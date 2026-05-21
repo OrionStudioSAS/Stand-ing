@@ -141,7 +141,7 @@ export async function syncMondayScenes() {
 }
 
 export function sceneShareUrl(scene) {
-  return `${window.location.origin}${window.location.pathname}?scene=${scene.share_token}`;
+  return `${window.location.origin}/?scene=${scene.share_token}`;
 }
 
 function filterScenes(scenes, filters = {}) {
