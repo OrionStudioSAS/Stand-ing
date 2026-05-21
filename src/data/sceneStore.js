@@ -128,6 +128,18 @@ export async function saveScene(scene) {
   return scene;
 }
 
+export async function syncMondayScenes() {
+  if (!supabase) throw new Error('Supabase non configure.');
+
+  const { data, error } = await supabase.functions.invoke('monday-sync', {
+    body: {},
+  });
+
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
 export function sceneShareUrl(scene) {
   return `${window.location.origin}${window.location.pathname}?scene=${scene.share_token}`;
 }

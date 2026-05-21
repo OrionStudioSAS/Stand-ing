@@ -449,6 +449,7 @@ select {
 
 .admin-header a,
 .admin-header-actions button,
+.sync-button,
 .stand-actions a,
 .object-bank button {
   min-height: 38px;
@@ -656,6 +657,33 @@ select {
   max-width: 760px;
   color: var(--muted);
   font-weight: 700;
+}
+
+.sync-button {
+  margin-top: 6px;
+}
+
+.sync-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.sync-result {
+  width: fit-content;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-weight: 900;
+}
+
+.sync-result.success {
+  color: #0f6f56;
+  background: rgba(29, 143, 131, 0.12);
+}
+
+.sync-result.error {
+  color: var(--danger);
+  background: rgba(181, 73, 53, 0.1);
 }
 
 @media (max-width: 1050px) {

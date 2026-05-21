@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
-import { getSceneByToken, listScenes, saveScene, sceneShareUrl } from './data/sceneStore.js';
+import { getSceneByToken, listScenes, saveScene, sceneShareUrl, syncMondayScenes } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -472,10 +472,34 @@ function AdminDashboard({ user }) {
   const [scenes, setScenes] = useState([]);
   const [filters, setFilters] = useState({ search: '', salon: '', status: '' });
   const [tab, setTab] = useState('stands');
+  const [syncState, setSyncState] = useState({ loading: false, message: '', error: '' });
 
   useEffect(() => {
     listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error));
   }, [filters]);
+
+  const refreshScenes = () => {
+    return listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error));
+  };
+
+  const runMondaySync = async () => {
+    setSyncState({ loading: true, message: '', error: '' });
+    try {
+      const result = await syncMondayScenes();
+      await refreshScenes();
+      setSyncState({
+        loading: false,
+        message: `${result?.processed ?? 0} scene(s) synchronisee(s) depuis Monday.`,
+        error: '',
+      });
+    } catch (error) {
+      setSyncState({
+        loading: false,
+        message: '',
+        error: error.message || 'Synchronisation Monday impossible.',
+      });
+    }
+  };
 
   const updateFilter = (key, value) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -581,8 +605,12 @@ function AdminDashboard({ user }) {
       {tab === 'monday' && (
         <section className="monday-panel">
           <h2>Synchronisation Monday</h2>
-          <p>Flux prevu: lire les tableaux SMCL Confort/Prestige, creer la scene quand la colonne "Creer la scene" vaut "OK", puis repasser le statut a "Cree".</p>
-          <p>Le squelette de fonction Edge est dans <code>supabase/functions/monday-sync</code>. Il faudra ajouter le token Monday et les IDs board/tableau exacts.</p>
+          <p>Lit les tableaux SMCL Confort/Prestige, cree une scene quand la colonne CONFIGURABLE vaut OUI, puis remplit le lien configurateur dans Monday.</p>
+          <button className="sync-button" onClick={runMondaySync} disabled={syncState.loading}>
+            {syncState.loading ? 'Synchronisation...' : 'Synchroniser Monday'}
+          </button>
+          {syncState.message && <div className="sync-result success">{syncState.message}</div>}
+          {syncState.error && <div className="sync-result error">{syncState.error}</div>}
         </section>
       )}
     </main>
