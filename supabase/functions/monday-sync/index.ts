@@ -7,7 +7,7 @@ Deno.serve(async () => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const mondayToken = Deno.env.get("MONDAY_API_TOKEN");
-  const publicAppUrl = Deno.env.get("PUBLIC_APP_URL");
+  const publicAppUrl = Deno.env.get("PUBLIC_APP_URL") || "https://stand-ing.vercel.app/";
 
   if (!mondayToken) {
     return json({ error: "Missing MONDAY_API_TOKEN" }, 500);
