@@ -156,6 +156,8 @@ input[type="range"] {
   width: 100%;
 }
 
+input[type="email"],
+input[type="password"],
 input[type="text"],
 input:not([type]) {
   width: 100%;
@@ -446,6 +448,7 @@ select {
 }
 
 .admin-header a,
+.admin-header-actions button,
 .stand-actions a,
 .object-bank button {
   min-height: 38px;
@@ -456,6 +459,74 @@ select {
   background: var(--ink);
   font-weight: 900;
   text-decoration: none;
+}
+
+.admin-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-header-actions small {
+  width: 100%;
+  color: var(--muted);
+  font-weight: 800;
+  text-align: right;
+}
+
+.admin-header-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-login-shell {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 22px;
+}
+
+.admin-login-card {
+  display: grid;
+  gap: 14px;
+  width: min(430px, 100%);
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(251, 250, 241, 0.94);
+  box-shadow: 0 22px 70px rgba(31, 39, 36, 0.16);
+}
+
+.admin-login-card > span {
+  width: fit-content;
+  padding: 5px 9px;
+  color: #fff;
+  background: var(--ink);
+  font-weight: 900;
+}
+
+.admin-login-card h1 {
+  margin: 0;
+  font-size: clamp(2rem, 8vw, 3.4rem);
+  line-height: 0.9;
+}
+
+.admin-login-card p {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.admin-login-error {
+  padding: 10px 12px;
+  border: 1px solid rgba(181, 73, 53, 0.32);
+  border-radius: 8px;
+  color: var(--danger);
+  background: rgba(181, 73, 53, 0.08);
+  font-weight: 800;
 }
 
 .admin-tabs {
@@ -648,5 +719,13 @@ select {
 
   .admin-header {
     align-items: start;
+  }
+
+  .admin-header-actions {
+    justify-content: flex-start;
+  }
+
+  .admin-header-actions small {
+    text-align: left;
   }
 }

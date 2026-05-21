@@ -6,9 +6,11 @@ import { Box3, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, Text
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import {
   FileImage,
+  LogOut,
   Plus,
   Search,
 } from 'lucide-react';
+import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { getSceneByToken, listScenes, saveScene, sceneShareUrl } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
@@ -54,7 +56,7 @@ function clamp(value, min, max) {
 function App() {
   const params = new URLSearchParams(window.location.search);
   const sceneToken = params.get('scene') || 'smcl-confort-demo';
-  const isAdmin = params.get('admin') === '1';
+  const isAdmin = window.location.pathname.replace(/\/$/, '') === '/admin' || params.get('admin') === '1';
   const [scene, setScene] = useState(null);
   const [loading, setLoading] = useState(!isAdmin);
 
@@ -65,10 +67,119 @@ function App() {
       .finally(() => setLoading(false));
   }, [isAdmin, sceneToken]);
 
-  if (isAdmin) return <AdminDashboard />;
+  if (isAdmin) return <AdminGate />;
   if (loading || !scene) return <div className="loading-screen">Chargement de la scene...</div>;
 
   return <ConfiguratorApp initialScene={scene} />;
+}
+
+function AdminGate() {
+  const [session, setSession] = useState(null);
+  const [adminUser, setAdminUser] = useState(null);
+  const [loading, setLoading] = useState(Boolean(supabase));
+  const [authError, setAuthError] = useState('');
+
+  useEffect(() => {
+    if (!supabase) {
+      setLoading(false);
+      return undefined;
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAdminUser(null);
+      setAuthError('');
+    });
+
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !session?.user) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    supabase
+      .from('admin_users')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          setAuthError('Impossible de verifier les droits admin.');
+          return;
+        }
+        if (!data) {
+          setAuthError('Compte connecte, mais non autorise en admin.');
+          return;
+        }
+        setAdminUser(data);
+      })
+      .finally(() => setLoading(false));
+  }, [session]);
+
+  if (!supabase) {
+    return (
+      <main className="admin-login-shell">
+        <section className="admin-login-card">
+          <span>StandING admin</span>
+          <h1>Supabase non configure</h1>
+          <p>Ajoute les variables Vite Supabase pour activer la connexion admin.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (loading) return <div className="loading-screen">Verification admin...</div>;
+  if (!session || !adminUser) return <AdminLogin authError={authError} />;
+
+  return <AdminDashboard user={session.user} />;
+}
+
+function AdminLogin({ authError }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(authError);
+
+  useEffect(() => setError(authError), [authError]);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    if (signInError) setError('Email ou mot de passe incorrect.');
+    setLoading(false);
+  };
+
+  return (
+    <main className="admin-login-shell">
+      <form className="admin-login-card" onSubmit={submit}>
+        <span>StandING admin</span>
+        <h1>Connexion admin</h1>
+        <p>Connecte-toi avec un compte autorise dans Supabase.</p>
+        <label>
+          Email
+          <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@standing.fr" required />
+        </label>
+        <label>
+          Mot de passe
+          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" required />
+        </label>
+        {error && <div className="admin-login-error">{error}</div>}
+        <button className="wide validate" disabled={loading}>
+          {loading ? 'Connexion...' : 'Se connecter'}
+        </button>
+      </form>
+    </main>
+  );
 }
 
 function ConfiguratorApp({ initialScene }) {
@@ -357,7 +468,7 @@ function ConfiguratorApp({ initialScene }) {
   );
 }
 
-function AdminDashboard() {
+function AdminDashboard({ user }) {
   const [scenes, setScenes] = useState([]);
   const [filters, setFilters] = useState({ search: '', salon: '', status: '' });
   const [tab, setTab] = useState('stands');
@@ -377,7 +488,13 @@ function AdminDashboard() {
           <span>StandING admin</span>
           <h1>Scenes clients</h1>
         </div>
-        <a href={`${window.location.pathname}?scene=smcl-confort-demo`}>Voir scene SMCL</a>
+        <div className="admin-header-actions">
+          <small>{user?.email}</small>
+          <a href="/?scene=smcl-confort-demo">Voir scene SMCL</a>
+          <button onClick={() => supabase.auth.signOut()}>
+            <LogOut size={16} /> Deconnexion
+          </button>
+        </div>
       </header>
 
       <nav className="admin-tabs">
