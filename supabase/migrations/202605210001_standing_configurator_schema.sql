@@ -19,7 +19,7 @@ create table if not exists public.scenes (
   width_m numeric(8,2) not null default 4,
   depth_m numeric(8,2) not null default 3,
   height_m numeric(8,2) not null default 2.5,
-  layout text not null default 'u' check (layout in ('left', 'right', 'u')),
+  layout text not null default 'u' check (layout in ('back', 'left', 'right', 'u')),
   source_payload jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

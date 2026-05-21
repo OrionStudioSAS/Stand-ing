@@ -129,9 +129,10 @@ function readMappingValue(item: any, mappingValue?: string | string[]) {
 }
 
 function normalizeLayout(value: string) {
-  const normalized = String(value || "").toLowerCase();
+  const normalized = normalizeText(value);
   if (normalized.includes("gauche")) return "left";
   if (normalized.includes("droite")) return "right";
+  if (normalized.includes("arriere")) return "back";
   return "u";
 }
 

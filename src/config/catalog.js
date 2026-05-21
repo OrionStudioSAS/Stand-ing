@@ -60,7 +60,8 @@ export const catalog = [
 ];
 
 export const layouts = [
-  { id: 'left', label: 'L gauche' },
-  { id: 'right', label: 'L droite' },
+  { id: 'left', label: 'Arriere gauche' },
+  { id: 'back', label: 'Arriere' },
+  { id: 'right', label: 'Arriere droite' },
   { id: 'u', label: 'U' },
 ];

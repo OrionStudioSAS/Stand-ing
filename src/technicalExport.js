@@ -357,8 +357,9 @@ function formatNumber(value) {
 }
 
 function layoutLabel(layout) {
-  if (layout === 'left') return 'L gauche';
-  if (layout === 'right') return 'L droite';
+  if (layout === 'left') return 'Arriere gauche';
+  if (layout === 'back') return 'Arriere';
+  if (layout === 'right') return 'Arriere droite';
   return 'U';
 }
 

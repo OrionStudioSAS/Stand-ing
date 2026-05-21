@@ -592,6 +592,7 @@ function AdminDashboard({ user }) {
 function availableWalls(layout) {
   if (layout === 'left') return [{ id: 'back', label: 'Fond' }, { id: 'left', label: 'Gauche' }];
   if (layout === 'right') return [{ id: 'back', label: 'Fond' }, { id: 'right', label: 'Droite' }];
+  if (layout === 'back') return [{ id: 'back', label: 'Fond' }];
   return [
     { id: 'back', label: 'Fond' },
     { id: 'left', label: 'Gauche' },
@@ -606,8 +607,9 @@ function wallLabel(wall) {
 }
 
 function layoutLabel(layout) {
-  if (layout === 'left') return 'L gauche';
-  if (layout === 'right') return 'L droite';
+  if (layout === 'left') return 'Arriere gauche';
+  if (layout === 'back') return 'Arriere';
+  if (layout === 'right') return 'Arriere droite';
   return 'U';
 }
 
