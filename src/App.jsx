@@ -5,10 +5,21 @@ import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
 import { Box3, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import {
+  Box,
+  Check,
+  ChevronUp,
   FileImage,
+  HelpCircle,
+  Languages,
+  Layers,
   LogOut,
+  Maximize2,
+  Minus,
   Plus,
+  RotateCcw,
+  Ruler,
   Search,
+  Sparkles,
 } from 'lucide-react';
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
@@ -341,9 +352,8 @@ function ConfiguratorApp({ initialScene }) {
   const [selectedId, setSelectedId] = useState('table-1');
   const [draggingId, setDraggingId] = useState(null);
   const [language, setLanguage] = useState('fr');
-  const [clientInfoOpen, setClientInfoOpen] = useState(false);
-  const [sceneInfoOpen, setSceneInfoOpen] = useState(true);
-  const [placedObjectsOpen, setPlacedObjectsOpen] = useState(true);
+  const [activeStep, setActiveStep] = useState(2);
+  const [openOptions, setOpenOptions] = useState({ moquette: true, personnalisation: false, coton: false, reserve: false, tete: false });
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [clientInfo, setClientInfo] = useState({
     client: initialScene.client_name || '',
@@ -355,6 +365,7 @@ function ConfiguratorApp({ initialScene }) {
 
   const area = width * depth;
   const selected = items.find((item) => item.id === selectedId);
+  const estimatedTotal = Math.round(area * 172.8);
 
   const currentScenePayload = (status, clientStatus) => ({
         ...initialScene,
@@ -389,6 +400,15 @@ function ConfiguratorApp({ initialScene }) {
   const validateConfiguration = async () => {
     await saveScene(currentScenePayload('configured', 'configured'));
     setSaveState('configured');
+  };
+
+  const saveDraft = async () => {
+    await saveScene(currentScenePayload(saveState === 'configured' ? 'configured' : 'created', saveState === 'configured' ? 'configured' : 'draft'));
+    if (saveState !== 'configured') setSaveState('draft');
+  };
+
+  const toggleOption = (key) => {
+    setOpenOptions((current) => ({ ...current, [key]: !current[key] }));
   };
 
   const updateItem = (id, patch) => {
@@ -431,59 +451,46 @@ function ConfiguratorApp({ initialScene }) {
   };
 
   return (
-    <main className="app-shell">
-      <aside className="panel left-panel">
-        <div className="brand">
-          <span>StandING</span>
-          <strong>Configurateur 3D</strong>
+    <main className="configurator-shell">
+      <header className="configurator-topbar">
+        <a className="config-logo" href="/">
+          <img src="/images/logo.png" alt="Stand-ING" />
+        </a>
+        <div className="config-breadcrumb">
+          <span>{initialScene.salon || 'SMCL 2026'}</span>
+          <span>{initialScene.project_name || 'Stand A-14'}</span>
+          <span>{area.toFixed(0)} m2</span>
         </div>
+        <nav className="stepper" aria-label="Etapes de configuration">
+          {[
+            { id: 1, label: 'Accueil' },
+            { id: 2, label: 'Options' },
+            { id: 3, label: 'Mobilier' },
+            { id: 4, label: 'Validation' },
+          ].map((step) => (
+            <button key={step.id} className={activeStep === step.id ? 'active' : step.id < activeStep ? 'done' : ''} onClick={() => setActiveStep(step.id)}>
+              <span>{step.id < activeStep ? <Check size={13} /> : step.id}</span>
+              {step.label}
+            </button>
+          ))}
+        </nav>
+        <div className="top-estimate">
+          <strong>{estimatedTotal.toLocaleString('fr-FR')} € HT</strong>
+          <span>Total estime</span>
+        </div>
+        <button className="save-button" onClick={saveDraft}>Sauvegarder</button>
+        <button className="round-tool"><HelpCircle size={18} /></button>
+        <label className="language-pill">
+          <Languages size={16} />
+          <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+            <option value="fr">FR</option>
+            <option value="en">EN</option>
+          </select>
+        </label>
+        <div className="user-pill">VD</div>
+      </header>
 
-        <section className="control-group">
-          <div className="group-title">Dimensions</div>
-          <label>
-            Largeur <span>{width} m</span>
-            <input type="range" min="2" max="8" step="0.5" value={width} onChange={(event) => setWidth(Number(event.target.value))} />
-          </label>
-          <label>
-            Profondeur <span>{depth} m</span>
-            <input type="range" min="2" max="6" step="0.5" value={depth} onChange={(event) => setDepth(Number(event.target.value))} />
-          </label>
-          <label>
-            Hauteur <span>{height} m</span>
-            <input type="range" min="2" max="4" step="0.1" value={height} onChange={(event) => setHeight(Number(event.target.value))} />
-          </label>
-          <div className="metric">{area.toFixed(1)} m2</div>
-        </section>
-
-        <section className="control-group">
-          <div className="group-title">Implantation</div>
-          <div className="segmented">
-            {layouts.map((option) => (
-              <button key={option.id} className={layout === option.id ? 'active' : ''} onClick={() => chooseLayout(option.id)}>
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="control-group">
-          <div className="group-title">Ajouter</div>
-          <div className="catalog">
-            {catalog.map((entry) => {
-              const Icon = entry.icon;
-              return (
-                <button key={entry.type} onClick={() => addItem(entry.type)} title={`Ajouter ${entry.label}`}>
-                  <Icon size={18} />
-                  <span>{entry.label}</span>
-                  <Plus size={14} />
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      </aside>
-
-      <section className="stage">
+      <section className="configurator-stage">
         <Canvas
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
           className={draggingId ? 'dragging-canvas' : ''}
@@ -495,8 +502,8 @@ function ConfiguratorApp({ initialScene }) {
             setDraggingId(null);
           }}
         >
-          <color attach="background" args={['#e9ece4']} />
-          <fog attach="fog" args={['#e9ece4', 9, 18]} />
+          <color attach="background" args={['#eef0f4']} />
+          <fog attach="fog" args={['#eef0f4', 9, 18]} />
           <ambientLight intensity={0.85} />
           <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
@@ -527,90 +534,134 @@ function ConfiguratorApp({ initialScene }) {
           />
         </Canvas>
 
-        <div className="scene-info-card">
-          <label className="language-field">
-            Langue
-            <select value={language} onChange={(event) => setLanguage(event.target.value)}>
-              <option value="fr">Francais</option>
-              <option value="en">English</option>
-            </select>
-          </label>
-          <button className="accordion-trigger" onClick={() => setClientInfoOpen((open) => !open)} aria-expanded={clientInfoOpen}>
-            <span>Mes informations</span>
-            <strong>{clientInfoOpen ? '-' : '+'}</strong>
-          </button>
-          {clientInfoOpen && (
-            <div className="client-info-grid">
-              <label>
-                Client
-                <input value={clientInfo.client} placeholder="Nom du client" onChange={(event) => updateClientInfo('client', event.target.value)} />
-              </label>
-              <label>
-                Projet
-                <input value={clientInfo.project} placeholder="Nom du projet" onChange={(event) => updateClientInfo('project', event.target.value)} />
-              </label>
-              <label>
-                Salon
-                <input value={clientInfo.event} placeholder="Salon / hall / stand" onChange={(event) => updateClientInfo('event', event.target.value)} />
-              </label>
-            </div>
-          )}
-          <button className="accordion-trigger" onClick={() => setSceneInfoOpen((open) => !open)} aria-expanded={sceneInfoOpen}>
-            <span>Informations scene client</span>
-            <strong>{sceneInfoOpen ? '-' : '+'}</strong>
-          </button>
-          {sceneInfoOpen && (
-            <div className="scene-info-grid">
-              <span>Surface</span>
-              <strong>{area.toFixed(1)} m2</strong>
-              <span>Dimensions</span>
-              <strong>{width} x {depth} x {height} m</strong>
-              <span>Implantation</span>
-              <strong>{layoutLabel(layout)}</strong>
-              <span>Objets</span>
-              <strong>{items.length}</strong>
-            </div>
-          )}
+        <div className="view-toolbar" aria-label="Outils de vue">
+          <button><Maximize2 size={16} /></button>
+          <button><Minus size={16} /></button>
+          <button><RotateCcw size={16} /></button>
+          <button><Ruler size={16} /></button>
+        </div>
+      </section>
+
+      <aside className="config-panel">
+        <div className="config-panel-head">
+          <h1>Options de configuration</h1>
+          <span>Etape {activeStep} / 4</span>
+        </div>
+        <div className="stand-summary-card">
+          <strong>{area.toFixed(0)} m2 · {layout === 'u' ? '3 faces' : layout === 'back' ? '1 face' : '2 faces'} · {initialScene.project_name || 'Stand A-14'}</strong>
+          <button type="button">Modifier ›</button>
+        </div>
+        <div className="rules-card">
+          <strong>Regles SMCL appliquees automatiquement</strong>
+          <span>✓ Reserve 2m2 incluse</span>
+          <span>✓ 2 tetes de cloison</span>
+          <span>✓ 9 spots LED (1/3m2)</span>
         </div>
 
-        <div className="scene-actions-card">
-          <button className="accordion-trigger" onClick={() => setPlacedObjectsOpen((open) => !open)} aria-expanded={placedObjectsOpen}>
-            <span>Objets poses</span>
-            <strong>{placedObjectsOpen ? '-' : '+'}</strong>
-          </button>
-          {placedObjectsOpen && (
-            <div className="placed-object-list" role="listbox" aria-label="Objets poses">
-              {items.map((item, index) => (
-                <button key={item.id} className={selectedId === item.id ? 'active' : ''} onClick={() => setSelectedId(item.id)}>
-                  <span>{index + 1}. {catalog.find((entry) => entry.type === item.type)?.label}</span>
-                  <small>{item.type === 'screen' ? wallLabel(item.wall) : `${item.x.toFixed(1)}, ${item.z.toFixed(1)}`}</small>
+        <section className="panel-section-title">Les options</section>
+        <OptionAccordion title="Moquette" icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+          <div className="carpet-card">
+            <div>
+              <strong>Moquette</strong>
+              <span>Gris clair (0939)</span>
+            </div>
+            <small>6 coloris disponibles — Inclus</small>
+            <div className="color-row included">
+              {['#cfd4d8', '#d4362a', '#adc62c', '#68a9c9', '#df7d31', '#34a853'].map((color) => <button key={color} style={{ background: color }} />)}
+            </div>
+            <small>En option 9€/m2</small>
+            <div className="color-row">
+              {['#ede7db', '#d4322b', '#eadcb8', '#65d1d2', '#f33d91', '#4cb8cf', '#681b74'].map((color) => <button key={color} style={{ background: color }} />)}
+            </div>
+          </div>
+        </OptionAccordion>
+        <OptionAccordion title="Personnalisation" icon={<Sparkles size={16} />} open={openOptions.personnalisation} onToggle={() => toggleOption('personnalisation')} />
+        <OptionAccordion title="Coton cloison" icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')} />
+        <OptionAccordion title="Reserve" icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')} />
+        <OptionAccordion title="Tete de cloison" icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')} />
+
+        <section className="panel-section-title">Objets poses</section>
+        <div className="compact-object-list">
+          {items.map((item, index) => (
+            <button key={item.id} className={selectedId === item.id ? 'active' : ''} onClick={() => setSelectedId(item.id)}>
+              <span>{index + 1}. {catalog.find((entry) => entry.type === item.type)?.label}</span>
+              <small>{item.type === 'screen' ? wallLabel(item.wall) : `${item.x.toFixed(1)}, ${item.z.toFixed(1)}`}</small>
+            </button>
+          ))}
+        </div>
+        {selected && selected.type !== 'screen' && (
+          <label className="rotation-control config-rotation">
+            Rotation <span>{selected.rotation || 0} deg</span>
+            <input
+              type="range"
+              min="-180"
+              max="180"
+              step="5"
+              value={selected.rotation || 0}
+              onInput={(event) => updateItem(selected.id, { rotation: Number(event.currentTarget.value) })}
+              onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })}
+            />
+          </label>
+        )}
+
+        <section className="panel-section-title">Ajouter</section>
+        <div className="compact-catalog">
+          {catalog.map((entry) => {
+            const Icon = entry.icon;
+            return (
+              <button key={entry.type} onClick={() => addItem(entry.type)} title={`Ajouter ${entry.label}`}>
+                <Icon size={16} />
+                <span>{entry.label}</span>
+                <Plus size={13} />
+              </button>
+            );
+          })}
+        </div>
+
+        <details className="stand-settings">
+          <summary>Dimensions et implantation</summary>
+          <div className="settings-grid">
+            <label>Largeur <span>{width} m</span><input type="range" min="2" max="8" step="0.5" value={width} onChange={(event) => setWidth(Number(event.target.value))} /></label>
+            <label>Profondeur <span>{depth} m</span><input type="range" min="2" max="6" step="0.5" value={depth} onChange={(event) => setDepth(Number(event.target.value))} /></label>
+            <label>Hauteur <span>{height} m</span><input type="range" min="2" max="4" step="0.1" value={height} onChange={(event) => setHeight(Number(event.target.value))} /></label>
+            <div className="segmented config-layouts">
+              {layouts.map((option) => (
+                <button key={option.id} className={layout === option.id ? 'active' : ''} onClick={() => chooseLayout(option.id)}>
+                  {option.label}
                 </button>
               ))}
             </div>
-          )}
-          {selected && selected.type !== 'screen' && (
-            <label className="rotation-control">
-              Rotation <span>{selected.rotation || 0} deg</span>
-              <input
-                type="range"
-                min="-180"
-                max="180"
-                step="5"
-                value={selected.rotation || 0}
-                onInput={(event) => updateItem(selected.id, { rotation: Number(event.currentTarget.value) })}
-                onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })}
-              />
-            </label>
-          )}
-          <button className="wide validate" onClick={validateConfiguration}>
-            Valider ma configuration
-          </button>
-          <button className="wide export" onClick={() => exportTechnicalPng({ width, depth, height, layout, items, catalog })}>
-            <FileImage size={16} /> Generer PNG technique
-          </button>
+          </div>
+        </details>
+
+        <button className="wide export" onClick={() => exportTechnicalPng({ width, depth, height, layout, items, catalog })}>
+          <FileImage size={16} /> Generer PNG technique
+        </button>
+      </aside>
+
+      <footer className="configurator-footer">
+        <div>
+          <span>Total HT estime</span>
+          <strong>{estimatedTotal.toLocaleString('fr-FR')} €</strong>
         </div>
-      </section>
+        <nav>
+          <button type="button" onClick={() => setActiveStep((step) => Math.max(1, step - 1))}>← Retour</button>
+          <button type="button" onClick={() => setActiveStep((step) => Math.min(4, step + 1))}>Etape suivante →</button>
+        </nav>
+      </footer>
     </main>
+  );
+}
+
+function OptionAccordion({ title, icon, open, onToggle, children }) {
+  return (
+    <section className={`option-accordion ${open ? 'open' : ''}`}>
+      <button type="button" onClick={onToggle}>
+        <span>{icon}{title}</span>
+        <ChevronUp size={18} />
+      </button>
+      {open && children}
+    </section>
   );
 }
 
