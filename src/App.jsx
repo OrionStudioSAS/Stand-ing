@@ -191,8 +191,13 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
     setLoading(true);
     setError('');
     const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    if (signInError) setError('Email ou mot de passe incorrect.');
-    setLoading(false);
+    if (signInError) {
+      setError('Email ou mot de passe incorrect.');
+      setLoading(false);
+      return;
+    }
+
+    window.location.href = '/admin';
   };
 
   const openConfigurationLink = () => {
