@@ -180,6 +180,7 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [configLink, setConfigLink] = useState('');
+  const [showConfigLink, setShowConfigLink] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(authError);
 
@@ -222,42 +223,41 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
           <h1>Connexion</h1>
           <p>{mode === 'admin' ? 'Bienvenue sur le Back-Office Stand-ING' : 'Bienvenue sur Stand-ING'}</p>
         </div>
-        {mode === 'admin' && (
-          <>
-            <label>
-              Email
-              <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="contact@aerosys-industries.fr" required />
-            </label>
-            <label>
-              Mot de passe
-              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mot de passe" required />
-            </label>
-            <div className="login-options">
-              <label className="remember-field">
-                <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
-                Se souvenir de moi
-              </label>
-              <button type="button">Mot de passe oublie ?</button>
-            </div>
-          </>
-        )}
-        {error && <div className="admin-login-error">{error}</div>}
-        {mode === 'admin' && (
-          <>
-            <button className="login-submit" disabled={loading}>
-              {loading ? 'Connexion...' : 'Se connecter'}
-            </button>
-            <div className="login-divider">ou continuer avec</div>
-          </>
-        )}
-        <p className="login-help">Premiere connexion ? Votre commercial Stand-ING vous a envoye un lien d'acces.</p>
         <label>
-          Lien de configuration
-          <input type="url" value={configLink} onChange={(event) => setConfigLink(event.target.value)} placeholder="https://stand-ing.vercel.app/?scene=..." />
+          Email
+          <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="contact@aerosys-industries.fr" required />
         </label>
-        <button type="button" className="config-link-button" onClick={openConfigurationLink}>
+        <label>
+          Mot de passe
+          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mot de passe" required />
+        </label>
+        <div className="login-options">
+          <label className="remember-field">
+            <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
+            Se souvenir de moi
+          </label>
+          <button type="button">Mot de passe oublie ?</button>
+        </div>
+        {error && <div className="admin-login-error">{error}</div>}
+        <button className="login-submit" disabled={loading}>
+          {loading ? 'Connexion...' : 'Se connecter'}
+        </button>
+        <div className="login-divider">ou continuer avec</div>
+        <p className="login-help">Premiere connexion ? Votre commercial Stand-ING vous a envoye un lien d'acces.</p>
+        <button type="button" className="config-link-button" onClick={() => setShowConfigLink((shown) => !shown)}>
           Acceder via mon lien de configuration
         </button>
+        {showConfigLink && (
+          <div className="config-link-panel">
+            <label>
+              Lien de configuration
+              <input type="url" value={configLink} onChange={(event) => setConfigLink(event.target.value)} placeholder="https://stand-ing.vercel.app/?scene=..." />
+            </label>
+            <button type="button" className="config-link-open" onClick={openConfigurationLink}>
+              Ouvrir ma scene
+            </button>
+          </div>
+        )}
         <small className="login-credit">Developper par - Orion Studio 2026</small>
       </form>
     </main>

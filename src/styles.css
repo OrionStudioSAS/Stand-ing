@@ -732,6 +732,24 @@ select {
   font-size: 0.9rem;
 }
 
+.config-link-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d7dbe2;
+  border-radius: 10px;
+  background: #f7f9fc;
+}
+
+.config-link-open {
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: #1f4378;
+  font-weight: 900;
+}
+
 .login-credit {
   margin-top: 160px;
   color: #c9cdd4;
