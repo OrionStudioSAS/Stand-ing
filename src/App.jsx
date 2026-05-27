@@ -83,6 +83,7 @@ function AdminGate() {
   const [session, setSession] = useState(null);
   const [adminUser, setAdminUser] = useState(null);
   const [loading, setLoading] = useState(Boolean(supabase));
+  const [authChecked, setAuthChecked] = useState(!supabase);
   const [authError, setAuthError] = useState('');
 
   useEffect(() => {
@@ -93,19 +94,24 @@ function AdminGate() {
 
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
+      setAuthChecked(true);
+      if (!data.session) setLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       setAdminUser(null);
       setAuthError('');
+      setAuthChecked(true);
+      setLoading(Boolean(nextSession));
     });
 
     return () => listener.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (!supabase || !session?.user) {
+    if (!supabase || !authChecked) return;
+    if (!session?.user) {
       setLoading(false);
       return;
     }
@@ -128,7 +134,7 @@ function AdminGate() {
         setAdminUser(data);
       })
       .finally(() => setLoading(false));
-  }, [session]);
+  }, [authChecked, session]);
 
   if (!supabase) {
     return (
@@ -144,7 +150,7 @@ function AdminGate() {
     );
   }
 
-  if (loading) return <div className="loading-screen">Verification admin...</div>;
+  if (loading || !authChecked) return <div className="loading-screen">Verification admin...</div>;
   if (!session || !adminUser) {
     window.location.replace('/');
     return <div className="loading-screen">Redirection...</div>;
