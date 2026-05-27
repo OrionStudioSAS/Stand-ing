@@ -7,20 +7,23 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import {
   Box,
   Check,
+  ChevronDown,
   ChevronUp,
   FileImage,
   HelpCircle,
-  Languages,
   Layers,
   LogOut,
+  Mail,
   Maximize2,
   Minus,
+  Paperclip,
   Plus,
   RotateCcw,
   Ruler,
   Search,
   Sparkles,
   Trash2,
+  X,
 } from 'lucide-react';
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
@@ -30,6 +33,23 @@ import './styles.css';
 
 const floorPlane = new Plane(new Vector3(0, 1, 0), 0);
 const wallSwitchZone = 0.18;
+const questionCategories = [
+  { id: 'technical', label: 'Question technique', icon: '?' },
+  { id: 'layout', label: 'Aménagement', icon: '📐' },
+  { id: 'signage', label: 'Signalétique', icon: '🏷️' },
+  { id: 'suggestion', label: 'Suggestion', icon: '💡' },
+  { id: 'urgent', label: 'Demande urgente', icon: '⚡' },
+  { id: 'other', label: 'Autre', icon: '📦' },
+];
+const urgencyLevels = [
+  { id: 'normal', label: 'Normal', delay: 'Réponse sous 48h', color: '#13a538' },
+  { id: 'important', label: 'Important', delay: 'Réponse sous 24h', color: '#f0c400' },
+  { id: 'urgent', label: 'Urgent', delay: 'Réponse sous 4h', color: '#dc2430' },
+];
+const languages = [
+  { id: 'fr', label: 'Français', sublabel: 'Interface en français', short: 'FR', flag: '🇫🇷' },
+  { id: 'en', label: 'English', sublabel: 'Interface in English', short: 'EN', flag: '🇬🇧' },
+];
 
 function makeItem(type, width, depth, layout) {
   const entry = catalog.find((item) => item.type === type);
@@ -353,6 +373,7 @@ function ConfiguratorApp({ initialScene }) {
   const [selectedId, setSelectedId] = useState('table-1');
   const [draggingId, setDraggingId] = useState(null);
   const [language, setLanguage] = useState('fr');
+  const [headerPanel, setHeaderPanel] = useState(null);
   const [activeStep, setActiveStep] = useState(1);
   const [openOptions, setOpenOptions] = useState({ moquette: true, personnalisation: false, coton: false, reserve: false, tete: false });
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
@@ -362,6 +383,24 @@ function ConfiguratorApp({ initialScene }) {
     project: initialScene.project_name || '',
     event: initialScene.event_name || initialScene.salon || '',
   });
+  const [contactDetails, setContactDetails] = useState(() => ({
+    firstName: 'Julien',
+    lastName: 'BOURLIEU',
+    company: initialScene.client_name || 'Aérosys Industries',
+    role: 'Responsable commercial',
+    email: initialScene.client_email || 'contact@aerosys.fr',
+    phone: '+33 6 12 34 56 78',
+    address: '12 avenue de la Défense',
+    zip: '92400',
+    city: 'Courbevoie',
+    country: 'France',
+    salon: `${initialScene.salon || 'SMCL 2026'} — Paris-Le Bourget`,
+    hall: '1',
+    emplacement: (initialScene.project_name || 'Stand A-14').replace(/^Stand\s+/i, ''),
+  }));
+  const [questionCategory, setQuestionCategory] = useState('technical');
+  const [urgency, setUrgency] = useState('important');
+  const [questionForm, setQuestionForm] = useState({ subject: '', message: '' });
   const [viewAngle] = useState(35);
   const hasMounted = useRef(false);
 
@@ -370,8 +409,9 @@ function ConfiguratorApp({ initialScene }) {
   const estimatedTotal = Math.round(area * 172.8);
   const salonLabel = initialScene.salon || clientInfo.event || 'SMCL 2026';
   const standLabel = initialScene.project_name || clientInfo.project || 'Stand A-14';
-  const clientLabel = clientInfo.client || 'Aerosys Industries';
+  const clientLabel = clientInfo.client || contactDetails.company || 'Aerosys Industries';
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
+  const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
 
   const currentScenePayload = (status, clientStatus) => ({
         ...initialScene,
@@ -457,6 +497,27 @@ function ConfiguratorApp({ initialScene }) {
     setClientInfo((current) => ({ ...current, [key]: value }));
   };
 
+  const updateContactDetail = (key, value) => {
+    setContactDetails((current) => ({ ...current, [key]: value }));
+  };
+
+  const toggleHeaderPanel = (panel) => {
+    setHeaderPanel((current) => (current === panel ? null : panel));
+  };
+
+  const validateContactDetails = () => {
+    updateClientInfo('client', contactDetails.company);
+    updateClientInfo('project', `Stand ${contactDetails.emplacement}`);
+    updateClientInfo('event', contactDetails.salon);
+    setHeaderPanel(null);
+  };
+
+  const submitQuestion = (event) => {
+    event.preventDefault();
+    setQuestionForm({ subject: '', message: '' });
+    setHeaderPanel(null);
+  };
+
   return (
     <main className={`configurator-shell ${activeStep === 1 ? 'intro-step' : ''}`}>
       <header className="configurator-topbar">
@@ -485,16 +546,56 @@ function ConfiguratorApp({ initialScene }) {
           <strong>{estimatedTotal.toLocaleString('fr-FR')} € HT</strong>
           <span>Total estime</span>
         </div>
-        <button className="round-tool"><HelpCircle size={18} /></button>
-        <label className="language-pill">
-          <Languages size={16} />
-          <select value={language} onChange={(event) => setLanguage(event.target.value)}>
-            <option value="fr">FR</option>
-            <option value="en">EN</option>
-          </select>
-        </label>
-        <div className="user-pill">VD</div>
+        <button className={`round-tool ${headerPanel === 'question' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('question')} aria-label="Questions et remarques">
+          <HelpCircle size={18} />
+        </button>
+        <button className={`language-pill ${headerPanel === 'language' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('language')} aria-label="Choisir la langue">
+          <span className="flag-dot">{selectedLanguage.flag}</span>
+          {selectedLanguage.short}
+          <ChevronDown size={15} />
+        </button>
+        <button className={`user-pill ${headerPanel === 'client' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('client')} aria-label="Renseignements client">VD</button>
       </header>
+
+      {headerPanel === 'client' && (
+        <div className="header-modal-layer" onMouseDown={(event) => event.target === event.currentTarget && setHeaderPanel(null)}>
+          <ClientInfoModal
+            salonLabel={salonLabel}
+            contactDetails={contactDetails}
+            onChange={updateContactDetail}
+            onClose={() => setHeaderPanel(null)}
+            onValidate={validateContactDetails}
+          />
+        </div>
+      )}
+
+      {headerPanel === 'question' && (
+        <div className="header-modal-layer" onMouseDown={(event) => event.target === event.currentTarget && setHeaderPanel(null)}>
+          <QuestionModal
+            salonLabel={salonLabel}
+            category={questionCategory}
+            urgency={urgency}
+            form={questionForm}
+            onCategoryChange={setQuestionCategory}
+            onUrgencyChange={setUrgency}
+            onFormChange={(key, value) => setQuestionForm((current) => ({ ...current, [key]: value }))}
+            onClose={() => setHeaderPanel(null)}
+            onSubmit={submitQuestion}
+          />
+        </div>
+      )}
+
+      {headerPanel === 'language' && (
+        <div className="header-popover-layer" onMouseDown={() => setHeaderPanel(null)}>
+          <LanguageMenu
+            language={language}
+            onSelect={(nextLanguage) => {
+              setLanguage(nextLanguage);
+              setHeaderPanel(null);
+            }}
+          />
+        </div>
+      )}
 
       <section className="configurator-stage">
         <Canvas
@@ -540,7 +641,7 @@ function ConfiguratorApp({ initialScene }) {
           />
         </Canvas>
 
-        {activeStep === 1 && (
+        {activeStep === 1 && !headerPanel && (
           <div className="intro-overlay">
             <article className="intro-card" aria-label="Accueil configurateur">
               <div className="intro-card-head">
@@ -685,6 +786,147 @@ function ConfiguratorApp({ initialScene }) {
       </footer>
       )}
     </main>
+  );
+}
+
+function ModalHead({ icon, title, salonLabel, onClose }) {
+  return (
+    <header className="modal-head">
+      <div className="modal-title-group">
+        {icon && <span className="modal-title-icon">{icon}</span>}
+        <h2>{title}</h2>
+      </div>
+      <div className="modal-head-actions">
+        <span>{salonLabel}</span>
+        <button type="button" onClick={onClose} aria-label="Fermer">
+          <X size={18} />
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function ClientInfoModal({ salonLabel, contactDetails, onChange, onClose, onValidate }) {
+  return (
+    <section className="client-info-modal">
+      <ModalHead title="Renseignements" salonLabel={salonLabel} onClose={onClose} />
+      <div className="client-info-content">
+        <p>Ces informations seront associées à votre configuration et à votre BAT.</p>
+        <div className="form-grid two">
+          <label>Prénom<input value={contactDetails.firstName} onChange={(event) => onChange('firstName', event.target.value)} /></label>
+          <label>Nom<input value={contactDetails.lastName} onChange={(event) => onChange('lastName', event.target.value)} /></label>
+        </div>
+        <label className="form-row">Société<input value={contactDetails.company} onChange={(event) => onChange('company', event.target.value)} /></label>
+        <div className="form-grid two">
+          <label>Fonction<input value={contactDetails.role} onChange={(event) => onChange('role', event.target.value)} /></label>
+          <label>Email<input type="email" value={contactDetails.email} onChange={(event) => onChange('email', event.target.value)} /></label>
+        </div>
+        <label className="form-row">Téléphone<input value={contactDetails.phone} onChange={(event) => onChange('phone', event.target.value)} /></label>
+
+        <span className="form-section-label">Localisation</span>
+        <label className="form-row">Adresse<input value={contactDetails.address} onChange={(event) => onChange('address', event.target.value)} /></label>
+        <div className="form-grid two">
+          <label>Code postal<input value={contactDetails.zip} onChange={(event) => onChange('zip', event.target.value)} /></label>
+          <label>Ville<input value={contactDetails.city} onChange={(event) => onChange('city', event.target.value)} /></label>
+        </div>
+        <label className="form-row">Pays
+          <select value={contactDetails.country} onChange={(event) => onChange('country', event.target.value)}>
+            <option>France</option>
+            <option>Belgique</option>
+            <option>Suisse</option>
+            <option>Luxembourg</option>
+          </select>
+        </label>
+
+        <span className="form-section-label">Emplacement</span>
+        <label className="form-row locked-field">Salon<input value={contactDetails.salon} readOnly /><span>🔒</span></label>
+        <div className="form-grid two locked">
+          <label>Hall<input value={contactDetails.hall} readOnly /></label>
+          <label>Emplacement<input value={contactDetails.emplacement} readOnly /></label>
+        </div>
+        <small>Les prix affichés sont hors taxes. Ces informations sont transmises à Stand-ING pour la gestion de votre dossier.</small>
+        <button className="modal-primary-button" type="button" onClick={onValidate}>Valider</button>
+      </div>
+    </section>
+  );
+}
+
+function QuestionModal({ salonLabel, category, urgency, form, onCategoryChange, onUrgencyChange, onFormChange, onClose, onSubmit }) {
+  return (
+    <form className="question-modal" onSubmit={onSubmit}>
+      <ModalHead icon={<HelpCircle size={19} />} title="Questions / Remarques" salonLabel={salonLabel} onClose={onClose} />
+      <div className="question-content">
+        <p>Vous avez une question sur votre stand ou souhaitez ajouter une remarque particulière ? L'équipe Stand-ING vous répond sous 24h.</p>
+
+        <span className="form-section-label">Catégorie</span>
+        <div className="chip-grid">
+          {questionCategories.map((entry) => (
+            <button key={entry.id} className={category === entry.id ? 'active' : ''} type="button" onClick={() => onCategoryChange(entry.id)}>
+              <span>{entry.icon}</span>{entry.label}
+            </button>
+          ))}
+        </div>
+
+        <label className="form-row">Objet
+          <input value={form.subject} onChange={(event) => onFormChange('subject', event.target.value)} placeholder="Ex : Dimension des cloisons pour mon logo..." />
+        </label>
+
+        <span className="form-section-label">Niveau d'urgence</span>
+        <div className="urgency-grid">
+          {urgencyLevels.map((entry) => (
+            <button key={entry.id} className={urgency === entry.id ? 'active' : ''} type="button" onClick={() => onUrgencyChange(entry.id)}>
+              <span style={{ background: entry.color }} />
+              <strong>{entry.label}</strong>
+              <small>{entry.delay}</small>
+              {urgency === entry.id && <Check size={14} />}
+            </button>
+          ))}
+        </div>
+
+        <label className="form-row">Message
+          <textarea
+            value={form.message}
+            onChange={(event) => onFormChange('message', event.target.value)}
+            maxLength={500}
+            placeholder={"Décrivez votre question ou remarque en détail...\n\nEx : Pour mon stand 25m², j'aimerais savoir si je peux intégrer un écran LED de 80cm sur la cloison de fond, en plus du visuel textile inclus."}
+          />
+          <em>{form.message.length} / 500</em>
+        </label>
+
+        <span className="form-section-label">Pièces jointes (optionnel)</span>
+        <label className="file-drop">
+          <Paperclip size={18} />
+          <span>Glisser un fichier ou</span>
+          <strong>Parcourir</strong>
+          <small>PNG, JPG, PDF — Max 10 Mo</small>
+          <input type="file" />
+        </label>
+
+        <div className="question-note">ℹ️ Notre équipe vous répondra directement par email et mettra à jour votre configuration si nécessaire.</div>
+        <button className="modal-primary-button centered" type="submit"><Mail size={15} /> Envoyer ma question</button>
+        <button className="modal-cancel-button" type="button" onClick={onClose}>Annuler</button>
+      </div>
+    </form>
+  );
+}
+
+function LanguageMenu({ language, onSelect }) {
+  return (
+    <section className="language-menu" onMouseDown={(event) => event.stopPropagation()}>
+      <h3>Choisir la langue</h3>
+      {languages.map((entry) => (
+        <button key={entry.id} className={language === entry.id ? 'active' : ''} type="button" onClick={() => onSelect(entry.id)}>
+          <span className="language-flag">{entry.flag}</span>
+          <span>
+            <strong>{entry.label}</strong>
+            <small>{entry.sublabel}</small>
+          </span>
+          <em>{entry.short}</em>
+          {language === entry.id && <Check size={14} />}
+        </button>
+      ))}
+      <p>Les textes du stand restent en français</p>
+    </section>
   );
 }
 
