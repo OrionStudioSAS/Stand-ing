@@ -20,6 +20,7 @@ import {
   Ruler,
   Search,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
@@ -446,6 +447,17 @@ function ConfiguratorApp({ initialScene }) {
     setItems((current) => current.map((item) => constrainItem(item, width, depth, nextLayout)));
   };
 
+  const rotateSelectedItem = () => {
+    if (!selected) return;
+    updateItem(selected.id, { rotation: ((selected.rotation || 0) + 15) % 360 });
+  };
+
+  const deleteSelectedItem = () => {
+    if (!selected) return;
+    setItems((current) => current.filter((item) => item.id !== selected.id));
+    setSelectedId(null);
+  };
+
   const updateClientInfo = (key, value) => {
     setClientInfo((current) => ({ ...current, [key]: value }));
   };
@@ -534,11 +546,20 @@ function ConfiguratorApp({ initialScene }) {
           />
         </Canvas>
 
-        <div className="view-toolbar" aria-label="Outils de vue">
-          <button><Maximize2 size={16} /></button>
-          <button><Minus size={16} /></button>
-          <button><RotateCcw size={16} /></button>
-          <button><Ruler size={16} /></button>
+        <div className={`view-toolbar ${selected ? 'selection-mode' : ''}`} aria-label={selected ? 'Actions objet selectionne' : 'Outils de vue'}>
+          {selected ? (
+            <>
+              <button type="button" onClick={rotateSelectedItem} title="Rotation"><RotateCcw size={16} /></button>
+              <button type="button" onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
+            </>
+          ) : (
+            <>
+              <button type="button"><Maximize2 size={16} /></button>
+              <button type="button"><Minus size={16} /></button>
+              <button type="button"><RotateCcw size={16} /></button>
+              <button type="button"><Ruler size={16} /></button>
+            </>
+          )}
         </div>
       </section>
 
@@ -579,30 +600,6 @@ function ConfiguratorApp({ initialScene }) {
         <OptionAccordion title="Coton cloison" icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')} />
         <OptionAccordion title="Reserve" icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')} />
         <OptionAccordion title="Tete de cloison" icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')} />
-
-        <section className="panel-section-title">Objets poses</section>
-        <div className="compact-object-list">
-          {items.map((item, index) => (
-            <button key={item.id} className={selectedId === item.id ? 'active' : ''} onClick={() => setSelectedId(item.id)}>
-              <span>{index + 1}. {catalog.find((entry) => entry.type === item.type)?.label}</span>
-              <small>{item.type === 'screen' ? wallLabel(item.wall) : `${item.x.toFixed(1)}, ${item.z.toFixed(1)}`}</small>
-            </button>
-          ))}
-        </div>
-        {selected && selected.type !== 'screen' && (
-          <label className="rotation-control config-rotation">
-            Rotation <span>{selected.rotation || 0} deg</span>
-            <input
-              type="range"
-              min="-180"
-              max="180"
-              step="5"
-              value={selected.rotation || 0}
-              onInput={(event) => updateItem(selected.id, { rotation: Number(event.currentTarget.value) })}
-              onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })}
-            />
-          </label>
-        )}
 
         <section className="panel-section-title">Ajouter</section>
         <div className="compact-catalog">

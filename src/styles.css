@@ -1242,6 +1242,15 @@ select {
   background: #e9eff7;
 }
 
+.view-toolbar.selection-mode button:first-child {
+  color: #fff;
+  background: #1f4378;
+}
+
+.view-toolbar.selection-mode button:last-child {
+  color: #b54935;
+}
+
 .config-panel {
   display: grid;
   align-content: start;
@@ -1386,13 +1395,11 @@ select {
   outline-offset: 2px;
 }
 
-.compact-object-list,
 .compact-catalog {
   display: grid;
   gap: 8px;
 }
 
-.compact-object-list button,
 .compact-catalog button {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -1408,18 +1415,6 @@ select {
   text-align: left;
 }
 
-.compact-object-list button.active {
-  color: #fff;
-  border-color: #1f4378;
-  background: #1f4378;
-}
-
-.compact-object-list small {
-  color: inherit;
-  opacity: 0.7;
-}
-
-.config-rotation,
 .stand-settings {
   border: 1px solid #dce1e8;
   border-radius: 10px;
