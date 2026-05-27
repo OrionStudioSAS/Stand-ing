@@ -355,6 +355,7 @@ function ConfiguratorApp({ initialScene }) {
   const [language, setLanguage] = useState('fr');
   const [activeStep, setActiveStep] = useState(2);
   const [openOptions, setOpenOptions] = useState({ moquette: true, personnalisation: false, coton: false, reserve: false, tete: false });
+  const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [clientInfo, setClientInfo] = useState({
     client: initialScene.client_name || '',
@@ -403,11 +404,6 @@ function ConfiguratorApp({ initialScene }) {
     setSaveState('configured');
   };
 
-  const saveDraft = async () => {
-    await saveScene(currentScenePayload(saveState === 'configured' ? 'configured' : 'created', saveState === 'configured' ? 'configured' : 'draft'));
-    if (saveState !== 'configured') setSaveState('draft');
-  };
-
   const toggleOption = (key) => {
     setOpenOptions((current) => ({ ...current, [key]: !current[key] }));
   };
@@ -445,11 +441,6 @@ function ConfiguratorApp({ initialScene }) {
   const chooseLayout = (nextLayout) => {
     setLayout(nextLayout);
     setItems((current) => current.map((item) => constrainItem(item, width, depth, nextLayout)));
-  };
-
-  const rotateSelectedItem = () => {
-    if (!selected) return;
-    updateItem(selected.id, { rotation: ((selected.rotation || 0) + 15) % 360 });
   };
 
   const deleteSelectedItem = () => {
@@ -490,7 +481,6 @@ function ConfiguratorApp({ initialScene }) {
           <strong>{estimatedTotal.toLocaleString('fr-FR')} € HT</strong>
           <span>Total estime</span>
         </div>
-        <button className="save-button" onClick={saveDraft}>Sauvegarder</button>
         <button className="round-tool"><HelpCircle size={18} /></button>
         <label className="language-pill">
           <Languages size={16} />
@@ -549,8 +539,22 @@ function ConfiguratorApp({ initialScene }) {
         <div className={`view-toolbar ${selected ? 'selection-mode' : ''}`} aria-label={selected ? 'Actions objet selectionne' : 'Outils de vue'}>
           {selected ? (
             <>
-              <button type="button" onClick={rotateSelectedItem} title="Rotation"><RotateCcw size={16} /></button>
+              <button type="button" onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
               <button type="button" onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
+              {rotationPanelOpen && selected.type !== 'screen' && (
+                <label className="toolbar-rotation-slider">
+                  <span>{selected.rotation || 0}°</span>
+                  <input
+                    type="range"
+                    min="-180"
+                    max="180"
+                    step="5"
+                    value={selected.rotation || 0}
+                    onInput={(event) => updateItem(selected.id, { rotation: Number(event.currentTarget.value) })}
+                    onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })}
+                  />
+                </label>
+              )}
             </>
           ) : (
             <>

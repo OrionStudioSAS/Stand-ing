@@ -1156,7 +1156,6 @@ select {
   font-size: 1.05rem;
 }
 
-.save-button,
 .round-tool,
 .language-pill,
 .user-pill {
@@ -1165,11 +1164,6 @@ select {
   background: #f2f4f7;
   color: #343a43;
   font-weight: 900;
-}
-
-.save-button {
-  min-height: 36px;
-  padding: 0 16px;
 }
 
 .round-tool,
@@ -1249,6 +1243,27 @@ select {
 
 .view-toolbar.selection-mode button:last-child {
   color: #b54935;
+}
+
+.toolbar-rotation-slider {
+  display: grid;
+  gap: 8px;
+  width: 180px;
+  padding: 12px;
+  border-top: 1px solid #edf0f4;
+  background: #fff;
+}
+
+.toolbar-rotation-slider span {
+  justify-self: start;
+  margin: 0;
+  color: #1f4378;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.toolbar-rotation-slider input {
+  width: 100%;
 }
 
 .config-panel {
