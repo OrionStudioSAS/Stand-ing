@@ -127,10 +127,12 @@ function AdminGate() {
   if (!supabase) {
     return (
       <main className="admin-login-shell">
-        <section className="admin-login-card">
-          <span>StandING admin</span>
-          <h1>Supabase non configure</h1>
-          <p>Ajoute les variables Vite Supabase pour activer la connexion admin.</p>
+        <LoginHero />
+        <section className="admin-login-area">
+          <div className="admin-login-card">
+            <h1>Supabase non configure</h1>
+            <p>Ajoute les variables Vite Supabase pour activer la connexion admin.</p>
+          </div>
         </section>
       </main>
     );
@@ -142,9 +144,35 @@ function AdminGate() {
   return <AdminDashboard user={session.user} />;
 }
 
+function LoginHero() {
+  return (
+    <section className="login-hero">
+      <div className="login-logo-bubble">
+        <img src="/images/logo.png" alt="Stand-ING" />
+        <span>Back-Office Admin</span>
+      </div>
+      <div className="login-hero-content">
+        <h2>Configurez votre stand en 3D.</h2>
+        <p>Visualisez chaque détail de votre stand d'exposition avant le jour J.</p>
+        <div className="login-stand-preview">
+          <img src="/images/image_stand_login.png" alt="Apercu stand 3D" />
+        </div>
+        <ul>
+          <li>Vue 3D temps reel, rotative</li>
+          <li>Options, mobilier, signaletique</li>
+          <li>BAT electronique integre</li>
+          <li>Acces 24h/24, depuis n'importe ou</li>
+        </ul>
+      </div>
+      <div className="login-orb" aria-hidden="true" />
+    </section>
+  );
+}
+
 function AdminLogin({ authError }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(authError);
 
@@ -161,22 +189,37 @@ function AdminLogin({ authError }) {
 
   return (
     <main className="admin-login-shell">
+      <LoginHero />
       <form className="admin-login-card" onSubmit={submit}>
-        <span>StandING admin</span>
-        <h1>Connexion admin</h1>
-        <p>Connecte-toi avec un compte autorise dans Supabase.</p>
+        <div className="login-form-heading">
+          <h1>Connexion</h1>
+          <p>Bienvenue sur le Back-Office Stand-ING</p>
+        </div>
         <label>
           Email
-          <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@standing.fr" required />
+          <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="contact@aerosys-industries.fr" required />
         </label>
         <label>
           Mot de passe
-          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" required />
+          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mot de passe" required />
         </label>
+        <div className="login-options">
+          <label className="remember-field">
+            <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
+            Se souvenir de moi
+          </label>
+          <button type="button">Mot de passe oublie ?</button>
+        </div>
         {error && <div className="admin-login-error">{error}</div>}
-        <button className="wide validate" disabled={loading}>
+        <button className="login-submit" disabled={loading}>
           {loading ? 'Connexion...' : 'Se connecter'}
         </button>
+        <div className="login-divider">ou continuer avec</div>
+        <p className="login-help">Premiere connexion ? Votre commercial Stand-ING vous a envoye un lien d'acces.</p>
+        <a className="config-link-button" href="/">
+          Acceder via mon lien de configuration
+        </a>
+        <small className="login-credit">Developper par - Orion Studio 2026</small>
       </form>
     </main>
   );
