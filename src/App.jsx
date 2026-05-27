@@ -145,7 +145,10 @@ function AdminGate() {
   }
 
   if (loading) return <div className="loading-screen">Verification admin...</div>;
-  if (!session || !adminUser) return <AdminLogin authError={authError} mode="admin" />;
+  if (!session || !adminUser) {
+    window.location.replace('/');
+    return <div className="loading-screen">Redirection...</div>;
+  }
 
   return <AdminDashboard user={session.user} />;
 }
