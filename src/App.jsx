@@ -353,7 +353,7 @@ function ConfiguratorApp({ initialScene }) {
   const [selectedId, setSelectedId] = useState('table-1');
   const [draggingId, setDraggingId] = useState(null);
   const [language, setLanguage] = useState('fr');
-  const [activeStep, setActiveStep] = useState(2);
+  const [activeStep, setActiveStep] = useState(1);
   const [openOptions, setOpenOptions] = useState({ moquette: true, personnalisation: false, coton: false, reserve: false, tete: false });
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
@@ -368,6 +368,10 @@ function ConfiguratorApp({ initialScene }) {
   const area = width * depth;
   const selected = items.find((item) => item.id === selectedId);
   const estimatedTotal = Math.round(area * 172.8);
+  const salonLabel = initialScene.salon || clientInfo.event || 'SMCL 2026';
+  const standLabel = initialScene.project_name || clientInfo.project || 'Stand A-14';
+  const clientLabel = clientInfo.client || 'Aerosys Industries';
+  const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
 
   const currentScenePayload = (status, clientStatus) => ({
         ...initialScene,
@@ -454,15 +458,15 @@ function ConfiguratorApp({ initialScene }) {
   };
 
   return (
-    <main className="configurator-shell">
+    <main className={`configurator-shell ${activeStep === 1 ? 'intro-step' : ''}`}>
       <header className="configurator-topbar">
         <a className="config-logo" href="/">
           <img src="/images/logo.png" alt="Stand-ING" />
         </a>
         <div className="config-breadcrumb">
-          <span>{initialScene.salon || 'SMCL 2026'}</span>
-          <span>{initialScene.project_name || 'Stand A-14'}</span>
-          <span>{area.toFixed(0)} m2</span>
+          <span>{salonLabel}</span>
+          <span>{standLabel}</span>
+          <span>{area.toFixed(0)} m²</span>
         </div>
         <nav className="stepper" aria-label="Etapes de configuration">
           {[
@@ -536,6 +540,32 @@ function ConfiguratorApp({ initialScene }) {
           />
         </Canvas>
 
+        {activeStep === 1 && (
+          <div className="intro-overlay">
+            <article className="intro-card" aria-label="Accueil configurateur">
+              <div className="intro-card-head">
+                <h1>Stand·ING — Configurateur 3D</h1>
+                <span>{salonLabel} · {standLabel}</span>
+              </div>
+              <div className="intro-card-body">
+                <h2>Bienvenue, {clientLabel} 👋</h2>
+                <p>
+                  Votre espace de configuration est prêt. Renseignez les informations
+                  de votre stand pour démarrer la visualisation 3D en temps réel.
+                </p>
+                <ul>
+                  <li><span>🏛</span>{standLabel} · Hall 1 · {faceLabel}</li>
+                  <li><span>📐</span>{area.toFixed(0)} m² — récupéré depuis votre dossier SMCL</li>
+                  <li><span>📅</span>{salonLabel} · 14-18 octobre 2026</li>
+                </ul>
+                <button type="button" onClick={() => setActiveStep(2)}>
+                  Commencer la configuration →
+                </button>
+              </div>
+            </article>
+          </div>
+        )}
+
         <div className={`view-toolbar ${selected ? 'selection-mode' : ''}`} aria-label={selected ? 'Actions objet selectionne' : 'Outils de vue'}>
           {selected ? (
             <>
@@ -567,6 +597,7 @@ function ConfiguratorApp({ initialScene }) {
         </div>
       </section>
 
+      {activeStep > 1 && (
       <aside className="config-panel">
         <div className="config-panel-head">
           <h1>Options de configuration</h1>
@@ -639,7 +670,9 @@ function ConfiguratorApp({ initialScene }) {
           <FileImage size={16} /> Generer PNG technique
         </button>
       </aside>
+      )}
 
+      {activeStep > 1 && (
       <footer className="configurator-footer">
         <div>
           <span>Total HT estime</span>
@@ -650,6 +683,7 @@ function ConfiguratorApp({ initialScene }) {
           <button type="button" onClick={() => setActiveStep((step) => Math.min(4, step + 1))}>Etape suivante →</button>
         </nav>
       </footer>
+      )}
     </main>
   );
 }

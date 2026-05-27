@@ -1043,6 +1043,11 @@ select {
   color: #171b22;
 }
 
+.configurator-shell.intro-step {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 68px minmax(0, 1fr);
+}
+
 .configurator-topbar {
   grid-column: 1 / -1;
   display: grid;
@@ -1205,8 +1210,101 @@ select {
   background: radial-gradient(circle at center, #f9fafb 0, #e9ebef 58%, #e0e3e8 100%);
 }
 
+.intro-step .configurator-stage {
+  grid-column: 1 / -1;
+}
+
 .configurator-stage canvas {
   cursor: grab;
+}
+
+.intro-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: rgba(26, 35, 52, 0.84);
+  z-index: 3;
+}
+
+.intro-card {
+  width: min(540px, 100%);
+  border-radius: 20px;
+  padding: 34px 40px 32px;
+  background: #fff;
+  box-shadow: 0 28px 70px rgba(10, 18, 32, 0.32);
+}
+
+.intro-card-head {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #dfe3ea;
+}
+
+.intro-card-head h1 {
+  margin: 0;
+  color: #1f4378;
+  font-size: 1.36rem;
+}
+
+.intro-card-head span {
+  color: #989fa9;
+  font-size: 0.78rem;
+}
+
+.intro-card-body {
+  display: grid;
+  gap: 18px;
+  padding-top: 24px;
+}
+
+.intro-card-body h2 {
+  margin: 0;
+  color: #171b22;
+  font-size: 1.32rem;
+}
+
+.intro-card-body p {
+  max-width: 440px;
+  margin: -8px 0 0;
+  color: #6d7380;
+  line-height: 1.28;
+}
+
+.intro-card-body ul {
+  display: grid;
+  gap: 13px;
+  margin: 6px 0 4px;
+  padding: 0;
+  color: #3f4651;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.intro-card-body li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.intro-card-body li span {
+  width: 16px;
+  text-align: center;
+}
+
+.intro-card-body button {
+  justify-self: start;
+  min-height: 48px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 24px;
+  color: #fff;
+  background: #1f4378;
+  box-shadow: 0 12px 24px rgba(31, 67, 120, 0.28);
+  font-size: 0.98rem;
+  font-weight: 900;
 }
 
 .view-toolbar {
@@ -1218,6 +1316,10 @@ select {
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 14px 36px rgba(24, 36, 56, 0.16);
+}
+
+.intro-step .view-toolbar {
+  display: none;
 }
 
 .view-toolbar button {
