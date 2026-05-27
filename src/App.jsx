@@ -73,10 +73,60 @@ function App() {
   }, [isAdmin, sceneToken]);
 
   if (isAdmin) return <AdminGate />;
-  if (!sceneToken) return <AdminLogin mode="home" />;
+  if (!sceneToken) return <HomeGate />;
   if (loading || !scene) return <div className="loading-screen">Chargement de la scene...</div>;
 
   return <ConfiguratorApp initialScene={scene} />;
+}
+
+function HomeGate() {
+  const [session, setSession] = useState(null);
+  const [adminUser, setAdminUser] = useState(null);
+  const [loading, setLoading] = useState(Boolean(supabase));
+
+  useEffect(() => {
+    if (!supabase) {
+      setLoading(false);
+      return undefined;
+    }
+
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setSession(data.session);
+      if (!data.session) setLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAdminUser(null);
+      setLoading(Boolean(nextSession));
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !session?.user) return;
+
+    setLoading(true);
+    supabase
+      .from('admin_users')
+      .select('user_id')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        setAdminUser(data);
+        if (data) window.location.replace('/admin');
+      })
+      .finally(() => setLoading(false));
+  }, [session]);
+
+  if (loading || adminUser) return <div className="loading-screen">Verification admin...</div>;
+  return <AdminLogin mode="home" />;
 }
 
 function AdminGate() {
