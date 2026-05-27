@@ -158,6 +158,7 @@ input[type="range"] {
 
 input[type="email"],
 input[type="password"],
+input[type="url"],
 input[type="text"],
 input:not([type]) {
   width: 100%;
@@ -633,7 +634,8 @@ select {
 }
 
 .admin-login-card input[type="email"],
-.admin-login-card input[type="password"] {
+.admin-login-card input[type="password"],
+.admin-login-card input[type="url"] {
   min-height: 39px;
   border-color: #c7cbd2;
   border-radius: 7px;

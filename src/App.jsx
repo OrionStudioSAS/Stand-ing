@@ -55,19 +55,25 @@ function clamp(value, min, max) {
 
 function App() {
   const params = new URLSearchParams(window.location.search);
-  const sceneToken = params.get('scene') || 'smcl-confort-demo';
+  const sceneToken = params.get('scene');
   const isAdmin = window.location.pathname.replace(/\/$/, '') === '/admin' || params.get('admin') === '1';
   const [scene, setScene] = useState(null);
-  const [loading, setLoading] = useState(!isAdmin);
+  const [loading, setLoading] = useState(Boolean(sceneToken) && !isAdmin);
 
   useEffect(() => {
     if (isAdmin) return;
+    if (!sceneToken) {
+      setLoading(false);
+      return;
+    }
+
     getSceneByToken(sceneToken)
       .then((loaded) => setScene(loaded))
       .finally(() => setLoading(false));
   }, [isAdmin, sceneToken]);
 
   if (isAdmin) return <AdminGate />;
+  if (!sceneToken) return <AdminLogin mode="home" />;
   if (loading || !scene) return <div className="loading-screen">Chargement de la scene...</div>;
 
   return <ConfiguratorApp initialScene={scene} />;
@@ -139,7 +145,7 @@ function AdminGate() {
   }
 
   if (loading) return <div className="loading-screen">Verification admin...</div>;
-  if (!session || !adminUser) return <AdminLogin authError={authError} />;
+  if (!session || !adminUser) return <AdminLogin authError={authError} mode="admin" />;
 
   return <AdminDashboard user={session.user} />;
 }
@@ -169,10 +175,11 @@ function LoginHero() {
   );
 }
 
-function AdminLogin({ authError }) {
+function AdminLogin({ authError = '', mode = 'admin' }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
+  const [configLink, setConfigLink] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(authError);
 
@@ -187,38 +194,70 @@ function AdminLogin({ authError }) {
     setLoading(false);
   };
 
+  const openConfigurationLink = () => {
+    const value = configLink.trim();
+    if (!value) {
+      setError('Colle ton lien de configuration pour continuer.');
+      return;
+    }
+
+    try {
+      const url = new URL(value, window.location.origin);
+      const scene = url.searchParams.get('scene');
+      if (!scene) {
+        setError('Lien invalide : aucun identifiant de scene trouve.');
+        return;
+      }
+      window.location.href = `${window.location.origin}/?scene=${encodeURIComponent(scene)}`;
+    } catch {
+      setError('Lien invalide.');
+    }
+  };
+
   return (
     <main className="admin-login-shell">
       <LoginHero />
       <form className="admin-login-card" onSubmit={submit}>
         <div className="login-form-heading">
           <h1>Connexion</h1>
-          <p>Bienvenue sur le Back-Office Stand-ING</p>
+          <p>{mode === 'admin' ? 'Bienvenue sur le Back-Office Stand-ING' : 'Bienvenue sur Stand-ING'}</p>
         </div>
-        <label>
-          Email
-          <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="contact@aerosys-industries.fr" required />
-        </label>
-        <label>
-          Mot de passe
-          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mot de passe" required />
-        </label>
-        <div className="login-options">
-          <label className="remember-field">
-            <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
-            Se souvenir de moi
-          </label>
-          <button type="button">Mot de passe oublie ?</button>
-        </div>
+        {mode === 'admin' && (
+          <>
+            <label>
+              Email
+              <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="contact@aerosys-industries.fr" required />
+            </label>
+            <label>
+              Mot de passe
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mot de passe" required />
+            </label>
+            <div className="login-options">
+              <label className="remember-field">
+                <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
+                Se souvenir de moi
+              </label>
+              <button type="button">Mot de passe oublie ?</button>
+            </div>
+          </>
+        )}
         {error && <div className="admin-login-error">{error}</div>}
-        <button className="login-submit" disabled={loading}>
-          {loading ? 'Connexion...' : 'Se connecter'}
-        </button>
-        <div className="login-divider">ou continuer avec</div>
+        {mode === 'admin' && (
+          <>
+            <button className="login-submit" disabled={loading}>
+              {loading ? 'Connexion...' : 'Se connecter'}
+            </button>
+            <div className="login-divider">ou continuer avec</div>
+          </>
+        )}
         <p className="login-help">Premiere connexion ? Votre commercial Stand-ING vous a envoye un lien d'acces.</p>
-        <a className="config-link-button" href="/">
+        <label>
+          Lien de configuration
+          <input type="url" value={configLink} onChange={(event) => setConfigLink(event.target.value)} placeholder="https://stand-ing.vercel.app/?scene=..." />
+        </label>
+        <button type="button" className="config-link-button" onClick={openConfigurationLink}>
           Acceder via mon lien de configuration
-        </a>
+        </button>
         <small className="login-credit">Developper par - Orion Studio 2026</small>
       </form>
     </main>
