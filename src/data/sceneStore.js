@@ -1,7 +1,18 @@
 import { demoScenes } from './seed.js';
 import { supabase } from './supabaseClient.js';
+import { catalog } from '../config/catalog.js';
 
 const storageKey = 'standing-scenes-v1';
+
+function normalizeSceneItem(item) {
+  const catalogItem = catalog.find((entry) => entry.type === item.type);
+  return {
+    ...item,
+    modelUrl: catalogItem?.modelUrl || item.modelUrl,
+    modelSize: catalogItem?.modelSize || item.modelSize,
+    color: catalogItem?.color || item.color,
+  };
+}
 
 function readLocalScenes() {
   const existing = window.localStorage.getItem(storageKey);
@@ -35,7 +46,7 @@ function dbSceneToScene(row) {
       z: Number(item.z),
       rotation: Number(item.rotation),
       wall: item.wall || item.config?.wall,
-    })),
+    })).map(normalizeSceneItem),
     files: row.scene_files || [],
   };
 }
@@ -61,7 +72,8 @@ export async function listScenes(filters = {}) {
 
 export async function getSceneByToken(token) {
   if (!supabase) {
-    return readLocalScenes().find((scene) => scene.share_token === token || scene.id === token) || readLocalScenes()[0];
+    const scene = readLocalScenes().find((item) => item.share_token === token || item.id === token) || readLocalScenes()[0];
+    return { ...scene, items: (scene.items || []).map(normalizeSceneItem) };
   }
 
   const { data, error } = await supabase

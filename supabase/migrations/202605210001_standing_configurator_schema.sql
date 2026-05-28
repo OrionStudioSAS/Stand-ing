@@ -136,8 +136,8 @@ values
   ('obj-cloison', 'Cloison 1x2.5m', '/models/Cloison%201x2.5m%20HT%20(1).obj', '{"size":[1,2.5,0.06]}'::jsonb),
   ('obj-podium', 'Podium 50cm', '/models/Poidum%20Blanc%2050x50x50cm.obj', '{"size":[0.5,0.5,0.5]}'::jsonb),
   ('obj-porte', 'Porte poussant', '/models/Porte%20Poussant%20Gauche%20(1).obj', '{"size":[1,2.5,0.24]}'::jsonb),
-  ('obj-meuble-bas', 'Meuble bas', '/models/Simulateur%20Stand-ING%20Meuble%20Bas.obj', '{"size":[1.04,0.54,0.5]}'::jsonb),
-  ('obj-porte-doc', 'Porte document', '/models/Simulateur%20Stand-ING.obj', '{"size":[0.3,1.4,0.3]}'::jsonb),
+  ('obj-meuble-bas', 'Meuble bas', '/models/meuble.obj', '{"size":[1.04,0.54,0.5]}'::jsonb),
+  ('obj-porte-doc', 'Porte document', '/models/Porte%20document.obj', '{"size":[0.3,1.4,0.3]}'::jsonb),
   ('obj-tabouret', 'Tabouret SIAE', '/models/TABOURET%20SIAE.obj', '{"size":[0.52,0.86,0.5]}'::jsonb)
 on conflict (type) do update set
   label = excluded.label,

@@ -38,7 +38,7 @@ export const catalog = [
     label: 'Meuble bas',
     icon: Box,
     color: '#d9c49b',
-    modelUrl: modelUrl('Simulateur Stand-ING Meuble Bas.obj'),
+    modelUrl: modelUrl('meuble.obj'),
     modelSize: [1.04, 0.54, 0.5],
   },
   {
@@ -46,7 +46,7 @@ export const catalog = [
     label: 'Porte document',
     icon: Box,
     color: '#d7dde0',
-    modelUrl: modelUrl('Simulateur Stand-ING.obj'),
+    modelUrl: modelUrl('Porte document.obj'),
     modelSize: [0.3, 1.4, 0.3],
   },
   {
