@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
+import { Box3, MeshStandardMaterial, Plane, Vector3 } from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import {
   Box,
@@ -1359,20 +1359,10 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
 }
 
 function Floor({ width, depth, carpetColor }) {
-  const texture = useLoader(TextureLoader, '/textures/floor-laminate.jpg');
-  const floorMap = useMemo(() => {
-    texture.wrapS = RepeatWrapping;
-    texture.wrapT = RepeatWrapping;
-    texture.colorSpace = SRGBColorSpace;
-    texture.repeat.set(Math.max(width / 1.2, 1), Math.max(depth / 1.2, 1));
-    texture.needsUpdate = true;
-    return texture;
-  }, [texture, width, depth]);
-
   return (
     <mesh receiveShadow position={[0, -0.035, 0]}>
       <boxGeometry args={[width, 0.07, depth]} />
-      <meshStandardMaterial map={floorMap} color={carpetColor} roughness={0.72} />
+      <meshStandardMaterial color={carpetColor || '#bebebe'} roughness={0.78} />
     </mesh>
   );
 }
