@@ -28,6 +28,7 @@ import {
   Settings2,
   Sparkles,
   Trash2,
+  Upload,
   UserPlus,
   Users,
   X,
@@ -35,7 +36,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { getSceneByToken, listScenes, saveScene, sceneShareUrl, syncMondayScenes } from './data/sceneStore.js';
+import { getSceneByToken, listObjectBank, listScenes, saveObjectBankItem, saveScene, sceneShareUrl, syncMondayScenes } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -1039,6 +1040,9 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, onSelect }
 
 function AdminDashboard({ user }) {
   const [scenes, setScenes] = useState([]);
+  const [assets, setAssets] = useState([]);
+  const [selectedAsset, setSelectedAsset] = useState(null);
+  const [assetCategory, setAssetCategory] = useState('Tout');
   const [filters, setFilters] = useState({ search: '', salon: '', status: '' });
   const [tab, setTab] = useState('dashboard');
   const [syncState, setSyncState] = useState({ loading: false, message: '', error: '' });
@@ -1046,6 +1050,10 @@ function AdminDashboard({ user }) {
   useEffect(() => {
     listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error));
   }, [filters]);
+
+  useEffect(() => {
+    listObjectBank().then(setAssets).catch((error) => console.error('Object bank list failed', error));
+  }, []);
 
   const refreshScenes = () => {
     return listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error));
@@ -1072,6 +1080,12 @@ function AdminDashboard({ user }) {
 
   const updateFilter = (key, value) => {
     setFilters((current) => ({ ...current, [key]: value }));
+  };
+
+  const saveAsset = async (asset) => {
+    const saved = await saveObjectBankItem(asset);
+    setAssets((current) => current.map((item) => (item.type === asset.type ? { ...item, ...saved } : item)));
+    setSelectedAsset((current) => (current?.type === asset.type ? { ...current, ...saved } : current));
   };
 
   return (
@@ -1116,9 +1130,21 @@ function AdminDashboard({ user }) {
         </header>
 
         <div className="admin-page-content">
-          {tab === 'dashboard' && <AdminDashboardHome scenes={scenes} />}
+          {tab === 'dashboard' && <AdminDashboardHome scenes={scenes} assets={assets} />}
           {tab === 'clients' && <AdminClientsView scenes={scenes} filters={filters} updateFilter={updateFilter} />}
-          {tab === 'objects' && <AdminObjectsView />}
+          {tab === 'objects' && (
+            <AdminObjectsView
+              assets={assets}
+              scenes={scenes}
+              search={filters.search}
+              category={assetCategory}
+              selectedAsset={selectedAsset}
+              onCategoryChange={setAssetCategory}
+              onSelectAsset={setSelectedAsset}
+              onCloseAsset={() => setSelectedAsset(null)}
+              onSaveAsset={saveAsset}
+            />
+          )}
           {tab === 'monday' && <AdminMondayView syncState={syncState} runMondaySync={runMondaySync} />}
           {tab === 'bat' && <AdminBatView scenes={scenes} />}
           {['salons', 'presets', 'users'].includes(tab) && <AdminPlaceholder tab={tab} />}
@@ -1148,40 +1174,34 @@ function adminSubtitle(tab) {
   return 'Vue en cours de préparation';
 }
 
-function AdminDashboardHome({ scenes }) {
-  const batRows = [
-    ['Salon SMCL 2026', 'Aérosys Industries', 'Stand A14 — 25m²', '⚠ En attente validation Stand-ING', '3j'],
-    ['Salon SMCL 2026', 'TechAir Group', 'Stand B22 — 18m²', '⚠ En attente validation Stand-ING', '1j'],
-    ['Salon SMCL 2026', 'Défense Systèmes', 'Stand C08 — 31m²', '⏳ Envoyé exposant — non signé', '5j'],
-    ['Salon SMCL 2026', 'AvioPro', 'Stand A02 — 18m²', '⏳ Envoyé exposant — non signé', '2j'],
-  ];
-  const recentItems = [
-    ['green', 'BAT signé', 'Aérosys Industries — SMCL', 'il y a 2h'],
-    ['blue', 'Config soumise', 'Défense Systèmes — SMCL', 'il y a 4h'],
-    ['green', 'BAT validé Stand-ING', 'TechAir Group — SMCL', 'hier'],
-    ['purple', 'Asset GLB ajouté', 'Podium Noir 75cm', 'il y a 2j'],
-    ['pale', 'Synchro Monday', 'SMCL 2026 — 3 items', 'il y a 2j'],
-  ];
-  const signed = scenes.filter((scene) => scene.client_status === 'configured' || scene.status === 'configured').length;
+function AdminDashboardHome({ scenes, assets }) {
+  const stats = getAdminStats(scenes, assets);
+  const batRows = getPendingBatRows(scenes);
+  const recentItems = getRecentActivityRows(scenes, assets);
+  const salonRows = getSalonRows(scenes);
 
   return (
     <>
       <section className="admin-kpi-grid">
-        <AdminKpi icon={<Orbit size={22} />} value={Math.max(142, scenes.length)} label="Configs soumises" hint="+12 ce mois" color="blue" />
-        <AdminKpi icon={<FileCheck2 size={22} />} value="8" label="BAT en attente" hint="— à valider" color="orange" />
-        <AdminKpi icon={<Check size={22} />} value={Math.max(134, signed)} label="BAT signés" hint="+11 ce mois" color="green" />
-        <AdminKpi icon={<span>€</span>} value="213 600 €" label="CA estimé" hint="+8% vs mois préc." color="navy" />
-        <AdminKpi icon={<Globe2 size={22} />} value="67" label="Exposants actifs" hint="+5 nouveaux" color="purple" />
+        <AdminKpi icon={<Orbit size={22} />} value={stats.configs} label="Configs soumises" hint={`${stats.configuredThisMonth} ce mois`} color="blue" />
+        <AdminKpi icon={<FileCheck2 size={22} />} value={stats.pendingBat} label="BAT en attente" hint={stats.pendingBat ? '— à valider' : 'aucun en attente'} color="orange" />
+        <AdminKpi icon={<Check size={22} />} value={stats.signedBat} label="BAT signés" hint={`${stats.signedThisMonth} ce mois`} color="green" />
+        <AdminKpi icon={<span>€</span>} value={`${stats.revenue.toLocaleString('fr-FR')} €`} label="CA estimé" hint={`${stats.averageArea.toFixed(0)} m² moyen`} color="navy" />
+        <AdminKpi icon={<Globe2 size={22} />} value={stats.exhibitors} label="Exposants actifs" hint={`${assets.filter((asset) => asset.is_active).length} assets actifs`} color="purple" />
       </section>
 
       <section className="admin-section-block">
         <h2>▲ BAT en attente de validation</h2>
         <div className="admin-bat-card">
-          {batRows.map((row) => (
-            <div className="admin-bat-row" key={row.join('-')}>
-              {row.map((cell, index) => <span key={cell} className={index === 3 ? 'warning' : ''}>{cell}</span>)}
+          {batRows.length ? batRows.map((row) => (
+            <div className="admin-bat-row" key={row.id}>
+              <span>{row.salon}</span>
+              <span>{row.client}</span>
+              <span>{row.stand}</span>
+              <span className="warning">{row.status}</span>
+              <span>{row.delay}</span>
             </div>
-          ))}
+          )) : <div className="admin-empty-row">Aucun BAT en attente avec les données actuelles.</div>}
         </div>
       </section>
 
@@ -1189,27 +1209,98 @@ function AdminDashboardHome({ scenes }) {
         <div className="admin-section-block">
           <h2>Activité récente</h2>
           <div className="admin-activity-card">
-            {recentItems.map((item) => (
-              <div className="admin-activity-row" key={item[1]}>
-                <span className={`activity-dot ${item[0]}`} />
-                <div><strong>{item[1]}</strong><small>{item[2]}</small></div>
-                <time>{item[3]}</time>
+            {recentItems.length ? recentItems.map((item) => (
+              <div className="admin-activity-row" key={item.id}>
+                <span className={`activity-dot ${item.color}`} />
+                <div><strong>{item.title}</strong><small>{item.subtitle}</small></div>
+                <time>{item.time}</time>
               </div>
-            ))}
+            )) : <div className="admin-empty-row">Aucune activité récente.</div>}
           </div>
         </div>
         <div className="admin-section-block">
           <h2>Salons actifs</h2>
           <div className="admin-salon-card">
-            <AdminSalonRow title="SMCL 2026" detail="42 exposants" status="Actif" />
-            <AdminSalonRow title="SIAE 2026" status="À venir" muted />
-            <AdminSalonRow title="Salon 3" status="À définir" muted />
-            <AdminSalonRow title="Salon 4" status="À définir" muted />
+            {salonRows.length ? salonRows.map((salon) => (
+              <AdminSalonRow key={salon.title} title={salon.title} detail={salon.detail} status={salon.status} muted={!salon.active} />
+            )) : <div className="admin-empty-row">Aucun salon synchronisé.</div>}
           </div>
         </div>
       </section>
     </>
   );
+}
+
+function getAdminStats(scenes, assets) {
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const configuredScenes = scenes.filter((scene) => ['draft', 'configured', 'bat_review', 'bat_validated'].includes(scene.client_status));
+  const pendingBat = scenes.filter((scene) => scene.status === 'bat_pending' || scene.client_status === 'bat_review').length;
+  const signedBat = scenes.filter((scene) => scene.status === 'validated' || scene.client_status === 'bat_validated').length;
+  const exhibitors = new Set(scenes.map((scene) => scene.client_name).filter(Boolean)).size;
+  const totalArea = scenes.reduce((sum, scene) => sum + Number(scene.dimensions?.width || scene.width_m || 0) * Number(scene.dimensions?.depth || scene.depth_m || 0), 0);
+
+  return {
+    configs: configuredScenes.length || scenes.length,
+    pendingBat,
+    signedBat,
+    configuredThisMonth: scenes.filter((scene) => (scene.created_at || '').startsWith(thisMonth)).length,
+    signedThisMonth: scenes.filter((scene) => (scene.updated_at || scene.created_at || '').startsWith(thisMonth) && (scene.status === 'validated' || scene.client_status === 'bat_validated')).length,
+    revenue: Math.round(totalArea * 172.8),
+    averageArea: scenes.length ? totalArea / scenes.length : 0,
+    exhibitors,
+    assets: assets.length,
+  };
+}
+
+function getPendingBatRows(scenes) {
+  return scenes
+    .filter((scene) => scene.status === 'bat_pending' || scene.client_status === 'bat_review')
+    .slice(0, 4)
+    .map((scene) => ({
+      id: scene.id,
+      salon: scene.event_name || scene.salon || 'Salon à définir',
+      client: scene.client_name || 'Client sans nom',
+      stand: `${scene.project_name || 'Stand'} — ${sceneArea(scene)}m²`,
+      status: scene.client_status === 'bat_review' ? 'En attente validation Stand-ING' : statusLabel(scene.status),
+      delay: relativeDays(scene.updated_at || scene.created_at),
+    }));
+}
+
+function getRecentActivityRows(scenes, assets) {
+  const sceneRows = scenes.map((scene) => ({
+    id: `scene-${scene.id}`,
+    title: scene.client_status === 'configured' ? 'Config soumise' : clientStatusLabel(scene.client_status),
+    subtitle: `${scene.client_name || 'Client'} — ${scene.salon || 'Salon'}`,
+    time: relativeTime(scene.updated_at || scene.created_at),
+    sortDate: new Date(scene.updated_at || scene.created_at || 0).getTime(),
+    color: scene.client_status === 'configured' ? 'green' : 'blue',
+  }));
+  const assetRows = assets.slice(0, 2).map((asset) => ({
+    id: `asset-${asset.type}`,
+    title: 'Asset 3D disponible',
+    subtitle: asset.label,
+    time: relativeTime(asset.updated_at || asset.created_at),
+    sortDate: new Date(asset.updated_at || asset.created_at || 0).getTime(),
+    color: asset.is_active ? 'purple' : 'pale',
+  }));
+  return [...sceneRows, ...assetRows].sort((a, b) => b.sortDate - a.sortDate).slice(0, 5);
+}
+
+function getSalonRows(scenes) {
+  const grouped = scenes.reduce((acc, scene) => {
+    const key = scene.event_name || scene.salon || 'Salon à définir';
+    if (!acc.has(key)) acc.set(key, { title: key, count: 0, active: false });
+    const current = acc.get(key);
+    current.count += 1;
+    current.active = current.active || scene.status !== 'archived';
+    return acc;
+  }, new Map());
+  return [...grouped.values()].map((salon) => ({
+    title: salon.title,
+    detail: `${salon.count} exposant${salon.count > 1 ? 's' : ''}`,
+    status: salon.active ? 'Actif' : 'À définir',
+    active: salon.active,
+  }));
 }
 
 function AdminKpi({ icon, value, label, hint, color }) {
@@ -1259,20 +1350,132 @@ function AdminClientsView({ scenes, filters, updateFilter }) {
   );
 }
 
-function AdminObjectsView() {
+function AdminObjectsView({ assets, scenes, search, category, selectedAsset, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset }) {
+  const categories = ['Tout', 'Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
+  const filteredAssets = assets.filter((asset) => {
+    const assetCategory = assetCategoryLabel(asset);
+    const matchesCategory = category === 'Tout' || assetCategory === category;
+    const matchesSearch = !search || [asset.label, asset.type, assetCategory].filter(Boolean).some((value) => value.toLowerCase().includes(search.toLowerCase()));
+    return matchesCategory && matchesSearch;
+  });
+
   return (
-    <section className="object-bank modern">
-      {catalog.map((item) => {
-        const Icon = item.icon;
-        return (
-          <article key={item.type}>
-            <Icon size={20} />
-            <div><strong>{item.label}</strong><span>{item.modelUrl ? 'Modele OBJ' : 'Objet natif'}</span></div>
-            <button>Ajouter a une scene</button>
-          </article>
-        );
-      })}
+    <section className="admin-assets-view">
+      <label className="asset-upload-drop">
+        <Upload size={23} />
+        <span>Glisser des fichiers .OBJ ou .GLB ici, ou</span>
+        <strong>Parcourir</strong>
+        <small>Formats acceptés : .obj, .glb — Conversion automatique OBJ→GLB incluse</small>
+        <input type="file" accept=".obj,.glb" multiple />
+      </label>
+
+      <nav className="asset-category-tabs" aria-label="Categories assets">
+        {categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => onCategoryChange(item)}>{item}</button>)}
+      </nav>
+
+      <div className="asset-grid">
+        {filteredAssets.map((asset) => (
+          <button key={asset.type} className="asset-card" type="button" onClick={() => onSelectAsset(asset)}>
+            <span className={`asset-status-dot ${assetStatus(asset)}`} />
+            <AssetPreview asset={asset} />
+            <div className="asset-card-body">
+              <strong>{asset.label}</strong>
+              <span>{assetCategoryLabel(asset)}</span>
+              <em>{assetSizeLabel(asset)}</em>
+              <div className="asset-tags">
+                {assetSalons(asset, scenes).slice(0, 2).map((salon) => <small key={salon}>{salonShortLabel(salon)}</small>)}
+                {!asset.is_active && <small className="inactive">Inactif</small>}
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {selectedAsset && (
+        <AssetDrawer
+          asset={selectedAsset}
+          scenes={scenes}
+          onClose={onCloseAsset}
+          onSave={onSaveAsset}
+          onDelete={() => onSaveAsset({ ...selectedAsset, is_active: false })}
+        />
+      )}
     </section>
+  );
+}
+
+function AssetPreview({ asset }) {
+  const url = asset.thumbnail_url;
+  if (url) return <img className="asset-thumb" src={url} alt="" />;
+  if (asset.model_url?.toLowerCase().endsWith('.obj')) return <span className="asset-obj-preview" />;
+  return <span className="asset-glb-preview">{assetFormat(asset)}</span>;
+}
+
+function AssetDrawer({ asset, scenes, onClose, onSave, onDelete }) {
+  const [draft, setDraft] = useState(asset);
+  const salons = getSalonRows(scenes).map((salon) => salon.title);
+  const assignedSalons = assetSalons(draft, scenes);
+
+  useEffect(() => setDraft(asset), [asset]);
+
+  const toggleSalon = (salon) => {
+    const current = new Set(assetSalons(draft, scenes));
+    if (current.has(salon)) current.delete(salon);
+    else current.add(salon);
+    setDraft({
+      ...draft,
+      dimensions: {
+        ...(draft.dimensions || {}),
+        salons: [...current],
+      },
+    });
+  };
+
+  return (
+    <div className="asset-drawer-layer">
+      <aside className="asset-drawer">
+        <header>
+          <div>
+            <h2>{draft.label}</h2>
+            <span>{assetCategoryLabel(draft)}</span>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
+        </header>
+
+        <AssetPreview asset={draft} />
+
+        <dl className="asset-meta-card">
+          <div><dt>Nom</dt><dd>{draft.label}</dd></div>
+          <div><dt>Catégorie</dt><dd>{assetCategoryLabel(draft)}</dd></div>
+          <div><dt>Format</dt><dd>{assetFormat(draft)}{assetFormat(draft) === 'OBJ' ? ' (converti depuis OBJ)' : ''}</dd></div>
+          <div><dt>Taille</dt><dd>{assetSizeLabel(draft)}</dd></div>
+          <div><dt>Dimensions</dt><dd>{assetDimensionsLabel(draft)}</dd></div>
+          <div><dt>Ajouté le</dt><dd>{formatDate(draft.created_at)}</dd></div>
+          <div><dt>Ajouté par</dt><dd>{draft.dimensions?.addedBy || 'Stand-ING'}</dd></div>
+        </dl>
+
+        <section className="asset-assignment">
+          <h3>Affectation par salon</h3>
+          {(salons.length ? salons : ['SMCL 2026', 'SIAE 2026']).map((salon) => {
+            const active = assignedSalons.includes(salon);
+            return (
+              <button key={salon} type="button" onClick={() => toggleSalon(salon)}>
+                <strong>{salon}</strong>
+                <span>{active ? 'Actif' : 'Inactif'}</span>
+                <i className={active ? 'active' : ''} />
+              </button>
+            );
+          })}
+        </section>
+
+        <small className="asset-price-note">Prix spécifique {assignedSalons[0] || 'salon'} : {draft.dimensions?.price ? `${draft.dimensions.price} €` : '—'}</small>
+
+        <footer>
+          <button type="button" className="asset-delete" onClick={onDelete}>Supprimer</button>
+          <button type="button" className="asset-save" onClick={() => onSave(draft)}>Enregistrer les modifications</button>
+        </footer>
+      </aside>
+    </div>
   );
 }
 
@@ -1312,6 +1515,79 @@ function AdminPlaceholder({ tab }) {
       <p>La maquette de ce menu sera intégrée dès que tu me l'envoies.</p>
     </section>
   );
+}
+
+function sceneArea(scene) {
+  const width = Number(scene.dimensions?.width || scene.width_m || 0);
+  const depth = Number(scene.dimensions?.depth || scene.depth_m || 0);
+  return Math.round(width * depth);
+}
+
+function relativeDays(value) {
+  if (!value) return '—';
+  const diff = Date.now() - new Date(value).getTime();
+  const days = Math.max(0, Math.round(diff / 86400000));
+  if (days === 0) return 'auj.';
+  return `${days}j`;
+}
+
+function relativeTime(value) {
+  if (!value) return '—';
+  const diffHours = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 3600000));
+  if (diffHours < 1) return 'à l’instant';
+  if (diffHours < 24) return `il y a ${diffHours}h`;
+  const days = Math.round(diffHours / 24);
+  if (days === 1) return 'hier';
+  return `il y a ${days}j`;
+}
+
+function formatDate(value) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('fr-FR').format(new Date(value));
+}
+
+function assetCategoryLabel(asset) {
+  if (asset.dimensions?.category) return asset.dimensions.category;
+  if (asset.type?.includes('screen')) return 'Multimédia';
+  if (asset.type?.includes('cloison') || asset.type?.includes('porte')) return 'Sol & Cloisons';
+  if (asset.type?.includes('enseigne')) return 'Enseignes';
+  return 'Mobilier';
+}
+
+function assetFormat(asset) {
+  const url = asset.model_url || '';
+  const ext = url.split('.').pop()?.toUpperCase();
+  if (ext === 'OBJ' || ext === 'GLB') return ext;
+  return asset.model_url ? '3D' : 'Natif';
+}
+
+function assetSizeLabel(asset) {
+  if (asset.dimensions?.sizeMb) return `${asset.dimensions.sizeMb} Mo`;
+  if (asset.dimensions?.fileSizeMb) return `${asset.dimensions.fileSizeMb} Mo`;
+  return '—';
+}
+
+function assetDimensionsLabel(asset) {
+  const size = asset.dimensions?.size || asset.dimensions?.dimensions;
+  if (!Array.isArray(size)) return '—';
+  return size.map((value) => `${Number(value).toLocaleString('fr-FR')} m`).join(' × ');
+}
+
+function assetSalons(asset, scenes = []) {
+  if (Array.isArray(asset.dimensions?.salons)) return asset.dimensions.salons;
+  const salons = [...new Set(scenes.map((scene) => scene.event_name || scene.salon).filter(Boolean))];
+  return asset.is_active ? salons.slice(0, 1) : [];
+}
+
+function assetStatus(asset) {
+  if (!asset.is_active) return 'inactive';
+  if (asset.dimensions?.processing) return 'processing';
+  return 'active';
+}
+
+function salonShortLabel(salon) {
+  if (!salon) return 'Salon';
+  return salon.replace(/\s*20\d{2}/, '').split(/[—/-]/)[0].trim();
 }
 
 function availableWalls(layout) {

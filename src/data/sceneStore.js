@@ -14,6 +14,31 @@ function normalizeSceneItem(item) {
   };
 }
 
+function catalogToObjectBankItem(item) {
+  return {
+    id: item.type,
+    type: item.type,
+    label: item.label,
+    model_url: item.modelUrl,
+    thumbnail_url: item.thumbnailUrl,
+    dimensions: {
+      ...(item.modelSize ? { size: item.modelSize } : {}),
+      category: objectCategory(item.type),
+      salons: item.type === 'obj-tabouret' ? ['SIAE'] : ['SMCL'],
+    },
+    is_active: true,
+    created_at: null,
+    updated_at: null,
+  };
+}
+
+function objectCategory(type = '') {
+  if (type.includes('screen')) return 'Multimédia';
+  if (type.includes('cloison') || type.includes('porte')) return 'Sol & Cloisons';
+  if (type.includes('tabouret') || type.includes('podium') || type.includes('meuble') || ['chair', 'table', 'counter'].includes(type)) return 'Mobilier';
+  return 'Mobilier';
+}
+
 function readLocalScenes() {
   const existing = window.localStorage.getItem(storageKey);
   if (!existing) {
@@ -150,6 +175,49 @@ export async function syncMondayScenes() {
 
   if (error) throw error;
   if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+export async function listObjectBank() {
+  if (!supabase) return catalog.map(catalogToObjectBankItem);
+
+  const { data, error } = await supabase
+    .from('object_bank')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  const byType = new Map(catalog.map((item) => [item.type, catalogToObjectBankItem(item)]));
+  return (data || []).map((item) => ({
+    ...(byType.get(item.type) || {}),
+    ...item,
+    model_url: byType.get(item.type)?.model_url || item.model_url,
+    thumbnail_url: item.thumbnail_url || byType.get(item.type)?.thumbnail_url,
+    dimensions: {
+      ...(byType.get(item.type)?.dimensions || {}),
+      ...(item.dimensions || {}),
+    },
+  }));
+}
+
+export async function saveObjectBankItem(asset) {
+  if (!supabase) return asset;
+
+  const payload = {
+    type: asset.type,
+    label: asset.label,
+    model_url: asset.model_url,
+    thumbnail_url: asset.thumbnail_url,
+    dimensions: asset.dimensions || {},
+    is_active: asset.is_active,
+  };
+  const { data, error } = await supabase
+    .from('object_bank')
+    .upsert(payload, { onConflict: 'type' })
+    .select()
+    .single();
+
+  if (error) throw error;
   return data;
 }
 

@@ -2635,3 +2635,366 @@ select {
     width: 100%;
   }
 }
+
+.admin-assets-view {
+  position: relative;
+  min-height: 100%;
+}
+
+.asset-upload-drop {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 80px;
+  border-radius: 10px;
+  padding: 12px 22px;
+  color: #676f7b;
+  background: #fff;
+  box-shadow: 0 3px 13px rgba(22, 28, 38, 0.1);
+}
+
+.asset-upload-drop svg {
+  color: #1f4378;
+  fill: #1f4378;
+}
+
+.asset-upload-drop strong {
+  border-radius: 8px;
+  padding: 9px 18px;
+  color: #fff;
+  background: #1f4378;
+}
+
+.asset-upload-drop small {
+  grid-column: 1 / -1;
+  justify-self: center;
+  color: #9ca2aa;
+  font-size: 0.72rem;
+}
+
+.asset-upload-drop input {
+  display: none;
+}
+
+.asset-category-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 20px 0 30px;
+}
+
+.asset-category-tabs button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 14px;
+  color: #555d68;
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.asset-category-tabs button.active {
+  color: #fff;
+  background: #1f4378;
+}
+
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.asset-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 182px;
+  border: 0;
+  border-radius: 9px;
+  padding: 0;
+  color: #2d333d;
+  background: #fff;
+  box-shadow: 0 3px 13px rgba(22, 28, 38, 0.1);
+  text-align: left;
+}
+
+.asset-status-dot {
+  position: absolute;
+  top: 9px;
+  right: 12px;
+  z-index: 1;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #176b41;
+}
+
+.asset-status-dot.inactive { background: #a4a9b0; }
+.asset-status-dot.processing { background: #f08420; }
+
+.asset-thumb,
+.asset-glb-preview,
+.asset-obj-preview {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 104px;
+  color: #9aa1ab;
+  background: #f5f5f5;
+  font-size: 0.78rem;
+  font-weight: 900;
+  object-fit: cover;
+}
+
+.asset-obj-preview {
+  background: linear-gradient(#c8ecff, #eaf7ff);
+}
+
+.asset-obj-preview::before {
+  content: "";
+  width: 52px;
+  height: 74px;
+  background: linear-gradient(110deg, #d8d8d8 0 54%, #c7c7c7 54% 100%);
+  clip-path: polygon(20% 8%, 82% 0, 70% 88%, 38% 100%);
+  transform: rotate(-14deg);
+}
+
+.asset-card-body {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 10px;
+  padding: 10px 12px 12px;
+}
+
+.asset-card-body strong {
+  overflow: hidden;
+  color: #2d333d;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-card-body > span {
+  grid-column: 1;
+  color: #9ca2aa;
+  font-size: 0.75rem;
+}
+
+.asset-card-body em {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: #9ca2aa;
+  font-size: 0.72rem;
+  font-style: normal;
+}
+
+.asset-tags {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 7px;
+  margin-top: 3px;
+}
+
+.asset-tags small {
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #1f4378;
+  background: #dce8fb;
+  font-size: 0.65rem;
+  font-weight: 900;
+}
+
+.asset-tags small.inactive {
+  color: #7f858d;
+  background: #efefef;
+}
+
+.asset-drawer-layer {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(20, 23, 28, 0.48);
+  z-index: 20;
+}
+
+.asset-drawer {
+  display: grid;
+  grid-template-rows: auto auto auto auto auto 1fr auto;
+  gap: 18px;
+  width: min(456px, 100%);
+  height: 100vh;
+  overflow-y: auto;
+  padding: 18px 24px;
+  background: #fff;
+  box-shadow: -12px 0 34px rgba(12, 18, 28, 0.2);
+}
+
+.asset-drawer header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.asset-drawer h2 {
+  margin: 0;
+  color: #171b22;
+  font-size: 1rem;
+}
+
+.asset-drawer header span {
+  display: inline-flex;
+  margin-top: 6px;
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: #1f64ff;
+  background: #dce8ff;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.asset-drawer header button {
+  border: 0;
+  color: #8c929c;
+  background: transparent;
+}
+
+.asset-drawer > .asset-glb-preview,
+.asset-drawer > .asset-obj-preview,
+.asset-drawer > .asset-thumb {
+  height: 180px;
+  border-radius: 9px;
+}
+
+.asset-meta-card {
+  overflow: hidden;
+  margin: 0;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 3px 13px rgba(22, 28, 38, 0.08);
+}
+
+.asset-meta-card div {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  min-height: 28px;
+  padding: 0 16px;
+}
+
+.asset-meta-card div:nth-child(even) {
+  background: #fafafa;
+}
+
+.asset-meta-card dt,
+.asset-meta-card dd {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  font-size: 0.76rem;
+}
+
+.asset-meta-card dt {
+  color: #9ca2aa;
+}
+
+.asset-meta-card dd {
+  color: #2d333d;
+  font-weight: 800;
+}
+
+.asset-assignment h3 {
+  margin: 0 0 12px;
+  color: #3b414a;
+  font-size: 0.86rem;
+}
+
+.asset-assignment button {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-bottom: 1px solid #eceef2;
+  padding: 0;
+  color: #2d333d;
+  background: transparent;
+  text-align: left;
+}
+
+.asset-assignment button span {
+  color: #9ca2aa;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.asset-assignment button span:has(+ i.active) {
+  color: #197844;
+}
+
+.asset-assignment i {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: #cfd3d9;
+}
+
+.asset-assignment i::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+
+.asset-assignment i.active {
+  background: #1f4378;
+}
+
+.asset-assignment i.active::after {
+  transform: translateX(20px);
+}
+
+.asset-price-note {
+  color: #b0b5bd;
+  font-size: 0.76rem;
+}
+
+.asset-drawer footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 30px -12px 0;
+  padding: 18px 12px 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0), #fff 32%);
+}
+
+.asset-delete,
+.asset-save {
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 16px;
+  font-weight: 900;
+}
+
+.asset-delete {
+  color: #db352b;
+  background: #ffdeda;
+}
+
+.asset-save {
+  color: #fff;
+  background: #1f4378;
+}
