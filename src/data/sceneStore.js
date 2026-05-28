@@ -100,6 +100,7 @@ export async function saveScene(scene) {
     depth_m: scene.dimensions.depth,
     height_m: scene.dimensions.height,
     layout: scene.layout,
+    source_payload: scene.source_payload || {},
     updated_at: new Date().toISOString(),
   };
 

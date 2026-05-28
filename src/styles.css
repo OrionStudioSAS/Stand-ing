@@ -1902,47 +1902,68 @@ select {
   transform: rotate(180deg);
 }
 
-.carpet-card {
+.color-option-card {
   display: grid;
   gap: 10px;
   margin: 0 14px 14px;
-  padding: 14px;
+  padding: 14px 16px 16px;
   border-radius: 9px;
   background: #fff;
 }
 
-.carpet-card > div:first-child {
+.color-card-head {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
   gap: 12px;
   color: #1f4378;
   font-size: 0.86rem;
 }
 
-.carpet-card > div:first-child strong {
+.color-card-head strong {
   color: #171b22;
+  font-size: 0.98rem;
 }
 
-.carpet-card small {
+.color-card-head span {
+  color: #1f4378;
+  font-weight: 900;
+}
+
+.color-option-card small {
   color: #a0a5ad;
 }
 
-.color-row {
+.color-swatch-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 13px;
 }
 
-.color-row button {
-  width: 36px;
-  height: 36px;
+.color-swatch-row button {
+  position: relative;
+  width: 40px;
+  height: 40px;
   border: 0;
   border-radius: 50%;
+  background-color: var(--swatch-color);
+  background-image: var(--swatch-image);
+  background-position: center;
+  background-size: cover;
+  box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.04);
 }
 
-.color-row.included button:first-child {
+.color-swatch-row button.active {
   outline: 3px solid #1f4378;
   outline-offset: 2px;
+}
+
+.color-swatch-row button.active::after {
+  content: "";
+  position: absolute;
+  inset: 9px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.72);
 }
 
 .compact-catalog {

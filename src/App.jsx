@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
+import { carpetColors, wallFabricColors } from './config/colorOptions.js';
 import { getSceneByToken, listScenes, saveScene, sceneShareUrl, syncMondayScenes } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
@@ -361,6 +362,7 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
 }
 
 function ConfiguratorApp({ initialScene }) {
+  const initialOptions = initialScene.options || initialScene.source_payload?.options || {};
   const [width, setWidth] = useState(initialScene.dimensions?.width || 4);
   const [depth, setDepth] = useState(initialScene.dimensions?.depth || 3);
   const [height, setHeight] = useState(initialScene.dimensions?.height || 2.5);
@@ -376,6 +378,8 @@ function ConfiguratorApp({ initialScene }) {
   const [headerPanel, setHeaderPanel] = useState(null);
   const [activeStep, setActiveStep] = useState(1);
   const [openOptions, setOpenOptions] = useState({ moquette: true, personnalisation: false, coton: false, reserve: false, tete: false });
+  const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || '1893');
+  const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || '303');
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [clientInfo, setClientInfo] = useState({
@@ -406,6 +410,8 @@ function ConfiguratorApp({ initialScene }) {
 
   const area = width * depth;
   const selected = items.find((item) => item.id === selectedId);
+  const selectedCarpetColor = carpetColors.find((color) => color.id === selectedCarpetId) || carpetColors[0];
+  const selectedWallFabricColor = wallFabricColors.find((color) => color.id === selectedWallFabricId) || wallFabricColors[0];
   const estimatedTotal = Math.round(area * 172.8);
   const salonLabel = initialScene.salon || clientInfo.event || 'SMCL 2026';
   const standLabel = initialScene.project_name || clientInfo.project || 'Stand A-14';
@@ -413,17 +419,33 @@ function ConfiguratorApp({ initialScene }) {
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
 
-  const currentScenePayload = (status, clientStatus) => ({
-        ...initialScene,
-        status,
-        client_status: clientStatus,
-        client_name: clientInfo.client,
-        project_name: clientInfo.project,
-        event_name: clientInfo.event,
-        dimensions: { width, depth, height },
-        layout,
-        items,
-      });
+  const currentScenePayload = (status, clientStatus) => {
+    const options = {
+      carpetColorId: selectedCarpetColor.id,
+      carpetColorName: selectedCarpetColor.name,
+      carpetColorHex: selectedCarpetColor.hex,
+      wallFabricColorId: selectedWallFabricColor.id,
+      wallFabricColorName: selectedWallFabricColor.name,
+      wallFabricColorHex: selectedWallFabricColor.hex,
+    };
+
+    return {
+      ...initialScene,
+      status,
+      client_status: clientStatus,
+      client_name: clientInfo.client,
+      project_name: clientInfo.project,
+      event_name: clientInfo.event,
+      dimensions: { width, depth, height },
+      layout,
+      items,
+      options,
+      source_payload: {
+        ...(initialScene.source_payload || {}),
+        options,
+      },
+    };
+  };
 
   useEffect(() => {
     if (!hasMounted.current) {
@@ -441,7 +463,7 @@ function ConfiguratorApp({ initialScene }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, items, clientInfo, saveState]);
+  }, [width, depth, height, layout, items, clientInfo, selectedCarpetColor, selectedWallFabricColor, saveState]);
 
   const validateConfiguration = async () => {
     await saveScene(currentScenePayload('configured', 'configured'));
@@ -626,6 +648,8 @@ function ConfiguratorApp({ initialScene }) {
               setDraggingId={setDraggingId}
               onDragMove={moveDraggedItem}
               viewAngle={viewAngle}
+              carpetColor={selectedCarpetColor.hex}
+              wallColor={selectedWallFabricColor.hex}
             />
             <ContactShadows opacity={0.22} scale={12} blur={2.4} far={5} position={[0, -0.01, 0]} />
           </Suspense>
@@ -717,23 +741,24 @@ function ConfiguratorApp({ initialScene }) {
 
         <section className="panel-section-title">Les options</section>
         <OptionAccordion title="Moquette" icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
-          <div className="carpet-card">
-            <div>
-              <strong>Moquette</strong>
-              <span>Gris clair (0939)</span>
-            </div>
-            <small>6 coloris disponibles — Inclus</small>
-            <div className="color-row included">
-              {['#cfd4d8', '#d4362a', '#adc62c', '#68a9c9', '#df7d31', '#34a853'].map((color) => <button key={color} style={{ background: color }} />)}
-            </div>
-            <small>En option 9€/m2</small>
-            <div className="color-row">
-              {['#ede7db', '#d4322b', '#eadcb8', '#65d1d2', '#f33d91', '#4cb8cf', '#681b74'].map((color) => <button key={color} style={{ background: color }} />)}
-            </div>
-          </div>
+          <ColorOptionCard
+            title="Couleur"
+            colors={carpetColors}
+            selectedColor={selectedCarpetColor}
+            optionLabel="En option 36€"
+            onSelect={setSelectedCarpetId}
+          />
         </OptionAccordion>
         <OptionAccordion title="Personnalisation" icon={<Sparkles size={16} />} open={openOptions.personnalisation} onToggle={() => toggleOption('personnalisation')} />
-        <OptionAccordion title="Coton cloison" icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')} />
+        <OptionAccordion title="Coton cloison" icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+          <ColorOptionCard
+            title="Couleur"
+            colors={wallFabricColors}
+            selectedColor={selectedWallFabricColor}
+            optionLabel="En option 36€"
+            onSelect={setSelectedWallFabricId}
+          />
+        </OptionAccordion>
         <OptionAccordion title="Reserve" icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')} />
         <OptionAccordion title="Tete de cloison" icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')} />
 
@@ -939,6 +964,46 @@ function OptionAccordion({ title, icon, open, onToggle, children }) {
       </button>
       {open && children}
     </section>
+  );
+}
+
+function ColorOptionCard({ title, colors, selectedColor, optionLabel, onSelect }) {
+  const includedColors = colors.filter((color) => color.included);
+  const optionalColors = colors.filter((color) => !color.included);
+
+  return (
+    <div className="color-option-card">
+      <div className="color-card-head">
+        <strong>{title}</strong>
+        <span>{selectedColor.name} ({selectedColor.code})</span>
+      </div>
+      <small>{includedColors.length} coloris disponibles — Inclus</small>
+      <div className="color-swatch-row included">
+        {includedColors.map((color) => (
+          <button
+            key={color.id}
+            className={selectedColor.id === color.id ? 'active' : ''}
+            type="button"
+            style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+            title={`${color.name} (${color.code})`}
+            onClick={() => onSelect(color.id)}
+          />
+        ))}
+      </div>
+      <small>{optionLabel}</small>
+      <div className="color-swatch-row optional">
+        {optionalColors.map((color) => (
+          <button
+            key={color.id}
+            className={selectedColor.id === color.id ? 'active' : ''}
+            type="button"
+            style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+            title={`${color.name} (${color.code})`}
+            onClick={() => onSelect(color.id)}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1217,7 +1282,7 @@ function screenWorldPosition(item, width, depth) {
   return [item.x, item.y, -depth / 2 + 0.075];
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, wallColor }) {
   const cameraPivot = useMemo(() => {
     const radians = (viewAngle * Math.PI) / 180;
     return [Math.sin(radians) * 0.75, 0, Math.cos(radians) * 0.25];
@@ -1237,9 +1302,9 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   return (
     <group position={cameraPivot}>
       <DragSurface width={width} depth={depth} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} />
-      <Floor width={width} depth={depth} />
+      <Floor width={width} depth={depth} carpetColor={carpetColor} />
       <Grid width={width} depth={depth} />
-      <Walls width={width} depth={depth} height={height} layout={layout} />
+      <Walls width={width} depth={depth} height={height} layout={layout} wallColor={wallColor} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
         {width}m x {depth}m
       </Text>
@@ -1270,7 +1335,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   );
 }
 
-function Floor({ width, depth }) {
+function Floor({ width, depth, carpetColor }) {
   const texture = useLoader(TextureLoader, '/textures/floor-laminate.jpg');
   const floorMap = useMemo(() => {
     texture.wrapS = RepeatWrapping;
@@ -1284,7 +1349,7 @@ function Floor({ width, depth }) {
   return (
     <mesh receiveShadow position={[0, -0.035, 0]}>
       <boxGeometry args={[width, 0.07, depth]} />
-      <meshStandardMaterial map={floorMap} color="#f8f5ea" roughness={0.72} />
+      <meshStandardMaterial map={floorMap} color={carpetColor} roughness={0.72} />
     </mesh>
   );
 }
@@ -1329,21 +1394,21 @@ function Grid({ width, depth }) {
   );
 }
 
-function Walls({ width, depth, height, layout }) {
+function Walls({ width, depth, height, layout, wallColor }) {
   return (
     <group>
-      <Wall position={[0, height / 2, -depth / 2]} size={[width, height, 0.12]} />
-      {(layout === 'left' || layout === 'u') && <Wall position={[-width / 2, height / 2, 0]} size={[0.12, height, depth]} />}
-      {(layout === 'right' || layout === 'u') && <Wall position={[width / 2, height / 2, 0]} size={[0.12, height, depth]} />}
+      <Wall position={[0, height / 2, -depth / 2]} size={[width, height, 0.12]} color={wallColor} />
+      {(layout === 'left' || layout === 'u') && <Wall position={[-width / 2, height / 2, 0]} size={[0.12, height, depth]} color={wallColor} />}
+      {(layout === 'right' || layout === 'u') && <Wall position={[width / 2, height / 2, 0]} size={[0.12, height, depth]} color={wallColor} />}
     </group>
   );
 }
 
-function Wall({ position, size }) {
+function Wall({ position, size, color }) {
   return (
     <mesh castShadow receiveShadow position={position}>
       <boxGeometry args={size} />
-      <meshStandardMaterial color="#fffdf4" roughness={0.62} />
+      <meshStandardMaterial color={color} roughness={0.62} />
     </mesh>
   );
 }
