@@ -10,19 +10,26 @@ import {
   ChevronDown,
   ChevronUp,
   FileImage,
+  FileCheck2,
+  Globe2,
   HelpCircle,
   Layers,
+  LayoutDashboard,
   LogOut,
   Mail,
   Maximize2,
   Minus,
+  Orbit,
   Paperclip,
   Plus,
   RotateCcw,
   Ruler,
   Search,
+  Settings2,
   Sparkles,
   Trash2,
+  UserPlus,
+  Users,
   X,
 } from 'lucide-react';
 import { supabase } from './data/supabaseClient.js';
@@ -1033,7 +1040,7 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, onSelect }
 function AdminDashboard({ user }) {
   const [scenes, setScenes] = useState([]);
   const [filters, setFilters] = useState({ search: '', salon: '', status: '' });
-  const [tab, setTab] = useState('stands');
+  const [tab, setTab] = useState('dashboard');
   const [syncState, setSyncState] = useState({ loading: false, message: '', error: '' });
 
   useEffect(() => {
@@ -1068,114 +1075,242 @@ function AdminDashboard({ user }) {
   };
 
   return (
-    <main className="admin-shell">
-      <header className="admin-header">
-        <div>
-          <span>StandING admin</span>
-          <h1>Scenes clients</h1>
-        </div>
-        <div className="admin-header-actions">
-          <small>{user?.email}</small>
-          <a href="/?scene=smcl-confort-demo">Voir scene SMCL</a>
-          <button onClick={() => supabase.auth.signOut()}>
-            <LogOut size={16} /> Deconnexion
+    <main className="admin-dashboard-shell">
+      <aside className="admin-sidebar">
+        <a className="admin-sidebar-logo" href="/admin">
+          <img src="/images/logo.png" alt="Stand-ING" />
+        </a>
+        <div className="admin-sidebar-product">Simulateur 3D - Stand'ING</div>
+        <nav className="admin-sidebar-nav" aria-label="Navigation admin">
+          <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}><LayoutDashboard size={16} />Dashboard</button>
+          <button className={tab === 'salons' ? 'active' : ''} onClick={() => setTab('salons')}><Orbit size={16} />Salons</button>
+          <button className={tab === 'clients' ? 'active' : ''} onClick={() => setTab('clients')}><Users size={16} />Clients & Configs</button>
+          <button className={tab === 'bat' ? 'active' : ''} onClick={() => setTab('bat')}><FileCheck2 size={16} />BAT</button>
+          <button className={tab === 'objects' ? 'active' : ''} onClick={() => setTab('objects')}><Box size={16} />Assets 3D</button>
+          <button className={tab === 'presets' ? 'active' : ''} onClick={() => setTab('presets')}><Settings2 size={16} />Presets</button>
+          <button className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}><UserPlus size={16} />Utilisateurs</button>
+          <button className={tab === 'monday' ? 'active' : ''} onClick={() => setTab('monday')}><span className="monday-mark">m</span>Monday.com</button>
+        </nav>
+        <div className="admin-sidebar-user">
+          <span>JL</span>
+          <div>
+            <strong>Julien Lang · Stand ING</strong>
+            <small>Super Admin</small>
+          </div>
+          <button type="button" onClick={() => supabase.auth.signOut()} title="Deconnexion">
+            <LogOut size={14} />
           </button>
         </div>
-      </header>
+      </aside>
 
-      <nav className="admin-tabs">
-        <button className={tab === 'stands' ? 'active' : ''} onClick={() => setTab('stands')}>Stands crees</button>
-        <button className={tab === 'objects' ? 'active' : ''} onClick={() => setTab('objects')}>Banque d'objets 3D</button>
-        <button className={tab === 'monday' ? 'active' : ''} onClick={() => setTab('monday')}>Monday sync</button>
-      </nav>
+      <section className="admin-main-panel">
+        <header className="admin-topbar-new">
+          <div>
+            <h1>{adminTitle(tab)}</h1>
+            <p>{adminSubtitle(tab)}</p>
+          </div>
+          <div className="admin-search-box">
+            <Search size={15} />
+            <input value={filters.search} placeholder="Rechercher..." onChange={(event) => updateFilter('search', event.target.value)} />
+          </div>
+        </header>
 
-      {tab === 'stands' && (
-        <>
-          <section className="admin-filters">
-            <label>
-              Recherche
-              <div className="search-field">
-                <Search size={16} />
-                <input value={filters.search} placeholder="Client, salon, projet..." onChange={(event) => updateFilter('search', event.target.value)} />
-              </div>
-            </label>
-            <label>
-              Salon
-              <input value={filters.salon} placeholder="SMCL" onChange={(event) => updateFilter('salon', event.target.value)} />
-            </label>
-            <label>
-              Statut
-              <select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}>
-                <option value="">Tous</option>
-                <option value="created">Cree</option>
-                <option value="configured">Configure</option>
-                <option value="bat_pending">BAT a valider</option>
-                <option value="validated">Valide</option>
-              </select>
-            </label>
-          </section>
-
-          <section className="admin-table">
-            {scenes.map((scene) => (
-              <article key={scene.id} className="stand-row">
-                <div>
-                  <strong>{scene.client_name || 'Client sans nom'}</strong>
-                  <span>{scene.salon} / {scene.offer} / {scene.project_name}</span>
-                </div>
-                <div>
-                  <span>Statut</span>
-                  <strong>{statusLabel(scene.status)}</strong>
-                </div>
-                <div>
-                  <span>Client</span>
-                  <strong>{clientStatusLabel(scene.client_status)}</strong>
-                </div>
-                <div>
-                  <span>Fichiers</span>
-                  <strong>{fileSummary(scene.files)}</strong>
-                </div>
-                <div className="stand-actions">
-                  <a href={sceneShareUrl(scene)}>Voir scene</a>
-                  {(scene.files || []).map((file) => (
-                    <a key={file.id || file.storage_path || file.file_name} href={file.public_url || '#'}>{fileTypeLabel(file.type)}</a>
-                  ))}
-                </div>
-              </article>
-            ))}
-          </section>
-        </>
-      )}
-
-      {tab === 'objects' && (
-        <section className="object-bank">
-          {catalog.map((item) => {
-            const Icon = item.icon;
-            return (
-              <article key={item.type}>
-                <Icon size={20} />
-                <div>
-                  <strong>{item.label}</strong>
-                  <span>{item.modelUrl ? 'Modele OBJ' : 'Objet natif'}</span>
-                </div>
-                <button>Ajouter a une scene</button>
-              </article>
-            );
-          })}
-        </section>
-      )}
-
-      {tab === 'monday' && (
-        <section className="monday-panel">
-          <h2>Synchronisation Monday</h2>
-          <p>Lit les tableaux SMCL Confort/Prestige, cree une scene quand la colonne CONFIGURABLE vaut OUI, puis remplit le lien configurateur dans Monday.</p>
-          <button className="sync-button" onClick={runMondaySync} disabled={syncState.loading}>
-            {syncState.loading ? 'Synchronisation...' : 'Synchroniser Monday'}
-          </button>
-          {syncState.message && <div className="sync-result success">{syncState.message}</div>}
-          {syncState.error && <div className="sync-result error">{syncState.error}</div>}
-        </section>
-      )}
+        <div className="admin-page-content">
+          {tab === 'dashboard' && <AdminDashboardHome scenes={scenes} />}
+          {tab === 'clients' && <AdminClientsView scenes={scenes} filters={filters} updateFilter={updateFilter} />}
+          {tab === 'objects' && <AdminObjectsView />}
+          {tab === 'monday' && <AdminMondayView syncState={syncState} runMondaySync={runMondaySync} />}
+          {tab === 'bat' && <AdminBatView scenes={scenes} />}
+          {['salons', 'presets', 'users'].includes(tab) && <AdminPlaceholder tab={tab} />}
+        </div>
+      </section>
     </main>
+  );
+}
+
+function adminTitle(tab) {
+  const labels = {
+    dashboard: 'Dashboard',
+    salons: 'Salons',
+    clients: 'Clients & Configs',
+    bat: 'BAT',
+    objects: 'Assets 3D',
+    presets: 'Presets',
+    users: 'Utilisateurs',
+    monday: 'Monday.com',
+  };
+  return labels[tab] || 'Dashboard';
+}
+
+function adminSubtitle(tab) {
+  if (tab === 'dashboard') return "Vue d'ensemble de l'activité Stand-ING";
+  if (tab === 'monday') return 'Synchronisation des tableaux salon';
+  return 'Vue en cours de préparation';
+}
+
+function AdminDashboardHome({ scenes }) {
+  const batRows = [
+    ['Salon SMCL 2026', 'Aérosys Industries', 'Stand A14 — 25m²', '⚠ En attente validation Stand-ING', '3j'],
+    ['Salon SMCL 2026', 'TechAir Group', 'Stand B22 — 18m²', '⚠ En attente validation Stand-ING', '1j'],
+    ['Salon SMCL 2026', 'Défense Systèmes', 'Stand C08 — 31m²', '⏳ Envoyé exposant — non signé', '5j'],
+    ['Salon SMCL 2026', 'AvioPro', 'Stand A02 — 18m²', '⏳ Envoyé exposant — non signé', '2j'],
+  ];
+  const recentItems = [
+    ['green', 'BAT signé', 'Aérosys Industries — SMCL', 'il y a 2h'],
+    ['blue', 'Config soumise', 'Défense Systèmes — SMCL', 'il y a 4h'],
+    ['green', 'BAT validé Stand-ING', 'TechAir Group — SMCL', 'hier'],
+    ['purple', 'Asset GLB ajouté', 'Podium Noir 75cm', 'il y a 2j'],
+    ['pale', 'Synchro Monday', 'SMCL 2026 — 3 items', 'il y a 2j'],
+  ];
+  const signed = scenes.filter((scene) => scene.client_status === 'configured' || scene.status === 'configured').length;
+
+  return (
+    <>
+      <section className="admin-kpi-grid">
+        <AdminKpi icon={<Orbit size={22} />} value={Math.max(142, scenes.length)} label="Configs soumises" hint="+12 ce mois" color="blue" />
+        <AdminKpi icon={<FileCheck2 size={22} />} value="8" label="BAT en attente" hint="— à valider" color="orange" />
+        <AdminKpi icon={<Check size={22} />} value={Math.max(134, signed)} label="BAT signés" hint="+11 ce mois" color="green" />
+        <AdminKpi icon={<span>€</span>} value="213 600 €" label="CA estimé" hint="+8% vs mois préc." color="navy" />
+        <AdminKpi icon={<Globe2 size={22} />} value="67" label="Exposants actifs" hint="+5 nouveaux" color="purple" />
+      </section>
+
+      <section className="admin-section-block">
+        <h2>▲ BAT en attente de validation</h2>
+        <div className="admin-bat-card">
+          {batRows.map((row) => (
+            <div className="admin-bat-row" key={row.join('-')}>
+              {row.map((cell, index) => <span key={cell} className={index === 3 ? 'warning' : ''}>{cell}</span>)}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="admin-bottom-grid">
+        <div className="admin-section-block">
+          <h2>Activité récente</h2>
+          <div className="admin-activity-card">
+            {recentItems.map((item) => (
+              <div className="admin-activity-row" key={item[1]}>
+                <span className={`activity-dot ${item[0]}`} />
+                <div><strong>{item[1]}</strong><small>{item[2]}</small></div>
+                <time>{item[3]}</time>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="admin-section-block">
+          <h2>Salons actifs</h2>
+          <div className="admin-salon-card">
+            <AdminSalonRow title="SMCL 2026" detail="42 exposants" status="Actif" />
+            <AdminSalonRow title="SIAE 2026" status="À venir" muted />
+            <AdminSalonRow title="Salon 3" status="À définir" muted />
+            <AdminSalonRow title="Salon 4" status="À définir" muted />
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function AdminKpi({ icon, value, label, hint, color }) {
+  return (
+    <article className="admin-kpi-card">
+      <span className={`admin-kpi-icon ${color}`}>{icon}</span>
+      <div>
+        <strong>{value}</strong>
+        <small>{label}</small>
+        <em>{hint}</em>
+      </div>
+    </article>
+  );
+}
+
+function AdminSalonRow({ title, detail, status, muted }) {
+  return (
+    <div className="admin-salon-row">
+      <div>
+        <strong>{title}</strong>
+        {detail && <small>{detail}</small>}
+      </div>
+      <span className={muted ? 'muted' : ''}>{status}</span>
+    </div>
+  );
+}
+
+function AdminClientsView({ scenes, filters, updateFilter }) {
+  return (
+    <>
+      <section className="admin-filters compact">
+        <label>Salon<input value={filters.salon} placeholder="SMCL" onChange={(event) => updateFilter('salon', event.target.value)} /></label>
+        <label>Statut<select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}><option value="">Tous</option><option value="created">Cree</option><option value="configured">Configure</option><option value="bat_pending">BAT a valider</option><option value="validated">Valide</option></select></label>
+      </section>
+      <section className="admin-table modern">
+        {scenes.map((scene) => (
+          <article key={scene.id} className="stand-row">
+            <div><strong>{scene.client_name || 'Client sans nom'}</strong><span>{scene.salon} / {scene.offer} / {scene.project_name}</span></div>
+            <div><span>Statut</span><strong>{statusLabel(scene.status)}</strong></div>
+            <div><span>Client</span><strong>{clientStatusLabel(scene.client_status)}</strong></div>
+            <div><span>Fichiers</span><strong>{fileSummary(scene.files)}</strong></div>
+            <div className="stand-actions"><a href={sceneShareUrl(scene)}>Voir scene</a>{(scene.files || []).map((file) => <a key={file.id || file.storage_path || file.file_name} href={file.public_url || '#'}>{fileTypeLabel(file.type)}</a>)}</div>
+          </article>
+        ))}
+      </section>
+    </>
+  );
+}
+
+function AdminObjectsView() {
+  return (
+    <section className="object-bank modern">
+      {catalog.map((item) => {
+        const Icon = item.icon;
+        return (
+          <article key={item.type}>
+            <Icon size={20} />
+            <div><strong>{item.label}</strong><span>{item.modelUrl ? 'Modele OBJ' : 'Objet natif'}</span></div>
+            <button>Ajouter a une scene</button>
+          </article>
+        );
+      })}
+    </section>
+  );
+}
+
+function AdminMondayView({ syncState, runMondaySync }) {
+  return (
+    <section className="monday-panel modern">
+      <h2>Synchronisation Monday</h2>
+      <p>Lit les tableaux SMCL Confort/Prestige, cree une scene quand la colonne CONFIGURABLE vaut OUI, puis remplit le lien configurateur dans Monday.</p>
+      <button className="sync-button" onClick={runMondaySync} disabled={syncState.loading}>{syncState.loading ? 'Synchronisation...' : 'Synchroniser Monday'}</button>
+      {syncState.message && <div className="sync-result success">{syncState.message}</div>}
+      {syncState.error && <div className="sync-result error">{syncState.error}</div>}
+    </section>
+  );
+}
+
+function AdminBatView({ scenes }) {
+  const rows = scenes.slice(0, 6);
+  return (
+    <section className="admin-table modern">
+      {rows.map((scene) => (
+        <article key={scene.id} className="stand-row">
+          <div><strong>{scene.client_name || 'Client sans nom'}</strong><span>{scene.project_name}</span></div>
+          <div><span>Salon</span><strong>{scene.salon}</strong></div>
+          <div><span>BAT</span><strong>{fileSummary(scene.files)}</strong></div>
+          <div><span>Client</span><strong>{clientStatusLabel(scene.client_status)}</strong></div>
+          <div className="stand-actions"><a href={sceneShareUrl(scene)}>Voir scene</a></div>
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function AdminPlaceholder({ tab }) {
+  return (
+    <section className="admin-placeholder-card">
+      <h2>{adminTitle(tab)}</h2>
+      <p>La maquette de ce menu sera intégrée dès que tu me l'envoies.</p>
+    </section>
   );
 }
 
