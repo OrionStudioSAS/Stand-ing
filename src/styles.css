@@ -1874,6 +1874,9 @@ select {
 }
 
 .option-accordion {
+  display: grid;
+  height: max-content;
+  min-height: max-content;
   overflow: hidden;
   border-radius: 10px;
   background: #1f4378;
