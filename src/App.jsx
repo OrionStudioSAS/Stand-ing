@@ -968,8 +968,13 @@ function OptionAccordion({ title, icon, open, onToggle, children }) {
 }
 
 function ColorOptionCard({ title, colors, selectedColor, optionLabel, onSelect }) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const includedColors = colors.filter((color) => color.included);
   const optionalColors = colors.filter((color) => !color.included);
+  const selectColor = (colorId) => {
+    onSelect(colorId);
+    setDropdownOpen(false);
+  };
 
   return (
     <div className="color-option-card">
@@ -977,31 +982,49 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, onSelect }
         <strong>{title}</strong>
         <span>{selectedColor.name} ({selectedColor.code})</span>
       </div>
-      <small>{includedColors.length} coloris disponibles — Inclus</small>
-      <div className="color-swatch-row included">
-        {includedColors.map((color) => (
-          <button
-            key={color.id}
-            className={selectedColor.id === color.id ? 'active' : ''}
-            type="button"
-            style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
-            title={`${color.name} (${color.code})`}
-            onClick={() => onSelect(color.id)}
-          />
-        ))}
-      </div>
-      <small>{optionLabel}</small>
-      <div className="color-swatch-row optional">
-        {optionalColors.map((color) => (
-          <button
-            key={color.id}
-            className={selectedColor.id === color.id ? 'active' : ''}
-            type="button"
-            style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
-            title={`${color.name} (${color.code})`}
-            onClick={() => onSelect(color.id)}
-          />
-        ))}
+      <div className={`color-dropdown ${dropdownOpen ? 'open' : ''}`}>
+        <button className="color-dropdown-trigger" type="button" onClick={() => setDropdownOpen((open) => !open)}>
+          <span className="selected-swatch" style={{ '--swatch-color': selectedColor.hex, '--swatch-image': `url("${selectedColor.image}")` }} />
+          <span>
+            <strong>{selectedColor.name}</strong>
+            <small>{selectedColor.code} · {selectedColor.included ? 'Inclus' : optionLabel}</small>
+          </span>
+          <ChevronDown size={18} />
+        </button>
+        {dropdownOpen && (
+          <div className="color-dropdown-menu">
+            <small>{includedColors.length} coloris disponibles — Inclus</small>
+            <div className="color-swatch-row included">
+              {includedColors.map((color) => (
+                <button
+                  key={color.id}
+                  className={selectedColor.id === color.id ? 'active' : ''}
+                  type="button"
+                  style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+                  title={`${color.name} (${color.code})`}
+                  onClick={() => selectColor(color.id)}
+                >
+                  <span>{color.name}</span>
+                </button>
+              ))}
+            </div>
+            <small>{optionLabel}</small>
+            <div className="color-swatch-row optional">
+              {optionalColors.map((color) => (
+                <button
+                  key={color.id}
+                  className={selectedColor.id === color.id ? 'active' : ''}
+                  type="button"
+                  style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+                  title={`${color.name} (${color.code})`}
+                  onClick={() => selectColor(color.id)}
+                >
+                  <span>{color.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

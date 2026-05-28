@@ -1804,10 +1804,10 @@ select {
 .config-panel {
   display: grid;
   align-content: start;
-  gap: 12px;
+  gap: 13px;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 8px 18px;
+  padding: 18px 8px 18px;
   background: #fff;
   border-left: 1px solid #dbe0e7;
 }
@@ -1832,8 +1832,8 @@ select {
 .stand-summary-card,
 .rules-card {
   margin: 0 0 0;
-  border-radius: 10px;
-  padding: 14px;
+  border-radius: 11px;
+  padding: 15px 16px;
   background: #eef2f7;
 }
 
@@ -1867,16 +1867,17 @@ select {
 }
 
 .panel-section-title {
-  margin-top: 8px;
+  margin-top: 10px;
   color: #171b22;
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: 900;
 }
 
 .option-accordion {
   overflow: hidden;
-  border-radius: 9px;
+  border-radius: 10px;
   background: #1f4378;
+  box-shadow: 0 1px 0 rgba(14, 31, 58, 0.06);
 }
 
 .option-accordion > button {
@@ -1884,11 +1885,12 @@ select {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  min-height: 48px;
+  min-height: 56px;
   border: 0;
-  padding: 0 14px;
+  padding: 0 16px;
   color: #fff;
   background: #1f4378;
+  font-size: 1rem;
   font-weight: 900;
 }
 
@@ -1904,10 +1906,10 @@ select {
 
 .color-option-card {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   margin: 0 14px 14px;
-  padding: 14px 16px 16px;
-  border-radius: 9px;
+  padding: 16px;
+  border-radius: 10px;
   background: #fff;
 }
 
@@ -1934,16 +1936,86 @@ select {
   color: #a0a5ad;
 }
 
+.color-dropdown {
+  position: relative;
+}
+
+.color-dropdown-trigger {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 54px;
+  border: 1px solid #dbe1e9;
+  border-radius: 12px;
+  padding: 7px 12px;
+  color: #1f4378;
+  background: #f7f9fc;
+  text-align: left;
+}
+
+.color-dropdown-trigger > span:nth-child(2) {
+  display: grid;
+  gap: 2px;
+}
+
+.color-dropdown-trigger strong {
+  color: #171b22;
+  font-size: 0.88rem;
+}
+
+.color-dropdown-trigger small {
+  font-size: 0.72rem;
+}
+
+.color-dropdown-trigger svg {
+  transition: transform 0.18s ease;
+}
+
+.color-dropdown.open .color-dropdown-trigger {
+  border-color: #1f4378;
+  box-shadow: 0 0 0 3px rgba(31, 67, 120, 0.1);
+}
+
+.color-dropdown.open .color-dropdown-trigger svg {
+  transform: rotate(180deg);
+}
+
+.selected-swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: var(--swatch-color);
+  background-image: var(--swatch-image);
+  background-position: center;
+  background-size: cover;
+  box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.08), 0 0 0 3px #fff;
+}
+
+.color-dropdown-menu {
+  display: grid;
+  gap: 11px;
+  max-height: 282px;
+  overflow-y: auto;
+  margin-top: 10px;
+  border: 1px solid #dbe1e9;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+  box-shadow: 0 14px 30px rgba(18, 32, 52, 0.12);
+}
+
 .color-swatch-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 13px;
+  gap: 12px;
 }
 
 .color-swatch-row button {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   border: 0;
   border-radius: 50%;
   background-color: var(--swatch-color);
@@ -1951,6 +2023,25 @@ select {
   background-position: center;
   background-size: cover;
   box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.04);
+}
+
+.color-swatch-row button span {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 5px);
+  display: none;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  border-radius: 6px;
+  padding: 4px 6px;
+  color: #fff;
+  background: rgba(23, 27, 34, 0.88);
+  font-size: 0.62rem;
+  z-index: 2;
+}
+
+.color-swatch-row button:hover span {
+  display: block;
 }
 
 .color-swatch-row button.active {
