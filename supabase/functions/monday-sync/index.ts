@@ -24,6 +24,17 @@ Deno.serve(async (req) => {
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const accessToken = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  const { data: authData, error: authError } = await supabase.auth.getUser(accessToken);
+  if (authError || !authData.user) return json({ error: "Unauthorized" }, 401);
+
+  const { data: adminUser } = await supabase
+    .from("admin_users")
+    .select("user_id")
+    .eq("user_id", authData.user.id)
+    .maybeSingle();
+  if (!adminUser) return json({ error: "Admin access required" }, 403);
+
   const { data: sources, error } = await supabase
     .from("monday_sources")
     .select("*")

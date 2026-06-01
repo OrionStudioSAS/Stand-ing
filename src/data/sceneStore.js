@@ -141,7 +141,7 @@ export async function saveScene(scene) {
     updated_at: new Date().toISOString(),
   };
 
-  const { error } = await supabase.from('scenes').upsert(payload);
+  const { error } = await supabase.from('scenes').update(payload).eq('id', scene.id);
   if (error) throw error;
 
   await supabase.from('scene_items').delete().eq('scene_id', scene.id);
@@ -173,9 +173,54 @@ export async function syncMondayScenes() {
     body: {},
   });
 
-  if (error) throw error;
-  if (data?.error) throw new Error(data.error);
+  const functionError = await getFunctionError(error, data);
+  if (functionError) throw functionError;
   return data;
+}
+
+export async function requestSceneAccessCode(sceneToken) {
+  if (!supabase) return { masked_email: 'mode local' };
+
+  const { data, error } = await supabase.functions.invoke('scene-access-request', {
+    body: { scene_token: sceneToken },
+  });
+
+  const functionError = await getFunctionError(error, data);
+  if (functionError) throw functionError;
+  return data;
+}
+
+export async function verifySceneAccessCode(sceneToken, code) {
+  if (!supabase) return { local: true };
+
+  const { data, error } = await supabase.functions.invoke('scene-access-verify', {
+    body: { scene_token: sceneToken, code },
+  });
+
+  const functionError = await getFunctionError(error, data);
+  if (functionError) throw functionError;
+  if (!data?.access_token || !data?.refresh_token) throw new Error('Session de vérification absente.');
+
+  const { error: sessionError } = await supabase.auth.setSession({
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+  });
+  if (sessionError) throw sessionError;
+  return data;
+}
+
+async function getFunctionError(error, data) {
+  if (data?.error) return new Error(data.error);
+  if (!error) return null;
+
+  try {
+    const payload = await error.context?.json?.();
+    if (payload?.error) return new Error(payload.error);
+  } catch {
+    // Keep the original Supabase error if the response body cannot be parsed.
+  }
+
+  return error;
 }
 
 export async function listObjectBank() {

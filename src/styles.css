@@ -2998,3 +2998,58 @@ select {
   color: #fff;
   background: #1f4378;
 }
+
+.scene-access-card {
+  align-content: center;
+  min-height: auto;
+}
+
+.scene-access-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  color: #1f4378;
+  background: #e7eef8;
+}
+
+.scene-access-email,
+.scene-access-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 9px;
+  padding: 11px 12px;
+  color: #1f4378;
+  background: #eef3fa;
+  font-size: 0.82rem;
+}
+
+.scene-access-code {
+  min-height: 58px !important;
+  color: #1f4378 !important;
+  font-size: 1.7rem !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.42em;
+  text-align: center;
+}
+
+.scene-access-message {
+  color: #147444;
+  background: #e7f6ed;
+}
+
+.scene-access-resend {
+  justify-self: center;
+  border: 0;
+  color: #1f4378;
+  background: transparent;
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.scene-access-resend:disabled {
+  cursor: wait;
+  opacity: 0.64;
+}

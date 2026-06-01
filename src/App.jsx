@@ -13,6 +13,7 @@ import {
   FileCheck2,
   Globe2,
   HelpCircle,
+  KeyRound,
   Layers,
   LayoutDashboard,
   LogOut,
@@ -36,7 +37,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { getSceneByToken, listObjectBank, listScenes, saveObjectBankItem, saveScene, sceneShareUrl, syncMondayScenes } from './data/sceneStore.js';
+import { getSceneByToken, listObjectBank, listScenes, requestSceneAccessCode, saveObjectBankItem, saveScene, sceneShareUrl, syncMondayScenes, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -100,6 +101,8 @@ function App() {
   const isAdmin = window.location.pathname.replace(/\/$/, '') === '/admin' || params.get('admin') === '1';
   const [scene, setScene] = useState(null);
   const [loading, setLoading] = useState(Boolean(sceneToken) && !isAdmin);
+  const [sceneAccessRequired, setSceneAccessRequired] = useState(false);
+  const [sceneError, setSceneError] = useState('');
 
   useEffect(() => {
     if (isAdmin) return;
@@ -108,13 +111,71 @@ function App() {
       return;
     }
 
-    getSceneByToken(sceneToken)
-      .then((loaded) => setScene(loaded))
-      .finally(() => setLoading(false));
+    let mounted = true;
+    const loadScene = async () => {
+      setLoading(true);
+      setSceneError('');
+      try {
+        if (!supabase) {
+          const loaded = await getSceneByToken(sceneToken);
+          if (mounted) setScene(loaded);
+          return;
+        }
+
+        const { data } = await supabase.auth.getSession();
+        const session = data.session;
+        if (!session?.user) {
+          if (mounted) setSceneAccessRequired(true);
+          return;
+        }
+
+        const { data: adminUser } = await supabase
+          .from('admin_users')
+          .select('user_id')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+        const verified = window.sessionStorage.getItem(`standing-scene-access:${sceneToken}`) === 'verified';
+
+        if (!adminUser && !verified) {
+          if (mounted) setSceneAccessRequired(true);
+          return;
+        }
+
+        const loaded = await getSceneByToken(sceneToken);
+        if (mounted) setScene(loaded);
+      } catch (error) {
+        window.sessionStorage.removeItem(`standing-scene-access:${sceneToken}`);
+        if (mounted) {
+          setSceneAccessRequired(true);
+          setSceneError(error.message || 'Accès à la scène impossible.');
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadScene();
+    return () => {
+      mounted = false;
+    };
   }, [isAdmin, sceneToken]);
 
   if (isAdmin) return <AdminGate />;
   if (!sceneToken) return <HomeGate />;
+  if (sceneAccessRequired && !scene) {
+    return (
+      <SceneAccessGate
+        sceneToken={sceneToken}
+        initialError={sceneError}
+        onVerified={async () => {
+          window.sessionStorage.setItem(`standing-scene-access:${sceneToken}`, 'verified');
+          const loaded = await getSceneByToken(sceneToken);
+          setScene(loaded);
+          setSceneAccessRequired(false);
+        }}
+      />
+    );
+  }
   if (loading || !scene) return <div className="loading-screen">Chargement de la scene...</div>;
 
   return <ConfiguratorApp initialScene={scene} />;
@@ -272,6 +333,93 @@ function LoginHero() {
       </div>
       <div className="login-orb" aria-hidden="true" />
     </section>
+  );
+}
+
+function SceneAccessGate({ sceneToken, initialError = '', onVerified }) {
+  const requested = useRef(false);
+  const [code, setCode] = useState('');
+  const [maskedEmail, setMaskedEmail] = useState('');
+  const [sending, setSending] = useState(true);
+  const [verifying, setVerifying] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState(initialError);
+
+  const sendCode = async () => {
+    setSending(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await requestSceneAccessCode(sceneToken);
+      setMaskedEmail(result.masked_email || '');
+      setMessage('Un code de connexion vient de vous être envoyé.');
+    } catch (requestError) {
+      setError(requestError.message || 'Impossible d’envoyer le code de connexion.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  useEffect(() => {
+    if (requested.current) return;
+    requested.current = true;
+    sendCode();
+  }, [sceneToken]);
+
+  const verifyCode = async (event) => {
+    event.preventDefault();
+    if (code.trim().length < 6) {
+      setError('Saisis le code à 6 chiffres reçu par email.');
+      return;
+    }
+
+    setVerifying(true);
+    setError('');
+    try {
+      await verifySceneAccessCode(sceneToken, code.trim());
+      await onVerified();
+    } catch (verifyError) {
+      setError(verifyError.message || 'Code incorrect ou expiré.');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  return (
+    <main className="admin-login-shell">
+      <LoginHero />
+      <section className="admin-login-area">
+        <form className="admin-login-card scene-access-card" onSubmit={verifyCode}>
+          <div className="scene-access-icon"><KeyRound size={24} /></div>
+          <div className="login-form-heading">
+            <h1>Vérifiez votre accès</h1>
+            <p>Pour protéger votre configuration, saisissez le code envoyé à l’adresse liée à votre stand.</p>
+          </div>
+          {maskedEmail && <div className="scene-access-email"><Mail size={16} /> Code envoyé à <strong>{maskedEmail}</strong></div>}
+          <label>
+            Code de connexion
+            <input
+              className="scene-access-code"
+              type="text"
+              value={code}
+              onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="000000"
+              autoFocus
+            />
+          </label>
+          {message && <div className="scene-access-message">{message}</div>}
+          {error && <div className="admin-login-error">{error}</div>}
+          <button className="login-submit" type="submit" disabled={verifying || sending}>
+            {verifying ? 'Vérification...' : 'Accéder à ma configuration'}
+          </button>
+          <button className="scene-access-resend" type="button" onClick={sendCode} disabled={sending}>
+            {sending ? 'Envoi en cours...' : 'Renvoyer un code'}
+          </button>
+        </form>
+      </section>
+    </main>
   );
 }
 
