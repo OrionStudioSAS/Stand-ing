@@ -16,7 +16,7 @@ Deno.serve(async (req) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const { scene_token: sceneToken, code } = await req.json().catch(() => ({}));
 
-  if (!sceneToken || typeof sceneToken !== "string" || !/^\d{6}$/.test(String(code || ""))) {
+  if (!sceneToken || typeof sceneToken !== "string" || !/^\d{6,10}$/.test(String(code || ""))) {
     return json({ error: "Code ou lien de configuration invalide." }, 400);
   }
 

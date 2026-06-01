@@ -369,7 +369,7 @@ function SceneAccessGate({ sceneToken, initialError = '', onVerified }) {
   const verifyCode = async (event) => {
     event.preventDefault();
     if (code.trim().length < 6) {
-      setError('Saisis le code à 6 chiffres reçu par email.');
+      setError('Saisis le code reçu par email.');
       return;
     }
 
@@ -402,10 +402,12 @@ function SceneAccessGate({ sceneToken, initialError = '', onVerified }) {
               className="scene-access-code"
               type="text"
               value={code}
-              onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 10))}
               inputMode="numeric"
               autoComplete="one-time-code"
-              placeholder="000000"
+              minLength={6}
+              maxLength={10}
+              placeholder="00000000"
               autoFocus
             />
           </label>
