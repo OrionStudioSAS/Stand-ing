@@ -44,30 +44,73 @@ Deno.serve(async (req) => {
 
   let processed = 0;
   let clients = 0;
+  let exhibitors = 0;
+  let baseItemsApplied = 0;
+
   for (const source of sources ?? []) {
+    const context = await ensureSourceContext(supabase, source);
     const items = await fetchMondayItems(mondayToken, source.board_id, source.group_id);
+
     for (const item of items) {
       const createValue = readColumn(item, source.create_column_id);
       const triggerValues = source.create_trigger_values ?? ["OK", "OUI"];
       if (!triggerValues.some((value: string) => normalizeText(createValue) === normalizeText(value))) continue;
 
-      const client = mapMondayItemToClient(item, source);
+      const userProfile = mapMondayItemToUserProfile(item, source);
+      const { data: savedProfile, error: profileError } = await supabase
+        .from("user_profiles")
+        .upsert(userProfile, { onConflict: "profile_key" })
+        .select("id")
+        .single();
+      if (profileError) throw profileError;
+
+      const client = mapMondayItemToClient(item, source, savedProfile?.id);
       const { data: savedClient, error: clientError } = await supabase
         .from("clients")
         .upsert(client, { onConflict: "client_key" })
         .select("id")
         .single();
-
       if (clientError) throw clientError;
 
-      const scene = mapMondayItemToScene(item, source, savedClient?.id);
+      if (context.salonId && savedProfile?.id && savedClient?.id) {
+        const { error: membershipError } = await supabase
+          .from("exhibitor_salon_memberships")
+          .upsert({
+            user_profile_id: savedProfile.id,
+            client_id: savedClient.id,
+            salon_id: context.salonId,
+            role: "exposant",
+            metadata: {
+              monday_item_id: item.id,
+              monday_board_id: source.board_id,
+              monday_group_id: source.group_id,
+              offer: source.offer,
+            },
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "user_profile_id,client_id,salon_id" });
+        if (membershipError) throw membershipError;
+      }
+
+      const { data: existingScene } = await supabase
+        .from("scenes")
+        .select("id")
+        .eq("monday_item_id", item.id)
+        .maybeSingle();
+
+      const preset = await findActivePreset(supabase, context.offerId, context.salonId);
+      const scene = mapMondayItemToScene(item, source, savedClient?.id, savedProfile?.id, context, preset?.id);
       const { data: savedScene, error: saveError } = await supabase
         .from("scenes")
         .upsert(scene, { onConflict: "monday_item_id" })
-        .select("share_token")
+        .select("id, share_token")
         .single();
 
       if (saveError) throw saveError;
+
+      if (!existingScene && savedScene?.id && preset?.stand_preset_items?.length) {
+        const inserted = await applyPresetItems(supabase, savedScene.id, preset);
+        baseItemsApplied += inserted;
+      }
 
       const shareUrl = publicAppUrl && savedScene?.share_token
         ? `${publicAppUrl.replace(/\/$/, "")}?scene=${savedScene.share_token}`
@@ -84,14 +127,54 @@ Deno.serve(async (req) => {
           text: "Configurer mon stand",
         });
       }
+
       processed += 1;
       clients += 1;
+      exhibitors += 1;
     }
   }
 
   await supabase.from("monday_sync_runs").insert({ status: "success", processed_count: processed });
-  return json({ processed, clients });
+  return json({ processed, clients, exhibitors, base_items_applied: baseItemsApplied });
 });
+
+async function ensureSourceContext(supabase: any, source: any) {
+  if (source.salon_id) {
+    return { salonId: source.salon_id, offerId: source.offer_id || null };
+  }
+
+  const salonSlug = slugify(`${source.salon || "salon"}-2026`);
+  const { data: salon, error: salonError } = await supabase
+    .from("salons")
+    .upsert({
+      slug: salonSlug,
+      name: source.salon || "Salon",
+      year: 2026,
+      status: "draft",
+      metadata: { source: "monday_sync_fallback" },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "slug" })
+    .select("id")
+    .single();
+  if (salonError) throw salonError;
+
+  const offerSlug = slugify(source.offer || "standard");
+  const { data: offer, error: offerError } = await supabase
+    .from("salon_offers")
+    .upsert({
+      salon_id: salon.id,
+      slug: offerSlug,
+      name: source.offer || "Standard",
+      metadata: { source: "monday_sync_fallback" },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "salon_id,slug" })
+    .select("id")
+    .single();
+  if (offerError) throw offerError;
+
+  await supabase.from("monday_sources").update({ salon_id: salon.id, offer_id: offer.id }).eq("id", source.id);
+  return { salonId: salon.id, offerId: offer.id };
+}
 
 async function fetchMondayItems(token: string, boardId: string, groupId?: string) {
   const query = `
@@ -119,7 +202,33 @@ async function fetchMondayItems(token: string, boardId: string, groupId?: string
   return groupId ? items.filter((item: any) => item.group?.id === groupId) : items;
 }
 
-function mapMondayItemToClient(item: any, source: any) {
+function mapMondayItemToUserProfile(item: any, source: any) {
+  const mapping = source.mapping ?? {};
+  const clientEmail = readMappingValue(item, mapping.client_email);
+  const clientName = readMappingValue(item, mapping.client_name) || item.name;
+  const contactName = readMappingValue(item, mapping.contact_name) || readMappingValue(item, mapping.contact);
+  const companyName = readMappingValue(item, mapping.company_name) || clientName;
+  const phone = readMappingValue(item, mapping.client_phone) || readMappingValue(item, mapping.phone);
+
+  return {
+    profile_key: clientKey(clientEmail, companyName || contactName || item.name),
+    email: normalizeEmail(clientEmail),
+    role: "exposant",
+    full_name: contactName || clientName || item.name,
+    company_name: companyName || null,
+    phone: phone || null,
+    metadata: {
+      monday_item_id: item.id,
+      monday_board_id: source.board_id,
+      monday_group_id: source.group_id,
+      salon: source.salon,
+      offer: source.offer,
+    },
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function mapMondayItemToClient(item: any, source: any, userProfileId?: string) {
   const mapping = source.mapping ?? {};
   const clientEmail = readMappingValue(item, mapping.client_email);
   const clientName = readMappingValue(item, mapping.client_name) || item.name;
@@ -130,6 +239,7 @@ function mapMondayItemToClient(item: any, source: any) {
 
   return {
     client_key: clientKey(clientEmail, companyName || contactName || item.name),
+    user_profile_id: userProfileId || null,
     display_name: contactName || companyName || clientName || item.name,
     company_name: companyName || null,
     email: normalizeEmail(clientEmail),
@@ -146,7 +256,7 @@ function mapMondayItemToClient(item: any, source: any) {
   };
 }
 
-function mapMondayItemToScene(item: any, source: any, clientId?: string) {
+function mapMondayItemToScene(item: any, source: any, clientId: string | undefined, userProfileId: string | undefined, context: any, presetId?: string) {
   const mapping = source.mapping ?? {};
   const width = Number(readMappingValue(item, mapping.width_m)) || 4;
   const depth = Number(readMappingValue(item, mapping.depth_m)) || 3;
@@ -160,6 +270,10 @@ function mapMondayItemToScene(item: any, source: any, clientId?: string) {
     monday_group_id: source.group_id,
     salon: source.salon,
     offer: source.offer,
+    salon_id: context.salonId || null,
+    offer_id: context.offerId || null,
+    exhibitor_user_id: userProfileId || null,
+    base_preset_id: presetId || null,
     status: "created",
     client_status: "not_started",
     client_name: clientName,
@@ -173,6 +287,65 @@ function mapMondayItemToScene(item: any, source: any, clientId?: string) {
     layout,
     source_payload: item,
   };
+}
+
+async function findActivePreset(supabase: any, offerId?: string, salonId?: string) {
+  if (offerId) {
+    const { data, error } = await supabase
+      .from("stand_presets")
+      .select("*, stand_preset_items(*)")
+      .eq("offer_id", offerId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (data) return data;
+  }
+
+  if (!salonId) return null;
+  const { data, error } = await supabase
+    .from("stand_presets")
+    .select("*, stand_preset_items(*)")
+    .eq("salon_id", salonId)
+    .is("offer_id", null)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function applyPresetItems(supabase: any, sceneId: string, preset: any) {
+  const items = preset.stand_preset_items ?? [];
+  if (!items.length) return 0;
+
+  const { error } = await supabase.from("scene_items").insert(items.map((item: any) => ({
+    scene_id: sceneId,
+    item_uid: item.item_uid,
+    type: item.type,
+    label: item.label,
+    x: item.x,
+    y: item.y,
+    z: item.z,
+    rotation: item.rotation,
+    wall: item.wall,
+    config: {
+      ...(item.config || {}),
+      included: true,
+      priceMode: "included",
+      basePresetId: preset.id,
+    },
+  })));
+  if (error) throw error;
+
+  await supabase
+    .from("scenes")
+    .update({ base_items_applied_at: new Date().toISOString() })
+    .eq("id", sceneId);
+
+  return items.length;
 }
 
 function clientKey(email: string, fallback: string) {
@@ -212,6 +385,12 @@ function normalizeText(value: string) {
     .replace(/\p{Diacritic}/gu, "")
     .trim()
     .toLowerCase();
+}
+
+function slugify(value: string) {
+  return normalizeText(value)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "item";
 }
 
 async function updateMondayColumnValue(token: string, boardId: string, itemId: string, columnId: string, value: Record<string, unknown>) {
