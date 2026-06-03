@@ -4,9 +4,7 @@ insert into public.scenes (
 )
 values
   ('smcl-confort-demo', 'smcl-confort-demo', 'SMCL-CONFORT-001', 'SMCL', 'Confort', 'created', 'not_started', 'Collectivite Demo', 'client-smcl@example.com', 'Stand SMCL Confort', 'SMCL', 4, 3, 2.5, 'u'),
-  ('smcl-prestige-demo', 'smcl-prestige-demo', 'SMCL-PRESTIGE-001', 'SMCL', 'Prestige', 'created', 'draft', 'Mairie Exemple', 'prestige-smcl@example.com', 'Stand SMCL Prestige', 'SMCL', 6, 3, 2.8, 'right'),
-  ('demo-salon-a', 'demo-salon-a', 'SALON-A-001', 'Salon Golf', 'Scene Standard', 'configured', 'configured', 'Golf Demo', 'golf@example.com', 'Stand Golf', 'Salon Golf', 3, 3, 2.5, 'left'),
-  ('demo-salon-b', 'demo-salon-b', 'SALON-B-001', 'Salon Habitat', 'Scene Habitat', 'created', 'not_started', 'Habitat Demo', 'habitat@example.com', 'Stand Habitat', 'Salon Habitat', 4, 4, 2.5, 'u')
+  ('smcl-prestige-demo', 'smcl-prestige-demo', 'SMCL-PRESTIGE-001', 'SMCL', 'Prestige', 'created', 'draft', 'Mairie Exemple', 'prestige-smcl@example.com', 'Stand SMCL Prestige', 'SMCL', 6, 3, 2.8, 'right')
 on conflict (id) do update set
   share_token = excluded.share_token,
   monday_item_id = excluded.monday_item_id,
