@@ -39,7 +39,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { getSceneByToken, listClients, listObjectBank, listScenes, requestSceneAccessCode, saveObjectBankItem, saveScene, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
+import { getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveObjectBankItem, saveScene, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -1209,6 +1209,7 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, onSelect }
 function AdminDashboard({ user, adminProfile }) {
   const [scenes, setScenes] = useState([]);
   const [clients, setClients] = useState([]);
+  const [salons, setSalons] = useState([]);
   const [assets, setAssets] = useState([]);
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [assetCategory, setAssetCategory] = useState('Tout');
@@ -1222,6 +1223,7 @@ function AdminDashboard({ user, adminProfile }) {
   useEffect(() => {
     listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error));
     listClients(filters).then(setClients).catch((error) => console.error('Client list failed', error));
+    listSalons({ search: filters.search }).then(setSalons).catch((error) => console.error('Salon list failed', error));
   }, [filters]);
 
   useEffect(() => {
@@ -1236,12 +1238,17 @@ function AdminDashboard({ user, adminProfile }) {
     return listClients(filters).then(setClients).catch((error) => console.error('Client list failed', error));
   };
 
+  const refreshSalons = () => {
+    return listSalons({ search: filters.search }).then(setSalons).catch((error) => console.error('Salon list failed', error));
+  };
+
   const runMondaySync = async () => {
     setSyncState({ loading: true, message: '', error: '' });
     try {
       const result = await syncMondayScenes();
       await refreshScenes();
       await refreshClients();
+      await refreshSalons();
       setSyncState({
         loading: false,
         message: `${result?.processed ?? 0} scene(s) synchronisee(s), ${result?.clients ?? 0} client(s) traite(s) depuis Monday.`,
@@ -1332,6 +1339,15 @@ function AdminDashboard({ user, adminProfile }) {
 
         <div className="admin-page-content">
           {tab === 'dashboard' && <AdminDashboardHome scenes={scenes} assets={assets} />}
+          {tab === 'salons' && (
+            <AdminSalonsView
+              salons={salons}
+              onOpenSalon={(salon) => {
+                updateFilter('salon', salon.name);
+                setTab('clients');
+              }}
+            />
+          )}
           {tab === 'clients' && <AdminClientsView clients={clients} filters={filters} updateFilter={updateFilter} />}
           {tab === 'objects' && (
             <AdminObjectsView
@@ -1350,7 +1366,7 @@ function AdminDashboard({ user, adminProfile }) {
           )}
           {tab === 'monday' && <AdminMondayView syncState={syncState} runMondaySync={runMondaySync} />}
           {tab === 'bat' && <AdminBatView scenes={scenes} />}
-          {['salons', 'presets', 'users'].includes(tab) && <AdminPlaceholder tab={tab} />}
+          {['presets', 'users'].includes(tab) && <AdminPlaceholder tab={tab} />}
         </div>
       </section>
     </main>
@@ -1373,6 +1389,7 @@ function adminTitle(tab) {
 
 function adminSubtitle(tab) {
   if (tab === 'dashboard') return "Vue d'ensemble de l'activité Stand-ING";
+  if (tab === 'salons') return 'Gestion des salons et de leurs configurations';
   if (tab === 'clients') return 'Clients synchronisés et configurations associées';
   if (tab === 'monday') return 'Synchronisation des tableaux salon';
   return 'Vue en cours de préparation';
@@ -1571,6 +1588,116 @@ function AdminSalonRow({ title, detail, status, muted }) {
       <span className={muted ? 'muted' : ''}>{status}</span>
     </div>
   );
+}
+
+function AdminSalonsView({ salons, onOpenSalon }) {
+  const [statusFilter, setStatusFilter] = useState('');
+  const filteredSalons = salons.filter((salon) => !statusFilter || salon.status === statusFilter);
+
+  return (
+    <section className="admin-salons-view">
+      <div className="admin-salons-toolbar">
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <option value="">Tous les salons</option>
+          <option value="active">Actifs</option>
+          <option value="upcoming">À venir</option>
+          <option value="draft">À définir</option>
+          <option value="archived">Archivés</option>
+        </select>
+      </div>
+
+      <div className="admin-salon-card-grid">
+        {filteredSalons.length ? filteredSalons.map((salon) => (
+          <article className={`admin-salon-overview-card ${salonStatusKind(salon)}`} key={salon.id || salon.slug || salon.name}>
+            <span className="salon-card-accent" />
+            <div className="salon-card-body">
+              <div className="salon-card-main">
+                <header>
+                  <h2>{salon.name}</h2>
+                  <span className={`salon-status-pill ${salonStatusKind(salon)}`}>{salonStatusLabel(salon.status)}</span>
+                </header>
+                <p className="salon-meta-line">📅 {formatSalonDateRange(salon)}</p>
+                <p className="salon-meta-line">📍 {salon.location || 'Lieu à définir'}</p>
+                <p className="salon-offer-line">{salonOfferSummary(salon)}</p>
+
+                <div className="salon-card-metrics">
+                  <div><strong>{salonExhibitorCount(salon) || '—'}</strong><span>Exposants</span></div>
+                  <div><strong>{salonConfigCount(salon) || '—'}</strong><span>Configs</span></div>
+                  <div><strong>{salonPendingBatCount(salon) || '—'}</strong><span>BAT en attente</span></div>
+                </div>
+              </div>
+
+              <div className="salon-card-side">
+                <button type="button" onClick={() => onOpenSalon(salon)}>
+                  {salon.status === 'active' ? 'Ouvrir' : 'Configurer'}
+                </button>
+                <SalonPreview salon={salon} />
+              </div>
+            </div>
+          </article>
+        )) : <div className="admin-empty-row">Aucun salon trouvé avec les filtres actuels.</div>}
+      </div>
+    </section>
+  );
+}
+
+function SalonPreview({ salon }) {
+  if (salon.cover_url) {
+    return <img className="salon-card-preview" src={salon.cover_url} alt="" />;
+  }
+
+  const initials = salon.name
+    ?.split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase() || 'SI';
+  return <span className={`salon-card-preview generated ${salonStatusKind(salon)}`}>{initials}</span>;
+}
+
+function salonStatusKind(salon) {
+  if (salon.status === 'active') return 'active';
+  if (salon.status === 'upcoming') return 'upcoming';
+  if (salon.status === 'archived') return 'archived';
+  return 'draft';
+}
+
+function salonStatusLabel(status) {
+  const labels = {
+    active: 'Actif',
+    upcoming: 'À venir',
+    draft: 'À définir',
+    archived: 'Archivé',
+  };
+  return labels[status] || 'À définir';
+}
+
+function formatSalonDateRange(salon) {
+  if (!salon.starts_on && !salon.ends_on) return 'À définir';
+  if (salon.starts_on && salon.ends_on) return `${formatDate(salon.starts_on)} → ${formatDate(salon.ends_on)}`;
+  return formatDate(salon.starts_on || salon.ends_on);
+}
+
+function salonOfferSummary(salon) {
+  const offers = salon.offers || [];
+  const itemCount = (salon.presets || []).reduce((sum, preset) => sum + (preset.stand_preset_items?.length || 0), 0);
+  if (!offers.length && !itemCount) return 'Configurations de stand à préparer';
+  const offerText = offers.length ? offers.map((offer) => offer.name).join(' · ') : 'Aucune formule';
+  return itemCount ? `${offerText} · ${itemCount} objet${itemCount > 1 ? 's' : ''} inclus` : offerText;
+}
+
+function salonExhibitorCount(salon) {
+  const identifiers = new Set((salon.scenes || []).map((scene) => scene.client_id || scene.client_email || scene.client_name).filter(Boolean));
+  return identifiers.size;
+}
+
+function salonConfigCount(salon) {
+  return (salon.scenes || []).length;
+}
+
+function salonPendingBatCount(salon) {
+  return (salon.scenes || []).filter((scene) => scene.status === 'bat_pending' || scene.client_status === 'bat_review').length;
 }
 
 function AdminClientsView({ clients, filters, updateFilter }) {

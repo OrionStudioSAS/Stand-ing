@@ -194,6 +194,31 @@ export async function listClients(filters = {}) {
   return filterClients((data || []).map(dbClientToClient), filters);
 }
 
+export async function listSalons(filters = {}) {
+  if (!supabase) {
+    return filterSalons(groupLocalSalons(readLocalScenes()), filters);
+  }
+
+  const [salonsResult, offersResult, presetsResult, presetItemsResult, scenesResult] = await Promise.all([
+    supabase.from('salons').select('*').order('year', { ascending: false }).order('name', { ascending: true }),
+    supabase.from('salon_offers').select('*').order('display_order', { ascending: true }).order('name', { ascending: true }),
+    supabase.from('stand_presets').select('*').order('created_at', { ascending: true }),
+    supabase.from('stand_preset_items').select('*'),
+    supabase.from('scenes').select('*'),
+  ]);
+
+  const error = salonsResult.error || offersResult.error || presetsResult.error || presetItemsResult.error || scenesResult.error;
+  if (error) throw error;
+
+  const salons = (salonsResult.data || []).map((salon) => dbSalonToSalon(
+    salon,
+    offersResult.data || [],
+    attachPresetItems(presetsResult.data || [], presetItemsResult.data || []),
+    scenesResult.data || []
+  ));
+  return filterSalons(salons, filters);
+}
+
 export async function requestSceneAccessCode(sceneToken) {
   if (!supabase) return { masked_email: 'mode local' };
 
@@ -405,6 +430,73 @@ function dbClientToClient(row) {
       dimensions: { width: scene.width_m, depth: scene.depth_m, height: scene.height_m },
     })),
   };
+}
+
+function dbSalonToSalon(row, offers = [], presets = [], scenes = []) {
+  const salonOffers = offers.filter((offer) => offer.salon_id === row.id);
+  const salonPresets = presets.filter((preset) => preset.salon_id === row.id);
+  const salonScenes = scenes.filter((scene) => scene.salon_id === row.id || scene.salon === row.name || scene.event_name === row.name);
+  return {
+    ...row,
+    offers: salonOffers.map((offer) => ({
+      ...offer,
+      presets: salonPresets.filter((preset) => preset.offer_id === offer.id),
+    })),
+    presets: salonPresets,
+    scenes: salonScenes.map((scene) => ({
+      ...scene,
+      dimensions: { width: scene.width_m, depth: scene.depth_m, height: scene.height_m },
+    })),
+  };
+}
+
+function attachPresetItems(presets, items) {
+  return presets.map((preset) => ({
+    ...preset,
+    stand_preset_items: items.filter((item) => item.preset_id === preset.id),
+  }));
+}
+
+function groupLocalSalons(scenes) {
+  const groups = new Map();
+  scenes.forEach((scene) => {
+    const name = scene.event_name || scene.salon || 'Salon à définir';
+    const key = name.toLowerCase();
+    const current = groups.get(key) || {
+      id: key,
+      name,
+      slug: key.replace(/\s+/g, '-'),
+      year: Number(String(name).match(/\b(20\d{2})\b/)?.[1]) || new Date().getFullYear(),
+      status: 'active',
+      location: scene.source_payload?.location || 'Lieu à définir',
+      starts_on: null,
+      ends_on: null,
+      cover_url: null,
+      offers: [],
+      presets: [],
+      scenes: [],
+    };
+    current.scenes.push(scene);
+    groups.set(key, current);
+  });
+  return [...groups.values()];
+}
+
+function filterSalons(salons, filters = {}) {
+  const search = filters.search?.trim().toLowerCase();
+  return salons.filter((salon) => {
+    if (filters.status && salon.status !== filters.status) return false;
+    if (!search) return true;
+    const haystack = [
+      salon.name,
+      salon.slug,
+      salon.location,
+      salon.status,
+      ...(salon.offers || []).map((offer) => offer.name),
+      ...(salon.scenes || []).flatMap((scene) => [scene.client_name, scene.project_name, scene.salon, scene.offer]),
+    ];
+    return haystack.filter(Boolean).some((value) => String(value).toLowerCase().includes(search));
+  });
 }
 
 function groupScenesByClient(scenes) {
