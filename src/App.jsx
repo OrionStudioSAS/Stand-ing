@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
 import { Box3, MeshStandardMaterial, Plane, Vector3 } from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import {
   Box,
@@ -61,8 +63,8 @@ const languages = [
   { id: 'en', label: 'English', sublabel: 'Interface in English', short: 'EN', flag: '🇬🇧' },
 ];
 
-function makeItem(type, width, depth, layout) {
-  const entry = catalog.find((item) => item.type === type);
+function makeItem(type, width, depth, layout, catalogEntry = null) {
+  const entry = catalogEntry || catalog.find((item) => item.type === type);
   const base = {
     id: `${type}-${Date.now()}-${Math.round(Math.random() * 1000)}`,
     type,
@@ -84,6 +86,7 @@ function makeItem(type, width, depth, layout) {
     ...base,
     modelUrl: entry?.modelUrl,
     modelSize: entry?.modelSize,
+    materialUrl: entry?.materialUrl,
     color: entry?.color,
     x: 0,
     z: Math.min(depth / 2 - 0.9, 0.7),
@@ -563,6 +566,7 @@ function ConfiguratorApp({ initialScene }) {
   const [questionCategory, setQuestionCategory] = useState('technical');
   const [urgency, setUrgency] = useState('important');
   const [questionForm, setQuestionForm] = useState({ subject: '', message: '' });
+  const [objectBank, setObjectBank] = useState([]);
   const [viewAngle] = useState(35);
   const hasMounted = useRef(false);
 
@@ -576,6 +580,14 @@ function ConfiguratorApp({ initialScene }) {
   const clientLabel = clientInfo.client || contactDetails.company || 'Aerosys Industries';
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
+  const availableCatalog = useMemo(() => {
+    const dynamicEntries = objectBank
+      .filter((asset) => asset.is_active)
+      .filter((asset) => assetMatchesSalon(asset, salonLabel))
+      .map(assetToCatalogEntry);
+    const entries = [...catalog, ...dynamicEntries];
+    return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
+  }, [objectBank, salonLabel]);
 
   const currentScenePayload = (status, clientStatus) => {
     const options = {
@@ -623,6 +635,12 @@ function ConfiguratorApp({ initialScene }) {
     return () => window.clearTimeout(timer);
   }, [width, depth, height, layout, items, clientInfo, selectedCarpetColor, selectedWallFabricColor, saveState]);
 
+  useEffect(() => {
+    listObjectBank()
+      .then((assets) => setObjectBank(assets || []))
+      .catch((error) => console.error('Object bank load failed', error));
+  }, []);
+
   const validateConfiguration = async () => {
     await saveScene(currentScenePayload('configured', 'configured'));
     setSaveState('configured');
@@ -656,8 +674,8 @@ function ConfiguratorApp({ initialScene }) {
     updateItem(draggingId, { x: point.x, z: point.z });
   };
 
-  const addItem = (type) => {
-    const item = makeItem(type, width, depth, layout);
+  const addItem = (entry) => {
+    const item = makeItem(entry.type, width, depth, layout, entry);
     setItems((current) => [...current, item]);
     setSelectedId(item.id);
   };
@@ -922,10 +940,10 @@ function ConfiguratorApp({ initialScene }) {
 
         <section className="panel-section-title">Ajouter</section>
         <div className="compact-catalog">
-          {catalog.map((entry) => {
+          {availableCatalog.map((entry) => {
             const Icon = entry.icon;
             return (
-              <button key={entry.type} onClick={() => addItem(entry.type)} title={`Ajouter ${entry.label}`}>
+              <button key={entry.type} onClick={() => addItem(entry)} title={`Ajouter ${entry.label}`}>
                 <Icon size={16} />
                 <span>{entry.label}</span>
                 <Plus size={13} />
@@ -950,7 +968,7 @@ function ConfiguratorApp({ initialScene }) {
           </div>
         </details>
 
-        <button className="wide export" onClick={() => exportTechnicalPng({ width, depth, height, layout, items, catalog })}>
+        <button className="wide export" onClick={() => exportTechnicalPng({ width, depth, height, layout, items, catalog: availableCatalog })}>
           <FileImage size={16} /> Generer PNG technique
         </button>
       </aside>
@@ -1770,6 +1788,46 @@ function assetSalons(asset, scenes = []) {
   return asset.is_active ? salons.slice(0, 1) : [];
 }
 
+function assetToCatalogEntry(asset) {
+  return {
+    type: asset.type,
+    label: asset.label,
+    icon: Box,
+    color: asset.dimensions?.color || '#efece2',
+    modelUrl: asset.model_url,
+    modelSize: assetModelSize(asset),
+    materialUrl: asset.dimensions?.materialUrl || null,
+  };
+}
+
+function assetModelSize(asset) {
+  const size = asset.dimensions?.size || asset.dimensions?.dimensions || asset.dimensions?.modelSize;
+  if (Array.isArray(size) && size.length >= 3) return size.map((value) => Number(value) || 0.7).slice(0, 3);
+  return [1, 1, 1];
+}
+
+function assetMatchesSalon(asset, salonLabel = '') {
+  const salons = assetSalons(asset);
+  if (!salons.length) return true;
+  const currentSalon = normalizeSalonLabel(salonLabel);
+  if (!currentSalon) return true;
+  return salons.some((salon) => {
+    const assignedSalon = normalizeSalonLabel(salon);
+    return assignedSalon && (currentSalon.includes(assignedSalon) || assignedSalon.includes(currentSalon));
+  });
+}
+
+function normalizeSalonLabel(value = '') {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b(salon|stand|paris|le|bourget)\b/g, ' ')
+    .replace(/\b20\d{2}\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 function assetStatus(asset) {
   if (!asset.is_active) return 'inactive';
   if (asset.dimensions?.processing) return 'processing';
@@ -2048,7 +2106,7 @@ function SceneItem({ item, selected, dragging, width, depth, onSelect, onDragSta
       {item.modelUrl && (
         <>
           <ObjHitbox size={item.modelSize} />
-          <ObjModel item={item} selected={selected} dragging={dragging} />
+          <Model3D item={item} selected={selected} dragging={dragging} />
         </>
       )}
     </group>
@@ -2070,6 +2128,38 @@ function ObjHitbox({ size = [0.7, 0.7, 0.7] }) {
   );
 }
 
+function Model3D({ item, selected, dragging }) {
+  if (item.modelUrl?.toLowerCase().split('?')[0].endsWith('.glb')) return <GlbModel item={item} />;
+  if (item.materialUrl) return <ObjModelWithMaterials item={item} />;
+  return <ObjModel item={item} selected={selected} dragging={dragging} />;
+}
+
+function GlbModel({ item }) {
+  const gltf = useLoader(GLTFLoader, item.modelUrl);
+  const model = useMemo(() => centerModel(gltf.scene.clone()), [gltf]);
+  return <primitive object={model} />;
+}
+
+function ObjModelWithMaterials({ item }) {
+  const materials = useLoader(MTLLoader, item.materialUrl);
+  const obj = useLoader(OBJLoader, item.modelUrl, (loader) => {
+    materials.preload();
+    loader.setMaterials(materials);
+  });
+  const model = useMemo(() => {
+    const clone = obj.clone();
+    clone.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    return centerModel(clone);
+  }, [obj]);
+
+  return <primitive object={model} />;
+}
+
 function ObjModel({ item, selected, dragging }) {
   const obj = useLoader(OBJLoader, item.modelUrl);
   const model = useMemo(() => {
@@ -2088,14 +2178,17 @@ function ObjModel({ item, selected, dragging }) {
       }
     });
 
-    const box = new Box3().setFromObject(clone);
-    const center = box.getCenter(new Vector3());
-    clone.position.set(-center.x, -box.min.y, -center.z);
-
-    return clone;
+    return centerModel(clone);
   }, [obj, item.color, selected, dragging]);
 
   return <primitive object={model} />;
+}
+
+function centerModel(model) {
+  const box = new Box3().setFromObject(model);
+  const center = box.getCenter(new Vector3());
+  model.position.set(-center.x, -box.min.y, -center.z);
+  return model;
 }
 
 function Chair({ selected, dragging }) {
