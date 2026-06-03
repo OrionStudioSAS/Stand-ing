@@ -37,7 +37,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { getSceneByToken, listObjectBank, listScenes, requestSceneAccessCode, saveObjectBankItem, saveScene, sceneShareUrl, syncMondayScenes, verifySceneAccessCode } from './data/sceneStore.js';
+import { getSceneByToken, listObjectBank, listScenes, requestSceneAccessCode, saveObjectBankItem, saveScene, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -1196,6 +1196,7 @@ function AdminDashboard({ user }) {
   const [filters, setFilters] = useState({ search: '', salon: '', status: '' });
   const [tab, setTab] = useState('dashboard');
   const [syncState, setSyncState] = useState({ loading: false, message: '', error: '' });
+  const [assetUploadState, setAssetUploadState] = useState({ loading: false, message: '', error: '' });
 
   useEffect(() => {
     listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error));
@@ -1236,6 +1237,28 @@ function AdminDashboard({ user }) {
     const saved = await saveObjectBankItem(asset);
     setAssets((current) => current.map((item) => (item.type === asset.type ? { ...item, ...saved } : item)));
     setSelectedAsset((current) => (current?.type === asset.type ? { ...current, ...saved } : current));
+  };
+
+  const uploadAssetFolder = async (files) => {
+    if (!files?.length) return;
+    setAssetUploadState({ loading: true, message: '', error: '' });
+    try {
+      const saved = await uploadObjectAssetFolder(files);
+      setAssets((current) => [saved, ...current.filter((item) => item.type !== saved.type)]);
+      setSelectedAsset(saved);
+      setAssetCategory('Tout');
+      setAssetUploadState({
+        loading: false,
+        message: `${saved.label} importe avec ${saved.dimensions?.uploadedFiles || 1} fichier(s).`,
+        error: '',
+      });
+    } catch (error) {
+      setAssetUploadState({
+        loading: false,
+        message: '',
+        error: error.message || 'Import du dossier impossible.',
+      });
+    }
   };
 
   return (
@@ -1289,10 +1312,12 @@ function AdminDashboard({ user }) {
               search={filters.search}
               category={assetCategory}
               selectedAsset={selectedAsset}
+              uploadState={assetUploadState}
               onCategoryChange={setAssetCategory}
               onSelectAsset={setSelectedAsset}
               onCloseAsset={() => setSelectedAsset(null)}
               onSaveAsset={saveAsset}
+              onUploadAssetFolder={uploadAssetFolder}
             />
           )}
           {tab === 'monday' && <AdminMondayView syncState={syncState} runMondaySync={runMondaySync} />}
@@ -1500,7 +1525,7 @@ function AdminClientsView({ scenes, filters, updateFilter }) {
   );
 }
 
-function AdminObjectsView({ assets, scenes, search, category, selectedAsset, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset }) {
+function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onUploadAssetFolder }) {
   const categories = ['Tout', 'Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
   const filteredAssets = assets.filter((asset) => {
     const assetCategory = assetCategoryLabel(asset);
@@ -1513,11 +1538,27 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, onC
     <section className="admin-assets-view">
       <label className="asset-upload-drop">
         <Upload size={23} />
-        <span>Glisser des fichiers .OBJ ou .GLB ici, ou</span>
-        <strong>Parcourir</strong>
-        <small>Formats acceptés : .obj, .glb — Conversion automatique OBJ→GLB incluse</small>
-        <input type="file" accept=".obj,.glb" multiple />
+        <span>Ajouter un dossier OBJ complet, ou un dossier contenant un .GLB</span>
+        <strong>{uploadState?.loading ? 'Import en cours...' : 'Parcourir un dossier'}</strong>
+        <small>Le dossier doit contenir l’OBJ, son .MTL et les textures. Les chemins relatifs sont conservés.</small>
+        <input
+          type="file"
+          accept=".obj,.glb,.mtl,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tga,.tif,.tiff"
+          multiple
+          webkitdirectory=""
+          directory=""
+          disabled={uploadState?.loading}
+          onChange={(event) => {
+            onUploadAssetFolder(event.target.files);
+            event.target.value = '';
+          }}
+        />
       </label>
+      {(uploadState?.message || uploadState?.error) && (
+        <div className={`asset-upload-feedback ${uploadState.error ? 'error' : ''}`}>
+          {uploadState.error || uploadState.message}
+        </div>
+      )}
 
       <nav className="asset-category-tabs" aria-label="Categories assets">
         {categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => onCategoryChange(item)}>{item}</button>)}

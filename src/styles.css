@@ -2678,6 +2678,30 @@ select {
   display: none;
 }
 
+.asset-upload-drop:has(input:disabled) {
+  cursor: progress;
+  opacity: 0.72;
+}
+
+.asset-upload-feedback {
+  align-items: center;
+  background: #eaf2ff;
+  border: 1px solid #c7d9f5;
+  border-radius: 12px;
+  color: #173f78;
+  display: flex;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: -10px;
+  padding: 10px 14px;
+}
+
+.asset-upload-feedback.error {
+  background: #fff0ef;
+  border-color: #fac8c3;
+  color: #bf2f23;
+}
+
 .asset-category-tabs {
   display: flex;
   flex-wrap: wrap;

@@ -266,6 +266,117 @@ export async function saveObjectBankItem(asset) {
   return data;
 }
 
+export async function uploadObjectAssetFolder(files) {
+  if (!supabase) throw new Error('Supabase non configure.');
+
+  const fileList = Array.from(files || []).filter((file) => file?.name);
+  if (!fileList.length) throw new Error('Selectionne un dossier contenant au moins un fichier 3D.');
+
+  const objFile = fileList.find((file) => file.name.toLowerCase().endsWith('.obj'));
+  const glbFile = fileList.find((file) => file.name.toLowerCase().endsWith('.glb'));
+  const modelFile = objFile || glbFile;
+  if (!modelFile) throw new Error('Le dossier doit contenir un fichier .obj ou .glb.');
+
+  const rootFolder = getUploadRootFolder(fileList);
+  const baseName = modelFile.name.replace(/\.[^.]+$/, '');
+  const assetType = `asset-${slugifyAsset(baseName)}-${Date.now().toString(36)}`;
+  const bucket = supabase.storage.from('object-assets');
+  let modelPath = '';
+  let materialPath = '';
+  let totalBytes = 0;
+
+  for (const file of fileList) {
+    totalBytes += file.size || 0;
+    const relativePath = getRelativeUploadPath(file, rootFolder);
+    const storagePath = `${assetType}/${relativePath}`;
+    const { error } = await bucket.upload(storagePath, file, {
+      cacheControl: '31536000',
+      contentType: guessContentType(file),
+      upsert: true,
+    });
+    if (error) throw error;
+
+    if (file === modelFile) modelPath = storagePath;
+    if (!materialPath && file.name.toLowerCase().endsWith('.mtl')) materialPath = storagePath;
+  }
+
+  const { data: modelPublic } = bucket.getPublicUrl(modelPath);
+  const { data: materialPublic } = materialPath ? bucket.getPublicUrl(materialPath) : { data: null };
+  const textureCount = fileList.filter((file) => /\.(jpe?g|png|webp|gif|bmp|tga|tiff?)$/i.test(file.name)).length;
+
+  return saveObjectBankItem({
+    type: assetType,
+    label: prettifyAssetLabel(baseName),
+    model_url: modelPublic.publicUrl,
+    thumbnail_url: null,
+    is_active: true,
+    dimensions: {
+      addedBy: 'Admin Stand-ING',
+      category: 'Mobilier',
+      fileSizeMb: Number((totalBytes / 1024 / 1024).toFixed(1)),
+      format: modelFile.name.toLowerCase().endsWith('.obj') ? 'OBJ' : 'GLB',
+      folderName: rootFolder || null,
+      uploadedFiles: fileList.length,
+      textureCount,
+      storageBucket: 'object-assets',
+      storagePath: modelPath,
+      materialUrl: materialPublic?.publicUrl || null,
+      materialPath: materialPath || null,
+    },
+  });
+}
+
+function getUploadRootFolder(files) {
+  const firstPath = files.find((file) => file.webkitRelativePath)?.webkitRelativePath || '';
+  return firstPath.includes('/') ? firstPath.split('/')[0] : '';
+}
+
+function getRelativeUploadPath(file, rootFolder) {
+  const rawPath = file.webkitRelativePath || file.name;
+  const normalized = rawPath.replaceAll('\\', '/');
+  if (rootFolder && normalized.startsWith(`${rootFolder}/`)) {
+    return normalized.slice(rootFolder.length + 1);
+  }
+  return normalized;
+}
+
+function prettifyAssetLabel(value) {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function slugifyAsset(value) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'objet-3d';
+}
+
+function guessContentType(file) {
+  const extension = file.name.toLowerCase().split('.').pop();
+  const types = {
+    obj: 'text/plain',
+    mtl: 'text/plain',
+    glb: 'model/gltf-binary',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    gif: 'image/gif',
+    bmp: 'image/bmp',
+    tga: 'image/x-tga',
+    tif: 'image/tiff',
+    tiff: 'image/tiff',
+  };
+  return file.type || types[extension] || 'application/octet-stream';
+}
+
 export function sceneShareUrl(scene) {
   return `${window.location.origin}/?scene=${scene.share_token}`;
 }
