@@ -43,6 +43,7 @@ Deno.serve(async (req) => {
   if (error) return json({ error: error.message }, 500);
 
   let processed = 0;
+  let clients = 0;
   for (const source of sources ?? []) {
     const items = await fetchMondayItems(mondayToken, source.board_id, source.group_id);
     for (const item of items) {
@@ -50,7 +51,16 @@ Deno.serve(async (req) => {
       const triggerValues = source.create_trigger_values ?? ["OK", "OUI"];
       if (!triggerValues.some((value: string) => normalizeText(createValue) === normalizeText(value))) continue;
 
-      const scene = mapMondayItemToScene(item, source);
+      const client = mapMondayItemToClient(item, source);
+      const { data: savedClient, error: clientError } = await supabase
+        .from("clients")
+        .upsert(client, { onConflict: "client_key" })
+        .select("id")
+        .single();
+
+      if (clientError) throw clientError;
+
+      const scene = mapMondayItemToScene(item, source, savedClient?.id);
       const { data: savedScene, error: saveError } = await supabase
         .from("scenes")
         .upsert(scene, { onConflict: "monday_item_id" })
@@ -75,11 +85,12 @@ Deno.serve(async (req) => {
         });
       }
       processed += 1;
+      clients += 1;
     }
   }
 
   await supabase.from("monday_sync_runs").insert({ status: "success", processed_count: processed });
-  return json({ processed });
+  return json({ processed, clients });
 });
 
 async function fetchMondayItems(token: string, boardId: string, groupId?: string) {
@@ -108,7 +119,34 @@ async function fetchMondayItems(token: string, boardId: string, groupId?: string
   return groupId ? items.filter((item: any) => item.group?.id === groupId) : items;
 }
 
-function mapMondayItemToScene(item: any, source: any) {
+function mapMondayItemToClient(item: any, source: any) {
+  const mapping = source.mapping ?? {};
+  const clientEmail = readMappingValue(item, mapping.client_email);
+  const clientName = readMappingValue(item, mapping.client_name) || item.name;
+  const contactName = readMappingValue(item, mapping.contact_name) || readMappingValue(item, mapping.contact);
+  const companyName = readMappingValue(item, mapping.company_name) || clientName;
+  const phone = readMappingValue(item, mapping.client_phone) || readMappingValue(item, mapping.phone);
+  const commercialName = readMappingValue(item, mapping.commercial_name) || readMappingValue(item, mapping.commercial);
+
+  return {
+    client_key: clientKey(clientEmail, companyName || contactName || item.name),
+    display_name: contactName || companyName || clientName || item.name,
+    company_name: companyName || null,
+    email: normalizeEmail(clientEmail),
+    phone: phone || null,
+    commercial_name: commercialName || null,
+    metadata: {
+      monday_item_id: item.id,
+      monday_board_id: source.board_id,
+      monday_group_id: source.group_id,
+      salon: source.salon,
+      offer: source.offer,
+    },
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function mapMondayItemToScene(item: any, source: any, clientId?: string) {
   const mapping = source.mapping ?? {};
   const width = Number(readMappingValue(item, mapping.width_m)) || 4;
   const depth = Number(readMappingValue(item, mapping.depth_m)) || 3;
@@ -126,6 +164,7 @@ function mapMondayItemToScene(item: any, source: any) {
     client_status: "not_started",
     client_name: clientName,
     client_email: readMappingValue(item, mapping.client_email),
+    client_id: clientId || null,
     project_name: item.name,
     event_name: source.salon,
     width_m: width,
@@ -134,6 +173,16 @@ function mapMondayItemToScene(item: any, source: any) {
     layout,
     source_payload: item,
   };
+}
+
+function clientKey(email: string, fallback: string) {
+  const normalizedEmail = normalizeEmail(email);
+  if (normalizedEmail) return `email:${normalizedEmail}`;
+  return `name:${normalizeText(fallback).replace(/\s+/g, " ") || crypto.randomUUID()}`;
+}
+
+function normalizeEmail(value: string) {
+  return String(value || "").trim().toLowerCase() || null;
 }
 
 function readColumn(item: any, columnId?: string) {

@@ -61,6 +61,7 @@ function writeLocalScenes(scenes) {
 function dbSceneToScene(row) {
   return {
     ...row,
+    client: row.clients || row.client || null,
     dimensions: row.dimensions || { width: row.width_m, depth: row.depth_m, height: row.height_m },
     items: (row.scene_items || []).map((item) => ({
       ...item.config,
@@ -133,6 +134,7 @@ export async function saveScene(scene) {
     client_email: scene.client_email,
     project_name: scene.project_name,
     event_name: scene.event_name,
+    client_id: scene.client_id || null,
     width_m: scene.dimensions.width,
     depth_m: scene.dimensions.depth,
     height_m: scene.dimensions.height,
@@ -176,6 +178,20 @@ export async function syncMondayScenes() {
   const functionError = await getFunctionError(error, data);
   if (functionError) throw functionError;
   return data;
+}
+
+export async function listClients(filters = {}) {
+  if (!supabase) {
+    return filterClients(groupScenesByClient(readLocalScenes()), filters);
+  }
+
+  const { data, error } = await supabase
+    .from('clients')
+    .select('*, scenes(*)')
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+  return filterClients((data || []).map(dbClientToClient), filters);
 }
 
 export async function requestSceneAccessCode(sceneToken) {
@@ -379,6 +395,62 @@ function guessContentType(file) {
 
 export function sceneShareUrl(scene) {
   return `${window.location.origin}/?scene=${scene.share_token}`;
+}
+
+function dbClientToClient(row) {
+  return {
+    ...row,
+    scenes: (row.scenes || []).map((scene) => ({
+      ...scene,
+      dimensions: { width: scene.width_m, depth: scene.depth_m, height: scene.height_m },
+    })),
+  };
+}
+
+function groupScenesByClient(scenes) {
+  const groups = new Map();
+  scenes.forEach((scene) => {
+    const email = scene.client_email?.trim().toLowerCase();
+    const name = scene.client_name?.trim().toLowerCase();
+    const key = email ? `email:${email}` : `name:${name || scene.id}`;
+    const current = groups.get(key) || {
+      id: key,
+      client_key: key,
+      display_name: scene.client_name || scene.client_email || 'Client sans nom',
+      company_name: scene.client_name || '',
+      email: scene.client_email || '',
+      phone: '',
+      commercial_name: scene.source_payload?.commercial_name || '',
+      metadata: { source: 'local' },
+      created_at: scene.created_at,
+      updated_at: scene.updated_at,
+      scenes: [],
+    };
+    current.scenes.push(scene);
+    groups.set(key, current);
+  });
+  return [...groups.values()];
+}
+
+function filterClients(clients, filters = {}) {
+  const search = filters.search?.trim().toLowerCase();
+  return clients.filter((client) => {
+    const scenes = client.scenes || [];
+    if (filters.salon && !scenes.some((scene) => scene.salon?.toLowerCase().includes(filters.salon.toLowerCase()))) return false;
+    if (filters.status && !scenes.some((scene) => scene.status === filters.status || scene.client_status === filters.status)) return false;
+    if (!search) return true;
+
+    const haystack = [
+      client.display_name,
+      client.company_name,
+      client.email,
+      client.phone,
+      client.commercial_name,
+      ...scenes.flatMap((scene) => [scene.client_name, scene.project_name, scene.salon, scene.offer, scene.client_email, scene.monday_item_id]),
+    ];
+
+    return haystack.filter(Boolean).some((value) => String(value).toLowerCase().includes(search));
+  });
 }
 
 function filterScenes(scenes, filters = {}) {

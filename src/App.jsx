@@ -39,7 +39,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { getSceneByToken, listObjectBank, listScenes, requestSceneAccessCode, saveObjectBankItem, saveScene, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
+import { getSceneByToken, listClients, listObjectBank, listScenes, requestSceneAccessCode, saveObjectBankItem, saveScene, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -311,7 +311,7 @@ function AdminGate() {
     return <div className="loading-screen">Redirection...</div>;
   }
 
-  return <AdminDashboard user={session.user} />;
+  return <AdminDashboard user={session.user} adminProfile={adminUser} />;
 }
 
 function LoginHero() {
@@ -1206,18 +1206,22 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, onSelect }
   );
 }
 
-function AdminDashboard({ user }) {
+function AdminDashboard({ user, adminProfile }) {
   const [scenes, setScenes] = useState([]);
+  const [clients, setClients] = useState([]);
   const [assets, setAssets] = useState([]);
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [assetCategory, setAssetCategory] = useState('Tout');
   const [filters, setFilters] = useState({ search: '', salon: '', status: '' });
   const [tab, setTab] = useState('dashboard');
+  const [accountOpen, setAccountOpen] = useState(false);
   const [syncState, setSyncState] = useState({ loading: false, message: '', error: '' });
   const [assetUploadState, setAssetUploadState] = useState({ loading: false, message: '', error: '' });
+  const profile = getAdminProfile(user, adminProfile);
 
   useEffect(() => {
     listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error));
+    listClients(filters).then(setClients).catch((error) => console.error('Client list failed', error));
   }, [filters]);
 
   useEffect(() => {
@@ -1228,14 +1232,19 @@ function AdminDashboard({ user }) {
     return listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error));
   };
 
+  const refreshClients = () => {
+    return listClients(filters).then(setClients).catch((error) => console.error('Client list failed', error));
+  };
+
   const runMondaySync = async () => {
     setSyncState({ loading: true, message: '', error: '' });
     try {
       const result = await syncMondayScenes();
       await refreshScenes();
+      await refreshClients();
       setSyncState({
         loading: false,
-        message: `${result?.processed ?? 0} scene(s) synchronisee(s) depuis Monday.`,
+        message: `${result?.processed ?? 0} scene(s) synchronisee(s), ${result?.clients ?? 0} client(s) traite(s) depuis Monday.`,
         error: '',
       });
     } catch (error) {
@@ -1289,22 +1298,23 @@ function AdminDashboard({ user }) {
         <nav className="admin-sidebar-nav" aria-label="Navigation admin">
           <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}><LayoutDashboard size={16} />Dashboard</button>
           <button className={tab === 'salons' ? 'active' : ''} onClick={() => setTab('salons')}><Orbit size={16} />Salons</button>
-          <button className={tab === 'clients' ? 'active' : ''} onClick={() => setTab('clients')}><Users size={16} />Clients & Configs</button>
+          <button className={tab === 'clients' ? 'active' : ''} onClick={() => setTab('clients')}><Users size={16} />Clients</button>
           <button className={tab === 'bat' ? 'active' : ''} onClick={() => setTab('bat')}><FileCheck2 size={16} />BAT</button>
           <button className={tab === 'objects' ? 'active' : ''} onClick={() => setTab('objects')}><Box size={16} />Assets 3D</button>
           <button className={tab === 'presets' ? 'active' : ''} onClick={() => setTab('presets')}><Settings2 size={16} />Presets</button>
           <button className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}><UserPlus size={16} />Utilisateurs</button>
           <button className={tab === 'monday' ? 'active' : ''} onClick={() => setTab('monday')}><span className="monday-mark">m</span>Monday.com</button>
         </nav>
-        <div className="admin-sidebar-user">
-          <span>JL</span>
-          <div>
-            <strong>Julien Lang · Stand ING</strong>
-            <small>Super Admin</small>
-          </div>
-          <button type="button" onClick={() => supabase.auth.signOut()} title="Deconnexion">
-            <LogOut size={14} />
+        <div className="admin-sidebar-user-wrap">
+          <button className="admin-sidebar-user" type="button" onClick={() => setAccountOpen((open) => !open)}>
+            <span>{profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : profile.initials}</span>
+            <div>
+              <strong>{profile.name}</strong>
+              <small>{profile.role}</small>
+            </div>
+            <ChevronUp size={14} />
           </button>
+          {accountOpen && <AdminAccountPanel profile={profile} onLogout={() => supabase.auth.signOut().then(() => window.location.replace('/'))} />}
         </div>
       </aside>
 
@@ -1322,7 +1332,7 @@ function AdminDashboard({ user }) {
 
         <div className="admin-page-content">
           {tab === 'dashboard' && <AdminDashboardHome scenes={scenes} assets={assets} />}
-          {tab === 'clients' && <AdminClientsView scenes={scenes} filters={filters} updateFilter={updateFilter} />}
+          {tab === 'clients' && <AdminClientsView clients={clients} filters={filters} updateFilter={updateFilter} />}
           {tab === 'objects' && (
             <AdminObjectsView
               assets={assets}
@@ -1351,7 +1361,7 @@ function adminTitle(tab) {
   const labels = {
     dashboard: 'Dashboard',
     salons: 'Salons',
-    clients: 'Clients & Configs',
+    clients: 'Clients',
     bat: 'BAT',
     objects: 'Assets 3D',
     presets: 'Presets',
@@ -1363,8 +1373,50 @@ function adminTitle(tab) {
 
 function adminSubtitle(tab) {
   if (tab === 'dashboard') return "Vue d'ensemble de l'activité Stand-ING";
+  if (tab === 'clients') return 'Clients synchronisés et configurations associées';
   if (tab === 'monday') return 'Synchronisation des tableaux salon';
   return 'Vue en cours de préparation';
+}
+
+function getAdminProfile(user, adminProfile = {}) {
+  const metadata = user?.user_metadata || {};
+  const email = adminProfile?.email || user?.email || '';
+  const name = adminProfile?.full_name || metadata.full_name || metadata.name || email || 'Administrateur';
+  const avatarUrl = adminProfile?.avatar_url || metadata.avatar_url || metadata.picture || '';
+  const initials = name
+    .split(/[.\s_-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'AD';
+
+  return {
+    name,
+    email,
+    role: adminProfile?.role_label || 'Admin',
+    avatarUrl,
+    initials,
+    createdAt: adminProfile?.created_at,
+  };
+}
+
+function AdminAccountPanel({ profile, onLogout }) {
+  return (
+    <div className="admin-account-panel">
+      <div className="admin-account-head">
+        <span>{profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : profile.initials}</span>
+        <div>
+          <strong>{profile.name}</strong>
+          <small>{profile.email}</small>
+        </div>
+      </div>
+      <dl>
+        <div><dt>Role</dt><dd>{profile.role}</dd></div>
+        <div><dt>Compte créé</dt><dd>{formatDate(profile.createdAt)}</dd></div>
+      </dl>
+      <button type="button" onClick={onLogout}><LogOut size={14} /> Déconnexion</button>
+    </div>
+  );
 }
 
 function AdminDashboardHome({ scenes, assets }) {
@@ -1521,26 +1573,99 @@ function AdminSalonRow({ title, detail, status, muted }) {
   );
 }
 
-function AdminClientsView({ scenes, filters, updateFilter }) {
+function AdminClientsView({ clients, filters, updateFilter }) {
   return (
-    <>
-      <section className="admin-filters compact">
-        <label>Salon<input value={filters.salon} placeholder="SMCL" onChange={(event) => updateFilter('salon', event.target.value)} /></label>
-        <label>Statut<select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}><option value="">Tous</option><option value="created">Cree</option><option value="configured">Configure</option><option value="bat_pending">BAT a valider</option><option value="validated">Valide</option></select></label>
+    <section className="admin-clients-view">
+      <section className="admin-clients-search-card">
+        <div>
+          <Search size={16} />
+          <input value={filters.search} placeholder="Nom client, salon, numéro de stand, commercial..." onChange={(event) => updateFilter('search', event.target.value)} />
+        </div>
+        <button type="button">Rechercher</button>
       </section>
-      <section className="admin-table modern">
-        {scenes.map((scene) => (
-          <article key={scene.id} className="stand-row">
-            <div><strong>{scene.client_name || 'Client sans nom'}</strong><span>{scene.salon} / {scene.offer} / {scene.project_name}</span></div>
-            <div><span>Statut</span><strong>{statusLabel(scene.status)}</strong></div>
-            <div><span>Client</span><strong>{clientStatusLabel(scene.client_status)}</strong></div>
-            <div><span>Fichiers</span><strong>{fileSummary(scene.files)}</strong></div>
-            <div className="stand-actions"><a href={sceneShareUrl(scene)}>Voir scene</a>{(scene.files || []).map((file) => <a key={file.id || file.storage_path || file.file_name} href={file.public_url || '#'}>{fileTypeLabel(file.type)}</a>)}</div>
+
+      <div className="admin-client-filter-line">
+        <span>Filtres actifs :</span>
+        <label>Salon <input value={filters.salon} placeholder="Tous" onChange={(event) => updateFilter('salon', event.target.value)} /></label>
+        <label>Statut <select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}><option value="">Tous</option><option value="created">Créé</option><option value="configured">Configuré</option><option value="bat_pending">BAT à valider</option><option value="validated">Validé</option></select></label>
+      </div>
+
+      <section className="admin-clients-table">
+        <header>
+          <span>Client</span>
+          <span>Salons</span>
+          <span>Configurations</span>
+          <span>Surface</span>
+          <span>Commercial</span>
+          <span>Statut</span>
+          <span>Actions</span>
+        </header>
+        {clients.length ? clients.map((client) => (
+          <article key={client.id || client.client_key}>
+            <div>
+              <strong>{client.company_name || client.display_name || 'Client sans nom'}</strong>
+              <small>{client.email || client.display_name || 'Email non renseigné'}</small>
+            </div>
+            <span>{clientSalonSummary(client)}</span>
+            <span>{clientConfigSummary(client)}</span>
+            <span>{clientSurfaceSummary(client)} m²</span>
+            <span>{client.commercial_name || clientCommercialSummary(client) || '—'}</span>
+            <span><i className={`client-status-badge ${clientStatusKind(client)}`}>{clientStatusSummary(client)}</i></span>
+            <div className="client-row-actions">
+              {clientPrimaryScene(client) ? <a href={sceneShareUrl(clientPrimaryScene(client))}>Voir</a> : <button type="button" disabled>Voir</button>}
+            </div>
           </article>
-        ))}
+        )) : <div className="admin-empty-row">Aucun client trouvé avec les filtres actuels.</div>}
       </section>
-    </>
+    </section>
   );
+}
+
+function clientPrimaryScene(client) {
+  const scenes = client.scenes || [];
+  return scenes
+    .slice()
+    .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))[0];
+}
+
+function clientSalonSummary(client) {
+  const salons = [...new Set((client.scenes || []).map((scene) => scene.event_name || scene.salon).filter(Boolean))];
+  if (!salons.length) return '—';
+  if (salons.length <= 2) return salons.join(', ');
+  return `${salons.slice(0, 2).join(', ')} +${salons.length - 2}`;
+}
+
+function clientConfigSummary(client) {
+  const scenes = client.scenes || [];
+  if (!scenes.length) return 'Aucune scène';
+  const first = scenes[0];
+  const label = first.project_name || first.monday_item_id || first.offer || 'Scène';
+  return scenes.length === 1 ? label : `${scenes.length} scènes · ${label}`;
+}
+
+function clientSurfaceSummary(client) {
+  return (client.scenes || []).reduce((sum, scene) => sum + sceneArea(scene), 0);
+}
+
+function clientCommercialSummary(client) {
+  const commercials = [...new Set((client.scenes || []).map((scene) => scene.source_payload?.commercial_name || scene.source_payload?.commercial).filter(Boolean))];
+  return commercials[0] || '';
+}
+
+function clientStatusKind(client) {
+  const statuses = new Set((client.scenes || []).flatMap((scene) => [scene.status, scene.client_status]));
+  if (statuses.has('validated') || statuses.has('bat_validated')) return 'success';
+  if (statuses.has('bat_pending') || statuses.has('bat_review')) return 'warning';
+  if (statuses.has('configured')) return 'purple';
+  return 'neutral';
+}
+
+function clientStatusSummary(client) {
+  const kind = clientStatusKind(client);
+  if (kind === 'success') return 'BAT signé';
+  if (kind === 'warning') return 'En attente Stand-ING';
+  if (kind === 'purple') return 'Config soumise';
+  return 'À configurer';
 }
 
 function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onUploadAssetFolder }) {
