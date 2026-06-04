@@ -199,22 +199,31 @@ export async function listSalons(filters = {}) {
     return filterSalons(groupLocalSalons(readLocalScenes()), filters);
   }
 
-  const [salonsResult, offersResult, presetsResult, presetItemsResult, scenesResult] = await Promise.all([
-    supabase.from('salons').select('*').order('year', { ascending: false }).order('name', { ascending: true }),
-    supabase.from('salon_offers').select('*').order('display_order', { ascending: true }).order('name', { ascending: true }),
-    supabase.from('stand_presets').select('*').order('created_at', { ascending: true }),
-    supabase.from('stand_preset_items').select('*'),
-    supabase.from('scenes').select('*'),
-  ]);
+  const salonsResult = await supabase
+    .from('salons')
+    .select('*')
+    .order('year', { ascending: false })
+    .order('name', { ascending: true });
 
-  const error = salonsResult.error || offersResult.error || presetsResult.error || presetItemsResult.error || scenesResult.error;
-  if (error) throw error;
+  if (salonsResult.error) {
+    console.warn('Salon table unavailable, falling back to scenes.', salonsResult.error);
+    const { data: scenesData, error: scenesError } = await supabase.from('scenes').select('*');
+    if (scenesError) throw salonsResult.error;
+    return filterSalons(groupLocalSalons((scenesData || []).map(dbSceneToScene)), filters);
+  }
+
+  const [offersResult, presetsResult, presetItemsResult, scenesResult] = await Promise.all([
+    safeSalonQuery(supabase.from('salon_offers').select('*').order('display_order', { ascending: true }).order('name', { ascending: true }), 'salon_offers'),
+    safeSalonQuery(supabase.from('stand_presets').select('*').order('created_at', { ascending: true }), 'stand_presets'),
+    safeSalonQuery(supabase.from('stand_preset_items').select('*'), 'stand_preset_items'),
+    safeSalonQuery(supabase.from('scenes').select('*'), 'scenes'),
+  ]);
 
   const salons = (salonsResult.data || []).map((salon) => dbSalonToSalon(
     salon,
-    offersResult.data || [],
-    attachPresetItems(presetsResult.data || [], presetItemsResult.data || []),
-    scenesResult.data || []
+    offersResult || [],
+    attachPresetItems(presetsResult || [], presetItemsResult || []),
+    scenesResult || []
   ));
   return filterSalons(salons, filters);
 }
@@ -262,6 +271,15 @@ async function getFunctionError(error, data) {
   }
 
   return error;
+}
+
+async function safeSalonQuery(query, label) {
+  const { data, error } = await query;
+  if (error) {
+    console.warn(`Salon secondary query failed: ${label}`, error);
+    return [];
+  }
+  return data || [];
 }
 
 export async function listObjectBank() {
