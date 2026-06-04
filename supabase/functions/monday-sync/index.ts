@@ -260,7 +260,6 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
   const mapping = source.mapping ?? {};
   const width = Number(readMappingValue(item, mapping.width_m)) || 4;
   const depth = Number(readMappingValue(item, mapping.depth_m)) || 3;
-  const height = Number(readMappingValue(item, mapping.height_m)) || 2.5;
   const layout = normalizeLayout(readMappingValue(item, mapping.layout));
   const clientName = readMappingValue(item, mapping.client_name) || item.name;
 
@@ -283,7 +282,7 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
     event_name: source.salon,
     width_m: width,
     depth_m: depth,
-    height_m: height,
+    height_m: 2.5,
     layout,
     source_payload: item,
   };

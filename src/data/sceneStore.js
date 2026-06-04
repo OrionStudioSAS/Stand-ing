@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient.js';
 import { catalog } from '../config/catalog.js';
 
 const storageKey = 'standing-scenes-v1';
+const fixedWallHeight = 2.5;
 
 function normalizeSceneItem(item) {
   const catalogItem = catalog.find((entry) => entry.type === item.type);
@@ -62,7 +63,7 @@ function dbSceneToScene(row) {
   return {
     ...row,
     client: row.clients || row.client || null,
-    dimensions: row.dimensions || { width: row.width_m, depth: row.depth_m, height: row.height_m },
+    dimensions: row.dimensions ? { ...row.dimensions, height: fixedWallHeight } : { width: row.width_m, depth: row.depth_m, height: fixedWallHeight },
     items: (row.scene_items || []).map((item) => ({
       ...item.config,
       id: item.item_uid,
@@ -137,7 +138,7 @@ export async function saveScene(scene) {
     client_id: scene.client_id || null,
     width_m: scene.dimensions.width,
     depth_m: scene.dimensions.depth,
-    height_m: scene.dimensions.height,
+    height_m: fixedWallHeight,
     layout: scene.layout,
     source_payload: scene.source_payload || {},
     updated_at: new Date().toISOString(),
@@ -335,7 +336,7 @@ export async function saveStandPresetConfig(preset, scene) {
     description: preset.description || `Scene de base ${preset.name}`,
     width_m: scene.dimensions.width,
     depth_m: scene.dimensions.depth,
-    height_m: scene.dimensions.height,
+    height_m: fixedWallHeight,
     layout: scene.layout,
     base_config: {
       ...(preset.base_config || {}),
@@ -614,7 +615,7 @@ function dbClientToClient(row) {
     ...row,
     scenes: (row.scenes || []).map((scene) => ({
       ...scene,
-      dimensions: { width: scene.width_m, depth: scene.depth_m, height: scene.height_m },
+      dimensions: { width: scene.width_m, depth: scene.depth_m, height: fixedWallHeight },
     })),
   };
 }
@@ -635,7 +636,7 @@ function dbSalonToSalon(row, offers = [], presets = [], scenes = [], sources = [
     monday_sources: salonSources,
     scenes: salonScenes.map((scene) => ({
       ...scene,
-      dimensions: { width: scene.width_m, depth: scene.depth_m, height: scene.height_m },
+      dimensions: { width: scene.width_m, depth: scene.depth_m, height: fixedWallHeight },
     })),
   };
 }

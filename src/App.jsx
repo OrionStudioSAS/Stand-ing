@@ -45,6 +45,7 @@ import './styles.css';
 
 const floorPlane = new Plane(new Vector3(0, 1, 0), 0);
 const wallSwitchZone = 0.18;
+const fixedWallHeight = 2.5;
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
   { id: 'layout', label: 'Aménagement', icon: '📐' },
@@ -527,7 +528,7 @@ function ConfiguratorApp({ initialScene }) {
   const initialOptions = initialScene.options || initialScene.source_payload?.options || {};
   const [width, setWidth] = useState(initialScene.dimensions?.width || 4);
   const [depth, setDepth] = useState(initialScene.dimensions?.depth || 3);
-  const [height, setHeight] = useState(initialScene.dimensions?.height || 2.5);
+  const height = fixedWallHeight;
   const [layout, setLayout] = useState(initialScene.layout || 'u');
   const [items, setItems] = useState(initialScene.items?.length ? initialScene.items : [
     { id: 'table-1', type: 'table', x: -0.75, z: 0.3, y: 0, rotation: 0 },
@@ -958,7 +959,6 @@ function ConfiguratorApp({ initialScene }) {
           <div className="settings-grid">
             <label>Largeur <span>{width} m</span><input type="range" min="2" max="8" step="0.5" value={width} onChange={(event) => setWidth(Number(event.target.value))} /></label>
             <label>Profondeur <span>{depth} m</span><input type="range" min="2" max="6" step="0.5" value={depth} onChange={(event) => setDepth(Number(event.target.value))} /></label>
-            <label>Hauteur <span>{height} m</span><input type="range" min="2" max="4" step="0.1" value={height} onChange={(event) => setHeight(Number(event.target.value))} /></label>
             <div className="segmented config-layouts">
               {layouts.map((option) => (
                 <button key={option.id} className={layout === option.id ? 'active' : ''} onClick={() => chooseLayout(option.id)}>
@@ -969,7 +969,7 @@ function ConfiguratorApp({ initialScene }) {
           </div>
         </details>
 
-        <button className="wide export" onClick={() => exportTechnicalPng({ width, depth, height, layout, items, catalog: availableCatalog })}>
+        <button className="wide export" onClick={() => exportTechnicalPng({ width, depth, layout, items, catalog: availableCatalog })}>
           <FileImage size={16} /> Generer PNG technique
         </button>
       </aside>
@@ -1921,7 +1921,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave }) {
   const initialScene = presetToEditableScene(preset);
   const [width, setWidth] = useState(initialScene.dimensions.width);
   const [depth, setDepth] = useState(initialScene.dimensions.depth);
-  const [height, setHeight] = useState(initialScene.dimensions.height);
+  const height = fixedWallHeight;
   const [layout, setLayout] = useState(initialScene.layout);
   const [items, setItems] = useState(initialScene.items);
   const [selectedId, setSelectedId] = useState(initialScene.items[0]?.id || null);
@@ -1966,7 +1966,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave }) {
 
   const save = () => {
     onSave({
-      dimensions: { width, depth, height },
+      dimensions: { width, depth, height: fixedWallHeight },
       layout,
       items,
       options: { presetMode: true, includedPack: offer?.name, salon: salon.name },
@@ -2030,7 +2030,6 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave }) {
         <div className="preset-dimensions">
           <label>Largeur <span>{width} m</span><input type="range" min="2" max="12" step="0.5" value={width} onChange={(event) => setWidth(Number(event.target.value))} /></label>
           <label>Profondeur <span>{depth} m</span><input type="range" min="2" max="10" step="0.5" value={depth} onChange={(event) => setDepth(Number(event.target.value))} /></label>
-          <label>Hauteur <span>{height} m</span><input type="range" min="2" max="4" step="0.1" value={height} onChange={(event) => setHeight(Number(event.target.value))} /></label>
         </div>
         <div className="preset-layouts">
           {layouts.map((option) => (
@@ -2066,7 +2065,7 @@ function presetToEditableScene(preset) {
     dimensions: {
       width: Number(preset.width_m || preset.base_config?.width || 5),
       depth: Number(preset.depth_m || preset.base_config?.depth || 5),
-      height: Number(preset.height_m || preset.base_config?.height || 2.5),
+      height: fixedWallHeight,
     },
     layout: preset.layout || preset.base_config?.layout || 'u',
     items,

@@ -32,7 +32,7 @@ export const demoScenes = [
     client_email: 'prestige-smcl@example.com',
     project_name: 'Stand SMCL Prestige',
     event_name: 'SMCL',
-    dimensions: { width: 6, depth: 3, height: 2.8 },
+    dimensions: { width: 6, depth: 3, height: 2.5 },
     layout: 'right',
     items: [
       { id: 'table-1', type: 'table', x: -0.8, z: 0.4, y: 0, rotation: 0 },
