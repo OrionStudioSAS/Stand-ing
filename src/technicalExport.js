@@ -12,11 +12,14 @@ const technicalColors = {
   gray: '#d9d9d9',
   soft: '#f7f7f7',
   wall: '#8f1d1d',
+  reinforcement: '#e87522',
   floor: '#f4efe5',
 };
 
 const fixedWallHeight = 2.5;
 const wallPanelWidth = 1;
+const reinforcementWidth = 1;
+const wallThicknessMeters = 0.06;
 
 export function exportTechnicalPng({ width, depth, layout, items, catalog }) {
   sheet.height = Math.max(1240, 1080 + items.length * 34);
@@ -56,16 +59,18 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   drawBox(ctx, x, y, w, 54, `${mm(width)} x ${mm(depth)} mm`, technicalColors.blue, 22);
   y += 72;
 
-  drawInfoBlock(ctx, x, y, w, [
+  const infoRows = [
     ['Surface', `${formatNumber(width * depth)} m2`],
     ['Hauteur murs', `${mm(height)} mm`],
+    ['Epaisseur murs', `${mm(wallThicknessMeters)} mm`],
     ['Implantation', layoutLabel(layout)],
     ['Objets', String(items.length)],
     ['Date export', new Date().toLocaleDateString('fr-FR')],
-  ]);
-  y += infoBlockHeight(5) + 18;
+  ];
+  drawInfoBlock(ctx, x, y, w, infoRows);
+  y += infoBlockHeight(infoRows.length) + 18;
 
-  y = drawWallBreakdown(ctx, x, y, w, width, depth, layout) + 18;
+  y = drawWallBreakdown(ctx, x, y, w, width, depth, layout, items) + 18;
 
   ctx.strokeStyle = '#777';
   ctx.strokeRect(x, y, w, 205);
@@ -78,11 +83,12 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   drawText(ctx, 'Origine X/Z au centre du stand.', x + 16, y + 168, 17);
   y += 224;
 
-  ctx.strokeRect(x, y, w, 170);
+  ctx.strokeRect(x, y, w, 196);
   drawText(ctx, 'LEGENDE', x + 16, y + 32, 20, technicalColors.blue, 'bold');
   legendLine(ctx, x + 18, y + 66, technicalColors.blue, 'Cotes stand');
   legendLine(ctx, x + 18, y + 102, technicalColors.red, 'Cotes objet');
   legendSwatch(ctx, x + 18, y + 130, technicalColors.wall, 'Murs / cloisons');
+  legendSwatch(ctx, x + 18, y + 158, technicalColors.reinforcement, 'Renfort TV 1000x2500');
 
   const footerY = sheet.height - sheet.margin - 86;
   ctx.strokeRect(x, footerY, w, 32);
@@ -98,7 +104,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
   const planH = depth * scale;
   const planX = bounds.x + (bounds.w - planW) / 2;
   const planY = bounds.y + (bounds.h - planH) / 2 + 30;
-  const wallThickness = Math.max(10, scale * 0.08);
+  const wallThickness = Math.max(8, scale * wallThicknessMeters);
 
   drawText(ctx, `${formatNumber(width * depth)}m2`, planX + planW / 2, 105, 64, technicalColors.ink, 'bold', 'center');
 
@@ -112,7 +118,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
   ctx.strokeStyle = technicalColors.ink;
   ctx.lineWidth = 2;
   ctx.strokeRect(planX, planY, planW, planH);
-  drawWalls(ctx, planX, planY, planW, planH, wallThickness, layout, width, depth, scale);
+  drawWalls(ctx, planX, planY, planW, planH, wallThickness, layout, width, depth, scale, items);
 
   drawDimension(ctx, planX, planY - 66, planX + planW, planY - 66, mm(width), 'horizontal', technicalColors.blue);
   drawDimension(ctx, planX - 64, planY, planX - 64, planY + planH, mm(depth), 'vertical', technicalColors.blue);
@@ -125,7 +131,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
     const label = `${index + 1}`;
 
     if (item.type === 'screen') {
-      drawScreenTop(ctx, item, width, depth, scale, toX, toY, label);
+      drawScreenTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label);
       return;
     }
 
@@ -167,7 +173,7 @@ function drawItemTable(ctx, items, catalog, width, depth) {
       entry?.label || item.type,
       `${mm(dims.width)} x ${mm(dims.depth)} x ${mm(dims.height)} mm`,
       item.type === 'screen' ? screenPositionLabel(item, width, depth) : `X ${signedMm(item.x)} / Z ${signedMm(item.z)}`,
-      item.type === 'screen' ? wallLabel(item.wall) : `${Math.round(item.rotation || 0)} deg`,
+      item.type === 'screen' ? `${wallLabel(item.wall)} + renfort 1000x2500` : `${Math.round(item.rotation || 0)} deg`,
     ];
 
     ctx.strokeStyle = '#cccccc';
@@ -181,22 +187,24 @@ function drawItemTable(ctx, items, catalog, width, depth) {
   });
 }
 
-function drawWalls(ctx, x, y, w, h, thickness, layout, width, depth, scale) {
+function drawWalls(ctx, x, y, w, h, thickness, layout, width, depth, scale, items) {
   ctx.fillStyle = technicalColors.wall;
-  ctx.fillRect(x, y - thickness / 2, w, thickness);
-  drawWallPanelTicks(ctx, x, y - thickness / 2, width, scale, 'horizontal', thickness, 'Fond');
+  ctx.fillRect(x, y, w, thickness);
+  drawWallPanelTicks(ctx, wallDescriptor('back', width, depth, items), x, y, scale, 'horizontal', thickness, 'Fond');
   if (layout === 'left' || layout === 'u') {
-    ctx.fillRect(x - thickness / 2, y, thickness, h);
-    drawWallPanelTicks(ctx, x - thickness / 2, y, depth, scale, 'vertical', thickness, 'Gauche');
+    const sideLength = sideWallLength(depth);
+    ctx.fillRect(x, y + thickness, thickness, Math.max(1, sideLength * scale));
+    drawWallPanelTicks(ctx, wallDescriptor('left', width, depth, items), x, y + thickness, scale, 'vertical', thickness, 'Gauche');
   }
   if (layout === 'right' || layout === 'u') {
-    ctx.fillRect(x + w - thickness / 2, y, thickness, h);
-    drawWallPanelTicks(ctx, x + w - thickness / 2, y, depth, scale, 'vertical', thickness, 'Droite');
+    const sideLength = sideWallLength(depth);
+    ctx.fillRect(x + w - thickness, y + thickness, thickness, Math.max(1, sideLength * scale));
+    drawWallPanelTicks(ctx, wallDescriptor('right', width, depth, items), x + w - thickness, y + thickness, scale, 'vertical', thickness, 'Droite');
   }
 }
 
-function drawWallPanelTicks(ctx, x, y, lengthMeters, scale, orientation, thickness, label) {
-  const panels = splitWallPanels(lengthMeters);
+function drawWallPanelTicks(ctx, wall, x, y, scale, orientation, thickness, label) {
+  const panels = wallPanelSegments(wall);
   let offset = 0;
 
   ctx.save();
@@ -208,16 +216,22 @@ function drawWallPanelTicks(ctx, x, y, lengthMeters, scale, orientation, thickne
   panels.forEach((panel, index) => {
     const start = offset * scale;
     const end = (offset + panel.meters) * scale;
+    if (panel.kind === 'reinforcement') {
+      ctx.fillStyle = technicalColors.reinforcement;
+      if (orientation === 'horizontal') ctx.fillRect(x + start, y, end - start, thickness);
+      else ctx.fillRect(x, y + start, thickness, end - start);
+      ctx.fillStyle = '#ffffff';
+    }
     if (orientation === 'horizontal') {
       if (index > 0) line(ctx, x + start, y, x + start, y + thickness);
-      if (end - start > 42) drawText(ctx, `${panel.mm}`, x + start + (end - start) / 2, y + thickness - 5, 10, '#ffffff', 'bold', 'center');
+      if (end - start > 42) drawText(ctx, panel.kind === 'reinforcement' ? `TV ${panel.mm}` : `${panel.mm}`, x + start + (end - start) / 2, y + thickness - 5, 10, '#ffffff', 'bold', 'center');
     } else {
       if (index > 0) line(ctx, x, y + start, x + thickness, y + start);
       if (end - start > 42) {
         ctx.save();
         ctx.translate(x + thickness / 2 + 4, y + start + (end - start) / 2);
         ctx.rotate(-Math.PI / 2);
-        drawText(ctx, `${panel.mm}`, 0, 0, 10, '#ffffff', 'bold', 'center');
+        drawText(ctx, panel.kind === 'reinforcement' ? `TV ${panel.mm}` : `${panel.mm}`, 0, 0, 10, '#ffffff', 'bold', 'center');
         ctx.restore();
       }
     }
@@ -226,8 +240,8 @@ function drawWallPanelTicks(ctx, x, y, lengthMeters, scale, orientation, thickne
   ctx.restore();
 }
 
-function drawWallBreakdown(ctx, x, y, w, width, depth, layout) {
-  const rows = wallRows(width, depth, layout);
+function drawWallBreakdown(ctx, x, y, w, width, depth, layout, items) {
+  const rows = wallRows(width, depth, layout, items);
   const h = 54 + rows.length * 32;
   ctx.strokeStyle = '#777';
   ctx.strokeRect(x, y, w, h);
@@ -244,28 +258,110 @@ function drawWallBreakdown(ctx, x, y, w, width, depth, layout) {
   return y + h;
 }
 
-function wallRows(width, depth, layout) {
-  const rows = [{ label: `Fond ${mm(width)}mm`, summary: wallPanelSummary(width) }];
-  if (layout === 'left' || layout === 'u') rows.push({ label: `Gauche ${mm(depth)}mm`, summary: wallPanelSummary(depth) });
-  if (layout === 'right' || layout === 'u') rows.push({ label: `Droite ${mm(depth)}mm`, summary: wallPanelSummary(depth) });
+function wallRows(width, depth, layout, items) {
+  const rows = [wallSummaryRow(wallDescriptor('back', width, depth, items), 'Fond')];
+  if (layout === 'left' || layout === 'u') rows.push(wallSummaryRow(wallDescriptor('left', width, depth, items), 'Gauche'));
+  if (layout === 'right' || layout === 'u') rows.push(wallSummaryRow(wallDescriptor('right', width, depth, items), 'Droite'));
   return rows;
 }
 
-function wallPanelSummary(lengthMeters) {
-  const panels = splitWallPanels(lengthMeters);
-  const full = panels.filter((panel) => panel.mm === 1000).length;
-  const remainder = panels.find((panel) => panel.mm !== 1000);
-  if (full && remainder) return `${full} x 1000 + ${remainder.mm} mm`;
-  if (full) return `${full} x 1000 mm`;
-  return `${panels[0]?.mm || 0} mm`;
+function wallSummaryRow(wall, label) {
+  return {
+    label: `${label} ${mm(wall.length)}mm`,
+    summary: wallPanelSummary(wall),
+  };
+}
+
+function wallPanelSummary(wall) {
+  const segments = wallPanelSegments(wall);
+  if (!segments.length) return '—';
+  return formatPanelSegments(segments);
+}
+
+function formatPanelSegments(segments) {
+  const parts = [];
+  let standardRun = [];
+
+  const flushStandardRun = () => {
+    if (!standardRun.length) return;
+    const full = standardRun.filter((segment) => segment.mm === 1000).length;
+    const remainders = standardRun.filter((segment) => segment.mm !== 1000).map((segment) => `${segment.mm}`);
+    if (full) parts.push(`${full} x 1000`);
+    parts.push(...remainders);
+    standardRun = [];
+  };
+
+  segments.forEach((segment) => {
+    if (segment.kind === 'reinforcement') {
+      flushStandardRun();
+      parts.push(`renfort TV ${segment.mm}`);
+    } else {
+      standardRun.push(segment);
+    }
+  });
+  flushStandardRun();
+
+  return `${parts.join(' + ')} mm`;
+}
+
+function wallPanelSegments(wall) {
+  const panels = [];
+  let cursor = 0;
+
+  wall.reinforcements.forEach((reinforcement) => {
+    const start = Math.max(cursor, reinforcement.start);
+    if (start > cursor) panels.push(...splitWallPanels(start - cursor));
+    const length = Math.max(0, reinforcement.end - start);
+    if (length > 0) panels.push({ mm: Math.round(length * 1000), meters: length, kind: 'reinforcement' });
+    cursor = Math.max(cursor, reinforcement.end);
+  });
+
+  if (wall.length > cursor) panels.push(...splitWallPanels(wall.length - cursor));
+  return panels;
+}
+
+function wallDescriptor(wall, width, depth, items = []) {
+  const length = wall === 'back' ? width : sideWallLength(depth);
+  const reinforcements = screenReinforcements(wall, width, depth, items, length);
+  return { wall, length, reinforcements };
+}
+
+function screenReinforcements(wall, width, depth, items, wallLength) {
+  return (items || [])
+    .filter((item) => item.type === 'screen' && (item.wall || 'back') === wall)
+    .map((item) => {
+      const center = screenAxisOffset(item, wall, width, depth);
+      const start = clampValue(center - reinforcementWidth / 2, 0, Math.max(0, wallLength - reinforcementWidth));
+      const end = Math.min(wallLength, start + reinforcementWidth);
+      return { start, end };
+    })
+    .sort((a, b) => a.start - b.start)
+    .reduce((acc, reinforcement) => {
+      const previous = acc[acc.length - 1];
+      if (previous && reinforcement.start < previous.end) {
+        previous.end = Math.max(previous.end, reinforcement.end);
+      } else {
+        acc.push({ ...reinforcement });
+      }
+      return acc;
+    }, []);
+}
+
+function screenAxisOffset(item, wall, width, depth) {
+  if (wall === 'back') return clampValue(Number(item.x || 0) + width / 2, 0, width);
+  return clampValue(Number(item.x || 0) + depth / 2 - wallThicknessMeters, 0, sideWallLength(depth));
+}
+
+function sideWallLength(depth) {
+  return Math.max(0, depth - wallThicknessMeters);
 }
 
 function splitWallPanels(lengthMeters) {
   const totalMm = Math.max(0, Math.round(lengthMeters * 1000));
   const fullPanels = Math.floor(totalMm / 1000);
   const remainder = totalMm - fullPanels * 1000;
-  const panels = Array.from({ length: fullPanels }, () => ({ mm: 1000, meters: wallPanelWidth }));
-  if (remainder > 0) panels.push({ mm: remainder, meters: remainder / 1000 });
+  const panels = Array.from({ length: fullPanels }, () => ({ mm: 1000, meters: wallPanelWidth, kind: 'standard' }));
+  if (remainder > 0) panels.push({ mm: remainder, meters: remainder / 1000, kind: 'standard' });
   return panels;
 }
 
@@ -301,7 +397,7 @@ function drawObjectDimensions(ctx, x, y, w, h, dims, rotation) {
   drawDimension(ctx, x + w / 2 + 18, y - h / 2, x + w / 2 + 18, y + h / 2, mm(dims.depth), 'vertical', technicalColors.red, 12);
 }
 
-function drawScreenTop(ctx, item, width, depth, scale, toX, toY, label) {
+function drawScreenTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label) {
   const screenWidth = 0.95 * scale;
   const screenDepth = 0.08 * scale;
   ctx.fillStyle = '#22364d';
@@ -310,7 +406,7 @@ function drawScreenTop(ctx, item, width, depth, scale, toX, toY, label) {
 
   if (item.wall === 'back') {
     const x = toX(item.x) - screenWidth / 2;
-    const y = toY(-depth / 2) + 8;
+    const y = toY(-depth / 2) + wallThickness + 4;
     ctx.fillRect(x, y, screenWidth, screenDepth);
     ctx.strokeRect(x, y, screenWidth, screenDepth);
     drawDimension(ctx, x, y - 18, x + screenWidth, y - 18, '950', 'horizontal', technicalColors.red, 12);
@@ -318,7 +414,7 @@ function drawScreenTop(ctx, item, width, depth, scale, toX, toY, label) {
     return;
   }
 
-  const x = item.wall === 'left' ? toX(-width / 2) + 8 : toX(width / 2) - screenDepth - 8;
+  const x = item.wall === 'left' ? toX(-width / 2) + wallThickness + 4 : toX(width / 2) - wallThickness - screenDepth - 4;
   const y = toY(item.x) - screenWidth / 2;
   ctx.fillRect(x, y, screenDepth, screenWidth);
   ctx.strokeRect(x, y, screenDepth, screenWidth);
@@ -440,6 +536,10 @@ function mm(meters) {
 function signedMm(meters) {
   const value = Math.round(meters * 1000);
   return `${value > 0 ? '+' : ''}${value} mm`;
+}
+
+function clampValue(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function formatNumber(value) {

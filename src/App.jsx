@@ -46,6 +46,8 @@ import './styles.css';
 const floorPlane = new Plane(new Vector3(0, 1, 0), 0);
 const wallSwitchZone = 0.18;
 const fixedWallHeight = 2.5;
+const wallThickness = 0.06;
+const screenDepth = 0.06;
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
   { id: 'layout', label: 'Aménagement', icon: '📐' },
@@ -79,7 +81,7 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
       ...base,
       wall: side,
       x: 0,
-      z: side === 'back' ? -depth / 2 : 0,
+      z: side === 'back' ? -depth / 2 + wallThickness : 0,
       y: 1.65,
     };
   }
@@ -2683,7 +2685,7 @@ function constrainItem(item, width, depth, layout) {
     const wall = validWalls.includes(item.wall) ? item.wall : 'back';
     const range = screenAxisRange(wall, width, depth);
     const axis = clamp(item.x, range.min, range.max);
-    return { ...item, wall, x: axis, z: wall === 'back' ? -depth / 2 : axis };
+    return { ...item, wall, x: axis, z: wall === 'back' ? -depth / 2 + wallThickness : axis };
   }
 
   return {
@@ -2694,9 +2696,10 @@ function constrainItem(item, width, depth, layout) {
 }
 
 function screenWorldPosition(item, width, depth) {
-  if (item.wall === 'left') return [-width / 2 + 0.095, item.y, item.x];
-  if (item.wall === 'right') return [width / 2 - 0.095, item.y, item.x];
-  return [item.x, item.y, -depth / 2 + 0.075];
+  const screenOffset = wallThickness + screenDepth / 2;
+  if (item.wall === 'left') return [-width / 2 + screenOffset, item.y, item.x];
+  if (item.wall === 'right') return [width / 2 - screenOffset, item.y, item.x];
+  return [item.x, item.y, -depth / 2 + screenOffset];
 }
 
 function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, wallColor }) {
@@ -2802,11 +2805,13 @@ function Grid({ width, depth }) {
 }
 
 function Walls({ width, depth, height, layout, wallColor }) {
+  const sideDepth = Math.max(0.01, depth - wallThickness);
+  const sideZ = -depth / 2 + wallThickness + sideDepth / 2;
   return (
     <group>
-      <Wall position={[0, height / 2, -depth / 2]} size={[width, height, 0.12]} color={wallColor} />
-      {(layout === 'left' || layout === 'u') && <Wall position={[-width / 2, height / 2, 0]} size={[0.12, height, depth]} color={wallColor} />}
-      {(layout === 'right' || layout === 'u') && <Wall position={[width / 2, height / 2, 0]} size={[0.12, height, depth]} color={wallColor} />}
+      <Wall position={[0, height / 2, -depth / 2 + wallThickness / 2]} size={[width, height, wallThickness]} color={wallColor} />
+      {(layout === 'left' || layout === 'u') && <Wall position={[-width / 2 + wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallColor} />}
+      {(layout === 'right' || layout === 'u') && <Wall position={[width / 2 - wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallColor} />}
     </group>
   );
 }
