@@ -39,7 +39,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveObjectBankItem, saveScene, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
+import { ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveObjectBankItem, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -62,6 +62,7 @@ const languages = [
   { id: 'fr', label: 'Français', sublabel: 'Interface en français', short: 'FR', flag: '🇫🇷' },
   { id: 'en', label: 'English', sublabel: 'Interface in English', short: 'EN', flag: '🇬🇧' },
 ];
+const defaultPackNames = ['Confort', 'Business', 'SIAE', 'Prestige'];
 
 function makeItem(type, width, depth, layout, catalogEntry = null) {
   const entry = catalogEntry || catalog.find((item) => item.type === type);
@@ -1342,10 +1343,8 @@ function AdminDashboard({ user, adminProfile }) {
           {tab === 'salons' && (
             <AdminSalonsView
               salons={salons}
-              onOpenSalon={(salon) => {
-                updateFilter('salon', salon.name);
-                setTab('clients');
-              }}
+              assets={assets}
+              onSalonChanged={refreshSalons}
             />
           )}
           {tab === 'clients' && <AdminClientsView clients={clients} filters={filters} updateFilter={updateFilter} />}
@@ -1590,8 +1589,9 @@ function AdminSalonRow({ title, detail, status, muted }) {
   );
 }
 
-function AdminSalonsView({ salons, onOpenSalon }) {
+function AdminSalonsView({ salons, assets, onSalonChanged }) {
   const [statusFilter, setStatusFilter] = useState('');
+  const [configuringSalon, setConfiguringSalon] = useState(null);
   const filteredSalons = salons.filter((salon) => !statusFilter || salon.status === statusFilter);
 
   return (
@@ -1628,17 +1628,301 @@ function AdminSalonsView({ salons, onOpenSalon }) {
               </div>
 
               <div className="salon-card-side">
-                <button type="button" onClick={() => onOpenSalon(salon)}>
-                  {salon.status === 'active' ? 'Ouvrir' : 'Configurer'}
-                </button>
+                <button type="button" onClick={() => setConfiguringSalon(salon)}>Configurer</button>
                 <SalonPreview salon={salon} />
               </div>
             </div>
           </article>
         )) : <div className="admin-empty-row">Aucun salon trouvé avec les filtres actuels.</div>}
       </div>
+
+      {configuringSalon && (
+        <AdminSalonPresetConfigurator
+          salon={configuringSalon}
+          assets={assets}
+          onClose={() => setConfiguringSalon(null)}
+          onSaved={async () => {
+            await onSalonChanged?.();
+          }}
+        />
+      )}
     </section>
   );
+}
+
+function AdminSalonPresetConfigurator({ salon, assets, onClose, onSaved }) {
+  const initialOffer = salon.offers?.[0] || null;
+  const [localSalon, setLocalSalon] = useState(salon);
+  const [selectedOfferId, setSelectedOfferId] = useState(initialOffer?.id || '');
+  const [saveState, setSaveState] = useState({ loading: false, message: '', error: '' });
+  const selectedOffer = (localSalon.offers || []).find((offer) => offer.id === selectedOfferId) || null;
+  const activePreset = selectedOffer?.presets?.[0] || (localSalon.presets || []).find((preset) => preset.offer_id === selectedOffer?.id) || null;
+
+  useEffect(() => {
+    setLocalSalon(salon);
+    setSelectedOfferId(salon.offers?.[0]?.id || '');
+  }, [salon]);
+
+  const addPack = async (packName) => {
+    setSaveState({ loading: true, message: '', error: '' });
+    try {
+      const { offer } = await ensureSalonOffer(localSalon, packName);
+      setLocalSalon((current) => ({
+        ...current,
+        offers: [...(current.offers || []).filter((item) => item.id !== offer.id), offer],
+        presets: [...(current.presets || []).filter((item) => item.offer_id !== offer.id), ...(offer.presets || [])],
+      }));
+      setSelectedOfferId(offer.id);
+      setSaveState({ loading: false, message: `${packName} ajouté à ${localSalon.name}.`, error: '' });
+      await onSaved?.();
+    } catch (error) {
+      setSaveState({ loading: false, message: '', error: error.message || 'Impossible d’ajouter ce pack.' });
+    }
+  };
+
+  const savePreset = async (sceneDraft) => {
+    if (!activePreset) return;
+    setSaveState({ loading: true, message: '', error: '' });
+    try {
+      const savedPreset = await saveStandPresetConfig(activePreset, sceneDraft);
+      setLocalSalon((current) => ({
+        ...current,
+        presets: [...(current.presets || []).filter((item) => item.id !== savedPreset.id), savedPreset],
+        offers: (current.offers || []).map((offer) => (
+          offer.id === selectedOfferId
+            ? { ...offer, presets: [savedPreset] }
+            : offer
+        )),
+      }));
+      setSaveState({ loading: false, message: 'Preset de base sauvegardé. Les prochaines scènes Monday reprendront ce placement.', error: '' });
+      await onSaved?.();
+    } catch (error) {
+      setSaveState({ loading: false, message: '', error: error.message || 'Sauvegarde impossible.' });
+    }
+  };
+
+  const existingPackNames = new Set((localSalon.offers || []).map((offer) => offer.name.toLowerCase()));
+
+  return (
+    <div className="salon-preset-layer">
+      <section className="salon-preset-modal">
+        <header className="salon-preset-header">
+          <div>
+            <span>Configuration de base</span>
+            <h2>{localSalon.name}</h2>
+            <p>Les objets enregistrés ici seront inclus automatiquement pour les clients du pack sélectionné, sans surcoût.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
+        </header>
+
+        <div className="salon-pack-tabs">
+          {(localSalon.offers || []).map((offer) => (
+            <button key={offer.id} type="button" className={offer.id === selectedOfferId ? 'active' : ''} onClick={() => setSelectedOfferId(offer.id)}>
+              {offer.name}
+              <small>{offer.presets?.[0]?.stand_preset_items?.length || 0} objet(s)</small>
+            </button>
+          ))}
+          {defaultPackNames.filter((name) => !existingPackNames.has(name.toLowerCase())).map((packName) => (
+            <button key={packName} type="button" className="add-pack" onClick={() => addPack(packName)}>
+              + {packName}
+            </button>
+          ))}
+        </div>
+
+        {saveState.message && <div className="preset-save-feedback success">{saveState.message}</div>}
+        {saveState.error && <div className="preset-save-feedback error">{saveState.error}</div>}
+
+        {activePreset ? (
+          <PresetSceneEditor
+            key={activePreset.id}
+            salon={localSalon}
+            offer={selectedOffer}
+            preset={activePreset}
+            assets={assets}
+            saving={saveState.loading}
+            onSave={savePreset}
+          />
+        ) : (
+          <div className="admin-empty-row">Sélectionne ou ajoute un pack pour configurer sa scène de base.</div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave }) {
+  const initialScene = presetToEditableScene(preset);
+  const [width, setWidth] = useState(initialScene.dimensions.width);
+  const [depth, setDepth] = useState(initialScene.dimensions.depth);
+  const [height, setHeight] = useState(initialScene.dimensions.height);
+  const [layout, setLayout] = useState(initialScene.layout);
+  const [items, setItems] = useState(initialScene.items);
+  const [selectedId, setSelectedId] = useState(initialScene.items[0]?.id || null);
+  const [draggingId, setDraggingId] = useState(null);
+  const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
+  const selected = items.find((item) => item.id === selectedId);
+  const availableCatalog = useMemo(() => {
+    const dynamicEntries = (assets || [])
+      .filter((asset) => asset.is_active)
+      .filter((asset) => assetMatchesSalon(asset, salon.name))
+      .map(assetToCatalogEntry);
+    const entries = [...catalog, ...dynamicEntries];
+    return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
+  }, [assets, salon.name]);
+
+  const updateItem = (id, patch) => {
+    setItems((current) => current.map((item) => (item.id === id ? constrainItem({ ...item, ...patch }, width, depth, layout) : item)));
+  };
+
+  const moveDraggedItem = (point) => {
+    if (!draggingId) return;
+    const dragged = items.find((item) => item.id === draggingId);
+    if (!dragged) return;
+    if (dragged.type === 'screen') {
+      const wall = wallFromDrag(point, dragged.wall, width, depth, layout);
+      updateItem(draggingId, { wall, x: wall === 'back' ? point.x : point.z });
+      return;
+    }
+    updateItem(draggingId, { x: point.x, z: point.z });
+  };
+
+  const addItem = (entry) => {
+    const item = makeItem(entry.type, width, depth, layout, entry);
+    setItems((current) => [...current, { ...item, label: entry.label }]);
+    setSelectedId(item.id);
+  };
+
+  const chooseLayout = (nextLayout) => {
+    setLayout(nextLayout);
+    setItems((current) => current.map((item) => constrainItem(item, width, depth, nextLayout)));
+  };
+
+  const save = () => {
+    onSave({
+      dimensions: { width, depth, height },
+      layout,
+      items,
+      options: { presetMode: true, includedPack: offer?.name, salon: salon.name },
+    });
+  };
+
+  return (
+    <div className="preset-editor-grid">
+      <section className="preset-3d-stage">
+        <Canvas
+          camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
+          shadows
+          onPointerUp={() => setDraggingId(null)}
+          onPointerLeave={() => setDraggingId(null)}
+        >
+          <color attach="background" args={['#eef0f4']} />
+          <ambientLight intensity={0.85} />
+          <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} />
+          <Suspense fallback={<Html center>Chargement</Html>}>
+            <StandScene
+              width={width}
+              depth={depth}
+              height={height}
+              layout={layout}
+              items={items}
+              selectedId={selectedId}
+              setSelectedId={setSelectedId}
+              draggingId={draggingId}
+              setDraggingId={setDraggingId}
+              onDragMove={moveDraggedItem}
+              viewAngle={35}
+              carpetColor="#bebebe"
+              wallColor="#f8f7f3"
+            />
+            <ContactShadows opacity={0.22} scale={12} blur={2.4} far={5} position={[0, -0.01, 0]} />
+          </Suspense>
+          <OrbitControls makeDefault target={[0, 0.7, 0]} minPolarAngle={Math.PI / 5.2} maxPolarAngle={Math.PI / 2.25} minDistance={4} maxDistance={11} enablePan enabled={!draggingId} />
+        </Canvas>
+
+        <div className={`view-toolbar preset-toolbar ${selected ? 'selection-mode' : ''}`}>
+          {selected ? (
+            <>
+              <button type="button" onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
+              <button type="button" onClick={() => { setItems((current) => current.filter((item) => item.id !== selected.id)); setSelectedId(null); }} title="Supprimer"><Trash2 size={16} /></button>
+              {rotationPanelOpen && selected.type !== 'screen' && (
+                <label className="toolbar-rotation-slider">
+                  <span>{selected.rotation || 0}°</span>
+                  <input type="range" min="-180" max="180" step="5" value={selected.rotation || 0} onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })} />
+                </label>
+              )}
+            </>
+          ) : (
+            <span>Selectionne un objet pour le déplacer, le tourner ou le supprimer.</span>
+          )}
+        </div>
+      </section>
+
+      <aside className="preset-side-panel">
+        <h3>{offer?.name || 'Pack'} · {salon.name}</h3>
+        <p>Ce preset est propre à ce salon. Un pack Business sur un autre salon aura son propre placement.</p>
+        <div className="preset-dimensions">
+          <label>Largeur <span>{width} m</span><input type="range" min="2" max="12" step="0.5" value={width} onChange={(event) => setWidth(Number(event.target.value))} /></label>
+          <label>Profondeur <span>{depth} m</span><input type="range" min="2" max="10" step="0.5" value={depth} onChange={(event) => setDepth(Number(event.target.value))} /></label>
+          <label>Hauteur <span>{height} m</span><input type="range" min="2" max="4" step="0.1" value={height} onChange={(event) => setHeight(Number(event.target.value))} /></label>
+        </div>
+        <div className="preset-layouts">
+          {layouts.map((option) => (
+            <button key={option.id} className={layout === option.id ? 'active' : ''} type="button" onClick={() => chooseLayout(option.id)}>
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <h4>Objets inclus</h4>
+        <div className="preset-catalog">
+          {availableCatalog.map((entry) => {
+            const Icon = entry.icon;
+            return (
+              <button key={entry.type} type="button" onClick={() => addItem(entry)}>
+                <Icon size={16} />
+                <span>{entry.label}</span>
+                <Plus size={13} />
+              </button>
+            );
+          })}
+        </div>
+        <button className="preset-save-button" type="button" disabled={saving} onClick={save}>
+          {saving ? 'Sauvegarde...' : 'Sauvegarder ce preset'}
+        </button>
+      </aside>
+    </div>
+  );
+}
+
+function presetToEditableScene(preset) {
+  const items = (preset.stand_preset_items || []).map((item) => normalizePresetItem(item));
+  return {
+    dimensions: {
+      width: Number(preset.width_m || preset.base_config?.width || 5),
+      depth: Number(preset.depth_m || preset.base_config?.depth || 5),
+      height: Number(preset.height_m || preset.base_config?.height || 2.5),
+    },
+    layout: preset.layout || preset.base_config?.layout || 'u',
+    items,
+  };
+}
+
+function normalizePresetItem(item) {
+  const config = item.config || {};
+  const catalogItem = catalog.find((entry) => entry.type === item.type);
+  return {
+    ...config,
+    id: item.item_uid || config.id || `${item.type}-${item.id}`,
+    type: item.type,
+    label: item.label || config.label || catalogItem?.label || item.type,
+    x: Number(item.x ?? config.x ?? 0),
+    y: Number(item.y ?? config.y ?? 0),
+    z: Number(item.z ?? config.z ?? 0),
+    rotation: Number(item.rotation ?? config.rotation ?? 0),
+    wall: item.wall || config.wall,
+    modelUrl: config.modelUrl || catalogItem?.modelUrl,
+    modelSize: config.modelSize || catalogItem?.modelSize,
+    color: config.color || catalogItem?.color,
+  };
 }
 
 function SalonPreview({ salon }) {

@@ -228,6 +228,103 @@ export async function listSalons(filters = {}) {
   return filterSalons(salons, filters);
 }
 
+export async function ensureSalonOffer(salon, packName) {
+  const slug = slugifyAsset(packName);
+  if (!supabase) {
+    const offer = { id: `${salon.id}-${slug}`, salon_id: salon.id, slug, name: packName, presets: [] };
+    const preset = makeLocalPreset(salon, offer);
+    return { offer: { ...offer, presets: [preset] }, preset };
+  }
+
+  const { data: offer, error: offerError } = await supabase
+    .from('salon_offers')
+    .upsert({
+      salon_id: salon.id,
+      slug,
+      name: packName,
+      display_order: packDisplayOrder(packName),
+      included_description: `Pack ${packName} configure pour ${salon.name}`,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'salon_id,slug' })
+    .select('*')
+    .single();
+
+  if (offerError) throw offerError;
+
+  const preset = await ensurePresetForOffer(salon, offer);
+  return { offer: { ...offer, presets: [preset] }, preset };
+}
+
+export async function saveStandPresetConfig(preset, scene) {
+  if (!supabase) return { ...preset, ...scene };
+
+  const payload = {
+    name: preset.name,
+    description: preset.description || `Scene de base ${preset.name}`,
+    width_m: scene.dimensions.width,
+    depth_m: scene.dimensions.depth,
+    height_m: scene.dimensions.height,
+    layout: scene.layout,
+    base_config: {
+      ...(preset.base_config || {}),
+      options: scene.options || {},
+      price_mode: 'included',
+    },
+    is_active: true,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data: savedPreset, error: presetError } = await supabase
+    .from('stand_presets')
+    .update(payload)
+    .eq('id', preset.id)
+    .select('*')
+    .single();
+
+  if (presetError) throw presetError;
+
+  const { error: deleteError } = await supabase.from('stand_preset_items').delete().eq('preset_id', preset.id);
+  if (deleteError) throw deleteError;
+
+  if (scene.items?.length) {
+    const { error: itemError } = await supabase.from('stand_preset_items').insert(
+      scene.items.map((item) => ({
+        preset_id: preset.id,
+        item_uid: item.id,
+        type: item.type,
+        label: item.label || catalog.find((entry) => entry.type === item.type)?.label || item.type,
+        x: item.x,
+        y: item.y || 0,
+        z: item.z,
+        rotation: item.rotation || 0,
+        wall: item.wall,
+        config: { ...item, included: true, priceMode: 'included', basePresetId: preset.id },
+        included: true,
+        price_mode: 'included',
+      }))
+    );
+    if (itemError) throw itemError;
+  }
+
+  return {
+    ...savedPreset,
+    stand_preset_items: (scene.items || []).map((item) => ({
+      preset_id: preset.id,
+      item_uid: item.id,
+      type: item.type,
+      label: item.label,
+      x: item.x,
+      y: item.y || 0,
+      z: item.z,
+      rotation: item.rotation || 0,
+      wall: item.wall,
+      config: item,
+      included: true,
+      price_mode: 'included',
+    })),
+  };
+}
+
 export async function requestSceneAccessCode(sceneToken) {
   if (!supabase) return { masked_email: 'mode local' };
 
@@ -466,6 +563,63 @@ function dbSalonToSalon(row, offers = [], presets = [], scenes = []) {
       dimensions: { width: scene.width_m, depth: scene.depth_m, height: scene.height_m },
     })),
   };
+}
+
+async function ensurePresetForOffer(salon, offer) {
+  const { data: existing, error: findError } = await supabase
+    .from('stand_presets')
+    .select('*')
+    .eq('salon_id', salon.id)
+    .eq('offer_id', offer.id)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (findError) throw findError;
+  if (existing) return { ...existing, stand_preset_items: [] };
+
+  const { data: preset, error: insertError } = await supabase
+    .from('stand_presets')
+    .insert({
+      salon_id: salon.id,
+      offer_id: offer.id,
+      name: `Scene de base ${offer.name} - ${salon.name}`,
+      description: `Objets inclus et placement de base pour ${offer.name} sur ${salon.name}`,
+      width_m: 5,
+      depth_m: 5,
+      height_m: 2.5,
+      layout: 'u',
+      base_config: { price_mode: 'included' },
+      is_active: true,
+    })
+    .select('*')
+    .single();
+
+  if (insertError) throw insertError;
+  return { ...preset, stand_preset_items: [] };
+}
+
+function makeLocalPreset(salon, offer) {
+  return {
+    id: `${offer.id}-preset`,
+    salon_id: salon.id,
+    offer_id: offer.id,
+    name: `Scene de base ${offer.name} - ${salon.name}`,
+    width_m: 5,
+    depth_m: 5,
+    height_m: 2.5,
+    layout: 'u',
+    base_config: {},
+    stand_preset_items: [],
+  };
+}
+
+function packDisplayOrder(packName = '') {
+  const key = packName.trim().toLowerCase();
+  if (key === 'confort') return 10;
+  if (key === 'business') return 20;
+  if (key === 'siae') return 25;
+  if (key === 'prestige') return 30;
+  return 99;
 }
 
 function attachPresetItems(presets, items) {
