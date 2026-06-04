@@ -11,9 +11,11 @@ const technicalColors = {
   blue: '#0057a8',
   gray: '#d9d9d9',
   soft: '#f7f7f7',
-  wall: '#0057a8',
-  panelStandard: '#0057a8',
-  panelCustom: '#e87522',
+  wall: '#c9161d',
+  panel1000: '#c9161d',
+  panel750: '#e87522',
+  panel500: '#0057a8',
+  panelOther: '#b8b8b8',
   reinforcement: '#7030a0',
   floor: '#f4efe5',
 };
@@ -85,13 +87,15 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   drawText(ctx, 'Origine X/Z au centre du stand.', x + 16, y + 168, 17);
   y += 224;
 
-  ctx.strokeRect(x, y, w, 224);
+  ctx.strokeRect(x, y, w, 280);
   drawText(ctx, 'LEGENDE', x + 16, y + 32, 20, technicalColors.blue, 'bold');
   legendLine(ctx, x + 18, y + 66, technicalColors.blue, 'Cotes stand');
   legendLine(ctx, x + 18, y + 102, technicalColors.red, 'Cotes objet');
-  legendSwatch(ctx, x + 18, y + 130, technicalColors.panelStandard, 'Trad 1000x2500');
-  legendSwatch(ctx, x + 18, y + 158, technicalColors.panelCustom, 'Trad largeur speciale');
-  legendSwatch(ctx, x + 18, y + 186, technicalColors.reinforcement, 'Renfort TV 1000x2500');
+  legendSwatch(ctx, x + 18, y + 130, technicalColors.panel1000, 'Cloison 1000mm');
+  legendSwatch(ctx, x + 18, y + 158, technicalColors.panel750, 'Cloison 750mm');
+  legendSwatch(ctx, x + 18, y + 186, technicalColors.panel500, 'Cloison 500mm');
+  legendSwatch(ctx, x + 18, y + 214, technicalColors.panelOther, 'Autre largeur');
+  legendSwatch(ctx, x + 18, y + 242, technicalColors.reinforcement, 'Renfort TV');
 
   const footerY = sheet.height - sheet.margin - 86;
   ctx.strokeRect(x, footerY, w, 32);
@@ -194,7 +198,7 @@ function drawItemTable(ctx, items, catalog, width, depth) {
 }
 
 function drawWalls(ctx, x, y, w, h, thickness, layout, width, depth, scale, items) {
-  ctx.fillStyle = technicalColors.panelStandard;
+  ctx.fillStyle = technicalColors.panel1000;
   ctx.fillRect(x, y, w, thickness);
   drawWallPanelTicks(ctx, wallDescriptor('back', width, depth, items), x, y, scale, 'horizontal', thickness, 'Fond');
   if (layout === 'left' || layout === 'u') {
@@ -239,7 +243,10 @@ function drawWallPanelTicks(ctx, wall, x, y, scale, orientation, thickness) {
 
 function panelColor(panel) {
   if (panel.kind === 'reinforcement') return technicalColors.reinforcement;
-  return panel.mm === 1000 ? technicalColors.panelStandard : technicalColors.panelCustom;
+  if (panel.mm === 1000) return technicalColors.panel1000;
+  if (panel.mm === 750) return technicalColors.panel750;
+  if (panel.mm === 500) return technicalColors.panel500;
+  return technicalColors.panelOther;
 }
 
 function drawPanelCallouts(ctx, wall, panels, x, y, scale, orientation, thickness) {
