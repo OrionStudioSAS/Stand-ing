@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
       if (saveError) throw saveError;
 
       if (!existingScene && savedScene?.id && preset?.stand_preset_items?.length) {
-        const inserted = await applyPresetItems(supabase, savedScene.id, preset);
+        const inserted = await applyPresetItems(supabase, savedScene.id, preset, scene);
         baseItemsApplied += inserted;
       }
 
@@ -317,11 +317,12 @@ async function findActivePreset(supabase: any, offerId?: string, salonId?: strin
   return data;
 }
 
-async function applyPresetItems(supabase: any, sceneId: string, preset: any) {
+async function applyPresetItems(supabase: any, sceneId: string, preset: any, scene: any) {
   const items = preset.stand_preset_items ?? [];
   if (!items.length) return 0;
 
-  const { error } = await supabase.from("scene_items").insert(items.map((item: any) => ({
+  const scaledItems = items.map((item: any) => scalePresetItemToScene(item, preset, scene));
+  const { error } = await supabase.from("scene_items").insert(scaledItems.map((item: any) => ({
     scene_id: sceneId,
     item_uid: item.item_uid,
     type: item.type,
@@ -333,9 +334,18 @@ async function applyPresetItems(supabase: any, sceneId: string, preset: any) {
     wall: item.wall,
     config: {
       ...(item.config || {}),
+      x: item.x,
+      y: item.y,
+      z: item.z,
+      rotation: item.rotation,
+      wall: item.wall,
       included: true,
       priceMode: "included",
       basePresetId: preset.id,
+      presetReferenceSize: {
+        width: Number(preset.width_m || scene.width_m),
+        depth: Number(preset.depth_m || scene.depth_m),
+      },
     },
   })));
   if (error) throw error;
@@ -346,6 +356,39 @@ async function applyPresetItems(supabase: any, sceneId: string, preset: any) {
     .eq("id", sceneId);
 
   return items.length;
+}
+
+function scalePresetItemToScene(item: any, preset: any, scene: any) {
+  const presetWidth = Number(preset.width_m || scene.width_m || 1);
+  const presetDepth = Number(preset.depth_m || scene.depth_m || 1);
+  const sceneWidth = Number(scene.width_m || presetWidth || 1);
+  const sceneDepth = Number(scene.depth_m || presetDepth || 1);
+  const widthRatio = presetWidth ? sceneWidth / presetWidth : 1;
+  const depthRatio = presetDepth ? sceneDepth / presetDepth : 1;
+  const wall = item.wall || item.config?.wall || null;
+
+  let x = Number(item.x || 0);
+  let z = Number(item.z || 0);
+
+  if (item.type === "screen") {
+    if (wall === "left" || wall === "right") {
+      x = clampNumber(x * depthRatio, -sceneDepth / 2 + 0.55, sceneDepth / 2 - 0.55);
+      z = x;
+    } else {
+      x = clampNumber(x * widthRatio, -sceneWidth / 2 + 0.55, sceneWidth / 2 - 0.55);
+      z = -sceneDepth / 2;
+    }
+  } else {
+    x = clampNumber(x * widthRatio, -sceneWidth / 2 + 0.35, sceneWidth / 2 - 0.35);
+    z = clampNumber(z * depthRatio, -sceneDepth / 2 + 0.35, sceneDepth / 2 - 0.35);
+  }
+
+  return { ...item, x, z, y: Number(item.y || 0), rotation: Number(item.rotation || 0), wall };
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  if (min > max) return value;
+  return Math.min(max, Math.max(min, value));
 }
 
 function clientKey(email: string, fallback: string) {
