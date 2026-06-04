@@ -438,6 +438,7 @@ function drawObjectDimensions(ctx, x, y, w, h, dims, rotation) {
 function drawScreenTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label) {
   const screenWidth = 0.95 * scale;
   const screenDepth = 0.08 * scale;
+  const tvLabel = tvTechnicalLabel(item);
   ctx.fillStyle = '#22364d';
   ctx.strokeStyle = technicalColors.ink;
   ctx.lineWidth = 2;
@@ -447,7 +448,7 @@ function drawScreenTop(ctx, item, width, depth, scale, wallThickness, toX, toY, 
     const y = toY(-depth / 2) + wallThickness + 4;
     ctx.fillRect(x, y, screenWidth, screenDepth);
     ctx.strokeRect(x, y, screenWidth, screenDepth);
-    drawDimension(ctx, x, y - 18, x + screenWidth, y - 18, '950', 'horizontal', technicalColors.red, 12);
+    drawText(ctx, tvLabel, x + screenWidth / 2, y + screenDepth + 42, 15, '#22364d', 'bold', 'center');
     drawBadge(ctx, x + screenWidth / 2, y + screenDepth + 22, label);
     return;
   }
@@ -456,8 +457,22 @@ function drawScreenTop(ctx, item, width, depth, scale, wallThickness, toX, toY, 
   const y = toY(item.x) - screenWidth / 2;
   ctx.fillRect(x, y, screenDepth, screenWidth);
   ctx.strokeRect(x, y, screenDepth, screenWidth);
-  drawDimension(ctx, x + screenDepth + 18, y, x + screenDepth + 18, y + screenWidth, '950', 'vertical', technicalColors.red, 12);
+  drawSideTvLabel(ctx, tvLabel, item.wall, x, y + screenWidth / 2, screenDepth);
   drawBadge(ctx, x + screenDepth + 22, y + screenWidth / 2, label);
+}
+
+function drawSideTvLabel(ctx, label, wall, x, y, screenDepth) {
+  ctx.save();
+  ctx.translate(wall === 'left' ? x + screenDepth + 44 : x - 36, y);
+  ctx.rotate(-Math.PI / 2);
+  drawText(ctx, label, 0, 0, 15, '#22364d', 'bold', 'center');
+  ctx.restore();
+}
+
+function tvTechnicalLabel(item) {
+  if (item.tvSize) return `TV ${item.tvSize}"`;
+  if (item.label && /tv\\s*\\d+|\\d+\\s*["”]|pouce/i.test(item.label)) return item.label;
+  return 'TV 43"';
 }
 
 function screenPositionLabel(item, width, depth) {
