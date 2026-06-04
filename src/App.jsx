@@ -1671,6 +1671,7 @@ function SalonPackStats({ salon }) {
 function AdminPresetsView({ salons, assets, onSalonChanged }) {
   const [selectedSalonId, setSelectedSalonId] = useState(salons[0]?.id || '');
   const [editing, setEditing] = useState(null);
+  const [actionState, setActionState] = useState({ loadingPack: '', message: '', error: '' });
   const selectedSalon = salons.find((salon) => salon.id === selectedSalonId) || salons[0] || null;
 
   useEffect(() => {
@@ -1680,7 +1681,28 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
     }
   }, [salons, selectedSalonId]);
 
-  const presets = selectedSalon ? salonPresetCards(selectedSalon) : [];
+  const packCards = selectedSalon ? salonPackCards(selectedSalon) : [];
+
+  const activatePack = async (entry) => {
+    if (!selectedSalon) return;
+    setActionState({ loadingPack: entry.packName, message: '', error: '' });
+    try {
+      const { offer } = await ensureSalonOffer(selectedSalon, entry.packName);
+      const nextSalon = mergeSalonOffer(selectedSalon, offer);
+      setEditing({
+        salon: nextSalon,
+        salonShort: salonShortLabel(nextSalon.name),
+        offer,
+        preset: offer.presets?.[0] || null,
+        packName: entry.packName,
+        active: true,
+      });
+      setActionState({ loadingPack: '', message: `${entry.packName} activé sur ${selectedSalon.name}.`, error: '' });
+      await onSalonChanged?.();
+    } catch (error) {
+      setActionState({ loadingPack: '', message: '', error: error.message || 'Impossible d’activer ce pack.' });
+    }
+  };
 
   return (
     <section className="admin-presets-view">
@@ -1693,28 +1715,33 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
             </button>
           ))}
         </div>
-        <button className="new-preset-button" type="button" disabled={!selectedSalon} onClick={() => setEditing({ salon: selectedSalon })}>
-          + Nouveau preset
-        </button>
       </header>
 
+      {actionState.message && <div className="preset-library-feedback success">{actionState.message}</div>}
+      {actionState.error && <div className="preset-library-feedback error">{actionState.error}</div>}
+
       <div className="preset-library-grid">
-        {presets.length ? presets.map((entry) => (
-          <article className="preset-library-card" key={entry.preset.id}>
+        {packCards.length ? packCards.map((entry) => (
+          <article className={`preset-library-card ${entry.active ? '' : 'inactive'}`} key={`${selectedSalon?.id || 'salon'}-${entry.packName}`}>
             <button className="preset-card-menu" type="button" aria-label="Options preset">⋮</button>
-            <div className="preset-card-preview">{presetReferenceLabel(entry.preset)}</div>
+            <div className="preset-card-preview">{entry.active ? presetReferenceLabel(entry.preset) : '—'}</div>
             <div className="preset-card-body">
-              <strong>{entry.salonShort} - {entry.offer.name}</strong>
-              <span>{presetMetaLabel(entry.preset)}</span>
+              <strong>{entry.salonShort} - {entry.packName}</strong>
+              <span>{entry.active ? presetMetaLabel(entry.preset) : 'Pack non activé sur ce salon'}</span>
               <div>
-                <button type="button" onClick={() => setEditing(entry)}>Modifier</button>
-                <button type="button" onClick={() => setEditing(entry)}>Dupliquer</button>
+                {entry.active ? (
+                  <button className="primary" type="button" onClick={() => setEditing(entry)}>Modifier</button>
+                ) : (
+                  <button className="activate-pack" type="button" disabled={actionState.loadingPack === entry.packName} onClick={() => activatePack(entry)}>
+                    {actionState.loadingPack === entry.packName ? 'Activation...' : 'Activer ce pack sur ce salon'}
+                  </button>
+                )}
               </div>
             </div>
             <i />
           </article>
         )) : (
-          <div className="admin-empty-row">Aucun preset configuré pour ce salon.</div>
+          <div className="admin-empty-row">Aucun salon disponible pour les presets.</div>
         )}
       </div>
 
@@ -1733,47 +1760,39 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
   );
 }
 
-function salonPresetCards(salon) {
-  return (salon.offers || []).flatMap((offer) => {
-    const presets = offer.presets?.length ? offer.presets : (salon.presets || []).filter((preset) => preset.offer_id === offer.id);
-    return presets.map((preset) => ({
+function salonPackCards(salon) {
+  return defaultPackNames.map((packName) => {
+    const offer = (salon.offers || []).find((item) => normalizeTextValue(item.name) === normalizeTextValue(packName)) || null;
+    const preset = offer?.presets?.[0] || (salon.presets || []).find((item) => item.offer_id === offer?.id) || null;
+    return {
       salon,
       salonShort: salonShortLabel(salon.name),
       offer,
       preset,
-    }));
+      packName,
+      active: Boolean(offer && preset),
+    };
   });
+}
+
+function mergeSalonOffer(salon, offer) {
+  return {
+    ...salon,
+    offers: [...(salon.offers || []).filter((item) => item.id !== offer.id), offer],
+    presets: [...(salon.presets || []).filter((item) => item.offer_id !== offer.id), ...(offer.presets || [])],
+  };
 }
 
 function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onClose, onSaved }) {
   const initialOffer = (salon.offers || []).find((offer) => offer.id === initialOfferId) || salon.offers?.[0] || null;
   const [localSalon, setLocalSalon] = useState(salon);
-  const [selectedOfferId, setSelectedOfferId] = useState(initialOffer?.id || '');
   const [saveState, setSaveState] = useState({ loading: false, message: '', error: '' });
-  const selectedOffer = (localSalon.offers || []).find((offer) => offer.id === selectedOfferId) || null;
+  const selectedOffer = (localSalon.offers || []).find((offer) => offer.id === initialOfferId) || initialOffer || null;
   const activePreset = selectedOffer?.presets?.[0] || (localSalon.presets || []).find((preset) => preset.offer_id === selectedOffer?.id) || null;
 
   useEffect(() => {
     setLocalSalon(salon);
-    setSelectedOfferId(initialOfferId || salon.offers?.[0]?.id || '');
   }, [salon, initialOfferId]);
-
-  const addPack = async (packName) => {
-    setSaveState({ loading: true, message: '', error: '' });
-    try {
-      const { offer } = await ensureSalonOffer(localSalon, packName);
-      setLocalSalon((current) => ({
-        ...current,
-        offers: [...(current.offers || []).filter((item) => item.id !== offer.id), offer],
-        presets: [...(current.presets || []).filter((item) => item.offer_id !== offer.id), ...(offer.presets || [])],
-      }));
-      setSelectedOfferId(offer.id);
-      setSaveState({ loading: false, message: `${packName} ajouté à ${localSalon.name}.`, error: '' });
-      await onSaved?.();
-    } catch (error) {
-      setSaveState({ loading: false, message: '', error: error.message || 'Impossible d’ajouter ce pack.' });
-    }
-  };
 
   const savePreset = async (sceneDraft) => {
     if (!activePreset) return;
@@ -1784,7 +1803,7 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
         ...current,
         presets: [...(current.presets || []).filter((item) => item.id !== savedPreset.id), savedPreset],
         offers: (current.offers || []).map((offer) => (
-          offer.id === selectedOfferId
+          offer.id === selectedOffer?.id
             ? { ...offer, presets: [savedPreset] }
             : offer
         )),
@@ -1796,36 +1815,22 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
     }
   };
 
-  const existingPackNames = new Set((localSalon.offers || []).map((offer) => offer.name.toLowerCase()));
-
   return (
     <div className="salon-preset-layer">
       <section className="salon-preset-modal">
         <header className="salon-preset-header">
           <div>
             <span>Configuration de base</span>
-            <h2>{localSalon.name}</h2>
-            <p>Les objets enregistrés ici seront inclus automatiquement pour les clients du pack sélectionné, sans surcoût.</p>
+            <h2>{localSalon.name}{selectedOffer ? ` · ${selectedOffer.name}` : ''}</h2>
+            <p>Les objets enregistrés ici seront inclus automatiquement pour les clients de ce pack, sans surcoût.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
         </header>
 
-        <div className="salon-pack-tabs">
-          {(localSalon.offers || []).map((offer) => (
-            <button key={offer.id} type="button" className={offer.id === selectedOfferId ? 'active' : ''} onClick={() => setSelectedOfferId(offer.id)}>
-              {offer.name}
-              <small>{offer.presets?.[0]?.stand_preset_items?.length || 0} objet(s)</small>
-            </button>
-          ))}
-          {defaultPackNames.filter((name) => !existingPackNames.has(name.toLowerCase())).map((packName) => (
-            <button key={packName} type="button" className="add-pack" onClick={() => addPack(packName)}>
-              + {packName}
-            </button>
-          ))}
+        <div className="preset-save-feedback-slot">
+          {saveState.message && <div className="preset-save-feedback success">{saveState.message}</div>}
+          {saveState.error && <div className="preset-save-feedback error">{saveState.error}</div>}
         </div>
-
-        {saveState.message && <div className="preset-save-feedback success">{saveState.message}</div>}
-        {saveState.error && <div className="preset-save-feedback error">{saveState.error}</div>}
 
         {activePreset ? (
           <PresetSceneEditor
