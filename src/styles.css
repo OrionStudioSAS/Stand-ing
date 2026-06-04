@@ -2985,6 +2985,7 @@ select {
 
 .preset-card-body div {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
 }
@@ -2999,6 +3000,12 @@ select {
   font-weight: 900;
 }
 
+.preset-board-line {
+  color: #697280;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
 .preset-card-body button.primary {
   color: #fff;
   border-color: #1f4378;
@@ -3011,9 +3018,38 @@ select {
   background: #eef4ff;
 }
 
+.preset-card-body button.danger {
+  color: #c82f36;
+  border-color: #f1c4c6;
+  background: #fff0f0;
+}
+
 .preset-card-body button:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+.preset-board-editor {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.preset-board-editor input {
+  min-width: 0;
+  height: 34px;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #1f2630;
+  background: #fff;
+  font-weight: 800;
+}
+
+.preset-board-editor button {
+  min-height: 34px;
+  padding: 0 12px;
 }
 
 .preset-library-card i {

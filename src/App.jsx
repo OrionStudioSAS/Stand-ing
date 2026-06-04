@@ -39,7 +39,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveObjectBankItem, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -1671,7 +1671,8 @@ function SalonPackStats({ salon }) {
 function AdminPresetsView({ salons, assets, onSalonChanged }) {
   const [selectedSalonId, setSelectedSalonId] = useState(salons[0]?.id || '');
   const [editing, setEditing] = useState(null);
-  const [actionState, setActionState] = useState({ loadingPack: '', message: '', error: '' });
+  const [boardEditor, setBoardEditor] = useState(null);
+  const [actionState, setActionState] = useState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: '' });
   const selectedSalon = salons.find((salon) => salon.id === selectedSalonId) || salons[0] || null;
 
   useEffect(() => {
@@ -1685,7 +1686,7 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
 
   const activatePack = async (entry) => {
     if (!selectedSalon) return;
-    setActionState({ loadingPack: entry.packName, message: '', error: '' });
+    setActionState({ loadingPack: entry.packName, savingBoardPack: '', deletingPresetId: '', message: '', error: '' });
     try {
       const { offer } = await ensureSalonOffer(selectedSalon, entry.packName);
       const nextSalon = mergeSalonOffer(selectedSalon, offer);
@@ -1697,10 +1698,44 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
         packName: entry.packName,
         active: true,
       });
-      setActionState({ loadingPack: '', message: `${entry.packName} activé sur ${selectedSalon.name}.`, error: '' });
+      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: `${entry.packName} activé sur ${selectedSalon.name}.`, error: '' });
       await onSalonChanged?.();
     } catch (error) {
-      setActionState({ loadingPack: '', message: '', error: error.message || 'Impossible d’activer ce pack.' });
+      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’activer ce pack.' });
+    }
+  };
+
+  const openBoardEditor = (entry) => {
+    setBoardEditor({ packName: entry.packName, value: entry.source?.board_id || '' });
+  };
+
+  const saveBoardId = async (event, entry) => {
+    event.preventDefault();
+    if (!selectedSalon || !boardEditor) return;
+    setActionState({ loadingPack: '', savingBoardPack: entry.packName, deletingPresetId: '', message: '', error: '' });
+    try {
+      await saveMondayBoardForPack(selectedSalon, entry.packName, boardEditor.value);
+      setBoardEditor(null);
+      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: `Board Monday enregistré pour ${entry.packName}.`, error: '' });
+      await onSalonChanged?.();
+    } catch (error) {
+      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’enregistrer le board Monday.' });
+    }
+  };
+
+  const removePreset = async (entry) => {
+    if (!entry.preset) return;
+    const confirmed = window.confirm(`Supprimer le preset ${entry.packName} pour ${selectedSalon?.name || 'ce salon'} ? Le board Monday restera configuré.`);
+    if (!confirmed) return;
+
+    setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: entry.preset.id, message: '', error: '' });
+    try {
+      await deleteStandPreset(entry.preset);
+      setEditing((current) => (current?.preset?.id === entry.preset.id ? null : current));
+      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: `Preset ${entry.packName} supprimé pour ce salon.`, error: '' });
+      await onSalonChanged?.();
+    } catch (error) {
+      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible de supprimer ce preset.' });
     }
   };
 
@@ -1728,15 +1763,46 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
             <div className="preset-card-body">
               <strong>{entry.salonShort} - {entry.packName}</strong>
               <span>{entry.active ? presetMetaLabel(entry.preset) : 'Pack non activé sur ce salon'}</span>
+              <small className="preset-board-line">
+                Monday : {entry.source?.board_id ? `board ${entry.source.board_id}` : 'aucun board'}
+              </small>
               <div>
                 {entry.active ? (
-                  <button className="primary" type="button" onClick={() => setEditing(entry)}>Modifier</button>
+                  <>
+                    <button className="primary" type="button" onClick={() => setEditing(entry)}>Modifier</button>
+                    <button type="button" onClick={() => openBoardEditor(entry)}>
+                      {entry.source?.board_id ? 'Modifier board' : 'Ajouter board ID'}
+                    </button>
+                    <button className="danger" type="button" disabled={actionState.deletingPresetId === entry.preset?.id} onClick={() => removePreset(entry)}>
+                      {actionState.deletingPresetId === entry.preset?.id ? 'Suppression...' : 'Supprimer preset'}
+                    </button>
+                  </>
                 ) : (
-                  <button className="activate-pack" type="button" disabled={actionState.loadingPack === entry.packName} onClick={() => activatePack(entry)}>
-                    {actionState.loadingPack === entry.packName ? 'Activation...' : 'Activer ce pack sur ce salon'}
-                  </button>
+                  <>
+                    <button className="activate-pack" type="button" disabled={actionState.loadingPack === entry.packName} onClick={() => activatePack(entry)}>
+                      {actionState.loadingPack === entry.packName ? 'Activation...' : 'Activer ce pack sur ce salon'}
+                    </button>
+                    <button type="button" onClick={() => openBoardEditor(entry)}>
+                      {entry.source?.board_id ? 'Modifier board' : 'Ajouter board ID'}
+                    </button>
+                  </>
                 )}
               </div>
+              {boardEditor?.packName === entry.packName && (
+                <form className="preset-board-editor" onSubmit={(event) => saveBoardId(event, entry)}>
+                  <input
+                    autoFocus
+                    value={boardEditor.value}
+                    inputMode="numeric"
+                    placeholder="Ex : 18395911999"
+                    onChange={(event) => setBoardEditor((current) => ({ ...current, value: event.target.value }))}
+                  />
+                  <button type="submit" disabled={actionState.savingBoardPack === entry.packName}>
+                    {actionState.savingBoardPack === entry.packName ? '...' : 'OK'}
+                  </button>
+                  <button type="button" onClick={() => setBoardEditor(null)}>Annuler</button>
+                </form>
+              )}
             </div>
             <i />
           </article>
@@ -1764,11 +1830,13 @@ function salonPackCards(salon) {
   return defaultPackNames.map((packName) => {
     const offer = (salon.offers || []).find((item) => normalizeTextValue(item.name) === normalizeTextValue(packName)) || null;
     const preset = offer?.presets?.[0] || (salon.presets || []).find((item) => item.offer_id === offer?.id) || null;
+    const source = offer?.monday_source || (salon.monday_sources || []).find((item) => normalizeTextValue(item.offer) === normalizeTextValue(packName)) || null;
     return {
       salon,
       salonShort: salonShortLabel(salon.name),
       offer,
       preset,
+      source,
       packName,
       active: Boolean(offer && preset),
     };
@@ -1780,6 +1848,9 @@ function mergeSalonOffer(salon, offer) {
     ...salon,
     offers: [...(salon.offers || []).filter((item) => item.id !== offer.id), offer],
     presets: [...(salon.presets || []).filter((item) => item.offer_id !== offer.id), ...(offer.presets || [])],
+    monday_sources: offer.monday_source
+      ? [...(salon.monday_sources || []).filter((item) => item.id !== offer.monday_source.id), offer.monday_source]
+      : (salon.monday_sources || []),
   };
 }
 

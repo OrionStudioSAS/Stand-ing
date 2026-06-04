@@ -212,18 +212,20 @@ export async function listSalons(filters = {}) {
     return filterSalons(groupLocalSalons((scenesData || []).map(dbSceneToScene)), filters);
   }
 
-  const [offersResult, presetsResult, presetItemsResult, scenesResult] = await Promise.all([
+  const [offersResult, presetsResult, presetItemsResult, scenesResult, sourcesResult] = await Promise.all([
     safeSalonQuery(supabase.from('salon_offers').select('*').order('display_order', { ascending: true }).order('name', { ascending: true }), 'salon_offers'),
     safeSalonQuery(supabase.from('stand_presets').select('*').order('created_at', { ascending: true }), 'stand_presets'),
     safeSalonQuery(supabase.from('stand_preset_items').select('*'), 'stand_preset_items'),
     safeSalonQuery(supabase.from('scenes').select('*'), 'scenes'),
+    safeSalonQuery(supabase.from('monday_sources').select('*'), 'monday_sources'),
   ]);
 
   const salons = (salonsResult.data || []).map((salon) => dbSalonToSalon(
     salon,
     offersResult || [],
     attachPresetItems(presetsResult || [], presetItemsResult || []),
-    scenesResult || []
+    scenesResult || [],
+    sourcesResult || []
   ));
   return filterSalons(salons, filters);
 }
@@ -231,7 +233,7 @@ export async function listSalons(filters = {}) {
 export async function ensureSalonOffer(salon, packName) {
   const slug = slugifyAsset(packName);
   if (!supabase) {
-    const offer = { id: `${salon.id}-${slug}`, salon_id: salon.id, slug, name: packName, presets: [] };
+    const offer = { id: `${salon.id}-${slug}`, salon_id: salon.id, slug, name: packName, presets: [], monday_source: null };
     const preset = makeLocalPreset(salon, offer);
     return { offer: { ...offer, presets: [preset] }, preset };
   }
@@ -252,7 +254,77 @@ export async function ensureSalonOffer(salon, packName) {
   if (offerError) throw offerError;
 
   const preset = await ensurePresetForOffer(salon, offer);
-  return { offer: { ...offer, presets: [preset] }, preset };
+  const mondaySource = await linkMondaySourceToOffer(salon, offer);
+  return { offer: { ...offer, monday_source: mondaySource, presets: [preset] }, preset };
+}
+
+export async function saveMondayBoardForPack(salon, packName, boardId) {
+  const normalizedBoardId = String(boardId || '').trim();
+  if (!normalizedBoardId) throw new Error('Ajoute un ID de board Monday.');
+
+  if (!supabase) {
+    return {
+      id: `${salon.id}-${slugifyAsset(packName)}-monday`,
+      salon: salonSourceLabel(salon),
+      offer: packName,
+      board_id: normalizedBoardId,
+      is_active: true,
+    };
+  }
+
+  const offer = (salon.offers || []).find((item) => normalizeKey(item.name) === normalizeKey(packName)) || null;
+  const existing = await findMondaySourceForPack(salon, packName);
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from('monday_sources')
+      .update({
+        board_id: normalizedBoardId,
+        salon_id: salon.id,
+        offer_id: offer?.id || existing.offer_id || null,
+        is_active: true,
+      })
+      .eq('id', existing.id)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  const { data, error } = await supabase
+    .from('monday_sources')
+    .insert({
+      salon: salonSourceLabel(salon),
+      offer: packName,
+      board_id: normalizedBoardId,
+      group_id: null,
+      create_column_id: 'statut05',
+      create_trigger_values: ['OUI', 'OK'],
+      status_column_id: 'statut464',
+      created_status_label: 'ENVOYE PAR MAIL',
+      link_column_id: 'lien_scene',
+      mapping: defaultMondayMappingForPack(),
+      salon_id: salon.id,
+      offer_id: offer?.id || null,
+      is_active: true,
+    })
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteStandPreset(preset) {
+  if (!preset?.id) throw new Error('Preset introuvable.');
+  if (!supabase) return true;
+
+  const { error: itemsError } = await supabase.from('stand_preset_items').delete().eq('preset_id', preset.id);
+  if (itemsError) throw itemsError;
+
+  const { error } = await supabase.from('stand_presets').delete().eq('id', preset.id);
+  if (error) throw error;
+  return true;
 }
 
 export async function saveStandPresetConfig(preset, scene) {
@@ -547,17 +619,20 @@ function dbClientToClient(row) {
   };
 }
 
-function dbSalonToSalon(row, offers = [], presets = [], scenes = []) {
+function dbSalonToSalon(row, offers = [], presets = [], scenes = [], sources = []) {
   const salonOffers = offers.filter((offer) => offer.salon_id === row.id);
   const salonPresets = presets.filter((preset) => preset.salon_id === row.id);
   const salonScenes = scenes.filter((scene) => scene.salon_id === row.id || scene.salon === row.name || scene.event_name === row.name);
+  const salonSources = sources.filter((source) => sourceMatchesSalon(source, row));
   return {
     ...row,
     offers: salonOffers.map((offer) => ({
       ...offer,
+      monday_source: salonSources.find((source) => sourceMatchesOffer(source, offer)) || null,
       presets: salonPresets.filter((preset) => preset.offer_id === offer.id),
     })),
     presets: salonPresets,
+    monday_sources: salonSources,
     scenes: salonScenes.map((scene) => ({
       ...scene,
       dimensions: { width: scene.width_m, depth: scene.depth_m, height: scene.height_m },
@@ -610,6 +685,66 @@ function makeLocalPreset(salon, offer) {
     layout: 'u',
     base_config: {},
     stand_preset_items: [],
+  };
+}
+
+async function linkMondaySourceToOffer(salon, offer) {
+  const existing = await findMondaySourceForPack(salon, offer.name);
+  if (!existing) return null;
+
+  const { data, error } = await supabase
+    .from('monday_sources')
+    .update({ salon_id: salon.id, offer_id: offer.id })
+    .eq('id', existing.id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function findMondaySourceForPack(salon, packName) {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('monday_sources')
+    .select('*')
+    .eq('offer', packName);
+  if (error) throw error;
+  return (data || []).find((source) => sourceMatchesSalon(source, salon)) || null;
+}
+
+function sourceMatchesSalon(source, salon) {
+  if (!source || !salon) return false;
+  if (source.salon_id && source.salon_id === salon.id) return true;
+  return normalizeKey(source.salon) === normalizeKey(salonSourceLabel(salon));
+}
+
+function sourceMatchesOffer(source, offer) {
+  if (!source || !offer) return false;
+  if (source.offer_id && source.offer_id === offer.id) return true;
+  return normalizeKey(source.offer) === normalizeKey(offer.name);
+}
+
+function salonSourceLabel(salon) {
+  return String(salon?.name || salon?.salon || 'Salon')
+    .replace(/\s*20\d{2}\b/, '')
+    .split(/[—/-]/)[0]
+    .trim() || 'Salon';
+}
+
+function normalizeKey(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function defaultMondayMappingForPack() {
+  return {
+    client_name: ['texte2', 'texte8'],
+    client_email: 'email',
+    width_m: 'chiffres',
+    depth_m: 'chiffres9',
   };
 }
 
