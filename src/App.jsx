@@ -1252,7 +1252,7 @@ function AdminDashboard({ user, adminProfile }) {
       await refreshSalons();
       setSyncState({
         loading: false,
-        message: `${result?.processed ?? 0} scene(s) synchronisee(s), ${result?.clients ?? 0} client(s) traite(s) depuis Monday.`,
+        message: `${result?.processed ?? 0} scene(s) synchronisee(s), ${result?.clients ?? 0} exposant(s) traite(s) depuis Monday.`,
         error: '',
       });
     } catch (error) {
@@ -1306,10 +1306,10 @@ function AdminDashboard({ user, adminProfile }) {
         <nav className="admin-sidebar-nav" aria-label="Navigation admin">
           <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}><LayoutDashboard size={16} />Dashboard</button>
           <button className={tab === 'salons' ? 'active' : ''} onClick={() => setTab('salons')}><Orbit size={16} />Salons</button>
-          <button className={tab === 'clients' ? 'active' : ''} onClick={() => setTab('clients')}><Users size={16} />Clients</button>
+          <button className={tab === 'clients' ? 'active' : ''} onClick={() => setTab('clients')}><Users size={16} />Exposants</button>
           <button className={tab === 'bat' ? 'active' : ''} onClick={() => setTab('bat')}><FileCheck2 size={16} />BAT</button>
           <button className={tab === 'objects' ? 'active' : ''} onClick={() => setTab('objects')}><Box size={16} />Assets 3D</button>
-          <button className={tab === 'presets' ? 'active' : ''} onClick={() => setTab('presets')}><Settings2 size={16} />Presets</button>
+          <button className={tab === 'presets' ? 'active' : ''} onClick={() => setTab('presets')}><Settings2 size={16} />Packs</button>
           <button className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}><UserPlus size={16} />Utilisateurs</button>
           <button className={tab === 'monday' ? 'active' : ''} onClick={() => setTab('monday')}><span className="monday-mark">m</span>Monday.com</button>
         </nav>
@@ -1385,10 +1385,10 @@ function adminTitle(tab) {
   const labels = {
     dashboard: 'Dashboard',
     salons: 'Salons',
-    clients: 'Clients',
+    clients: 'Exposants',
     bat: 'BAT',
     objects: 'Assets 3D',
-    presets: 'Presets — Bibliothèque Étagère',
+    presets: 'Packs',
     users: 'Utilisateurs',
     monday: 'Monday.com',
   };
@@ -1398,8 +1398,8 @@ function adminTitle(tab) {
 function adminSubtitle(tab) {
   if (tab === 'dashboard') return "Vue d'ensemble de l'activité Stand-ING";
   if (tab === 'salons') return 'Gestion des salons et de leurs configurations';
-  if (tab === 'presets') return 'Configurations types disponibles par salon, filtrées par surface';
-  if (tab === 'clients') return 'Clients synchronisés et configurations associées';
+  if (tab === 'presets') return 'Gestion des packs disponibles par salon';
+  if (tab === 'clients') return 'Exposants synchronisés et configurations associées';
   if (tab === 'monday') return 'Synchronisation des tableaux salon';
   return 'Vue en cours de préparation';
 }
@@ -1530,7 +1530,7 @@ function getPendingBatRows(scenes) {
     .map((scene) => ({
       id: scene.id,
       salon: scene.event_name || scene.salon || 'Salon à définir',
-      client: scene.client_name || 'Client sans nom',
+      client: scene.client_name || 'Exposant sans nom',
       stand: `${scene.project_name || 'Stand'} — ${sceneArea(scene)}m²`,
       status: scene.client_status === 'bat_review' ? 'En attente validation Stand-ING' : statusLabel(scene.status),
       delay: relativeDays(scene.updated_at || scene.created_at),
@@ -1725,17 +1725,17 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
 
   const removePreset = async (entry) => {
     if (!entry.preset) return;
-    const confirmed = window.confirm(`Supprimer le preset ${entry.packName} pour ${selectedSalon?.name || 'ce salon'} ? Le board Monday restera configuré.`);
+    const confirmed = window.confirm(`Retirer le pack ${entry.packName} de ${selectedSalon?.name || 'ce salon'} ? Le board Monday restera configuré.`);
     if (!confirmed) return;
 
     setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: entry.preset.id, message: '', error: '' });
     try {
       await deleteStandPreset(entry.preset);
       setEditing((current) => (current?.preset?.id === entry.preset.id ? null : current));
-      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: `Preset ${entry.packName} supprimé pour ce salon.`, error: '' });
+      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: `Pack ${entry.packName} retiré pour ce salon.`, error: '' });
       await onSalonChanged?.();
     } catch (error) {
-      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible de supprimer ce preset.' });
+      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible de retirer ce pack.' });
     }
   };
 
@@ -1758,7 +1758,7 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
       <div className="preset-library-grid">
         {packCards.length ? packCards.map((entry) => (
           <article className={`preset-library-card ${entry.active ? '' : 'inactive'}`} key={`${selectedSalon?.id || 'salon'}-${entry.packName}`}>
-            <button className="preset-card-menu" type="button" aria-label="Options preset">⋮</button>
+            <button className="preset-card-menu" type="button" aria-label="Options pack">⋮</button>
             <div className="preset-card-preview">{entry.active ? presetReferenceLabel(entry.preset) : '—'}</div>
             <div className="preset-card-body">
               <strong>{entry.salonShort} - {entry.packName}</strong>
@@ -1774,7 +1774,7 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
                       {entry.source?.board_id ? 'Modifier board' : 'Ajouter board ID'}
                     </button>
                     <button className="danger" type="button" disabled={actionState.deletingPresetId === entry.preset?.id} onClick={() => removePreset(entry)}>
-                      {actionState.deletingPresetId === entry.preset?.id ? 'Suppression...' : 'Supprimer preset'}
+                      {actionState.deletingPresetId === entry.preset?.id ? 'Suppression...' : 'Retirer pack'}
                     </button>
                   </>
                 ) : (
@@ -1807,7 +1807,7 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
             <i />
           </article>
         )) : (
-          <div className="admin-empty-row">Aucun salon disponible pour les presets.</div>
+          <div className="admin-empty-row">Aucun salon disponible pour les packs.</div>
         )}
       </div>
 
@@ -1879,7 +1879,7 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
             : offer
         )),
       }));
-      setSaveState({ loading: false, message: 'Preset de base sauvegardé. Les prochaines scènes Monday reprendront ce placement.', error: '' });
+      setSaveState({ loading: false, message: 'Pack de base sauvegardé. Les prochaines scènes Monday reprendront ce placement.', error: '' });
       await onSaved?.();
     } catch (error) {
       setSaveState({ loading: false, message: '', error: error.message || 'Sauvegarde impossible.' });
@@ -1893,7 +1893,7 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
           <div>
             <span>Configuration de base</span>
             <h2>{localSalon.name}{selectedOffer ? ` · ${selectedOffer.name}` : ''}</h2>
-            <p>Les objets enregistrés ici seront inclus automatiquement pour les clients de ce pack, sans surcoût.</p>
+            <p>Les objets enregistrés ici seront inclus automatiquement pour les exposants de ce pack, sans surcoût.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
         </header>
@@ -2030,7 +2030,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave }) {
 
       <aside className="preset-side-panel">
         <h3>{offer?.name || 'Pack'} · {salon.name}</h3>
-        <p>Ce preset est propre à ce salon. Un pack Business sur un autre salon aura son propre placement.</p>
+        <p>Ce pack est propre à ce salon. Un pack Business sur un autre salon aura son propre placement.</p>
         <div className="preset-dimensions">
           <label>Largeur <span>{width} m</span><input type="range" min="2" max="12" step="0.5" value={width} onChange={(event) => setWidth(Number(event.target.value))} /></label>
           <label>Profondeur <span>{depth} m</span><input type="range" min="2" max="10" step="0.5" value={depth} onChange={(event) => setDepth(Number(event.target.value))} /></label>
@@ -2057,7 +2057,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave }) {
           })}
         </div>
         <button className="preset-save-button" type="button" disabled={saving} onClick={save}>
-          {saving ? 'Sauvegarde...' : 'Sauvegarder ce preset'}
+          {saving ? 'Sauvegarde...' : 'Sauvegarder ce pack'}
         </button>
       </aside>
     </div>
@@ -2193,7 +2193,7 @@ function AdminClientsView({ clients, filters, updateFilter }) {
       <section className="admin-clients-search-card">
         <div>
           <Search size={16} />
-          <input value={filters.search} placeholder="Nom client, salon, numéro de stand, commercial..." onChange={(event) => updateFilter('search', event.target.value)} />
+          <input value={filters.search} placeholder="Nom exposant, salon, numéro de stand, commercial..." onChange={(event) => updateFilter('search', event.target.value)} />
         </div>
         <button type="button">Rechercher</button>
       </section>
@@ -2206,7 +2206,7 @@ function AdminClientsView({ clients, filters, updateFilter }) {
 
       <section className="admin-clients-table">
         <header>
-          <span>Client</span>
+          <span>Exposant</span>
           <span>Salons</span>
           <span>Configurations</span>
           <span>Surface</span>
@@ -2217,7 +2217,7 @@ function AdminClientsView({ clients, filters, updateFilter }) {
         {clients.length ? clients.map((client) => (
           <article key={client.id || client.client_key}>
             <div>
-              <strong>{client.company_name || client.display_name || 'Client sans nom'}</strong>
+              <strong>{client.company_name || client.display_name || 'Exposant sans nom'}</strong>
               <small>{client.email || client.display_name || 'Email non renseigné'}</small>
             </div>
             <span>{clientSalonSummary(client)}</span>
@@ -2229,7 +2229,7 @@ function AdminClientsView({ clients, filters, updateFilter }) {
               {clientPrimaryScene(client) ? <a href={sceneShareUrl(clientPrimaryScene(client))}>Voir</a> : <button type="button" disabled>Voir</button>}
             </div>
           </article>
-        )) : <div className="admin-empty-row">Aucun client trouvé avec les filtres actuels.</div>}
+        )) : <div className="admin-empty-row">Aucun exposant trouvé avec les filtres actuels.</div>}
       </section>
     </section>
   );
@@ -2445,10 +2445,10 @@ function AdminBatView({ scenes }) {
     <section className="admin-table modern">
       {rows.map((scene) => (
         <article key={scene.id} className="stand-row">
-          <div><strong>{scene.client_name || 'Client sans nom'}</strong><span>{scene.project_name}</span></div>
+          <div><strong>{scene.client_name || 'Exposant sans nom'}</strong><span>{scene.project_name}</span></div>
           <div><span>Salon</span><strong>{scene.salon}</strong></div>
           <div><span>BAT</span><strong>{fileSummary(scene.files)}</strong></div>
-          <div><span>Client</span><strong>{clientStatusLabel(scene.client_status)}</strong></div>
+          <div><span>Exposant</span><strong>{clientStatusLabel(scene.client_status)}</strong></div>
           <div className="stand-actions"><a href={sceneShareUrl(scene)}>Voir scene</a></div>
         </article>
       ))}
