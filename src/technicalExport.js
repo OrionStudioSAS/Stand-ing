@@ -209,7 +209,7 @@ function drawWalls(ctx, x, y, w, h, thickness, layout, width, depth, scale, item
   }
 }
 
-function drawWallPanelTicks(ctx, wall, x, y, scale, orientation, thickness, label) {
+function drawWallPanelTicks(ctx, wall, x, y, scale, orientation, thickness) {
   const panels = wallPanelSegments(wall);
   let offset = 0;
 
@@ -217,7 +217,6 @@ function drawWallPanelTicks(ctx, wall, x, y, scale, orientation, thickness, labe
   ctx.strokeStyle = '#ffffff';
   ctx.fillStyle = '#ffffff';
   ctx.lineWidth = 2;
-  drawText(ctx, label, orientation === 'horizontal' ? x + 8 : x + thickness + 8, orientation === 'horizontal' ? y - 8 : y + 18, 12, technicalColors.wall, 'bold');
 
   panels.forEach((panel, index) => {
     const start = offset * scale;
@@ -228,25 +227,48 @@ function drawWallPanelTicks(ctx, wall, x, y, scale, orientation, thickness, labe
     ctx.fillStyle = '#ffffff';
     if (orientation === 'horizontal') {
       if (index > 0) line(ctx, x + start, y, x + start, y + thickness);
-      if (end - start > 42) drawText(ctx, panel.kind === 'reinforcement' ? `TV ${panel.mm}` : `${panel.mm}`, x + start + (end - start) / 2, y + thickness - 5, 10, '#ffffff', 'bold', 'center');
     } else {
       if (index > 0) line(ctx, x, y + start, x + thickness, y + start);
-      if (end - start > 42) {
-        ctx.save();
-        ctx.translate(x + thickness / 2 + 4, y + start + (end - start) / 2);
-        ctx.rotate(-Math.PI / 2);
-        drawText(ctx, panel.kind === 'reinforcement' ? `TV ${panel.mm}` : `${panel.mm}`, 0, 0, 10, '#ffffff', 'bold', 'center');
-        ctx.restore();
-      }
     }
     offset += panel.meters;
   });
   ctx.restore();
+
+  drawPanelCallouts(ctx, wall, panels, x, y, scale, orientation, thickness);
 }
 
 function panelColor(panel) {
   if (panel.kind === 'reinforcement') return technicalColors.reinforcement;
   return panel.mm === 1000 ? technicalColors.panelStandard : technicalColors.panelCustom;
+}
+
+function drawPanelCallouts(ctx, wall, panels, x, y, scale, orientation, thickness) {
+  let offset = 0;
+
+  panels.forEach((panel) => {
+    const start = offset * scale;
+    const end = (offset + panel.meters) * scale;
+    const size = end - start;
+    const title = panel.kind === 'reinforcement' ? 'CLOISON TRAD RENFORT' : 'CLOISON TRAD';
+    const dimensions = `${panel.mm}x2500mm ht`;
+    const fontSize = size < 84 ? 10 : 12;
+
+    if (orientation === 'horizontal') {
+      const cx = x + start + size / 2;
+      drawText(ctx, title, cx, y - 32, fontSize, technicalColors.ink, 'bold', 'center');
+      drawText(ctx, dimensions, cx, y - 15, fontSize, technicalColors.ink, 'bold', 'center');
+    } else {
+      const sideOffset = wall.wall === 'left' ? -34 : thickness + 34;
+      ctx.save();
+      ctx.translate(x + sideOffset, y + start + size / 2);
+      ctx.rotate(-Math.PI / 2);
+      drawText(ctx, title, 0, -6, fontSize, technicalColors.ink, 'bold', 'center');
+      drawText(ctx, dimensions, 0, 11, fontSize, technicalColors.ink, 'bold', 'center');
+      ctx.restore();
+    }
+
+    offset += panel.meters;
+  });
 }
 
 function drawWallBreakdown(ctx, x, y, w, width, depth, layout, items) {
