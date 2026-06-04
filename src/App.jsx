@@ -1343,6 +1343,15 @@ function AdminDashboard({ user, adminProfile }) {
           {tab === 'salons' && (
             <AdminSalonsView
               salons={salons}
+              onOpenSalon={(salon) => {
+                updateFilter('salon', salon.name);
+                setTab('clients');
+              }}
+            />
+          )}
+          {tab === 'presets' && (
+            <AdminPresetsView
+              salons={salons}
               assets={assets}
               onSalonChanged={refreshSalons}
             />
@@ -1365,7 +1374,7 @@ function AdminDashboard({ user, adminProfile }) {
           )}
           {tab === 'monday' && <AdminMondayView syncState={syncState} runMondaySync={runMondaySync} />}
           {tab === 'bat' && <AdminBatView scenes={scenes} />}
-          {['presets', 'users'].includes(tab) && <AdminPlaceholder tab={tab} />}
+          {tab === 'users' && <AdminPlaceholder tab={tab} />}
         </div>
       </section>
     </main>
@@ -1379,7 +1388,7 @@ function adminTitle(tab) {
     clients: 'Clients',
     bat: 'BAT',
     objects: 'Assets 3D',
-    presets: 'Presets',
+    presets: 'Presets — Bibliothèque Étagère',
     users: 'Utilisateurs',
     monday: 'Monday.com',
   };
@@ -1389,6 +1398,7 @@ function adminTitle(tab) {
 function adminSubtitle(tab) {
   if (tab === 'dashboard') return "Vue d'ensemble de l'activité Stand-ING";
   if (tab === 'salons') return 'Gestion des salons et de leurs configurations';
+  if (tab === 'presets') return 'Configurations types disponibles par salon, filtrées par surface';
   if (tab === 'clients') return 'Clients synchronisés et configurations associées';
   if (tab === 'monday') return 'Synchronisation des tableaux salon';
   return 'Vue en cours de préparation';
@@ -1589,9 +1599,8 @@ function AdminSalonRow({ title, detail, status, muted }) {
   );
 }
 
-function AdminSalonsView({ salons, assets, onSalonChanged }) {
+function AdminSalonsView({ salons, onOpenSalon }) {
   const [statusFilter, setStatusFilter] = useState('');
-  const [configuringSalon, setConfiguringSalon] = useState(null);
   const filteredSalons = salons.filter((salon) => !statusFilter || salon.status === statusFilter);
 
   return (
@@ -1619,6 +1628,7 @@ function AdminSalonsView({ salons, assets, onSalonChanged }) {
                 <p className="salon-meta-line">📅 {formatSalonDateRange(salon)}</p>
                 <p className="salon-meta-line">📍 {salon.location || 'Lieu à définir'}</p>
                 <p className="salon-offer-line">{salonOfferSummary(salon)}</p>
+                <SalonPackStats salon={salon} />
 
                 <div className="salon-card-metrics">
                   <div><strong>{salonExhibitorCount(salon) || '—'}</strong><span>Exposants</span></div>
@@ -1628,19 +1638,92 @@ function AdminSalonsView({ salons, assets, onSalonChanged }) {
               </div>
 
               <div className="salon-card-side">
-                <button type="button" onClick={() => setConfiguringSalon(salon)}>Configurer</button>
+                <button type="button" onClick={() => onOpenSalon?.(salon)}>Ouvrir</button>
                 <SalonPreview salon={salon} />
               </div>
             </div>
           </article>
         )) : <div className="admin-empty-row">Aucun salon trouvé avec les filtres actuels.</div>}
       </div>
+    </section>
+  );
+}
 
-      {configuringSalon && (
+function SalonPackStats({ salon }) {
+  const offers = salon.offers || [];
+  if (!offers.length) return <div className="salon-pack-stats muted">Aucun pack associé.</div>;
+  return (
+    <div className="salon-pack-stats">
+      {offers.map((offer) => {
+        const sceneCount = (salon.scenes || []).filter((scene) => scene.offer_id === offer.id || normalizeTextValue(scene.offer) === normalizeTextValue(offer.name)).length;
+        const itemCount = offer.presets?.[0]?.stand_preset_items?.length || 0;
+        return (
+          <div key={offer.id}>
+            <span>{offer.name}</span>
+            <strong>{sceneCount} config · {itemCount} inclus</strong>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AdminPresetsView({ salons, assets, onSalonChanged }) {
+  const [selectedSalonId, setSelectedSalonId] = useState(salons[0]?.id || '');
+  const [editing, setEditing] = useState(null);
+  const selectedSalon = salons.find((salon) => salon.id === selectedSalonId) || salons[0] || null;
+
+  useEffect(() => {
+    if (!selectedSalonId && salons[0]?.id) setSelectedSalonId(salons[0].id);
+    if (selectedSalonId && salons.length && !salons.some((salon) => salon.id === selectedSalonId)) {
+      setSelectedSalonId(salons[0].id);
+    }
+  }, [salons, selectedSalonId]);
+
+  const presets = selectedSalon ? salonPresetCards(selectedSalon) : [];
+
+  return (
+    <section className="admin-presets-view">
+      <header className="presets-toolbar">
+        <div className="preset-salon-tabs">
+          <span>Salon :</span>
+          {salons.map((salon) => (
+            <button key={salon.id} type="button" className={salon.id === selectedSalon?.id ? 'active' : ''} onClick={() => setSelectedSalonId(salon.id)}>
+              {salon.name}
+            </button>
+          ))}
+        </div>
+        <button className="new-preset-button" type="button" disabled={!selectedSalon} onClick={() => setEditing({ salon: selectedSalon })}>
+          + Nouveau preset
+        </button>
+      </header>
+
+      <div className="preset-library-grid">
+        {presets.length ? presets.map((entry) => (
+          <article className="preset-library-card" key={entry.preset.id}>
+            <button className="preset-card-menu" type="button" aria-label="Options preset">⋮</button>
+            <div className="preset-card-preview">{presetReferenceLabel(entry.preset)}</div>
+            <div className="preset-card-body">
+              <strong>{entry.salonShort} - {entry.offer.name}</strong>
+              <span>{presetMetaLabel(entry.preset)}</span>
+              <div>
+                <button type="button" onClick={() => setEditing(entry)}>Modifier</button>
+                <button type="button" onClick={() => setEditing(entry)}>Dupliquer</button>
+              </div>
+            </div>
+            <i />
+          </article>
+        )) : (
+          <div className="admin-empty-row">Aucun preset configuré pour ce salon.</div>
+        )}
+      </div>
+
+      {editing && (
         <AdminSalonPresetConfigurator
-          salon={configuringSalon}
+          salon={editing.salon}
           assets={assets}
-          onClose={() => setConfiguringSalon(null)}
+          initialOfferId={editing.offer?.id}
+          onClose={() => setEditing(null)}
           onSaved={async () => {
             await onSalonChanged?.();
           }}
@@ -1650,8 +1733,20 @@ function AdminSalonsView({ salons, assets, onSalonChanged }) {
   );
 }
 
-function AdminSalonPresetConfigurator({ salon, assets, onClose, onSaved }) {
-  const initialOffer = salon.offers?.[0] || null;
+function salonPresetCards(salon) {
+  return (salon.offers || []).flatMap((offer) => {
+    const presets = offer.presets?.length ? offer.presets : (salon.presets || []).filter((preset) => preset.offer_id === offer.id);
+    return presets.map((preset) => ({
+      salon,
+      salonShort: salonShortLabel(salon.name),
+      offer,
+      preset,
+    }));
+  });
+}
+
+function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onClose, onSaved }) {
+  const initialOffer = (salon.offers || []).find((offer) => offer.id === initialOfferId) || salon.offers?.[0] || null;
   const [localSalon, setLocalSalon] = useState(salon);
   const [selectedOfferId, setSelectedOfferId] = useState(initialOffer?.id || '');
   const [saveState, setSaveState] = useState({ loading: false, message: '', error: '' });
@@ -1660,8 +1755,8 @@ function AdminSalonPresetConfigurator({ salon, assets, onClose, onSaved }) {
 
   useEffect(() => {
     setLocalSalon(salon);
-    setSelectedOfferId(salon.offers?.[0]?.id || '');
-  }, [salon]);
+    setSelectedOfferId(initialOfferId || salon.offers?.[0]?.id || '');
+  }, [salon, initialOfferId]);
 
   const addPack = async (packName) => {
     setSaveState({ loading: true, message: '', error: '' });
@@ -1982,6 +2077,38 @@ function salonConfigCount(salon) {
 
 function salonPendingBatCount(salon) {
   return (salon.scenes || []).filter((scene) => scene.status === 'bat_pending' || scene.client_status === 'bat_review').length;
+}
+
+function normalizeTextValue(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function presetArea(preset) {
+  const width = Number(preset.width_m || preset.base_config?.width || 0);
+  const depth = Number(preset.depth_m || preset.base_config?.depth || 0);
+  return Math.round(width * depth);
+}
+
+function presetFaceCount(preset) {
+  const layout = preset.layout || preset.base_config?.layout || 'u';
+  if (layout === 'back') return 1;
+  if (layout === 'left' || layout === 'right') return 2;
+  return 3;
+}
+
+function presetReferenceLabel(preset) {
+  const area = presetArea(preset);
+  return area ? `${area}m${presetFaceCount(preset)}F` : `${presetFaceCount(preset)}F`;
+}
+
+function presetMetaLabel(preset) {
+  const area = presetArea(preset);
+  const modules = preset.stand_preset_items?.length || 0;
+  return `${area ? `${area} m²` : 'Surface à définir'} · ${presetFaceCount(preset)} face${presetFaceCount(preset) > 1 ? 's' : ''} · ${modules} module${modules > 1 ? 's' : ''}`;
 }
 
 function AdminClientsView({ clients, filters, updateFilter }) {

@@ -2821,6 +2821,184 @@ select {
     linear-gradient(160deg, #8f969f, #f2f3f5);
 }
 
+.salon-pack-stats {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #edf0f4;
+}
+
+.salon-pack-stats div {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) 1fr;
+  align-items: center;
+  gap: 10px;
+  color: #8f96a1;
+  font-size: 0.72rem;
+}
+
+.salon-pack-stats span {
+  color: #1f4378;
+  font-weight: 950;
+}
+
+.salon-pack-stats strong {
+  color: #6f7782;
+  font-size: 0.72rem;
+}
+
+.salon-pack-stats.muted {
+  color: #9ca2aa;
+  font-size: 0.74rem;
+}
+
+.admin-presets-view {
+  display: grid;
+  gap: 30px;
+}
+
+.presets-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.preset-salon-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: #5f6671;
+  font-size: 0.82rem;
+}
+
+.preset-salon-tabs span {
+  margin-right: 2px;
+  font-weight: 800;
+}
+
+.preset-salon-tabs button {
+  min-height: 32px;
+  border: 1px solid #d9dee7;
+  border-radius: 999px;
+  padding: 0 16px;
+  color: #646d78;
+  background: #fff;
+  font-weight: 800;
+  box-shadow: 0 1px 3px rgba(22, 28, 38, 0.05);
+}
+
+.preset-salon-tabs button.active {
+  color: #fff;
+  border-color: #1f4378;
+  background: #1f4378;
+}
+
+.new-preset-button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 18px;
+  color: #fff;
+  background: #1f4378;
+  font-weight: 950;
+  box-shadow: 0 4px 12px rgba(31, 67, 120, 0.2);
+}
+
+.new-preset-button:disabled {
+  opacity: 0.55;
+}
+
+.preset-library-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 365px));
+  gap: 20px;
+}
+
+.preset-library-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: 128px auto;
+  overflow: hidden;
+  min-height: 222px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 3px 13px rgba(22, 28, 38, 0.08);
+}
+
+.preset-card-menu {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 1;
+  border: 0;
+  color: #9ba2ad;
+  background: transparent;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.preset-card-preview {
+  display: grid;
+  place-items: center;
+  color: #a0a6af;
+  background:
+    radial-gradient(circle at 50% 25%, rgba(31, 67, 120, 0.06), transparent 34%),
+    #f7f8fa;
+  font-weight: 950;
+}
+
+.preset-card-body {
+  display: grid;
+  align-content: end;
+  gap: 4px;
+  padding: 16px;
+}
+
+.preset-card-body strong {
+  color: #2b323d;
+  font-size: 0.86rem;
+}
+
+.preset-card-body > span {
+  color: #9ca2ad;
+  font-size: 0.72rem;
+}
+
+.preset-card-body div {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.preset-card-body button {
+  min-height: 34px;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  padding: 0 16px;
+  color: #2e3744;
+  background: #fff;
+  font-weight: 900;
+}
+
+.preset-card-body button:last-child {
+  color: #fff;
+  border-color: #1f4378;
+  background: #1f4378;
+}
+
+.preset-library-card i {
+  position: absolute;
+  right: 16px;
+  bottom: 22px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #177744;
+}
+
 .salon-preset-layer {
   position: fixed;
   inset: 0;
@@ -3292,6 +3470,8 @@ select {
   .admin-bottom-grid,
   .admin-bat-row,
   .admin-salon-card-grid,
+  .preset-library-grid,
+  .preset-editor-grid,
   .admin-clients-table header,
   .admin-clients-table article {
     grid-template-columns: 1fr;
@@ -3336,6 +3516,15 @@ select {
   }
 
   .admin-search-box {
+    width: 100%;
+  }
+
+  .presets-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .new-preset-button {
     width: 100%;
   }
 
