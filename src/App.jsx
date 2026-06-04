@@ -1332,10 +1332,6 @@ function AdminDashboard({ user, adminProfile }) {
             <h1>{adminTitle(tab)}</h1>
             <p>{adminSubtitle(tab)}</p>
           </div>
-          <div className="admin-search-box">
-            <Search size={15} />
-            <input value={filters.search} placeholder="Rechercher..." onChange={(event) => updateFilter('search', event.target.value)} />
-          </div>
         </header>
 
         <div className="admin-page-content">

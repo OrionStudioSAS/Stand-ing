@@ -2418,28 +2418,6 @@ select {
   font-size: 0.78rem;
 }
 
-.admin-search-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 174px;
-  min-height: 32px;
-  border-radius: 8px;
-  padding: 0 12px;
-  color: #a6abb3;
-  background: #f3f3f3;
-}
-
-.admin-search-box input {
-  width: 100%;
-  min-height: 0;
-  border: 0;
-  padding: 0;
-  color: #5e6570;
-  background: transparent;
-  font-size: 0.82rem;
-}
-
 .admin-page-content {
   min-height: 0;
   overflow-y: auto;
@@ -3543,10 +3521,6 @@ select {
 
   .admin-main-panel {
     grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  .admin-search-box {
-    width: 100%;
   }
 
   .presets-toolbar {
