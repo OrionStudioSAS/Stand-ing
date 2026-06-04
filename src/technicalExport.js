@@ -11,8 +11,10 @@ const technicalColors = {
   blue: '#0057a8',
   gray: '#d9d9d9',
   soft: '#f7f7f7',
-  wall: '#8f1d1d',
-  reinforcement: '#e87522',
+  wall: '#0057a8',
+  panelStandard: '#0057a8',
+  panelCustom: '#e87522',
+  reinforcement: '#7030a0',
   floor: '#f4efe5',
 };
 
@@ -83,12 +85,13 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   drawText(ctx, 'Origine X/Z au centre du stand.', x + 16, y + 168, 17);
   y += 224;
 
-  ctx.strokeRect(x, y, w, 196);
+  ctx.strokeRect(x, y, w, 224);
   drawText(ctx, 'LEGENDE', x + 16, y + 32, 20, technicalColors.blue, 'bold');
   legendLine(ctx, x + 18, y + 66, technicalColors.blue, 'Cotes stand');
   legendLine(ctx, x + 18, y + 102, technicalColors.red, 'Cotes objet');
-  legendSwatch(ctx, x + 18, y + 130, technicalColors.wall, 'Murs / cloisons');
-  legendSwatch(ctx, x + 18, y + 158, technicalColors.reinforcement, 'Renfort TV 1000x2500');
+  legendSwatch(ctx, x + 18, y + 130, technicalColors.panelStandard, 'Trad 1000x2500');
+  legendSwatch(ctx, x + 18, y + 158, technicalColors.panelCustom, 'Trad largeur speciale');
+  legendSwatch(ctx, x + 18, y + 186, technicalColors.reinforcement, 'Renfort TV 1000x2500');
 
   const footerY = sheet.height - sheet.margin - 86;
   ctx.strokeRect(x, footerY, w, 32);
@@ -121,7 +124,10 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
   drawWalls(ctx, planX, planY, planW, planH, wallThickness, layout, width, depth, scale, items);
 
   drawDimension(ctx, planX, planY - 66, planX + planW, planY - 66, mm(width), 'horizontal', technicalColors.blue);
-  drawDimension(ctx, planX - 64, planY, planX - 64, planY + planH, mm(depth), 'vertical', technicalColors.blue);
+  const hasSideWall = layout === 'left' || layout === 'right' || layout === 'u';
+  const sideDimensionStartY = hasSideWall ? planY + wallThickness : planY;
+  const sideDimensionLabel = hasSideWall ? mm(sideWallLength(depth)) : mm(depth);
+  drawDimension(ctx, planX - 64, sideDimensionStartY, planX - 64, planY + planH, sideDimensionLabel, 'vertical', technicalColors.blue);
 
   items.forEach((item, index) => {
     const entry = catalog.find((candidate) => candidate.type === item.type);
@@ -188,7 +194,7 @@ function drawItemTable(ctx, items, catalog, width, depth) {
 }
 
 function drawWalls(ctx, x, y, w, h, thickness, layout, width, depth, scale, items) {
-  ctx.fillStyle = technicalColors.wall;
+  ctx.fillStyle = technicalColors.panelStandard;
   ctx.fillRect(x, y, w, thickness);
   drawWallPanelTicks(ctx, wallDescriptor('back', width, depth, items), x, y, scale, 'horizontal', thickness, 'Fond');
   if (layout === 'left' || layout === 'u') {
@@ -216,12 +222,10 @@ function drawWallPanelTicks(ctx, wall, x, y, scale, orientation, thickness, labe
   panels.forEach((panel, index) => {
     const start = offset * scale;
     const end = (offset + panel.meters) * scale;
-    if (panel.kind === 'reinforcement') {
-      ctx.fillStyle = technicalColors.reinforcement;
-      if (orientation === 'horizontal') ctx.fillRect(x + start, y, end - start, thickness);
-      else ctx.fillRect(x, y + start, thickness, end - start);
-      ctx.fillStyle = '#ffffff';
-    }
+    ctx.fillStyle = panelColor(panel);
+    if (orientation === 'horizontal') ctx.fillRect(x + start, y, end - start, thickness);
+    else ctx.fillRect(x, y + start, thickness, end - start);
+    ctx.fillStyle = '#ffffff';
     if (orientation === 'horizontal') {
       if (index > 0) line(ctx, x + start, y, x + start, y + thickness);
       if (end - start > 42) drawText(ctx, panel.kind === 'reinforcement' ? `TV ${panel.mm}` : `${panel.mm}`, x + start + (end - start) / 2, y + thickness - 5, 10, '#ffffff', 'bold', 'center');
@@ -238,6 +242,11 @@ function drawWallPanelTicks(ctx, wall, x, y, scale, orientation, thickness, labe
     offset += panel.meters;
   });
   ctx.restore();
+}
+
+function panelColor(panel) {
+  if (panel.kind === 'reinforcement') return technicalColors.reinforcement;
+  return panel.mm === 1000 ? technicalColors.panelStandard : technicalColors.panelCustom;
 }
 
 function drawWallBreakdown(ctx, x, y, w, width, depth, layout, items) {
