@@ -1,4 +1,4 @@
-import { Armchair, Box, Layers, Monitor, Square, Table2 } from 'lucide-react';
+import { Armchair, Box, Monitor, Square, Table2 } from 'lucide-react';
 
 export function modelUrl(fileName) {
   return `/models/${encodeURIComponent(fileName)}`;
@@ -40,19 +40,6 @@ export const catalog = [
     color: '#d9c49b',
     modelUrl: modelUrl('meuble.obj'),
     modelSize: [1.04, 0.54, 0.5],
-  },
-  {
-    type: 'group-reserve',
-    label: 'Reserve complete',
-    icon: Layers,
-    color: '#dfe8ec',
-    isGroup: true,
-    groupSize: [2.1, 2.5, 1.1],
-    children: [
-      { type: 'obj-cloison', label: 'Reserve - Cloison', x: -0.5, z: -0.5, rotation: 0 },
-      { type: 'obj-porte', label: 'Reserve - Porte', x: 0.55, z: -0.5, rotation: 0 },
-      { type: 'obj-meuble-bas', label: 'Reserve - Meuble bas', x: 0, z: 0.25, rotation: 0 },
-    ],
   },
   {
     type: 'obj-porte-doc',

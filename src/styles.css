@@ -3552,6 +3552,13 @@ select {
   min-height: 100%;
 }
 
+.asset-actions-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  align-items: stretch;
+}
+
 .asset-upload-drop {
   display: grid;
   grid-template-columns: auto auto auto;
@@ -3564,6 +3571,22 @@ select {
   color: #676f7b;
   background: #fff;
   box-shadow: 0 3px 13px rgba(22, 28, 38, 0.1);
+}
+
+.asset-group-create-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-width: 210px;
+  min-height: 80px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 18px;
+  color: #fff;
+  background: #1f4378;
+  box-shadow: 0 3px 13px rgba(22, 28, 38, 0.1);
+  font-weight: 900;
 }
 
 .asset-upload-drop svg {
@@ -3671,7 +3694,8 @@ select {
 
 .asset-thumb,
 .asset-glb-preview,
-.asset-obj-preview {
+.asset-obj-preview,
+.asset-group-preview {
   display: grid;
   place-items: center;
   width: 100%;
@@ -3685,6 +3709,16 @@ select {
 
 .asset-obj-preview {
   background: linear-gradient(#c8ecff, #eaf7ff);
+}
+
+.asset-group-preview {
+  gap: 8px;
+  color: #1f4378;
+  background: linear-gradient(135deg, #eef4ff, #f8fbff);
+}
+
+.asset-group-preview svg {
+  color: #1f4378;
 }
 
 .asset-obj-preview::before {
@@ -3800,6 +3834,7 @@ select {
 
 .asset-drawer > .asset-glb-preview,
 .asset-drawer > .asset-obj-preview,
+.asset-drawer > .asset-group-preview,
 .asset-drawer > .asset-thumb {
   height: 180px;
   border-radius: 9px;
@@ -3932,6 +3967,83 @@ select {
 .asset-save {
   color: #fff;
   background: #1f4378;
+}
+
+.asset-group-drawer {
+  width: min(720px, 100%);
+}
+
+.asset-group-field,
+.asset-group-row label {
+  display: grid;
+  gap: 6px;
+  color: #77808c;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.asset-group-field input,
+.asset-group-row input,
+.asset-group-row select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #d8dde6;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #252b34;
+  background: #fff;
+  font: inherit;
+}
+
+.asset-group-builder h3 {
+  margin: 0 0 6px;
+  color: #2d333d;
+  font-size: 0.95rem;
+}
+
+.asset-group-builder p {
+  margin: 0 0 14px;
+  color: #8d949d;
+  font-size: 0.78rem;
+}
+
+.asset-group-row {
+  display: grid;
+  grid-template-columns: 1.35fr 1.1fr 0.55fr 0.55fr 0.65fr auto;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f6f8fb;
+}
+
+.asset-group-row > button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  color: #db352b;
+  background: #ffdeda;
+}
+
+.asset-group-row > button:disabled {
+  opacity: 0.45;
+}
+
+.asset-group-add-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 13px;
+  color: #1f4378;
+  background: #e7eefb;
+  font-weight: 900;
 }
 
 .scene-access-card {
