@@ -510,15 +510,25 @@ export async function uploadObjectAssetFolder(files) {
   const baseName = modelFile.name.replace(/\.[^.]+$/, '');
   const assetType = `asset-${slugifyAsset(baseName)}-${Date.now().toString(36)}`;
   const bucket = supabase.storage.from('object-assets');
+  const uploadEntries = makeUniqueStorageEntries(fileList.map((file) => {
+    const relativePath = getRelativeUploadPath(file, rootFolder);
+    return {
+      file,
+      originalRelativePath: relativePath,
+      sanitizedRelativePath: sanitizeStoragePath(relativePath),
+    };
+  }));
+  const referenceRules = buildAssetReferenceRules(uploadEntries);
   let modelPath = '';
   let materialPath = '';
   let totalBytes = 0;
 
-  for (const file of fileList) {
+  for (const entry of uploadEntries) {
+    const { file } = entry;
     totalBytes += file.size || 0;
-    const relativePath = getRelativeUploadPath(file, rootFolder);
-    const storagePath = `${assetType}/${relativePath}`;
-    const { error } = await bucket.upload(storagePath, file, {
+    const storagePath = `${assetType}/${entry.sanitizedRelativePath}`;
+    const uploadBody = await prepareAssetUploadBody(entry, referenceRules);
+    const { error } = await bucket.upload(storagePath, uploadBody, {
       cacheControl: '31536000',
       contentType: guessContentType(file),
       upsert: true,
@@ -567,6 +577,85 @@ function getRelativeUploadPath(file, rootFolder) {
     return normalized.slice(rootFolder.length + 1);
   }
   return normalized;
+}
+
+function sanitizeStoragePath(path) {
+  const normalized = String(path || 'asset').replaceAll('\\', '/');
+  const segments = normalized.split('/').filter(Boolean);
+  return segments.map((segment, index) => sanitizeStorageSegment(segment, index === segments.length - 1)).join('/') || 'asset';
+}
+
+function sanitizeStorageSegment(segment, isFile = false) {
+  const normalized = String(segment || 'asset').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const extensionMatch = isFile ? normalized.match(/(\.[a-z0-9]{1,8})$/i) : null;
+  const extension = extensionMatch ? extensionMatch[1].toLowerCase() : '';
+  const baseName = extension ? normalized.slice(0, -extension.length) : normalized;
+  const safeBase = baseName
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[.-]+|[.-]+$/g, '')
+    .slice(0, 96);
+  return `${safeBase || 'asset'}${extension}`;
+}
+
+function makeUniqueStorageEntries(entries) {
+  const usedPaths = new Set();
+  return entries.map((entry) => {
+    let candidate = entry.sanitizedRelativePath || 'asset';
+    if (usedPaths.has(candidate)) {
+      const extension = candidate.match(/(\.[a-z0-9]{1,8})$/i)?.[1] || '';
+      const base = extension ? candidate.slice(0, -extension.length) : candidate;
+      let index = 2;
+      while (usedPaths.has(`${base}-${index}${extension}`)) index += 1;
+      candidate = `${base}-${index}${extension}`;
+    }
+    usedPaths.add(candidate);
+    return { ...entry, sanitizedRelativePath: candidate };
+  });
+}
+
+function buildAssetReferenceRules(entries) {
+  const rules = new Map();
+  const addRule = (from, to) => {
+    const source = String(from || '').replaceAll('\\', '/');
+    const target = String(to || '').replaceAll('\\', '/');
+    if (!source || !target || source === target) return;
+    for (const variant of new Set([source, source.normalize('NFC'), source.normalize('NFD')])) {
+      if (variant && variant !== target) rules.set(variant, target);
+    }
+  };
+
+  for (const entry of entries) {
+    const originalPath = entry.originalRelativePath;
+    const sanitizedPath = entry.sanitizedRelativePath;
+    const originalName = getUploadFileName(originalPath);
+    const sanitizedName = getUploadFileName(sanitizedPath);
+    addRule(originalPath, sanitizedPath);
+    addRule(`./${originalPath}`, `./${sanitizedPath}`);
+    addRule(originalName, sanitizedName);
+  }
+
+  return Array.from(rules, ([from, to]) => ({ from, to })).sort((a, b) => b.from.length - a.from.length);
+}
+
+function getUploadFileName(path) {
+  return String(path || '').replaceAll('\\', '/').split('/').pop() || '';
+}
+
+async function prepareAssetUploadBody(entry, referenceRules) {
+  if (!/\.(obj|mtl)$/i.test(entry.file.name)) return entry.file;
+  const text = await entry.file.text();
+  const rewritten = rewriteKnownAssetReferences(text, referenceRules);
+  return new Blob([rewritten], { type: guessContentType(entry.file) });
+}
+
+function rewriteKnownAssetReferences(text, referenceRules) {
+  let rewritten = text;
+  for (const { from, to } of referenceRules) {
+    rewritten = rewritten.split(from).join(to);
+  }
+  return rewritten;
 }
 
 function prettifyAssetLabel(value) {
