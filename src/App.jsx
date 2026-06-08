@@ -2507,6 +2507,8 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
     { uid: `group-row-${Date.now()}-1`, type: fallbackType, x: -0.4, z: 0, rotation: 0 },
     { uid: `group-row-${Date.now()}-2`, type: fallbackType, x: 0.4, z: 0, rotation: 0 },
   ]);
+  const [selectedRowUid, setSelectedRowUid] = useState(null);
+  const activeRowUid = selectedRowUid || rows[0]?.uid || null;
   const [assignedSalons, setAssignedSalons] = useState(() => getSalonRows(scenes).map((salon) => salon.title).slice(0, 1));
 
   const updateRow = (uid, patch) => {
@@ -2515,6 +2517,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
 
   const removeRow = (uid) => {
     setRows((current) => current.filter((row) => row.uid !== uid));
+    if (activeRowUid === uid) setSelectedRowUid(rows.find((row) => row.uid !== uid)?.uid || null);
   };
 
   const toggleSalon = (salon) => {
@@ -2582,11 +2585,18 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
 
         <section className="asset-group-builder">
           <h3>Objets du groupe</h3>
-          <p>Les positions sont relatives au centre du groupe. L'exposant ne pourra pas déplacer ces sous-éléments séparément.</p>
+          <p>Place les objets directement sur le plan en vue du dessus. Les champs X/Z restent disponibles pour l'ajustement précis.</p>
+          <MiniGroupPlan
+            rows={rows}
+            sourceAssets={sourceAssets}
+            selectedUid={activeRowUid}
+            onSelect={setSelectedRowUid}
+            onMove={(uid, position) => updateRow(uid, position)}
+          />
           {rows.map((row, index) => {
             const selectedSource = sourceAssets.find((asset) => asset.type === row.type);
             return (
-              <article key={row.uid} className="asset-group-row">
+              <article key={row.uid} className={`asset-group-row ${activeRowUid === row.uid ? 'active' : ''}`} onClick={() => setSelectedRowUid(row.uid)}>
                 <label>
                   <span>Objet</span>
                   <select value={row.type} onChange={(event) => updateRow(row.uid, { type: event.target.value, label: '' })}>
@@ -2604,7 +2614,11 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
               </article>
             );
           })}
-          <button type="button" className="asset-group-add-row" onClick={() => setRows((current) => [...current, { uid: `group-row-${Date.now()}`, type: fallbackType, x: 0, z: 0, rotation: 0 }])}>
+          <button type="button" className="asset-group-add-row" onClick={() => {
+            const uid = `group-row-${Date.now()}`;
+            setRows((current) => [...current, { uid, type: fallbackType, x: 0, z: 0, rotation: 0 }]);
+            setSelectedRowUid(uid);
+          }}>
             <Plus size={14} /> Ajouter un objet au groupe
           </button>
         </section>
@@ -2630,6 +2644,104 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
           </button>
         </footer>
       </aside>
+    </div>
+  );
+}
+
+function MiniGroupPlan({ rows, sourceAssets, selectedUid, onSelect, onMove }) {
+  const svgRef = useRef(null);
+  const [draggingUid, setDraggingUid] = useState(null);
+  const planItems = rows.map((row) => {
+    const asset = sourceAssets.find((item) => item.type === row.type);
+    const [width = 0.6, , depth = 0.6] = assetModelSize(asset || {});
+    return {
+      ...row,
+      asset,
+      width,
+      depth,
+      x: Number(row.x || 0),
+      z: Number(row.z || 0),
+      rotation: Number(row.rotation || 0),
+    };
+  });
+  const half = Math.max(1.6, ...planItems.flatMap((item) => [
+    Math.abs(item.x) + item.width / 2 + 0.35,
+    Math.abs(item.z) + item.depth / 2 + 0.35,
+  ]));
+  const viewSize = half * 2;
+
+  const pointerToPosition = (event) => {
+    const rect = svgRef.current.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * viewSize - half;
+    const z = ((event.clientY - rect.top) / rect.height) * viewSize - half;
+    return {
+      x: Number(clamp(x, -half, half).toFixed(2)),
+      z: Number(clamp(z, -half, half).toFixed(2)),
+    };
+  };
+
+  const moveActive = (event, uid = draggingUid) => {
+    if (!uid) return;
+    event.preventDefault();
+    onMove(uid, pointerToPosition(event));
+  };
+
+  return (
+    <div className="asset-group-plan-card">
+      <div className="asset-group-plan-head">
+        <strong>Mini plan du groupe</strong>
+        <span>Glisse un bloc pour le placer</span>
+      </div>
+      <svg
+        ref={svgRef}
+        className="asset-group-plan"
+        viewBox={`${-half} ${-half} ${viewSize} ${viewSize}`}
+        onPointerMove={(event) => moveActive(event)}
+        onPointerUp={() => setDraggingUid(null)}
+        onPointerLeave={() => setDraggingUid(null)}
+      >
+        <defs>
+          <pattern id="asset-group-grid" width="0.25" height="0.25" patternUnits="userSpaceOnUse">
+            <path d="M 0.25 0 L 0 0 0 0.25" fill="none" stroke="#dbe2ec" strokeWidth="0.01" />
+          </pattern>
+        </defs>
+        <rect x={-half} y={-half} width={viewSize} height={viewSize} rx="0.08" fill="url(#asset-group-grid)" />
+        <line x1={-half} x2={half} y1="0" y2="0" stroke="#94a3b8" strokeWidth="0.018" strokeDasharray="0.08 0.08" />
+        <line x1="0" x2="0" y1={-half} y2={half} stroke="#94a3b8" strokeWidth="0.018" strokeDasharray="0.08 0.08" />
+        <circle cx="0" cy="0" r="0.05" fill="#1f4378" />
+        {planItems.map((item, index) => {
+          const active = selectedUid === item.uid;
+          return (
+            <g
+              key={item.uid}
+              transform={`translate(${item.x} ${item.z}) rotate(${item.rotation})`}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                onSelect(item.uid);
+                setDraggingUid(item.uid);
+                moveActive(event, item.uid);
+              }}
+            >
+              <rect
+                x={-item.width / 2}
+                y={-item.depth / 2}
+                width={item.width}
+                height={item.depth}
+                rx="0.04"
+                fill={active ? '#ffcf5a' : '#dfe8ec'}
+                stroke={active ? '#1f4378' : '#7f8fa4'}
+                strokeWidth={active ? '0.035' : '0.02'}
+              />
+              <text x="0" y="0.035" textAnchor="middle" fontSize="0.16" fill="#172033" fontWeight="700">{index + 1}</text>
+            </g>
+          );
+        })}
+      </svg>
+      <div className="asset-group-plan-legend">
+        <span>Centre du groupe</span>
+        <span>X horizontal · Z vertical</span>
+      </div>
     </div>
   );
 }

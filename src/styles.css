@@ -4007,6 +4007,54 @@ select {
   font-size: 0.78rem;
 }
 
+.asset-group-plan-card {
+  overflow: hidden;
+  margin: 0 0 14px;
+  border: 1px solid #d9e1ec;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.asset-group-plan-head,
+.asset-group-plan-legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.asset-group-plan-head strong {
+  color: #172033;
+  font-size: 0.88rem;
+}
+
+.asset-group-plan-head span,
+.asset-group-plan-legend span {
+  color: #8d949d;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.asset-group-plan {
+  display: block;
+  width: 100%;
+  height: 310px;
+  border-top: 1px solid #edf1f6;
+  border-bottom: 1px solid #edf1f6;
+  background: #f8fafc;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.asset-group-plan g {
+  cursor: grab;
+}
+
+.asset-group-plan g:active {
+  cursor: grabbing;
+}
+
 .asset-group-row {
   display: grid;
   grid-template-columns: 1.35fr 1.1fr 0.55fr 0.55fr 0.65fr auto;
@@ -4016,6 +4064,11 @@ select {
   border-radius: 10px;
   padding: 10px;
   background: #f6f8fb;
+}
+
+.asset-group-row.active {
+  outline: 2px solid #1f4378;
+  background: #eef4ff;
 }
 
 .asset-group-row > button {
