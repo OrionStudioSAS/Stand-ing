@@ -3076,39 +3076,79 @@ function constrainItem(item, width, depth, layout) {
     return { ...item, wall, x: axis, z: wall === 'back' ? -depth / 2 + wallThickness : axis };
   }
 
-  const dims = itemGroupSize(item);
-  const marginX = Math.max(0.35, dims.width / 2);
-  const marginZ = Math.max(0.35, dims.depth / 2);
+  const bounds = itemGroupBounds(item);
 
   return {
     ...item,
-    x: clamp(item.x, -width / 2 + marginX, width / 2 - marginX),
-    z: clamp(item.z, -depth / 2 + marginZ, depth / 2 - marginZ),
+    x: clamp(item.x, -width / 2 - bounds.minX, width / 2 - bounds.maxX),
+    z: clamp(item.z, -depth / 2 - bounds.minZ, depth / 2 - bounds.maxZ),
   };
 }
 
 function itemGroupSize(item) {
-  if (item.groupSize?.length >= 3) {
-    return { width: Number(item.groupSize[0]) || 0.7, height: Number(item.groupSize[1]) || 0.7, depth: Number(item.groupSize[2]) || 0.7 };
-  }
-  if (!item.isGroup || !item.children?.length) return { width: 0.7, height: 0.7, depth: 0.7 };
+  const bounds = itemGroupBounds(item);
+  return {
+    width: bounds.width,
+    height: bounds.height,
+    depth: bounds.depth,
+  };
+}
 
-  const bounds = item.children.reduce((acc, child) => {
+function itemGroupBounds(item) {
+  const centeredBounds = (size = [0.7, 0.7, 0.7]) => {
+    const width = Number(size[0]) || 0.7;
+    const height = Number(size[1]) || 0.7;
+    const depth = Number(size[2]) || 0.7;
+    return {
+      minX: -width / 2,
+      maxX: width / 2,
+      minZ: -depth / 2,
+      maxZ: depth / 2,
+      centerX: 0,
+      centerZ: 0,
+      width,
+      height,
+      depth,
+    };
+  };
+
+  if (!item.isGroup || !item.children?.length) return centeredBounds(item.modelSize || [0.7, 0.7, 0.7]);
+
+  if (item.groupSize?.length >= 3) {
+    const childBounds = item.children?.length ? childrenBounds(item.children) : null;
+    if (childBounds) return childBounds;
+    return centeredBounds(item.groupSize);
+  }
+
+  return childrenBounds(item.children) || centeredBounds();
+}
+
+function childrenBounds(children) {
+  if (!children?.length) return null;
+  const bounds = children.reduce((acc, child) => {
     const childSize = child.modelSize?.length >= 3
       ? { width: Number(child.modelSize[0]) || 0.5, depth: Number(child.modelSize[2]) || 0.5, height: Number(child.modelSize[1]) || 0.5 }
       : { width: 0.6, depth: 0.6, height: 0.6 };
+    const radians = ((Number(child.rotation || 0) * Math.PI) / 180);
+    const halfX = Math.abs(Math.cos(radians)) * childSize.width / 2 + Math.abs(Math.sin(radians)) * childSize.depth / 2;
+    const halfZ = Math.abs(Math.sin(radians)) * childSize.width / 2 + Math.abs(Math.cos(radians)) * childSize.depth / 2;
     return {
-      minX: Math.min(acc.minX, Number(child.x || 0) - childSize.width / 2),
-      maxX: Math.max(acc.maxX, Number(child.x || 0) + childSize.width / 2),
-      minZ: Math.min(acc.minZ, Number(child.z || 0) - childSize.depth / 2),
-      maxZ: Math.max(acc.maxZ, Number(child.z || 0) + childSize.depth / 2),
+      minX: Math.min(acc.minX, Number(child.x || 0) - halfX),
+      maxX: Math.max(acc.maxX, Number(child.x || 0) + halfX),
+      minZ: Math.min(acc.minZ, Number(child.z || 0) - halfZ),
+      maxZ: Math.max(acc.maxZ, Number(child.z || 0) + halfZ),
       height: Math.max(acc.height, childSize.height),
     };
   }, { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity, height: 0.7 });
 
+  const width = Math.max(0.7, bounds.maxX - bounds.minX);
+  const depth = Math.max(0.7, bounds.maxZ - bounds.minZ);
   return {
-    width: Math.max(0.7, bounds.maxX - bounds.minX),
-    depth: Math.max(0.7, bounds.maxZ - bounds.minZ),
+    ...bounds,
+    centerX: bounds.minX + width / 2,
+    centerZ: bounds.minZ + depth / 2,
+    width,
+    depth,
     height: bounds.height,
   };
 }
@@ -3264,7 +3304,7 @@ function SceneItem({ item, selected, dragging, width, depth, onSelect, onDragSta
 }
 
 function GroupedSceneItem({ item, selected, dragging, rotationY, onSelect, onDragStart, onDragEnd, onDragMove }) {
-  const groupSize = itemGroupSize(item);
+  const groupBounds = itemGroupBounds(item);
   return (
     <group
       position={[item.x, 0, item.z]}
@@ -3276,15 +3316,17 @@ function GroupedSceneItem({ item, selected, dragging, rotationY, onSelect, onDra
         if (dragging) onDragMove(event);
       }}
     >
-      <ObjHitbox size={[groupSize.width, Math.max(0.35, groupSize.height), groupSize.depth]} />
+      <group position={[groupBounds.centerX, 0, groupBounds.centerZ]}>
+        <ObjHitbox size={[groupBounds.width, Math.max(0.35, groupBounds.height), groupBounds.depth]} />
+      </group>
       {item.children?.map((child) => (
         <group key={child.id} position={[child.x || 0, child.y || 0, child.z || 0]} rotation={[0, ((child.rotation || 0) * Math.PI) / 180, 0]}>
           <SceneItemContent item={child} selected={selected} dragging={dragging} />
         </group>
       ))}
       {selected && (
-        <mesh position={[0, 0.02, 0]}>
-          <boxGeometry args={[groupSize.width, 0.025, groupSize.depth]} />
+        <mesh position={[groupBounds.centerX, 0.02, groupBounds.centerZ]}>
+          <boxGeometry args={[groupBounds.width, 0.025, groupBounds.depth]} />
           <meshBasicMaterial color="#ffcf5a" transparent opacity={0.22} depthWrite={false} />
         </mesh>
       )}
