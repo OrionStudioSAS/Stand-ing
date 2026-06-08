@@ -2607,8 +2607,8 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
                   <span>Libellé plan</span>
                   <input value={row.label || selectedSource?.label || ''} onChange={(event) => updateRow(row.uid, { label: event.target.value })} />
                 </label>
-                <label><span>X m</span><input type="number" step="0.05" value={row.x} onChange={(event) => updateRow(row.uid, { x: event.target.value })} /></label>
-                <label><span>Z m</span><input type="number" step="0.05" value={row.z} onChange={(event) => updateRow(row.uid, { z: event.target.value })} /></label>
+                <label><span>X m</span><input type="number" step="0.10" value={row.x} onChange={(event) => updateRow(row.uid, { x: event.target.value })} /></label>
+                <label><span>Z m</span><input type="number" step="0.10" value={row.z} onChange={(event) => updateRow(row.uid, { z: event.target.value })} /></label>
                 <label><span>Rotation</span><input type="number" step="5" value={row.rotation} onChange={(event) => updateRow(row.uid, { rotation: event.target.value })} /></label>
                 <button type="button" onClick={() => removeRow(row.uid)} disabled={rows.length <= 1}><Trash2 size={14} /></button>
               </article>
@@ -2651,6 +2651,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
 function MiniGroupPlan({ rows, sourceAssets, selectedUid, onSelect, onMove }) {
   const svgRef = useRef(null);
   const [draggingUid, setDraggingUid] = useState(null);
+  const snapStep = 0.1;
   const planItems = rows.map((row) => {
     const asset = sourceAssets.find((item) => item.type === row.type);
     const [width = 0.6, , depth = 0.6] = assetModelSize(asset || {});
@@ -2675,8 +2676,8 @@ function MiniGroupPlan({ rows, sourceAssets, selectedUid, onSelect, onMove }) {
     const x = ((event.clientX - rect.left) / rect.width) * viewSize - half;
     const z = ((event.clientY - rect.top) / rect.height) * viewSize - half;
     return {
-      x: Number(clamp(x, -half, half).toFixed(2)),
-      z: Number(clamp(z, -half, half).toFixed(2)),
+      x: snapPosition(x, half, snapStep),
+      z: snapPosition(z, half, snapStep),
     };
   };
 
@@ -2928,6 +2929,11 @@ function slugForType(value) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 42) || 'groupe';
+}
+
+function snapPosition(value, limit, step = 0.1) {
+  const snapped = Math.round(value / step) * step;
+  return Number(clamp(snapped, -limit, limit).toFixed(2));
 }
 
 function assetMatchesSalon(asset, salonLabel = '') {
