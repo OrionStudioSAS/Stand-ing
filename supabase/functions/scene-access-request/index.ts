@@ -31,6 +31,10 @@ Deno.serve(async (req) => {
     return json({ error: "Aucune adresse email n'est associée à cette scène." }, 404);
   }
 
+  const clientEmail = scene.client_email.trim().toLowerCase();
+  const authUser = await ensureConfirmedAuthUser(admin, clientEmail);
+  if (!authUser) return json({ error: "Impossible de préparer l'accès email pour cette scène." }, 500);
+
   const { data: previous } = await admin
     .from("scene_access_requests")
     .select("requested_at")
@@ -48,8 +52,11 @@ Deno.serve(async (req) => {
 
   const auth = createClient(supabaseUrl, anonKey);
   const { error: otpError } = await auth.auth.signInWithOtp({
-    email: scene.client_email,
-    options: { shouldCreateUser: true },
+    email: clientEmail,
+    options: {
+      shouldCreateUser: false,
+      emailRedirectTo: Deno.env.get("PUBLIC_APP_URL") || "https://stand-ing.vercel.app/",
+    },
   });
 
   if (otpError) return json({ error: otpError.message }, 400);
@@ -59,8 +66,55 @@ Deno.serve(async (req) => {
     requested_at: new Date().toISOString(),
   });
 
-  return json({ masked_email: maskEmail(scene.client_email) });
+  return json({ masked_email: maskEmail(clientEmail) });
 });
+
+async function ensureConfirmedAuthUser(admin: any, email: string) {
+  const existing = await findAuthUserByEmail(admin, email);
+  if (existing) {
+    if (!existing.email_confirmed_at) {
+      const { data, error } = await admin.auth.admin.updateUserById(existing.id, {
+        email_confirm: true,
+      });
+      if (error) throw error;
+      await linkExhibitorProfile(admin, email, data.user?.id || existing.id);
+      return data.user || existing;
+    }
+    await linkExhibitorProfile(admin, email, existing.id);
+    return existing;
+  }
+
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    email_confirm: true,
+    user_metadata: { role: "exposant", source: "scene_access" },
+  });
+  if (error) throw error;
+  await linkExhibitorProfile(admin, email, data.user.id);
+  return data.user;
+}
+
+async function findAuthUserByEmail(admin: any, email: string) {
+  let page = 1;
+  const perPage = 1000;
+  while (page <= 10) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    const user = data.users.find((candidate: any) => candidate.email?.toLowerCase() === email);
+    if (user) return user;
+    if (data.users.length < perPage) return null;
+    page += 1;
+  }
+  return null;
+}
+
+async function linkExhibitorProfile(admin: any, email: string, userId: string) {
+  await admin
+    .from("user_profiles")
+    .update({ auth_user_id: userId, updated_at: new Date().toISOString() })
+    .eq("email", email)
+    .is("auth_user_id", null);
+}
 
 function maskEmail(email: string) {
   const [name, domain] = email.split("@");
