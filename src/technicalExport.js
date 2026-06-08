@@ -26,7 +26,8 @@ const reinforcementWidth = 1;
 const wallThicknessMeters = 0.06;
 
 export function exportTechnicalPng({ width, depth, layout, items, catalog }) {
-  sheet.height = Math.max(1240, 1080 + items.length * 34);
+  const technicalItems = flattenTechnicalItems(items, catalog);
+  sheet.height = Math.max(1240, 1080 + technicalItems.length * 34);
   const canvas = document.createElement('canvas');
   canvas.width = sheet.width;
   canvas.height = sheet.height;
@@ -35,9 +36,9 @@ export function exportTechnicalPng({ width, depth, layout, items, catalog }) {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   drawFrame(ctx);
-  drawSidebar(ctx, width, depth, fixedWallHeight, layout, items);
-  drawPlan(ctx, width, depth, layout, items, catalog);
-  drawItemTable(ctx, items, catalog, width, depth);
+  drawSidebar(ctx, width, depth, fixedWallHeight, layout, technicalItems);
+  drawPlan(ctx, width, depth, layout, technicalItems, catalog);
+  drawItemTable(ctx, technicalItems, catalog, width, depth);
   downloadCanvas(canvas, `standing-plan-technique-${width}x${depth}m.png`);
 }
 
@@ -137,7 +138,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
     const entry = catalog.find((candidate) => candidate.type === item.type);
     const dims = itemDimensions(item, entry);
     const center = { x: toX(item.x), y: toY(item.z) };
-    const color = entry?.color || '#cccccc';
+    const color = item.color || entry?.color || '#cccccc';
     const label = `${index + 1}`;
 
     if (item.type === 'screen') {
@@ -180,7 +181,7 @@ function drawItemTable(ctx, items, catalog, width, depth) {
     const dims = itemDimensions(item, entry);
     const values = [
       String(index + 1),
-      entry?.label || item.type,
+      item.label || entry?.label || item.type,
       `${mm(dims.width)} x ${mm(dims.depth)} x ${mm(dims.height)} mm`,
       item.type === 'screen' ? screenPositionLabel(item, width, depth) : `X ${signedMm(item.x)} / Z ${signedMm(item.z)}`,
       item.type === 'screen' ? `${wallLabel(item.wall)} + renfort 1000x2500` : `${Math.round(item.rotation || 0)} deg`,
@@ -548,7 +549,46 @@ function legendSwatch(ctx, x, y, color, label) {
   drawText(ctx, label, x + 64, y + 4, 16);
 }
 
+function flattenTechnicalItems(items, catalog) {
+  return (items || []).flatMap((item) => {
+    if (!item.isGroup || !item.children?.length) return [item];
+    const parentRotation = Number(item.rotation || 0);
+    const radians = (parentRotation * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const parentLabel = item.label || catalog.find((entry) => entry.type === item.type)?.label || 'Groupe';
+
+    return item.children.map((child, index) => {
+      const childCatalog = catalog.find((entry) => entry.type === child.type) || {};
+      const localX = Number(child.x || 0);
+      const localZ = Number(child.z || 0);
+      return {
+        ...child,
+        id: `${item.id}-${child.id || index}`,
+        label: `${parentLabel} - ${child.label || childCatalog.label || child.type}`,
+        x: Number(item.x || 0) + localX * cos - localZ * sin,
+        y: Number(item.y || 0) + Number(child.y || 0),
+        z: Number(item.z || 0) + localX * sin + localZ * cos,
+        rotation: parentRotation + Number(child.rotation || 0),
+        modelUrl: child.modelUrl || childCatalog.modelUrl,
+        modelSize: child.modelSize || childCatalog.modelSize,
+        color: child.color || childCatalog.color,
+        groupId: item.id,
+        groupLabel: parentLabel,
+      };
+    });
+  });
+}
+
 function itemDimensions(item, entry) {
+  if (item?.modelSize?.length >= 3) {
+    return {
+      width: Number(item.modelSize[0]) || 0.6,
+      depth: Number(item.modelSize[2]) || 0.6,
+      height: Number(item.modelSize[1]) || 0.6,
+    };
+  }
+
   if (entry?.modelSize) {
     return {
       width: entry.modelSize[0],

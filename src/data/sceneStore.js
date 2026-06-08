@@ -7,12 +7,36 @@ const fixedWallHeight = 2.5;
 
 function normalizeSceneItem(item) {
   const catalogItem = catalog.find((entry) => entry.type === item.type);
+  const isGroup = Boolean(item.isGroup || catalogItem?.isGroup);
   return {
     ...item,
+    isGroup,
+    groupSize: item.groupSize || catalogItem?.groupSize,
+    children: isGroup ? normalizeGroupChildren(item.children || catalogItem?.children || []) : item.children,
     modelUrl: catalogItem?.modelUrl || item.modelUrl,
     modelSize: catalogItem?.modelSize || item.modelSize,
     color: catalogItem?.color || item.color,
   };
+}
+
+function normalizeGroupChildren(children) {
+  return children.map((child, index) => {
+    const catalogItem = catalog.find((entry) => entry.type === child.type) || {};
+    return {
+      ...child,
+      id: child.id || `${child.type}-child-${index + 1}`,
+      label: child.label || catalogItem.label || child.type,
+      modelUrl: child.modelUrl || catalogItem.modelUrl,
+      modelSize: child.modelSize || catalogItem.modelSize,
+      materialUrl: child.materialUrl || catalogItem.materialUrl,
+      color: child.color || catalogItem.color,
+      x: Number(child.x || 0),
+      y: Number(child.y || 0),
+      z: Number(child.z || 0),
+      rotation: Number(child.rotation || 0),
+      lockedInGroup: true,
+    };
+  });
 }
 
 function catalogToObjectBankItem(item) {

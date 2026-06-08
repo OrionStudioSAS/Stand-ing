@@ -72,8 +72,21 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
   const base = {
     id: `${type}-${Date.now()}-${Math.round(Math.random() * 1000)}`,
     type,
+    label: entry?.label,
     rotation: 0,
   };
+
+  if (entry?.isGroup || entry?.children?.length) {
+    return {
+      ...base,
+      isGroup: true,
+      groupSize: entry.groupSize || [1.2, 1, 1.2],
+      children: resolveGroupChildren(entry.children || []),
+      x: 0,
+      z: Math.min(depth / 2 - 0.9, 0.7),
+      y: 0,
+    };
+  }
 
   if (type === 'screen') {
     const side = layout === 'right' ? 'right' : layout === 'left' ? 'left' : 'back';
@@ -96,6 +109,26 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
     z: Math.min(depth / 2 - 0.9, 0.7),
     y: 0,
   };
+}
+
+function resolveGroupChildren(children) {
+  return children.map((child, index) => {
+    const entry = catalog.find((item) => item.type === child.type) || {};
+    return {
+      ...child,
+      id: child.id || `${child.type}-child-${index + 1}`,
+      label: child.label || entry.label || child.type,
+      modelUrl: child.modelUrl || entry.modelUrl,
+      modelSize: child.modelSize || entry.modelSize,
+      materialUrl: child.materialUrl || entry.materialUrl,
+      color: child.color || entry.color,
+      x: Number(child.x || 0),
+      y: Number(child.y || 0),
+      z: Number(child.z || 0),
+      rotation: Number(child.rotation || 0),
+      lockedInGroup: true,
+    };
+  });
 }
 
 function clamp(value, min, max) {
@@ -2089,11 +2122,15 @@ function presetToEditableScene(preset) {
 function normalizePresetItem(item) {
   const config = item.config || {};
   const catalogItem = catalog.find((entry) => entry.type === item.type);
+  const isGroup = Boolean(config.isGroup || catalogItem?.isGroup);
   return {
     ...config,
     id: item.item_uid || config.id || `${item.type}-${item.id}`,
     type: item.type,
     label: item.label || config.label || catalogItem?.label || item.type,
+    isGroup,
+    groupSize: config.groupSize || catalogItem?.groupSize,
+    children: isGroup ? resolveGroupChildren(config.children || catalogItem?.children || []) : config.children,
     x: Number(item.x ?? config.x ?? 0),
     y: Number(item.y ?? config.y ?? 0),
     z: Number(item.z ?? config.z ?? 0),
@@ -2700,10 +2737,40 @@ function constrainItem(item, width, depth, layout) {
     return { ...item, wall, x: axis, z: wall === 'back' ? -depth / 2 + wallThickness : axis };
   }
 
+  const dims = itemGroupSize(item);
+  const marginX = Math.max(0.35, dims.width / 2);
+  const marginZ = Math.max(0.35, dims.depth / 2);
+
   return {
     ...item,
-    x: clamp(item.x, -width / 2 + 0.35, width / 2 - 0.35),
-    z: clamp(item.z, -depth / 2 + 0.35, depth / 2 - 0.35),
+    x: clamp(item.x, -width / 2 + marginX, width / 2 - marginX),
+    z: clamp(item.z, -depth / 2 + marginZ, depth / 2 - marginZ),
+  };
+}
+
+function itemGroupSize(item) {
+  if (item.groupSize?.length >= 3) {
+    return { width: Number(item.groupSize[0]) || 0.7, height: Number(item.groupSize[1]) || 0.7, depth: Number(item.groupSize[2]) || 0.7 };
+  }
+  if (!item.isGroup || !item.children?.length) return { width: 0.7, height: 0.7, depth: 0.7 };
+
+  const bounds = item.children.reduce((acc, child) => {
+    const childSize = child.modelSize?.length >= 3
+      ? { width: Number(child.modelSize[0]) || 0.5, depth: Number(child.modelSize[2]) || 0.5, height: Number(child.modelSize[1]) || 0.5 }
+      : { width: 0.6, depth: 0.6, height: 0.6 };
+    return {
+      minX: Math.min(acc.minX, Number(child.x || 0) - childSize.width / 2),
+      maxX: Math.max(acc.maxX, Number(child.x || 0) + childSize.width / 2),
+      minZ: Math.min(acc.minZ, Number(child.z || 0) - childSize.depth / 2),
+      maxZ: Math.max(acc.maxZ, Number(child.z || 0) + childSize.depth / 2),
+      height: Math.max(acc.height, childSize.height),
+    };
+  }, { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity, height: 0.7 });
+
+  return {
+    width: Math.max(0.7, bounds.maxX - bounds.minX),
+    depth: Math.max(0.7, bounds.maxZ - bounds.minZ),
+    height: bounds.height,
   };
 }
 
@@ -2840,6 +2907,7 @@ function Wall({ position, size, color }) {
 function SceneItem({ item, selected, dragging, width, depth, onSelect, onDragStart, onDragEnd, onDragMove }) {
   const rotationY = (item.rotation * Math.PI) / 180;
   if (item.type === 'screen') return <Screen item={item} width={width} depth={depth} selected={selected} dragging={dragging} onSelect={onSelect} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} />;
+  if (item.isGroup) return <GroupedSceneItem item={item} selected={selected} dragging={dragging} rotationY={rotationY} onSelect={onSelect} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} />;
   return (
     <group
       position={[item.x, 0, item.z]}
@@ -2851,6 +2919,43 @@ function SceneItem({ item, selected, dragging, width, depth, onSelect, onDragSta
         if (dragging) onDragMove(event);
       }}
     >
+      <SceneItemContent item={item} selected={selected} dragging={dragging} />
+    </group>
+  );
+}
+
+function GroupedSceneItem({ item, selected, dragging, rotationY, onSelect, onDragStart, onDragEnd, onDragMove }) {
+  const groupSize = itemGroupSize(item);
+  return (
+    <group
+      position={[item.x, 0, item.z]}
+      rotation={[0, rotationY, 0]}
+      onClick={(event) => { event.stopPropagation(); onSelect(); }}
+      onPointerDown={onDragStart}
+      onPointerUp={onDragEnd}
+      onPointerMove={(event) => {
+        if (dragging) onDragMove(event);
+      }}
+    >
+      <ObjHitbox size={[groupSize.width, Math.max(0.35, groupSize.height), groupSize.depth]} />
+      {item.children?.map((child) => (
+        <group key={child.id} position={[child.x || 0, child.y || 0, child.z || 0]} rotation={[0, ((child.rotation || 0) * Math.PI) / 180, 0]}>
+          <SceneItemContent item={child} selected={selected} dragging={dragging} />
+        </group>
+      ))}
+      {selected && (
+        <mesh position={[0, 0.02, 0]}>
+          <boxGeometry args={[groupSize.width, 0.025, groupSize.depth]} />
+          <meshBasicMaterial color="#ffcf5a" transparent opacity={0.22} depthWrite={false} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+function SceneItemContent({ item, selected, dragging }) {
+  return (
+    <>
       {item.type === 'chair' && <Chair selected={selected} dragging={dragging} />}
       {item.type === 'table' && <Table selected={selected} dragging={dragging} />}
       {item.type === 'counter' && <Counter selected={selected} dragging={dragging} />}
@@ -2860,7 +2965,7 @@ function SceneItem({ item, selected, dragging, width, depth, onSelect, onDragSta
           <Model3D item={item} selected={selected} dragging={dragging} />
         </>
       )}
-    </group>
+    </>
   );
 }
 
