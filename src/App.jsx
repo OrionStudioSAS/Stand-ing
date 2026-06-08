@@ -442,19 +442,31 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
   const [error, setError] = useState(authError);
 
   useEffect(() => setError(authError), [authError]);
+  useEffect(() => {
+    if (!supabase) setError('Supabase non configuré : vérifie VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY.');
+  }, []);
 
   const submit = async (event) => {
     event.preventDefault();
-    setLoading(true);
-    setError('');
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    if (signInError) {
-      setError('Email ou mot de passe incorrect.');
-      setLoading(false);
+    if (!supabase) {
+      setError('Supabase non configuré : vérifie VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY.');
       return;
     }
+    setLoading(true);
+    setError('');
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) {
+        setError('Email ou mot de passe incorrect.');
+        setLoading(false);
+        return;
+      }
 
-    window.location.href = '/admin';
+      window.location.href = '/admin';
+    } catch (error) {
+      setError(error.message || 'Connexion admin impossible.');
+      setLoading(false);
+    }
   };
 
   const openConfigurationLink = () => {
@@ -501,7 +513,7 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
           <button type="button">Mot de passe oublie ?</button>
         </div>
         {error && <div className="admin-login-error">{error}</div>}
-        <button className="login-submit" disabled={loading}>
+        <button className="login-submit" disabled={loading || !supabase}>
           {loading ? 'Connexion...' : 'Se connecter'}
         </button>
         <div className="login-divider">ou continuer avec</div>
