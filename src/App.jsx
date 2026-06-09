@@ -48,6 +48,7 @@ const wallSwitchZone = 0.18;
 const fixedWallHeight = 2.5;
 const wallThickness = 0.06;
 const screenDepth = 0.06;
+const wallItemSnap = 0.25;
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
   { id: 'layout', label: 'Aménagement', icon: '📐' },
@@ -88,14 +89,15 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
     };
   }
 
-  if (type === 'screen') {
+  if (isWallItemType(type)) {
     const side = layout === 'right' ? 'right' : layout === 'left' ? 'left' : 'back';
     return {
       ...base,
       wall: side,
       x: 0,
       z: side === 'back' ? -depth / 2 + wallThickness : 0,
-      y: 1.65,
+      y: type === 'poster' ? 1.45 : 1.65,
+      posterHeight: entry?.posterHeight,
     };
   }
 
@@ -714,7 +716,7 @@ function ConfiguratorApp({ initialScene }) {
     const dragged = items.find((item) => item.id === draggingId);
     if (!dragged) return;
 
-    if (dragged.type === 'screen') {
+    if (isWallItem(dragged)) {
       const wall = wallFromDrag(point, dragged.wall, width, depth, layout);
       updateItem(draggingId, { wall, x: wall === 'back' ? point.x : point.z });
       return;
@@ -921,7 +923,7 @@ function ConfiguratorApp({ initialScene }) {
             <>
               <button type="button" onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
               <button type="button" onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
-              {rotationPanelOpen && selected.type !== 'screen' && (
+              {rotationPanelOpen && !isWallItem(selected) && (
                 <label className="toolbar-rotation-slider">
                   <span>{selected.rotation || 0}°</span>
                   <input
@@ -2044,7 +2046,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
     if (!draggingId) return;
     const dragged = items.find((item) => item.id === draggingId);
     if (!dragged) return;
-    if (dragged.type === 'screen') {
+    if (isWallItem(dragged)) {
       const wall = wallFromDrag(point, dragged.wall, width, depth, layout);
       updateItem(draggingId, { wall, x: wall === 'back' ? point.x : point.z });
       return;
@@ -2114,7 +2116,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
             <>
               <button type="button" onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
               <button type="button" onClick={() => { setItems((current) => current.filter((item) => item.id !== selected.id)); setSelectedId(null); }} title="Supprimer"><Trash2 size={16} /></button>
-              {rotationPanelOpen && selected.type !== 'screen' && (
+              {rotationPanelOpen && !isWallItem(selected) && (
                 <label className="toolbar-rotation-slider">
                   <span>{selected.rotation || 0}°</span>
                   <input type="range" min="-180" max="180" step="5" value={selected.rotation || 0} onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })} />
@@ -2874,6 +2876,7 @@ function assetCategoryLabel(asset) {
   if (asset.dimensions?.isGroup) return 'Groupes';
   if (asset.dimensions?.category) return asset.dimensions.category;
   if (asset.type?.includes('screen')) return 'Multimédia';
+  if (asset.type?.includes('poster')) return 'Signalétique';
   if (asset.type?.includes('cloison') || asset.type?.includes('porte')) return 'Sol & Cloisons';
   if (asset.type?.includes('enseigne')) return 'Enseignes';
   return 'Mobilier';
@@ -3085,6 +3088,18 @@ function fileTypeLabel(type) {
   return labels[type] || 'Fichier';
 }
 
+function isWallItemType(type) {
+  return ['screen', 'poster'].includes(type);
+}
+
+function isWallItem(item) {
+  return isWallItemType(item?.type) || Boolean(item?.wall && item?.isWallItem);
+}
+
+function snapWallAxis(value) {
+  return Number((Math.round(Number(value || 0) / wallItemSnap) * wallItemSnap).toFixed(2));
+}
+
 function screenAxisRange(wall, width, depth, margin = 0.55) {
   const length = wall === 'back' ? width : depth;
   return {
@@ -3130,11 +3145,12 @@ function wallFromDrag(point, currentWall, width, depth, layout) {
 }
 
 function constrainItem(item, width, depth, layout) {
-  if (item.type === 'screen') {
+  if (isWallItem(item)) {
     const validWalls = availableWalls(layout).map((wall) => wall.id);
     const wall = validWalls.includes(item.wall) ? item.wall : 'back';
-    const range = screenAxisRange(wall, width, depth);
-    const axis = clamp(item.x, range.min, range.max);
+    const margin = item.type === 'poster' ? 0.25 : 0.55;
+    const range = screenAxisRange(wall, width, depth, margin);
+    const axis = clamp(snapWallAxis(item.x), range.min, range.max);
     return { ...item, wall, x: axis, z: wall === 'back' ? -depth / 2 + wallThickness : axis };
   }
 
@@ -3222,6 +3238,62 @@ function screenWorldPosition(item, width, depth) {
   return [item.x, item.y, -depth / 2 + screenOffset];
 }
 
+function posterAvailableWidth(item, items, width, depth) {
+  const wall = item.wall || 'back';
+  const wallLength = wall === 'back' ? width : depth;
+  const min = -wallLength / 2;
+  const max = wallLength / 2;
+  const axis = clamp(Number(item.x || 0), min, max);
+  const blockers = wallBlockers(item, items, width, depth, wall)
+    .map((blocker) => ({ min: clamp(blocker.min, min, max), max: clamp(blocker.max, min, max) }))
+    .filter((blocker) => blocker.max > blocker.min)
+    .sort((a, b) => a.min - b.min);
+
+  const segments = [];
+  let cursor = min;
+  blockers.forEach((blocker) => {
+    if (blocker.min > cursor) segments.push({ min: cursor, max: blocker.min });
+    cursor = Math.max(cursor, blocker.max);
+  });
+  if (cursor < max) segments.push({ min: cursor, max });
+  const containing = segments.find((segment) => axis >= segment.min && axis <= segment.max);
+  const nearest = containing || segments.sort((a, b) => Math.abs(axis - (a.min + a.max) / 2) - Math.abs(axis - (b.min + b.max) / 2))[0] || { min, max };
+  const segmentMin = nearest.min;
+  const segmentMax = nearest.max;
+  return Math.max(0.5, Number((segmentMax - segmentMin - 0.2).toFixed(2)));
+}
+
+function wallBlockers(currentItem, items, width, depth, wall) {
+  return (items || [])
+    .filter((item) => item.id !== currentItem.id)
+    .flatMap((item) => {
+      if (isWallItem(item)) return wallMountedBlocker(item, wall, width, depth);
+      return floorWallBlocker(item, wall, width, depth);
+    })
+    .filter(Boolean);
+}
+
+function wallMountedBlocker(item, wall, width, depth) {
+  if ((item.wall || 'back') !== wall) return null;
+  const axis = Number(item.x || 0);
+  const itemWidth = item.type === 'screen' ? 0.95 : 1;
+  return { min: axis - itemWidth / 2 - 0.1, max: axis + itemWidth / 2 + 0.1 };
+}
+
+function floorWallBlocker(item, wall, width, depth) {
+  const bounds = itemGroupBounds(item);
+  const minX = Number(item.x || 0) + bounds.minX;
+  const maxX = Number(item.x || 0) + bounds.maxX;
+  const minZ = Number(item.z || 0) + bounds.minZ;
+  const maxZ = Number(item.z || 0) + bounds.maxZ;
+  const wallZone = 0.72;
+
+  if (wall === 'back' && minZ <= -depth / 2 + wallZone) return { min: minX - 0.1, max: maxX + 0.1 };
+  if (wall === 'left' && minX <= -width / 2 + wallZone) return { min: minZ - 0.1, max: maxZ + 0.1 };
+  if (wall === 'right' && maxX >= width / 2 - wallZone) return { min: minZ - 0.1, max: maxZ + 0.1 };
+  return null;
+}
+
 function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, wallColor }) {
   const cameraPivot = useMemo(() => {
     const radians = (viewAngle * Math.PI) / 180;
@@ -3252,6 +3324,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
         <SceneItem
           key={item.id}
           item={item}
+          items={items}
           width={width}
           depth={depth}
           selected={item.id === selectedId}
@@ -3345,9 +3418,9 @@ function Wall({ position, size, color }) {
   );
 }
 
-function SceneItem({ item, selected, dragging, width, depth, onSelect, onDragStart, onDragEnd, onDragMove }) {
+function SceneItem({ item, items = [], selected, dragging, width, depth, onSelect, onDragStart, onDragEnd, onDragMove }) {
   const rotationY = (item.rotation * Math.PI) / 180;
-  if (item.type === 'screen') return <Screen item={item} width={width} depth={depth} selected={selected} dragging={dragging} onSelect={onSelect} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} />;
+  if (isWallItem(item)) return <WallMountedItem item={item} items={items} width={width} depth={depth} selected={selected} dragging={dragging} onSelect={onSelect} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} />;
   if (item.isGroup) return <GroupedSceneItem item={item} selected={selected} dragging={dragging} rotationY={rotationY} onSelect={onSelect} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} />;
   return (
     <group
@@ -3545,9 +3618,12 @@ function Counter({ selected, dragging }) {
   );
 }
 
-function Screen({ item, width, depth, selected, dragging, onSelect, onDragStart, onDragEnd, onDragMove }) {
+function WallMountedItem({ item, items, width, depth, selected, dragging, onSelect, onDragStart, onDragEnd, onDragMove }) {
   const rotation = item.wall === 'left' ? Math.PI / 2 : item.wall === 'right' ? -Math.PI / 2 : 0;
   const offset = screenWorldPosition(item, width, depth);
+  const isPoster = item.type === 'poster';
+  const posterWidth = isPoster ? posterAvailableWidth(item, items, width, depth) : 0.95;
+  const posterHeight = item.posterHeight || 1.25;
   return (
     <group
       position={offset}
@@ -3559,14 +3635,30 @@ function Screen({ item, width, depth, selected, dragging, onSelect, onDragStart,
         if (dragging) onDragMove(event);
       }}
     >
-      <mesh castShadow>
-        <boxGeometry args={[0.95, 0.58, 0.06]} />
-        <meshStandardMaterial color={activeColor(selected, dragging, '#182233')} roughness={0.4} />
-      </mesh>
-      <mesh position={[0, 0, 0.035]}>
-        <boxGeometry args={[0.82, 0.45, 0.015]} />
-        <meshStandardMaterial color="#67d7ff" emissive="#1c6887" emissiveIntensity={0.55} />
-      </mesh>
+      {isPoster ? (
+        <>
+          <mesh castShadow>
+            <boxGeometry args={[posterWidth, posterHeight, 0.035]} />
+            <meshStandardMaterial color={activeColor(selected, dragging, '#f7f1dc')} roughness={0.48} />
+          </mesh>
+          <mesh position={[0, 0, 0.026]}>
+            <boxGeometry args={[Math.max(0.2, posterWidth - 0.12), Math.max(0.2, posterHeight - 0.12), 0.012]} />
+            <meshStandardMaterial color="#ffffff" roughness={0.36} />
+          </mesh>
+          <Text position={[0, 0, 0.038]} fontSize={0.16} color="#1f4378" anchorX="center" anchorY="middle">AFFICHE</Text>
+        </>
+      ) : (
+        <>
+          <mesh castShadow>
+            <boxGeometry args={[0.95, 0.58, 0.06]} />
+            <meshStandardMaterial color={activeColor(selected, dragging, '#182233')} roughness={0.4} />
+          </mesh>
+          <mesh position={[0, 0, 0.035]}>
+            <boxGeometry args={[0.82, 0.45, 0.015]} />
+            <meshStandardMaterial color="#67d7ff" emissive="#1c6887" emissiveIntensity={0.55} />
+          </mesh>
+        </>
+      )}
     </group>
   );
 }

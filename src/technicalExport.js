@@ -26,7 +26,7 @@ const reinforcementWidth = 1;
 const wallThicknessMeters = 0.06;
 
 export function exportTechnicalPng({ width, depth, layout, items, catalog }) {
-  const technicalItems = flattenTechnicalItems(items, catalog);
+  const technicalItems = applyWallItemMetrics(flattenTechnicalItems(items, catalog), width, depth, catalog);
   sheet.height = Math.max(1240, 1080 + technicalItems.length * 34);
   const canvas = document.createElement('canvas');
   canvas.width = sheet.width;
@@ -141,8 +141,8 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
     const color = item.color || entry?.color || '#cccccc';
     const label = `${index + 1}`;
 
-    if (item.type === 'screen') {
-      drawScreenTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label);
+    if (isWallItem(item)) {
+      drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label);
       return;
     }
 
@@ -183,8 +183,8 @@ function drawItemTable(ctx, items, catalog, width, depth) {
       String(index + 1),
       item.label || entry?.label || item.type,
       `${mm(dims.width)} x ${mm(dims.depth)} x ${mm(dims.height)} mm`,
-      item.type === 'screen' ? screenPositionLabel(item, width, depth) : `X ${signedMm(item.x)} / Z ${signedMm(item.z)}`,
-      item.type === 'screen' ? `${wallLabel(item.wall)} + renfort 1000x2500` : `${Math.round(item.rotation || 0)} deg`,
+      isWallItem(item) ? screenPositionLabel(item, width, depth) : `X ${signedMm(item.x)} / Z ${signedMm(item.z)}`,
+      item.type === 'screen' ? `${wallLabel(item.wall)} + renfort 1000x2500` : isWallItem(item) ? wallLabel(item.wall) : `${Math.round(item.rotation || 0)} deg`,
     ];
 
     ctx.strokeStyle = '#cccccc';
@@ -436,30 +436,30 @@ function drawObjectDimensions(ctx, x, y, w, h, dims, rotation) {
   drawDimension(ctx, x + w / 2 + 18, y - h / 2, x + w / 2 + 18, y + h / 2, mm(dims.depth), 'vertical', technicalColors.red, 12);
 }
 
-function drawScreenTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label) {
-  const screenWidth = 0.95 * scale;
-  const screenDepth = 0.08 * scale;
-  const tvLabel = tvTechnicalLabel(item);
-  ctx.fillStyle = '#22364d';
+function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label) {
+  const itemWidth = (item.type === 'poster' ? Number(item.posterWidth || 1) : 0.95) * scale;
+  const itemDepth = (item.type === 'poster' ? 0.04 : 0.08) * scale;
+  const wallLabelText = item.type === 'poster' ? `AFFICHE ${mm(item.posterWidth || 1)}` : tvTechnicalLabel(item);
+  ctx.fillStyle = item.type === 'poster' ? '#f7f1dc' : '#22364d';
   ctx.strokeStyle = technicalColors.ink;
   ctx.lineWidth = 2;
 
   if (item.wall === 'back') {
-    const x = toX(item.x) - screenWidth / 2;
+    const x = toX(item.x) - itemWidth / 2;
     const y = toY(-depth / 2) + wallThickness + 4;
-    ctx.fillRect(x, y, screenWidth, screenDepth);
-    ctx.strokeRect(x, y, screenWidth, screenDepth);
-    drawText(ctx, tvLabel, x + screenWidth / 2, y + screenDepth + 42, 15, '#22364d', 'bold', 'center');
-    drawBadge(ctx, x + screenWidth / 2, y + screenDepth + 22, label);
+    ctx.fillRect(x, y, itemWidth, itemDepth);
+    ctx.strokeRect(x, y, itemWidth, itemDepth);
+    drawText(ctx, wallLabelText, x + itemWidth / 2, y + itemDepth + 42, 15, '#22364d', 'bold', 'center');
+    drawBadge(ctx, x + itemWidth / 2, y + itemDepth + 22, label);
     return;
   }
 
-  const x = item.wall === 'left' ? toX(-width / 2) + wallThickness + 4 : toX(width / 2) - wallThickness - screenDepth - 4;
-  const y = toY(item.x) - screenWidth / 2;
-  ctx.fillRect(x, y, screenDepth, screenWidth);
-  ctx.strokeRect(x, y, screenDepth, screenWidth);
-  drawSideTvLabel(ctx, tvLabel, item.wall, x, y + screenWidth / 2, screenDepth);
-  drawBadge(ctx, x + screenDepth + 22, y + screenWidth / 2, label);
+  const x = item.wall === 'left' ? toX(-width / 2) + wallThickness + 4 : toX(width / 2) - wallThickness - itemDepth - 4;
+  const y = toY(item.x) - itemWidth / 2;
+  ctx.fillRect(x, y, itemDepth, itemWidth);
+  ctx.strokeRect(x, y, itemDepth, itemWidth);
+  drawSideTvLabel(ctx, wallLabelText, item.wall, x, y + itemWidth / 2, itemDepth);
+  drawBadge(ctx, x + itemDepth + 22, y + itemWidth / 2, label);
 }
 
 function drawSideTvLabel(ctx, label, wall, x, y, screenDepth) {
@@ -580,7 +580,72 @@ function flattenTechnicalItems(items, catalog) {
   });
 }
 
+function applyWallItemMetrics(items, width, depth, catalog) {
+  return items.map((item) => {
+    if (item.type !== 'poster') return item;
+    return {
+      ...item,
+      posterWidth: posterAvailableWidth(item, items, width, depth, catalog),
+    };
+  });
+}
+
+function isWallItem(item) {
+  return ['screen', 'poster'].includes(item?.type);
+}
+
+function posterAvailableWidth(item, items, width, depth, catalog) {
+  const wall = item.wall || 'back';
+  const wallLength = wall === 'back' ? width : depth;
+  const min = -wallLength / 2;
+  const max = wallLength / 2;
+  const axis = clampValue(Number(item.x || 0), min, max);
+  const blockers = (items || [])
+    .filter((candidate) => candidate.id !== item.id)
+    .map((candidate) => wallBlocker(candidate, wall, width, depth, catalog))
+    .filter(Boolean)
+    .map((blocker) => ({ min: clampValue(blocker.min, min, max), max: clampValue(blocker.max, min, max) }))
+    .filter((blocker) => blocker.max > blocker.min)
+    .sort((a, b) => a.min - b.min);
+  const segments = [];
+  let cursor = min;
+  blockers.forEach((blocker) => {
+    if (blocker.min > cursor) segments.push({ min: cursor, max: blocker.min });
+    cursor = Math.max(cursor, blocker.max);
+  });
+  if (cursor < max) segments.push({ min: cursor, max });
+  const containing = segments.find((segment) => axis >= segment.min && axis <= segment.max);
+  const nearest = containing || segments.sort((a, b) => Math.abs(axis - (a.min + a.max) / 2) - Math.abs(axis - (b.min + b.max) / 2))[0] || { min, max };
+  return Math.max(0.5, Number((nearest.max - nearest.min - 0.2).toFixed(2)));
+}
+
+function wallBlocker(item, wall, width, depth, catalog) {
+  if (isWallItem(item)) {
+    if ((item.wall || 'back') !== wall) return null;
+    const axis = Number(item.x || 0);
+    const itemWidth = item.type === 'screen' ? 0.95 : Number(item.posterWidth || 1);
+    return { min: axis - itemWidth / 2 - 0.1, max: axis + itemWidth / 2 + 0.1 };
+  }
+
+  const entry = catalog.find((candidate) => candidate.type === item.type);
+  const dims = itemDimensions(item, entry);
+  const minX = Number(item.x || 0) - dims.width / 2;
+  const maxX = Number(item.x || 0) + dims.width / 2;
+  const minZ = Number(item.z || 0) - dims.depth / 2;
+  const maxZ = Number(item.z || 0) + dims.depth / 2;
+  const wallZone = 0.72;
+
+  if (wall === 'back' && minZ <= -depth / 2 + wallZone) return { min: minX - 0.1, max: maxX + 0.1 };
+  if (wall === 'left' && minX <= -width / 2 + wallZone) return { min: minZ - 0.1, max: maxZ + 0.1 };
+  if (wall === 'right' && maxX >= width / 2 - wallZone) return { min: minZ - 0.1, max: maxZ + 0.1 };
+  return null;
+}
+
 function itemDimensions(item, entry) {
+  if (item?.type === 'poster') {
+    return { width: Number(item.posterWidth || 1), depth: 0.04, height: Number(item.posterHeight || 1.25) };
+  }
+
   if (item?.modelSize?.length >= 3) {
     return {
       width: Number(item.modelSize[0]) || 0.6,
