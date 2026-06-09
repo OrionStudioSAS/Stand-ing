@@ -369,6 +369,7 @@ async function applyPresetItems(supabase: any, sceneId: string, preset: any, sce
       included: true,
       priceMode: "included",
       basePresetId: preset.id,
+      presetAnchor: item.anchorMeta || null,
       presetReferenceSize: {
         width: Number(preset.width_m || scene.width_m),
         depth: Number(preset.depth_m || scene.depth_m),
@@ -396,21 +397,47 @@ function scalePresetItemToScene(item: any, preset: any, scene: any) {
 
   let x = Number(item.x || 0);
   let z = Number(item.z || 0);
+  let anchorMeta: any = null;
 
   if (item.type === "screen") {
     if (wall === "left" || wall === "right") {
-      x = clampNumber(x * depthRatio, -sceneDepth / 2 + 0.55, sceneDepth / 2 - 0.55);
+      const anchored = anchoredAxisPosition(x, presetDepth, sceneDepth, depthRatio, 0.85);
+      x = clampNumber(anchored.value, -sceneDepth / 2 + 0.55, sceneDepth / 2 - 0.55);
       z = x;
+      anchorMeta = { axis: anchored.anchor, wall };
     } else {
-      x = clampNumber(x * widthRatio, -sceneWidth / 2 + 0.55, sceneWidth / 2 - 0.55);
+      const anchored = anchoredAxisPosition(x, presetWidth, sceneWidth, widthRatio, 0.85);
+      x = clampNumber(anchored.value, -sceneWidth / 2 + 0.55, sceneWidth / 2 - 0.55);
       z = -sceneDepth / 2;
+      anchorMeta = { x: anchored.anchor, wall: wall || "back" };
     }
   } else {
-    x = clampNumber(x * widthRatio, -sceneWidth / 2 + 0.35, sceneWidth / 2 - 0.35);
-    z = clampNumber(z * depthRatio, -sceneDepth / 2 + 0.35, sceneDepth / 2 - 0.35);
+    const anchoredX = anchoredAxisPosition(x, presetWidth, sceneWidth, widthRatio);
+    const anchoredZ = anchoredAxisPosition(z, presetDepth, sceneDepth, depthRatio);
+    x = clampNumber(anchoredX.value, -sceneWidth / 2 + 0.35, sceneWidth / 2 - 0.35);
+    z = clampNumber(anchoredZ.value, -sceneDepth / 2 + 0.35, sceneDepth / 2 - 0.35);
+    anchorMeta = { x: anchoredX.anchor, z: anchoredZ.anchor };
   }
 
-  return { ...item, x, z, y: Number(item.y || 0), rotation: Number(item.rotation || 0), wall };
+  return { ...item, x, z, y: Number(item.y || 0), rotation: Number(item.rotation || 0), wall, anchorMeta };
+}
+
+function anchoredAxisPosition(value: number, presetLength: number, sceneLength: number, ratio: number, maxAnchorDistance = 1.6) {
+  const safePresetLength = Math.max(Number(presetLength || 0), 0.01);
+  const safeSceneLength = Math.max(Number(sceneLength || 0), 0.01);
+  const distanceFromMin = value + safePresetLength / 2;
+  const distanceFromMax = safePresetLength / 2 - value;
+  const threshold = Math.min(maxAnchorDistance, safePresetLength * 0.35);
+
+  if (distanceFromMin >= 0 && distanceFromMin <= threshold && distanceFromMin <= distanceFromMax) {
+    return { value: -safeSceneLength / 2 + distanceFromMin, anchor: "min" };
+  }
+
+  if (distanceFromMax >= 0 && distanceFromMax <= threshold) {
+    return { value: safeSceneLength / 2 - distanceFromMax, anchor: "max" };
+  }
+
+  return { value: value * ratio, anchor: "scaled" };
 }
 
 function clampNumber(value: number, min: number, max: number) {
