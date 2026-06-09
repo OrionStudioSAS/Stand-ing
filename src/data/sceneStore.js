@@ -509,6 +509,7 @@ export async function listObjectBank() {
 
 export async function saveObjectBankItem(asset) {
   if (!supabase) return asset;
+  const assignedSalons = Array.isArray(asset.dimensions?.salons) ? asset.dimensions.salons : null;
 
   const payload = {
     type: asset.type,
@@ -516,7 +517,7 @@ export async function saveObjectBankItem(asset) {
     model_url: asset.model_url,
     thumbnail_url: asset.thumbnail_url,
     dimensions: asset.dimensions || {},
-    is_active: asset.is_active,
+    is_active: assignedSalons ? assignedSalons.length > 0 : asset.is_active !== false,
   };
   const { data, error } = await supabase
     .from('object_bank')
@@ -526,6 +527,53 @@ export async function saveObjectBankItem(asset) {
 
   if (error) throw error;
   return data;
+}
+
+export async function deleteObjectBankItem(asset) {
+  if (!supabase) return true;
+
+  await deleteObjectAssetFiles(asset);
+
+  const { error } = await supabase
+    .from('object_bank')
+    .delete()
+    .eq('type', asset.type);
+
+  if (error) throw error;
+  return true;
+}
+
+async function deleteObjectAssetFiles(asset) {
+  const bucketName = asset?.dimensions?.storageBucket;
+  if (!bucketName) return;
+
+  const bucket = supabase.storage.from(bucketName);
+  const paths = new Set([
+    asset.dimensions?.storagePath,
+    asset.dimensions?.materialPath,
+    ...(Array.isArray(asset.dimensions?.storagePaths) ? asset.dimensions.storagePaths : []),
+  ].filter(Boolean));
+
+  const rootPath = asset.dimensions?.storageRoot || asset.type;
+  const listedPaths = await listStorageObjectPaths(bucket, rootPath);
+  listedPaths.forEach((path) => paths.add(path));
+
+  if (!paths.size) return;
+  const { error } = await bucket.remove([...paths]);
+  if (error) throw error;
+}
+
+async function listStorageObjectPaths(bucket, path) {
+  const { data, error } = await bucket.list(path, { limit: 1000 });
+  if (error || !data?.length) return [];
+
+  const childPaths = await Promise.all(data.map(async (entry) => {
+    const fullPath = `${path}/${entry.name}`;
+    if (entry.id) return [fullPath];
+    return listStorageObjectPaths(bucket, fullPath);
+  }));
+
+  return childPaths.flat();
 }
 
 export async function uploadObjectAssetFolder(files) {
@@ -591,6 +639,7 @@ export async function uploadObjectAssetFolder(files) {
       uploadedFiles: fileList.length,
       textureCount,
       storageBucket: 'object-assets',
+      storageRoot: assetType,
       storagePath: modelPath,
       materialUrl: materialPublic?.publicUrl || null,
       materialPath: materialPath || null,

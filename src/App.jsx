@@ -39,7 +39,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -655,7 +655,7 @@ function ConfiguratorApp({ initialScene }) {
       .filter((asset) => asset.is_active)
       .filter((asset) => assetMatchesSalon(asset, salonLabel))
       .map(assetToCatalogEntry);
-    const entries = [...catalog, ...dynamicEntries];
+    const entries = [...nativeCatalogEntries(), ...dynamicEntries];
     return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
   }, [objectBank, salonLabel]);
 
@@ -1346,6 +1346,15 @@ function AdminDashboard({ user, adminProfile }) {
     return saved;
   };
 
+  const deleteAsset = async (asset) => {
+    if (!asset) return;
+    const confirmed = window.confirm(`Supprimer définitivement "${asset.label}" de la banque d'objets ?`);
+    if (!confirmed) return;
+    await deleteObjectBankItem(asset);
+    setAssets((current) => current.filter((item) => item.type !== asset.type));
+    setSelectedAsset(null);
+  };
+
   const uploadAssetFolder = async (files) => {
     if (!files?.length) return;
     setAssetUploadState({ loading: true, message: '', error: '' });
@@ -1437,6 +1446,7 @@ function AdminDashboard({ user, adminProfile }) {
               onSelectAsset={setSelectedAsset}
               onCloseAsset={() => setSelectedAsset(null)}
               onSaveAsset={saveAsset}
+              onDeleteAsset={deleteAsset}
               onUploadAssetFolder={uploadAssetFolder}
             />
           )}
@@ -2060,7 +2070,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       .filter((asset) => asset.is_active)
       .filter((asset) => assetMatchesSalon(asset, salon.name))
       .map(assetToCatalogEntry);
-    const entries = [...catalog, ...dynamicEntries];
+    const entries = [...nativeCatalogEntries(), ...dynamicEntries];
     return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
   }, [assets, salon.name]);
 
@@ -2424,7 +2434,7 @@ function clientStatusSummary(client) {
   return 'À configurer';
 }
 
-function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onUploadAssetFolder }) {
+function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onUploadAssetFolder }) {
   const [groupCreatorOpen, setGroupCreatorOpen] = useState(false);
   const categories = ['Tout', 'Groupes', 'Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
   const filteredAssets = assets.filter((asset) => {
@@ -2492,9 +2502,10 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
         <AssetDrawer
           asset={selectedAsset}
           scenes={scenes}
+          assets={assets}
           onClose={onCloseAsset}
           onSave={onSaveAsset}
-          onDelete={() => onSaveAsset({ ...selectedAsset, is_active: false })}
+          onDelete={() => onDeleteAsset(selectedAsset)}
         />
       )}
       {groupCreatorOpen && (
@@ -2521,24 +2532,35 @@ function AssetPreview({ asset }) {
   return <span className="asset-glb-preview">{assetFormat(asset)}</span>;
 }
 
-function AssetDrawer({ asset, scenes, onClose, onSave, onDelete }) {
+function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const [draft, setDraft] = useState(asset);
+  const [groupRows, setGroupRows] = useState(() => assetToGroupRows(asset));
+  const [selectedGroupRowUid, setSelectedGroupRowUid] = useState(null);
   const salons = getSalonRows(scenes).map((salon) => salon.title);
   const assignedSalons = assetSalons(draft, scenes);
   const isGroupAsset = Boolean(draft.dimensions?.isGroup);
+  const sourceAssets = groupSourceAssets(assets);
+  const fallbackType = sourceAssets[0]?.type || '';
+  const activeGroupRowUid = selectedGroupRowUid || groupRows[0]?.uid || null;
   const draftPlacementRuleId = normalizePlacementRule(draft.dimensions?.placementRule)?.id || 'free';
 
-  useEffect(() => setDraft(asset), [asset]);
+  useEffect(() => {
+    setDraft(asset);
+    setGroupRows(assetToGroupRows(asset));
+    setSelectedGroupRowUid(null);
+  }, [asset]);
 
   const toggleSalon = (salon) => {
     const current = new Set(assetSalons(draft, scenes));
     if (current.has(salon)) current.delete(salon);
     else current.add(salon);
+    const nextSalons = [...current];
     setDraft({
       ...draft,
+      is_active: nextSalons.length > 0,
       dimensions: {
         ...(draft.dimensions || {}),
-        salons: [...current],
+        salons: nextSalons,
       },
     });
   };
@@ -2549,6 +2571,37 @@ function AssetDrawer({ asset, scenes, onClose, onSave, onDelete }) {
       dimensions: {
         ...(draft.dimensions || {}),
         placementRule: placementRuleFromId(ruleId),
+      },
+    });
+  };
+
+  const updateGroupRow = (uid, patch) => {
+    setGroupRows((current) => current.map((row) => (row.uid === uid ? { ...row, ...patch } : row)));
+  };
+
+  const removeGroupRow = (uid) => {
+    setGroupRows((current) => current.filter((row) => row.uid !== uid));
+    if (activeGroupRowUid === uid) setSelectedGroupRowUid(groupRows.find((row) => row.uid !== uid)?.uid || null);
+  };
+
+  const saveDraft = () => {
+    if (!isGroupAsset) {
+      onSave(draft);
+      return;
+    }
+
+    const children = buildGroupChildren(groupRows, sourceAssets);
+    if (!children.length) return;
+    onSave({
+      ...draft,
+      label: draft.label?.trim() || 'Groupe d’objets',
+      dimensions: {
+        ...(draft.dimensions || {}),
+        isGroup: true,
+        category: 'Groupes',
+        groupSize: computeGroupSize(children),
+        children,
+        format: 'Groupe',
       },
     });
   };
@@ -2565,6 +2618,11 @@ function AssetDrawer({ asset, scenes, onClose, onSave, onDelete }) {
         </header>
 
         <AssetPreview asset={draft} />
+
+        <label className="asset-group-field">
+          <span>Nom</span>
+          <input value={draft.label || ''} onChange={(event) => setDraft({ ...draft, label: event.target.value })} />
+        </label>
 
         <dl className="asset-meta-card">
           <div><dt>Nom</dt><dd>{draft.label}</dd></div>
@@ -2591,23 +2649,65 @@ function AssetDrawer({ asset, scenes, onClose, onSave, onDelete }) {
         </section>
 
         {isGroupAsset && (
-          <section className="asset-group-placement">
-            <h3>Règle de placement</h3>
-            <label>
-              <span>Position obligatoire</span>
-              <select value={draftPlacementRuleId} onChange={(event) => updatePlacementRule(event.target.value)}>
-                {placementRuleOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-              </select>
-            </label>
-            <small>{placementRuleLabel(draftPlacementRuleId, true)}</small>
-          </section>
+          <>
+            <section className="asset-group-placement">
+              <h3>Règle de placement</h3>
+              <label>
+                <span>Position obligatoire</span>
+                <select value={draftPlacementRuleId} onChange={(event) => updatePlacementRule(event.target.value)}>
+                  {placementRuleOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                </select>
+              </label>
+              <small>{placementRuleLabel(draftPlacementRuleId, true)}</small>
+            </section>
+
+            <section className="asset-group-builder">
+              <h3>Composition du groupe</h3>
+              <p>Tu peux modifier les objets, leur position X/Z et les déplacer directement sur le mini-plan.</p>
+              <MiniGroupPlan
+                rows={groupRows}
+                sourceAssets={sourceAssets}
+                selectedUid={activeGroupRowUid}
+                onSelect={setSelectedGroupRowUid}
+                onMove={(uid, position) => updateGroupRow(uid, position)}
+              />
+              {groupRows.map((row) => {
+                const selectedSource = sourceAssets.find((source) => source.type === row.type);
+                return (
+                  <article key={row.uid} className={`asset-group-row ${activeGroupRowUid === row.uid ? 'active' : ''}`} onClick={() => setSelectedGroupRowUid(row.uid)}>
+                    <label>
+                      <span>Objet</span>
+                      <select value={row.type} onChange={(event) => updateGroupRow(row.uid, { type: event.target.value, label: '' })}>
+                        {sourceAssets.map((source) => <option key={source.type} value={source.type}>{source.label}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Libellé plan</span>
+                      <input value={row.label || selectedSource?.label || ''} onChange={(event) => updateGroupRow(row.uid, { label: event.target.value })} />
+                    </label>
+                    <label><span>X m</span><input type="number" step="0.10" value={row.x} onChange={(event) => updateGroupRow(row.uid, { x: event.target.value })} /></label>
+                    <label><span>Z m</span><input type="number" step="0.10" value={row.z} onChange={(event) => updateGroupRow(row.uid, { z: event.target.value })} /></label>
+                    <label><span>Rotation</span><input type="number" step="5" value={row.rotation} onChange={(event) => updateGroupRow(row.uid, { rotation: event.target.value })} /></label>
+                    <button type="button" onClick={() => removeGroupRow(row.uid)} disabled={groupRows.length <= 1}><Trash2 size={14} /></button>
+                  </article>
+                );
+              })}
+              <button type="button" className="asset-group-add-row" onClick={() => {
+                const uid = `group-row-${Date.now()}`;
+                setGroupRows((current) => [...current, { uid, type: fallbackType, x: 0, z: 0, rotation: 0 }]);
+                setSelectedGroupRowUid(uid);
+              }}>
+                <Plus size={14} /> Ajouter un objet au groupe
+              </button>
+            </section>
+          </>
         )}
 
         <small className="asset-price-note">Prix spécifique {assignedSalons[0] || 'salon'} : {draft.dimensions?.price ? `${draft.dimensions.price} €` : '—'}</small>
 
         <footer>
-          <button type="button" className="asset-delete" onClick={onDelete}>Supprimer</button>
-          <button type="button" className="asset-save" onClick={() => onSave(draft)}>Enregistrer les modifications</button>
+          <button type="button" className="asset-delete" onClick={onDelete}>Supprimer définitivement</button>
+          <button type="button" className="asset-save" onClick={saveDraft}>Enregistrer les modifications</button>
         </footer>
       </aside>
     </div>
@@ -2642,26 +2742,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
   };
 
   const saveGroup = async () => {
-    const children = rows
-      .map((row, index) => {
-        const source = sourceAssets.find((asset) => asset.type === row.type);
-        if (!source) return null;
-        return {
-          id: `${source.type}-child-${index + 1}`,
-          type: source.type,
-          label: row.label || source.label,
-          x: Number(row.x || 0),
-          y: 0,
-          z: Number(row.z || 0),
-          rotation: Number(row.rotation || 0),
-          modelUrl: source.model_url,
-          modelSize: assetModelSize(source),
-          materialUrl: source.dimensions?.materialUrl || null,
-          color: source.dimensions?.color || source.color,
-          lockedInGroup: true,
-        };
-      })
-      .filter(Boolean);
+    const children = buildGroupChildren(rows, sourceAssets);
 
     if (!children.length) return;
     setSaving(true);
@@ -2975,8 +3056,8 @@ function assetDimensionsLabel(asset) {
 }
 
 function groupSourceAssets(assets = []) {
-  const baseAssets = catalog
-    .filter((entry) => !entry.isGroup && entry.type !== 'screen')
+  const baseAssets = nativeCatalogEntries()
+    .filter((entry) => !entry.isGroup && !isWallItemType(entry.type))
     .map((entry) => ({
       type: entry.type,
       label: entry.label,
@@ -2988,9 +3069,47 @@ function groupSourceAssets(assets = []) {
         materialUrl: entry.materialUrl || null,
       },
     }));
-  const dynamicAssets = assets.filter((asset) => asset.is_active && !asset.dimensions?.isGroup && asset.type !== 'screen');
+  const dynamicAssets = assets.filter((asset) => asset.is_active && !asset.dimensions?.isGroup && !isWallItemType(asset.type));
   const all = [...baseAssets, ...dynamicAssets];
   return all.filter((asset, index) => all.findIndex((candidate) => candidate.type === asset.type) === index);
+}
+
+function nativeCatalogEntries() {
+  return catalog.filter((entry) => !entry.modelUrl && !entry.materialUrl && !entry.isGroup);
+}
+
+function assetToGroupRows(asset) {
+  return (asset?.dimensions?.children || []).map((child, index) => ({
+    uid: `${child.id || child.type || 'child'}-${index}-${Date.now()}`,
+    type: child.type,
+    label: child.label || '',
+    x: Number(child.x || 0),
+    z: Number(child.z || 0),
+    rotation: Number(child.rotation || 0),
+  }));
+}
+
+function buildGroupChildren(rows, sourceAssets) {
+  return rows
+    .map((row, index) => {
+      const source = sourceAssets.find((asset) => asset.type === row.type);
+      if (!source) return null;
+      return {
+        id: `${source.type}-child-${index + 1}`,
+        type: source.type,
+        label: row.label || source.label,
+        x: Number(row.x || 0),
+        y: 0,
+        z: Number(row.z || 0),
+        rotation: Number(row.rotation || 0),
+        modelUrl: source.model_url,
+        modelSize: assetModelSize(source),
+        materialUrl: source.dimensions?.materialUrl || null,
+        color: source.dimensions?.color || source.color,
+        lockedInGroup: true,
+      };
+    })
+    .filter(Boolean);
 }
 
 function assetSalons(asset, scenes = []) {
