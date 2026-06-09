@@ -49,6 +49,8 @@ const fixedWallHeight = 2.5;
 const wallThickness = 0.06;
 const screenDepth = 0.06;
 const wallItemSnap = 0.25;
+const collisionPadding = 0.04;
+const collisionPlacementStep = 0.25;
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
   { id: 'layout', label: 'Aménagement', icon: '📐' },
@@ -702,13 +704,7 @@ function ConfiguratorApp({ initialScene }) {
   };
 
   const updateItem = (id, patch) => {
-    setItems((current) =>
-      current.map((item) => {
-        if (item.id !== id) return item;
-        const next = { ...item, ...patch };
-        return constrainItem(next, width, depth, layout);
-      })
-    );
+    setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout));
   };
 
   const moveDraggedItem = (point) => {
@@ -727,7 +723,11 @@ function ConfiguratorApp({ initialScene }) {
 
   const addItem = (entry) => {
     const item = makeItem(entry.type, width, depth, layout, entry);
-    setItems((current) => [...current, item]);
+    setItems((current) => {
+      const placed = placeItemInFreeSpot(item, current, width, depth, layout);
+      if (!placed) return current;
+      return [...current, placed];
+    });
     setSelectedId(item.id);
   };
 
@@ -2039,7 +2039,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   }, [assets, salon.name]);
 
   const updateItem = (id, patch) => {
-    setItems((current) => current.map((item) => (item.id === id ? constrainItem({ ...item, ...patch }, width, depth, layout) : item)));
+    setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout));
   };
 
   const moveDraggedItem = (point) => {
@@ -2056,7 +2056,11 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
 
   const addItem = (entry) => {
     const item = makeItem(entry.type, width, depth, layout, entry);
-    setItems((current) => [...current, { ...item, label: entry.label }]);
+    setItems((current) => {
+      const placed = placeItemInFreeSpot({ ...item, label: entry.label }, current, width, depth, layout);
+      if (!placed) return current;
+      return [...current, placed];
+    });
     setSelectedId(item.id);
   };
 
@@ -3163,6 +3167,79 @@ function constrainItem(item, width, depth, layout) {
   };
 }
 
+function updateSceneItemWithCollision(items, id, patch, width, depth, layout) {
+  const currentItem = items.find((item) => item.id === id);
+  if (!currentItem) return items;
+
+  const candidate = constrainItem({ ...currentItem, ...patch }, width, depth, layout);
+  if (collidesWithScene(candidate, items, id)) return items;
+  return items.map((item) => (item.id === id ? candidate : item));
+}
+
+function placeItemInFreeSpot(item, items, width, depth, layout) {
+  const firstCandidate = constrainItem(item, width, depth, layout);
+  if (isWallItem(firstCandidate) || !collidesWithScene(firstCandidate, items, firstCandidate.id)) return firstCandidate;
+
+  const bounds = itemGroupBounds(firstCandidate);
+  const minX = -width / 2 - bounds.minX;
+  const maxX = width / 2 - bounds.maxX;
+  const minZ = -depth / 2 - bounds.minZ;
+  const maxZ = depth / 2 - bounds.maxZ;
+  const candidates = [];
+
+  for (let z = minZ; z <= maxZ + 0.001; z += collisionPlacementStep) {
+    for (let x = minX; x <= maxX + 0.001; x += collisionPlacementStep) {
+      candidates.push({
+        x: Number(x.toFixed(2)),
+        z: Number(z.toFixed(2)),
+        distance: Math.hypot(x - firstCandidate.x, z - firstCandidate.z),
+      });
+    }
+  }
+
+  for (const position of candidates.sort((a, b) => a.distance - b.distance)) {
+    const candidate = constrainItem({ ...firstCandidate, x: position.x, z: position.z }, width, depth, layout);
+    if (!collidesWithScene(candidate, items, candidate.id)) return candidate;
+  }
+
+  return null;
+}
+
+function collidesWithScene(candidate, items, ignoreId = null) {
+  if (isWallItem(candidate)) return false;
+  const candidateBox = itemCollisionBox(candidate);
+  if (!candidateBox) return false;
+
+  return (items || []).some((item) => {
+    if (!item || item.id === ignoreId || isWallItem(item)) return false;
+    const itemBox = itemCollisionBox(item);
+    return itemBox ? boxesOverlap(candidateBox, itemBox) : false;
+  });
+}
+
+function itemCollisionBox(item) {
+  if (!item || isWallItem(item)) return null;
+  const bounds = itemGroupBounds(item);
+  const radians = ((Number(item.rotation || 0) * Math.PI) / 180);
+  const halfWidth = bounds.width / 2;
+  const halfDepth = bounds.depth / 2;
+  const rotatedHalfX = Math.abs(Math.cos(radians)) * halfWidth + Math.abs(Math.sin(radians)) * halfDepth;
+  const rotatedHalfZ = Math.abs(Math.sin(radians)) * halfWidth + Math.abs(Math.cos(radians)) * halfDepth;
+  const centerX = Number(item.x || 0) + Number(bounds.centerX || 0);
+  const centerZ = Number(item.z || 0) + Number(bounds.centerZ || 0);
+
+  return {
+    minX: centerX - rotatedHalfX - collisionPadding,
+    maxX: centerX + rotatedHalfX + collisionPadding,
+    minZ: centerZ - rotatedHalfZ - collisionPadding,
+    maxZ: centerZ + rotatedHalfZ + collisionPadding,
+  };
+}
+
+function boxesOverlap(a, b) {
+  return a.minX < b.maxX && a.maxX > b.minX && a.minZ < b.maxZ && a.maxZ > b.minZ;
+}
+
 function itemGroupSize(item) {
   const bounds = itemGroupBounds(item);
   return {
@@ -3190,7 +3267,7 @@ function itemGroupBounds(item) {
     };
   };
 
-  if (!item.isGroup || !item.children?.length) return centeredBounds(item.modelSize || [0.7, 0.7, 0.7]);
+  if (!item.isGroup || !item.children?.length) return centeredBounds(itemDefaultSize(item));
 
   if (item.groupSize?.length >= 3) {
     const childBounds = item.children?.length ? childrenBounds(item.children) : null;
@@ -3199,6 +3276,15 @@ function itemGroupBounds(item) {
   }
 
   return childrenBounds(item.children) || centeredBounds();
+}
+
+function itemDefaultSize(item) {
+  const defaults = {
+    chair: [0.52, 0.86, 0.5],
+    table: [0.96, 0.62, 0.96],
+    counter: [1.15, 1.01, 0.5],
+  };
+  return item?.modelSize || defaults[item?.type] || [0.7, 0.7, 0.7];
 }
 
 function childrenBounds(children) {
