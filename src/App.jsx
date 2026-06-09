@@ -3251,8 +3251,10 @@ function collidesWithWallItems(candidate, items, ignoreId = null, width = 0, dep
   if (!candidateBox) return false;
 
   return (items || []).some((item) => {
-    if (!item || item.id === ignoreId || !isWallItem(item)) return false;
-    const itemBox = wallItemCollisionBox(item, items, width, depth);
+    if (!item || item.id === ignoreId) return false;
+    const itemBox = isWallItem(item)
+      ? wallItemCollisionBox(item, items, width, depth)
+      : floorItemWallCollisionBox(item, candidateBox.wall, width, depth);
     return itemBox ? wallBoxesOverlap(candidateBox, itemBox) : false;
   });
 }
@@ -3283,6 +3285,19 @@ function wallItemMetrics(item, items, width, depth) {
 
 function wallBoxesOverlap(a, b) {
   return a.wall === b.wall && a.minAxis < b.maxAxis && a.maxAxis > b.minAxis && a.minY < b.maxY && a.maxY > b.minY;
+}
+
+function floorItemWallCollisionBox(item, wall, width, depth) {
+  const blocker = floorWallBlocker(item, wall, width, depth);
+  if (!blocker) return null;
+  const bounds = itemGroupBounds(item);
+  return {
+    wall,
+    minAxis: blocker.min,
+    maxAxis: blocker.max,
+    minY: 0,
+    maxY: Number(bounds.height || fixedWallHeight) + collisionPadding,
+  };
 }
 
 function itemCollisionBox(item) {
@@ -3435,11 +3450,12 @@ function wallMountedBlocker(item, wall, width, depth) {
 }
 
 function floorWallBlocker(item, wall, width, depth) {
-  const bounds = itemGroupBounds(item);
-  const minX = Number(item.x || 0) + bounds.minX;
-  const maxX = Number(item.x || 0) + bounds.maxX;
-  const minZ = Number(item.z || 0) + bounds.minZ;
-  const maxZ = Number(item.z || 0) + bounds.maxZ;
+  const bounds = itemCollisionBox(item);
+  if (!bounds) return null;
+  const minX = bounds.minX;
+  const maxX = bounds.maxX;
+  const minZ = bounds.minZ;
+  const maxZ = bounds.maxZ;
   const wallZone = 0.72;
 
   if (wall === 'back' && minZ <= -depth / 2 + wallZone) return { min: minX - 0.1, max: maxX + 0.1 };
