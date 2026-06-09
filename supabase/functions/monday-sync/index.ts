@@ -97,8 +97,9 @@ Deno.serve(async (req) => {
         .eq("monday_item_id", item.id)
         .maybeSingle();
 
-      const preset = await findActivePreset(supabase, context.offerId, context.salonId);
-      const scene = mapMondayItemToScene(item, source, savedClient?.id, savedProfile?.id, context, preset?.id);
+      const sceneDraft = mapMondayItemToScene(item, source, savedClient?.id, savedProfile?.id, context);
+      const preset = await findActivePreset(supabase, context.offerId, context.salonId, sceneDraft.layout);
+      const scene = { ...sceneDraft, base_preset_id: preset?.id || null };
       const { data: savedScene, error: saveError } = await supabase
         .from("scenes")
         .upsert(scene, { onConflict: "monday_item_id" })
@@ -256,7 +257,7 @@ function mapMondayItemToClient(item: any, source: any, userProfileId?: string) {
   };
 }
 
-function mapMondayItemToScene(item: any, source: any, clientId: string | undefined, userProfileId: string | undefined, context: any, presetId?: string) {
+function mapMondayItemToScene(item: any, source: any, clientId: string | undefined, userProfileId: string | undefined, context: any) {
   const mapping = source.mapping ?? {};
   const width = Number(readMappingValue(item, mapping.width_m)) || 4;
   const depth = Number(readMappingValue(item, mapping.depth_m)) || 3;
@@ -272,7 +273,7 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
     salon_id: context.salonId || null,
     offer_id: context.offerId || null,
     exhibitor_user_id: userProfileId || null,
-    base_preset_id: presetId || null,
+    base_preset_id: null,
     status: "created",
     client_status: "not_started",
     client_name: clientName,
@@ -288,8 +289,14 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
   };
 }
 
-async function findActivePreset(supabase: any, offerId?: string, salonId?: string) {
+async function findActivePreset(supabase: any, offerId?: string, salonId?: string, layout = "u") {
   if (offerId) {
+    const exact = await findPresetByLayout(supabase, { offerId, layout });
+    if (exact) return exact;
+
+    const fallback = await findPresetByLayout(supabase, { offerId, layout: "u" });
+    if (fallback) return fallback;
+
     const { data, error } = await supabase
       .from("stand_presets")
       .select("*, stand_preset_items(*)")
@@ -303,6 +310,9 @@ async function findActivePreset(supabase: any, offerId?: string, salonId?: strin
   }
 
   if (!salonId) return null;
+  const exactSalonPreset = await findPresetByLayout(supabase, { salonId, layout, offerIsNull: true });
+  if (exactSalonPreset) return exactSalonPreset;
+
   const { data, error } = await supabase
     .from("stand_presets")
     .select("*, stand_preset_items(*)")
@@ -312,6 +322,24 @@ async function findActivePreset(supabase: any, offerId?: string, salonId?: strin
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function findPresetByLayout(supabase: any, params: { offerId?: string; salonId?: string; layout: string; offerIsNull?: boolean }) {
+  let query = supabase
+    .from("stand_presets")
+    .select("*, stand_preset_items(*)")
+    .eq("is_active", true)
+    .eq("layout", params.layout)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (params.offerId) query = query.eq("offer_id", params.offerId);
+  if (params.salonId) query = query.eq("salon_id", params.salonId);
+  if (params.offerIsNull) query = query.is("offer_id", null);
+
+  const { data, error } = await query.maybeSingle();
   if (error) throw error;
   return data;
 }

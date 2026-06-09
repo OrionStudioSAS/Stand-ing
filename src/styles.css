@@ -3132,6 +3132,58 @@ select {
   background: #ffe5e6;
 }
 
+.preset-modal-body {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.preset-layout-reference-tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 24px 0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgba(20, 29, 43, 0.08);
+}
+
+.preset-layout-reference-tabs > span {
+  color: #77808c;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.preset-layout-reference-tabs button {
+  display: grid;
+  gap: 2px;
+  min-width: 118px;
+  min-height: 42px;
+  border: 1px solid #dce2eb;
+  border-radius: 10px;
+  padding: 6px 10px;
+  color: #354050;
+  background: #f8fafc;
+  font-weight: 950;
+}
+
+.preset-layout-reference-tabs button small {
+  color: #8d96a3;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.preset-layout-reference-tabs button.active {
+  color: #fff;
+  border-color: #1f4378;
+  background: #1f4378;
+}
+
+.preset-layout-reference-tabs button.active small {
+  color: #c7d8f4;
+}
+
 .preset-editor-grid {
   min-height: 0;
   display: grid;

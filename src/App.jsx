@@ -1753,6 +1753,28 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
     }
   };
 
+  const openPackEditor = async (entry) => {
+    if (!selectedSalon) return;
+    setActionState({ loadingPack: entry.packName, savingBoardPack: '', deletingPresetId: '', message: '', error: '' });
+    try {
+      const { offer } = await ensureSalonOffer(selectedSalon, entry.packName);
+      const nextSalon = mergeSalonOffer(selectedSalon, offer);
+      setEditing({
+        ...entry,
+        salon: nextSalon,
+        salonShort: salonShortLabel(nextSalon.name),
+        offer,
+        presets: offer.presets || [],
+        preset: offer.presets?.find((item) => item.layout === 'u') || offer.presets?.[0] || null,
+        active: true,
+      });
+      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: '' });
+      await onSalonChanged?.();
+    } catch (error) {
+      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’ouvrir ce pack.' });
+    }
+  };
+
   const openBoardEditor = (entry) => {
     setBoardEditor({ packName: entry.packName, value: entry.source?.board_id || '' });
   };
@@ -1807,17 +1829,19 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
         {packCards.length ? packCards.map((entry) => (
           <article className={`preset-library-card ${entry.active ? '' : 'inactive'}`} key={`${selectedSalon?.id || 'salon'}-${entry.packName}`}>
             <button className="preset-card-menu" type="button" aria-label="Options pack">⋮</button>
-            <div className="preset-card-preview">{entry.active ? presetReferenceLabel(entry.preset) : '—'}</div>
+            <div className="preset-card-preview">{entry.active ? presetReferenceLabel(entry.preset, entry.presets) : '—'}</div>
             <div className="preset-card-body">
               <strong>{entry.salonShort} - {entry.packName}</strong>
-              <span>{entry.active ? presetMetaLabel(entry.preset) : 'Pack non activé sur ce salon'}</span>
+              <span>{entry.active ? presetMetaLabel(entry.preset, entry.presets) : 'Pack non activé sur ce salon'}</span>
               <small className="preset-board-line">
                 Monday : {entry.source?.board_id ? `board ${entry.source.board_id}` : 'aucun board'}
               </small>
               <div>
                 {entry.active ? (
                   <>
-                    <button className="primary" type="button" onClick={() => setEditing(entry)}>Modifier</button>
+                    <button className="primary" type="button" disabled={actionState.loadingPack === entry.packName} onClick={() => openPackEditor(entry)}>
+                      {actionState.loadingPack === entry.packName ? 'Ouverture...' : 'Modifier'}
+                    </button>
                     <button type="button" onClick={() => openBoardEditor(entry)}>
                       {entry.source?.board_id ? 'Modifier board' : 'Ajouter board ID'}
                     </button>
@@ -1877,16 +1901,18 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
 function salonPackCards(salon) {
   return defaultPackNames.map((packName) => {
     const offer = (salon.offers || []).find((item) => normalizeTextValue(item.name) === normalizeTextValue(packName)) || null;
-    const preset = offer?.presets?.[0] || (salon.presets || []).find((item) => item.offer_id === offer?.id) || null;
+    const presets = offer?.presets?.length ? offer.presets : (salon.presets || []).filter((item) => item.offer_id === offer?.id);
+    const preset = presets.find((item) => item.layout === 'u') || presets[0] || null;
     const source = offer?.monday_source || (salon.monday_sources || []).find((item) => normalizeTextValue(item.offer) === normalizeTextValue(packName)) || null;
     return {
       salon,
       salonShort: salonShortLabel(salon.name),
       offer,
+      presets,
       preset,
       source,
       packName,
-      active: Boolean(offer && preset),
+      active: Boolean(offer && presets.length),
     };
   });
 }
@@ -1906,11 +1932,16 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
   const initialOffer = (salon.offers || []).find((offer) => offer.id === initialOfferId) || salon.offers?.[0] || null;
   const [localSalon, setLocalSalon] = useState(salon);
   const [saveState, setSaveState] = useState({ loading: false, message: '', error: '' });
+  const [selectedLayout, setSelectedLayout] = useState('u');
   const selectedOffer = (localSalon.offers || []).find((offer) => offer.id === initialOfferId) || initialOffer || null;
-  const activePreset = selectedOffer?.presets?.[0] || (localSalon.presets || []).find((preset) => preset.offer_id === selectedOffer?.id) || null;
+  const offerPresets = selectedOffer?.presets?.length ? selectedOffer.presets : (localSalon.presets || []).filter((preset) => preset.offer_id === selectedOffer?.id);
+  const activePreset = offerPresets.find((preset) => (preset.layout || 'u') === selectedLayout) || offerPresets[0] || null;
 
   useEffect(() => {
     setLocalSalon(salon);
+    const nextOffer = (salon.offers || []).find((offer) => offer.id === initialOfferId) || salon.offers?.[0] || null;
+    const nextPresets = nextOffer?.presets?.length ? nextOffer.presets : (salon.presets || []).filter((preset) => preset.offer_id === nextOffer?.id);
+    setSelectedLayout(nextPresets.find((preset) => preset.layout === 'u')?.layout || nextPresets[0]?.layout || 'u');
   }, [salon, initialOfferId]);
 
   const savePreset = async (sceneDraft) => {
@@ -1923,11 +1954,11 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
         presets: [...(current.presets || []).filter((item) => item.id !== savedPreset.id), savedPreset],
         offers: (current.offers || []).map((offer) => (
           offer.id === selectedOffer?.id
-            ? { ...offer, presets: [savedPreset] }
+            ? { ...offer, presets: [...(offer.presets || []).filter((item) => item.id !== savedPreset.id), savedPreset] }
             : offer
         )),
       }));
-      setSaveState({ loading: false, message: 'Pack de base sauvegardé. Les prochaines scènes Monday reprendront ce placement.', error: '' });
+      setSaveState({ loading: false, message: `Base ${layoutLabel(savedPreset.layout)} sauvegardée. Monday appliquera cette référence pour la même implantation.`, error: '' });
       await onSaved?.();
     } catch (error) {
       setSaveState({ loading: false, message: '', error: error.message || 'Sauvegarde impossible.' });
@@ -1952,15 +1983,31 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
         </div>
 
         {activePreset ? (
-          <PresetSceneEditor
-            key={activePreset.id}
-            salon={localSalon}
-            offer={selectedOffer}
-            preset={activePreset}
-            assets={assets}
-            saving={saveState.loading}
-            onSave={savePreset}
-          />
+          <div className="preset-modal-body">
+            <div className="preset-layout-reference-tabs">
+              <span>Base à configurer :</span>
+              {layouts.map((layoutOption) => {
+                const layoutPreset = offerPresets.find((preset) => (preset.layout || 'u') === layoutOption.id);
+                const itemCount = layoutPreset?.stand_preset_items?.length || 0;
+                return (
+                  <button key={layoutOption.id} type="button" className={selectedLayout === layoutOption.id ? 'active' : ''} onClick={() => setSelectedLayout(layoutOption.id)}>
+                    {layoutOption.label}
+                    <small>{itemCount} objet{itemCount > 1 ? 's' : ''}</small>
+                  </button>
+                );
+              })}
+            </div>
+            <PresetSceneEditor
+              key={activePreset.id}
+              salon={localSalon}
+              offer={selectedOffer}
+              preset={activePreset}
+              assets={assets}
+              saving={saveState.loading}
+              onSave={savePreset}
+              onPresetLayoutChange={setSelectedLayout}
+            />
+          </div>
         ) : (
           <div className="admin-empty-row">Sélectionne ou ajoute un pack pour configurer sa scène de base.</div>
         )}
@@ -1969,7 +2016,7 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
   );
 }
 
-function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave }) {
+function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPresetLayoutChange }) {
   const initialScene = presetToEditableScene(preset);
   const [width, setWidth] = useState(initialScene.dimensions.width);
   const [depth, setDepth] = useState(initialScene.dimensions.depth);
@@ -2012,6 +2059,10 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave }) {
   };
 
   const chooseLayout = (nextLayout) => {
+    if (onPresetLayoutChange && nextLayout !== layout) {
+      onPresetLayoutChange(nextLayout);
+      return;
+    }
     setLayout(nextLayout);
     setItems((current) => current.map((item) => constrainItem(item, width, depth, nextLayout)));
   };
@@ -2078,7 +2129,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave }) {
 
       <aside className="preset-side-panel">
         <h3>{offer?.name || 'Pack'} · {salon.name}</h3>
-        <p>Ce pack est propre à ce salon. Un pack Business sur un autre salon aura son propre placement.</p>
+        <p>Cette base est spécifique à l’implantation {layoutLabel(layout)}. Change d’onglet pour configurer les autres murs.</p>
         <div className="preset-dimensions">
           <label>Largeur <span>{width} m</span><input type="range" min="2" max="12" step="0.5" value={width} onChange={(event) => setWidth(Number(event.target.value))} /></label>
           <label>Profondeur <span>{depth} m</span><input type="range" min="2" max="10" step="0.5" value={depth} onChange={(event) => setDepth(Number(event.target.value))} /></label>
@@ -2227,12 +2278,17 @@ function presetFaceCount(preset) {
   return 3;
 }
 
-function presetReferenceLabel(preset) {
+function presetReferenceLabel(preset, presets = []) {
+  if (presets.length > 1) return `${presets.length} bases`;
   const area = presetArea(preset);
   return area ? `${area}m${presetFaceCount(preset)}F` : `${presetFaceCount(preset)}F`;
 }
 
-function presetMetaLabel(preset) {
+function presetMetaLabel(preset, presets = []) {
+  if (presets.length > 1) {
+    const totalModules = presets.reduce((sum, item) => sum + (item.stand_preset_items?.length || 0), 0);
+    return `${presets.length} implantations · ${totalModules} module${totalModules > 1 ? 's' : ''} inclus`;
+  }
   const area = presetArea(preset);
   const modules = preset.stand_preset_items?.length || 0;
   return `${area ? `${area} m²` : 'Surface à définir'} · ${presetFaceCount(preset)} face${presetFaceCount(preset) > 1 ? 's' : ''} · ${modules} module${modules > 1 ? 's' : ''}`;

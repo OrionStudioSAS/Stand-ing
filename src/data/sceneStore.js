@@ -1,6 +1,6 @@
 import { demoScenes } from './seed.js';
 import { supabase } from './supabaseClient.js';
-import { catalog } from '../config/catalog.js';
+import { catalog, layouts } from '../config/catalog.js';
 
 const storageKey = 'standing-scenes-v1';
 const fixedWallHeight = 2.5;
@@ -259,8 +259,8 @@ export async function ensureSalonOffer(salon, packName) {
   const slug = slugifyAsset(packName);
   if (!supabase) {
     const offer = { id: `${salon.id}-${slug}`, salon_id: salon.id, slug, name: packName, presets: [], monday_source: null };
-    const preset = makeLocalPreset(salon, offer);
-    return { offer: { ...offer, presets: [preset] }, preset };
+    const presets = makeLocalPreset(salon, offer);
+    return { offer: { ...offer, presets }, preset: presets[0] || null };
   }
 
   const { data: offer, error: offerError } = await supabase
@@ -278,9 +278,9 @@ export async function ensureSalonOffer(salon, packName) {
 
   if (offerError) throw offerError;
 
-  const preset = await ensurePresetForOffer(salon, offer);
+  const presets = await ensurePresetForOffer(salon, offer);
   const mondaySource = await linkMondaySourceToOffer(salon, offer);
-  return { offer: { ...offer, monday_source: mondaySource, presets: [preset] }, preset };
+  return { offer: { ...offer, monday_source: mondaySource, presets }, preset: presets[0] || null };
 }
 
 export async function saveMondayBoardForPack(salon, packName, boardId) {
@@ -344,8 +344,15 @@ export async function deleteStandPreset(preset) {
   if (!preset?.id) throw new Error('Preset introuvable.');
   if (!supabase) return true;
 
-  const { error: itemsError } = await supabase.from('stand_preset_items').delete().eq('preset_id', preset.id);
-  if (itemsError) throw itemsError;
+  if (preset.offer_id && preset.salon_id) {
+    const { error } = await supabase
+      .from('stand_presets')
+      .delete()
+      .eq('salon_id', preset.salon_id)
+      .eq('offer_id', preset.offer_id);
+    if (error) throw error;
+    return true;
+  }
 
   const { error } = await supabase.from('stand_presets').delete().eq('id', preset.id);
   if (error) throw error;
@@ -760,46 +767,49 @@ async function ensurePresetForOffer(salon, offer) {
     .select('*')
     .eq('salon_id', salon.id)
     .eq('offer_id', offer.id)
-    .eq('is_active', true)
-    .maybeSingle();
+    .eq('is_active', true);
 
   if (findError) throw findError;
-  if (existing) return { ...existing, stand_preset_items: [] };
+  const existingByLayout = new Map((existing || []).map((preset) => [preset.layout || 'u', { ...preset, stand_preset_items: [] }]));
+  const missingLayouts = layouts.filter((layout) => !existingByLayout.has(layout.id));
 
-  const { data: preset, error: insertError } = await supabase
-    .from('stand_presets')
-    .insert({
-      salon_id: salon.id,
-      offer_id: offer.id,
-      name: `Scene de base ${offer.name} - ${salon.name}`,
-      description: `Objets inclus et placement de base pour ${offer.name} sur ${salon.name}`,
-      width_m: 5,
-      depth_m: 5,
-      height_m: 2.5,
-      layout: 'u',
-      base_config: { price_mode: 'included' },
-      is_active: true,
-    })
-    .select('*')
-    .single();
+  if (missingLayouts.length) {
+    const { data: created, error: insertError } = await supabase
+      .from('stand_presets')
+      .insert(missingLayouts.map((layout) => ({
+        salon_id: salon.id,
+        offer_id: offer.id,
+        name: `Scene de base ${offer.name} - ${salon.name} - ${layout.label}`,
+        description: `Objets inclus et placement de base pour ${offer.name} sur ${salon.name} (${layout.label})`,
+        width_m: 5,
+        depth_m: 5,
+        height_m: 2.5,
+        layout: layout.id,
+        base_config: { price_mode: 'included', layout_reference: layout.id },
+        is_active: true,
+      })))
+      .select('*');
 
-  if (insertError) throw insertError;
-  return { ...preset, stand_preset_items: [] };
+    if (insertError) throw insertError;
+    (created || []).forEach((preset) => existingByLayout.set(preset.layout || 'u', { ...preset, stand_preset_items: [] }));
+  }
+
+  return layouts.map((layout) => existingByLayout.get(layout.id)).filter(Boolean);
 }
 
 function makeLocalPreset(salon, offer) {
-  return {
-    id: `${offer.id}-preset`,
+  return layouts.map((layout) => ({
+    id: `${offer.id}-preset-${layout.id}`,
     salon_id: salon.id,
     offer_id: offer.id,
-    name: `Scene de base ${offer.name} - ${salon.name}`,
+    name: `Scene de base ${offer.name} - ${salon.name} - ${layout.label}`,
     width_m: 5,
     depth_m: 5,
     height_m: 2.5,
-    layout: 'u',
-    base_config: {},
+    layout: layout.id,
+    base_config: { layout_reference: layout.id },
     stand_preset_items: [],
-  };
+  }));
 }
 
 async function linkMondaySourceToOffer(salon, offer) {
