@@ -13,6 +13,8 @@ function normalizeSceneItem(item) {
     isGroup,
     groupSize: item.groupSize || catalogItem?.groupSize,
     children: isGroup ? normalizeGroupChildren(item.children || catalogItem?.children || []) : item.children,
+    placementRule: item.placementRule || catalogItem?.placementRule,
+    lockedPlacement: item.lockedPlacement ?? Boolean(item.placementRule || catalogItem?.placementRule?.locked),
     modelUrl: catalogItem?.modelUrl || item.modelUrl,
     modelSize: catalogItem?.modelSize || item.modelSize,
     color: catalogItem?.color || item.color,

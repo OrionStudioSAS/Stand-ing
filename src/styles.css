@@ -1771,6 +1771,11 @@ select {
   background: #e9eff7;
 }
 
+.view-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .view-toolbar.selection-mode button:first-child {
   color: #fff;
   background: #1f4378;
@@ -1799,6 +1804,16 @@ select {
 
 .toolbar-rotation-slider input {
   width: 100%;
+}
+
+.toolbar-lock-note {
+  width: 150px;
+  padding: 10px 12px;
+  color: #1f4378;
+  background: #f3f6fb;
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-align: center;
 }
 
 .config-panel {
@@ -4035,6 +4050,7 @@ select {
 }
 
 .asset-group-field input,
+.asset-group-placement select,
 .asset-group-row input,
 .asset-group-row select {
   width: 100%;
@@ -4045,6 +4061,36 @@ select {
   color: #252b34;
   background: #fff;
   font: inherit;
+}
+
+.asset-group-placement {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 16px;
+  border: 1px solid #d9e1ec;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f7faff;
+}
+
+.asset-group-placement h3 {
+  margin: 0;
+  color: #172033;
+  font-size: 0.95rem;
+}
+
+.asset-group-placement label {
+  display: grid;
+  gap: 6px;
+  color: #77808c;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.asset-group-placement small {
+  color: #697484;
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .asset-group-builder h3 {

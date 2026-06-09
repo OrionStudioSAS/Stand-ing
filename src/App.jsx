@@ -69,6 +69,12 @@ const languages = [
   { id: 'en', label: 'English', sublabel: 'Interface in English', short: 'EN', flag: '🇬🇧' },
 ];
 const defaultPackNames = ['Confort', 'Business', 'SIAE', 'Prestige'];
+const placementRuleOptions = [
+  { id: 'free', label: 'Libre', description: 'L’utilisateur peut poser et déplacer ce groupe normalement.' },
+  { id: 'back-left', label: 'Coin fond gauche', description: 'Le groupe se colle automatiquement au mur du fond, côté gauche.' },
+  { id: 'back-right', label: 'Coin fond droit', description: 'Le groupe se colle automatiquement au mur du fond, côté droit.' },
+  { id: 'back-center', label: 'Centre du mur du fond', description: 'Le groupe reste centré contre le mur du fond.' },
+];
 
 function makeItem(type, width, depth, layout, catalogEntry = null) {
   const entry = catalogEntry || catalog.find((item) => item.type === type);
@@ -80,15 +86,18 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
   };
 
   if (entry?.isGroup || entry?.children?.length) {
-    return {
+    const item = {
       ...base,
       isGroup: true,
       groupSize: entry.groupSize || [1.2, 1, 1.2],
       children: resolveGroupChildren(entry.children || []),
+      placementRule: normalizePlacementRule(entry.placementRule),
+      lockedPlacement: isLockedPlacementRule(entry.placementRule),
       x: 0,
       z: Math.min(depth / 2 - 0.9, 0.7),
       y: 0,
     };
+    return applyPlacementRule(item, width, depth, layout);
   }
 
   if (isWallItemType(type)) {
@@ -577,15 +586,18 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
 
 function ConfiguratorApp({ initialScene }) {
   const initialOptions = initialScene.options || initialScene.source_payload?.options || {};
-  const [width, setWidth] = useState(initialScene.dimensions?.width || 4);
-  const [depth, setDepth] = useState(initialScene.dimensions?.depth || 3);
+  const initialWidth = initialScene.dimensions?.width || 4;
+  const initialDepth = initialScene.dimensions?.depth || 3;
+  const initialLayout = initialScene.layout || 'u';
+  const [width, setWidth] = useState(initialWidth);
+  const [depth, setDepth] = useState(initialDepth);
   const height = fixedWallHeight;
-  const [layout, setLayout] = useState(initialScene.layout || 'u');
-  const [items, setItems] = useState(initialScene.items?.length ? initialScene.items : [
+  const [layout, setLayout] = useState(initialLayout);
+  const [items, setItems] = useState(() => (initialScene.items?.length ? initialScene.items : [
     { id: 'table-1', type: 'table', x: -0.75, z: 0.3, y: 0, rotation: 0 },
     { id: 'chair-1', type: 'chair', x: 0.8, z: 0.45, y: 0, rotation: -15 },
     { id: 'screen-1', type: 'screen', x: 0, z: -1.5, y: 1.65, wall: 'back', rotation: 0 },
-  ]);
+  ]).map((item) => constrainItem(item, initialWidth, initialDepth, initialLayout)));
   const [selectedId, setSelectedId] = useState('table-1');
   const [draggingId, setDraggingId] = useState(null);
   const [language, setLanguage] = useState('fr');
@@ -633,6 +645,11 @@ function ConfiguratorApp({ initialScene }) {
   const clientLabel = clientInfo.client || contactDetails.company || 'Aerosys Industries';
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
+
+  useEffect(() => {
+    setItems((current) => current.map((item) => constrainItem(item, width, depth, layout)));
+  }, [width, depth, layout]);
+
   const availableCatalog = useMemo(() => {
     const dynamicEntries = objectBank
       .filter((asset) => asset.is_active)
@@ -921,9 +938,10 @@ function ConfiguratorApp({ initialScene }) {
         <div className={`view-toolbar ${selected ? 'selection-mode' : ''}`} aria-label={selected ? 'Actions objet selectionne' : 'Outils de vue'}>
           {selected ? (
             <>
-              <button type="button" onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
+              <button type="button" disabled={itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
               <button type="button" onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
-              {rotationPanelOpen && !isWallItem(selected) && (
+              {itemPlacementLocked(selected) && <span className="toolbar-lock-note">Placement verrouillé</span>}
+              {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (
                 <label className="toolbar-rotation-slider">
                   <span>{selected.rotation || 0}°</span>
                   <input
@@ -2020,15 +2038,23 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
 
 function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPresetLayoutChange }) {
   const initialScene = presetToEditableScene(preset);
-  const [width, setWidth] = useState(initialScene.dimensions.width);
-  const [depth, setDepth] = useState(initialScene.dimensions.depth);
+  const initialWidth = initialScene.dimensions.width;
+  const initialDepth = initialScene.dimensions.depth;
+  const initialLayout = initialScene.layout;
+  const [width, setWidth] = useState(initialWidth);
+  const [depth, setDepth] = useState(initialDepth);
   const height = fixedWallHeight;
-  const [layout, setLayout] = useState(initialScene.layout);
-  const [items, setItems] = useState(initialScene.items);
+  const [layout, setLayout] = useState(initialLayout);
+  const [items, setItems] = useState(() => initialScene.items.map((item) => constrainItem(item, initialWidth, initialDepth, initialLayout)));
   const [selectedId, setSelectedId] = useState(initialScene.items[0]?.id || null);
   const [draggingId, setDraggingId] = useState(null);
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const selected = items.find((item) => item.id === selectedId);
+
+  useEffect(() => {
+    setItems((current) => current.map((item) => constrainItem(item, width, depth, layout)));
+  }, [width, depth, layout]);
+
   const availableCatalog = useMemo(() => {
     const dynamicEntries = (assets || [])
       .filter((asset) => asset.is_active)
@@ -2118,9 +2144,10 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
         <div className={`view-toolbar preset-toolbar ${selected ? 'selection-mode' : ''}`}>
           {selected ? (
             <>
-              <button type="button" onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
+              <button type="button" disabled={itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
               <button type="button" onClick={() => { setItems((current) => current.filter((item) => item.id !== selected.id)); setSelectedId(null); }} title="Supprimer"><Trash2 size={16} /></button>
-              {rotationPanelOpen && !isWallItem(selected) && (
+              {itemPlacementLocked(selected) && <span className="toolbar-lock-note">Placement verrouillé</span>}
+              {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (
                 <label className="toolbar-rotation-slider">
                   <span>{selected.rotation || 0}°</span>
                   <input type="range" min="-180" max="180" step="5" value={selected.rotation || 0} onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })} />
@@ -2193,6 +2220,8 @@ function normalizePresetItem(item) {
     isGroup,
     groupSize: config.groupSize || catalogItem?.groupSize,
     children: isGroup ? resolveGroupChildren(config.children || catalogItem?.children || []) : config.children,
+    placementRule: normalizePlacementRule(config.placementRule || catalogItem?.placementRule),
+    lockedPlacement: config.lockedPlacement ?? isLockedPlacementRule(config.placementRule || catalogItem?.placementRule),
     x: Number(item.x ?? config.x ?? 0),
     y: Number(item.y ?? config.y ?? 0),
     z: Number(item.z ?? config.z ?? 0),
@@ -2496,6 +2525,8 @@ function AssetDrawer({ asset, scenes, onClose, onSave, onDelete }) {
   const [draft, setDraft] = useState(asset);
   const salons = getSalonRows(scenes).map((salon) => salon.title);
   const assignedSalons = assetSalons(draft, scenes);
+  const isGroupAsset = Boolean(draft.dimensions?.isGroup);
+  const draftPlacementRuleId = normalizePlacementRule(draft.dimensions?.placementRule)?.id || 'free';
 
   useEffect(() => setDraft(asset), [asset]);
 
@@ -2508,6 +2539,16 @@ function AssetDrawer({ asset, scenes, onClose, onSave, onDelete }) {
       dimensions: {
         ...(draft.dimensions || {}),
         salons: [...current],
+      },
+    });
+  };
+
+  const updatePlacementRule = (ruleId) => {
+    setDraft({
+      ...draft,
+      dimensions: {
+        ...(draft.dimensions || {}),
+        placementRule: placementRuleFromId(ruleId),
       },
     });
   };
@@ -2549,6 +2590,19 @@ function AssetDrawer({ asset, scenes, onClose, onSave, onDelete }) {
           })}
         </section>
 
+        {isGroupAsset && (
+          <section className="asset-group-placement">
+            <h3>Règle de placement</h3>
+            <label>
+              <span>Position obligatoire</span>
+              <select value={draftPlacementRuleId} onChange={(event) => updatePlacementRule(event.target.value)}>
+                {placementRuleOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+              </select>
+            </label>
+            <small>{placementRuleLabel(draftPlacementRuleId, true)}</small>
+          </section>
+        )}
+
         <small className="asset-price-note">Prix spécifique {assignedSalons[0] || 'salon'} : {draft.dimensions?.price ? `${draft.dimensions.price} €` : '—'}</small>
 
         <footer>
@@ -2572,6 +2626,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
   const [selectedRowUid, setSelectedRowUid] = useState(null);
   const activeRowUid = selectedRowUid || rows[0]?.uid || null;
   const [assignedSalons, setAssignedSalons] = useState(() => getSalonRows(scenes).map((salon) => salon.title).slice(0, 1));
+  const [placementRuleId, setPlacementRuleId] = useState('free');
 
   const updateRow = (uid, patch) => {
     setRows((current) => current.map((row) => (row.uid === uid ? { ...row, ...patch } : row)));
@@ -2621,6 +2676,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
         isGroup: true,
         groupSize: computeGroupSize(children),
         children,
+        placementRule: placementRuleFromId(placementRuleId),
         salons: assignedSalons,
         addedBy: 'Admin Stand-ING',
         format: 'Groupe',
@@ -2644,6 +2700,17 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
           <span>Nom du groupe</span>
           <input value={name} onChange={(event) => setName(event.target.value)} />
         </label>
+
+        <section className="asset-group-placement">
+          <h3>Règle de placement</h3>
+          <label>
+            <span>Position obligatoire</span>
+            <select value={placementRuleId} onChange={(event) => setPlacementRuleId(event.target.value)}>
+              {placementRuleOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </label>
+          <small>{placementRuleLabel(placementRuleId, true)}</small>
+        </section>
 
         <section className="asset-group-builder">
           <h3>Objets du groupe</h3>
@@ -2942,6 +3009,7 @@ function assetToCatalogEntry(asset) {
       isGroup: true,
       groupSize: asset.dimensions?.groupSize || computeGroupSize(asset.dimensions?.children || []),
       children: asset.dimensions?.children || [],
+      placementRule: normalizePlacementRule(asset.dimensions?.placementRule),
     };
   }
 
@@ -3025,6 +3093,31 @@ function assetStatus(asset) {
   if (!asset.is_active) return 'inactive';
   if (asset.dimensions?.processing) return 'processing';
   return 'active';
+}
+
+function placementRuleFromId(id) {
+  if (!id || id === 'free') return null;
+  return { id, locked: true };
+}
+
+function normalizePlacementRule(rule) {
+  if (!rule) return null;
+  if (typeof rule === 'string') return placementRuleFromId(rule);
+  if (!rule.id || rule.id === 'free') return null;
+  return { id: rule.id, locked: rule.locked !== false };
+}
+
+function isLockedPlacementRule(rule) {
+  return Boolean(normalizePlacementRule(rule)?.locked);
+}
+
+function itemPlacementLocked(item) {
+  return Boolean(item?.lockedPlacement || isLockedPlacementRule(item?.placementRule));
+}
+
+function placementRuleLabel(id, withDescription = false) {
+  const option = placementRuleOptions.find((item) => item.id === id) || placementRuleOptions[0];
+  return withDescription ? option.description : option.label;
 }
 
 function salonShortLabel(salon) {
@@ -3148,6 +3241,42 @@ function wallFromDrag(point, currentWall, width, depth, layout) {
   return wallZones.sort((a, b) => a.distance - b.distance)[0].wall;
 }
 
+function applyPlacementRule(item, width, depth, layout) {
+  const rule = normalizePlacementRule(item?.placementRule);
+  if (!rule?.locked) return item;
+
+  const bounds = itemGroupBounds({ ...item, placementRule: null, lockedPlacement: false });
+  const clearance = wallThickness;
+  const base = {
+    ...item,
+    placementRule: rule,
+    lockedPlacement: true,
+    rotation: Number(rule.rotation || 0),
+  };
+
+  if (rule.id === 'back-right') {
+    return {
+      ...base,
+      x: Number((width / 2 - clearance - bounds.maxX).toFixed(2)),
+      z: Number((-depth / 2 + clearance - bounds.minZ).toFixed(2)),
+    };
+  }
+
+  if (rule.id === 'back-center') {
+    return {
+      ...base,
+      x: Number((-(bounds.minX + bounds.maxX) / 2).toFixed(2)),
+      z: Number((-depth / 2 + clearance - bounds.minZ).toFixed(2)),
+    };
+  }
+
+  return {
+    ...base,
+    x: Number((-width / 2 + clearance - bounds.minX).toFixed(2)),
+    z: Number((-depth / 2 + clearance - bounds.minZ).toFixed(2)),
+  };
+}
+
 function constrainItem(item, width, depth, layout) {
   if (isWallItem(item)) {
     const validWalls = availableWalls(layout).map((wall) => wall.id);
@@ -3158,12 +3287,13 @@ function constrainItem(item, width, depth, layout) {
     return { ...item, wall, x: axis, z: wall === 'back' ? -depth / 2 + wallThickness : axis };
   }
 
-  const bounds = itemGroupBounds(item);
+  const positionedItem = applyPlacementRule(item, width, depth, layout);
+  const bounds = itemGroupBounds(positionedItem);
 
   return {
-    ...item,
-    x: clamp(item.x, -width / 2 - bounds.minX, width / 2 - bounds.maxX),
-    z: clamp(item.z, -depth / 2 - bounds.minZ, depth / 2 - bounds.maxZ),
+    ...positionedItem,
+    x: clamp(positionedItem.x, -width / 2 - bounds.minX, width / 2 - bounds.maxX),
+    z: clamp(positionedItem.z, -depth / 2 - bounds.minZ, depth / 2 - bounds.maxZ),
   };
 }
 
@@ -3179,6 +3309,7 @@ function updateSceneItemWithCollision(items, id, patch, width, depth, layout) {
 function placeItemInFreeSpot(item, items, width, depth, layout) {
   const firstCandidate = constrainItem(item, width, depth, layout);
   if (isWallItem(firstCandidate)) return placeWallItemInFreeSpot(firstCandidate, items, width, depth, layout);
+  if (itemPlacementLocked(firstCandidate)) return collidesWithScene(firstCandidate, items, firstCandidate.id, width, depth) ? null : firstCandidate;
   if (!collidesWithScene(firstCandidate, items, firstCandidate.id, width, depth)) return firstCandidate;
 
   const bounds = itemGroupBounds(firstCandidate);
@@ -3502,14 +3633,17 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
           onSelect={() => setSelectedId(item.id)}
           onDragStart={(event) => {
             event.stopPropagation();
-            event.target.setPointerCapture(event.pointerId);
             setSelectedId(item.id);
+            if (itemPlacementLocked(item)) return;
+            event.target.setPointerCapture(event.pointerId);
             setDraggingId(item.id);
           }}
           onDragEnd={(event) => {
             event.stopPropagation();
-            event.target.releasePointerCapture(event.pointerId);
-            setDraggingId(null);
+            if (draggingId === item.id && event.target.hasPointerCapture?.(event.pointerId)) {
+              event.target.releasePointerCapture(event.pointerId);
+            }
+            if (draggingId === item.id) setDraggingId(null);
           }}
           onDragMove={dragFromPointer}
         />
