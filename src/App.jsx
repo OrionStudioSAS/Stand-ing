@@ -3172,13 +3172,14 @@ function updateSceneItemWithCollision(items, id, patch, width, depth, layout) {
   if (!currentItem) return items;
 
   const candidate = constrainItem({ ...currentItem, ...patch }, width, depth, layout);
-  if (collidesWithScene(candidate, items, id)) return items;
+  if (collidesWithScene(candidate, items, id, width, depth)) return items;
   return items.map((item) => (item.id === id ? candidate : item));
 }
 
 function placeItemInFreeSpot(item, items, width, depth, layout) {
   const firstCandidate = constrainItem(item, width, depth, layout);
-  if (isWallItem(firstCandidate) || !collidesWithScene(firstCandidate, items, firstCandidate.id)) return firstCandidate;
+  if (isWallItem(firstCandidate)) return placeWallItemInFreeSpot(firstCandidate, items, width, depth, layout);
+  if (!collidesWithScene(firstCandidate, items, firstCandidate.id, width, depth)) return firstCandidate;
 
   const bounds = itemGroupBounds(firstCandidate);
   const minX = -width / 2 - bounds.minX;
@@ -3199,14 +3200,42 @@ function placeItemInFreeSpot(item, items, width, depth, layout) {
 
   for (const position of candidates.sort((a, b) => a.distance - b.distance)) {
     const candidate = constrainItem({ ...firstCandidate, x: position.x, z: position.z }, width, depth, layout);
-    if (!collidesWithScene(candidate, items, candidate.id)) return candidate;
+    if (!collidesWithScene(candidate, items, candidate.id, width, depth)) return candidate;
   }
 
   return null;
 }
 
-function collidesWithScene(candidate, items, ignoreId = null) {
-  if (isWallItem(candidate)) return false;
+function placeWallItemInFreeSpot(item, items, width, depth, layout) {
+  if (!collidesWithScene(item, items, item.id, width, depth)) return item;
+
+  const validWalls = availableWalls(layout).map((wall) => wall.id);
+  const preferredWall = validWalls.includes(item.wall) ? item.wall : 'back';
+  const orderedWalls = [preferredWall, ...validWalls.filter((wall) => wall !== preferredWall)];
+  const candidates = [];
+
+  orderedWalls.forEach((wall, wallIndex) => {
+    const margin = item.type === 'poster' ? 0.25 : 0.55;
+    const range = screenAxisRange(wall, width, depth, margin);
+    for (let axis = range.min; axis <= range.max + 0.001; axis += wallItemSnap) {
+      candidates.push({
+        wall,
+        axis: snapWallAxis(axis),
+        distance: wallIndex * 100 + Math.abs(axis - Number(item.x || 0)),
+      });
+    }
+  });
+
+  for (const position of candidates.sort((a, b) => a.distance - b.distance)) {
+    const candidate = constrainItem({ ...item, wall: position.wall, x: position.axis }, width, depth, layout);
+    if (!collidesWithScene(candidate, items, candidate.id, width, depth)) return candidate;
+  }
+
+  return null;
+}
+
+function collidesWithScene(candidate, items, ignoreId = null, width = 0, depth = 0) {
+  if (isWallItem(candidate)) return collidesWithWallItems(candidate, items, ignoreId, width, depth);
   const candidateBox = itemCollisionBox(candidate);
   if (!candidateBox) return false;
 
@@ -3215,6 +3244,45 @@ function collidesWithScene(candidate, items, ignoreId = null) {
     const itemBox = itemCollisionBox(item);
     return itemBox ? boxesOverlap(candidateBox, itemBox) : false;
   });
+}
+
+function collidesWithWallItems(candidate, items, ignoreId = null, width = 0, depth = 0) {
+  const candidateBox = wallItemCollisionBox(candidate, items, width, depth);
+  if (!candidateBox) return false;
+
+  return (items || []).some((item) => {
+    if (!item || item.id === ignoreId || !isWallItem(item)) return false;
+    const itemBox = wallItemCollisionBox(item, items, width, depth);
+    return itemBox ? wallBoxesOverlap(candidateBox, itemBox) : false;
+  });
+}
+
+function wallItemCollisionBox(item, items, width, depth) {
+  if (!isWallItem(item)) return null;
+  const metrics = wallItemMetrics(item, items, width, depth);
+  const axis = Number(item.x || 0);
+  const y = Number(item.y || 1.5);
+  return {
+    wall: item.wall || 'back',
+    minAxis: axis - metrics.width / 2 - collisionPadding,
+    maxAxis: axis + metrics.width / 2 + collisionPadding,
+    minY: y - metrics.height / 2 - collisionPadding,
+    maxY: y + metrics.height / 2 + collisionPadding,
+  };
+}
+
+function wallItemMetrics(item, items, width, depth) {
+  if (item.type === 'poster') {
+    return {
+      width: posterAvailableWidth(item, items, width, depth),
+      height: Number(item.posterHeight || 1.25),
+    };
+  }
+  return { width: 0.95, height: 0.58 };
+}
+
+function wallBoxesOverlap(a, b) {
+  return a.wall === b.wall && a.minAxis < b.maxAxis && a.maxAxis > b.minAxis && a.minY < b.maxY && a.maxY > b.minY;
 }
 
 function itemCollisionBox(item) {
