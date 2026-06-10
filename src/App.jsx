@@ -117,6 +117,7 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
     modelUrl: entry?.modelUrl,
     modelSize: entry?.modelSize,
     materialUrl: entry?.materialUrl,
+    dimensions: entry?.dimensions,
     color: entry?.color,
     x: 0,
     z: Math.min(depth / 2 - 0.9, 0.7),
@@ -134,6 +135,7 @@ function resolveGroupChildren(children) {
       modelUrl: child.modelUrl || entry.modelUrl,
       modelSize: child.modelSize || entry.modelSize,
       materialUrl: child.materialUrl || entry.materialUrl,
+      dimensions: child.dimensions || entry.dimensions,
       color: child.color || entry.color,
       x: Number(child.x || 0),
       y: Number(child.y || 0),
@@ -2736,6 +2738,8 @@ function normalizePresetItem(item) {
     wall: item.wall || config.wall,
     modelUrl: config.modelUrl || catalogItem?.modelUrl,
     modelSize: config.modelSize || catalogItem?.modelSize,
+    materialUrl: config.materialUrl || catalogItem?.materialUrl,
+    dimensions: config.dimensions || catalogItem?.dimensions,
     color: config.color || catalogItem?.color,
   };
 }
@@ -3648,6 +3652,7 @@ function buildGroupChildren(rows, sourceAssets) {
         modelUrl: source.model_url,
         modelSize: assetModelSize(source),
         materialUrl: source.dimensions?.materialUrl || null,
+        dimensions: source.dimensions || {},
         color: source.dimensions?.color || source.color,
         lockedInGroup: true,
       };
@@ -4828,8 +4833,20 @@ function resolveModelResourceUrl(url, item) {
     return `${baseUrl}${matchingPath.slice(rootPath.length + 1).split('/').map(encodeURIComponent).join('/')}`;
   }
 
+  const modelFolder = modelSiblingFolder(item?.modelUrl || item?.materialUrl || '');
+  const shouldTryModelFolder = /arche|jardiniere|jardinière/i.test(`${item?.type || ''} ${item?.label || ''} ${modelFolder}`);
+  if (shouldTryModelFolder && modelFolder && !cleanUrl.includes(`/${modelFolder}/`)) {
+    return `${baseUrl}${encodeURIComponent(modelFolder)}/${encodeURIComponent(fileName)}`;
+  }
+
   // Fallback for old OBJ uploads where MTL files reference an obsolete folder name.
   return `${baseUrl}${encodeURIComponent(fileName)}`;
+}
+
+function modelSiblingFolder(url = '') {
+  const fileName = decodeURIComponent(String(url).split('?')[0].replaceAll('\\', '/').split('/').pop() || '');
+  const stem = fileName.replace(/\.[^.]+$/, '');
+  return stem ? stem.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^[.-]+|[.-]+$/g, '') : '';
 }
 
 function isTextureResource(url = '') {

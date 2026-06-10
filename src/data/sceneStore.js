@@ -17,6 +17,8 @@ function normalizeSceneItem(item) {
     lockedPlacement: item.lockedPlacement ?? Boolean(item.placementRule || catalogItem?.placementRule?.locked),
     modelUrl: catalogItem?.modelUrl || item.modelUrl,
     modelSize: catalogItem?.modelSize || item.modelSize,
+    materialUrl: catalogItem?.materialUrl || item.materialUrl,
+    dimensions: item.dimensions || catalogItem?.dimensions,
     color: catalogItem?.color || item.color,
   };
 }
@@ -31,6 +33,7 @@ function normalizeGroupChildren(children) {
       modelUrl: child.modelUrl || catalogItem.modelUrl,
       modelSize: child.modelSize || catalogItem.modelSize,
       materialUrl: child.materialUrl || catalogItem.materialUrl,
+      dimensions: child.dimensions || catalogItem.dimensions,
       color: child.color || catalogItem.color,
       x: Number(child.x || 0),
       y: Number(child.y || 0),
@@ -620,7 +623,7 @@ async function listStorageObjectPaths(bucket, path) {
 export async function uploadObjectAssetFolder(files) {
   if (!supabase) throw new Error('Supabase non configure.');
 
-  const fileList = Array.from(files || []).filter((file) => file?.name);
+  const fileList = Array.from(files || []).filter((file) => file?.name && !isIgnoredAssetFile(file.name));
   if (!fileList.length) throw new Error('Selectionne un dossier contenant au moins un fichier 3D.');
 
   const objFile = fileList.find((file) => file.name.toLowerCase().endsWith('.obj'));
@@ -781,10 +784,26 @@ function rewriteKnownAssetReferences(text, referenceRules) {
     rewritten = rewritten.split(encodeURI(from)).join(encodeURI(to));
   }
 
-  // Some SketchUp exports keep stale texture folders in the MTL even when the
-  // texture file sits next to the OBJ/MTL. Repoint by filename as a safe fallback.
-  const rulesByFileName = new Map(referenceRules.map((rule) => [getUploadFileName(rule.from).toLowerCase(), rule.to]));
+  // Some SketchUp exports keep stale texture folders in the MTL. Repoint by
+  // filename, preferring the sanitized subfolder path when the texture lives there.
+  const rulesByFileName = buildFileNameReferenceMap(referenceRules);
   return rewritten.split('\n').map((line) => rewriteAssetReferenceLine(line, rulesByFileName)).join('\n');
+}
+
+function buildFileNameReferenceMap(referenceRules) {
+  const map = new Map();
+  for (const rule of referenceRules) {
+    const fileName = getUploadFileName(rule.from).toLowerCase();
+    if (!fileName) continue;
+
+    const current = map.get(fileName);
+    const currentHasPath = current?.includes('/');
+    const nextHasPath = rule.to.includes('/');
+    if (!current || (nextHasPath && !currentHasPath) || rule.to.length > current.length) {
+      map.set(fileName, rule.to);
+    }
+  }
+  return map;
 }
 
 function rewriteAssetReferenceLine(line, rulesByFileName) {
@@ -817,6 +836,10 @@ function slugifyAsset(value) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 48) || 'objet-3d';
+}
+
+function isIgnoredAssetFile(name) {
+  return ['.ds_store', 'thumbs.db'].includes(String(name || '').toLowerCase());
 }
 
 function guessContentType(file) {
