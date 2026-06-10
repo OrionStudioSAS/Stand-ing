@@ -682,6 +682,7 @@ export async function uploadObjectAssetFolder(files) {
       storageBucket: 'object-assets',
       storageRoot: assetType,
       storagePath: modelPath,
+      storagePaths: uploadEntries.map((entry) => `${assetType}/${entry.sanitizedRelativePath}`),
       materialUrl: materialPublic?.publicUrl || null,
       materialPath: materialPath || null,
     },
@@ -777,8 +778,27 @@ function rewriteKnownAssetReferences(text, referenceRules) {
   let rewritten = text;
   for (const { from, to } of referenceRules) {
     rewritten = rewritten.split(from).join(to);
+    rewritten = rewritten.split(encodeURI(from)).join(encodeURI(to));
   }
-  return rewritten;
+
+  // Some SketchUp exports keep stale texture folders in the MTL even when the
+  // texture file sits next to the OBJ/MTL. Repoint by filename as a safe fallback.
+  const rulesByFileName = new Map(referenceRules.map((rule) => [getUploadFileName(rule.from).toLowerCase(), rule.to]));
+  return rewritten.split('\n').map((line) => rewriteAssetReferenceLine(line, rulesByFileName)).join('\n');
+}
+
+function rewriteAssetReferenceLine(line, rulesByFileName) {
+  const trimmed = line.trim();
+  const match = trimmed.match(/^(mtllib|map_[a-z0-9_]+|bump|disp|decal|refl)\s+(.+)$/i);
+  if (!match) return line;
+
+  const value = match[2].trim();
+  const tokens = value.split(/\s+/);
+  const target = tokens[tokens.length - 1];
+  const replacement = rulesByFileName.get(getUploadFileName(target).toLowerCase());
+  if (!replacement || target === replacement) return line;
+
+  return line.replace(target, replacement);
 }
 
 function prettifyAssetLabel(value) {

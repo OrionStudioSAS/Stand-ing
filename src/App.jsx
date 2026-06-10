@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, MeshStandardMaterial, Plane, Vector3 } from 'three';
+import { Box3, DoubleSide, LoadingManager, MeshStandardMaterial, Plane, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -4494,38 +4494,36 @@ function Model3D({ item, selected, dragging }) {
 
 function GlbModel({ item }) {
   const gltf = useLoader(GLTFLoader, item.modelUrl);
-  const model = useMemo(() => centerModel(gltf.scene.clone()), [gltf]);
-  return <primitive object={model} />;
+  const model = useMemo(() => prepareLoadedModel(gltf.scene), [gltf]);
+  return <primitive object={model} dispose={null} />;
 }
 
 function ObjModelWithMaterials({ item }) {
-  const materials = useLoader(MTLLoader, item.materialUrl);
+  const materials = useLoader(MTLLoader, item.materialUrl, (loader) => {
+    const manager = new LoadingManager();
+    manager.setURLModifier((url) => resolveModelResourceUrl(url, item));
+    loader.manager = manager;
+    loader.setMaterialOptions({ ignoreZeroRGBs: true, side: DoubleSide });
+    loader.setResourcePath(assetBaseUrl(item.materialUrl || item.modelUrl));
+  });
   const obj = useLoader(OBJLoader, item.modelUrl, (loader) => {
     materials.preload();
     loader.setMaterials(materials);
   });
-  const model = useMemo(() => {
-    const clone = obj.clone();
-    clone.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
-    return centerModel(clone);
-  }, [obj]);
+  const model = useMemo(() => prepareLoadedModel(obj), [obj]);
 
-  return <primitive object={model} />;
+  return <primitive object={model} dispose={null} />;
 }
 
 function ObjModel({ item, selected, dragging }) {
   const obj = useLoader(OBJLoader, item.modelUrl);
   const model = useMemo(() => {
-    const clone = obj.clone();
+    const clone = obj.clone(true);
     const material = new MeshStandardMaterial({
       color: activeColor(selected, dragging, item.color || '#ece7da'),
       roughness: 0.58,
       metalness: 0.03,
+      side: DoubleSide,
     });
 
     clone.traverse((child) => {
@@ -4539,7 +4537,53 @@ function ObjModel({ item, selected, dragging }) {
     return centerModel(clone);
   }, [obj, item.color, selected, dragging]);
 
-  return <primitive object={model} />;
+  return <primitive object={model} dispose={null} />;
+}
+
+function prepareLoadedModel(source) {
+  const clone = source.clone(true);
+  clone.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+      child.material = cloneMeshMaterial(child.material);
+    }
+  });
+  return centerModel(clone);
+}
+
+function cloneMeshMaterial(material) {
+  if (Array.isArray(material)) return material.map((item) => item?.clone?.() || item);
+  return material?.clone?.() || material;
+}
+
+function assetBaseUrl(url = '') {
+  if (!url || !url.includes('/')) return '';
+  return url.slice(0, url.lastIndexOf('/') + 1);
+}
+
+function resolveModelResourceUrl(url, item) {
+  if (!isTextureResource(url)) return url;
+  const baseUrl = assetBaseUrl(item?.materialUrl || item?.modelUrl || '');
+  if (!baseUrl) return url;
+
+  const cleanUrl = url.split('?')[0];
+  const fileName = decodeURIComponent(cleanUrl.replaceAll('\\', '/').split('/').pop() || '');
+  if (!fileName) return url;
+
+  const rootPath = item?.dimensions?.storageRoot || item?.type || '';
+  const storagePaths = Array.isArray(item?.dimensions?.storagePaths) ? item.dimensions.storagePaths : [];
+  const matchingPath = storagePaths.find((path) => path.toLowerCase().endsWith(`/${fileName.toLowerCase()}`));
+  if (matchingPath && rootPath && matchingPath.startsWith(`${rootPath}/`)) {
+    return `${baseUrl}${matchingPath.slice(rootPath.length + 1).split('/').map(encodeURIComponent).join('/')}`;
+  }
+
+  // Fallback for old OBJ uploads where MTL files reference an obsolete folder name.
+  return `${baseUrl}${encodeURIComponent(fileName)}`;
+}
+
+function isTextureResource(url = '') {
+  return /\.(jpe?g|png|webp|gif|bmp|tga|tiff?)(\?.*)?$/i.test(url);
 }
 
 function centerModel(model) {
