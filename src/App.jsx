@@ -290,6 +290,7 @@ function AdminGate() {
   const [loading, setLoading] = useState(Boolean(supabase));
   const [authChecked, setAuthChecked] = useState(!supabase);
   const [authError, setAuthError] = useState('');
+  const sessionUserId = session?.user?.id || '';
 
   useEffect(() => {
     if (!supabase) {
@@ -305,10 +306,25 @@ function AdminGate() {
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
-      setAdminUser(null);
       setAuthError('');
       setAuthChecked(true);
-      setLoading(Boolean(nextSession));
+
+      if (!nextSession?.user) {
+        setAdminUser(null);
+        setLoading(false);
+        return;
+      }
+
+      setAdminUser((currentAdmin) => {
+        const sameAdmin = currentAdmin?.user_id === nextSession.user.id;
+        if (sameAdmin) {
+          setLoading(false);
+          return currentAdmin;
+        }
+
+        setLoading(true);
+        return null;
+      });
     });
 
     return () => listener.subscription.unsubscribe();
@@ -316,7 +332,7 @@ function AdminGate() {
 
   useEffect(() => {
     if (!supabase || !authChecked) return;
-    if (!session?.user) {
+    if (!sessionUserId) {
       setLoading(false);
       return;
     }
@@ -325,7 +341,7 @@ function AdminGate() {
     supabase
       .from('admin_users')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', sessionUserId)
       .maybeSingle()
       .then(({ data, error }) => {
         if (error) {
@@ -339,7 +355,7 @@ function AdminGate() {
         setAdminUser(data);
       })
       .finally(() => setLoading(false));
-  }, [authChecked, session]);
+  }, [authChecked, sessionUserId]);
 
   if (!supabase) {
     return (
@@ -1454,6 +1470,26 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, onSelect }
   );
 }
 
+const adminTabStorageKey = 'standing-admin-active-tab';
+const adminTabs = ['dashboard', 'salons', 'clients', 'bat', 'objects', 'presets', 'users', 'monday'];
+
+function initialAdminTab() {
+  try {
+    const savedTab = window.localStorage.getItem(adminTabStorageKey);
+    return adminTabs.includes(savedTab) ? savedTab : 'dashboard';
+  } catch {
+    return 'dashboard';
+  }
+}
+
+function rememberAdminTab(tab) {
+  try {
+    window.localStorage.setItem(adminTabStorageKey, tab);
+  } catch {
+    // Ignore private browsing / storage failures.
+  }
+}
+
 function AdminDashboard({ user, adminProfile }) {
   const [scenes, setScenes] = useState([]);
   const [clients, setClients] = useState([]);
@@ -1462,11 +1498,15 @@ function AdminDashboard({ user, adminProfile }) {
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [assetCategory, setAssetCategory] = useState('Tout');
   const [filters, setFilters] = useState({ search: '', salon: '', status: '' });
-  const [tab, setTab] = useState('dashboard');
+  const [tab, setTabState] = useState(initialAdminTab);
   const [accountOpen, setAccountOpen] = useState(false);
   const [syncState, setSyncState] = useState({ loading: false, message: '', error: '' });
   const [assetUploadState, setAssetUploadState] = useState({ loading: false, message: '', error: '' });
   const profile = getAdminProfile(user, adminProfile);
+  const setTab = (nextTab) => {
+    rememberAdminTab(nextTab);
+    setTabState(nextTab);
+  };
 
   useEffect(() => {
     listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error));
