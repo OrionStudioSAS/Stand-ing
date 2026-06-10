@@ -4684,3 +4684,28 @@ select {
   background: #fff0ee;
   border-color: #f3cbc6;
 }
+
+.base-pack-scene-note {
+  position: absolute;
+  top: 22px;
+  left: 24px;
+  z-index: 6;
+  display: grid;
+  gap: 4px;
+  max-width: min(330px, calc(100% - 48px));
+  border: 1px solid rgba(31, 67, 120, 0.14);
+  border-radius: 14px;
+  padding: 12px 14px;
+  color: #1f4378;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 12px 28px rgba(20, 32, 48, 0.12);
+  font-size: 0.78rem;
+  font-weight: 850;
+  pointer-events: none;
+}
+
+.base-pack-scene-note strong {
+  color: #172132;
+  font-size: 0.82rem;
+  font-weight: 950;
+}

@@ -728,6 +728,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           pricing: {
             basePrice: scenePricing.basePrice,
             baseItems: scenePricing.baseItems,
+            baseUsage: scenePricing.baseUsage,
             baseItemsConfigured: scenePricing.baseItemsConfigured,
             itemsTotal: scenePricing.itemsTotal,
             total: scenePricing.total,
@@ -990,6 +991,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         {readOnly && !headerPanel && (
           <div className="readonly-badge">
             <Check size={15} /> Scène confirmée — mode visualisation
+          </div>
+        )}
+
+        {activeStep > 1 && !headerPanel && scenePricing.baseUsage?.length > 0 && (
+          <div className="base-pack-scene-note">
+            <strong>Pack de base</strong>
+            {scenePricing.baseUsage.slice(0, 4).map((item) => (
+              <span key={item.type}>{basePackItemLabel(item.label, item.quantity)} {basePackIncludedWord(item.label, item.quantity)} {item.used}/{item.quantity}</span>
+            ))}
           </div>
         )}
 
@@ -1308,7 +1318,7 @@ function OptionsStepPanel({
 
 function FurnitureStepPanel({ items, catalog, pricing, salonLabel, readOnly = false, onAdd, onRemove }) {
   const includedItems = pricing?.baseItemsConfigured
-    ? pricing.baseItems.map((item) => ({ key: item.type, label: item.label, count: item.quantity }))
+    ? pricing.baseUsage.map((item) => ({ key: item.type, label: item.label, count: item.used, quota: item.quantity }))
     : sceneItemSummary(items.filter((item) => isIncludedSceneItem(item) && isFurniturePanelType(item)));
   const furnitureEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'furniture').slice(0, 8);
   const multimediaEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'multimedia').slice(0, 8);
@@ -1326,7 +1336,7 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, readOnly = fa
             displayedIncludedItems.map((item) => (
               <div key={item.key} className="included-furniture-card">
                 <span><Check size={13} /></span>
-                <strong>{item.label}{item.count > 1 ? ` × ${item.count}` : ''}</strong>
+                <strong>{item.quota ? basePackUsageText(item) : `${item.label}${item.count > 1 ? ` × ${item.count}` : ''}`}</strong>
                 <em>Inclus</em>
               </div>
             ))
@@ -1372,7 +1382,7 @@ function ValidationStepPanel({
   onConfirm,
 }) {
   const lines = pricing?.lines || [];
-  const baseItems = pricing?.baseItems || [];
+  const baseItems = pricing?.baseUsage || pricing?.baseItems || [];
   const confirmed = saveState === 'configured';
 
   return (
@@ -1400,8 +1410,8 @@ function ValidationStepPanel({
         {baseItems.length ? (
           baseItems.map((item) => (
             <div key={item.type} className="validation-option-row">
-              <span>{item.label}</span>
-              <strong>× {item.quantity}</strong>
+              <span>{basePackItemLabel(item.label, item.quantity)}</span>
+              <strong>{item.used ?? 0}/{item.quantity}</strong>
             </div>
           ))
         ) : (
@@ -1435,6 +1445,23 @@ function ValidationStepPanel({
       )}
     </>
   );
+}
+
+function basePackUsageText(item) {
+  return `Pack de base : ${basePackItemLabel(item.label, item.quota)} ${basePackIncludedWord(item.label, item.quota)} ${item.count}/${item.quota}`;
+}
+
+function basePackIncludedWord(label = '', quantity = 1) {
+  const feminine = String(label).trim().toLowerCase().endsWith('e');
+  if (Number(quantity || 0) > 1) return feminine ? 'comprises' : 'compris';
+  return feminine ? 'comprise' : 'compris';
+}
+
+function basePackItemLabel(label = 'Objet', quantity = 1) {
+  if (Number(quantity || 0) <= 1) return label;
+  if (/\d|["”]/.test(label)) return label;
+  if (/[sx]$/i.test(label)) return label;
+  return `${label}s`;
 }
 
 function PanelHead({ title, step }) {
@@ -3801,10 +3828,24 @@ function calculateScenePricing({ catalog, items, salonLabel, scene }) {
   const baseItems = sceneBaseItems(scene);
   const baseItemsConfigured = sceneHasBaseItems(scene);
   const includedSceneCounts = countSceneItems(items.filter(isIncludedSceneItem));
+  const baseItemCounts = baseItemsToCountMap(baseItems);
   const includedCounts = baseItemsConfigured
-    ? mergeIncludedCountMaps(includedSceneCounts, baseItemsToCountMap(baseItems))
+    ? mergeIncludedCountMaps(includedSceneCounts, baseItemCounts)
     : includedSceneCounts;
   const totalCounts = countSceneItems(items);
+  const baseUsage = baseItemsConfigured
+    ? baseItems.map((item) => {
+      const quantity = Number(item.quantity || 0);
+      const used = Math.min(totalCounts.get(item.type) || 0, quantity);
+      return {
+        ...item,
+        quantity,
+        used,
+        remaining: Math.max(0, quantity - used),
+        billable: Math.max(0, (totalCounts.get(item.type) || 0) - quantity),
+      };
+    })
+    : [];
   const billableCounts = new Map();
   const lines = [];
   let itemsTotal = 0;
@@ -3834,6 +3875,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene }) {
   return {
     basePrice,
     baseItems,
+    baseUsage,
     baseItemsConfigured,
     billableCounts,
     includedCounts,
