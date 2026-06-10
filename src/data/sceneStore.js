@@ -906,7 +906,21 @@ async function ensurePresetForOffer(salon, offer) {
     (created || []).forEach((preset) => existingByLayout.set(preset.layout || 'u', { ...preset, stand_preset_items: [] }));
   }
 
-  return layouts.map((layout) => existingByLayout.get(layout.id)).filter(Boolean);
+  const presets = layouts.map((layout) => existingByLayout.get(layout.id)).filter(Boolean);
+  return attachPresetItems(presets, await fetchPresetItems(presets));
+}
+
+async function fetchPresetItems(presets = []) {
+  const presetIds = presets.map((preset) => preset.id).filter(Boolean);
+  if (!presetIds.length) return [];
+
+  const { data, error } = await supabase
+    .from('stand_preset_items')
+    .select('*')
+    .in('preset_id', presetIds);
+
+  if (error) throw error;
+  return data || [];
 }
 
 function makeLocalPreset(salon, offer) {
