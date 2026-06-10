@@ -156,10 +156,12 @@ function App() {
   const [loading, setLoading] = useState(Boolean(sceneToken) && !isAdmin);
   const [sceneAccessRequired, setSceneAccessRequired] = useState(false);
   const [sceneError, setSceneError] = useState('');
+  const [sceneAdminViewer, setSceneAdminViewer] = useState(false);
 
   useEffect(() => {
     if (isAdmin) return;
     if (!sceneToken) {
+      setSceneAdminViewer(false);
       setLoading(false);
       return;
     }
@@ -171,7 +173,10 @@ function App() {
       try {
         if (!supabase) {
           const loaded = await getSceneByToken(sceneToken);
-          if (mounted) setScene(loaded);
+          if (mounted) {
+            setSceneAdminViewer(false);
+            setScene(loaded);
+          }
           return;
         }
 
@@ -187,6 +192,7 @@ function App() {
           .select('user_id')
           .eq('user_id', session.user.id)
           .maybeSingle();
+        if (mounted) setSceneAdminViewer(Boolean(adminUser));
         const verified = window.sessionStorage.getItem(`standing-scene-access:${sceneToken}`) === 'verified';
 
         if (!adminUser && !verified) {
@@ -199,6 +205,7 @@ function App() {
       } catch (error) {
         window.sessionStorage.removeItem(`standing-scene-access:${sceneToken}`);
         if (mounted) {
+          setSceneAdminViewer(false);
           setSceneAccessRequired(true);
           setSceneError(error.message || 'Accès à la scène impossible.');
         }
@@ -222,6 +229,7 @@ function App() {
         initialError={sceneError}
         onVerified={async () => {
           window.sessionStorage.setItem(`standing-scene-access:${sceneToken}`, 'verified');
+          setSceneAdminViewer(false);
           const loaded = await getSceneByToken(sceneToken);
           setScene(loaded);
           setSceneAccessRequired(false);
@@ -231,7 +239,7 @@ function App() {
   }
   if (loading || !scene) return <div className="loading-screen">Chargement de la scene...</div>;
 
-  return <ConfiguratorApp initialScene={scene} />;
+  return <ConfiguratorApp initialScene={scene} isAdminViewer={sceneAdminViewer} />;
 }
 
 function HomeGate() {
@@ -600,7 +608,7 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
   );
 }
 
-function ConfiguratorApp({ initialScene }) {
+function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const initialOptions = initialScene.options || initialScene.source_payload?.options || {};
   const initialWidth = initialScene.dimensions?.width || 4;
   const initialDepth = initialScene.dimensions?.depth || 3;
@@ -614,16 +622,18 @@ function ConfiguratorApp({ initialScene }) {
     { id: 'chair-1', type: 'chair', x: 0.8, z: 0.45, y: 0, rotation: -15 },
     { id: 'screen-1', type: 'screen', x: 0, z: -1.5, y: 1.65, wall: 'back', rotation: 0 },
   ]).map((item) => constrainItem(item, initialWidth, initialDepth, initialLayout)));
-  const [selectedId, setSelectedId] = useState('table-1');
+  const initialReadOnly = initialScene.client_status === 'configured' && !isAdminViewer;
+  const [selectedId, setSelectedId] = useState(initialReadOnly ? null : 'table-1');
   const [draggingId, setDraggingId] = useState(null);
   const [language, setLanguage] = useState('fr');
   const [headerPanel, setHeaderPanel] = useState(null);
-  const [activeStep, setActiveStep] = useState(1);
+  const [activeStep, setActiveStep] = useState(initialReadOnly ? 4 : 1);
   const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, reserve: false, tete: false, comptoir: false });
   const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || '1893');
   const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || '303');
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
+  const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
   const [clientInfo, setClientInfo] = useState({
     client: initialScene.client_name || '',
     project: initialScene.project_name || '',
@@ -660,10 +670,19 @@ function ConfiguratorApp({ initialScene }) {
   const clientLabel = clientInfo.client || contactDetails.company || 'Aerosys Industries';
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
+  const readOnly = saveState === 'configured' && !isAdminViewer;
 
   useEffect(() => {
     setItems((current) => current.map((item) => constrainItem(item, width, depth, layout)));
   }, [width, depth, layout]);
+
+  useEffect(() => {
+    if (readOnly) {
+      setDraggingId(null);
+      setSelectedId(null);
+      setRotationPanelOpen(false);
+    }
+  }, [readOnly]);
 
   const availableCatalog = useMemo(() => {
     const dynamicEntries = objectBank
@@ -724,6 +743,8 @@ function ConfiguratorApp({ initialScene }) {
       return undefined;
     }
 
+    if (readOnly) return undefined;
+
     const timer = window.setTimeout(() => {
       const alreadyConfigured = saveState === 'configured';
       saveScene(currentScenePayload(alreadyConfigured ? 'configured' : 'created', alreadyConfigured ? 'configured' : 'draft'))
@@ -734,7 +755,7 @@ function ConfiguratorApp({ initialScene }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, items, clientInfo, selectedCarpetColor, selectedWallFabricColor, saveState]);
+  }, [width, depth, height, layout, items, clientInfo, selectedCarpetColor, selectedWallFabricColor, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
@@ -743,8 +764,18 @@ function ConfiguratorApp({ initialScene }) {
   }, []);
 
   const validateConfiguration = async () => {
-    await saveScene(currentScenePayload('configured', 'configured'));
-    setSaveState('configured');
+    if (readOnly || confirmState.loading) return;
+    setConfirmState({ loading: true, message: '', error: '' });
+    try {
+      await saveScene(currentScenePayload('configured', 'configured'));
+      setSaveState('configured');
+      setSelectedId(null);
+      setDraggingId(null);
+      setActiveStep(4);
+      setConfirmState({ loading: false, message: 'Votre scène est confirmée. Elle est maintenant verrouillée.', error: '' });
+    } catch (error) {
+      setConfirmState({ loading: false, message: '', error: error.message || 'Confirmation impossible.' });
+    }
   };
 
   const toggleOption = (key) => {
@@ -752,11 +783,12 @@ function ConfiguratorApp({ initialScene }) {
   };
 
   const updateItem = (id, patch) => {
+    if (readOnly) return;
     setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout));
   };
 
   const moveDraggedItem = (point) => {
-    if (!draggingId) return;
+    if (readOnly || !draggingId) return;
     const dragged = items.find((item) => item.id === draggingId);
     if (!dragged) return;
 
@@ -770,6 +802,7 @@ function ConfiguratorApp({ initialScene }) {
   };
 
   const addItem = (entry) => {
+    if (readOnly) return;
     const item = makeItem(entry.type, width, depth, layout, entry);
     setItems((current) => {
       const placed = placeItemInFreeSpot(item, current, width, depth, layout);
@@ -780,6 +813,7 @@ function ConfiguratorApp({ initialScene }) {
   };
 
   const removeOptionalItem = (type) => {
+    if (readOnly) return;
     setItems((current) => {
       const index = [...current].reverse().findIndex((item) => item.type === type && !isIncludedSceneItem(item));
       if (index < 0) return current;
@@ -791,12 +825,13 @@ function ConfiguratorApp({ initialScene }) {
   };
 
   const chooseLayout = (nextLayout) => {
+    if (readOnly) return;
     setLayout(nextLayout);
     setItems((current) => current.map((item) => constrainItem(item, width, depth, nextLayout)));
   };
 
   const deleteSelectedItem = () => {
-    if (!selected) return;
+    if (readOnly || !selected) return;
     setItems((current) => current.filter((item) => item.id !== selected.id));
     setSelectedId(null);
   };
@@ -827,7 +862,7 @@ function ConfiguratorApp({ initialScene }) {
   };
 
   return (
-    <main className={`configurator-shell ${activeStep === 1 ? 'intro-step' : ''}`}>
+    <main className={`configurator-shell ${activeStep === 1 ? 'intro-step' : ''} ${readOnly ? 'readonly-mode' : ''}`}>
       <header className="configurator-topbar">
         <a className="config-logo" href="/">
           <img src="/images/logo.png" alt="Stand-ING" />
@@ -852,7 +887,7 @@ function ConfiguratorApp({ initialScene }) {
         </nav>
         <div className="top-estimate">
           <strong>{estimatedTotal.toLocaleString('fr-FR')} € HT</strong>
-          <span>Total estime</span>
+          <span>Total HT estimé</span>
         </div>
         <button className={`round-tool ${headerPanel === 'question' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('question')} aria-label="Questions et remarques">
           <HelpCircle size={18} />
@@ -911,10 +946,10 @@ function ConfiguratorApp({ initialScene }) {
           className={draggingId ? 'dragging-canvas' : ''}
           shadows
           onPointerUp={() => {
-            setDraggingId(null);
+            if (!readOnly) setDraggingId(null);
           }}
           onPointerLeave={() => {
-            setDraggingId(null);
+            if (!readOnly) setDraggingId(null);
           }}
         >
           <color attach="background" args={['#eef0f4']} />
@@ -932,6 +967,7 @@ function ConfiguratorApp({ initialScene }) {
               setSelectedId={setSelectedId}
               draggingId={draggingId}
               setDraggingId={setDraggingId}
+              interactive={!readOnly}
               onDragMove={moveDraggedItem}
               viewAngle={viewAngle}
               carpetColor={selectedCarpetColor.hex}
@@ -951,7 +987,13 @@ function ConfiguratorApp({ initialScene }) {
           />
         </Canvas>
 
-        {activeStep === 1 && !headerPanel && (
+        {readOnly && !headerPanel && (
+          <div className="readonly-badge">
+            <Check size={15} /> Scène confirmée — mode visualisation
+          </div>
+        )}
+
+        {activeStep === 1 && !headerPanel && !readOnly && (
           <div className="intro-overlay">
             <article className="intro-card" aria-label="Accueil configurateur">
               <div className="intro-card-head">
@@ -977,8 +1019,8 @@ function ConfiguratorApp({ initialScene }) {
           </div>
         )}
 
-        <div className={`view-toolbar ${selected ? 'selection-mode' : ''}`} aria-label={selected ? 'Actions objet selectionne' : 'Outils de vue'}>
-          {selected ? (
+        <div className={`view-toolbar ${selected && !readOnly ? 'selection-mode' : ''}`} aria-label={selected ? 'Actions objet selectionne' : 'Outils de vue'}>
+          {selected && !readOnly ? (
             <>
               <button type="button" disabled={itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
               <button type="button" onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
@@ -1017,8 +1059,23 @@ function ConfiguratorApp({ initialScene }) {
             catalog={availableCatalog}
             pricing={scenePricing}
             salonLabel={salonLabel}
+            readOnly={readOnly}
             onAdd={addItem}
             onRemove={removeOptionalItem}
+          />
+        ) : activeStep === 4 ? (
+          <ValidationStepPanel
+            area={area}
+            layout={layout}
+            standLabel={initialScene.project_name || 'Stand A-14'}
+            carpetColor={selectedCarpetColor}
+            wallFabricColor={selectedWallFabricColor}
+            pricing={scenePricing}
+            saveState={saveState}
+            confirmState={confirmState}
+            readOnly={readOnly}
+            isAdminViewer={isAdminViewer}
+            onConfirm={validateConfiguration}
           />
         ) : (
           <OptionsStepPanel
@@ -1030,29 +1087,24 @@ function ConfiguratorApp({ initialScene }) {
             toggleOption={toggleOption}
             selectedCarpetColor={selectedCarpetColor}
             selectedWallFabricColor={selectedWallFabricColor}
-            onCarpetColor={setSelectedCarpetId}
-            onWallColor={setSelectedWallFabricId}
-            width={width}
-            depth={depth}
-            setWidth={setWidth}
-            setDepth={setDepth}
-            currentLayout={layout}
-            chooseLayout={chooseLayout}
+            readOnly={readOnly}
+            onCarpetColor={(colorId) => !readOnly && setSelectedCarpetId(colorId)}
+            onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
             onExport={() => exportTechnicalPng({ width, depth, layout, items, catalog: availableCatalog })}
           />
         )}
       </aside>
       )}
 
-      {activeStep > 1 && (
+      {activeStep > 1 && !readOnly && (
       <footer className="configurator-footer">
         <div>
-          <span>Total HT estime</span>
+          <span>Total HT estimé</span>
           <strong>{estimatedTotal.toLocaleString('fr-FR')} €</strong>
         </div>
         <nav>
           <button type="button" onClick={() => setActiveStep((step) => Math.max(1, step - 1))}>← Retour</button>
-          <button type="button" onClick={() => setActiveStep((step) => Math.min(4, step + 1))}>Etape suivante →</button>
+          {activeStep < 4 && <button type="button" onClick={() => setActiveStep((step) => Math.min(4, step + 1))}>Etape suivante →</button>}
         </nav>
       </footer>
       )}
@@ -1210,14 +1262,9 @@ function OptionsStepPanel({
   toggleOption,
   selectedCarpetColor,
   selectedWallFabricColor,
+  readOnly = false,
   onCarpetColor,
   onWallColor,
-  width,
-  depth,
-  setWidth,
-  setDepth,
-  currentLayout,
-  chooseLayout,
   onExport,
 }) {
   return (
@@ -1233,6 +1280,7 @@ function OptionsStepPanel({
           colors={carpetColors}
           selectedColor={selectedCarpetColor}
           optionLabel="En option 36€"
+          disabled={readOnly}
           onSelect={onCarpetColor}
         />
       </OptionAccordion>
@@ -1243,27 +1291,13 @@ function OptionsStepPanel({
           colors={wallFabricColors}
           selectedColor={selectedWallFabricColor}
           optionLabel="En option 36€"
+          disabled={readOnly}
           onSelect={onWallColor}
         />
       </OptionAccordion>
       <OptionAccordion title="Reserve" icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')} />
       <OptionAccordion title="Tete de cloison" icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')} />
       <OptionAccordion title="Comptoir" icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')} />
-
-      <details className="stand-settings">
-        <summary>Dimensions et implantation</summary>
-        <div className="settings-grid">
-          <label>Largeur <span>{width} m</span><input type="range" min="2" max="8" step="0.5" value={width} onChange={(event) => setWidth(Number(event.target.value))} /></label>
-          <label>Profondeur <span>{depth} m</span><input type="range" min="2" max="6" step="0.5" value={depth} onChange={(event) => setDepth(Number(event.target.value))} /></label>
-          <div className="segmented config-layouts">
-            {layouts.map((option) => (
-              <button key={option.id} className={currentLayout === option.id ? 'active' : ''} onClick={() => chooseLayout(option.id)}>
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </details>
 
       <button className="wide export" onClick={onExport}>
         <FileImage size={16} /> Generer PNG technique
@@ -1272,7 +1306,7 @@ function OptionsStepPanel({
   );
 }
 
-function FurnitureStepPanel({ items, catalog, pricing, salonLabel, onAdd, onRemove }) {
+function FurnitureStepPanel({ items, catalog, pricing, salonLabel, readOnly = false, onAdd, onRemove }) {
   const includedItems = pricing?.baseItemsConfigured
     ? pricing.baseItems.map((item) => ({ key: item.type, label: item.label, count: item.quantity }))
     : sceneItemSummary(items.filter((item) => isIncludedSceneItem(item) && isFurniturePanelType(item)));
@@ -1307,6 +1341,7 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, onAdd, onRemo
         entries={furnitureEntries}
         counts={billableCounts}
         salonLabel={salonLabel}
+        readOnly={readOnly}
         onAdd={onAdd}
         onRemove={onRemove}
       />
@@ -1315,9 +1350,89 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, onAdd, onRemo
         entries={multimediaEntries}
         counts={billableCounts}
         salonLabel={salonLabel}
+        readOnly={readOnly}
         onAdd={onAdd}
         onRemove={onRemove}
       />
+    </>
+  );
+}
+
+function ValidationStepPanel({
+  area,
+  layout,
+  standLabel,
+  carpetColor,
+  wallFabricColor,
+  pricing,
+  saveState,
+  confirmState,
+  readOnly,
+  isAdminViewer,
+  onConfirm,
+}) {
+  const lines = pricing?.lines || [];
+  const baseItems = pricing?.baseItems || [];
+  const confirmed = saveState === 'configured';
+
+  return (
+    <>
+      <PanelHead title="Validation" step={4} />
+      <StandSummary area={area} layout={layout} standLabel={standLabel} />
+
+      <section className="validation-summary-card">
+        <h2>Récapitulatif HT</h2>
+        <div className="validation-total-line">
+          <span>Total options et mobilier</span>
+          <strong>{(pricing?.total || 0).toLocaleString('fr-FR')} € HT</strong>
+        </div>
+        <p>La scène de base est incluse à 0 €. Seuls les ajouts hors pack ou au-delà des quantités incluses sont facturés.</p>
+      </section>
+
+      <section className="validation-section">
+        <h3>Options choisies</h3>
+        <div className="validation-option-row"><span>Moquette</span><strong>{carpetColor.name} ({carpetColor.code})</strong></div>
+        <div className="validation-option-row"><span>Coton cloison</span><strong>{wallFabricColor.name} ({wallFabricColor.code})</strong></div>
+      </section>
+
+      <section className="validation-section">
+        <h3>Objets inclus dans le pack</h3>
+        {baseItems.length ? (
+          baseItems.map((item) => (
+            <div key={item.type} className="validation-option-row">
+              <span>{item.label}</span>
+              <strong>× {item.quantity}</strong>
+            </div>
+          ))
+        ) : (
+          <p className="validation-muted">Aucun quota mobilier configuré sur ce pack.</p>
+        )}
+      </section>
+
+      <section className="validation-section">
+        <h3>Suppléments facturés</h3>
+        {lines.length ? (
+          lines.map((line) => (
+            <div key={line.type} className="validation-price-row">
+              <span>{line.label} × {line.quantity}</span>
+              <strong>{line.total.toLocaleString('fr-FR')} € HT</strong>
+            </div>
+          ))
+        ) : (
+          <p className="validation-muted">Aucun supplément : la configuration reste à 0 € HT.</p>
+        )}
+      </section>
+
+      {confirmState.message && <div className="validation-message success">{confirmState.message}</div>}
+      {confirmState.error && <div className="validation-message error">{confirmState.error}</div>}
+
+      {confirmed && !isAdminViewer ? (
+        <div className="validation-locked"><Check size={16} /> Scène confirmée, mode visualisation activé.</div>
+      ) : (
+        <button className="validation-confirm-button" type="button" disabled={readOnly || confirmState.loading} onClick={onConfirm}>
+          {confirmState.loading ? 'Confirmation...' : confirmed ? 'Scène confirmée' : 'Confirmer la scène'}
+        </button>
+      )}
     </>
   );
 }
@@ -1335,7 +1450,6 @@ function StandSummary({ area, layout, standLabel }) {
   return (
     <div className="stand-summary-card">
       <strong>{area.toFixed(0)} m2 · {layout === 'u' ? '3 faces' : layout === 'back' ? '1 face' : '2 faces'} · {standLabel}</strong>
-      <button type="button">Modifier ›</button>
     </div>
   );
 }
@@ -1351,7 +1465,7 @@ function RulesSummary() {
   );
 }
 
-function FurnitureCatalogSection({ title, entries, counts, salonLabel, onAdd, onRemove }) {
+function FurnitureCatalogSection({ title, entries, counts, salonLabel, readOnly = false, onAdd, onRemove }) {
   if (!entries.length) return null;
   return (
     <section className="furniture-panel-section">
@@ -1363,6 +1477,7 @@ function FurnitureCatalogSection({ title, entries, counts, salonLabel, onAdd, on
             entry={entry}
             count={counts.get(entry.type) || 0}
             salonLabel={salonLabel}
+            readOnly={readOnly}
             onAdd={() => onAdd(entry)}
             onRemove={() => onRemove(entry.type)}
           />
@@ -1372,7 +1487,7 @@ function FurnitureCatalogSection({ title, entries, counts, salonLabel, onAdd, on
   );
 }
 
-function FurnitureCatalogRow({ entry, count, salonLabel, onAdd, onRemove }) {
+function FurnitureCatalogRow({ entry, count, salonLabel, readOnly = false, onAdd, onRemove }) {
   const Icon = entry.icon || Box;
   return (
     <article className={`furniture-catalog-row ${count > 0 ? 'selected' : ''}`}>
@@ -1384,11 +1499,11 @@ function FurnitureCatalogRow({ entry, count, salonLabel, onAdd, onRemove }) {
         <em>{formatFurniturePrice(entry, salonLabel)}</em>
       </div>
       <div className="quantity-control">
-        <button type="button" onClick={onRemove} disabled={count <= 0}>−</button>
+        <button type="button" onClick={onRemove} disabled={readOnly || count <= 0}>−</button>
         <span>{count}</span>
-        <button type="button" onClick={onAdd}>+</button>
+        <button type="button" onClick={onAdd} disabled={readOnly}>+</button>
       </div>
-      <button type="button" className={`row-add-button ${count > 0 ? 'active' : ''}`} onClick={onAdd}>
+      <button type="button" className={`row-add-button ${count > 0 ? 'active' : ''}`} onClick={onAdd} disabled={readOnly}>
         {count > 0 ? <Check size={14} /> : <Plus size={14} />}
       </button>
     </article>
@@ -1407,11 +1522,12 @@ function OptionAccordion({ title, icon, open, onToggle, children }) {
   );
 }
 
-function ColorOptionCard({ title, colors, selectedColor, optionLabel, onSelect }) {
+function ColorOptionCard({ title, colors, selectedColor, optionLabel, disabled = false, onSelect }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const includedColors = colors.filter((color) => color.included);
   const optionalColors = colors.filter((color) => !color.included);
   const selectColor = (colorId) => {
+    if (disabled) return;
     onSelect(colorId);
     setDropdownOpen(false);
   };
@@ -1423,7 +1539,7 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, onSelect }
         <span>{selectedColor.name} ({selectedColor.code})</span>
       </div>
       <div className={`color-dropdown ${dropdownOpen ? 'open' : ''}`}>
-        <button className="color-dropdown-trigger" type="button" onClick={() => setDropdownOpen((open) => !open)}>
+        <button className="color-dropdown-trigger" type="button" disabled={disabled} onClick={() => setDropdownOpen((open) => !open)}>
           <span className="selected-swatch" style={{ '--swatch-color': selectedColor.hex, '--swatch-image': `url("${selectedColor.image}")` }} />
           <span>
             <strong>{selectedColor.name}</strong>
@@ -1442,6 +1558,7 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, onSelect }
                   type="button"
                   style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
                   title={`${color.name} (${color.code})`}
+                  disabled={disabled}
                   onClick={() => selectColor(color.id)}
                 >
                   <span>{color.name}</span>
@@ -1457,6 +1574,7 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, onSelect }
                   type="button"
                   style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
                   title={`${color.name} (${color.code})`}
+                  disabled={disabled}
                   onClick={() => selectColor(color.id)}
                 >
                   <span>{color.name}</span>
@@ -3678,16 +3796,14 @@ function isBasePackEligible(entry) {
   return category === 'furniture' || category === 'multimedia';
 }
 
-function calculateScenePricing({ area, catalog, items, salonLabel, scene }) {
-  const basePrice = Number(
-    scene?.base_price
-    || scene?.offer_details?.base_price
-    || scene?.source_payload?.base_price
-    || 0
-  ) || Math.round(area * 172.8);
+function calculateScenePricing({ catalog, items, salonLabel, scene }) {
+  const basePrice = 0;
   const baseItems = sceneBaseItems(scene);
   const baseItemsConfigured = sceneHasBaseItems(scene);
-  const includedCounts = baseItemsConfigured ? baseItemsToCountMap(baseItems) : countSceneItems(items.filter(isIncludedSceneItem));
+  const includedSceneCounts = countSceneItems(items.filter(isIncludedSceneItem));
+  const includedCounts = baseItemsConfigured
+    ? mergeIncludedCountMaps(includedSceneCounts, baseItemsToCountMap(baseItems))
+    : includedSceneCounts;
   const totalCounts = countSceneItems(items);
   const billableCounts = new Map();
   const lines = [];
@@ -3725,6 +3841,16 @@ function calculateScenePricing({ area, catalog, items, salonLabel, scene }) {
     lines,
     total: Math.round(basePrice + itemsTotal),
   };
+}
+
+function mergeIncludedCountMaps(...maps) {
+  const merged = new Map();
+  maps.forEach((map) => {
+    map.forEach((count, type) => {
+      merged.set(type, Math.max(merged.get(type) || 0, count || 0));
+    });
+  });
+  return merged;
 }
 
 function findCatalogEntry(catalogEntries, type) {
@@ -4317,14 +4443,14 @@ function floorWallBlocker(item, wall, width, depth) {
   return null;
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, wallColor }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, wallColor, interactive = true }) {
   const cameraPivot = useMemo(() => {
     const radians = (viewAngle * Math.PI) / 180;
     return [Math.sin(radians) * 0.75, 0, Math.cos(radians) * 0.25];
   }, [viewAngle]);
 
   const dragFromPointer = (event) => {
-    if (!draggingId) return;
+    if (!interactive || !draggingId) return;
     const floorPoint = new Vector3();
     event.ray.intersectPlane(floorPlane, floorPoint);
     event.stopPropagation();
@@ -4336,7 +4462,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
 
   return (
     <group position={cameraPivot}>
-      <DragSurface width={width} depth={depth} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} />
+      {interactive && <DragSurface width={width} depth={depth} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} />}
       <Floor width={width} depth={depth} carpetColor={carpetColor} />
       <Grid width={width} depth={depth} />
       <Walls width={width} depth={depth} height={height} layout={layout} wallColor={wallColor} />
@@ -4352,9 +4478,10 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
           depth={depth}
           selected={item.id === selectedId}
           dragging={item.id === draggingId}
-          onSelect={() => setSelectedId(item.id)}
+          onSelect={() => interactive && setSelectedId(item.id)}
           onDragStart={(event) => {
             event.stopPropagation();
+            if (!interactive) return;
             setSelectedId(item.id);
             if (itemPlacementLocked(item)) return;
             event.target.setPointerCapture(event.pointerId);

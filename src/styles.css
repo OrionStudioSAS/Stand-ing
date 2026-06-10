@@ -4552,3 +4552,135 @@ select {
   cursor: wait;
   opacity: 0.64;
 }
+
+.readonly-badge {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(31, 67, 120, 0.16);
+  border-radius: 999px;
+  padding: 10px 15px;
+  color: #1f4378;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 12px 28px rgba(20, 32, 48, 0.14);
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+
+.validation-summary-card,
+.validation-section,
+.validation-locked,
+.validation-message {
+  border: 1px solid #dce3ed;
+  border-radius: 12px;
+  padding: 14px 15px;
+  background: #fff;
+}
+
+.validation-summary-card {
+  display: grid;
+  gap: 10px;
+  background: #f7fbff;
+  border-color: #c7d8ef;
+}
+
+.validation-summary-card h2,
+.validation-section h3 {
+  margin: 0;
+  color: #171b22;
+  font-size: 0.94rem;
+  font-weight: 950;
+}
+
+.validation-summary-card p,
+.validation-muted {
+  margin: 0;
+  color: #8b95a4;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.validation-total-line,
+.validation-option-row,
+.validation-price-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.validation-total-line strong {
+  color: #1f4378;
+  font-size: 1.35rem;
+  white-space: nowrap;
+}
+
+.validation-section {
+  display: grid;
+  gap: 10px;
+}
+
+.validation-option-row,
+.validation-price-row {
+  border-top: 1px solid #eef1f5;
+  padding-top: 9px;
+  color: #626b78;
+  font-size: 0.82rem;
+}
+
+.validation-option-row strong,
+.validation-price-row strong {
+  color: #18212d;
+  font-size: 0.82rem;
+  text-align: right;
+}
+
+.validation-price-row strong {
+  color: #167044;
+}
+
+.validation-confirm-button {
+  min-height: 46px;
+  border: 0;
+  border-radius: 12px;
+  color: #fff;
+  background: #1f4378;
+  box-shadow: 0 12px 24px rgba(31, 67, 120, 0.25);
+  font-weight: 950;
+}
+
+.validation-confirm-button:disabled,
+.quantity-control button:disabled,
+.row-add-button:disabled,
+.color-dropdown-trigger:disabled,
+.color-swatch-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.validation-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #167044;
+  background: #ecf8f0;
+  border-color: #cbead5;
+  font-weight: 950;
+}
+
+.validation-message.success {
+  color: #167044;
+  background: #ecf8f0;
+  border-color: #cbead5;
+}
+
+.validation-message.error {
+  color: #ad2d24;
+  background: #fff0ee;
+  border-color: #f3cbc6;
+}
