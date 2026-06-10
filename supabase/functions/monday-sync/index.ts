@@ -99,7 +99,15 @@ Deno.serve(async (req) => {
 
       const sceneDraft = mapMondayItemToScene(item, source, savedClient?.id, savedProfile?.id, context);
       const preset = await findActivePreset(supabase, context.offerId, context.salonId, sceneDraft.layout);
-      const scene = { ...sceneDraft, base_preset_id: preset?.id || null };
+      const baseItems = await fetchOfferBaseItems(supabase, context.offerId);
+      const scene = {
+        ...sceneDraft,
+        base_preset_id: preset?.id || null,
+        source_payload: {
+          ...(sceneDraft.source_payload || {}),
+          baseItems,
+        },
+      };
       const { data: savedScene, error: saveError } = await supabase
         .from("scenes")
         .upsert(scene, { onConflict: "monday_item_id" })
@@ -324,6 +332,17 @@ async function findActivePreset(supabase: any, offerId?: string, salonId?: strin
     .maybeSingle();
   if (error) throw error;
   return data;
+}
+
+async function fetchOfferBaseItems(supabase: any, offerId?: string) {
+  if (!offerId) return [];
+  const { data, error } = await supabase
+    .from("salon_offers")
+    .select("metadata")
+    .eq("id", offerId)
+    .maybeSingle();
+  if (error) throw error;
+  return Array.isArray(data?.metadata?.baseItems) ? data.metadata.baseItems : [];
 }
 
 async function findPresetByLayout(supabase: any, params: { offerId?: string; salonId?: string; layout: string; offerIsNull?: boolean }) {

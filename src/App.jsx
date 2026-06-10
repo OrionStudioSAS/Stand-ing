@@ -39,7 +39,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -690,11 +690,13 @@ function ConfiguratorApp({ initialScene }) {
       source_payload: {
         ...(initialScene.source_payload || {}),
         options,
-        pricing: {
-          basePrice: scenePricing.basePrice,
-          itemsTotal: scenePricing.itemsTotal,
-          total: scenePricing.total,
-          lines: scenePricing.lines,
+          pricing: {
+            basePrice: scenePricing.basePrice,
+            baseItems: scenePricing.baseItems,
+            baseItemsConfigured: scenePricing.baseItemsConfigured,
+            itemsTotal: scenePricing.itemsTotal,
+            total: scenePricing.total,
+            lines: scenePricing.lines,
         },
       },
     };
@@ -1255,10 +1257,13 @@ function OptionsStepPanel({
 }
 
 function FurnitureStepPanel({ items, catalog, pricing, salonLabel, onAdd, onRemove }) {
-  const includedItems = sceneItemSummary(items.filter((item) => isIncludedSceneItem(item) && isFurniturePanelType(item)));
+  const includedItems = pricing?.baseItemsConfigured
+    ? pricing.baseItems.map((item) => ({ key: item.type, label: item.label, count: item.quantity }))
+    : sceneItemSummary(items.filter((item) => isIncludedSceneItem(item) && isFurniturePanelType(item)));
   const furnitureEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'furniture').slice(0, 8);
   const multimediaEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'multimedia').slice(0, 8);
   const billableCounts = pricing?.billableCounts || new Map();
+  const displayedIncludedItems = pricing?.baseItemsConfigured ? includedItems : (includedItems.length ? includedItems : defaultIncludedFurniture());
 
   return (
     <>
@@ -1267,13 +1272,17 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, onAdd, onRemo
         <h2>Mobilier standard</h2>
         <p>Inclus dans votre forfait</p>
         <div className="included-furniture-list">
-          {(includedItems.length ? includedItems : defaultIncludedFurniture()).map((item) => (
-            <div key={item.key} className="included-furniture-card">
-              <span><Check size={13} /></span>
-              <strong>{item.label}{item.count > 1 ? ` × ${item.count}` : ''}</strong>
-              <em>Inclus</em>
-            </div>
-          ))}
+          {displayedIncludedItems.length ? (
+            displayedIncludedItems.map((item) => (
+              <div key={item.key} className="included-furniture-card">
+                <span><Check size={13} /></span>
+                <strong>{item.label}{item.count > 1 ? ` × ${item.count}` : ''}</strong>
+                <em>Inclus</em>
+              </div>
+            ))
+          ) : (
+            <div className="included-furniture-empty">Aucun mobilier inclus dans ce pack.</div>
+          )}
         </div>
       </section>
 
@@ -1920,8 +1929,9 @@ function SalonPackStats({ salon }) {
 function AdminPresetsView({ salons, assets, onSalonChanged }) {
   const [selectedSalonId, setSelectedSalonId] = useState(salons[0]?.id || '');
   const [editing, setEditing] = useState(null);
+  const [basePackEditor, setBasePackEditor] = useState(null);
   const [boardEditor, setBoardEditor] = useState(null);
-  const [actionState, setActionState] = useState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: '' });
+  const [actionState, setActionState] = useState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
   const selectedSalon = salons.find((salon) => salon.id === selectedSalonId) || salons[0] || null;
 
   useEffect(() => {
@@ -1935,7 +1945,7 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
 
   const activatePack = async (entry) => {
     if (!selectedSalon) return;
-    setActionState({ loadingPack: entry.packName, savingBoardPack: '', deletingPresetId: '', message: '', error: '' });
+    setActionState({ loadingPack: entry.packName, savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
     try {
       const { offer } = await ensureSalonOffer(selectedSalon, entry.packName);
       const nextSalon = mergeSalonOffer(selectedSalon, offer);
@@ -1947,16 +1957,16 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
         packName: entry.packName,
         active: true,
       });
-      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: `${entry.packName} activé sur ${selectedSalon.name}.`, error: '' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `${entry.packName} activé sur ${selectedSalon.name}.`, error: '' });
       await onSalonChanged?.();
     } catch (error) {
-      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’activer ce pack.' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’activer ce pack.' });
     }
   };
 
   const openPackEditor = async (entry) => {
     if (!selectedSalon) return;
-    setActionState({ loadingPack: entry.packName, savingBoardPack: '', deletingPresetId: '', message: '', error: '' });
+    setActionState({ loadingPack: entry.packName, savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
     try {
       const { offer } = await ensureSalonOffer(selectedSalon, entry.packName);
       const nextSalon = mergeSalonOffer(selectedSalon, offer);
@@ -1969,10 +1979,10 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
         preset: offer.presets?.find((item) => item.layout === 'u') || offer.presets?.[0] || null,
         active: true,
       });
-      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: '' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
       await onSalonChanged?.();
     } catch (error) {
-      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’ouvrir ce pack.' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’ouvrir ce pack.' });
     }
   };
 
@@ -1980,17 +1990,43 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
     setBoardEditor({ packName: entry.packName, value: entry.source?.board_id || '' });
   };
 
+  const openBasePackEditor = async (entry) => {
+    if (!selectedSalon) return;
+    setActionState({ loadingPack: entry.packName, savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
+    try {
+      const { offer } = await ensureSalonOffer(selectedSalon, entry.packName);
+      const nextSalon = mergeSalonOffer(selectedSalon, offer);
+      setBasePackEditor({ ...entry, salon: nextSalon, offer, active: true });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
+      await onSalonChanged?.();
+    } catch (error) {
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’ouvrir le pack de base.' });
+    }
+  };
+
+  const saveBasePack = async (offer, baseItems) => {
+    setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: offer?.name || '', deletingPresetId: '', message: '', error: '' });
+    try {
+      const savedOffer = await saveSalonOfferBaseItems(offer, baseItems);
+      setBasePackEditor(null);
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Pack de base ${savedOffer.name} sauvegardé.`, error: '' });
+      await onSalonChanged?.();
+    } catch (error) {
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible de sauvegarder le pack de base.' });
+    }
+  };
+
   const saveBoardId = async (event, entry) => {
     event.preventDefault();
     if (!selectedSalon || !boardEditor) return;
-    setActionState({ loadingPack: '', savingBoardPack: entry.packName, deletingPresetId: '', message: '', error: '' });
+    setActionState({ loadingPack: '', savingBoardPack: entry.packName, savingBasePack: '', deletingPresetId: '', message: '', error: '' });
     try {
       await saveMondayBoardForPack(selectedSalon, entry.packName, boardEditor.value);
       setBoardEditor(null);
-      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: `Board Monday enregistré pour ${entry.packName}.`, error: '' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Board Monday enregistré pour ${entry.packName}.`, error: '' });
       await onSalonChanged?.();
     } catch (error) {
-      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’enregistrer le board Monday.' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’enregistrer le board Monday.' });
     }
   };
 
@@ -1999,14 +2035,14 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
     const confirmed = window.confirm(`Retirer le pack ${entry.packName} de ${selectedSalon?.name || 'ce salon'} ? Le board Monday restera configuré.`);
     if (!confirmed) return;
 
-    setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: entry.preset.id, message: '', error: '' });
+    setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: entry.preset.id, message: '', error: '' });
     try {
       await deleteStandPreset(entry.preset);
       setEditing((current) => (current?.preset?.id === entry.preset.id ? null : current));
-      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: `Pack ${entry.packName} retiré pour ce salon.`, error: '' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Pack ${entry.packName} retiré pour ce salon.`, error: '' });
       await onSalonChanged?.();
     } catch (error) {
-      setActionState({ loadingPack: '', savingBoardPack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible de retirer ce pack.' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible de retirer ce pack.' });
     }
   };
 
@@ -2046,6 +2082,9 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
                     <button type="button" onClick={() => openBoardEditor(entry)}>
                       {entry.source?.board_id ? 'Modifier board' : 'Ajouter board ID'}
                     </button>
+                    <button type="button" disabled={actionState.savingBasePack === entry.packName} onClick={() => openBasePackEditor(entry)}>
+                      Pack de base
+                    </button>
                     <button className="danger" type="button" disabled={actionState.deletingPresetId === entry.preset?.id} onClick={() => removePreset(entry)}>
                       {actionState.deletingPresetId === entry.preset?.id ? 'Suppression...' : 'Retirer pack'}
                     </button>
@@ -2057,6 +2096,9 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
                     </button>
                     <button type="button" onClick={() => openBoardEditor(entry)}>
                       {entry.source?.board_id ? 'Modifier board' : 'Ajouter board ID'}
+                    </button>
+                    <button type="button" disabled={actionState.loadingPack === entry.packName} onClick={() => openBasePackEditor(entry)}>
+                      Pack de base
                     </button>
                   </>
                 )}
@@ -2095,6 +2137,17 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
           }}
         />
       )}
+
+      {basePackEditor && (
+        <BasePackEditorModal
+          salon={basePackEditor.salon || selectedSalon}
+          offer={basePackEditor.offer}
+          assets={assets}
+          saving={actionState.savingBasePack === basePackEditor.offer?.name}
+          onClose={() => setBasePackEditor(null)}
+          onSave={(baseItems) => saveBasePack(basePackEditor.offer, baseItems)}
+        />
+      )}
     </section>
   );
 }
@@ -2127,6 +2180,93 @@ function mergeSalonOffer(salon, offer) {
       ? [...(salon.monday_sources || []).filter((item) => item.id !== offer.monday_source.id), offer.monday_source]
       : (salon.monday_sources || []),
   };
+}
+
+function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) {
+  const entries = useMemo(() => {
+    const dynamicEntries = (assets || [])
+      .filter((asset) => asset.is_active)
+      .filter((asset) => assetMatchesSalon(asset, salon?.name))
+      .map(assetToCatalogEntry);
+    const all = [...dynamicEntries, ...nativeCatalogEntries()];
+    return all
+      .filter((entry, index) => all.findIndex((item) => item.type === entry.type) === index)
+      .filter((entry) => isBasePackEligible(entry));
+  }, [assets, salon?.name]);
+  const [quantities, setQuantities] = useState(() => baseItemsToQuantityMap(offer?.metadata?.baseItems));
+
+  useEffect(() => {
+    setQuantities(baseItemsToQuantityMap(offer?.metadata?.baseItems));
+  }, [offer?.id, offer?.metadata?.baseItems]);
+
+  const updateQuantity = (type, nextQuantity) => {
+    setQuantities((current) => ({
+      ...current,
+      [type]: Math.max(0, Number(nextQuantity || 0)),
+    }));
+  };
+
+  const save = () => {
+    const baseItems = entries
+      .map((entry) => ({
+        type: entry.type,
+        label: entry.label,
+        quantity: Number(quantities[entry.type] || 0),
+      }))
+      .filter((item) => item.quantity > 0);
+    onSave(baseItems);
+  };
+
+  return (
+    <div className="asset-drawer-layer">
+      <aside className="asset-drawer base-pack-drawer">
+        <header>
+          <div>
+            <h2>Pack de base</h2>
+            <span>{salon?.name} · {offer?.name}</span>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
+        </header>
+
+        <div className="base-pack-help">
+          Ces quantités sont incluses dans la formule, sans poser les objets sur la scène.
+          Elles sont communes à toutes les implantations du pack.
+        </div>
+
+        <div className="base-pack-list">
+          {entries.map((entry) => {
+            const Icon = entry.icon || Box;
+            const quantity = Number(quantities[entry.type] || 0);
+            return (
+              <article key={entry.type} className={quantity > 0 ? 'active' : ''}>
+                <span>{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Icon size={22} />}</span>
+                <div>
+                  <strong>{entry.label}</strong>
+                  <small>{formatFurniturePrice(entry, salon?.name)} · {assetReference(entry, salon?.name) || 'Sans référence'}</small>
+                </div>
+                <div className="quantity-control">
+                  <button type="button" onClick={() => updateQuantity(entry.type, quantity - 1)} disabled={quantity <= 0}>−</button>
+                  <input
+                    value={quantity}
+                    inputMode="numeric"
+                    onChange={(event) => updateQuantity(entry.type, event.target.value)}
+                  />
+                  <button type="button" onClick={() => updateQuantity(entry.type, quantity + 1)}>+</button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        <footer>
+          <button type="button" className="asset-delete" onClick={onClose}>Annuler</button>
+          <button type="button" className="asset-save" disabled={saving} onClick={save}>
+            {saving ? 'Sauvegarde...' : 'Sauvegarder le pack de base'}
+          </button>
+        </footer>
+      </aside>
+    </div>
+  );
 }
 
 function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onClose, onSaved }) {
@@ -2173,7 +2313,7 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
           <div>
             <span>Configuration de base</span>
             <h2>{localSalon.name}{selectedOffer ? ` · ${selectedOffer.name}` : ''}</h2>
-            <p>Les objets enregistrés ici seront inclus automatiquement pour les exposants de ce pack, sans surcoût.</p>
+            <p>Les objets placés ici composent la scène de départ selon l’implantation. Les quotas gratuits se règlent dans “Pack de base”.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
         </header>
@@ -3449,6 +3589,55 @@ function isFurniturePanelType(item) {
   return true;
 }
 
+function sceneBaseItems(scene) {
+  const baseItems = scene?.source_payload?.baseItems
+    || scene?.source_payload?.base_items
+    || scene?.source_payload?.pricing?.baseItems
+    || scene?.metadata?.baseItems
+    || [];
+  return normalizeBaseItemsForUi(baseItems);
+}
+
+function sceneHasBaseItems(scene) {
+  return Boolean(
+    scene?.source_payload
+    && (
+      Object.prototype.hasOwnProperty.call(scene.source_payload, 'baseItems')
+      || Object.prototype.hasOwnProperty.call(scene.source_payload, 'base_items')
+      || Object.prototype.hasOwnProperty.call(scene.source_payload?.pricing || {}, 'baseItems')
+    )
+  );
+}
+
+function normalizeBaseItemsForUi(baseItems = []) {
+  return (baseItems || [])
+    .map((item) => ({
+      type: item.type,
+      label: item.label || catalog.find((entry) => entry.type === item.type)?.label || item.type,
+      quantity: Math.max(0, Number(item.quantity || 0)),
+    }))
+    .filter((item) => item.type && item.quantity > 0);
+}
+
+function baseItemsToCountMap(baseItems = []) {
+  return normalizeBaseItemsForUi(baseItems).reduce((counts, item) => {
+    counts.set(item.type, (counts.get(item.type) || 0) + item.quantity);
+    return counts;
+  }, new Map());
+}
+
+function baseItemsToQuantityMap(baseItems = []) {
+  return normalizeBaseItemsForUi(baseItems).reduce((acc, item) => {
+    acc[item.type] = item.quantity;
+    return acc;
+  }, {});
+}
+
+function isBasePackEligible(entry) {
+  const category = furniturePanelCategory(entry);
+  return category === 'furniture' || category === 'multimedia';
+}
+
 function calculateScenePricing({ area, catalog, items, salonLabel, scene }) {
   const basePrice = Number(
     scene?.base_price
@@ -3456,7 +3645,9 @@ function calculateScenePricing({ area, catalog, items, salonLabel, scene }) {
     || scene?.source_payload?.base_price
     || 0
   ) || Math.round(area * 172.8);
-  const includedCounts = countSceneItems(items.filter(isIncludedSceneItem));
+  const baseItems = sceneBaseItems(scene);
+  const baseItemsConfigured = sceneHasBaseItems(scene);
+  const includedCounts = baseItemsConfigured ? baseItemsToCountMap(baseItems) : countSceneItems(items.filter(isIncludedSceneItem));
   const totalCounts = countSceneItems(items);
   const billableCounts = new Map();
   const lines = [];
@@ -3486,6 +3677,8 @@ function calculateScenePricing({ area, catalog, items, salonLabel, scene }) {
 
   return {
     basePrice,
+    baseItems,
+    baseItemsConfigured,
     billableCounts,
     includedCounts,
     itemsTotal,

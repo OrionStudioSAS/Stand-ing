@@ -285,6 +285,47 @@ export async function ensureSalonOffer(salon, packName) {
   return { offer: { ...offer, monday_source: mondaySource, presets }, preset: presets[0] || null };
 }
 
+export async function saveSalonOfferBaseItems(offer, baseItems = []) {
+  if (!offer?.id) throw new Error('Pack introuvable.');
+  const normalizedItems = normalizeBaseItems(baseItems);
+
+  if (!supabase) {
+    return {
+      ...offer,
+      metadata: {
+        ...(offer.metadata || {}),
+        baseItems: normalizedItems,
+      },
+    };
+  }
+
+  const { data, error } = await supabase
+    .from('salon_offers')
+    .update({
+      metadata: {
+        ...(offer.metadata || {}),
+        baseItems: normalizedItems,
+      },
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', offer.id)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+function normalizeBaseItems(baseItems = []) {
+  return (baseItems || [])
+    .map((item) => ({
+      type: item.type,
+      label: item.label,
+      quantity: Math.max(0, Number(item.quantity || 0)),
+    }))
+    .filter((item) => item.type && item.quantity > 0);
+}
+
 export async function saveMondayBoardForPack(salon, packName, boardId) {
   const normalizedBoardId = String(boardId || '').trim();
   if (!normalizedBoardId) throw new Error('Ajoute un ID de board Monday.');
