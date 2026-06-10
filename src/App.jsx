@@ -4520,9 +4520,9 @@ function ObjModel({ item, selected, dragging }) {
   const model = useMemo(() => {
     const clone = obj.clone(true);
     const material = new MeshStandardMaterial({
-      color: activeColor(selected, dragging, item.color || '#ece7da'),
-      roughness: 0.58,
-      metalness: 0.03,
+      color: activeColor(selected, dragging, defaultModelColor(item)),
+      roughness: defaultModelRoughness(item),
+      metalness: defaultModelMetalness(item),
       side: DoubleSide,
     });
 
@@ -4553,8 +4553,49 @@ function prepareLoadedModel(source) {
 }
 
 function cloneMeshMaterial(material) {
-  if (Array.isArray(material)) return material.map((item) => item?.clone?.() || item);
-  return material?.clone?.() || material;
+  if (Array.isArray(material)) return material.map(cloneAndNormalizeMaterial);
+  return cloneAndNormalizeMaterial(material);
+}
+
+function cloneAndNormalizeMaterial(material) {
+  const cloned = material?.clone?.() || material;
+  if (!cloned) return cloned;
+
+  cloned.side = DoubleSide;
+
+  if (cloned.map && cloned.color?.set) {
+    // SketchUp MTL often combines map_Kd with a mid-grey Kd, which multiplies
+    // the texture and makes aluminium assets almost black in Three.js.
+    cloned.color.set('#ffffff');
+  } else if (isAluminiumMaterial(cloned) && cloned.color?.set) {
+    cloned.color.set('#bfc5c8');
+  }
+
+  if (isAluminiumMaterial(cloned)) {
+    if ('metalness' in cloned) cloned.metalness = 0.35;
+    if ('roughness' in cloned) cloned.roughness = 0.42;
+    if ('shininess' in cloned) cloned.shininess = 55;
+  }
+
+  cloned.needsUpdate = true;
+  return cloned;
+}
+
+function isAluminiumMaterial(material = {}) {
+  return /alu|minium|metal|brushed/i.test(material.name || '');
+}
+
+function defaultModelColor(item) {
+  if (/porte[-_ ]?doc/i.test(item?.type || item?.label || '')) return '#bfc5c8';
+  return item?.color || '#ece7da';
+}
+
+function defaultModelMetalness(item) {
+  return /porte[-_ ]?doc/i.test(item?.type || item?.label || '') ? 0.35 : 0.03;
+}
+
+function defaultModelRoughness(item) {
+  return /porte[-_ ]?doc/i.test(item?.type || item?.label || '') ? 0.42 : 0.58;
 }
 
 function assetBaseUrl(url = '') {
