@@ -603,7 +603,7 @@ function ConfiguratorApp({ initialScene }) {
   const [language, setLanguage] = useState('fr');
   const [headerPanel, setHeaderPanel] = useState(null);
   const [activeStep, setActiveStep] = useState(1);
-  const [openOptions, setOpenOptions] = useState({ moquette: true, personnalisation: false, coton: false, reserve: false, tete: false });
+  const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, reserve: false, tete: false, comptoir: false });
   const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || '1893');
   const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || '303');
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
@@ -746,6 +746,17 @@ function ConfiguratorApp({ initialScene }) {
       return [...current, placed];
     });
     setSelectedId(item.id);
+  };
+
+  const removeOptionalItem = (type) => {
+    setItems((current) => {
+      const index = [...current].reverse().findIndex((item) => item.type === type && !isIncludedSceneItem(item));
+      if (index < 0) return current;
+      const removeIndex = current.length - 1 - index;
+      const removedItem = current[removeIndex];
+      if (selectedId === removedItem.id) setSelectedId(null);
+      return current.filter((_, itemIndex) => itemIndex !== removeIndex);
+    });
   };
 
   const chooseLayout = (nextLayout) => {
@@ -969,76 +980,34 @@ function ConfiguratorApp({ initialScene }) {
 
       {activeStep > 1 && (
       <aside className="config-panel">
-        <div className="config-panel-head">
-          <h1>Options de configuration</h1>
-          <span>Etape {activeStep} / 4</span>
-        </div>
-        <div className="stand-summary-card">
-          <strong>{area.toFixed(0)} m2 · {layout === 'u' ? '3 faces' : layout === 'back' ? '1 face' : '2 faces'} · {initialScene.project_name || 'Stand A-14'}</strong>
-          <button type="button">Modifier ›</button>
-        </div>
-        <div className="rules-card">
-          <strong>Regles SMCL appliquees automatiquement</strong>
-          <span>✓ Reserve 2m2 incluse</span>
-          <span>✓ 2 tetes de cloison</span>
-          <span>✓ 9 spots LED (1/3m2)</span>
-        </div>
-
-        <section className="panel-section-title">Les options</section>
-        <OptionAccordion title="Moquette" icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
-          <ColorOptionCard
-            title="Couleur"
-            colors={carpetColors}
-            selectedColor={selectedCarpetColor}
-            optionLabel="En option 36€"
-            onSelect={setSelectedCarpetId}
+        {activeStep === 3 ? (
+          <FurnitureStepPanel
+            items={items}
+            catalog={availableCatalog}
+            onAdd={addItem}
+            onRemove={removeOptionalItem}
           />
-        </OptionAccordion>
-        <OptionAccordion title="Personnalisation" icon={<Sparkles size={16} />} open={openOptions.personnalisation} onToggle={() => toggleOption('personnalisation')} />
-        <OptionAccordion title="Coton cloison" icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
-          <ColorOptionCard
-            title="Couleur"
-            colors={wallFabricColors}
-            selectedColor={selectedWallFabricColor}
-            optionLabel="En option 36€"
-            onSelect={setSelectedWallFabricId}
+        ) : (
+          <OptionsStepPanel
+            activeStep={activeStep}
+            area={area}
+            layout={layout}
+            standLabel={initialScene.project_name || 'Stand A-14'}
+            openOptions={openOptions}
+            toggleOption={toggleOption}
+            selectedCarpetColor={selectedCarpetColor}
+            selectedWallFabricColor={selectedWallFabricColor}
+            onCarpetColor={setSelectedCarpetId}
+            onWallColor={setSelectedWallFabricId}
+            width={width}
+            depth={depth}
+            setWidth={setWidth}
+            setDepth={setDepth}
+            currentLayout={layout}
+            chooseLayout={chooseLayout}
+            onExport={() => exportTechnicalPng({ width, depth, layout, items, catalog: availableCatalog })}
           />
-        </OptionAccordion>
-        <OptionAccordion title="Reserve" icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')} />
-        <OptionAccordion title="Tete de cloison" icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')} />
-
-        <section className="panel-section-title">Ajouter</section>
-        <div className="compact-catalog">
-          {availableCatalog.map((entry) => {
-            const Icon = entry.icon;
-            return (
-              <button key={entry.type} onClick={() => addItem(entry)} title={`Ajouter ${entry.label}`}>
-                <Icon size={16} />
-                <span>{entry.label}</span>
-                <Plus size={13} />
-              </button>
-            );
-          })}
-        </div>
-
-        <details className="stand-settings">
-          <summary>Dimensions et implantation</summary>
-          <div className="settings-grid">
-            <label>Largeur <span>{width} m</span><input type="range" min="2" max="8" step="0.5" value={width} onChange={(event) => setWidth(Number(event.target.value))} /></label>
-            <label>Profondeur <span>{depth} m</span><input type="range" min="2" max="6" step="0.5" value={depth} onChange={(event) => setDepth(Number(event.target.value))} /></label>
-            <div className="segmented config-layouts">
-              {layouts.map((option) => (
-                <button key={option.id} className={layout === option.id ? 'active' : ''} onClick={() => chooseLayout(option.id)}>
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </details>
-
-        <button className="wide export" onClick={() => exportTechnicalPng({ width, depth, layout, items, catalog: availableCatalog })}>
-          <FileImage size={16} /> Generer PNG technique
-        </button>
+        )}
       </aside>
       )}
 
@@ -1196,6 +1165,190 @@ function LanguageMenu({ language, onSelect }) {
       ))}
       <p>Les textes du stand restent en français</p>
     </section>
+  );
+}
+
+function OptionsStepPanel({
+  activeStep,
+  area,
+  layout,
+  standLabel,
+  openOptions,
+  toggleOption,
+  selectedCarpetColor,
+  selectedWallFabricColor,
+  onCarpetColor,
+  onWallColor,
+  width,
+  depth,
+  setWidth,
+  setDepth,
+  currentLayout,
+  chooseLayout,
+  onExport,
+}) {
+  return (
+    <>
+      <PanelHead title="Options de configuration" step={activeStep} />
+      <StandSummary area={area} layout={layout} standLabel={standLabel} />
+      <RulesSummary />
+
+      <section className="panel-section-title">Les options</section>
+      <OptionAccordion title="Moquette" icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+        <ColorOptionCard
+          title="Couleur"
+          colors={carpetColors}
+          selectedColor={selectedCarpetColor}
+          optionLabel="En option 36€"
+          onSelect={onCarpetColor}
+        />
+      </OptionAccordion>
+      <OptionAccordion title="Empreinte moquette" icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')} />
+      <OptionAccordion title="Coton cloison" icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+        <ColorOptionCard
+          title="Couleur"
+          colors={wallFabricColors}
+          selectedColor={selectedWallFabricColor}
+          optionLabel="En option 36€"
+          onSelect={onWallColor}
+        />
+      </OptionAccordion>
+      <OptionAccordion title="Reserve" icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')} />
+      <OptionAccordion title="Tete de cloison" icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')} />
+      <OptionAccordion title="Comptoir" icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')} />
+
+      <details className="stand-settings">
+        <summary>Dimensions et implantation</summary>
+        <div className="settings-grid">
+          <label>Largeur <span>{width} m</span><input type="range" min="2" max="8" step="0.5" value={width} onChange={(event) => setWidth(Number(event.target.value))} /></label>
+          <label>Profondeur <span>{depth} m</span><input type="range" min="2" max="6" step="0.5" value={depth} onChange={(event) => setDepth(Number(event.target.value))} /></label>
+          <div className="segmented config-layouts">
+            {layouts.map((option) => (
+              <button key={option.id} className={currentLayout === option.id ? 'active' : ''} onClick={() => chooseLayout(option.id)}>
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </details>
+
+      <button className="wide export" onClick={onExport}>
+        <FileImage size={16} /> Generer PNG technique
+      </button>
+    </>
+  );
+}
+
+function FurnitureStepPanel({ items, catalog, onAdd, onRemove }) {
+  const includedItems = sceneItemSummary(items.filter((item) => isIncludedSceneItem(item) && isFurniturePanelType(item)));
+  const furnitureEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'furniture').slice(0, 8);
+  const multimediaEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'multimedia').slice(0, 8);
+  const optionalCounts = countSceneItems(items.filter((item) => !isIncludedSceneItem(item)));
+
+  return (
+    <>
+      <PanelHead title="Mobilier & Multimedia" step={3} />
+      <section className="furniture-panel-section">
+        <h2>Mobilier standard</h2>
+        <p>Inclus dans votre forfait</p>
+        <div className="included-furniture-list">
+          {(includedItems.length ? includedItems : defaultIncludedFurniture()).map((item) => (
+            <div key={item.key} className="included-furniture-card">
+              <span><Check size={13} /></span>
+              <strong>{item.label}{item.count > 1 ? ` × ${item.count}` : ''}</strong>
+              <em>Inclus</em>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <FurnitureCatalogSection
+        title="Mobilier additionnel"
+        entries={furnitureEntries}
+        counts={optionalCounts}
+        onAdd={onAdd}
+        onRemove={onRemove}
+      />
+      <FurnitureCatalogSection
+        title="Multimedia"
+        entries={multimediaEntries}
+        counts={optionalCounts}
+        onAdd={onAdd}
+        onRemove={onRemove}
+      />
+    </>
+  );
+}
+
+function PanelHead({ title, step }) {
+  return (
+    <div className="config-panel-head">
+      <h1>{title}</h1>
+      <span>Etape {step} / 4</span>
+    </div>
+  );
+}
+
+function StandSummary({ area, layout, standLabel }) {
+  return (
+    <div className="stand-summary-card">
+      <strong>{area.toFixed(0)} m2 · {layout === 'u' ? '3 faces' : layout === 'back' ? '1 face' : '2 faces'} · {standLabel}</strong>
+      <button type="button">Modifier ›</button>
+    </div>
+  );
+}
+
+function RulesSummary() {
+  return (
+    <div className="rules-card">
+      <strong>Regles SMCL appliquees automatiquement</strong>
+      <span>✓ Reserve 2m2 incluse</span>
+      <span>✓ 2 tetes de cloison</span>
+      <span>✓ 9 spots LED (1/3m2)</span>
+    </div>
+  );
+}
+
+function FurnitureCatalogSection({ title, entries, counts, onAdd, onRemove }) {
+  if (!entries.length) return null;
+  return (
+    <section className="furniture-panel-section">
+      <h2>{title}</h2>
+      <div className="furniture-catalog-list">
+        {entries.map((entry) => (
+          <FurnitureCatalogRow
+            key={entry.type}
+            entry={entry}
+            count={counts.get(entry.type) || 0}
+            onAdd={() => onAdd(entry)}
+            onRemove={() => onRemove(entry.type)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FurnitureCatalogRow({ entry, count, onAdd, onRemove }) {
+  const Icon = entry.icon || Box;
+  return (
+    <article className={`furniture-catalog-row ${count > 0 ? 'selected' : ''}`}>
+      <span className="furniture-thumb">
+        {entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Icon size={24} />}
+      </span>
+      <div>
+        <strong>{entry.label}</strong>
+        <em>{formatFurniturePrice(entry)}</em>
+      </div>
+      <div className="quantity-control">
+        <button type="button" onClick={onRemove} disabled={count <= 0}>−</button>
+        <span>{count}</span>
+        <button type="button" onClick={onAdd}>+</button>
+      </div>
+      <button type="button" className={`row-add-button ${count > 0 ? 'active' : ''}`} onClick={onAdd}>
+        {count > 0 ? <Check size={14} /> : <Plus size={14} />}
+      </button>
+    </article>
   );
 }
 
@@ -3129,6 +3282,8 @@ function assetToCatalogEntry(asset) {
       groupSize: asset.dimensions?.groupSize || computeGroupSize(asset.dimensions?.children || []),
       children: asset.dimensions?.children || [],
       placementRule: normalizePlacementRule(asset.dimensions?.placementRule),
+      price: asset.dimensions?.price || 0,
+      thumbnailUrl: asset.thumbnail_url,
     };
   }
 
@@ -3140,6 +3295,9 @@ function assetToCatalogEntry(asset) {
     modelUrl: asset.model_url,
     modelSize: assetModelSize(asset),
     materialUrl: asset.dimensions?.materialUrl || null,
+    price: asset.dimensions?.price || 0,
+    thumbnailUrl: asset.thumbnail_url,
+    dimensions: asset.dimensions || {},
   };
 }
 
@@ -3212,6 +3370,65 @@ function assetStatus(asset) {
   if (!asset.is_active) return 'inactive';
   if (asset.dimensions?.processing) return 'processing';
   return 'active';
+}
+
+function isIncludedSceneItem(item) {
+  return Boolean(item?.included || item?.priceMode === 'included' || item?.price_mode === 'included' || item?.basePresetId);
+}
+
+function isFurniturePanelType(item) {
+  if (!item || isWallItem(item)) return false;
+  const label = `${item.label || ''} ${item.type || ''}`.toLowerCase();
+  if (label.includes('cloison') || label.includes('porte poussant')) return false;
+  return true;
+}
+
+function countSceneItems(sceneItems) {
+  return sceneItems.reduce((counts, item) => {
+    counts.set(item.type, (counts.get(item.type) || 0) + 1);
+    return counts;
+  }, new Map());
+}
+
+function sceneItemSummary(sceneItems) {
+  const summaries = new Map();
+  sceneItems.forEach((item) => {
+    const current = summaries.get(item.type) || {
+      key: item.type,
+      label: item.label || catalog.find((entry) => entry.type === item.type)?.label || item.type,
+      count: 0,
+    };
+    current.count += 1;
+    summaries.set(item.type, current);
+  });
+  return [...summaries.values()];
+}
+
+function defaultIncludedFurniture() {
+  return [
+    { key: 'counter', label: 'Comptoir', count: 1 },
+    { key: 'stool', label: 'Tabouret', count: 2 },
+    { key: 'high-table', label: 'Mange-debout', count: 1 },
+  ];
+}
+
+function furniturePanelCategory(entry) {
+  const text = `${entry?.type || ''} ${entry?.label || ''}`.toLowerCase();
+  if (entry?.isGroup || text.includes('cloison') || text.includes('porte poussant')) return 'hidden';
+  if (isWallItemType(entry?.type) || /tv|ecran|écran|borne|led|multimedia|multimédia|caisson/.test(text)) return 'multimedia';
+  return 'furniture';
+}
+
+function formatFurniturePrice(entry) {
+  const defaultPrices = {
+    chair: 72,
+    table: 93,
+    counter: 144,
+    screen: 450,
+  };
+  const price = Number(entry?.price ?? entry?.dimensions?.price ?? entry?.optionPrice ?? defaultPrices[entry?.type] ?? 0);
+  if (!price) return '+ 0 €';
+  return `+ ${price.toLocaleString('fr-FR')} €`;
 }
 
 function placementRuleFromId(id) {
