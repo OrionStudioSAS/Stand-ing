@@ -3461,6 +3461,16 @@ select {
   color: #1f2630;
 }
 
+.preset-side-panel .preset-included-help {
+  margin: -4px 0 12px;
+  border-radius: 10px;
+  padding: 9px 10px;
+  color: #1f4378;
+  background: #eef4fb;
+  font-size: 0.73rem;
+  font-weight: 800;
+}
+
 .preset-catalog {
   display: grid;
   gap: 8px;
@@ -4104,6 +4114,17 @@ select {
   font-size: 0.86rem;
 }
 
+.asset-salon-pricing-row {
+  display: grid;
+  gap: 7px;
+  border-bottom: 1px solid #eceef2;
+  padding: 0 0 10px;
+}
+
+.asset-salon-pricing-row + .asset-salon-pricing-row {
+  margin-top: 10px;
+}
+
 .asset-assignment button {
   display: grid;
   grid-template-columns: 1fr auto auto;
@@ -4112,7 +4133,6 @@ select {
   width: 100%;
   min-height: 44px;
   border: 0;
-  border-bottom: 1px solid #eceef2;
   padding: 0;
   color: #2d333d;
   background: transparent;
@@ -4155,6 +4175,43 @@ select {
 
 .asset-assignment i.active::after {
   transform: translateX(20px);
+}
+
+.asset-salon-pricing-fields {
+  display: grid;
+  gap: 7px;
+  padding: 0 0 0 1px;
+}
+
+.asset-salon-pricing-fields label {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  align-items: center;
+  gap: 10px;
+}
+
+.asset-salon-pricing-fields label span {
+  color: #9ca2aa;
+  font-size: 0.76rem;
+}
+
+.asset-salon-pricing-fields input {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0 9px;
+  color: #2d333d;
+  background: #f6f8fb;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.asset-salon-pricing-fields input:focus {
+  border-color: #a9c4ed;
+  outline: none;
+  background: #fff;
 }
 
 .asset-price-note {

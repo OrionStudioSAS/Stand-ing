@@ -639,7 +639,6 @@ function ConfiguratorApp({ initialScene }) {
   const selected = items.find((item) => item.id === selectedId);
   const selectedCarpetColor = carpetColors.find((color) => color.id === selectedCarpetId) || carpetColors[0];
   const selectedWallFabricColor = wallFabricColors.find((color) => color.id === selectedWallFabricId) || wallFabricColors[0];
-  const estimatedTotal = Math.round(area * 172.8);
   const salonLabel = initialScene.salon || clientInfo.event || 'SMCL 2026';
   const standLabel = initialScene.project_name || clientInfo.project || 'Stand A-14';
   const clientLabel = clientInfo.client || contactDetails.company || 'Aerosys Industries';
@@ -655,9 +654,17 @@ function ConfiguratorApp({ initialScene }) {
       .filter((asset) => asset.is_active)
       .filter((asset) => assetMatchesSalon(asset, salonLabel))
       .map(assetToCatalogEntry);
-    const entries = [...nativeCatalogEntries(), ...dynamicEntries];
+    const entries = [...dynamicEntries, ...nativeCatalogEntries()];
     return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
   }, [objectBank, salonLabel]);
+  const scenePricing = useMemo(() => calculateScenePricing({
+    area,
+    catalog: availableCatalog,
+    items,
+    salonLabel,
+    scene: initialScene,
+  }), [area, availableCatalog, items, salonLabel, initialScene]);
+  const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus) => {
     const options = {
@@ -683,6 +690,12 @@ function ConfiguratorApp({ initialScene }) {
       source_payload: {
         ...(initialScene.source_payload || {}),
         options,
+        pricing: {
+          basePrice: scenePricing.basePrice,
+          itemsTotal: scenePricing.itemsTotal,
+          total: scenePricing.total,
+          lines: scenePricing.lines,
+        },
       },
     };
   };
@@ -984,6 +997,8 @@ function ConfiguratorApp({ initialScene }) {
           <FurnitureStepPanel
             items={items}
             catalog={availableCatalog}
+            pricing={scenePricing}
+            salonLabel={salonLabel}
             onAdd={addItem}
             onRemove={removeOptionalItem}
           />
@@ -1239,11 +1254,11 @@ function OptionsStepPanel({
   );
 }
 
-function FurnitureStepPanel({ items, catalog, onAdd, onRemove }) {
+function FurnitureStepPanel({ items, catalog, pricing, salonLabel, onAdd, onRemove }) {
   const includedItems = sceneItemSummary(items.filter((item) => isIncludedSceneItem(item) && isFurniturePanelType(item)));
   const furnitureEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'furniture').slice(0, 8);
   const multimediaEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'multimedia').slice(0, 8);
-  const optionalCounts = countSceneItems(items.filter((item) => !isIncludedSceneItem(item)));
+  const billableCounts = pricing?.billableCounts || new Map();
 
   return (
     <>
@@ -1265,14 +1280,16 @@ function FurnitureStepPanel({ items, catalog, onAdd, onRemove }) {
       <FurnitureCatalogSection
         title="Mobilier additionnel"
         entries={furnitureEntries}
-        counts={optionalCounts}
+        counts={billableCounts}
+        salonLabel={salonLabel}
         onAdd={onAdd}
         onRemove={onRemove}
       />
       <FurnitureCatalogSection
         title="Multimedia"
         entries={multimediaEntries}
-        counts={optionalCounts}
+        counts={billableCounts}
+        salonLabel={salonLabel}
         onAdd={onAdd}
         onRemove={onRemove}
       />
@@ -1309,7 +1326,7 @@ function RulesSummary() {
   );
 }
 
-function FurnitureCatalogSection({ title, entries, counts, onAdd, onRemove }) {
+function FurnitureCatalogSection({ title, entries, counts, salonLabel, onAdd, onRemove }) {
   if (!entries.length) return null;
   return (
     <section className="furniture-panel-section">
@@ -1320,6 +1337,7 @@ function FurnitureCatalogSection({ title, entries, counts, onAdd, onRemove }) {
             key={entry.type}
             entry={entry}
             count={counts.get(entry.type) || 0}
+            salonLabel={salonLabel}
             onAdd={() => onAdd(entry)}
             onRemove={() => onRemove(entry.type)}
           />
@@ -1329,7 +1347,7 @@ function FurnitureCatalogSection({ title, entries, counts, onAdd, onRemove }) {
   );
 }
 
-function FurnitureCatalogRow({ entry, count, onAdd, onRemove }) {
+function FurnitureCatalogRow({ entry, count, salonLabel, onAdd, onRemove }) {
   const Icon = entry.icon || Box;
   return (
     <article className={`furniture-catalog-row ${count > 0 ? 'selected' : ''}`}>
@@ -1338,7 +1356,7 @@ function FurnitureCatalogRow({ entry, count, onAdd, onRemove }) {
       </span>
       <div>
         <strong>{entry.label}</strong>
-        <em>{formatFurniturePrice(entry)}</em>
+        <em>{formatFurniturePrice(entry, salonLabel)}</em>
       </div>
       <div className="quantity-control">
         <button type="button" onClick={onRemove} disabled={count <= 0}>−</button>
@@ -2223,7 +2241,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       .filter((asset) => asset.is_active)
       .filter((asset) => assetMatchesSalon(asset, salon.name))
       .map(assetToCatalogEntry);
-    const entries = [...nativeCatalogEntries(), ...dynamicEntries];
+    const entries = [...dynamicEntries, ...nativeCatalogEntries()];
     return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
   }, [assets, salon.name]);
 
@@ -2338,6 +2356,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           ))}
         </div>
         <h4>Objets inclus</h4>
+        <p className="preset-included-help">Chaque objet sauvegardé ici est inclus dans la formule. Le client ne paiera que les quantités ajoutées au-delà.</p>
         <div className="preset-catalog">
           {availableCatalog.map((entry) => {
             const Icon = entry.icon;
@@ -2728,6 +2747,26 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
     });
   };
 
+  const updateSalonPricing = (salon, patch) => {
+    const key = salonPricingKey(salon);
+    const currentPricing = draft.dimensions?.salonPricing || {};
+    const currentSalonPricing = currentPricing[key] || { salon, price: '', reference: '' };
+    setDraft({
+      ...draft,
+      dimensions: {
+        ...(draft.dimensions || {}),
+        salonPricing: {
+          ...currentPricing,
+          [key]: {
+            ...currentSalonPricing,
+            salon,
+            ...patch,
+          },
+        },
+      },
+    });
+  };
+
   const updateGroupRow = (uid, patch) => {
     setGroupRows((current) => current.map((row) => (row.uid === uid ? { ...row, ...patch } : row)));
   };
@@ -2791,12 +2830,38 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           <h3>Affectation par salon</h3>
           {(salons.length ? salons : ['SMCL 2026', 'SIAE 2026']).map((salon) => {
             const active = assignedSalons.includes(salon);
+            const salonPricing = getSalonPricing(draft, salon);
             return (
-              <button key={salon} type="button" onClick={() => toggleSalon(salon)}>
-                <strong>{salon}</strong>
-                <span>{active ? 'Actif' : 'Inactif'}</span>
-                <i className={active ? 'active' : ''} />
-              </button>
+              <div key={salon} className="asset-salon-pricing-row">
+                <button type="button" onClick={() => toggleSalon(salon)}>
+                  <strong>{salon}</strong>
+                  <span>{active ? 'Actif' : 'Inactif'}</span>
+                  <i className={active ? 'active' : ''} />
+                </button>
+                {active && (
+                  <div className="asset-salon-pricing-fields">
+                    <label>
+                      <span>Prix spécifique {salon}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={salonPricing.price ?? ''}
+                        placeholder="—"
+                        onChange={(event) => updateSalonPricing(salon, { price: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      <span>Référence</span>
+                      <input
+                        value={salonPricing.reference || ''}
+                        placeholder="Ex : A4ENINJCSJKCSBJ"
+                        onChange={(event) => updateSalonPricing(salon, { reference: event.target.value })}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
             );
           })}
         </section>
@@ -2856,7 +2921,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           </>
         )}
 
-        <small className="asset-price-note">Prix spécifique {assignedSalons[0] || 'salon'} : {draft.dimensions?.price ? `${draft.dimensions.price} €` : '—'}</small>
+        <small className="asset-price-note">Les prix et références peuvent être différents pour chaque salon actif.</small>
 
         <footer>
           <button type="button" className="asset-delete" onClick={onDelete}>Supprimer définitivement</button>
@@ -3284,6 +3349,7 @@ function assetToCatalogEntry(asset) {
       placementRule: normalizePlacementRule(asset.dimensions?.placementRule),
       price: asset.dimensions?.price || 0,
       thumbnailUrl: asset.thumbnail_url,
+      dimensions: asset.dimensions || {},
     };
   }
 
@@ -3383,6 +3449,55 @@ function isFurniturePanelType(item) {
   return true;
 }
 
+function calculateScenePricing({ area, catalog, items, salonLabel, scene }) {
+  const basePrice = Number(
+    scene?.base_price
+    || scene?.offer_details?.base_price
+    || scene?.source_payload?.base_price
+    || 0
+  ) || Math.round(area * 172.8);
+  const includedCounts = countSceneItems(items.filter(isIncludedSceneItem));
+  const totalCounts = countSceneItems(items);
+  const billableCounts = new Map();
+  const lines = [];
+  let itemsTotal = 0;
+
+  totalCounts.forEach((totalCount, type) => {
+    const includedCount = includedCounts.get(type) || 0;
+    const billableCount = Math.max(0, totalCount - includedCount);
+    if (!billableCount) {
+      billableCounts.set(type, 0);
+      return;
+    }
+    const entry = findCatalogEntry(catalog, type);
+    const unitPrice = assetUnitPrice(entry, salonLabel);
+    const lineTotal = unitPrice * billableCount;
+    billableCounts.set(type, billableCount);
+    itemsTotal += lineTotal;
+    lines.push({
+      type,
+      label: entry?.label || type,
+      quantity: billableCount,
+      unitPrice,
+      total: lineTotal,
+      reference: assetReference(entry, salonLabel),
+    });
+  });
+
+  return {
+    basePrice,
+    billableCounts,
+    includedCounts,
+    itemsTotal,
+    lines,
+    total: Math.round(basePrice + itemsTotal),
+  };
+}
+
+function findCatalogEntry(catalogEntries, type) {
+  return (catalogEntries || []).find((entry) => entry.type === type) || catalog.find((entry) => entry.type === type) || null;
+}
+
 function countSceneItems(sceneItems) {
   return sceneItems.reduce((counts, item) => {
     counts.set(item.type, (counts.get(item.type) || 0) + 1);
@@ -3419,16 +3534,54 @@ function furniturePanelCategory(entry) {
   return 'furniture';
 }
 
-function formatFurniturePrice(entry) {
+function formatFurniturePrice(entry, salonLabel) {
+  const price = assetUnitPrice(entry, salonLabel);
+  if (!price) return '+ 0 €';
+  return `+ ${price.toLocaleString('fr-FR')} €`;
+}
+
+function assetUnitPrice(entry, salonLabel) {
+  const salonPricing = getSalonPricing(entry, salonLabel);
   const defaultPrices = {
     chair: 72,
     table: 93,
     counter: 144,
     screen: 450,
   };
-  const price = Number(entry?.price ?? entry?.dimensions?.price ?? entry?.optionPrice ?? defaultPrices[entry?.type] ?? 0);
-  if (!price) return '+ 0 €';
-  return `+ ${price.toLocaleString('fr-FR')} €`;
+  return firstPriceValue(
+    salonPricing.price,
+    entry?.price,
+    entry?.dimensions?.price,
+    entry?.optionPrice,
+    defaultPrices[entry?.type],
+    0,
+  );
+}
+
+function assetReference(entry, salonLabel) {
+  return getSalonPricing(entry, salonLabel).reference || entry?.dimensions?.reference || '';
+}
+
+function getSalonPricing(assetOrEntry, salonLabel) {
+  const pricing = assetOrEntry?.dimensions?.salonPricing || assetOrEntry?.salonPricing || {};
+  const directKey = salonPricingKey(salonLabel);
+  const direct = pricing[directKey];
+  if (direct) return direct;
+  const normalized = normalizeSalonLabel(salonLabel);
+  return Object.entries(pricing).find(([, value]) => normalizeSalonLabel(value?.salon || '') === normalized)?.[1] || {};
+}
+
+function salonPricingKey(salonLabel) {
+  return slugForType(salonLabel || 'salon');
+}
+
+function firstPriceValue(...values) {
+  for (const value of values) {
+    if (value === undefined || value === null || value === '') continue;
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return 0;
 }
 
 function placementRuleFromId(id) {
