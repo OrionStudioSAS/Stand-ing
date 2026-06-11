@@ -3105,6 +3105,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
       dimensions: {
         ...(draft.dimensions || {}),
         size: nextSize.map((size) => Number(size.toFixed(2))),
+        sizeSource: 'manual',
       },
     });
   };
@@ -3724,8 +3725,24 @@ function assetToCatalogEntry(asset) {
 
 function assetModelSize(asset) {
   const size = asset.dimensions?.size || asset.dimensions?.dimensions || asset.dimensions?.modelSize;
+  if (asset.dimensions?.sizeSource === 'manual' && Array.isArray(size) && size.length >= 3) return normalizeModelSize(size);
+  const namedSize = parseModelSizeFromText(`${asset.label || ''} ${asset.model_url || asset.modelUrl || ''}`);
+  if (namedSize) return namedSize;
   if (Array.isArray(size) && size.length >= 3) return normalizeModelSize(size);
   return inferredAssetModelSize(asset);
+}
+
+function parseModelSizeFromText(value) {
+  const text = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const match = text.match(/(\d+(?:[,.]\d+)?)\s*[x×]\s*(\d+(?:[,.]\d+)?)\s*[x×]\s*(\d+(?:[,.]\d+)?)\s*(mm|cm|m)\b/);
+  if (!match) return null;
+
+  const unit = match[4];
+  const factor = unit === 'mm' ? 1000 : unit === 'cm' ? 100 : 1;
+  const [width, depth, height] = match.slice(1, 4).map((part) => Number(part.replace(',', '.')) / factor);
+  if (![width, depth, height].every((number) => Number.isFinite(number) && number > 0)) return null;
+
+  return [width, height, depth].map((number) => Number(number.toFixed(2)));
 }
 
 function normalizeModelSize(size, fallback = [0.55, 0.7, 0.55]) {
@@ -4431,6 +4448,9 @@ function itemGroupBounds(item) {
 
 function itemDefaultSize(item) {
   const savedSize = item?.dimensions?.size || item?.dimensions?.dimensions || item?.dimensions?.modelSize;
+  if (item?.dimensions?.sizeSource === 'manual' && Array.isArray(savedSize) && savedSize.length >= 3) return normalizeModelSize(savedSize);
+  const namedSize = parseModelSizeFromText(`${item?.label || ''} ${item?.modelUrl || ''}`);
+  if (namedSize) return namedSize;
   if (Array.isArray(savedSize) && savedSize.length >= 3) return normalizeModelSize(savedSize);
   if (item?.modelSize?.length >= 3) {
     const normalizedSize = normalizeModelSize(item.modelSize);

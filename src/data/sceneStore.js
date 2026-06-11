@@ -646,7 +646,9 @@ export async function uploadObjectAssetFolder(files) {
     };
   }));
   const referenceRules = buildAssetReferenceRules(uploadEntries);
+  const namedModelSize = parseModelSizeFromText(baseName || modelFile.name);
   const measuredModelSize = await readUploadedModelSize(modelFile);
+  const modelSize = namedModelSize || measuredModelSize;
   let modelPath = '';
   let materialPath = '';
   let totalBytes = 0;
@@ -682,7 +684,7 @@ export async function uploadObjectAssetFolder(files) {
       category: 'Mobilier',
       fileSizeMb: Number((totalBytes / 1024 / 1024).toFixed(1)),
       format: modelFile.name.toLowerCase().endsWith('.obj') ? 'OBJ' : 'GLB',
-      ...(measuredModelSize ? { size: measuredModelSize } : {}),
+      ...(modelSize ? { size: modelSize, sizeSource: namedModelSize ? 'name' : 'obj-vertices' } : {}),
       folderName: rootFolder || null,
       uploadedFiles: fileList.length,
       textureCount,
@@ -806,13 +808,14 @@ async function backfillObjectBankModelSizes(items) {
 
   const repairedItems = await Promise.all((items || []).map(async (item) => {
     if (!shouldBackfillModelSize(item)) return item;
-    const measuredSize = await readRemoteObjModelSize(item.model_url);
+    const namedSize = parseModelSizeFromText(`${item.label || ''} ${item.model_url || ''}`);
+    const measuredSize = namedSize || await readRemoteObjModelSize(item.model_url);
     if (!measuredSize) return item;
 
     const dimensions = {
       ...(item.dimensions || {}),
       size: measuredSize,
-      sizeSource: 'obj-vertices',
+      sizeSource: namedSize ? 'name' : 'obj-vertices',
     };
     const repairedItem = { ...item, dimensions };
 
@@ -835,6 +838,8 @@ async function backfillObjectBankModelSizes(items) {
 function shouldBackfillModelSize(item) {
   if (!item?.model_url?.toLowerCase().split('?')[0].endsWith('.obj')) return false;
   if (item.dimensions?.isGroup) return false;
+  if (item.dimensions?.sizeSource === 'manual') return false;
+  if (parseModelSizeFromText(`${item.label || ''} ${item.model_url || ''}`) && item.dimensions?.sizeSource !== 'name') return true;
   const size = item.dimensions?.size || item.dimensions?.dimensions || item.dimensions?.modelSize;
   if (!Array.isArray(size) || size.length < 3) return true;
   const normalized = size.map(Number);
@@ -870,6 +875,20 @@ function parseObjModelSize(text) {
   // Most OBJ exports here are already in meters; very large files are usually in mm.
   const divisor = Math.max(...size) > 100 ? 1000 : 1;
   return size.map((value) => Number(Math.max(0.05, value / divisor).toFixed(2)));
+}
+
+function parseModelSizeFromText(value) {
+  const text = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const match = text.match(/(\d+(?:[,.]\d+)?)\s*[x×]\s*(\d+(?:[,.]\d+)?)\s*[x×]\s*(\d+(?:[,.]\d+)?)\s*(mm|cm|m)\b/);
+  if (!match) return null;
+
+  const unit = match[4];
+  const factor = unit === 'mm' ? 1000 : unit === 'cm' ? 100 : 1;
+  const [width, depth, height] = match.slice(1, 4).map((part) => Number(part.replace(',', '.')) / factor);
+  if (![width, depth, height].every((number) => Number.isFinite(number) && number > 0)) return null;
+
+  // Asset names use the workshop convention: largeur x profondeur x hauteur.
+  return [width, height, depth].map((number) => Number(number.toFixed(2)));
 }
 
 function rewriteKnownAssetReferences(text, referenceRules) {
