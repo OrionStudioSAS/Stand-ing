@@ -49,6 +49,7 @@ const fixedWallHeight = 2.5;
 const wallThickness = 0.06;
 const screenDepth = 0.06;
 const wallItemSnap = 0.25;
+const carpetFootprintOverflow = 0.2;
 const collisionPadding = 0.04;
 const collisionPlacementStep = 0.25;
 const questionCategories = [
@@ -1296,7 +1297,9 @@ function OptionsStepPanel({
           onSelect={onCarpetColor}
         />
       </OptionAccordion>
-      <OptionAccordion title="Empreinte moquette" icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')} />
+      <OptionAccordion title="Empreinte moquette" icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')}>
+        <CarpetFootprintCard layout={layout} />
+      </OptionAccordion>
       <OptionAccordion title="Coton cloison" icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
         <ColorOptionCard
           title="Couleur"
@@ -1635,6 +1638,29 @@ function rememberAdminTab(tab) {
   } catch {
     // Ignore private browsing / storage failures.
   }
+}
+
+function CarpetFootprintCard({ layout }) {
+  const sideOverflow = layout === 'left'
+    ? 'Débord de 200 mm sur la droite du stand'
+    : layout === 'right'
+      ? 'Débord de 200 mm sur la gauche du stand'
+      : 'Pas de débord latéral pour cette implantation';
+
+  return (
+    <div className="carpet-footprint-card">
+      <header>
+        <strong>Dalles moquette 1000 × 1000 mm</strong>
+        <span>Inclus</span>
+      </header>
+      <ul>
+        <li>Débord de 200 mm dans l’allée devant le stand</li>
+        <li>{sideOverflow}</li>
+        <li>Même niveau que le sol : les objets peuvent être posés dessus</li>
+      </ul>
+      <small>Les couleurs de cette empreinte seront ajoutées dès réception des références.</small>
+    </div>
+  );
 }
 
 function AdminDashboard({ user, adminProfile }) {
@@ -4137,6 +4163,28 @@ function snapWallAxis(value) {
   return Number((Math.round(Number(value || 0) / wallItemSnap) * wallItemSnap).toFixed(2));
 }
 
+function carpetFootprintBounds(width, depth, layout) {
+  const leftOverflow = layout === 'right' ? carpetFootprintOverflow : 0;
+  const rightOverflow = layout === 'left' ? carpetFootprintOverflow : 0;
+  return {
+    minX: -width / 2 - leftOverflow,
+    maxX: width / 2 + rightOverflow,
+    minZ: -depth / 2,
+    maxZ: depth / 2 + carpetFootprintOverflow,
+  };
+}
+
+function carpetFootprintSize(width, depth, layout) {
+  const bounds = carpetFootprintBounds(width, depth, layout);
+  return {
+    ...bounds,
+    width: bounds.maxX - bounds.minX,
+    depth: bounds.maxZ - bounds.minZ,
+    centerX: (bounds.minX + bounds.maxX) / 2,
+    centerZ: (bounds.minZ + bounds.maxZ) / 2,
+  };
+}
+
 function screenAxisRange(wall, width, depth, margin = 0.55) {
   const length = wall === 'back' ? width : depth;
   return {
@@ -4229,11 +4277,12 @@ function constrainItem(item, width, depth, layout) {
 
   const positionedItem = applyPlacementRule(item, width, depth, layout);
   const bounds = itemGroupBounds(positionedItem);
+  const footprint = carpetFootprintBounds(width, depth, layout);
 
   return {
     ...positionedItem,
-    x: clamp(positionedItem.x, -width / 2 - bounds.minX, width / 2 - bounds.maxX),
-    z: clamp(positionedItem.z, -depth / 2 - bounds.minZ, depth / 2 - bounds.maxZ),
+    x: clamp(positionedItem.x, footprint.minX - bounds.minX, footprint.maxX - bounds.maxX),
+    z: clamp(positionedItem.z, footprint.minZ - bounds.minZ, footprint.maxZ - bounds.maxZ),
   };
 }
 
@@ -4253,10 +4302,11 @@ function placeItemInFreeSpot(item, items, width, depth, layout) {
   if (!collidesWithScene(firstCandidate, items, firstCandidate.id, width, depth)) return firstCandidate;
 
   const bounds = itemGroupBounds(firstCandidate);
-  const minX = -width / 2 - bounds.minX;
-  const maxX = width / 2 - bounds.maxX;
-  const minZ = -depth / 2 - bounds.minZ;
-  const maxZ = depth / 2 - bounds.maxZ;
+  const footprint = carpetFootprintBounds(width, depth, layout);
+  const minX = footprint.minX - bounds.minX;
+  const maxX = footprint.maxX - bounds.maxX;
+  const minZ = footprint.minZ - bounds.minZ;
+  const maxZ = footprint.maxZ - bounds.maxZ;
   const candidates = [];
 
   for (let z = minZ; z <= maxZ + 0.001; z += collisionPlacementStep) {
@@ -4562,9 +4612,9 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
 
   return (
     <group position={cameraPivot}>
-      {interactive && <DragSurface width={width} depth={depth} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} />}
-      <Floor width={width} depth={depth} carpetColor={carpetColor} />
-      <Grid width={width} depth={depth} />
+      {interactive && <DragSurface width={width} depth={depth} layout={layout} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} />}
+      <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} />
+      <Grid width={width} depth={depth} layout={layout} />
       <Walls width={width} depth={depth} height={height} layout={layout} wallColor={wallColor} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
         {width}m x {depth}m
@@ -4601,19 +4651,21 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   );
 }
 
-function Floor({ width, depth, carpetColor }) {
+function Floor({ width, depth, layout, carpetColor }) {
+  const footprint = carpetFootprintSize(width, depth, layout);
   return (
-    <mesh receiveShadow position={[0, -0.035, 0]}>
-      <boxGeometry args={[width, 0.07, depth]} />
+    <mesh receiveShadow position={[footprint.centerX, -0.035, footprint.centerZ]}>
+      <boxGeometry args={[footprint.width, 0.07, footprint.depth]} />
       <meshStandardMaterial color={carpetColor || '#bebebe'} roughness={0.78} />
     </mesh>
   );
 }
 
-function DragSurface({ width, depth, sceneOffset, draggingId, onDragMove }) {
+function DragSurface({ width, depth, layout, sceneOffset, draggingId, onDragMove }) {
+  const footprint = carpetFootprintSize(width, depth, layout);
   return (
     <mesh
-      position={[0, 0.015, 0]}
+      position={[footprint.centerX, 0.015, footprint.centerZ]}
       rotation={[-Math.PI / 2, 0, 0]}
       onPointerMove={(event) => {
         if (!draggingId) return;
@@ -4628,16 +4680,21 @@ function DragSurface({ width, depth, sceneOffset, draggingId, onDragMove }) {
         event.stopPropagation();
       }}
     >
-      <planeGeometry args={[width, depth]} />
+      <planeGeometry args={[footprint.width, footprint.depth]} />
       <meshBasicMaterial transparent opacity={0} depthWrite={false} />
     </mesh>
   );
 }
 
-function Grid({ width, depth }) {
+function Grid({ width, depth, layout }) {
+  const footprint = carpetFootprintBounds(width, depth, layout);
+  const footprintWidth = footprint.maxX - footprint.minX;
+  const footprintDepth = footprint.maxZ - footprint.minZ;
+  const centerX = (footprint.minX + footprint.maxX) / 2;
+  const centerZ = (footprint.minZ + footprint.maxZ) / 2;
   const lines = [];
-  for (let x = -width / 2; x <= width / 2 + 0.01; x += 1) lines.push({ key: `x-${x}`, position: [x, 0.006, 0], scale: [0.01, 0.01, depth] });
-  for (let z = -depth / 2; z <= depth / 2 + 0.01; z += 1) lines.push({ key: `z-${z}`, position: [0, 0.007, z], scale: [width, 0.01, 0.01] });
+  for (let x = Math.ceil(footprint.minX); x <= footprint.maxX + 0.01; x += 1) lines.push({ key: `x-${x}`, position: [x, 0.006, centerZ], scale: [0.01, 0.01, footprintDepth] });
+  for (let z = Math.ceil(footprint.minZ); z <= footprint.maxZ + 0.01; z += 1) lines.push({ key: `z-${z}`, position: [centerX, 0.007, z], scale: [footprintWidth, 0.01, 0.01] });
   return (
     <group>
       {lines.map((line) => (

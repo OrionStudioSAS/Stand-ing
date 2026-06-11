@@ -18,12 +18,14 @@ const technicalColors = {
   panelOther: '#b8b8b8',
   reinforcement: '#7030a0',
   floor: '#f4efe5',
+  footprint: '#eee5d6',
 };
 
 const fixedWallHeight = 2.5;
 const wallPanelWidth = 1;
 const reinforcementWidth = 1;
 const wallThicknessMeters = 0.06;
+const carpetFootprintOverflow = 0.2;
 
 export function exportTechnicalPng({ width, depth, layout, items, catalog }) {
   const technicalItems = applyWallItemMetrics(flattenTechnicalItems(items, catalog), width, depth, catalog);
@@ -88,7 +90,7 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   drawText(ctx, 'Origine X/Z au centre du stand.', x + 16, y + 168, 17);
   y += 224;
 
-  ctx.strokeRect(x, y, w, 280);
+  ctx.strokeRect(x, y, w, 308);
   drawText(ctx, 'LEGENDE', x + 16, y + 32, 20, technicalColors.blue, 'bold');
   legendLine(ctx, x + 18, y + 66, technicalColors.blue, 'Cotes stand');
   legendLine(ctx, x + 18, y + 102, technicalColors.red, 'Cotes objet');
@@ -97,6 +99,7 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   legendSwatch(ctx, x + 18, y + 186, technicalColors.panel500, 'Cloison 500mm');
   legendSwatch(ctx, x + 18, y + 214, technicalColors.panelOther, 'Autre largeur');
   legendSwatch(ctx, x + 18, y + 242, technicalColors.reinforcement, 'Renfort TV');
+  legendSwatch(ctx, x + 18, y + 270, technicalColors.footprint, 'Empreinte moquette +200mm');
 
   const footerY = sheet.height - sheet.margin - 86;
   ctx.strokeRect(x, footerY, w, 32);
@@ -121,6 +124,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
 
   ctx.fillStyle = technicalColors.floor;
   ctx.fillRect(planX, planY, planW, planH);
+  drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale);
   drawGrid(ctx, planX, planY, planW, planH, width, depth, scale);
 
   ctx.strokeStyle = technicalColors.ink;
@@ -151,6 +155,31 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
   });
 
   drawText(ctx, 'Allee', planX + planW / 2, planY + planH + 62, 58, technicalColors.ink, 'normal', 'center');
+}
+
+function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale) {
+  const overflow = carpetFootprintOverflow * scale;
+  ctx.save();
+  ctx.fillStyle = technicalColors.footprint;
+  ctx.strokeStyle = '#b8aa91';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([10, 6]);
+
+  // Debord systematique de 200mm dans l'allee, devant le stand.
+  ctx.fillRect(planX, planY + planH, planW, overflow);
+  ctx.strokeRect(planX, planY + planH, planW, overflow);
+
+  if (layout === 'left') {
+    ctx.fillRect(planX + planW, planY, overflow, planH + overflow);
+    ctx.strokeRect(planX + planW, planY, overflow, planH + overflow);
+  }
+
+  if (layout === 'right') {
+    ctx.fillRect(planX - overflow, planY, overflow, planH + overflow);
+    ctx.strokeRect(planX - overflow, planY, overflow, planH + overflow);
+  }
+
+  ctx.restore();
 }
 
 function drawItemTable(ctx, items, catalog, width, depth) {
