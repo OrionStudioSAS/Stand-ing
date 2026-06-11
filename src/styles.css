@@ -4176,6 +4176,74 @@ select {
   font-weight: 800;
 }
 
+.asset-behavior-settings {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d9e1ec;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f7faff;
+}
+
+.asset-behavior-settings h3 {
+  margin: 0;
+  color: #172033;
+  font-size: 0.95rem;
+}
+
+.asset-behavior-settings label:not(.asset-toggle-row) {
+  display: grid;
+  gap: 6px;
+  color: #77808c;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.asset-behavior-settings select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #d8dde6;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #252b34;
+  background: #fff;
+  font: inherit;
+}
+
+.asset-toggle-row {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+}
+
+.asset-toggle-row input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: #1f4378;
+}
+
+.asset-toggle-row strong,
+.asset-toggle-row small {
+  display: block;
+}
+
+.asset-toggle-row strong {
+  color: #2d333d;
+  font-size: 0.82rem;
+}
+
+.asset-toggle-row small {
+  margin-top: 3px;
+  color: #8992a0;
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
 .asset-assignment h3 {
   margin: 0 0 12px;
   color: #3b414a;

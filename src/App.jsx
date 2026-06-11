@@ -85,6 +85,7 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
     type,
     label: entry?.label,
     rotation: 0,
+    collisionEnabled: entry?.dimensions?.collisionEnabled !== false,
   };
 
   if (entry?.isGroup || entry?.children?.length) {
@@ -102,15 +103,23 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
     return applyPlacementRule(item, width, depth, layout);
   }
 
-  if (isWallItemType(type)) {
+  if (isCatalogWallEntry(entry, type)) {
     const side = layout === 'right' ? 'right' : layout === 'left' ? 'left' : 'back';
+    const size = entry?.modelSize || entry?.dimensions?.size || [];
     return {
       ...base,
+      isWallItem: !isWallItemType(type),
+      modelUrl: entry?.modelUrl,
+      modelSize: entry?.modelSize,
+      materialUrl: entry?.materialUrl,
+      dimensions: entry?.dimensions,
+      color: entry?.color,
       wall: side,
       x: 0,
       z: side === 'back' ? -depth / 2 + wallThickness : 0,
-      y: type === 'poster' ? 1.45 : 1.65,
+      y: isWallItemType(type) ? (type === 'poster' ? 1.45 : 1.65) : Number(entry?.dimensions?.wallY ?? 0),
       posterHeight: entry?.posterHeight,
+      wallDepth: isWallItemType(type) ? undefined : Number(size?.[2] || 0.08),
     };
   }
 
@@ -3070,6 +3079,8 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const fallbackType = sourceAssets[0]?.type || '';
   const activeGroupRowUid = selectedGroupRowUid || groupRows[0]?.uid || null;
   const draftPlacementRuleId = normalizePlacementRule(draft.dimensions?.placementRule)?.id || 'free';
+  const draftMountType = assetPlacementMode(draft);
+  const draftCollisionEnabled = draft.dimensions?.collisionEnabled !== false;
 
   useEffect(() => {
     setDraft(asset);
@@ -3098,6 +3109,16 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
       dimensions: {
         ...(draft.dimensions || {}),
         placementRule: placementRuleFromId(ruleId),
+      },
+    });
+  };
+
+  const updateAssetBehavior = (patch) => {
+    setDraft({
+      ...draft,
+      dimensions: {
+        ...(draft.dimensions || {}),
+        ...patch,
       },
     });
   };
@@ -3180,6 +3201,30 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           <div><dt>Ajouté le</dt><dd>{formatDate(draft.created_at)}</dd></div>
           <div><dt>Ajouté par</dt><dd>{draft.dimensions?.addedBy || 'Stand-ING'}</dd></div>
         </dl>
+
+        {!isGroupAsset && (
+          <section className="asset-behavior-settings">
+            <h3>Comportement dans la scène</h3>
+            <label>
+              <span>Placement</span>
+              <select value={draftMountType} onChange={(event) => updateAssetBehavior({ mountType: event.target.value })}>
+                <option value="floor">Objet au sol</option>
+                <option value="wall">Objet rattaché à un mur</option>
+              </select>
+            </label>
+            <label className="asset-toggle-row">
+              <input
+                type="checkbox"
+                checked={draftCollisionEnabled}
+                onChange={(event) => updateAssetBehavior({ collisionEnabled: event.target.checked })}
+              />
+              <span>
+                <strong>Collision active</strong>
+                <small>Désactive-la pour permettre de poser ou déplacer des objets au travers/en dessous.</small>
+              </span>
+            </label>
+          </section>
+        )}
 
         <section className="asset-assignment">
           <h3>Affectation par salon</h3>
@@ -3719,6 +3764,8 @@ function assetToCatalogEntry(asset) {
     materialUrl: asset.dimensions?.materialUrl || null,
     price: asset.dimensions?.price || 0,
     thumbnailUrl: asset.thumbnail_url,
+    isWallItem: assetPlacementMode(asset) === 'wall',
+    collisionEnabled: asset.dimensions?.collisionEnabled !== false,
     dimensions: asset.dimensions || {},
   };
 }
@@ -4134,8 +4181,21 @@ function isWallItemType(type) {
   return ['screen', 'poster'].includes(type);
 }
 
+function assetPlacementMode(assetOrEntry = {}) {
+  const mountType = assetOrEntry?.dimensions?.mountType || assetOrEntry?.mountType;
+  return mountType === 'wall' ? 'wall' : 'floor';
+}
+
+function isCatalogWallEntry(entry, type) {
+  return isWallItemType(type) || assetPlacementMode(entry) === 'wall' || Boolean(entry?.isWallItem);
+}
+
 function isWallItem(item) {
   return isWallItemType(item?.type) || Boolean(item?.wall && item?.isWallItem);
+}
+
+function itemCollisionEnabled(item) {
+  return item?.collisionEnabled !== false && item?.dimensions?.collisionEnabled !== false;
 }
 
 function snapWallAxis(value) {
@@ -4326,7 +4386,7 @@ function serializeObjectWallSurface(surface) {
 
 function objectWallSurfaces(items = [], ignoreId = null) {
   return (items || [])
-    .filter((item) => item && item.id !== ignoreId && !isWallItem(item))
+    .filter((item) => item && item.id !== ignoreId && !isWallItem(item) && itemCollisionEnabled(item))
     .flatMap((item) => {
       if (item.isGroup && item.children?.length) return groupObjectWallSurfaces(item);
       return wallSurfaceCandidate(item, item.id, item.x || 0, item.z || 0, item.rotation || 0);
@@ -4537,23 +4597,25 @@ function placeWallItemInFreeSpot(item, items, width, depth, layout) {
 }
 
 function collidesWithScene(candidate, items, ignoreId = null, width = 0, depth = 0) {
+  if (!itemCollisionEnabled(candidate)) return false;
   if (isWallItem(candidate)) return collidesWithWallItems(candidate, items, ignoreId, width, depth);
   const candidateBox = itemCollisionBox(candidate);
   if (!candidateBox) return false;
 
   return (items || []).some((item) => {
-    if (!item || item.id === ignoreId || isWallItem(item)) return false;
+    if (!item || item.id === ignoreId || isWallItem(item) || !itemCollisionEnabled(item)) return false;
     const itemBox = itemCollisionBox(item);
     return itemBox ? boxesOverlap(candidateBox, itemBox) : false;
   });
 }
 
 function collidesWithWallItems(candidate, items, ignoreId = null, width = 0, depth = 0) {
+  if (!itemCollisionEnabled(candidate)) return false;
   const candidateBox = wallItemCollisionBox(candidate, items, width, depth);
   if (!candidateBox) return false;
 
   return (items || []).some((item) => {
-    if (!item || item.id === ignoreId) return false;
+    if (!item || item.id === ignoreId || !itemCollisionEnabled(item)) return false;
     const itemBox = isWallItem(item)
       ? wallItemCollisionBox(item, items, width, depth)
       : floorItemWallCollisionBox(item, candidateBox.wall, width, depth);
@@ -4562,7 +4624,7 @@ function collidesWithWallItems(candidate, items, ignoreId = null, width = 0, dep
 }
 
 function wallItemCollisionBox(item, items, width, depth) {
-  if (!isWallItem(item)) return null;
+  if (!isWallItem(item) || !itemCollisionEnabled(item)) return null;
   const metrics = wallItemMetrics(item, items, width, depth);
   const axis = Number(item.x || 0);
   const y = Number(item.y || 1.5);
@@ -4580,6 +4642,13 @@ function wallItemMetrics(item, items, width, depth) {
     return {
       width: posterAvailableWidth(item, items, width, depth),
       height: Number(item.posterHeight || 1.25),
+    };
+  }
+  if (item.modelUrl) {
+    const size = itemDefaultSize(item);
+    return {
+      width: Number(size[0] || 0.95),
+      height: Number(size[1] || 0.58),
     };
   }
   return { width: 0.95, height: 0.58 };
@@ -4603,7 +4672,7 @@ function floorItemWallCollisionBox(item, wall, width, depth) {
 }
 
 function itemCollisionBox(item) {
-  if (!item || isWallItem(item)) return null;
+  if (!item || isWallItem(item) || !itemCollisionEnabled(item)) return null;
   const bounds = itemPlacementBounds(item);
   const centerX = Number(item.x || 0);
   const centerZ = Number(item.z || 0);
@@ -4727,7 +4796,7 @@ function objectWallTransform(item, items = []) {
   const surface = objectWallSurfaceForItem(item, items);
   if (!surface) return null;
   const side = Number(item.wallSide || 1) >= 0 ? 1 : -1;
-  const screenOffset = wallThickness + screenDepth / 2;
+  const screenOffset = wallMountedNormalOffset(item);
   const axis = Number(item.x || surface.centerAxis || 0);
   const position = surface.orientation === 'x'
     ? [axis, item.y, Number(surface.normalAxis || 0) + side * screenOffset]
@@ -4741,10 +4810,17 @@ function objectWallTransform(item, items = []) {
 function screenWorldPosition(item, width, depth, items = []) {
   const objectTransform = objectWallTransform(item, items);
   if (objectTransform) return objectTransform.position;
-  const screenOffset = wallThickness + screenDepth / 2;
+  const screenOffset = wallMountedNormalOffset(item);
   if (item.wall === 'left') return [-width / 2 + screenOffset, item.y, item.x];
   if (item.wall === 'right') return [width / 2 - screenOffset, item.y, item.x];
   return [item.x, item.y, -depth / 2 + screenOffset];
+}
+
+function wallMountedNormalOffset(item) {
+  if (item?.type === 'poster') return wallThickness + 0.035 / 2;
+  if (item?.type === 'screen') return wallThickness + screenDepth / 2;
+  const depth = Number(item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
+  return wallThickness + Math.max(0.02, depth / 2);
 }
 
 function posterAvailableWidth(item, items, width, depth) {
@@ -4783,9 +4859,10 @@ function wallBlockers(currentItem, items, width, depth, wall) {
 }
 
 function wallMountedBlocker(item, wall, width, depth) {
+  if (!itemCollisionEnabled(item)) return null;
   if ((item.wall || 'back') !== wall) return null;
   const axis = Number(item.x || 0);
-  const itemWidth = item.type === 'screen' ? 0.95 : 1;
+  const itemWidth = wallItemMetrics(item, [], width, depth).width;
   return { min: axis - itemWidth / 2 - 0.1, max: axis + itemWidth / 2 + 0.1 };
 }
 
@@ -5265,6 +5342,7 @@ function WallMountedItem({ item, items, width, depth, selected, dragging, onSele
   const rotation = objectTransform?.rotation ?? (item.wall === 'left' ? Math.PI / 2 : item.wall === 'right' ? -Math.PI / 2 : 0);
   const offset = objectTransform?.position ?? screenWorldPosition(item, width, depth, items);
   const isPoster = item.type === 'poster';
+  const isCustomModel = Boolean(item.modelUrl);
   const posterWidth = isPoster ? posterAvailableWidth(item, items, width, depth) : 0.95;
   const posterHeight = item.posterHeight || 1.25;
   return (
@@ -5290,6 +5368,8 @@ function WallMountedItem({ item, items, width, depth, selected, dragging, onSele
           </mesh>
           <Text position={[0, 0, 0.038]} fontSize={0.16} color="#1f4378" anchorX="center" anchorY="middle">AFFICHE</Text>
         </>
+      ) : isCustomModel ? (
+        <SceneItemContent item={item} selected={selected} dragging={dragging} />
       ) : (
         <>
           <mesh castShadow>

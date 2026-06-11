@@ -146,7 +146,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
     const label = `${index + 1}`;
 
     if (isWallItem(item)) {
-      drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label);
+      drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, item.label || entry?.label);
       return;
     }
 
@@ -465,11 +465,12 @@ function drawObjectDimensions(ctx, x, y, w, h, dims, rotation) {
   drawDimension(ctx, x + w / 2 + 18, y - h / 2, x + w / 2 + 18, y + h / 2, mm(dims.depth), 'vertical', technicalColors.red, 12);
 }
 
-function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label) {
-  const itemWidth = (item.type === 'poster' ? Number(item.posterWidth || 1) : 0.95) * scale;
-  const itemDepth = (item.type === 'poster' ? 0.04 : 0.08) * scale;
-  const wallLabelText = item.type === 'poster' ? `AFFICHE ${mm(item.posterWidth || 1)}` : tvTechnicalLabel(item);
-  ctx.fillStyle = item.type === 'poster' ? '#f7f1dc' : '#22364d';
+function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, defaultLabel) {
+  const isCustomWallModel = Boolean(item.modelUrl) && !['screen', 'poster'].includes(item.type);
+  const itemWidth = (item.type === 'poster' ? Number(item.posterWidth || 1) : isCustomWallModel ? dims.width : 0.95) * scale;
+  const itemDepth = (item.type === 'poster' ? 0.04 : isCustomWallModel ? Math.max(0.04, dims.depth) : 0.08) * scale;
+  const wallLabelText = item.type === 'poster' ? `AFFICHE ${mm(item.posterWidth || 1)}` : item.type === 'screen' ? tvTechnicalLabel(item) : (defaultLabel || 'OBJET MURAL');
+  ctx.fillStyle = item.type === 'poster' ? '#f7f1dc' : item.type === 'screen' ? '#22364d' : (item.color || '#dfe8ec');
   ctx.strokeStyle = technicalColors.ink;
   ctx.lineWidth = 2;
 
@@ -620,7 +621,7 @@ function applyWallItemMetrics(items, width, depth, catalog) {
 }
 
 function isWallItem(item) {
-  return ['screen', 'poster'].includes(item?.type);
+  return ['screen', 'poster'].includes(item?.type) || Boolean(item?.wall && item?.isWallItem);
 }
 
 function posterAvailableWidth(item, items, width, depth, catalog) {
@@ -649,10 +650,13 @@ function posterAvailableWidth(item, items, width, depth, catalog) {
 }
 
 function wallBlocker(item, wall, width, depth, catalog) {
+  if (item?.collisionEnabled === false || item?.dimensions?.collisionEnabled === false) return null;
   if (isWallItem(item)) {
     if ((item.wall || 'back') !== wall) return null;
     const axis = Number(item.x || 0);
-    const itemWidth = item.type === 'screen' ? 0.95 : Number(item.posterWidth || 1);
+    const entry = catalog.find((candidate) => candidate.type === item.type);
+    const dims = itemDimensions(item, entry);
+    const itemWidth = item.type === 'screen' ? 0.95 : item.type === 'poster' ? Number(item.posterWidth || 1) : dims.width;
     return { min: axis - itemWidth / 2 - 0.1, max: axis + itemWidth / 2 + 0.1 };
   }
 
