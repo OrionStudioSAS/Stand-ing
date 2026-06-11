@@ -671,11 +671,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [urgency, setUrgency] = useState('important');
   const [questionForm, setQuestionForm] = useState({ subject: '', message: '' });
   const [objectBank, setObjectBank] = useState([]);
+  const [objectBankLoaded, setObjectBankLoaded] = useState(false);
   const [viewAngle] = useState(35);
   const hasMounted = useRef(false);
 
   const area = width * depth;
-  const selected = items.find((item) => item.id === selectedId);
   const selectedCarpetColor = carpetColors.find((color) => color.id === selectedCarpetId) || carpetColors[0];
   const selectedWallFabricColor = wallFabricColors.find((color) => color.id === selectedWallFabricId) || wallFabricColors[0];
   const salonLabel = initialScene.salon || clientInfo.event || 'SMCL 2026';
@@ -705,6 +705,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
     return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
   }, [objectBank, salonLabel]);
+  const hydratedItems = useMemo(() => (
+    objectBankLoaded ? items.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)) : items
+  ), [items, availableCatalog, objectBankLoaded]);
+  const selected = hydratedItems.find((item) => item.id === selectedId);
 
   useEffect(() => {
     if (!objectBank.length) return;
@@ -714,10 +718,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const scenePricing = useMemo(() => calculateScenePricing({
     area,
     catalog: availableCatalog,
-    items,
+    items: hydratedItems,
     salonLabel,
     scene: initialScene,
-  }), [area, availableCatalog, items, salonLabel, initialScene]);
+  }), [area, availableCatalog, hydratedItems, salonLabel, initialScene]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus) => {
@@ -739,7 +743,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       event_name: clientInfo.event,
       dimensions: { width, depth, height },
       layout,
-      items,
+      items: hydratedItems,
       options,
       source_payload: {
         ...(initialScene.source_payload || {}),
@@ -775,12 +779,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, items, clientInfo, selectedCarpetColor, selectedWallFabricColor, saveState, readOnly]);
+  }, [width, depth, height, layout, hydratedItems, clientInfo, selectedCarpetColor, selectedWallFabricColor, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
       .then((assets) => setObjectBank(assets || []))
-      .catch((error) => console.error('Object bank load failed', error));
+      .catch((error) => console.error('Object bank load failed', error))
+      .finally(() => setObjectBankLoaded(true));
   }, []);
 
   const validateConfiguration = async () => {
@@ -809,11 +814,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const moveDraggedItem = (point) => {
     if (readOnly || !draggingId) return;
-    const dragged = items.find((item) => item.id === draggingId);
+    const dragged = hydratedItems.find((item) => item.id === draggingId);
     if (!dragged) return;
 
     if (isWallItem(dragged)) {
-      updateItem(draggingId, wallDragPatch(point, dragged, items, width, depth, layout));
+      updateItem(draggingId, wallDragPatch(point, dragged, hydratedItems, width, depth, layout));
       return;
     }
 
@@ -879,6 +884,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     setQuestionForm({ subject: '', message: '' });
     setHeaderPanel(null);
   };
+
+  if (!objectBankLoaded) return <div className="loading-screen">Chargement des objets 3D...</div>;
 
   return (
     <main className={`configurator-shell ${activeStep === 1 ? 'intro-step' : ''} ${readOnly ? 'readonly-mode' : ''}`}>
@@ -976,12 +983,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           <ambientLight intensity={0.85} />
           <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
-            <StandScene
-              width={width}
-              depth={depth}
-              height={height}
-              layout={layout}
-              items={items}
+          <StandScene
+            width={width}
+            depth={depth}
+            height={height}
+            layout={layout}
+            items={hydratedItems}
               selectedId={selectedId}
               setSelectedId={setSelectedId}
               draggingId={draggingId}
@@ -1083,7 +1090,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       <aside className="config-panel">
         {activeStep === 3 ? (
           <FurnitureStepPanel
-            items={items}
+            items={hydratedItems}
             catalog={availableCatalog}
             pricing={scenePricing}
             salonLabel={salonLabel}
@@ -1118,7 +1125,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             readOnly={readOnly}
             onCarpetColor={(colorId) => !readOnly && setSelectedCarpetId(colorId)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
-            onExport={() => exportTechnicalPng({ width, depth, layout, items, catalog: availableCatalog })}
+            onExport={() => exportTechnicalPng({ width, depth, layout, items: hydratedItems, catalog: availableCatalog })}
           />
         )}
       </aside>
@@ -5324,17 +5331,30 @@ function resolveModelResourceUrl(url, item) {
   if (!baseUrl) return url;
 
   const cleanUrl = url.split('?')[0];
-  const fileName = decodeURIComponent(cleanUrl.replaceAll('\\', '/').split('/').pop() || '');
+  const fileName = safeDecodeUri(cleanUrl.replaceAll('\\', '/').split('/').pop() || '');
   if (!fileName) return url;
 
   const rootPath = item?.dimensions?.storageRoot || item?.type || '';
   const storagePaths = Array.isArray(item?.dimensions?.storagePaths) ? item.dimensions.storagePaths : [];
-  const matchingPath = storagePaths.find((path) => path.toLowerCase().endsWith(`/${fileName.toLowerCase()}`));
-  if (matchingPath && rootPath && matchingPath.startsWith(`${rootPath}/`)) {
-    return `${baseUrl}${matchingPath.slice(rootPath.length + 1).split('/').map(encodeURIComponent).join('/')}`;
+  const normalizedFileName = normalizeStorageLookup(fileName);
+  const matchingPath = storagePaths.find((path) => normalizeStorageLookup(path).endsWith(`/${normalizedFileName}`));
+  if (matchingPath && rootPath && normalizeStorageLookup(matchingPath).startsWith(`${normalizeStorageLookup(rootPath)}/`)) {
+    return textureUrlFromStoragePath(baseUrl, rootPath, matchingPath);
   }
 
-  const modelFolder = modelSiblingFolder(item?.modelUrl || item?.materialUrl || '');
+  const relativeTexturePath = relativeTexturePathFromUrl(url, baseUrl, rootPath);
+  if (relativeTexturePath) {
+    const matchingRelativePath = storagePaths.find((path) => {
+      const relativePath = rootPath && normalizeStorageLookup(path).startsWith(`${normalizeStorageLookup(rootPath)}/`)
+        ? path.split('/').slice(1).join('/')
+        : path;
+      return normalizeStorageLookup(relativePath) === normalizeStorageLookup(relativeTexturePath);
+    });
+    if (matchingRelativePath && rootPath) return textureUrlFromStoragePath(baseUrl, rootPath, matchingRelativePath);
+    return `${baseUrl}${encodeTexturePath(relativeTexturePath)}`;
+  }
+
+  const modelFolder = modelSiblingFolder(item?.modelUrl || modelMaterialUrl(item) || '');
   const shouldTryModelFolder = /arche|jardiniere|jardinière/i.test(`${item?.type || ''} ${item?.label || ''} ${modelFolder}`);
   if (shouldTryModelFolder && modelFolder && !cleanUrl.includes(`/${modelFolder}/`)) {
     return `${baseUrl}${encodeURIComponent(modelFolder)}/${encodeURIComponent(fileName)}`;
@@ -5342,6 +5362,56 @@ function resolveModelResourceUrl(url, item) {
 
   // Fallback for old OBJ uploads where MTL files reference an obsolete folder name.
   return `${baseUrl}${encodeURIComponent(fileName)}`;
+}
+
+function textureUrlFromStoragePath(baseUrl, rootPath, storagePath) {
+  const normalizedRoot = normalizeStorageLookup(rootPath);
+  const segments = String(storagePath || '').replaceAll('\\', '/').split('/').filter(Boolean);
+  const relativeSegments = normalizeStorageLookup(segments[0]) === normalizedRoot ? segments.slice(1) : segments;
+  return `${baseUrl}${relativeSegments.map((segment) => encodeURIComponent(safeDecodeUri(segment))).join('/')}`;
+}
+
+function relativeTexturePathFromUrl(url, baseUrl, rootPath) {
+  const cleanUrl = String(url || '').split('?')[0].replaceAll('\\', '/');
+  const decodedUrl = safeDecodeUri(cleanUrl);
+  const decodedBase = safeDecodeUri(baseUrl).replace(/\/$/, '');
+
+  if (decodedUrl.startsWith(`${decodedBase}/`)) {
+    return decodedUrl.slice(decodedBase.length + 1);
+  }
+
+  if (rootPath) {
+    const marker = `/${rootPath.replace(/^\/+|\/+$/g, '')}/`;
+    const index = decodedUrl.indexOf(marker);
+    if (index >= 0) return decodedUrl.slice(index + marker.length);
+  }
+
+  return '';
+}
+
+function encodeTexturePath(path = '') {
+  return String(path)
+    .replaceAll('\\', '/')
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(safeDecodeUri(segment)))
+    .join('/');
+}
+
+function normalizeStorageLookup(value = '') {
+  return safeDecodeUri(String(value || ''))
+    .replaceAll('\\', '/')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function safeDecodeUri(value = '') {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 function modelSiblingFolder(url = '') {
