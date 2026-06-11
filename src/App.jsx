@@ -1758,11 +1758,11 @@ function AdminDashboard({ user, adminProfile }) {
     setSelectedAsset(null);
   };
 
-  const uploadAssetFolder = async (files, profileImageFile = null) => {
+  const uploadAssetFolder = async (files) => {
     if (!files?.length) return;
     setAssetUploadState({ loading: true, message: '', error: '' });
     try {
-      const saved = await uploadObjectAssetFolder(files, profileImageFile);
+      const saved = await uploadObjectAssetFolder(files);
       setAssets((current) => [saved, ...current.filter((item) => item.type !== saved.type)]);
       setSelectedAsset(saved);
       setAssetCategory('Tout');
@@ -2972,7 +2972,6 @@ function clientStatusSummary(client) {
 
 function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onUploadAssetFolder }) {
   const [groupCreatorOpen, setGroupCreatorOpen] = useState(false);
-  const [profileImageFile, setProfileImageFile] = useState(null);
   const categories = ['Tout', 'Groupes', 'Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
   const filteredAssets = assets.filter((asset) => {
     const assetCategory = assetCategoryLabel(asset);
@@ -2997,23 +2996,7 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
             directory=""
             disabled={uploadState?.loading}
             onChange={(event) => {
-              onUploadAssetFolder(event.target.files, profileImageFile);
-              setProfileImageFile(null);
-              event.target.value = '';
-            }}
-          />
-        </label>
-        <label className={`asset-profile-picker ${profileImageFile ? 'has-file' : ''}`}>
-          <FileImage size={19} />
-          <span>Image boutique</span>
-          <strong>{profileImageFile?.name || 'Choisir une image'}</strong>
-          <small>Optionnel : JPG, PNG ou WebP. Sinon une image nommée preview/cover/thumbnail dans le dossier sera utilisée.</small>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            disabled={uploadState?.loading}
-            onChange={(event) => {
-              setProfileImageFile(event.target.files?.[0] || null);
+              onUploadAssetFolder(event.target.files);
               event.target.value = '';
             }}
           />
@@ -3226,8 +3209,8 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
         <label className="asset-thumbnail-edit">
           <FileImage size={18} />
           <span>
-            <strong>{thumbnailUploading ? 'Image en cours d’envoi...' : 'Image boutique / configurateur'}</strong>
-            <small>{draft.thumbnail_url ? 'Remplacer l’image affichée dans la boutique et les panels.' : 'Ajouter une image pour représenter cet objet.'}</small>
+            <strong>{thumbnailUploading ? 'Image en cours d’envoi...' : 'Image de l’objet'}</strong>
+            <small>{draft.thumbnail_url ? 'Remplacer l’image qui représente cet objet.' : 'Ajouter une image pour représenter cet objet.'}</small>
             {thumbnailError && <em>{thumbnailError}</em>}
           </span>
           <input

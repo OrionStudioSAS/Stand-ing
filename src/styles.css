@@ -3854,7 +3854,7 @@ select {
 
 .asset-actions-row {
   display: grid;
-  grid-template-columns: 1fr minmax(220px, 280px) auto;
+  grid-template-columns: 1fr auto;
   gap: 14px;
   align-items: stretch;
 }
@@ -3909,52 +3909,6 @@ select {
 }
 
 .asset-upload-drop input {
-  display: none;
-}
-
-.asset-profile-picker {
-  position: relative;
-  display: grid;
-  align-content: center;
-  justify-items: start;
-  gap: 5px;
-  min-height: 80px;
-  border: 1px dashed #c7d4e7;
-  border-radius: 10px;
-  padding: 12px 14px;
-  color: #1f4378;
-  background: #f7fbff;
-  box-shadow: 0 3px 13px rgba(22, 28, 38, 0.06);
-  cursor: pointer;
-}
-
-.asset-profile-picker.has-file {
-  border-style: solid;
-  background: #eef4fb;
-}
-
-.asset-profile-picker span {
-  color: #647082;
-  font-size: 0.72rem;
-  font-weight: 900;
-}
-
-.asset-profile-picker strong {
-  overflow: hidden;
-  max-width: 100%;
-  color: #1f4378;
-  font-size: 0.82rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.asset-profile-picker small {
-  color: #9ca2aa;
-  font-size: 0.68rem;
-  line-height: 1.25;
-}
-
-.asset-profile-picker input {
   display: none;
 }
 
