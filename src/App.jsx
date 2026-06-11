@@ -1326,8 +1326,8 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, readOnly = fa
   const includedItems = pricing?.baseItemsConfigured
     ? pricing.baseUsage.map((item) => ({ key: item.type, label: item.label, count: item.used, quota: item.quantity }))
     : sceneItemSummary(items.filter((item) => isIncludedSceneItem(item) && isFurniturePanelType(item)));
-  const furnitureEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'furniture').slice(0, 8);
-  const multimediaEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'multimedia').slice(0, 8);
+  const furnitureEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'furniture');
+  const multimediaEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'multimedia');
   const billableCounts = pricing?.billableCounts || new Map();
   const displayedIncludedItems = pricing?.baseItemsConfigured ? includedItems : (includedItems.length ? includedItems : defaultIncludedFurniture());
 
@@ -4008,7 +4008,12 @@ function defaultIncludedFurniture() {
 
 function furniturePanelCategory(entry) {
   const text = `${entry?.type || ''} ${entry?.label || ''}`.toLowerCase();
-  if (entry?.isGroup || text.includes('cloison') || text.includes('porte poussant')) return 'hidden';
+  const category = String(entry?.dimensions?.category || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (entry?.isGroup) return 'hidden';
+  if (category.includes('multimedia')) return 'multimedia';
+  if (category.includes('mobilier')) return 'furniture';
+  if (category.includes('sol') || category.includes('cloison')) return 'hidden';
+  if (text.includes('cloison') || text.includes('porte poussant')) return 'hidden';
   if (isWallItemType(entry?.type) || /tv|ecran|écran|borne|led|multimedia|multimédia|caisson/.test(text)) return 'multimedia';
   return 'furniture';
 }
