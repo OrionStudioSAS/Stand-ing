@@ -539,7 +539,7 @@ export async function listObjectBank() {
 
   if (error) throw error;
   const byType = new Map(catalog.map((item) => [item.type, catalogToObjectBankItem(item)]));
-  return (data || []).map((item) => ({
+  const mergedItems = (data || []).map((item) => ({
     ...(byType.get(item.type) || {}),
     ...item,
     model_url: byType.get(item.type)?.model_url || item.model_url,
@@ -549,6 +549,8 @@ export async function listObjectBank() {
       ...(item.dimensions || {}),
     },
   }));
+
+  return backfillObjectBankModelSizes(mergedItems);
 }
 
 export async function saveObjectBankItem(asset) {
@@ -786,6 +788,62 @@ async function readUploadedModelSize(file) {
   } catch {
     return null;
   }
+}
+
+async function readRemoteObjModelSize(url) {
+  if (!url || !url.toLowerCase().split('?')[0].endsWith('.obj')) return null;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    return parseObjModelSize(await response.text());
+  } catch {
+    return null;
+  }
+}
+
+async function backfillObjectBankModelSizes(items) {
+  if (!supabase) return items;
+
+  const repairedItems = await Promise.all((items || []).map(async (item) => {
+    if (!shouldBackfillModelSize(item)) return item;
+    const measuredSize = await readRemoteObjModelSize(item.model_url);
+    if (!measuredSize) return item;
+
+    const dimensions = {
+      ...(item.dimensions || {}),
+      size: measuredSize,
+      sizeSource: 'obj-vertices',
+    };
+    const repairedItem = { ...item, dimensions };
+
+    if (isAdminRoute()) {
+      supabase
+        .from('object_bank')
+        .update({ dimensions })
+        .eq('type', item.type)
+        .then(({ error }) => {
+          if (error) console.warn('Object bank size backfill failed', item.type, error);
+        });
+    }
+
+    return repairedItem;
+  }));
+
+  return repairedItems;
+}
+
+function shouldBackfillModelSize(item) {
+  if (!item?.model_url?.toLowerCase().split('?')[0].endsWith('.obj')) return false;
+  if (item.dimensions?.isGroup) return false;
+  const size = item.dimensions?.size || item.dimensions?.dimensions || item.dimensions?.modelSize;
+  if (!Array.isArray(size) || size.length < 3) return true;
+  const normalized = size.map(Number);
+  return normalized.every((value) => value === 1);
+}
+
+function isAdminRoute() {
+  if (typeof window === 'undefined') return false;
+  return window.location.pathname.replace(/\/$/, '') === '/admin' || new URLSearchParams(window.location.search).get('admin') === '1';
 }
 
 function parseObjModelSize(text) {
