@@ -39,7 +39,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, uploadObjectAssetThumbnail, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -1758,11 +1758,11 @@ function AdminDashboard({ user, adminProfile }) {
     setSelectedAsset(null);
   };
 
-  const uploadAssetFolder = async (files) => {
+  const uploadAssetFolder = async (files, profileImageFile = null) => {
     if (!files?.length) return;
     setAssetUploadState({ loading: true, message: '', error: '' });
     try {
-      const saved = await uploadObjectAssetFolder(files);
+      const saved = await uploadObjectAssetFolder(files, profileImageFile);
       setAssets((current) => [saved, ...current.filter((item) => item.type !== saved.type)]);
       setSelectedAsset(saved);
       setAssetCategory('Tout');
@@ -2972,6 +2972,7 @@ function clientStatusSummary(client) {
 
 function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onUploadAssetFolder }) {
   const [groupCreatorOpen, setGroupCreatorOpen] = useState(false);
+  const [profileImageFile, setProfileImageFile] = useState(null);
   const categories = ['Tout', 'Groupes', 'Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
   const filteredAssets = assets.filter((asset) => {
     const assetCategory = assetCategoryLabel(asset);
@@ -2996,7 +2997,23 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
             directory=""
             disabled={uploadState?.loading}
             onChange={(event) => {
-              onUploadAssetFolder(event.target.files);
+              onUploadAssetFolder(event.target.files, profileImageFile);
+              setProfileImageFile(null);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        <label className={`asset-profile-picker ${profileImageFile ? 'has-file' : ''}`}>
+          <FileImage size={19} />
+          <span>Image boutique</span>
+          <strong>{profileImageFile?.name || 'Choisir une image'}</strong>
+          <small>Optionnel : JPG, PNG ou WebP. Sinon une image nommée preview/cover/thumbnail dans le dossier sera utilisée.</small>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            disabled={uploadState?.loading}
+            onChange={(event) => {
+              setProfileImageFile(event.target.files?.[0] || null);
               event.target.value = '';
             }}
           />
@@ -3070,6 +3087,8 @@ function AssetPreview({ asset }) {
 
 function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const [draft, setDraft] = useState(asset);
+  const [thumbnailUploading, setThumbnailUploading] = useState(false);
+  const [thumbnailError, setThumbnailError] = useState('');
   const [groupRows, setGroupRows] = useState(() => assetToGroupRows(asset));
   const [selectedGroupRowUid, setSelectedGroupRowUid] = useState(null);
   const salons = getSalonRows(scenes).map((salon) => salon.title);
@@ -3084,6 +3103,8 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
 
   useEffect(() => {
     setDraft(asset);
+    setThumbnailUploading(false);
+    setThumbnailError('');
     setGroupRows(assetToGroupRows(asset));
     setSelectedGroupRowUid(null);
   }, [asset]);
@@ -3174,6 +3195,21 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
     });
   };
 
+  const changeThumbnail = async (file) => {
+    if (!file) return;
+    setThumbnailUploading(true);
+    setThumbnailError('');
+    try {
+      const updated = await uploadObjectAssetThumbnail(draft, file);
+      const saved = await onSave(updated);
+      setDraft(saved);
+    } catch (error) {
+      setThumbnailError(error.message || 'Upload de l’image impossible.');
+    } finally {
+      setThumbnailUploading(false);
+    }
+  };
+
   return (
     <div className="asset-drawer-layer">
       <aside className="asset-drawer">
@@ -3186,6 +3222,24 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
         </header>
 
         <AssetPreview asset={draft} />
+
+        <label className="asset-thumbnail-edit">
+          <FileImage size={18} />
+          <span>
+            <strong>{thumbnailUploading ? 'Image en cours d’envoi...' : 'Image boutique / configurateur'}</strong>
+            <small>{draft.thumbnail_url ? 'Remplacer l’image affichée dans la boutique et les panels.' : 'Ajouter une image pour représenter cet objet.'}</small>
+            {thumbnailError && <em>{thumbnailError}</em>}
+          </span>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            disabled={thumbnailUploading}
+            onChange={(event) => {
+              changeThumbnail(event.target.files?.[0] || null);
+              event.target.value = '';
+            }}
+          />
+        </label>
 
         <label className="asset-group-field">
           <span>Nom</span>

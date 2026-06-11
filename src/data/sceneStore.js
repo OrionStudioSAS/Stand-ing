@@ -622,7 +622,7 @@ async function listStorageObjectPaths(bucket, path) {
   return childPaths.flat();
 }
 
-export async function uploadObjectAssetFolder(files) {
+export async function uploadObjectAssetFolder(files, profileImageFile = null) {
   if (!supabase) throw new Error('Supabase non configure.');
 
   const fileList = Array.from(files || []).filter((file) => file?.name && !isIgnoredAssetFile(file.name));
@@ -670,12 +670,14 @@ export async function uploadObjectAssetFolder(files) {
   const { data: modelPublic } = bucket.getPublicUrl(modelPath);
   const { data: materialPublic } = materialPath ? bucket.getPublicUrl(materialPath) : { data: null };
   const textureCount = fileList.filter((file) => /\.(jpe?g|png|webp|gif|bmp|tga|tiff?)$/i.test(file.name)).length;
+  const thumbnailFile = profileImageFile || findProfileImageFile(fileList);
+  const thumbnail = thumbnailFile ? await uploadObjectAssetThumbnailFile(assetType, thumbnailFile, bucket) : null;
 
   return saveObjectBankItem({
     type: assetType,
     label: prettifyAssetLabel(baseName),
     model_url: modelPublic.publicUrl,
-    thumbnail_url: null,
+    thumbnail_url: thumbnail?.publicUrl || null,
     is_active: true,
     dimensions: {
       addedBy: 'Admin Stand-ING',
@@ -692,8 +694,60 @@ export async function uploadObjectAssetFolder(files) {
       storagePaths: uploadEntries.map((entry) => `${assetType}/${entry.sanitizedRelativePath}`),
       materialUrl: materialPublic?.publicUrl || null,
       materialPath: materialPath || null,
+      thumbnailPath: thumbnail?.path || null,
     },
   });
+}
+
+export async function uploadObjectAssetThumbnail(asset, file) {
+  if (!supabase) throw new Error('Supabase non configure.');
+  if (!asset?.type) throw new Error('Objet introuvable.');
+  if (!file || !isProfileImageFile(file)) throw new Error('Selectionne une image JPG, PNG ou WebP.');
+
+  const bucket = supabase.storage.from('object-assets');
+  const thumbnail = await uploadObjectAssetThumbnailFile(asset.type, file, bucket);
+  const previousPath = asset.dimensions?.thumbnailPath;
+  if (previousPath && previousPath !== thumbnail.path) {
+    bucket.remove([previousPath]).then(({ error }) => {
+      if (error) console.warn('Ancienne vignette non supprimee', error);
+    });
+  }
+
+  return {
+    ...asset,
+    thumbnail_url: thumbnail.publicUrl,
+    dimensions: {
+      ...(asset.dimensions || {}),
+      storageBucket: asset.dimensions?.storageBucket || 'object-assets',
+      storageRoot: asset.dimensions?.storageRoot || asset.type,
+      thumbnailPath: thumbnail.path,
+    },
+  };
+}
+
+async function uploadObjectAssetThumbnailFile(assetType, file, bucket) {
+  const extension = file.name.toLowerCase().match(/\.([a-z0-9]{2,5})$/)?.[1] || 'jpg';
+  const path = `${assetType}/profile-${Date.now().toString(36)}.${extension}`;
+  const { error } = await bucket.upload(path, file, {
+    cacheControl: '31536000',
+    contentType: guessContentType(file),
+    upsert: true,
+  });
+  if (error) throw error;
+  const { data } = bucket.getPublicUrl(path);
+  return { path, publicUrl: data.publicUrl };
+}
+
+function findProfileImageFile(files) {
+  return (files || []).find((file) => {
+    if (!isProfileImageFile(file)) return false;
+    const name = getUploadFileName(file.name || file.webkitRelativePath).toLowerCase();
+    return /(^|[-_\s])(profile|profil|thumbnail|thumb|cover|preview|vignette)([-_\s.]|$)/i.test(name);
+  }) || null;
+}
+
+function isProfileImageFile(file) {
+  return /\.(jpe?g|png|webp)$/i.test(file?.name || '');
 }
 
 function getUploadRootFolder(files) {

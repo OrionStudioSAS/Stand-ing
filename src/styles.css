@@ -3854,7 +3854,7 @@ select {
 
 .asset-actions-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr minmax(220px, 280px) auto;
   gap: 14px;
   align-items: stretch;
 }
@@ -3909,6 +3909,52 @@ select {
 }
 
 .asset-upload-drop input {
+  display: none;
+}
+
+.asset-profile-picker {
+  position: relative;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 5px;
+  min-height: 80px;
+  border: 1px dashed #c7d4e7;
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: #1f4378;
+  background: #f7fbff;
+  box-shadow: 0 3px 13px rgba(22, 28, 38, 0.06);
+  cursor: pointer;
+}
+
+.asset-profile-picker.has-file {
+  border-style: solid;
+  background: #eef4fb;
+}
+
+.asset-profile-picker span {
+  color: #647082;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.asset-profile-picker strong {
+  overflow: hidden;
+  max-width: 100%;
+  color: #1f4378;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-profile-picker small {
+  color: #9ca2aa;
+  font-size: 0.68rem;
+  line-height: 1.25;
+}
+
+.asset-profile-picker input {
   display: none;
 }
 
@@ -4356,6 +4402,8 @@ select {
 }
 
 .asset-drawer footer {
+  position: sticky;
+  bottom: -18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4363,6 +4411,61 @@ select {
   margin: 30px -12px 0;
   padding: 18px 12px 0;
   background: linear-gradient(180deg, rgba(255,255,255,0), #fff 32%);
+}
+
+.asset-drawer {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.asset-thumbnail-edit {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #d9e1ec;
+  border-radius: 12px;
+  padding: 11px 12px;
+  color: #1f4378;
+  background: #f7faff;
+  cursor: pointer;
+}
+
+.asset-thumbnail-edit > svg {
+  justify-self: center;
+}
+
+.asset-thumbnail-edit strong,
+.asset-thumbnail-edit small,
+.asset-thumbnail-edit em {
+  display: block;
+}
+
+.asset-thumbnail-edit strong {
+  color: #243044;
+  font-size: 0.82rem;
+}
+
+.asset-thumbnail-edit small {
+  margin-top: 2px;
+  color: #8992a0;
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+.asset-thumbnail-edit em {
+  margin-top: 5px;
+  color: #bf2f23;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.asset-thumbnail-edit input {
+  display: none;
 }
 
 .base-pack-drawer {
@@ -4823,4 +4926,14 @@ select {
   color: #172132;
   font-size: 0.82rem;
   font-weight: 950;
+}
+
+@media (max-width: 920px) {
+  .asset-actions-row {
+    grid-template-columns: 1fr;
+  }
+
+  .asset-group-create-button {
+    min-height: 58px;
+  }
 }
