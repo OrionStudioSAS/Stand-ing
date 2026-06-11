@@ -970,12 +970,11 @@ function rewriteAssetReferenceLine(line, rulesByFileName) {
   if (!match) return line;
 
   const value = match[2].trim();
-  const tokens = value.split(/\s+/);
-  const target = tokens[tokens.length - 1];
-  const replacement = rulesByFileName.get(getUploadFileName(target).toLowerCase());
-  if (!replacement || target === replacement) return line;
+  const normalizedValue = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const replacement = Array.from(rulesByFileName.entries()).find(([fileName]) => normalizedValue.includes(fileName))?.[1];
+  if (!replacement || value === replacement) return line;
 
-  return line.replace(target, replacement);
+  return `${match[1]} ${replacement}`;
 }
 
 function prettifyAssetLabel(value) {

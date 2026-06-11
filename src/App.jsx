@@ -5223,6 +5223,8 @@ function ObjModelWithMaterials({ item, materialUrl }) {
     loader.manager = manager;
     loader.setMaterialOptions({ ignoreZeroRGBs: true, side: DoubleSide });
     loader.setResourcePath(assetBaseUrl(materialUrl || item.modelUrl));
+    const parse = loader.parse.bind(loader);
+    loader.parse = (text, path) => parse(rewriteRuntimeMtlReferences(text, item), path);
   });
   const obj = useLoader(OBJLoader, item.modelUrl, (loader) => {
     materials.preload();
@@ -5362,6 +5364,40 @@ function resolveModelResourceUrl(url, item) {
 
   // Fallback for old OBJ uploads where MTL files reference an obsolete folder name.
   return `${baseUrl}${encodeURIComponent(fileName)}`;
+}
+
+function rewriteRuntimeMtlReferences(text, item) {
+  const rootPath = item?.dimensions?.storageRoot || item?.type || '';
+  const storagePaths = Array.isArray(item?.dimensions?.storagePaths) ? item.dimensions.storagePaths : [];
+  if (!text || !storagePaths.length || !rootPath) return text;
+
+  const texturePaths = storagePaths
+    .filter(isTextureResource)
+    .map((path) => ({
+      path,
+      fileName: safeDecodeUri(String(path).replaceAll('\\', '/').split('/').pop() || ''),
+      relativePath: textureRelativePath(rootPath, path),
+    }))
+    .filter((entry) => entry.fileName && entry.relativePath);
+
+  if (!texturePaths.length) return text;
+
+  return String(text).split('\n').map((line) => {
+    const match = line.match(/^(\s*(?:map_[a-z0-9_]+|bump|disp|decal|refl)\s+)(.+)$/i);
+    if (!match) return line;
+    const value = match[2].trim();
+    const normalizedValue = normalizeStorageLookup(value);
+    const texture = texturePaths.find((entry) => normalizedValue.includes(normalizeStorageLookup(entry.fileName)));
+    if (!texture) return line;
+    return `${match[1]}${texture.relativePath}`;
+  }).join('\n');
+}
+
+function textureRelativePath(rootPath, storagePath) {
+  const normalizedRoot = normalizeStorageLookup(rootPath);
+  const segments = String(storagePath || '').replaceAll('\\', '/').split('/').filter(Boolean);
+  const relativeSegments = normalizeStorageLookup(segments[0]) === normalizedRoot ? segments.slice(1) : segments;
+  return relativeSegments.map((segment) => safeDecodeUri(segment)).join('/');
 }
 
 function textureUrlFromStoragePath(baseUrl, rootPath, storagePath) {
