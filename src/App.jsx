@@ -5148,9 +5148,6 @@ function GroupedSceneItem({ item, selected, dragging, rotationY, onSelect, onDra
         if (dragging) onDragMove(event);
       }}
     >
-      <group position={[groupBounds.centerX, 0, groupBounds.centerZ]}>
-        <ObjHitbox size={[groupBounds.width, Math.max(0.35, groupBounds.height), groupBounds.depth]} />
-      </group>
       {item.children?.map((child) => (
         <group key={child.id} position={[child.x || 0, child.y || 0, child.z || 0]} rotation={[0, ((child.rotation || 0) * Math.PI) / 180, 0]}>
           <SceneItemContent item={child} selected={selected} dragging={dragging} />
@@ -5189,9 +5186,11 @@ function activeColor(selected, dragging, base) {
 
 function ObjHitbox({ size = [0.7, 0.7, 0.7] }) {
   const [x, y, z] = size;
+  const thinVerticalPanel = Number(y || 0) >= 1.5 && Math.min(Number(x || 0), Number(z || 0)) <= 0.18;
+  const minFootprint = thinVerticalPanel ? 0.08 : 0.18;
   return (
     <mesh position={[0, Math.max(y, 0.35) / 2, 0]}>
-      <boxGeometry args={[Math.max(x, 0.55), Math.max(y, 0.35), Math.max(z, 0.55)]} />
+      <boxGeometry args={[Math.max(x, minFootprint), Math.max(y, 0.35), Math.max(z, minFootprint)]} />
       <meshBasicMaterial transparent opacity={0} depthWrite={false} />
     </mesh>
   );
