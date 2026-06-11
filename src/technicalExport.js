@@ -159,26 +159,26 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
 
 function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale) {
   const overflow = carpetFootprintOverflow * scale;
+  const tile = scale;
+  const maxY = planY + planH + overflow;
+  const y = maxY - tile;
+  let x = planX + planW / 2 - tile / 2;
+
+  if (layout === 'left') {
+    x = planX + planW + overflow - tile;
+  }
+
+  if (layout === 'right') {
+    x = planX - overflow;
+  }
+
   ctx.save();
   ctx.fillStyle = technicalColors.footprint;
   ctx.strokeStyle = '#b8aa91';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([10, 6]);
-
-  // Debord systematique de 200mm dans l'allee, devant le stand.
-  ctx.fillRect(planX, planY + planH, planW, overflow);
-  ctx.strokeRect(planX, planY + planH, planW, overflow);
-
-  if (layout === 'left') {
-    ctx.fillRect(planX + planW, planY, overflow, planH + overflow);
-    ctx.strokeRect(planX + planW, planY, overflow, planH + overflow);
-  }
-
-  if (layout === 'right') {
-    ctx.fillRect(planX - overflow, planY, overflow, planH + overflow);
-    ctx.strokeRect(planX - overflow, planY, overflow, planH + overflow);
-  }
-
+  ctx.fillRect(x, y, tile, tile);
+  ctx.strokeRect(x, y, tile, tile);
   ctx.restore();
 }
 

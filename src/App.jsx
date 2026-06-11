@@ -49,6 +49,7 @@ const fixedWallHeight = 2.5;
 const wallThickness = 0.06;
 const screenDepth = 0.06;
 const wallItemSnap = 0.25;
+const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
 const collisionPadding = 0.04;
 const collisionPlacementStep = 0.25;
@@ -1642,10 +1643,10 @@ function rememberAdminTab(tab) {
 
 function CarpetFootprintCard({ layout }) {
   const sideOverflow = layout === 'left'
-    ? 'Débord de 200 mm sur la droite du stand'
+    ? 'Placée en coin avant droit : 200 mm sortent à droite'
     : layout === 'right'
-      ? 'Débord de 200 mm sur la gauche du stand'
-      : 'Pas de débord latéral pour cette implantation';
+      ? 'Placée en coin avant gauche : 200 mm sortent à gauche'
+      : 'Placée devant le stand, sans débord latéral';
 
   return (
     <div className="carpet-footprint-card">
@@ -1654,7 +1655,8 @@ function CarpetFootprintCard({ layout }) {
         <span>Inclus</span>
       </header>
       <ul>
-        <li>Débord de 200 mm dans l’allée devant le stand</li>
+        <li>Dalle 1000 × 1000 mm positionnée à l’extrémité avant</li>
+        <li>200 mm sortent dans l’allée devant le stand</li>
         <li>{sideOverflow}</li>
         <li>Même niveau que le sol : les objets peuvent être posés dessus</li>
       </ul>
@@ -4163,26 +4165,83 @@ function snapWallAxis(value) {
   return Number((Math.round(Number(value || 0) / wallItemSnap) * wallItemSnap).toFixed(2));
 }
 
-function carpetFootprintBounds(width, depth, layout) {
-  const leftOverflow = layout === 'right' ? carpetFootprintOverflow : 0;
-  const rightOverflow = layout === 'left' ? carpetFootprintOverflow : 0;
+function standFloorBounds(width, depth) {
   return {
-    minX: -width / 2 - leftOverflow,
-    maxX: width / 2 + rightOverflow,
+    minX: -width / 2,
+    maxX: width / 2,
     minZ: -depth / 2,
-    maxZ: depth / 2 + carpetFootprintOverflow,
+    maxZ: depth / 2,
   };
 }
 
-function carpetFootprintSize(width, depth, layout) {
-  const bounds = carpetFootprintBounds(width, depth, layout);
+function carpetFootprintBounds(width, depth, layout) {
+  const side = layout === 'right' ? 'left' : layout === 'left' ? 'right' : 'center';
+  const maxZ = depth / 2 + carpetFootprintOverflow;
+  const minZ = maxZ - carpetFootprintSizeMeters;
+  let minX = -carpetFootprintSizeMeters / 2;
+  let maxX = carpetFootprintSizeMeters / 2;
+
+  if (side === 'right') {
+    maxX = width / 2 + carpetFootprintOverflow;
+    minX = maxX - carpetFootprintSizeMeters;
+  }
+
+  if (side === 'left') {
+    minX = -width / 2 - carpetFootprintOverflow;
+    maxX = minX + carpetFootprintSizeMeters;
+  }
+
+  return { minX, maxX, minZ, maxZ };
+}
+
+function rectSize(rect) {
   return {
-    ...bounds,
-    width: bounds.maxX - bounds.minX,
-    depth: bounds.maxZ - bounds.minZ,
-    centerX: (bounds.minX + bounds.maxX) / 2,
-    centerZ: (bounds.minZ + bounds.maxZ) / 2,
+    ...rect,
+    width: rect.maxX - rect.minX,
+    depth: rect.maxZ - rect.minZ,
+    centerX: (rect.minX + rect.maxX) / 2,
+    centerZ: (rect.minZ + rect.maxZ) / 2,
   };
+}
+
+function placementRegions(width, depth, layout, itemBounds) {
+  return [standFloorBounds(width, depth), carpetFootprintBounds(width, depth, layout)]
+    .map((rect) => itemAllowedRegion(rect, itemBounds))
+    .filter(Boolean);
+}
+
+function itemAllowedRegion(rect, itemBounds) {
+  const region = {
+    minX: rect.minX - itemBounds.minX,
+    maxX: rect.maxX - itemBounds.maxX,
+    minZ: rect.minZ - itemBounds.minZ,
+    maxZ: rect.maxZ - itemBounds.maxZ,
+  };
+  return region.minX <= region.maxX && region.minZ <= region.maxZ ? region : null;
+}
+
+function clampToRegion(item, region) {
+  return {
+    x: clamp(item.x, region.minX, region.maxX),
+    z: clamp(item.z, region.minZ, region.maxZ),
+  };
+}
+
+function pointInRegion(item, region) {
+  return item.x >= region.minX && item.x <= region.maxX && item.z >= region.minZ && item.z <= region.maxZ;
+}
+
+function closestPlacementInRegions(item, regions) {
+  if (!regions.length) return { x: item.x, z: item.z };
+  const containingRegion = regions.find((region) => pointInRegion(item, region));
+  if (containingRegion) return { x: item.x, z: item.z };
+
+  return regions
+    .map((region) => {
+      const position = clampToRegion(item, region);
+      return { ...position, distance: Math.hypot(position.x - item.x, position.z - item.z) };
+    })
+    .sort((a, b) => a.distance - b.distance)[0];
 }
 
 function screenAxisRange(wall, width, depth, margin = 0.55) {
@@ -4277,12 +4336,12 @@ function constrainItem(item, width, depth, layout) {
 
   const positionedItem = applyPlacementRule(item, width, depth, layout);
   const bounds = itemGroupBounds(positionedItem);
-  const footprint = carpetFootprintBounds(width, depth, layout);
+  const placement = closestPlacementInRegions(positionedItem, placementRegions(width, depth, layout, bounds));
 
   return {
     ...positionedItem,
-    x: clamp(positionedItem.x, footprint.minX - bounds.minX, footprint.maxX - bounds.maxX),
-    z: clamp(positionedItem.z, footprint.minZ - bounds.minZ, footprint.maxZ - bounds.maxZ),
+    x: placement.x,
+    z: placement.z,
   };
 }
 
@@ -4302,20 +4361,18 @@ function placeItemInFreeSpot(item, items, width, depth, layout) {
   if (!collidesWithScene(firstCandidate, items, firstCandidate.id, width, depth)) return firstCandidate;
 
   const bounds = itemGroupBounds(firstCandidate);
-  const footprint = carpetFootprintBounds(width, depth, layout);
-  const minX = footprint.minX - bounds.minX;
-  const maxX = footprint.maxX - bounds.maxX;
-  const minZ = footprint.minZ - bounds.minZ;
-  const maxZ = footprint.maxZ - bounds.maxZ;
+  const regions = placementRegions(width, depth, layout, bounds);
   const candidates = [];
 
-  for (let z = minZ; z <= maxZ + 0.001; z += collisionPlacementStep) {
-    for (let x = minX; x <= maxX + 0.001; x += collisionPlacementStep) {
-      candidates.push({
-        x: Number(x.toFixed(2)),
-        z: Number(z.toFixed(2)),
-        distance: Math.hypot(x - firstCandidate.x, z - firstCandidate.z),
-      });
+  for (const region of regions) {
+    for (let z = region.minZ; z <= region.maxZ + 0.001; z += collisionPlacementStep) {
+      for (let x = region.minX; x <= region.maxX + 0.001; x += collisionPlacementStep) {
+        candidates.push({
+          x: Number(x.toFixed(2)),
+          z: Number(z.toFixed(2)),
+          distance: Math.hypot(x - firstCandidate.x, z - firstCandidate.z),
+        });
+      }
     }
   }
 
@@ -4652,20 +4709,28 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
 }
 
 function Floor({ width, depth, layout, carpetColor }) {
-  const footprint = carpetFootprintSize(width, depth, layout);
+  const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
   return (
-    <mesh receiveShadow position={[footprint.centerX, -0.035, footprint.centerZ]}>
-      <boxGeometry args={[footprint.width, 0.07, footprint.depth]} />
-      <meshStandardMaterial color={carpetColor || '#bebebe'} roughness={0.78} />
-    </mesh>
+    <group>
+      <mesh receiveShadow position={[0, -0.035, 0]}>
+        <boxGeometry args={[width, 0.07, depth]} />
+        <meshStandardMaterial color={carpetColor || '#bebebe'} roughness={0.78} />
+      </mesh>
+      <mesh receiveShadow position={[footprint.centerX, 0.003, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[footprint.width, footprint.depth]} />
+        <meshStandardMaterial color={carpetColor || '#bebebe'} roughness={0.78} />
+      </mesh>
+      <FootprintOutline bounds={footprint} />
+    </group>
   );
 }
 
 function DragSurface({ width, depth, layout, sceneOffset, draggingId, onDragMove }) {
-  const footprint = carpetFootprintSize(width, depth, layout);
-  return (
+  const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
+  const dragPlane = (key, position, size) => (
     <mesh
-      position={[footprint.centerX, 0.015, footprint.centerZ]}
+      key={key}
+      position={position}
       rotation={[-Math.PI / 2, 0, 0]}
       onPointerMove={(event) => {
         if (!draggingId) return;
@@ -4680,21 +4745,23 @@ function DragSurface({ width, depth, layout, sceneOffset, draggingId, onDragMove
         event.stopPropagation();
       }}
     >
-      <planeGeometry args={[footprint.width, footprint.depth]} />
+      <planeGeometry args={size} />
       <meshBasicMaterial transparent opacity={0} depthWrite={false} />
     </mesh>
   );
+
+  return (
+    <group>
+      {dragPlane('stand', [0, 0.015, 0], [width, depth])}
+      {dragPlane('footprint', [footprint.centerX, 0.016, footprint.centerZ], [footprint.width, footprint.depth])}
+    </group>
+  );
 }
 
-function Grid({ width, depth, layout }) {
-  const footprint = carpetFootprintBounds(width, depth, layout);
-  const footprintWidth = footprint.maxX - footprint.minX;
-  const footprintDepth = footprint.maxZ - footprint.minZ;
-  const centerX = (footprint.minX + footprint.maxX) / 2;
-  const centerZ = (footprint.minZ + footprint.maxZ) / 2;
+function Grid({ width, depth }) {
   const lines = [];
-  for (let x = Math.ceil(footprint.minX); x <= footprint.maxX + 0.01; x += 1) lines.push({ key: `x-${x}`, position: [x, 0.006, centerZ], scale: [0.01, 0.01, footprintDepth] });
-  for (let z = Math.ceil(footprint.minZ); z <= footprint.maxZ + 0.01; z += 1) lines.push({ key: `z-${z}`, position: [centerX, 0.007, z], scale: [footprintWidth, 0.01, 0.01] });
+  for (let x = -width / 2; x <= width / 2 + 0.01; x += 1) lines.push({ key: `x-${x}`, position: [x, 0.006, 0], scale: [0.01, 0.01, depth] });
+  for (let z = -depth / 2; z <= depth / 2 + 0.01; z += 1) lines.push({ key: `z-${z}`, position: [0, 0.007, z], scale: [width, 0.01, 0.01] });
   return (
     <group>
       {lines.map((line) => (
@@ -4703,6 +4770,20 @@ function Grid({ width, depth, layout }) {
           <meshStandardMaterial color="#d8d0bd" roughness={0.9} />
         </mesh>
       ))}
+    </group>
+  );
+}
+
+function FootprintOutline({ bounds }) {
+  const y = 0.01;
+  const thickness = 0.018;
+  const color = '#9b927f';
+  return (
+    <group>
+      <mesh position={[bounds.centerX, y, bounds.minZ]}><boxGeometry args={[bounds.width, thickness, thickness]} /><meshStandardMaterial color={color} roughness={0.8} /></mesh>
+      <mesh position={[bounds.centerX, y, bounds.maxZ]}><boxGeometry args={[bounds.width, thickness, thickness]} /><meshStandardMaterial color={color} roughness={0.8} /></mesh>
+      <mesh position={[bounds.minX, y, bounds.centerZ]}><boxGeometry args={[thickness, thickness, bounds.depth]} /><meshStandardMaterial color={color} roughness={0.8} /></mesh>
+      <mesh position={[bounds.maxX, y, bounds.centerZ]}><boxGeometry args={[thickness, thickness, bounds.depth]} /><meshStandardMaterial color={color} roughness={0.8} /></mesh>
     </group>
   );
 }
