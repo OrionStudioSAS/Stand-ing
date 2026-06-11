@@ -4170,11 +4170,13 @@ function snapWallAxis(value) {
   return Number((Math.round(Number(value || 0) / wallItemSnap) * wallItemSnap).toFixed(2));
 }
 
-function standFloorBounds(width, depth) {
+function standFloorBounds(width, depth, layout) {
+  const hasLeftWall = layout === 'left' || layout === 'u';
+  const hasRightWall = layout === 'right' || layout === 'u';
   return {
-    minX: -width / 2,
-    maxX: width / 2,
-    minZ: -depth / 2,
+    minX: -width / 2 + (hasLeftWall ? wallThickness : 0),
+    maxX: width / 2 - (hasRightWall ? wallThickness : 0),
+    minZ: -depth / 2 + wallThickness,
     maxZ: depth / 2,
   };
 }
@@ -4210,7 +4212,7 @@ function rectSize(rect) {
 }
 
 function placementRegions(width, depth, layout, itemBounds) {
-  return [standFloorBounds(width, depth), carpetFootprintBounds(width, depth, layout)]
+  return [standFloorBounds(width, depth, layout), carpetFootprintBounds(width, depth, layout)]
     .map((rect) => itemAllowedRegion(rect, itemBounds))
     .filter(Boolean);
 }
@@ -4340,7 +4342,7 @@ function constrainItem(item, width, depth, layout) {
   }
 
   const positionedItem = applyPlacementRule(item, width, depth, layout);
-  const bounds = itemGroupBounds(positionedItem);
+  const bounds = itemPlacementBounds(positionedItem);
   const placement = closestPlacementInRegions(positionedItem, placementRegions(width, depth, layout, bounds));
 
   return {
@@ -4365,7 +4367,7 @@ function placeItemInFreeSpot(item, items, width, depth, layout) {
   if (itemPlacementLocked(firstCandidate)) return collidesWithScene(firstCandidate, items, firstCandidate.id, width, depth) ? null : firstCandidate;
   if (!collidesWithScene(firstCandidate, items, firstCandidate.id, width, depth)) return firstCandidate;
 
-  const bounds = itemGroupBounds(firstCandidate);
+  const bounds = itemPlacementBounds(firstCandidate);
   const regions = placementRegions(width, depth, layout, bounds);
   const candidates = [];
 
@@ -4485,20 +4487,33 @@ function floorItemWallCollisionBox(item, wall, width, depth) {
 
 function itemCollisionBox(item) {
   if (!item || isWallItem(item)) return null;
+  const bounds = itemPlacementBounds(item);
+  const centerX = Number(item.x || 0);
+  const centerZ = Number(item.z || 0);
+
+  return {
+    minX: centerX + bounds.minX - collisionPadding,
+    maxX: centerX + bounds.maxX + collisionPadding,
+    minZ: centerZ + bounds.minZ - collisionPadding,
+    maxZ: centerZ + bounds.maxZ + collisionPadding,
+  };
+}
+
+function itemPlacementBounds(item) {
   const bounds = itemGroupBounds(item);
   const radians = ((Number(item.rotation || 0) * Math.PI) / 180);
   const halfWidth = bounds.width / 2;
   const halfDepth = bounds.depth / 2;
   const rotatedHalfX = Math.abs(Math.cos(radians)) * halfWidth + Math.abs(Math.sin(radians)) * halfDepth;
   const rotatedHalfZ = Math.abs(Math.sin(radians)) * halfWidth + Math.abs(Math.cos(radians)) * halfDepth;
-  const centerX = Number(item.x || 0) + Number(bounds.centerX || 0);
-  const centerZ = Number(item.z || 0) + Number(bounds.centerZ || 0);
+  const centerX = Number(bounds.centerX || 0);
+  const centerZ = Number(bounds.centerZ || 0);
 
   return {
-    minX: centerX - rotatedHalfX - collisionPadding,
-    maxX: centerX + rotatedHalfX + collisionPadding,
-    minZ: centerZ - rotatedHalfZ - collisionPadding,
-    maxZ: centerZ + rotatedHalfZ + collisionPadding,
+    minX: centerX - rotatedHalfX,
+    maxX: centerX + rotatedHalfX,
+    minZ: centerZ - rotatedHalfZ,
+    maxZ: centerZ + rotatedHalfZ,
   };
 }
 
