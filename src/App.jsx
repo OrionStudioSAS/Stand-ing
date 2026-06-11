@@ -705,6 +705,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
     return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
   }, [objectBank, salonLabel]);
+
+  useEffect(() => {
+    if (!objectBank.length) return;
+    setItems((current) => current.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)));
+  }, [objectBank, availableCatalog]);
+
   const scenePricing = useMemo(() => calculateScenePricing({
     area,
     catalog: availableCatalog,
@@ -4033,6 +4039,38 @@ function findCatalogEntry(catalogEntries, type) {
   return (catalogEntries || []).find((entry) => entry.type === type) || catalog.find((entry) => entry.type === type) || null;
 }
 
+function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
+  const entry = findCatalogEntry(catalogEntries, item?.type);
+  if (!entry) return item;
+  const isGroup = Boolean(item.isGroup || entry.isGroup);
+  const dimensions = {
+    ...(entry.dimensions || {}),
+    ...(item.dimensions || {}),
+  };
+  const materialUrl = item.materialUrl || item.dimensions?.materialUrl || entry.materialUrl || entry.dimensions?.materialUrl;
+  const hydrated = {
+    ...item,
+    label: item.label || entry.label,
+    isGroup,
+    groupSize: item.groupSize || entry.groupSize,
+    placementRule: item.placementRule || entry.placementRule,
+    lockedPlacement: item.lockedPlacement ?? Boolean(item.placementRule || entry.placementRule?.locked),
+    modelUrl: item.modelUrl || entry.modelUrl,
+    modelSize: item.modelSize || entry.modelSize,
+    materialUrl,
+    dimensions,
+    color: item.color || entry.color,
+    isWallItem: item.isWallItem ?? entry.isWallItem,
+    collisionEnabled: item.collisionEnabled ?? entry.collisionEnabled,
+  };
+
+  if (isGroup && item.children?.length) {
+    hydrated.children = item.children.map((child) => hydrateSceneItemFromCatalog(child, catalogEntries));
+  }
+
+  return hydrated;
+}
+
 function countSceneItems(sceneItems) {
   return sceneItems.reduce((counts, item) => {
     counts.set(item.type, (counts.get(item.type) || 0) + 1);
@@ -5160,8 +5198,9 @@ function ObjHitbox({ size = [0.7, 0.7, 0.7] }) {
 }
 
 function Model3D({ item, selected, dragging }) {
+  const materialUrl = modelMaterialUrl(item);
   if (item.modelUrl?.toLowerCase().split('?')[0].endsWith('.glb')) return <GlbModel item={item} />;
-  if (item.materialUrl) return <ObjModelWithMaterials item={item} />;
+  if (materialUrl) return <ObjModelWithMaterials item={item} materialUrl={materialUrl} />;
   return <ObjModel item={item} selected={selected} dragging={dragging} />;
 }
 
@@ -5171,13 +5210,13 @@ function GlbModel({ item }) {
   return <primitive object={model} dispose={null} />;
 }
 
-function ObjModelWithMaterials({ item }) {
-  const materials = useLoader(MTLLoader, item.materialUrl, (loader) => {
+function ObjModelWithMaterials({ item, materialUrl }) {
+  const materials = useLoader(MTLLoader, materialUrl, (loader) => {
     const manager = new LoadingManager();
     manager.setURLModifier((url) => resolveModelResourceUrl(url, item));
     loader.manager = manager;
     loader.setMaterialOptions({ ignoreZeroRGBs: true, side: DoubleSide });
-    loader.setResourcePath(assetBaseUrl(item.materialUrl || item.modelUrl));
+    loader.setResourcePath(assetBaseUrl(materialUrl || item.modelUrl));
   });
   const obj = useLoader(OBJLoader, item.modelUrl, (loader) => {
     materials.preload();
@@ -5186,6 +5225,10 @@ function ObjModelWithMaterials({ item }) {
   const model = useMemo(() => prepareLoadedModel(obj), [obj]);
 
   return <primitive object={model} dispose={null} />;
+}
+
+function modelMaterialUrl(item) {
+  return item?.materialUrl || item?.dimensions?.materialUrl || null;
 }
 
 function ObjModel({ item, selected, dragging }) {
@@ -5278,7 +5321,7 @@ function assetBaseUrl(url = '') {
 
 function resolveModelResourceUrl(url, item) {
   if (!isTextureResource(url)) return url;
-  const baseUrl = assetBaseUrl(item?.materialUrl || item?.modelUrl || '');
+  const baseUrl = assetBaseUrl(modelMaterialUrl(item) || item?.modelUrl || '');
   if (!baseUrl) return url;
 
   const cleanUrl = url.split('?')[0];

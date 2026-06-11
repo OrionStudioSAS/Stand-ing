@@ -17,8 +17,11 @@ function normalizeSceneItem(item) {
     lockedPlacement: item.lockedPlacement ?? Boolean(item.placementRule || catalogItem?.placementRule?.locked),
     modelUrl: catalogItem?.modelUrl || item.modelUrl,
     modelSize: catalogItem?.modelSize || item.modelSize,
-    materialUrl: catalogItem?.materialUrl || item.materialUrl,
-    dimensions: item.dimensions || catalogItem?.dimensions,
+    materialUrl: catalogItem?.materialUrl || item.materialUrl || item.dimensions?.materialUrl,
+    dimensions: {
+      ...(catalogItem?.dimensions || {}),
+      ...(item.dimensions || {}),
+    },
     color: catalogItem?.color || item.color,
   };
 }
@@ -32,8 +35,11 @@ function normalizeGroupChildren(children) {
       label: child.label || catalogItem.label || child.type,
       modelUrl: child.modelUrl || catalogItem.modelUrl,
       modelSize: child.modelSize || catalogItem.modelSize,
-      materialUrl: child.materialUrl || catalogItem.materialUrl,
-      dimensions: child.dimensions || catalogItem.dimensions,
+      materialUrl: child.materialUrl || child.dimensions?.materialUrl || catalogItem.materialUrl,
+      dimensions: {
+        ...(catalogItem.dimensions || {}),
+        ...(child.dimensions || {}),
+      },
       color: child.color || catalogItem.color,
       x: Number(child.x || 0),
       y: Number(child.y || 0),
