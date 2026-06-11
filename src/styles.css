@@ -4176,55 +4176,6 @@ select {
   font-weight: 800;
 }
 
-.asset-dimensions-editor {
-  display: grid;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid #dfe5ee;
-  border-radius: 12px;
-  background: #fff;
-}
-
-.asset-dimensions-editor h3,
-.asset-dimensions-editor p {
-  margin: 0;
-}
-
-.asset-dimensions-editor h3 {
-  color: #252b34;
-  font-size: 0.9rem;
-}
-
-.asset-dimensions-editor p {
-  color: #8f96a1;
-  font-size: 0.76rem;
-}
-
-.asset-dimensions-editor > div {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-.asset-dimensions-editor label {
-  display: grid;
-  gap: 5px;
-  color: #77808c;
-  font-size: 0.72rem;
-  font-weight: 900;
-}
-
-.asset-dimensions-editor input {
-  width: 100%;
-  min-height: 34px;
-  border: 1px solid #d8dde6;
-  border-radius: 8px;
-  padding: 0 8px;
-  color: #252b34;
-  background: #fff;
-  font: inherit;
-}
-
 .asset-assignment h3 {
   margin: 0 0 12px;
   color: #3b414a;

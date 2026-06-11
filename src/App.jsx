@@ -3070,7 +3070,6 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const fallbackType = sourceAssets[0]?.type || '';
   const activeGroupRowUid = selectedGroupRowUid || groupRows[0]?.uid || null;
   const draftPlacementRuleId = normalizePlacementRule(draft.dimensions?.placementRule)?.id || 'free';
-  const draftSize = assetModelSize(draft);
 
   useEffect(() => {
     setDraft(asset);
@@ -3119,19 +3118,6 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             ...patch,
           },
         },
-      },
-    });
-  };
-
-  const updateAssetDimension = (index, value) => {
-    const nextSize = [...draftSize];
-    nextSize[index] = Math.max(0.05, Number(value) || 0.05);
-    setDraft({
-      ...draft,
-      dimensions: {
-        ...(draft.dimensions || {}),
-        size: nextSize.map((size) => Number(size.toFixed(2))),
-        sizeSource: 'manual',
       },
     });
   };
@@ -3194,18 +3180,6 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           <div><dt>Ajouté le</dt><dd>{formatDate(draft.created_at)}</dd></div>
           <div><dt>Ajouté par</dt><dd>{draft.dimensions?.addedBy || 'Stand-ING'}</dd></div>
         </dl>
-
-        {!isGroupAsset && (
-          <section className="asset-dimensions-editor">
-            <h3>Zone de collision</h3>
-            <p>Ajuste l’empreinte réelle si la zone autour de l’objet est trop grande ou trop petite.</p>
-            <div>
-              <label><span>Largeur X</span><input type="number" min="0.05" step="0.01" value={draftSize[0]} onChange={(event) => updateAssetDimension(0, event.target.value)} /></label>
-              <label><span>Hauteur Y</span><input type="number" min="0.05" step="0.01" value={draftSize[1]} onChange={(event) => updateAssetDimension(1, event.target.value)} /></label>
-              <label><span>Profondeur Z</span><input type="number" min="0.05" step="0.01" value={draftSize[2]} onChange={(event) => updateAssetDimension(2, event.target.value)} /></label>
-            </div>
-          </section>
-        )}
 
         <section className="asset-assignment">
           <h3>Affectation par salon</h3>
