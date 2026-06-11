@@ -798,8 +798,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     if (!dragged) return;
 
     if (isWallItem(dragged)) {
-      const wall = wallFromDrag(point, dragged.wall, width, depth, layout);
-      updateItem(draggingId, { wall, x: wall === 'back' ? point.x : point.z });
+      updateItem(draggingId, wallDragPatch(point, dragged, items, width, depth, layout));
       return;
     }
 
@@ -2609,8 +2608,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
     const dragged = items.find((item) => item.id === draggingId);
     if (!dragged) return;
     if (isWallItem(dragged)) {
-      const wall = wallFromDrag(point, dragged.wall, width, depth, layout);
-      updateItem(draggingId, { wall, x: wall === 'back' ? point.x : point.z });
+      updateItem(draggingId, wallDragPatch(point, dragged, items, width, depth, layout));
       return;
     }
     updateItem(draggingId, { x: point.x, z: point.z });
@@ -4295,6 +4293,139 @@ function wallFromDrag(point, currentWall, width, depth, layout) {
   return wallZones.sort((a, b) => a.distance - b.distance)[0].wall;
 }
 
+function wallDragPatch(point, dragged, items, width, depth, layout) {
+  const objectWall = objectWallFromDrag(point, items, dragged.id);
+  if (objectWall) {
+    return {
+      wall: objectWall.surface.id,
+      x: objectWall.axis,
+      wallSide: objectWall.side,
+      wallSurface: serializeObjectWallSurface(objectWall.surface),
+    };
+  }
+
+  const wall = wallFromDrag(point, dragged.wall, width, depth, layout);
+  return {
+    wall,
+    x: wall === 'back' ? point.x : point.z,
+    wallSide: null,
+    wallSurface: null,
+  };
+}
+
+function objectWallFromDrag(point, items, ignoreId = null) {
+  const threshold = 0.35;
+  const candidates = objectWallSurfaces(items, ignoreId)
+    .map((surface) => {
+      const halfLength = surface.length / 2;
+      const minAxis = surface.centerAxis - halfLength - 0.3;
+      const maxAxis = surface.centerAxis + halfLength + 0.3;
+      const axisValue = surface.orientation === 'x' ? point.x : point.z;
+      const normalValue = surface.orientation === 'x' ? point.z : point.x;
+      if (axisValue < minAxis || axisValue > maxAxis) return null;
+      const distance = Math.abs(normalValue - surface.normalAxis);
+      if (distance > threshold) return null;
+      return {
+        surface,
+        axis: snapWallAxis(clamp(axisValue, surface.centerAxis - halfLength, surface.centerAxis + halfLength)),
+        side: normalValue >= surface.normalAxis ? 1 : -1,
+        distance,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.distance - b.distance);
+
+  return candidates[0] || null;
+}
+
+function serializeObjectWallSurface(surface) {
+  return surface ? {
+    id: surface.id,
+    orientation: surface.orientation,
+    centerX: surface.centerX,
+    centerZ: surface.centerZ,
+    centerAxis: surface.centerAxis,
+    normalAxis: surface.normalAxis,
+    length: surface.length,
+  } : null;
+}
+
+function objectWallSurfaces(items = [], ignoreId = null) {
+  return (items || [])
+    .filter((item) => item && item.id !== ignoreId && !isWallItem(item))
+    .flatMap((item) => {
+      if (item.isGroup && item.children?.length) return groupObjectWallSurfaces(item);
+      return wallSurfaceCandidate(item, item.id, item.x || 0, item.z || 0, item.rotation || 0);
+    })
+    .filter(Boolean);
+}
+
+function groupObjectWallSurfaces(group) {
+  const groupRotation = Number(group.rotation || 0);
+  return (group.children || [])
+    .flatMap((child) => {
+      const rotated = rotatePoint(Number(child.x || 0), Number(child.z || 0), groupRotation);
+      return wallSurfaceCandidate(
+        child,
+        `${group.id}:${child.id}`,
+        Number(group.x || 0) + rotated.x,
+        Number(group.z || 0) + rotated.z,
+        groupRotation + Number(child.rotation || 0),
+      );
+    })
+    .filter(Boolean);
+}
+
+function wallSurfaceCandidate(item, id, centerX, centerZ, rotation = 0) {
+  if (!isObjectWallSurfaceCandidate(item)) return null;
+  const size = itemDefaultSize(item);
+  const width = Number(size[0] || 0.6);
+  const depth = Number(size[2] || 0.06);
+  const longAxisIsX = width >= depth;
+  const angle = (Number(rotation || 0) * Math.PI) / 180;
+  const vector = longAxisIsX
+    ? { x: Math.cos(angle), z: Math.sin(angle) }
+    : { x: -Math.sin(angle), z: Math.cos(angle) };
+  const orientation = Math.abs(vector.x) >= Math.abs(vector.z) ? 'x' : 'z';
+  const length = Math.max(width, depth);
+  const surface = {
+    id: `object-wall:${id}`,
+    orientation,
+    centerX: Number(centerX || 0),
+    centerZ: Number(centerZ || 0),
+    length,
+  };
+  return {
+    ...surface,
+    centerAxis: orientation === 'x' ? surface.centerX : surface.centerZ,
+    normalAxis: orientation === 'x' ? surface.centerZ : surface.centerX,
+  };
+}
+
+function isObjectWallSurfaceCandidate(item) {
+  const label = `${item?.type || ''} ${item?.label || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const size = itemDefaultSize(item);
+  const looksLikePartition = Number(size[1] || 0) >= 1.8 && Math.min(Number(size[0] || 0), Number(size[2] || 0)) <= 0.18;
+  return label.includes('cloison') || looksLikePartition;
+}
+
+function rotatePoint(x, z, degrees = 0) {
+  const radians = (Number(degrees || 0) * Math.PI) / 180;
+  return {
+    x: Math.cos(radians) * x - Math.sin(radians) * z,
+    z: Math.sin(radians) * x + Math.cos(radians) * z,
+  };
+}
+
+function objectWallSurfaceForItem(item, items = []) {
+  if (!isObjectWallId(item?.wall)) return null;
+  return objectWallSurfaces(items).find((surface) => surface.id === item.wall) || item.wallSurface || null;
+}
+
+function isObjectWallId(wall) {
+  return String(wall || '').startsWith('object-wall:');
+}
+
 function applyPlacementRule(item, width, depth, layout) {
   const rule = normalizePlacementRule(item?.placementRule);
   if (!rule?.locked) return item;
@@ -4333,6 +4464,18 @@ function applyPlacementRule(item, width, depth, layout) {
 
 function constrainItem(item, width, depth, layout) {
   if (isWallItem(item)) {
+    if (isObjectWallId(item.wall)) {
+      const surface = item.wallSurface;
+      if (surface) {
+        const halfLength = surface.length / 2;
+        const itemHalfWidth = wallItemMetrics(item, [], width, depth).width / 2;
+        const margin = Math.min(itemHalfWidth, Math.max(0, halfLength - 0.02));
+        const min = surface.centerAxis - halfLength + margin;
+        const max = surface.centerAxis + halfLength - margin;
+        return { ...item, x: clamp(snapWallAxis(item.x), min, max) };
+      }
+    }
+
     const validWalls = availableWalls(layout).map((wall) => wall.id);
     const wall = validWalls.includes(item.wall) ? item.wall : 'back';
     const margin = item.type === 'poster' ? 0.25 : 0.55;
@@ -4606,7 +4749,24 @@ function childrenBounds(children) {
   };
 }
 
-function screenWorldPosition(item, width, depth) {
+function objectWallTransform(item, items = []) {
+  const surface = objectWallSurfaceForItem(item, items);
+  if (!surface) return null;
+  const side = Number(item.wallSide || 1) >= 0 ? 1 : -1;
+  const screenOffset = wallThickness + screenDepth / 2;
+  const axis = Number(item.x || surface.centerAxis || 0);
+  const position = surface.orientation === 'x'
+    ? [axis, item.y, Number(surface.normalAxis || 0) + side * screenOffset]
+    : [Number(surface.normalAxis || 0) + side * screenOffset, item.y, axis];
+  const rotation = surface.orientation === 'x'
+    ? (side >= 0 ? 0 : Math.PI)
+    : (side >= 0 ? Math.PI / 2 : -Math.PI / 2);
+  return { position, rotation, surface };
+}
+
+function screenWorldPosition(item, width, depth, items = []) {
+  const objectTransform = objectWallTransform(item, items);
+  if (objectTransform) return objectTransform.position;
   const screenOffset = wallThickness + screenDepth / 2;
   if (item.wall === 'left') return [-width / 2 + screenOffset, item.y, item.x];
   if (item.wall === 'right') return [width / 2 - screenOffset, item.y, item.x];
@@ -5127,8 +5287,9 @@ function Counter({ selected, dragging }) {
 }
 
 function WallMountedItem({ item, items, width, depth, selected, dragging, onSelect, onDragStart, onDragEnd, onDragMove }) {
-  const rotation = item.wall === 'left' ? Math.PI / 2 : item.wall === 'right' ? -Math.PI / 2 : 0;
-  const offset = screenWorldPosition(item, width, depth);
+  const objectTransform = objectWallTransform(item, items);
+  const rotation = objectTransform?.rotation ?? (item.wall === 'left' ? Math.PI / 2 : item.wall === 'right' ? -Math.PI / 2 : 0);
+  const offset = objectTransform?.position ?? screenWorldPosition(item, width, depth, items);
   const isPoster = item.type === 'poster';
   const posterWidth = isPoster ? posterAvailableWidth(item, items, width, depth) : 0.95;
   const posterHeight = item.posterHeight || 1.25;
