@@ -3044,6 +3044,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const fallbackType = sourceAssets[0]?.type || '';
   const activeGroupRowUid = selectedGroupRowUid || groupRows[0]?.uid || null;
   const draftPlacementRuleId = normalizePlacementRule(draft.dimensions?.placementRule)?.id || 'free';
+  const draftSize = assetModelSize(draft);
 
   useEffect(() => {
     setDraft(asset);
@@ -3092,6 +3093,18 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             ...patch,
           },
         },
+      },
+    });
+  };
+
+  const updateAssetDimension = (index, value) => {
+    const nextSize = [...draftSize];
+    nextSize[index] = Math.max(0.05, Number(value) || 0.05);
+    setDraft({
+      ...draft,
+      dimensions: {
+        ...(draft.dimensions || {}),
+        size: nextSize.map((size) => Number(size.toFixed(2))),
       },
     });
   };
@@ -3154,6 +3167,18 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           <div><dt>Ajouté le</dt><dd>{formatDate(draft.created_at)}</dd></div>
           <div><dt>Ajouté par</dt><dd>{draft.dimensions?.addedBy || 'Stand-ING'}</dd></div>
         </dl>
+
+        {!isGroupAsset && (
+          <section className="asset-dimensions-editor">
+            <h3>Zone de collision</h3>
+            <p>Ajuste l’empreinte réelle si la zone autour de l’objet est trop grande ou trop petite.</p>
+            <div>
+              <label><span>Largeur X</span><input type="number" min="0.05" step="0.01" value={draftSize[0]} onChange={(event) => updateAssetDimension(0, event.target.value)} /></label>
+              <label><span>Hauteur Y</span><input type="number" min="0.05" step="0.01" value={draftSize[1]} onChange={(event) => updateAssetDimension(1, event.target.value)} /></label>
+              <label><span>Profondeur Z</span><input type="number" min="0.05" step="0.01" value={draftSize[2]} onChange={(event) => updateAssetDimension(2, event.target.value)} /></label>
+            </div>
+          </section>
+        )}
 
         <section className="asset-assignment">
           <h3>Affectation par salon</h3>
@@ -3699,8 +3724,25 @@ function assetToCatalogEntry(asset) {
 
 function assetModelSize(asset) {
   const size = asset.dimensions?.size || asset.dimensions?.dimensions || asset.dimensions?.modelSize;
-  if (Array.isArray(size) && size.length >= 3) return size.map((value) => Number(value) || 0.7).slice(0, 3);
-  return [1, 1, 1];
+  if (Array.isArray(size) && size.length >= 3) return normalizeModelSize(size);
+  return inferredAssetModelSize(asset);
+}
+
+function normalizeModelSize(size, fallback = [0.55, 0.7, 0.55]) {
+  return fallback.map((fallbackValue, index) => {
+    const value = Number(size?.[index]);
+    return Number((Number.isFinite(value) && value > 0 ? value : fallbackValue).toFixed(2));
+  });
+}
+
+function inferredAssetModelSize(asset = {}) {
+  const label = `${asset.type || ''} ${asset.label || ''}`.toLowerCase();
+  if (/poubelle|corbeille|trash|bin/.test(label)) return [0.28, 0.45, 0.28];
+  if (/tabouret/.test(label)) return [0.52, 0.86, 0.5];
+  if (/chaise|chair/.test(label)) return [0.52, 0.86, 0.5];
+  if (/table|mange/.test(label)) return [0.8, 0.75, 0.8];
+  if (/comptoir|counter/.test(label)) return [1.15, 1.01, 0.5];
+  return [0.55, 0.7, 0.55];
 }
 
 function computeGroupSize(children = []) {
@@ -4388,20 +4430,27 @@ function itemGroupBounds(item) {
 }
 
 function itemDefaultSize(item) {
+  const savedSize = item?.dimensions?.size || item?.dimensions?.dimensions || item?.dimensions?.modelSize;
+  if (Array.isArray(savedSize) && savedSize.length >= 3) return normalizeModelSize(savedSize);
+  if (item?.modelSize?.length >= 3) {
+    const normalizedSize = normalizeModelSize(item.modelSize);
+    const looksLikeOldFallback = item?.type?.startsWith?.('asset-') && normalizedSize.every((value) => value === 1);
+    if (!looksLikeOldFallback) return normalizedSize;
+  }
+
   const defaults = {
     chair: [0.52, 0.86, 0.5],
     table: [0.96, 0.62, 0.96],
     counter: [1.15, 1.01, 0.5],
   };
-  return item?.modelSize || defaults[item?.type] || [0.7, 0.7, 0.7];
+  return defaults[item?.type] || inferredAssetModelSize(item);
 }
 
 function childrenBounds(children) {
   if (!children?.length) return null;
   const bounds = children.reduce((acc, child) => {
-    const childSize = child.modelSize?.length >= 3
-      ? { width: Number(child.modelSize[0]) || 0.5, depth: Number(child.modelSize[2]) || 0.5, height: Number(child.modelSize[1]) || 0.5 }
-      : { width: 0.6, depth: 0.6, height: 0.6 };
+    const size = itemDefaultSize(child);
+    const childSize = { width: size[0], depth: size[2], height: size[1] };
     const radians = ((Number(child.rotation || 0) * Math.PI) / 180);
     const halfX = Math.abs(Math.cos(radians)) * childSize.width / 2 + Math.abs(Math.sin(radians)) * childSize.depth / 2;
     const halfZ = Math.abs(Math.sin(radians)) * childSize.width / 2 + Math.abs(Math.cos(radians)) * childSize.depth / 2;
@@ -4677,7 +4726,7 @@ function SceneItemContent({ item, selected, dragging }) {
       {item.type === 'counter' && <Counter selected={selected} dragging={dragging} />}
       {item.modelUrl && (
         <>
-          <ObjHitbox size={item.modelSize} />
+          <ObjHitbox size={itemDefaultSize(item)} />
           <Model3D item={item} selected={selected} dragging={dragging} />
         </>
       )}

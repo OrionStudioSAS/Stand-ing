@@ -644,6 +644,7 @@ export async function uploadObjectAssetFolder(files) {
     };
   }));
   const referenceRules = buildAssetReferenceRules(uploadEntries);
+  const measuredModelSize = await readUploadedModelSize(modelFile);
   let modelPath = '';
   let materialPath = '';
   let totalBytes = 0;
@@ -679,6 +680,7 @@ export async function uploadObjectAssetFolder(files) {
       category: 'Mobilier',
       fileSizeMb: Number((totalBytes / 1024 / 1024).toFixed(1)),
       format: modelFile.name.toLowerCase().endsWith('.obj') ? 'OBJ' : 'GLB',
+      ...(measuredModelSize ? { size: measuredModelSize } : {}),
       folderName: rootFolder || null,
       uploadedFiles: fileList.length,
       textureCount,
@@ -775,6 +777,41 @@ async function prepareAssetUploadBody(entry, referenceRules) {
   const text = await entry.file.text();
   const rewritten = rewriteKnownAssetReferences(text, referenceRules);
   return new Blob([rewritten], { type: guessContentType(entry.file) });
+}
+
+async function readUploadedModelSize(file) {
+  if (!file?.name?.toLowerCase().endsWith('.obj')) return null;
+  try {
+    return parseObjModelSize(await file.text());
+  } catch {
+    return null;
+  }
+}
+
+function parseObjModelSize(text) {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  let vertexCount = 0;
+
+  for (const line of String(text || '').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('v ')) continue;
+    const parts = trimmed.split(/\s+/).slice(1, 4).map(Number);
+    if (parts.length < 3 || parts.some((value) => !Number.isFinite(value))) continue;
+    vertexCount += 1;
+    parts.forEach((value, index) => {
+      min[index] = Math.min(min[index], value);
+      max[index] = Math.max(max[index], value);
+    });
+  }
+
+  if (!vertexCount) return null;
+  const size = max.map((value, index) => value - min[index]);
+  if (size.some((value) => !Number.isFinite(value) || value <= 0)) return null;
+
+  // Most OBJ exports here are already in meters; very large files are usually in mm.
+  const divisor = Math.max(...size) > 100 ? 1000 : 1;
+  return size.map((value) => Number(Math.max(0.05, value / divisor).toFixed(2)));
 }
 
 function rewriteKnownAssetReferences(text, referenceRules) {
