@@ -47,7 +47,11 @@ const floorPlane = new Plane(new Vector3(0, 1, 0), 0);
 const wallSwitchZone = 0.18;
 const fixedWallHeight = 2.5;
 const wallThickness = 0.06;
+const floorThickness = 0.01;
+const baseboardHeight = 0.06;
+const baseboardThickness = 0.003;
 const screenDepth = 0.06;
+const screenCenterHeight = 1.6;
 const wallItemSnap = 0.25;
 const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
@@ -117,7 +121,7 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
       wall: side,
       x: 0,
       z: side === 'back' ? -depth / 2 + wallThickness : 0,
-      y: isWallItemType(type) ? (type === 'poster' ? 1.45 : 1.65) : Number(entry?.dimensions?.wallY ?? 0),
+      y: type === 'screen' ? screenCenterHeight : isWallItemType(type) ? (type === 'poster' ? 1.45 : screenCenterHeight) : Number(entry?.dimensions?.wallY ?? 0),
       posterHeight: entry?.posterHeight,
       wallDepth: isWallItemType(type) ? undefined : Number(size?.[2] || 0.08),
     };
@@ -633,7 +637,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [items, setItems] = useState(() => (initialScene.items?.length ? initialScene.items : [
     { id: 'table-1', type: 'table', x: -0.75, z: 0.3, y: 0, rotation: 0 },
     { id: 'chair-1', type: 'chair', x: 0.8, z: 0.45, y: 0, rotation: -15 },
-    { id: 'screen-1', type: 'screen', x: 0, z: -1.5, y: 1.65, wall: 'back', rotation: 0 },
+    { id: 'screen-1', type: 'screen', x: 0, z: -1.5, y: screenCenterHeight, wall: 'back', rotation: 0 },
   ]).map((item) => constrainItem(item, initialWidth, initialDepth, initialLayout)));
   const initialReadOnly = initialScene.client_status === 'configured' && !isAdminViewer;
   const [selectedId, setSelectedId] = useState(initialReadOnly ? null : 'table-1');
@@ -4597,7 +4601,7 @@ function constrainItem(item, width, depth, layout) {
     const margin = item.type === 'poster' ? 0.25 : 0.55;
     const range = screenAxisRange(wall, width, depth, margin);
     const axis = clamp(snapWallAxis(item.x), range.min, range.max);
-    return { ...item, wall, x: axis, z: wall === 'back' ? -depth / 2 + wallThickness : axis };
+    return { ...item, wall, x: axis, y: wallItemCenterY(item), z: wall === 'back' ? -depth / 2 + wallThickness : axis };
   }
 
   const positionedItem = applyPlacementRule(item, width, depth, layout);
@@ -4709,7 +4713,7 @@ function wallItemCollisionBox(item, items, width, depth) {
   if (!isWallItem(item) || !itemCollisionEnabled(item)) return null;
   const metrics = wallItemMetrics(item, items, width, depth);
   const axis = Number(item.x || 0);
-  const y = Number(item.y || 1.5);
+  const y = wallItemCenterY(item);
   return {
     wall: item.wall || 'back',
     minAxis: axis - metrics.width / 2 - collisionPadding,
@@ -4880,9 +4884,10 @@ function objectWallTransform(item, items = []) {
   const side = Number(item.wallSide || 1) >= 0 ? 1 : -1;
   const screenOffset = wallMountedNormalOffset(item);
   const axis = Number(item.x || surface.centerAxis || 0);
+  const y = wallItemCenterY(item);
   const position = surface.orientation === 'x'
-    ? [axis, item.y, Number(surface.normalAxis || 0) + side * screenOffset]
-    : [Number(surface.normalAxis || 0) + side * screenOffset, item.y, axis];
+    ? [axis, y, Number(surface.normalAxis || 0) + side * screenOffset]
+    : [Number(surface.normalAxis || 0) + side * screenOffset, y, axis];
   const rotation = surface.orientation === 'x'
     ? (side >= 0 ? 0 : Math.PI)
     : (side >= 0 ? Math.PI / 2 : -Math.PI / 2);
@@ -4893,9 +4898,15 @@ function screenWorldPosition(item, width, depth, items = []) {
   const objectTransform = objectWallTransform(item, items);
   if (objectTransform) return objectTransform.position;
   const screenOffset = wallMountedNormalOffset(item);
-  if (item.wall === 'left') return [-width / 2 + screenOffset, item.y, item.x];
-  if (item.wall === 'right') return [width / 2 - screenOffset, item.y, item.x];
-  return [item.x, item.y, -depth / 2 + screenOffset];
+  const y = wallItemCenterY(item);
+  if (item.wall === 'left') return [-width / 2 + screenOffset, y, item.x];
+  if (item.wall === 'right') return [width / 2 - screenOffset, y, item.x];
+  return [item.x, y, -depth / 2 + screenOffset];
+}
+
+function wallItemCenterY(item) {
+  if (item?.type === 'screen') return screenCenterHeight;
+  return Number(item?.y ?? 1.5);
 }
 
 function wallMountedNormalOffset(item) {
@@ -5025,8 +5036,8 @@ function Floor({ width, depth, layout, carpetColor }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
   return (
     <group>
-      <mesh receiveShadow position={[0, -0.035, 0]}>
-        <boxGeometry args={[width, 0.07, depth]} />
+      <mesh receiveShadow position={[0, -floorThickness / 2, 0]}>
+        <boxGeometry args={[width, floorThickness, depth]} />
         <meshStandardMaterial color={carpetColor || '#bebebe'} roughness={0.78} />
       </mesh>
       <mesh receiveShadow position={[footprint.centerX, 0.003, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -5107,8 +5118,11 @@ function Walls({ width, depth, height, layout, wallColor }) {
   return (
     <group>
       <Wall position={[0, height / 2, -depth / 2 + wallThickness / 2]} size={[width, height, wallThickness]} color={wallColor} />
+      <Baseboard position={[0, baseboardHeight / 2, -depth / 2 + wallThickness + baseboardThickness / 2]} size={[width, baseboardHeight, baseboardThickness]} />
       {(layout === 'left' || layout === 'u') && <Wall position={[-width / 2 + wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallColor} />}
+      {(layout === 'left' || layout === 'u') && <Baseboard position={[-width / 2 + wallThickness + baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
       {(layout === 'right' || layout === 'u') && <Wall position={[width / 2 - wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallColor} />}
+      {(layout === 'right' || layout === 'u') && <Baseboard position={[width / 2 - wallThickness - baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
     </group>
   );
 }
@@ -5118,6 +5132,15 @@ function Wall({ position, size, color }) {
     <mesh castShadow receiveShadow position={position}>
       <boxGeometry args={size} />
       <meshStandardMaterial color={color} roughness={0.62} />
+    </mesh>
+  );
+}
+
+function Baseboard({ position, size }) {
+  return (
+    <mesh castShadow receiveShadow position={position}>
+      <boxGeometry args={size} />
+      <meshStandardMaterial color="#f4efe4" roughness={0.52} />
     </mesh>
   );
 }
@@ -5180,10 +5203,35 @@ function SceneItemContent({ item, selected, dragging }) {
         <>
           <ObjHitbox size={itemDefaultSize(item)} />
           <Model3D item={item} selected={selected} dragging={dragging} />
+          <ObjectBaseboards item={item} />
         </>
       )}
     </>
   );
+}
+
+function ObjectBaseboards({ item }) {
+  if (!shouldShowObjectBaseboards(item)) return null;
+  const [width, , depth] = itemDefaultSize(item);
+  const y = baseboardHeight / 2 + 0.002;
+  const xSize = Math.max(0.08, width);
+  const zSize = Math.max(0.08, depth);
+  return (
+    <group>
+      <Baseboard position={[0, y, zSize / 2 + baseboardThickness / 2]} size={[xSize, baseboardHeight, baseboardThickness]} />
+      <Baseboard position={[0, y, -zSize / 2 - baseboardThickness / 2]} size={[xSize, baseboardHeight, baseboardThickness]} />
+      <Baseboard position={[xSize / 2 + baseboardThickness / 2, y, 0]} size={[baseboardThickness, baseboardHeight, zSize]} />
+      <Baseboard position={[-xSize / 2 - baseboardThickness / 2, y, 0]} size={[baseboardThickness, baseboardHeight, zSize]} />
+    </group>
+  );
+}
+
+function shouldShowObjectBaseboards(item) {
+  const text = `${item?.type || ''} ${item?.label || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (text.includes('porte document')) return false;
+  if (text.includes('cloison') || text.includes('porte')) return true;
+  const size = itemDefaultSize(item);
+  return Number(size[1] || 0) >= 1.8 && Math.min(Number(size[0] || 0), Number(size[2] || 0)) <= 0.18;
 }
 
 function activeColor(selected, dragging, base) {
