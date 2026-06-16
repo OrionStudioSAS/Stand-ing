@@ -204,6 +204,36 @@ export async function saveScene(scene) {
   return scene;
 }
 
+export async function uploadSceneItemOptionImage(scene, item, file) {
+  if (!file) throw new Error('Image introuvable.');
+  if (!supabase) return fileToDataUrl(file);
+
+  const extension = file.name.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() || 'jpg';
+  const safeSceneId = slugifyAsset(scene?.id || scene?.share_token || 'scene');
+  const safeItemId = slugifyAsset(item?.id || item?.type || 'item');
+  const safeName = slugifyAsset(file.name.replace(/\.[^.]+$/, ''));
+  const storagePath = `scene-options/${safeSceneId}/${safeItemId}/${Date.now().toString(36)}-${safeName}.${extension}`;
+  const bucket = supabase.storage.from('object-assets');
+  const { error } = await bucket.upload(storagePath, file, {
+    cacheControl: '3600',
+    contentType: file.type || `image/${extension}`,
+    upsert: true,
+  });
+  if (error) throw error;
+
+  const { data } = bucket.getPublicUrl(storagePath);
+  return data.publicUrl;
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Lecture du fichier impossible.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export async function syncMondayScenes() {
   if (!supabase) throw new Error('Supabase non configure.');
 

@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, DoubleSide, LoadingManager, MeshStandardMaterial, Plane, Vector3 } from 'three';
+import { Box3, CanvasTexture, DoubleSide, LinearFilter, LoadingManager, MeshStandardMaterial, Plane, TextureLoader, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -39,7 +39,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, uploadObjectAssetThumbnail, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -642,7 +642,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const initialReadOnly = initialScene.client_status === 'configured' && !isAdminViewer;
   const [selectedId, setSelectedId] = useState(initialReadOnly ? null : 'table-1');
   const [draggingId, setDraggingId] = useState(null);
-  const [language, setLanguage] = useState('fr');
+  const [language, setLanguage] = useState(initialOptions.language || 'fr');
   const [headerPanel, setHeaderPanel] = useState(null);
   const [activeStep, setActiveStep] = useState(initialReadOnly ? 4 : 1);
   const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, reserve: false, tete: false, comptoir: false });
@@ -651,6 +651,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
+  const [itemOptionState, setItemOptionState] = useState({ uploading: false, error: '' });
   const [clientInfo, setClientInfo] = useState({
     client: initialScene.client_name || '',
     project: initialScene.project_name || '',
@@ -688,6 +689,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
   const readOnly = saveState === 'configured' && !isAdminViewer;
+  const sceneVisualContext = useMemo(() => ({
+    language,
+    company: contactDetails.company || clientInfo.client || initialScene.client_name || '',
+    standNumber: contactDetails.emplacement || standLabel.replace(/^Stand\s+/i, ''),
+  }), [language, contactDetails.company, contactDetails.emplacement, clientInfo.client, initialScene.client_name, standLabel]);
 
   useEffect(() => {
     setItems((current) => current.map((item) => constrainItem(item, width, depth, layout)));
@@ -700,6 +706,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       setRotationPanelOpen(false);
     }
   }, [readOnly]);
+
+  useEffect(() => {
+    setItemOptionState({ uploading: false, error: '' });
+  }, [selectedId]);
 
   const availableCatalog = useMemo(() => {
     const dynamicEntries = objectBank
@@ -736,6 +746,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       wallFabricColorId: selectedWallFabricColor.id,
       wallFabricColorName: selectedWallFabricColor.name,
       wallFabricColorHex: selectedWallFabricColor.hex,
+      language,
     };
 
     return {
@@ -783,7 +794,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, hydratedItems, clientInfo, selectedCarpetColor, selectedWallFabricColor, saveState, readOnly]);
+  }, [width, depth, height, layout, hydratedItems, clientInfo, selectedCarpetColor, selectedWallFabricColor, language, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
@@ -814,6 +825,23 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const updateItem = (id, patch) => {
     if (readOnly) return;
     setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout));
+  };
+
+  const updateSelectedItemOptions = (patch) => {
+    if (!selected || readOnly) return;
+    updateItem(selected.id, { options: { ...(selected.options || {}), ...patch } });
+  };
+
+  const uploadSelectedItemImage = async (file) => {
+    if (!selected || !file) return;
+    setItemOptionState({ uploading: true, error: '' });
+    try {
+      const imageUrl = await uploadSceneItemOptionImage(initialScene, selected, file);
+      updateSelectedItemOptions({ headMainImageUrl: imageUrl, headMainImageName: file.name });
+      setItemOptionState({ uploading: false, error: '' });
+    } catch (error) {
+      setItemOptionState({ uploading: false, error: error.message || 'Upload impossible.' });
+    }
   };
 
   const moveDraggedItem = (point) => {
@@ -1002,6 +1030,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
               viewAngle={viewAngle}
               carpetColor={selectedCarpetColor.hex}
               wallColor={selectedWallFabricColor.hex}
+              visualContext={sceneVisualContext}
             />
             <ContactShadows opacity={0.22} scale={12} blur={2.4} far={5} position={[0, -0.01, 0]} />
           </Suspense>
@@ -1062,6 +1091,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           {selected && !readOnly ? (
             <>
               <button type="button" disabled={itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
+              {isPartitionHeadItem(selected) && <button type="button" onClick={() => setRotationPanelOpen(false)} title="Options visuel"><FileImage size={16} /></button>}
               <button type="button" onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
               {itemPlacementLocked(selected) && <span className="toolbar-lock-note">Placement verrouillé</span>}
               {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (
@@ -1088,6 +1118,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             </>
           )}
         </div>
+
+        {selected && !readOnly && isPartitionHeadItem(selected) && (
+          <PartitionHeadOptionsPanel
+            item={selected}
+            visualContext={sceneVisualContext}
+            uploadState={itemOptionState}
+            onImageChange={uploadSelectedItemImage}
+            onResetImage={() => updateSelectedItemOptions({ headMainImageUrl: '', headMainImageName: '' })}
+          />
+        )}
       </section>
 
       {activeStep > 1 && (
@@ -1289,6 +1329,44 @@ function LanguageMenu({ language, onSelect }) {
       ))}
       <p>Les textes du stand restent en français</p>
     </section>
+  );
+}
+
+function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageChange, onResetImage }) {
+  const imageName = item.options?.headMainImageName || 'Texture originale LED_5500k_1.jpg';
+  return (
+    <aside className="item-options-panel">
+      <div className="item-options-heading">
+        <FileImage size={17} />
+        <div>
+          <strong>Tête de cloison</strong>
+          <span>Options de cet objet uniquement</span>
+        </div>
+      </div>
+
+      <div className="item-dynamic-preview">
+        <span className="preview-flag">{languageFlag(visualContext?.language)}</span>
+        <strong>{visualContext?.company || 'Nom société'}</strong>
+        <span>{visualContext?.standNumber || 'A-14'}</span>
+      </div>
+
+      <label className="item-image-upload">
+        <span>Image à modifier</span>
+        <small>{imageName}</small>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          disabled={uploadState.uploading}
+          onChange={(event) => onImageChange(event.target.files?.[0])}
+        />
+      </label>
+
+      {item.options?.headMainImageUrl && (
+        <button className="item-image-reset" type="button" onClick={onResetImage}>Revenir à l’image d’origine</button>
+      )}
+      {uploadState.uploading && <p className="item-options-status">Upload du visuel...</p>}
+      {uploadState.error && <p className="item-options-error">{uploadState.error}</p>}
+    </aside>
   );
 }
 
@@ -4281,6 +4359,15 @@ function isWallItem(item) {
   return isWallItemType(item?.type) || Boolean(item?.wall && item?.isWallItem);
 }
 
+function isPartitionHeadItem(item = {}) {
+  const text = `${item.type || ''} ${item.label || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return text.includes('tete de cloison');
+}
+
+function languageFlag(language = 'fr') {
+  return language === 'en' ? '🇬🇧' : '🇫🇷';
+}
+
 function itemCollisionEnabled(item) {
   return item?.collisionEnabled !== false && item?.dimensions?.collisionEnabled !== false;
 }
@@ -5002,7 +5089,7 @@ function floorWallBlocker(item, wall, width, depth) {
   return null;
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, wallColor, interactive = true }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, wallColor, interactive = true, visualContext = null }) {
   const cameraPivot = useMemo(() => {
     const radians = (viewAngle * Math.PI) / 180;
     return [Math.sin(radians) * 0.75, 0, Math.cos(radians) * 0.25];
@@ -5029,7 +5116,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
         {width}m x {depth}m
       </Text>
       {items.map((item) => (
-        <SceneItem
+          <SceneItem
           key={item.id}
           item={item}
           items={items}
@@ -5053,8 +5140,9 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
             }
             if (draggingId === item.id) setDraggingId(null);
           }}
-          onDragMove={dragFromPointer}
-        />
+            onDragMove={dragFromPointer}
+            visualContext={visualContext}
+          />
       ))}
     </group>
   );
@@ -5173,10 +5261,10 @@ function Baseboard({ position, size }) {
   );
 }
 
-function SceneItem({ item, items = [], selected, dragging, width, depth, onSelect, onDragStart, onDragEnd, onDragMove }) {
+function SceneItem({ item, items = [], selected, dragging, width, depth, onSelect, onDragStart, onDragEnd, onDragMove, visualContext }) {
   const rotationY = (item.rotation * Math.PI) / 180;
-  if (isWallItem(item)) return <WallMountedItem item={item} items={items} width={width} depth={depth} selected={selected} dragging={dragging} onSelect={onSelect} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} />;
-  if (item.isGroup) return <GroupedSceneItem item={item} selected={selected} dragging={dragging} rotationY={rotationY} onSelect={onSelect} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} />;
+  if (isWallItem(item)) return <WallMountedItem item={item} items={items} width={width} depth={depth} selected={selected} dragging={dragging} onSelect={onSelect} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} visualContext={visualContext} />;
+  if (item.isGroup) return <GroupedSceneItem item={item} selected={selected} dragging={dragging} rotationY={rotationY} onSelect={onSelect} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} visualContext={visualContext} />;
   return (
     <group
       position={[item.x, 0, item.z]}
@@ -5188,12 +5276,12 @@ function SceneItem({ item, items = [], selected, dragging, width, depth, onSelec
         if (dragging) onDragMove(event);
       }}
     >
-      <SceneItemContent item={item} selected={selected} dragging={dragging} />
+      <SceneItemContent item={item} selected={selected} dragging={dragging} visualContext={visualContext} />
     </group>
   );
 }
 
-function GroupedSceneItem({ item, selected, dragging, rotationY, onSelect, onDragStart, onDragEnd, onDragMove }) {
+function GroupedSceneItem({ item, selected, dragging, rotationY, onSelect, onDragStart, onDragEnd, onDragMove, visualContext }) {
   const groupBounds = itemGroupBounds(item);
   return (
     <group
@@ -5208,7 +5296,7 @@ function GroupedSceneItem({ item, selected, dragging, rotationY, onSelect, onDra
     >
       {item.children?.map((child) => (
         <group key={child.id} position={[child.x || 0, child.y || 0, child.z || 0]} rotation={[0, ((child.rotation || 0) * Math.PI) / 180, 0]}>
-          <SceneItemContent item={child} selected={selected} dragging={dragging} />
+          <SceneItemContent item={child} selected={selected} dragging={dragging} visualContext={visualContext} />
         </group>
       ))}
       {selected && (
@@ -5221,7 +5309,7 @@ function GroupedSceneItem({ item, selected, dragging, rotationY, onSelect, onDra
   );
 }
 
-function SceneItemContent({ item, selected, dragging }) {
+function SceneItemContent({ item, selected, dragging, visualContext }) {
   return (
     <>
       {item.type === 'chair' && <Chair selected={selected} dragging={dragging} />}
@@ -5230,7 +5318,7 @@ function SceneItemContent({ item, selected, dragging }) {
       {item.modelUrl && (
         <>
           <ObjHitbox bounds={itemGroupBounds(item)} />
-          <Model3D item={item} selected={selected} dragging={dragging} />
+          <Model3D item={item} selected={selected} dragging={dragging} visualContext={visualContext} />
           <ObjectBaseboards item={item} />
         </>
       )}
@@ -5281,10 +5369,10 @@ function ObjHitbox({ bounds = null, size = [0.7, 0.7, 0.7] }) {
   );
 }
 
-function Model3D({ item, selected, dragging }) {
+function Model3D({ item, selected, dragging, visualContext }) {
   const materialUrl = modelMaterialUrl(item);
   if (item.modelUrl?.toLowerCase().split('?')[0].endsWith('.glb')) return <GlbModel item={item} />;
-  if (materialUrl) return <ObjModelWithMaterials item={item} materialUrl={materialUrl} />;
+  if (materialUrl) return <ObjModelWithMaterials item={item} materialUrl={materialUrl} visualContext={visualContext} />;
   return <ObjModel item={item} selected={selected} dragging={dragging} />;
 }
 
@@ -5294,7 +5382,11 @@ function GlbModel({ item }) {
   return <primitive object={model} dispose={null} />;
 }
 
-function ObjModelWithMaterials({ item, materialUrl }) {
+function ObjModelWithMaterials({ item, materialUrl, visualContext }) {
+  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '');
+  const exhibitorTexture = useMemo(() => (
+    isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext) : null
+  ), [item.type, item.label, item.modelUrl, visualContext?.language, visualContext?.company, visualContext?.standNumber]);
   const materials = useLoader(MTLLoader, materialUrl, (loader) => {
     const manager = new LoadingManager();
     manager.setURLModifier((url) => resolveModelResourceUrl(url, item));
@@ -5308,7 +5400,7 @@ function ObjModelWithMaterials({ item, materialUrl }) {
     materials.preload();
     loader.setMaterials(materials);
   });
-  const model = useMemo(() => prepareLoadedModel(obj), [obj]);
+  const model = useMemo(() => prepareLoadedModel(obj, item, { mainImageTexture, exhibitorTexture }), [obj, item, mainImageTexture, exhibitorTexture]);
 
   return <primitive object={model} dispose={null} />;
 }
@@ -5342,16 +5434,187 @@ function ObjModel({ item, selected, dragging }) {
   return <primitive object={model} dispose={null} />;
 }
 
-function prepareLoadedModel(source) {
+function prepareLoadedModel(source, item = null, textureOptions = {}) {
   const clone = source.clone(true);
   clone.traverse((child) => {
     if (child.isMesh) {
       child.castShadow = true;
       child.receiveShadow = true;
       child.material = cloneMeshMaterial(child.material);
+      child.material = applyItemOptionMaterials(child.material, item, textureOptions);
     }
   });
   return centerModel(clone);
+}
+
+function useExternalTexture(url) {
+  const [texture, setTexture] = useState(null);
+
+  useEffect(() => {
+    if (!url) {
+      setTexture(null);
+      return undefined;
+    }
+
+    let disposed = false;
+    const loader = new TextureLoader();
+    loader.load(url, (loadedTexture) => {
+      if (disposed) {
+        loadedTexture.dispose();
+        return;
+      }
+      loadedTexture.flipY = true;
+      loadedTexture.minFilter = LinearFilter;
+      loadedTexture.magFilter = LinearFilter;
+      loadedTexture.needsUpdate = true;
+      setTexture(loadedTexture);
+    }, undefined, () => {
+      if (!disposed) setTexture(null);
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [url]);
+
+  return texture;
+}
+
+function applyItemOptionMaterials(material, item, textureOptions = {}) {
+  if (!isPartitionHeadItem(item)) return material;
+  if (Array.isArray(material)) return material.map((entry) => applyItemOptionMaterials(entry, item, textureOptions));
+  if (!material) return material;
+
+  const materialName = normalizeMaterialName(material.name);
+  if (textureOptions.mainImageTexture && materialName.includes('led_5500k_1')) {
+    return materialWithTexture(material, textureOptions.mainImageTexture);
+  }
+  if (textureOptions.exhibitorTexture && (materialName === '_10' || materialName === '10' || materialName.endsWith('_10'))) {
+    return materialWithTexture(material, textureOptions.exhibitorTexture);
+  }
+  return material;
+}
+
+function materialWithTexture(material, texture) {
+  const next = material.clone?.() || material;
+  next.map = texture;
+  if (next.color?.set) next.color.set('#ffffff');
+  next.needsUpdate = true;
+  return next;
+}
+
+function normalizeMaterialName(name = '') {
+  return String(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function createPartitionHeadInfoTexture(visualContext = {}) {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 320;
+  const ctx = canvas.getContext('2d');
+  const company = String(visualContext?.company || 'Nom société').trim();
+  const standNumber = String(visualContext?.standNumber || 'A-14').replace(/^Stand\s+/i, '').trim();
+  const language = visualContext?.language || 'fr';
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#f2f5fa';
+  ctx.fillRect(0, 0, canvas.width, 52);
+  ctx.fillStyle = '#1f4378';
+  ctx.fillRect(0, 52, canvas.width, 8);
+  ctx.fillStyle = '#dc2430';
+  ctx.fillRect(canvas.width - 130, 52, 130, 8);
+
+  drawLanguageFlag(ctx, language, 52, 108, 156, 104);
+  ctx.fillStyle = '#172033';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  fitCanvasText(ctx, company, 250, 160, 490, 58);
+
+  ctx.fillStyle = '#e9eff7';
+  roundRect(ctx, 770, 94, 206, 132, 22);
+  ctx.fill();
+  ctx.strokeStyle = '#1f4378';
+  ctx.lineWidth = 5;
+  roundRect(ctx, 770, 94, 206, 132, 22);
+  ctx.stroke();
+  ctx.fillStyle = '#1f4378';
+  ctx.font = '900 64px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(standNumber || 'A-14', 873, 160);
+
+  ctx.fillStyle = '#8a94a3';
+  ctx.font = '700 26px Arial, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('STAND', 250, 232);
+
+  const texture = new CanvasTexture(canvas);
+  texture.flipY = true;
+  texture.minFilter = LinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function drawLanguageFlag(ctx, language, x, y, width, height) {
+  ctx.save();
+  roundRect(ctx, x, y, width, height, 12);
+  ctx.clip();
+  if (language === 'en') {
+    ctx.fillStyle = '#0a2f78';
+    ctx.fillRect(x, y, width, height);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 22;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + width, y + height);
+    ctx.moveTo(x + width, y);
+    ctx.lineTo(x, y + height);
+    ctx.stroke();
+    ctx.strokeStyle = '#d21f3c';
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + width, y + height);
+    ctx.moveTo(x + width, y);
+    ctx.lineTo(x, y + height);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x + width / 2 - 13, y, 26, height);
+    ctx.fillRect(x, y + height / 2 - 13, width, 26);
+    ctx.fillStyle = '#d21f3c';
+    ctx.fillRect(x + width / 2 - 7, y, 14, height);
+    ctx.fillRect(x, y + height / 2 - 7, width, 14);
+  } else {
+    ctx.fillStyle = '#1f4378';
+    ctx.fillRect(x, y, width / 3, height);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x + width / 3, y, width / 3, height);
+    ctx.fillStyle = '#dc2430';
+    ctx.fillRect(x + (width * 2) / 3, y, width / 3, height);
+  }
+  ctx.restore();
+}
+
+function fitCanvasText(ctx, text, x, y, maxWidth, baseSize) {
+  let size = baseSize;
+  do {
+    ctx.font = `800 ${size}px Arial, sans-serif`;
+    size -= 2;
+  } while (ctx.measureText(text).width > maxWidth && size > 24);
+  ctx.fillText(text, x, y);
+}
+
+function roundRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
 }
 
 function cloneMeshMaterial(material) {
@@ -5600,7 +5863,7 @@ function Counter({ selected, dragging }) {
   );
 }
 
-function WallMountedItem({ item, items, width, depth, selected, dragging, onSelect, onDragStart, onDragEnd, onDragMove }) {
+function WallMountedItem({ item, items, width, depth, selected, dragging, onSelect, onDragStart, onDragEnd, onDragMove, visualContext }) {
   const objectTransform = objectWallTransform(item, items);
   const rotation = objectTransform?.rotation ?? (item.wall === 'left' ? Math.PI / 2 : item.wall === 'right' ? -Math.PI / 2 : 0);
   const offset = objectTransform?.position ?? screenWorldPosition(item, width, depth, items);
@@ -5632,7 +5895,7 @@ function WallMountedItem({ item, items, width, depth, selected, dragging, onSele
           <Text position={[0, 0, 0.038]} fontSize={0.16} color="#1f4378" anchorX="center" anchorY="middle">AFFICHE</Text>
         </>
       ) : isCustomModel ? (
-        <SceneItemContent item={item} selected={selected} dragging={dragging} />
+        <SceneItemContent item={item} selected={selected} dragging={dragging} visualContext={visualContext} />
       ) : (
         <>
           <mesh castShadow>
