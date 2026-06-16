@@ -2598,7 +2598,15 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
 }
 
 function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPresetLayoutChange }) {
-  const initialScene = presetToEditableScene(preset);
+  const availableCatalog = useMemo(() => {
+    const dynamicEntries = (assets || [])
+      .filter((asset) => asset.is_active)
+      .filter((asset) => assetMatchesSalon(asset, salon.name))
+      .map(assetToCatalogEntry);
+    const entries = [...dynamicEntries, ...nativeCatalogEntries()];
+    return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
+  }, [assets, salon.name]);
+  const initialScene = useMemo(() => presetToEditableScene(preset, availableCatalog), [preset, availableCatalog]);
   const initialWidth = initialScene.dimensions.width;
   const initialDepth = initialScene.dimensions.depth;
   const initialLayout = initialScene.layout;
@@ -2613,17 +2621,8 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const selected = items.find((item) => item.id === selectedId);
 
   useEffect(() => {
-    setItems((current) => current.map((item) => constrainItem(item, width, depth, layout)));
-  }, [width, depth, layout]);
-
-  const availableCatalog = useMemo(() => {
-    const dynamicEntries = (assets || [])
-      .filter((asset) => asset.is_active)
-      .filter((asset) => assetMatchesSalon(asset, salon.name))
-      .map(assetToCatalogEntry);
-    const entries = [...dynamicEntries, ...nativeCatalogEntries()];
-    return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
-  }, [assets, salon.name]);
+    setItems((current) => current.map((item) => constrainItem(hydrateSceneItemFromCatalog(item, availableCatalog), width, depth, layout)));
+  }, [width, depth, layout, availableCatalog]);
 
   const updateItem = (id, patch) => {
     setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout));
@@ -2756,8 +2755,8 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   );
 }
 
-function presetToEditableScene(preset) {
-  const items = (preset.stand_preset_items || []).map((item) => normalizePresetItem(item));
+function presetToEditableScene(preset, catalogEntries = []) {
+  const items = (preset.stand_preset_items || []).map((item) => normalizePresetItem(item, catalogEntries));
   return {
     dimensions: {
       width: Number(preset.width_m || preset.base_config?.width || 5),
@@ -2769,9 +2768,9 @@ function presetToEditableScene(preset) {
   };
 }
 
-function normalizePresetItem(item) {
+function normalizePresetItem(item, catalogEntries = []) {
   const config = item.config || {};
-  const catalogItem = catalog.find((entry) => entry.type === item.type);
+  const catalogItem = findCatalogEntry(catalogEntries, item.type) || catalog.find((entry) => entry.type === item.type);
   const isGroup = Boolean(config.isGroup || catalogItem?.isGroup);
   return {
     ...config,
@@ -2788,6 +2787,8 @@ function normalizePresetItem(item) {
     z: Number(item.z ?? config.z ?? 0),
     rotation: Number(item.rotation ?? config.rotation ?? 0),
     wall: item.wall || config.wall,
+    isWallItem: config.isWallItem ?? catalogItem?.isWallItem,
+    collisionEnabled: config.collisionEnabled ?? catalogItem?.collisionEnabled,
     modelUrl: config.modelUrl || catalogItem?.modelUrl,
     modelSize: config.modelSize || catalogItem?.modelSize,
     materialUrl: config.materialUrl || catalogItem?.materialUrl,
@@ -4731,10 +4732,10 @@ function wallItemMetrics(item, items, width, depth) {
     };
   }
   if (item.modelUrl) {
-    const size = itemDefaultSize(item);
+    const size = itemGroupSize(item);
     return {
-      width: Number(size[0] || 0.95),
-      height: Number(size[1] || 0.58),
+      width: Number(size.width || 0.95),
+      height: Number(size.height || 0.58),
     };
   }
   return { width: 0.95, height: 0.58 };
@@ -4939,7 +4940,7 @@ function wallItemCenterY(item) {
 function wallMountedNormalOffset(item) {
   if (item?.type === 'poster') return wallThickness + 0.035 / 2;
   if (item?.type === 'screen') return wallThickness + screenDepth / 2;
-  const depth = Number(item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
+  const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
   return wallThickness + Math.max(0.02, depth / 2);
 }
 
@@ -5228,7 +5229,7 @@ function SceneItemContent({ item, selected, dragging }) {
       {item.type === 'counter' && <Counter selected={selected} dragging={dragging} />}
       {item.modelUrl && (
         <>
-          <ObjHitbox size={itemDefaultSize(item)} />
+          <ObjHitbox bounds={itemGroupBounds(item)} />
           <Model3D item={item} selected={selected} dragging={dragging} />
           <ObjectBaseboards item={item} />
         </>
@@ -5264,12 +5265,16 @@ function activeColor(selected, dragging, base) {
   return selected ? '#ffcf5a' : base;
 }
 
-function ObjHitbox({ size = [0.7, 0.7, 0.7] }) {
-  const [x, y, z] = size;
+function ObjHitbox({ bounds = null, size = [0.7, 0.7, 0.7] }) {
+  const x = Number(bounds?.width || size[0] || 0.7);
+  const y = Number(bounds?.height || size[1] || 0.7);
+  const z = Number(bounds?.depth || size[2] || 0.7);
+  const centerX = Number(bounds?.centerX || 0);
+  const centerZ = Number(bounds?.centerZ || 0);
   const thinVerticalPanel = Number(y || 0) >= 1.5 && Math.min(Number(x || 0), Number(z || 0)) <= 0.18;
   const minFootprint = thinVerticalPanel ? 0.08 : 0.18;
   return (
-    <mesh position={[0, Math.max(y, 0.35) / 2, 0]}>
+    <mesh position={[centerX, Math.max(y, 0.35) / 2, centerZ]}>
       <boxGeometry args={[Math.max(x, minFootprint), Math.max(y, 0.35), Math.max(z, minFootprint)]} />
       <meshBasicMaterial transparent opacity={0} depthWrite={false} />
     </mesh>

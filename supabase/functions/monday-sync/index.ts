@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const mondayApiUrl = "https://api.monday.com/v2";
+const wallThickness = 0.06;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -418,16 +419,17 @@ function scalePresetItemToScene(item: any, preset: any, scene: any) {
   let z = Number(item.z || 0);
   let anchorMeta: any = null;
 
-  if (item.type === "screen") {
+  if (isPresetWallItem(item)) {
+    const itemHalfWidth = wallItemHalfWidth(item);
     if (wall === "left" || wall === "right") {
       const anchored = anchoredAxisPosition(x, presetDepth, sceneDepth, depthRatio, 0.85);
-      x = clampNumber(anchored.value, -sceneDepth / 2 + 0.55, sceneDepth / 2 - 0.55);
+      x = clampNumber(anchored.value, -sceneDepth / 2 + itemHalfWidth, sceneDepth / 2 - itemHalfWidth);
       z = x;
       anchorMeta = { axis: anchored.anchor, wall };
     } else {
       const anchored = anchoredAxisPosition(x, presetWidth, sceneWidth, widthRatio, 0.85);
-      x = clampNumber(anchored.value, -sceneWidth / 2 + 0.55, sceneWidth / 2 - 0.55);
-      z = -sceneDepth / 2;
+      x = clampNumber(anchored.value, -sceneWidth / 2 + itemHalfWidth, sceneWidth / 2 - itemHalfWidth);
+      z = -sceneDepth / 2 + wallThickness;
       anchorMeta = { x: anchored.anchor, wall: wall || "back" };
     }
   } else {
@@ -439,6 +441,27 @@ function scalePresetItemToScene(item: any, preset: any, scene: any) {
   }
 
   return { ...item, x, z, y: Number(item.y || 0), rotation: Number(item.rotation || 0), wall, anchorMeta };
+}
+
+function isPresetWallItem(item: any) {
+  const type = String(item.type || "");
+  const config = item.config || {};
+  return type === "screen"
+    || type === "poster"
+    || Boolean((item.wall || config.wall) && (config.isWallItem || config.dimensions?.mountType === "wall"));
+}
+
+function wallItemHalfWidth(item: any) {
+  if (item.type === "poster") return 0.25;
+  const bounds = item.config?.dimensions?.placementBounds;
+  const boundedWidth = Number(bounds?.maxX) - Number(bounds?.minX);
+  if (Number.isFinite(boundedWidth) && boundedWidth > 0) return Math.max(0.08, boundedWidth / 2);
+
+  const size = item.config?.dimensions?.size || item.config?.dimensions?.dimensions || item.config?.modelSize;
+  const modelWidth = Array.isArray(size) ? Number(size[0]) : 0;
+  if (Number.isFinite(modelWidth) && modelWidth > 0) return Math.max(0.08, modelWidth / 2);
+
+  return 0.3;
 }
 
 function anchoredAxisPosition(value: number, presetLength: number, sceneLength: number, ratio: number, maxAnchorDistance = 1.6) {
