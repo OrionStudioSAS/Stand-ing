@@ -272,6 +272,7 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
   const depth = Number(readMappingValue(item, mapping.depth_m)) || 3;
   const layout = normalizeLayout(readMappingValue(item, mapping.layout));
   const clientName = readMappingValue(item, mapping.client_name) || item.name;
+  const standNumber = readMappingValue(item, mapping.stand_number) || readColumn(item, "n_");
 
   return {
     monday_item_id: item.id,
@@ -294,7 +295,7 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
     depth_m: depth,
     height_m: 2.5,
     layout,
-    source_payload: item,
+    source_payload: { ...item, stand_number: standNumber },
   };
 }
 

@@ -692,7 +692,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const sceneVisualContext = useMemo(() => ({
     language,
     company: sceneExhibitorCompanyName(initialScene, clientInfo, contactDetails),
-    standNumber: contactDetails.emplacement || standLabel.replace(/^Stand\s+/i, ''),
+    standNumber: sceneStandNumber(initialScene, contactDetails, standLabel),
   }), [language, initialScene, clientInfo, contactDetails, standLabel]);
 
   useEffect(() => {
@@ -4376,6 +4376,19 @@ function sceneExhibitorCompanyName(scene = {}, clientInfo = {}, contactDetails =
     || '';
 }
 
+function sceneStandNumber(scene = {}, contactDetails = {}, standLabel = '') {
+  return scene.source_payload?.stand_number
+    || mondayColumnText(scene.source_payload, 'n_')
+    || contactDetails.emplacement
+    || standLabel.replace(/^Stand\s+/i, '')
+    || '';
+}
+
+function mondayColumnText(sourcePayload = {}, columnId = '') {
+  if (!columnId || !Array.isArray(sourcePayload?.column_values)) return '';
+  return sourcePayload.column_values.find((column) => column.id === columnId)?.text || '';
+}
+
 function languageFlag(language = 'fr') {
   return language === 'en' ? '🇬🇧' : '🇫🇷';
 }
@@ -5403,7 +5416,7 @@ function GlbModel({ item }) {
 }
 
 function ObjModelWithMaterials({ item, materialUrl, visualContext }) {
-  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '');
+  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: [474, 296] });
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext) : null
   ), [item.type, item.label, item.modelUrl, visualContext?.language, visualContext?.company, visualContext?.standNumber]);
@@ -5467,7 +5480,7 @@ function prepareLoadedModel(source, item = null, textureOptions = {}) {
   return centerModel(clone);
 }
 
-function useExternalTexture(url) {
+function useExternalTexture(url, options = {}) {
   const [texture, setTexture] = useState(null);
 
   useEffect(() => {
@@ -5483,14 +5496,9 @@ function useExternalTexture(url) {
         loadedTexture.dispose();
         return;
       }
-      loadedTexture.flipY = true;
-      loadedTexture.wrapS = RepeatWrapping;
-      loadedTexture.wrapT = RepeatWrapping;
-      loadedTexture.colorSpace = SRGBColorSpace;
-      loadedTexture.minFilter = LinearFilter;
-      loadedTexture.magFilter = LinearFilter;
-      loadedTexture.needsUpdate = true;
-      setTexture(loadedTexture);
+      const nextTexture = options.coverSize ? createCoverImageTexture(loadedTexture.image, options.coverSize[0], options.coverSize[1]) : loadedTexture;
+      if (!options.coverSize) prepareDynamicTexture(nextTexture);
+      setTexture(nextTexture);
     }, undefined, () => {
       if (!disposed) setTexture(null);
     });
@@ -5498,9 +5506,39 @@ function useExternalTexture(url) {
     return () => {
       disposed = true;
     };
-  }, [url]);
+  }, [url, options.coverSize?.[0], options.coverSize?.[1]]);
 
   return texture;
+}
+
+function prepareDynamicTexture(texture) {
+  texture.flipY = true;
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  texture.colorSpace = SRGBColorSpace;
+  texture.minFilter = LinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function createCoverImageTexture(image, targetWidth, targetHeight) {
+  if (typeof document === 'undefined' || !image) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  const ctx = canvas.getContext('2d');
+  const imageWidth = image.naturalWidth || image.videoWidth || image.width || targetWidth;
+  const imageHeight = image.naturalHeight || image.videoHeight || image.height || targetHeight;
+  const scale = Math.max(targetWidth / imageWidth, targetHeight / imageHeight);
+  const drawWidth = imageWidth * scale;
+  const drawHeight = imageHeight * scale;
+  const dx = (targetWidth - drawWidth) / 2;
+  const dy = (targetHeight - drawHeight) / 2;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, targetWidth, targetHeight);
+  ctx.drawImage(image, dx, dy, drawWidth, drawHeight);
+  return prepareDynamicTexture(new CanvasTexture(canvas));
 }
 
 function applyItemOptionMaterials(material, item, textureOptions = {}, meshName = '') {
