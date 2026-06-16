@@ -5255,6 +5255,7 @@ function ObjectBaseboards({ item }) {
 
 function shouldShowObjectBaseboards(item) {
   const text = `${item?.type || ''} ${item?.label || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (text.includes('tete de cloison')) return false;
   return text.includes('cloison');
 }
 
