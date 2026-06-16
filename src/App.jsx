@@ -5228,10 +5228,7 @@ function ObjectBaseboards({ item }) {
 
 function shouldShowObjectBaseboards(item) {
   const text = `${item?.type || ''} ${item?.label || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (text.includes('porte document')) return false;
-  if (text.includes('cloison') || text.includes('porte')) return true;
-  const size = itemDefaultSize(item);
-  return Number(size[1] || 0) >= 1.8 && Math.min(Number(size[0] || 0), Number(size[2] || 0)) <= 0.18;
+  return text.includes('cloison');
 }
 
 function activeColor(selected, dragging, base) {
