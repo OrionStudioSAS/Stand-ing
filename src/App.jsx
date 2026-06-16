@@ -691,9 +691,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const readOnly = saveState === 'configured' && !isAdminViewer;
   const sceneVisualContext = useMemo(() => ({
     language,
-    company: contactDetails.company || clientInfo.client || initialScene.client_name || '',
+    company: sceneExhibitorCompanyName(initialScene, clientInfo, contactDetails),
     standNumber: contactDetails.emplacement || standLabel.replace(/^Stand\s+/i, ''),
-  }), [language, contactDetails.company, contactDetails.emplacement, clientInfo.client, initialScene.client_name, standLabel]);
+  }), [language, initialScene, clientInfo, contactDetails, standLabel]);
 
   useEffect(() => {
     setItems((current) => current.map((item) => constrainItem(item, width, depth, layout)));
@@ -4362,6 +4362,18 @@ function isWallItem(item) {
 function isPartitionHeadItem(item = {}) {
   const text = `${item.type || ''} ${item.label || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   return text.includes('tete de cloison');
+}
+
+function sceneExhibitorCompanyName(scene = {}, clientInfo = {}, contactDetails = {}) {
+  return scene.source_payload?.name
+    || scene.source_payload?.item?.name
+    || scene.source_payload?.client_name
+    || scene.source_payload?.company_name
+    || scene.project_name
+    || clientInfo.client
+    || contactDetails.company
+    || scene.client_name
+    || '';
 }
 
 function languageFlag(language = 'fr') {
