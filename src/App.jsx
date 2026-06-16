@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, CanvasTexture, DoubleSide, LinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, TextureLoader, Vector3 } from 'three';
+import { Box3, CanvasTexture, DoubleSide, LinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -5441,7 +5441,7 @@ function prepareLoadedModel(source, item = null, textureOptions = {}) {
       child.castShadow = true;
       child.receiveShadow = true;
       child.material = cloneMeshMaterial(child.material);
-      child.material = applyItemOptionMaterials(child.material, item, textureOptions);
+      child.material = applyItemOptionMaterials(child.material, item, textureOptions, child.name);
     }
   });
   return centerModel(clone);
@@ -5466,6 +5466,7 @@ function useExternalTexture(url) {
       loadedTexture.flipY = true;
       loadedTexture.wrapS = RepeatWrapping;
       loadedTexture.wrapT = RepeatWrapping;
+      loadedTexture.colorSpace = SRGBColorSpace;
       loadedTexture.minFilter = LinearFilter;
       loadedTexture.magFilter = LinearFilter;
       loadedTexture.needsUpdate = true;
@@ -5482,24 +5483,33 @@ function useExternalTexture(url) {
   return texture;
 }
 
-function applyItemOptionMaterials(material, item, textureOptions = {}) {
+function applyItemOptionMaterials(material, item, textureOptions = {}, meshName = '') {
   if (!isPartitionHeadItem(item)) return material;
-  if (Array.isArray(material)) return material.map((entry) => applyItemOptionMaterials(entry, item, textureOptions));
+  if (Array.isArray(material)) return material.map((entry) => applyItemOptionMaterials(entry, item, textureOptions, meshName));
   if (!material) return material;
 
   const materialName = normalizeMaterialName(material.name);
   if (textureOptions.mainImageTexture && materialName.includes('led_5500k_1')) {
     return materialWithTexture(material, textureOptions.mainImageTexture);
   }
-  if (textureOptions.exhibitorTexture && (materialName === '_10' || materialName === '10' || materialName.endsWith('_10'))) {
+  if (textureOptions.exhibitorTexture && shouldUseExhibitorHeadTexture(materialName, meshName)) {
     return materialWithTexture(material, textureOptions.exhibitorTexture);
   }
   return material;
 }
 
+function shouldUseExhibitorHeadTexture(materialName = '', meshName = '') {
+  const normalizedMeshName = normalizeMaterialName(meshName);
+  return materialName === '_10'
+    || materialName === '10'
+    || materialName.endsWith('_10')
+    || (normalizedMeshName.includes('mesh4') && normalizedMeshName.includes('group3'));
+}
+
 function materialWithTexture(material, texture) {
   const next = material.clone?.() || material;
   next.map = texture;
+  next.transparent = false;
   if (next.color?.set) next.color.set('#ffffff');
   next.needsUpdate = true;
   return next;
@@ -5512,8 +5522,9 @@ function normalizeMaterialName(name = '') {
 function createPartitionHeadInfoTexture(visualContext = {}) {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = 320;
+  // Same pixel format as the original _10.jpg so the SketchUp UVs keep lining up.
+  canvas.width = 656;
+  canvas.height = 407;
   const ctx = canvas.getContext('2d');
   const company = String(visualContext?.company || 'Nom société').trim();
   const standNumber = String(visualContext?.standNumber || 'A-14').replace(/^Stand\s+/i, '').trim();
@@ -5521,40 +5532,19 @@ function createPartitionHeadInfoTexture(visualContext = {}) {
 
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#f2f5fa';
-  ctx.fillRect(0, 0, canvas.width, 52);
-  ctx.fillStyle = '#1f4378';
-  ctx.fillRect(0, 52, canvas.width, 8);
-  ctx.fillStyle = '#dc2430';
-  ctx.fillRect(canvas.width - 130, 52, 130, 8);
 
-  drawLanguageFlag(ctx, language, 52, 108, 156, 104);
-  ctx.fillStyle = '#172033';
-  ctx.textBaseline = 'middle';
+  drawLanguageFlag(ctx, language, 22, 23, 66, 44);
+  ctx.fillStyle = '#050505';
+  ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
-  fitCanvasText(ctx, company, 250, 160, 490, 58);
-
-  ctx.fillStyle = '#e9eff7';
-  roundRect(ctx, 770, 94, 206, 132, 22);
-  ctx.fill();
-  ctx.strokeStyle = '#1f4378';
-  ctx.lineWidth = 5;
-  roundRect(ctx, 770, 94, 206, 132, 22);
-  ctx.stroke();
-  ctx.fillStyle = '#1f4378';
-  ctx.font = '900 64px Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(standNumber || 'A-14', 873, 160);
-
-  ctx.fillStyle = '#8a94a3';
-  ctx.font = '700 26px Arial, sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText('STAND', 250, 232);
+  fitCanvasText(ctx, company.toUpperCase(), 156, 17, 350, 57);
+  fitCanvasText(ctx, (standNumber || 'A-14').toUpperCase(), 544, 17, 90, 57);
 
   const texture = new CanvasTexture(canvas);
   texture.flipY = true;
   texture.wrapS = RepeatWrapping;
   texture.wrapT = RepeatWrapping;
+  texture.colorSpace = SRGBColorSpace;
   texture.minFilter = LinearFilter;
   texture.magFilter = LinearFilter;
   texture.needsUpdate = true;
@@ -5563,20 +5553,13 @@ function createPartitionHeadInfoTexture(visualContext = {}) {
 
 function drawLanguageFlag(ctx, language, x, y, width, height) {
   ctx.save();
-  roundRect(ctx, x, y, width, height, 12);
+  ctx.beginPath();
+  ctx.rect(x, y, width, height);
   ctx.clip();
   if (language === 'en') {
     ctx.fillStyle = '#0a2f78';
     ctx.fillRect(x, y, width, height);
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 22;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + width, y + height);
-    ctx.moveTo(x + width, y);
-    ctx.lineTo(x, y + height);
-    ctx.stroke();
-    ctx.strokeStyle = '#d21f3c';
     ctx.lineWidth = 10;
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -5584,18 +5567,26 @@ function drawLanguageFlag(ctx, language, x, y, width, height) {
     ctx.moveTo(x + width, y);
     ctx.lineTo(x, y + height);
     ctx.stroke();
+    ctx.strokeStyle = '#d21f3c';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + width, y + height);
+    ctx.moveTo(x + width, y);
+    ctx.lineTo(x, y + height);
+    ctx.stroke();
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(x + width / 2 - 13, y, 26, height);
-    ctx.fillRect(x, y + height / 2 - 13, width, 26);
+    ctx.fillRect(x + width / 2 - 6, y, 12, height);
+    ctx.fillRect(x, y + height / 2 - 6, width, 12);
     ctx.fillStyle = '#d21f3c';
-    ctx.fillRect(x + width / 2 - 7, y, 14, height);
-    ctx.fillRect(x, y + height / 2 - 7, width, 14);
+    ctx.fillRect(x + width / 2 - 3, y, 6, height);
+    ctx.fillRect(x, y + height / 2 - 3, width, 6);
   } else {
-    ctx.fillStyle = '#1f4378';
+    ctx.fillStyle = '#1f2474';
     ctx.fillRect(x, y, width / 3, height);
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(x + width / 3, y, width / 3, height);
-    ctx.fillStyle = '#dc2430';
+    ctx.fillStyle = '#e60028';
     ctx.fillRect(x + (width * 2) / 3, y, width / 3, height);
   }
   ctx.restore();
@@ -5604,7 +5595,7 @@ function drawLanguageFlag(ctx, language, x, y, width, height) {
 function fitCanvasText(ctx, text, x, y, maxWidth, baseSize) {
   let size = baseSize;
   do {
-    ctx.font = `800 ${size}px Arial, sans-serif`;
+    ctx.font = `900 ${size}px "Arial Narrow", Impact, Arial, sans-serif`;
     size -= 2;
   } while (ctx.measureText(text).width > maxWidth && size > 24);
   ctx.fillText(text, x, y);
