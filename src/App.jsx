@@ -4686,7 +4686,7 @@ function constrainItem(item, width, depth, layout) {
 
     const validWalls = availableWalls(layout).map((wall) => wall.id);
     const wall = validWalls.includes(item.wall) ? item.wall : 'back';
-    const margin = item.type === 'poster' ? 0.25 : 0.55;
+    const margin = wallItemAxisMargin(item, [], width, depth);
     const range = screenAxisRange(wall, width, depth, margin);
     const axis = clamp(snapWallAxis(item.x), range.min, range.max);
     return { ...item, wall, x: axis, y: wallItemCenterY(item), z: wall === 'back' ? -depth / 2 + wallThickness : axis };
@@ -4751,7 +4751,7 @@ function placeWallItemInFreeSpot(item, items, width, depth, layout) {
   const candidates = [];
 
   orderedWalls.forEach((wall, wallIndex) => {
-    const margin = item.type === 'poster' ? 0.25 : 0.55;
+    const margin = wallItemAxisMargin(item, items, width, depth);
     const range = screenAxisRange(wall, width, depth, margin);
     for (let axis = range.min; axis <= range.max + 0.001; axis += wallItemSnap) {
       candidates.push({
@@ -4826,6 +4826,11 @@ function wallItemMetrics(item, items, width, depth) {
     };
   }
   return { width: 0.95, height: 0.58 };
+}
+
+function wallItemAxisMargin(item, items = [], width = 0, depth = 0) {
+  if (item?.type === 'poster') return 0.25;
+  return Math.max(0.04, wallItemMetrics(item, items, width, depth).width / 2);
 }
 
 function wallBoxesOverlap(a, b) {
