@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, CanvasTexture, DoubleSide, LinearFilter, LoadingManager, MeshStandardMaterial, Plane, TextureLoader, Vector3 } from 'three';
+import { Box3, CanvasTexture, DoubleSide, LinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, TextureLoader, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -5464,6 +5464,8 @@ function useExternalTexture(url) {
         return;
       }
       loadedTexture.flipY = true;
+      loadedTexture.wrapS = RepeatWrapping;
+      loadedTexture.wrapT = RepeatWrapping;
       loadedTexture.minFilter = LinearFilter;
       loadedTexture.magFilter = LinearFilter;
       loadedTexture.needsUpdate = true;
@@ -5551,6 +5553,8 @@ function createPartitionHeadInfoTexture(visualContext = {}) {
 
   const texture = new CanvasTexture(canvas);
   texture.flipY = true;
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
   texture.minFilter = LinearFilter;
   texture.magFilter = LinearFilter;
   texture.needsUpdate = true;
