@@ -4773,19 +4773,17 @@ function itemCollisionBox(item) {
 
 function itemPlacementBounds(item) {
   const bounds = itemGroupBounds(item);
-  const radians = ((Number(item.rotation || 0) * Math.PI) / 180);
-  const halfWidth = bounds.width / 2;
-  const halfDepth = bounds.depth / 2;
-  const rotatedHalfX = Math.abs(Math.cos(radians)) * halfWidth + Math.abs(Math.sin(radians)) * halfDepth;
-  const rotatedHalfZ = Math.abs(Math.sin(radians)) * halfWidth + Math.abs(Math.cos(radians)) * halfDepth;
-  const centerX = Number(bounds.centerX || 0);
-  const centerZ = Number(bounds.centerZ || 0);
-
+  const corners = [
+    rotatePoint(bounds.minX, bounds.minZ, Number(item.rotation || 0)),
+    rotatePoint(bounds.minX, bounds.maxZ, Number(item.rotation || 0)),
+    rotatePoint(bounds.maxX, bounds.minZ, Number(item.rotation || 0)),
+    rotatePoint(bounds.maxX, bounds.maxZ, Number(item.rotation || 0)),
+  ];
   return {
-    minX: centerX - rotatedHalfX,
-    maxX: centerX + rotatedHalfX,
-    minZ: centerZ - rotatedHalfZ,
-    maxZ: centerZ + rotatedHalfZ,
+    minX: Math.min(...corners.map((corner) => corner.x)),
+    maxX: Math.max(...corners.map((corner) => corner.x)),
+    minZ: Math.min(...corners.map((corner) => corner.z)),
+    maxZ: Math.max(...corners.map((corner) => corner.z)),
   };
 }
 
@@ -4820,7 +4818,7 @@ function itemGroupBounds(item) {
     };
   };
 
-  if (!item.isGroup || !item.children?.length) return centeredBounds(itemDefaultSize(item));
+  if (!item.isGroup || !item.children?.length) return itemPlacementBoundsOverride(item) || centeredBounds(itemDefaultSize(item));
 
   if (item.groupSize?.length >= 3) {
     const childBounds = item.children?.length ? childrenBounds(item.children) : null;
@@ -4829,6 +4827,29 @@ function itemGroupBounds(item) {
   }
 
   return childrenBounds(item.children) || centeredBounds();
+}
+
+function itemPlacementBoundsOverride(item) {
+  const bounds = item?.dimensions?.placementBounds;
+  const minX = Number(bounds?.minX);
+  const maxX = Number(bounds?.maxX);
+  const minZ = Number(bounds?.minZ);
+  const maxZ = Number(bounds?.maxZ);
+  if (![minX, maxX, minZ, maxZ].every(Number.isFinite) || minX >= maxX || minZ >= maxZ) return null;
+
+  const width = maxX - minX;
+  const depth = maxZ - minZ;
+  return {
+    minX,
+    maxX,
+    minZ,
+    maxZ,
+    centerX: minX + width / 2,
+    centerZ: minZ + depth / 2,
+    width,
+    depth,
+    height: Number(bounds?.height || itemDefaultSize(item)?.[1] || 0.7),
+  };
 }
 
 function itemDefaultSize(item) {
@@ -4852,17 +4873,23 @@ function itemDefaultSize(item) {
 function childrenBounds(children) {
   if (!children?.length) return null;
   const bounds = children.reduce((acc, child) => {
-    const size = itemDefaultSize(child);
-    const childSize = { width: size[0], depth: size[2], height: size[1] };
-    const radians = ((Number(child.rotation || 0) * Math.PI) / 180);
-    const halfX = Math.abs(Math.cos(radians)) * childSize.width / 2 + Math.abs(Math.sin(radians)) * childSize.depth / 2;
-    const halfZ = Math.abs(Math.sin(radians)) * childSize.width / 2 + Math.abs(Math.cos(radians)) * childSize.depth / 2;
+    const childBounds = itemPlacementBoundsOverride(child) || itemGroupBounds({ ...child, isGroup: false });
+    const corners = [
+      rotatePoint(childBounds.minX, childBounds.minZ, Number(child.rotation || 0)),
+      rotatePoint(childBounds.minX, childBounds.maxZ, Number(child.rotation || 0)),
+      rotatePoint(childBounds.maxX, childBounds.minZ, Number(child.rotation || 0)),
+      rotatePoint(childBounds.maxX, childBounds.maxZ, Number(child.rotation || 0)),
+    ];
+    const minX = Math.min(...corners.map((corner) => Number(child.x || 0) + corner.x));
+    const maxX = Math.max(...corners.map((corner) => Number(child.x || 0) + corner.x));
+    const minZ = Math.min(...corners.map((corner) => Number(child.z || 0) + corner.z));
+    const maxZ = Math.max(...corners.map((corner) => Number(child.z || 0) + corner.z));
     return {
-      minX: Math.min(acc.minX, Number(child.x || 0) - halfX),
-      maxX: Math.max(acc.maxX, Number(child.x || 0) + halfX),
-      minZ: Math.min(acc.minZ, Number(child.z || 0) - halfZ),
-      maxZ: Math.max(acc.maxZ, Number(child.z || 0) + halfZ),
-      height: Math.max(acc.height, childSize.height),
+      minX: Math.min(acc.minX, minX),
+      maxX: Math.max(acc.maxX, maxX),
+      minZ: Math.min(acc.minZ, minZ),
+      maxZ: Math.max(acc.maxZ, maxZ),
+      height: Math.max(acc.height, childBounds.height || 0.7),
     };
   }, { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity, height: 0.7 });
 
