@@ -446,9 +446,7 @@ function scalePresetItemToScene(item: any, preset: any, scene: any) {
 function isPresetWallItem(item: any) {
   const type = String(item.type || "");
   const config = item.config || {};
-  return type === "screen"
-    || type === "poster"
-    || Boolean((item.wall || config.wall) && (config.isWallItem || config.dimensions?.mountType === "wall"));
+  return type === "screen" || type === "poster" || Boolean(item.wall || config.wall);
 }
 
 function wallItemHalfWidth(item: any) {
