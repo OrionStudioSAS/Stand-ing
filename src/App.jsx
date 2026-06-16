@@ -4457,12 +4457,22 @@ function closestPlacementInRegions(item, regions) {
     .sort((a, b) => a.distance - b.distance)[0];
 }
 
-function screenAxisRange(wall, width, depth, margin = 0.55) {
+function wallItemAxisRange(item, wall, width, depth) {
   const length = wall === 'back' ? width : depth;
+  const bounds = wallItemAxisBounds(item, wall);
   return {
-    min: -length / 2 + margin,
-    max: length / 2 - margin,
+    min: -length / 2 - bounds.min,
+    max: length / 2 - bounds.max,
   };
+}
+
+function wallItemAxisBounds(item, wall = 'back') {
+  if (item?.type === 'poster') return { min: -0.25, max: 0.25 };
+  const bounds = itemGroupBounds(item);
+  if (wall === 'left') {
+    return { min: -Number(bounds.maxX || 0), max: -Number(bounds.minX || 0) };
+  }
+  return { min: Number(bounds.minX || -0.55), max: Number(bounds.maxX || 0.55) };
 }
 
 function wallFromDrag(point, currentWall, width, depth, layout) {
@@ -4686,8 +4696,7 @@ function constrainItem(item, width, depth, layout) {
 
     const validWalls = availableWalls(layout).map((wall) => wall.id);
     const wall = validWalls.includes(item.wall) ? item.wall : 'back';
-    const margin = wallItemAxisMargin(item, [], width, depth);
-    const range = screenAxisRange(wall, width, depth, margin);
+    const range = wallItemAxisRange(item, wall, width, depth);
     const axis = clamp(snapWallAxis(item.x), range.min, range.max);
     return { ...item, wall, x: axis, y: wallItemCenterY(item), z: wall === 'back' ? -depth / 2 + wallThickness : axis };
   }
@@ -4751,8 +4760,7 @@ function placeWallItemInFreeSpot(item, items, width, depth, layout) {
   const candidates = [];
 
   orderedWalls.forEach((wall, wallIndex) => {
-    const margin = wallItemAxisMargin(item, items, width, depth);
-    const range = screenAxisRange(wall, width, depth, margin);
+    const range = wallItemAxisRange(item, wall, width, depth);
     for (let axis = range.min; axis <= range.max + 0.001; axis += wallItemSnap) {
       candidates.push({
         wall,
@@ -4826,11 +4834,6 @@ function wallItemMetrics(item, items, width, depth) {
     };
   }
   return { width: 0.95, height: 0.58 };
-}
-
-function wallItemAxisMargin(item, items = [], width = 0, depth = 0) {
-  if (item?.type === 'poster') return 0.25;
-  return Math.max(0.04, wallItemMetrics(item, items, width, depth).width / 2);
 }
 
 function wallBoxesOverlap(a, b) {
