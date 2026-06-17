@@ -649,6 +649,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [activeStep, setActiveStep] = useState(initialReadOnly ? 4 : 1);
   const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, led: false, reserve: false, tete: false, comptoir: false });
   const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || '1893');
+  const [selectedCarpetFootprintId, setSelectedCarpetFootprintId] = useState(initialOptions.carpetFootprintColorId || initialOptions.carpetColorId || '1893');
   const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || '303');
   const [ledRailsEnabled, setLedRailsEnabled] = useState(initialOptions.ledRailsEnabled !== false);
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
@@ -686,6 +687,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const area = width * depth;
   const selectedCarpetColor = carpetColors.find((color) => color.id === selectedCarpetId) || carpetColors[0];
+  const selectedCarpetFootprintColor = carpetColors.find((color) => color.id === selectedCarpetFootprintId) || selectedCarpetColor;
   const selectedWallFabricColor = wallFabricColors.find((color) => color.id === selectedWallFabricId) || wallFabricColors[0];
   const salonLabel = initialScene.salon || clientInfo.event || 'SMCL 2026';
   const standLabel = initialScene.project_name || clientInfo.project || 'Stand A-14';
@@ -758,6 +760,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       carpetColorId: selectedCarpetColor.id,
       carpetColorName: selectedCarpetColor.name,
       carpetColorHex: selectedCarpetColor.hex,
+      carpetFootprintColorId: selectedCarpetFootprintColor.id,
+      carpetFootprintColorName: selectedCarpetFootprintColor.name,
+      carpetFootprintColorHex: selectedCarpetFootprintColor.hex,
       wallFabricColorId: selectedWallFabricColor.id,
       wallFabricColorName: selectedWallFabricColor.name,
       wallFabricColorHex: selectedWallFabricColor.hex,
@@ -812,7 +817,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedWallFabricColor, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, selectedWallFabricColor, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
@@ -1061,6 +1066,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
               onDragMove={moveDraggedItem}
               viewAngle={viewAngle}
               carpetColor={selectedCarpetColor.hex}
+              carpetFootprintColor={selectedCarpetFootprintColor.hex}
               wallColor={selectedWallFabricColor.hex}
               visualContext={sceneVisualContext}
             />
@@ -1180,6 +1186,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             layout={layout}
             standLabel={initialScene.project_name || 'Stand A-14'}
             carpetColor={selectedCarpetColor}
+            carpetFootprintColor={selectedCarpetFootprintColor}
             wallFabricColor={selectedWallFabricColor}
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={ledSpotCount}
@@ -1199,11 +1206,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             openOptions={openOptions}
             toggleOption={toggleOption}
             selectedCarpetColor={selectedCarpetColor}
+            selectedCarpetFootprintColor={selectedCarpetFootprintColor}
             selectedWallFabricColor={selectedWallFabricColor}
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={ledSpotCount}
             readOnly={readOnly}
             onCarpetColor={(colorId) => !readOnly && setSelectedCarpetId(colorId)}
+            onCarpetFootprintColor={(colorId) => !readOnly && setSelectedCarpetFootprintId(colorId)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
             onExport={() => exportTechnicalPng({ width, depth, layout, items: sceneItems, catalog: availableCatalog })}
@@ -1415,11 +1424,13 @@ function OptionsStepPanel({
   openOptions,
   toggleOption,
   selectedCarpetColor,
+  selectedCarpetFootprintColor,
   selectedWallFabricColor,
   ledRailsEnabled,
   ledSpotCount,
   readOnly = false,
   onCarpetColor,
+  onCarpetFootprintColor,
   onWallColor,
   onLedRailsEnabled,
   onExport,
@@ -1446,10 +1457,10 @@ function OptionsStepPanel({
         <ColorOptionCard
           title="Couleur empreinte"
           colors={carpetColors}
-          selectedColor={selectedCarpetColor}
+          selectedColor={selectedCarpetFootprintColor}
           optionLabel="En option 36€"
           disabled={readOnly}
-          onSelect={onCarpetColor}
+          onSelect={onCarpetFootprintColor}
         />
       </OptionAccordion>
       <OptionAccordion title="Coton cloison" icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
@@ -1538,6 +1549,7 @@ function ValidationStepPanel({
   layout,
   standLabel,
   carpetColor,
+  carpetFootprintColor,
   wallFabricColor,
   ledRailsEnabled,
   ledSpotCount,
@@ -1569,6 +1581,7 @@ function ValidationStepPanel({
       <section className="validation-section">
         <h3>Options choisies</h3>
         <div className="validation-option-row"><span>Moquette</span><strong>{carpetColor.name} ({carpetColor.code})</strong></div>
+        <div className="validation-option-row"><span>Empreinte moquette</span><strong>{carpetFootprintColor.name} ({carpetFootprintColor.code})</strong></div>
         <div className="validation-option-row"><span>Coton cloison</span><strong>{wallFabricColor.name} ({wallFabricColor.code})</strong></div>
         <div className="validation-option-row"><span>Spots LED</span><strong>{ledRailsEnabled ? `${ledSpotCount} spots conserves` : 'Retires'}</strong></div>
       </section>
@@ -5333,7 +5346,7 @@ function floorWallBlocker(item, wall, width, depth) {
   return null;
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, wallColor, interactive = true, visualContext = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, wallColor, interactive = true, visualContext = null }) {
   const cameraPivot = useMemo(() => {
     const radians = (viewAngle * Math.PI) / 180;
     return [Math.sin(radians) * 0.75, 0, Math.cos(radians) * 0.25];
@@ -5353,7 +5366,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   return (
     <group position={cameraPivot}>
       {interactive && <DragSurface width={width} depth={depth} layout={layout} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} />}
-      <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} />
+      <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} />
       <Grid width={width} depth={depth} layout={layout} />
       <Walls width={width} depth={depth} height={height} layout={layout} wallColor={wallColor} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
@@ -5392,7 +5405,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   );
 }
 
-function Floor({ width, depth, layout, carpetColor }) {
+function Floor({ width, depth, layout, carpetColor, carpetFootprintColor }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
   return (
     <group>
@@ -5402,7 +5415,7 @@ function Floor({ width, depth, layout, carpetColor }) {
       </mesh>
       <mesh receiveShadow position={[footprint.centerX, 0.003, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[footprint.width, footprint.depth]} />
-        <meshStandardMaterial color={carpetColor || '#bebebe'} roughness={0.78} />
+        <meshStandardMaterial color={carpetFootprintColor || carpetColor || '#bebebe'} roughness={0.78} />
       </mesh>
       <FootprintOutline bounds={footprint} />
     </group>
