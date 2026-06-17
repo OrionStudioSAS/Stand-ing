@@ -5620,7 +5620,7 @@ function ObjModel({ item, selected, dragging }) {
       }
     });
 
-    return centerModel(clone);
+    return centerModel(clone, item);
   }, [obj, item.color, selected, dragging]);
 
   return <primitive object={model} dispose={null} />;
@@ -5636,7 +5636,7 @@ function prepareLoadedModel(source, item = null, textureOptions = {}) {
       child.material = applyItemOptionMaterials(child.material, item, textureOptions, child.name);
     }
   });
-  return centerModel(clone);
+  return centerModel(clone, item);
 }
 
 function useExternalTexture(url, options = {}) {
@@ -6013,10 +6013,25 @@ function isTextureResource(url = '') {
   return /\.(jpe?g|png|webp|gif|bmp|tga|tiff?)(\?.*)?$/i.test(url);
 }
 
-function centerModel(model) {
+function centerModel(model, item = null) {
   const box = new Box3().setFromObject(model);
-  const center = box.getCenter(new Vector3());
-  model.position.set(-center.x, -box.min.y, -center.z);
+  if (item) {
+    const actualSize = box.getSize(new Vector3());
+    const desiredSize = itemDefaultSize(item);
+    const actualMax = Math.max(actualSize.x, actualSize.y, actualSize.z);
+    const desiredMax = Math.max(...desiredSize.map((value) => Number(value) || 0));
+    if (Number.isFinite(actualMax) && actualMax > 0 && Number.isFinite(desiredMax) && desiredMax > 0) {
+      const scale = desiredMax / actualMax;
+      if (Number.isFinite(scale) && scale > 0 && (scale < 0.25 || scale > 4)) {
+        model.scale.setScalar(scale);
+        model.updateMatrixWorld(true);
+      }
+    }
+  }
+
+  const scaledBox = new Box3().setFromObject(model);
+  const center = scaledBox.getCenter(new Vector3());
+  model.position.set(-center.x, -scaledBox.min.y, -center.z);
   return model;
 }
 
