@@ -57,6 +57,8 @@ const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
 const collisionPadding = 0.04;
 const collisionPlacementStep = 0.25;
+const ledSpotAreaMeters = 3;
+const ledRailDefaultCenterY = fixedWallHeight - 0.08;
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
   { id: 'layout', label: 'Aménagement', icon: '📐' },
@@ -121,7 +123,7 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
       wall: side,
       x: 0,
       z: side === 'back' ? -depth / 2 + wallThickness : 0,
-      y: type === 'screen' ? screenCenterHeight : isWallItemType(type) ? (type === 'poster' ? 1.45 : screenCenterHeight) : Number(entry?.dimensions?.wallY ?? 0),
+      y: defaultWallItemCenterY(entry, type),
       posterHeight: entry?.posterHeight,
       wallDepth: isWallItemType(type) ? undefined : Number(size?.[2] || 0.08),
     };
@@ -645,9 +647,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [language, setLanguage] = useState(initialOptions.language || 'fr');
   const [headerPanel, setHeaderPanel] = useState(null);
   const [activeStep, setActiveStep] = useState(initialReadOnly ? 4 : 1);
-  const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, reserve: false, tete: false, comptoir: false });
+  const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, led: false, reserve: false, tete: false, comptoir: false });
   const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || '1893');
   const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || '303');
+  const [ledRailsEnabled, setLedRailsEnabled] = useState(initialOptions.ledRailsEnabled !== false);
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
@@ -722,7 +725,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const hydratedItems = useMemo(() => (
     objectBankLoaded ? items.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)) : items
   ), [items, availableCatalog, objectBankLoaded]);
-  const selected = hydratedItems.find((item) => item.id === selectedId);
+  const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item)), [hydratedItems]);
+  const ledRailEntry = useMemo(() => availableCatalog.find(isLedRailEntry), [availableCatalog]);
+  const ledSpotCount = ledSpotCountForArea(area);
+  const automaticLedItems = useMemo(
+    () => (ledRailsEnabled ? makeAutomaticLedRailItems(ledRailEntry, width, depth, layout, ledSpotCount) : []),
+    [ledRailsEnabled, ledRailEntry, width, depth, layout, ledSpotCount],
+  );
+  const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticLedItems], [manualHydratedItems, automaticLedItems]);
+  const selected = sceneItems.find((item) => item.id === selectedId);
 
   useEffect(() => {
     if (!objectBank.length) return;
@@ -732,10 +743,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const scenePricing = useMemo(() => calculateScenePricing({
     area,
     catalog: availableCatalog,
-    items: hydratedItems,
+    items: sceneItems,
     salonLabel,
     scene: initialScene,
-  }), [area, availableCatalog, hydratedItems, salonLabel, initialScene]);
+  }), [area, availableCatalog, sceneItems, salonLabel, initialScene]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus) => {
@@ -747,6 +758,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       wallFabricColorName: selectedWallFabricColor.name,
       wallFabricColorHex: selectedWallFabricColor.hex,
       language,
+      ledRailsEnabled,
+      ledSpotCount,
     };
 
     return {
@@ -758,7 +771,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       event_name: clientInfo.event,
       dimensions: { width, depth, height },
       layout,
-      items: hydratedItems,
+      items: manualHydratedItems,
       options,
       source_payload: {
         ...(initialScene.source_payload || {}),
@@ -794,7 +807,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, hydratedItems, clientInfo, selectedCarpetColor, selectedWallFabricColor, language, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedWallFabricColor, language, ledRailsEnabled, ledSpotCount, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
@@ -846,11 +859,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const moveDraggedItem = (point) => {
     if (readOnly || !draggingId) return;
-    const dragged = hydratedItems.find((item) => item.id === draggingId);
+    const dragged = sceneItems.find((item) => item.id === draggingId);
     if (!dragged) return;
 
     if (isWallItem(dragged)) {
-      updateItem(draggingId, wallDragPatch(point, dragged, hydratedItems, width, depth, layout));
+      updateItem(draggingId, wallDragPatch(point, dragged, sceneItems, width, depth, layout));
       return;
     }
 
@@ -888,6 +901,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const deleteSelectedItem = () => {
     if (readOnly || !selected) return;
+    if (isAutomaticLedRailItem(selected)) {
+      setLedRailsEnabled(false);
+      setSelectedId(null);
+      return;
+    }
     setItems((current) => current.filter((item) => item.id !== selected.id));
     setSelectedId(null);
   };
@@ -1020,7 +1038,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             depth={depth}
             height={height}
             layout={layout}
-            items={hydratedItems}
+            items={sceneItems}
               selectedId={selectedId}
               setSelectedId={setSelectedId}
               draggingId={draggingId}
@@ -1134,7 +1152,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       <aside className="config-panel">
         {activeStep === 3 ? (
           <FurnitureStepPanel
-            items={hydratedItems}
+            items={sceneItems}
             catalog={availableCatalog}
             pricing={scenePricing}
             salonLabel={salonLabel}
@@ -1149,6 +1167,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             standLabel={initialScene.project_name || 'Stand A-14'}
             carpetColor={selectedCarpetColor}
             wallFabricColor={selectedWallFabricColor}
+            ledRailsEnabled={ledRailsEnabled}
+            ledSpotCount={ledSpotCount}
             pricing={scenePricing}
             saveState={saveState}
             confirmState={confirmState}
@@ -1166,10 +1186,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             toggleOption={toggleOption}
             selectedCarpetColor={selectedCarpetColor}
             selectedWallFabricColor={selectedWallFabricColor}
+            ledRailsEnabled={ledRailsEnabled}
+            ledSpotCount={ledSpotCount}
             readOnly={readOnly}
             onCarpetColor={(colorId) => !readOnly && setSelectedCarpetId(colorId)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
-            onExport={() => exportTechnicalPng({ width, depth, layout, items: hydratedItems, catalog: availableCatalog })}
+            onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
+            onExport={() => exportTechnicalPng({ width, depth, layout, items: sceneItems, catalog: availableCatalog })}
           />
         )}
       </aside>
@@ -1379,16 +1402,19 @@ function OptionsStepPanel({
   toggleOption,
   selectedCarpetColor,
   selectedWallFabricColor,
+  ledRailsEnabled,
+  ledSpotCount,
   readOnly = false,
   onCarpetColor,
   onWallColor,
+  onLedRailsEnabled,
   onExport,
 }) {
   return (
     <>
       <PanelHead title="Options de configuration" step={activeStep} />
       <StandSummary area={area} layout={layout} standLabel={standLabel} />
-      <RulesSummary />
+      <RulesSummary ledSpotCount={ledSpotCount} ledRailsEnabled={ledRailsEnabled} />
 
       <section className="panel-section-title">Les options</section>
       <OptionAccordion title="Moquette" icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
@@ -1412,6 +1438,14 @@ function OptionsStepPanel({
           optionLabel="En option 36€"
           disabled={readOnly}
           onSelect={onWallColor}
+        />
+      </OptionAccordion>
+      <OptionAccordion title="Spots LED" icon={<Sparkles size={16} />} open={openOptions.led} onToggle={() => toggleOption('led')}>
+        <LedRailOptionCard
+          enabled={ledRailsEnabled}
+          spotCount={ledSpotCount}
+          disabled={readOnly}
+          onChange={onLedRailsEnabled}
         />
       </OptionAccordion>
       <OptionAccordion title="Reserve" icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')} />
@@ -1483,6 +1517,8 @@ function ValidationStepPanel({
   standLabel,
   carpetColor,
   wallFabricColor,
+  ledRailsEnabled,
+  ledSpotCount,
   pricing,
   saveState,
   confirmState,
@@ -1512,6 +1548,7 @@ function ValidationStepPanel({
         <h3>Options choisies</h3>
         <div className="validation-option-row"><span>Moquette</span><strong>{carpetColor.name} ({carpetColor.code})</strong></div>
         <div className="validation-option-row"><span>Coton cloison</span><strong>{wallFabricColor.name} ({wallFabricColor.code})</strong></div>
+        <div className="validation-option-row"><span>Spots LED</span><strong>{ledRailsEnabled ? `${ledSpotCount} spots conserves` : 'Retires'}</strong></div>
       </section>
 
       <section className="validation-section">
@@ -1590,13 +1627,13 @@ function StandSummary({ area, layout, standLabel }) {
   );
 }
 
-function RulesSummary() {
+function RulesSummary({ ledSpotCount, ledRailsEnabled }) {
   return (
     <div className="rules-card">
       <strong>Regles SMCL appliquees automatiquement</strong>
       <span>✓ Reserve 2m2 incluse</span>
       <span>✓ 2 tetes de cloison</span>
-      <span>✓ 9 spots LED (1/3m2)</span>
+      <span>{ledRailsEnabled ? '✓' : '−'} {ledSpotCount} spots LED (1/3m2)</span>
     </div>
   );
 }
@@ -1655,6 +1692,36 @@ function OptionAccordion({ title, icon, open, onToggle, children }) {
       </button>
       {open && children}
     </section>
+  );
+}
+
+function LedRailOptionCard({ enabled, spotCount, disabled = false, onChange }) {
+  return (
+    <div className="led-option-card">
+      <div>
+        <strong>Rails LED automatiques</strong>
+        <span>{spotCount} spots calcules automatiquement, soit 1 spot tous les 3m2.</span>
+      </div>
+      <div className="led-option-actions">
+        <button
+          type="button"
+          className={enabled ? 'active' : ''}
+          disabled={disabled}
+          onClick={() => onChange(true)}
+        >
+          Les laisser
+        </button>
+        <button
+          type="button"
+          className={!enabled ? 'active danger' : ''}
+          disabled={disabled}
+          onClick={() => onChange(false)}
+        >
+          Tous les retirer
+        </button>
+      </div>
+      <small>Ils sont places en haut des murs et restent inclus dans la scene de base.</small>
+    </div>
   );
 }
 
@@ -4194,6 +4261,7 @@ function furniturePanelCategory(entry) {
   const text = `${entry?.type || ''} ${entry?.label || ''}`.toLowerCase();
   const category = String(entry?.dimensions?.category || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   if (entry?.isGroup) return 'hidden';
+  if (isLedRailEntry(entry)) return 'hidden';
   if (category.includes('multimedia')) return 'multimedia';
   if (category.includes('mobilier')) return 'furniture';
   if (category.includes('sol') || category.includes('cloison')) return 'hidden';
@@ -4269,7 +4337,7 @@ function isLockedPlacementRule(rule) {
 }
 
 function itemPlacementLocked(item) {
-  return Boolean(item?.lockedPlacement || isLockedPlacementRule(item?.placementRule));
+  return Boolean(item?.lockedPlacement || isAutomaticLedRailItem(item) || isLockedPlacementRule(item?.placementRule));
 }
 
 function placementRuleLabel(id, withDescription = false) {
@@ -4291,6 +4359,95 @@ function availableWalls(layout) {
     { id: 'left', label: 'Gauche' },
     { id: 'right', label: 'Droite' },
   ];
+}
+
+function ledSpotCountForArea(area) {
+  return Math.max(1, Math.ceil(Number(area || 0) / ledSpotAreaMeters));
+}
+
+function isLedRailEntry(item = {}) {
+  const text = `${item?.type || ''} ${item?.label || ''} ${item?.dimensions?.folderName || ''}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  return text.includes('led') && (text.includes('rail') || text.includes('spot'));
+}
+
+function isAutomaticLedRailItem(item = {}) {
+  return Boolean(item?.autoLedRail || item?.dimensions?.autoLedRail);
+}
+
+function defaultWallItemCenterY(entry, type) {
+  if (type === 'screen') return screenCenterHeight;
+  if (type === 'poster') return 1.45;
+  if (isLedRailEntry(entry)) return ledRailCenterY(entry);
+  if (isWallItemType(type)) return screenCenterHeight;
+  const y = Number(entry?.dimensions?.wallY);
+  return Number.isFinite(y) && y > 0 ? y : 1.5;
+}
+
+function ledRailCenterY(entry) {
+  const y = Number(entry?.y ?? entry?.dimensions?.wallY);
+  return Number.isFinite(y) && y > 0 ? y : ledRailDefaultCenterY;
+}
+
+function makeAutomaticLedRailItems(entry, width, depth, layout, spotCount) {
+  if (!entry || !spotCount) return [];
+  const railCount = Math.max(1, Math.ceil(spotCount / ledSpotsPerRail(entry)));
+  const walls = availableWalls(layout);
+  const totalLength = walls.reduce((sum, wall) => sum + wallLength(wall.id, width, depth), 0);
+  const allocations = walls.map((wall) => {
+    const exact = (railCount * wallLength(wall.id, width, depth)) / Math.max(totalLength, 0.01);
+    return { wall: wall.id, count: Math.floor(exact), remainder: exact % 1 };
+  });
+  let allocated = allocations.reduce((sum, item) => sum + item.count, 0);
+  [...allocations]
+    .sort((a, b) => b.remainder - a.remainder)
+    .forEach((item) => {
+      if (allocated >= railCount) return;
+      item.count += 1;
+      allocated += 1;
+    });
+
+  return allocations.flatMap((allocation) => {
+    const baseItem = {
+      ...makeItem(entry.type, width, depth, layout, entry),
+      autoLedRail: true,
+      included: true,
+      priceMode: 'included',
+      lockedPlacement: true,
+      collisionEnabled: false,
+      wall: allocation.wall,
+      y: ledRailCenterY(entry),
+      dimensions: {
+        ...(entry.dimensions || {}),
+        autoLedRail: true,
+        collisionEnabled: false,
+        wallY: ledRailCenterY(entry),
+      },
+    };
+    const range = wallItemAxisRange(baseItem, allocation.wall, width, depth);
+    return Array.from({ length: allocation.count }, (_, index) => {
+      const rawAxis = range.min + ((index + 1) * (range.max - range.min)) / (allocation.count + 1);
+      const axis = clamp(snapWallAxis(rawAxis), range.min, range.max);
+      return constrainItem({
+        ...baseItem,
+        id: `auto-led-${entry.type}-${allocation.wall}-${index + 1}`,
+        x: axis,
+      }, width, depth, layout);
+    });
+  });
+}
+
+function ledSpotsPerRail(entry = {}) {
+  const text = `${entry?.label || ''} ${entry?.type || ''}`.toLowerCase();
+  const match = text.match(/(\d+)\s*spots?/);
+  const spots = Number(match?.[1]);
+  return Number.isFinite(spots) && spots > 0 ? spots : 1;
+}
+
+function wallLength(wall, width, depth) {
+  return wall === 'back' ? Number(width || 0) : Number(depth || 0);
 }
 
 function wallLabel(wall) {
@@ -4348,6 +4505,7 @@ function isWallItemType(type) {
 
 function assetPlacementMode(assetOrEntry = {}) {
   const mountType = assetOrEntry?.dimensions?.mountType || assetOrEntry?.mountType;
+  if (isLedRailEntry(assetOrEntry)) return 'wall';
   return mountType === 'wall' ? 'wall' : 'floor';
 }
 
@@ -5054,6 +5212,7 @@ function screenWorldPosition(item, width, depth, items = []) {
 
 function wallItemCenterY(item) {
   if (item?.type === 'screen') return screenCenterHeight;
+  if (isLedRailEntry(item)) return ledRailCenterY(item);
   return Number(item?.y ?? 1.5);
 }
 

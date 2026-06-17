@@ -2236,6 +2236,58 @@ select {
   background: #fff;
 }
 
+.led-option-card {
+  display: grid;
+  gap: 14px;
+  margin: 0 14px 14px;
+  padding: 16px;
+  border-radius: 10px;
+  color: #202631;
+  background: #fff;
+}
+
+.led-option-card > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.led-option-card strong {
+  color: #171b22;
+}
+
+.led-option-card span,
+.led-option-card small {
+  color: #8b929c;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.led-option-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.led-option-actions button {
+  min-height: 38px;
+  border: 1px solid #d8e1ec;
+  border-radius: 999px;
+  color: #1f4378;
+  background: #f7f9fc;
+  font-weight: 900;
+}
+
+.led-option-actions button.active {
+  color: #fff;
+  border-color: #1f4378;
+  background: #1f4378;
+}
+
+.led-option-actions button.active.danger {
+  border-color: #b54935;
+  background: #b54935;
+}
+
 .color-card-head {
   display: flex;
   align-items: baseline;
