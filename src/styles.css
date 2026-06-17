@@ -2288,6 +2288,36 @@ select {
   background: #b54935;
 }
 
+.toggle-option-card {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 14px 0;
+  padding: 14px 16px 0;
+  border-radius: 10px 10px 0 0;
+  background: #fff;
+}
+
+.toggle-option-card button {
+  min-height: 38px;
+  border: 1px solid #d8e1ec;
+  border-radius: 999px;
+  color: #1f4378;
+  background: #f7f9fc;
+  font-weight: 900;
+}
+
+.toggle-option-card button.active {
+  color: #fff;
+  border-color: #1f4378;
+  background: #1f4378;
+}
+
+.toggle-option-card button.active.danger {
+  border-color: #b54935;
+  background: #b54935;
+}
+
 .color-card-head {
   display: flex;
   align-items: baseline;

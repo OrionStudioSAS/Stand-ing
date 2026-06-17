@@ -650,6 +650,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, led: false, reserve: false, tete: false, comptoir: false });
   const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || '1893');
   const [selectedCarpetFootprintId, setSelectedCarpetFootprintId] = useState(initialOptions.carpetFootprintColorId || initialOptions.carpetColorId || '1893');
+  const [carpetFootprintEnabled, setCarpetFootprintEnabled] = useState(initialOptions.carpetFootprintEnabled !== false);
   const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || '303');
   const [ledRailsEnabled, setLedRailsEnabled] = useState(initialOptions.ledRailsEnabled !== false);
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
@@ -702,8 +703,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   }), [language, initialScene, clientInfo, contactDetails, standLabel]);
 
   useEffect(() => {
-    setItems((current) => current.map((item) => constrainItem(item, width, depth, layout)));
-  }, [width, depth, layout]);
+    setItems((current) => current.map((item) => constrainItem(item, width, depth, layout, carpetFootprintEnabled)));
+  }, [width, depth, layout, carpetFootprintEnabled]);
 
   useEffect(() => {
     if (readOnly) {
@@ -763,6 +764,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       carpetFootprintColorId: selectedCarpetFootprintColor.id,
       carpetFootprintColorName: selectedCarpetFootprintColor.name,
       carpetFootprintColorHex: selectedCarpetFootprintColor.hex,
+      carpetFootprintEnabled,
       wallFabricColorId: selectedWallFabricColor.id,
       wallFabricColorName: selectedWallFabricColor.name,
       wallFabricColorHex: selectedWallFabricColor.hex,
@@ -817,7 +819,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, selectedWallFabricColor, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, carpetFootprintEnabled, selectedWallFabricColor, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
@@ -849,14 +851,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     if (readOnly) return;
     const autoLedItem = sceneItems.find((item) => item.id === id && isAutomaticLedRailItem(item));
     if (autoLedItem) {
-      const constrained = constrainItem({ ...autoLedItem, ...patch }, width, depth, layout);
+      const constrained = constrainItem({ ...autoLedItem, ...patch }, width, depth, layout, carpetFootprintEnabled);
       setLedRailOverrides((current) => ({
         ...current,
         [id]: pickLedRailOverride(constrained),
       }));
       return;
     }
-    setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout));
+    setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout, carpetFootprintEnabled));
   };
 
   const updateSelectedItemOptions = (patch) => {
@@ -893,7 +895,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     if (readOnly) return;
     const item = makeItem(entry.type, width, depth, layout, entry);
     setItems((current) => {
-      const placed = placeItemInFreeSpot(item, current, width, depth, layout);
+      const placed = placeItemInFreeSpot(item, current, width, depth, layout, carpetFootprintEnabled);
       if (!placed) return current;
       return [...current, placed];
     });
@@ -915,7 +917,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const chooseLayout = (nextLayout) => {
     if (readOnly) return;
     setLayout(nextLayout);
-    setItems((current) => current.map((item) => constrainItem(item, width, depth, nextLayout)));
+    setItems((current) => current.map((item) => constrainItem(item, width, depth, nextLayout, carpetFootprintEnabled)));
   };
 
   const deleteSelectedItem = () => {
@@ -1067,6 +1069,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
               viewAngle={viewAngle}
               carpetColor={selectedCarpetColor.hex}
               carpetFootprintColor={selectedCarpetFootprintColor.hex}
+              carpetFootprintEnabled={carpetFootprintEnabled}
               wallColor={selectedWallFabricColor.hex}
               visualContext={sceneVisualContext}
             />
@@ -1187,6 +1190,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             standLabel={initialScene.project_name || 'Stand A-14'}
             carpetColor={selectedCarpetColor}
             carpetFootprintColor={selectedCarpetFootprintColor}
+            carpetFootprintEnabled={carpetFootprintEnabled}
             wallFabricColor={selectedWallFabricColor}
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={ledSpotCount}
@@ -1207,12 +1211,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             toggleOption={toggleOption}
             selectedCarpetColor={selectedCarpetColor}
             selectedCarpetFootprintColor={selectedCarpetFootprintColor}
+            carpetFootprintEnabled={carpetFootprintEnabled}
             selectedWallFabricColor={selectedWallFabricColor}
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={ledSpotCount}
             readOnly={readOnly}
             onCarpetColor={(colorId) => !readOnly && setSelectedCarpetId(colorId)}
             onCarpetFootprintColor={(colorId) => !readOnly && setSelectedCarpetFootprintId(colorId)}
+            onCarpetFootprintEnabled={(enabled) => !readOnly && setCarpetFootprintEnabled(enabled)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
             onExport={() => exportTechnicalPng({ width, depth, layout, items: sceneItems, catalog: availableCatalog })}
@@ -1425,12 +1431,14 @@ function OptionsStepPanel({
   toggleOption,
   selectedCarpetColor,
   selectedCarpetFootprintColor,
+  carpetFootprintEnabled,
   selectedWallFabricColor,
   ledRailsEnabled,
   ledSpotCount,
   readOnly = false,
   onCarpetColor,
   onCarpetFootprintColor,
+  onCarpetFootprintEnabled,
   onWallColor,
   onLedRailsEnabled,
   onExport,
@@ -1453,6 +1461,13 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       <OptionAccordion title="Empreinte moquette" icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')}>
+        <ToggleOptionCard
+          enabled={carpetFootprintEnabled}
+          enabledLabel="La laisser"
+          disabledLabel="La retirer"
+          disabled={readOnly}
+          onChange={onCarpetFootprintEnabled}
+        />
         <ColorOptionCard
           title="Couleur empreinte"
           colors={carpetColors}
@@ -1549,6 +1564,7 @@ function ValidationStepPanel({
   standLabel,
   carpetColor,
   carpetFootprintColor,
+  carpetFootprintEnabled,
   wallFabricColor,
   ledRailsEnabled,
   ledSpotCount,
@@ -1580,7 +1596,7 @@ function ValidationStepPanel({
       <section className="validation-section">
         <h3>Options choisies</h3>
         <div className="validation-option-row"><span>Moquette</span><strong>{carpetColor.name} ({carpetColor.code})</strong></div>
-        <div className="validation-option-row"><span>Empreinte moquette</span><strong>{carpetFootprintColor.name} ({carpetFootprintColor.code})</strong></div>
+        <div className="validation-option-row"><span>Empreinte moquette</span><strong>{carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : 'Retirée'}</strong></div>
         <div className="validation-option-row"><span>Coton cloison</span><strong>{wallFabricColor.name} ({wallFabricColor.code})</strong></div>
         <div className="validation-option-row"><span>Spots LED</span><strong>{ledRailsEnabled ? `${ledSpotCount} spots conserves` : 'Retires'}</strong></div>
       </section>
@@ -1755,6 +1771,29 @@ function LedRailOptionCard({ enabled, spotCount, disabled = false, onChange }) {
         </button>
       </div>
       <small>Ils sont places en haut des murs et restent inclus dans la scene de base.</small>
+    </div>
+  );
+}
+
+function ToggleOptionCard({ enabled, enabledLabel, disabledLabel, disabled = false, onChange }) {
+  return (
+    <div className="toggle-option-card">
+      <button
+        type="button"
+        className={enabled ? 'active' : ''}
+        disabled={disabled}
+        onClick={() => onChange(true)}
+      >
+        {enabledLabel}
+      </button>
+      <button
+        type="button"
+        className={!enabled ? 'active danger' : ''}
+        disabled={disabled}
+        onClick={() => onChange(false)}
+      >
+        {disabledLabel}
+      </button>
     </div>
   );
 }
@@ -4617,6 +4656,12 @@ function carpetFootprintBounds(width, depth, layout) {
   let minX = -carpetFootprintSizeMeters / 2;
   let maxX = carpetFootprintSizeMeters / 2;
 
+  if (layout === 'u') {
+    maxX = width / 2 - wallThickness - carpetFootprintOverflow;
+    minX = maxX - carpetFootprintSizeMeters;
+    return { minX, maxX, minZ, maxZ };
+  }
+
   if (side === 'right') {
     maxX = width / 2 + carpetFootprintOverflow;
     minX = maxX - carpetFootprintSizeMeters;
@@ -4640,8 +4685,10 @@ function rectSize(rect) {
   };
 }
 
-function placementRegions(width, depth, layout, itemBounds) {
-  return [standFloorBounds(width, depth, layout), carpetFootprintBounds(width, depth, layout)]
+function placementRegions(width, depth, layout, itemBounds, carpetFootprintEnabled = true) {
+  const regions = [standFloorBounds(width, depth, layout)];
+  if (carpetFootprintEnabled) regions.push(carpetFootprintBounds(width, depth, layout));
+  return regions
     .map((rect) => itemAllowedRegion(rect, itemBounds))
     .filter(Boolean);
 }
@@ -4903,7 +4950,7 @@ function applyPlacementRule(item, width, depth, layout) {
   };
 }
 
-function constrainItem(item, width, depth, layout) {
+function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true) {
   if (isWallItem(item)) {
     if (isObjectWallId(item.wall)) {
       const surface = item.wallSurface;
@@ -4926,7 +4973,7 @@ function constrainItem(item, width, depth, layout) {
 
   const positionedItem = applyPlacementRule(item, width, depth, layout);
   const bounds = itemPlacementBounds(positionedItem);
-  const placement = closestPlacementInRegions(positionedItem, placementRegions(width, depth, layout, bounds));
+  const placement = closestPlacementInRegions(positionedItem, placementRegions(width, depth, layout, bounds, carpetFootprintEnabled));
 
   return {
     ...positionedItem,
@@ -4935,23 +4982,23 @@ function constrainItem(item, width, depth, layout) {
   };
 }
 
-function updateSceneItemWithCollision(items, id, patch, width, depth, layout) {
+function updateSceneItemWithCollision(items, id, patch, width, depth, layout, carpetFootprintEnabled = true) {
   const currentItem = items.find((item) => item.id === id);
   if (!currentItem) return items;
 
-  const candidate = constrainItem({ ...currentItem, ...patch }, width, depth, layout);
+  const candidate = constrainItem({ ...currentItem, ...patch }, width, depth, layout, carpetFootprintEnabled);
   if (collidesWithScene(candidate, items, id, width, depth)) return items;
   return items.map((item) => (item.id === id ? candidate : item));
 }
 
-function placeItemInFreeSpot(item, items, width, depth, layout) {
-  const firstCandidate = constrainItem(item, width, depth, layout);
+function placeItemInFreeSpot(item, items, width, depth, layout, carpetFootprintEnabled = true) {
+  const firstCandidate = constrainItem(item, width, depth, layout, carpetFootprintEnabled);
   if (isWallItem(firstCandidate)) return placeWallItemInFreeSpot(firstCandidate, items, width, depth, layout);
   if (itemPlacementLocked(firstCandidate)) return collidesWithScene(firstCandidate, items, firstCandidate.id, width, depth) ? null : firstCandidate;
   if (!collidesWithScene(firstCandidate, items, firstCandidate.id, width, depth)) return firstCandidate;
 
   const bounds = itemPlacementBounds(firstCandidate);
-  const regions = placementRegions(width, depth, layout, bounds);
+  const regions = placementRegions(width, depth, layout, bounds, carpetFootprintEnabled);
   const candidates = [];
 
   for (const region of regions) {
@@ -4967,7 +5014,7 @@ function placeItemInFreeSpot(item, items, width, depth, layout) {
   }
 
   for (const position of candidates.sort((a, b) => a.distance - b.distance)) {
-    const candidate = constrainItem({ ...firstCandidate, x: position.x, z: position.z }, width, depth, layout);
+    const candidate = constrainItem({ ...firstCandidate, x: position.x, z: position.z }, width, depth, layout, carpetFootprintEnabled);
     if (!collidesWithScene(candidate, items, candidate.id, width, depth)) return candidate;
   }
 
@@ -5321,7 +5368,8 @@ function floorWallBlocker(item, wall, width, depth) {
   return null;
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, wallColor, interactive = true, visualContext = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallColor, interactive = true, visualContext = null }) {
+  const [hoveredId, setHoveredId] = useState(null);
   const cameraPivot = useMemo(() => {
     const radians = (viewAngle * Math.PI) / 180;
     return [Math.sin(radians) * 0.75, 0, Math.cos(radians) * 0.25];
@@ -5340,8 +5388,8 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
 
   return (
     <group position={cameraPivot}>
-      {interactive && <DragSurface width={width} depth={depth} layout={layout} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} />}
-      <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} />
+      {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} />}
+      <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} />
       <Grid width={width} depth={depth} layout={layout} />
       <Walls width={width} depth={depth} height={height} layout={layout} wallColor={wallColor} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
@@ -5355,8 +5403,10 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
           width={width}
           depth={depth}
           selected={item.id === selectedId}
+          hovered={item.id === hoveredId}
           dragging={item.id === draggingId}
           onSelect={() => interactive && setSelectedId(item.id)}
+          onHover={(hovered) => interactive && setHoveredId(hovered ? item.id : null)}
           onDragStart={(event) => {
             event.stopPropagation();
             if (!interactive) return;
@@ -5380,7 +5430,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   );
 }
 
-function Floor({ width, depth, layout, carpetColor, carpetFootprintColor }) {
+function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
   return (
     <group>
@@ -5388,16 +5438,20 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor }) {
         <boxGeometry args={[width, floorThickness, depth]} />
         <meshStandardMaterial color={carpetColor || '#bebebe'} roughness={0.78} />
       </mesh>
-      <mesh receiveShadow position={[footprint.centerX, 0.003, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[footprint.width, footprint.depth]} />
-        <meshStandardMaterial color={carpetFootprintColor || carpetColor || '#bebebe'} roughness={0.78} />
-      </mesh>
-      <FootprintOutline bounds={footprint} />
+      {carpetFootprintEnabled && (
+        <>
+          <mesh receiveShadow position={[footprint.centerX, 0.003, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[footprint.width, footprint.depth]} />
+            <meshStandardMaterial color={carpetFootprintColor || carpetColor || '#bebebe'} roughness={0.78} />
+          </mesh>
+          <FootprintOutline bounds={footprint} />
+        </>
+      )}
     </group>
   );
 }
 
-function DragSurface({ width, depth, layout, sceneOffset, draggingId, onDragMove }) {
+function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, sceneOffset, draggingId, onDragMove }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
   const dragPlane = (key, position, size) => (
     <mesh
@@ -5425,7 +5479,7 @@ function DragSurface({ width, depth, layout, sceneOffset, draggingId, onDragMove
   return (
     <group>
       {dragPlane('stand', [0, 0.015, 0], [width, depth])}
-      {dragPlane('footprint', [footprint.centerX, 0.016, footprint.centerZ], [footprint.width, footprint.depth])}
+      {carpetFootprintEnabled && dragPlane('footprint', [footprint.centerX, 0.016, footprint.centerZ], [footprint.width, footprint.depth])}
     </group>
   );
 }
@@ -5493,33 +5547,37 @@ function Baseboard({ position, size }) {
   );
 }
 
-function SceneItem({ item, items = [], selected, dragging, width, depth, onSelect, onDragStart, onDragEnd, onDragMove, visualContext }) {
+function SceneItem({ item, items = [], selected, hovered, dragging, width, depth, onSelect, onHover, onDragStart, onDragEnd, onDragMove, visualContext }) {
   const rotationY = (item.rotation * Math.PI) / 180;
-  if (isWallItem(item)) return <WallMountedItem item={item} items={items} width={width} depth={depth} selected={selected} dragging={dragging} onSelect={onSelect} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} visualContext={visualContext} />;
-  if (item.isGroup) return <GroupedSceneItem item={item} selected={selected} dragging={dragging} rotationY={rotationY} onSelect={onSelect} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} visualContext={visualContext} />;
+  if (isWallItem(item)) return <WallMountedItem item={item} items={items} width={width} depth={depth} selected={selected} hovered={hovered} dragging={dragging} onSelect={onSelect} onHover={onHover} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} visualContext={visualContext} />;
+  if (item.isGroup) return <GroupedSceneItem item={item} selected={selected} hovered={hovered} dragging={dragging} rotationY={rotationY} onSelect={onSelect} onHover={onHover} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} visualContext={visualContext} />;
   return (
     <group
       position={[item.x, 0, item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
+      onPointerEnter={(event) => { event.stopPropagation(); onHover(true); }}
+      onPointerLeave={(event) => { event.stopPropagation(); onHover(false); }}
       onPointerDown={onDragStart}
       onPointerUp={onDragEnd}
       onPointerMove={(event) => {
         if (dragging) onDragMove(event);
       }}
     >
-      <SceneItemContent item={item} selected={selected} dragging={dragging} visualContext={visualContext} />
+      <SceneItemContent item={item} selected={selected} hovered={hovered} dragging={dragging} visualContext={visualContext} />
     </group>
   );
 }
 
-function GroupedSceneItem({ item, selected, dragging, rotationY, onSelect, onDragStart, onDragEnd, onDragMove, visualContext }) {
+function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, onSelect, onHover, onDragStart, onDragEnd, onDragMove, visualContext }) {
   const groupBounds = itemGroupBounds(item);
   return (
     <group
       position={[item.x, 0, item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
+      onPointerEnter={(event) => { event.stopPropagation(); onHover(true); }}
+      onPointerLeave={(event) => { event.stopPropagation(); onHover(false); }}
       onPointerDown={onDragStart}
       onPointerUp={onDragEnd}
       onPointerMove={(event) => {
@@ -5528,32 +5586,29 @@ function GroupedSceneItem({ item, selected, dragging, rotationY, onSelect, onDra
     >
       {item.children?.map((child) => (
         <group key={child.id} position={[child.x || 0, child.y || 0, child.z || 0]} rotation={[0, ((child.rotation || 0) * Math.PI) / 180, 0]}>
-          <SceneItemContent item={child} selected={selected} dragging={dragging} visualContext={visualContext} />
+          <SceneItemContent item={child} selected={false} hovered={hovered} dragging={dragging} visualContext={visualContext} />
         </group>
       ))}
-      {selected && (
-        <mesh position={[groupBounds.centerX, 0.02, groupBounds.centerZ]}>
-          <boxGeometry args={[groupBounds.width, 0.025, groupBounds.depth]} />
-          <meshBasicMaterial color="#ffcf5a" transparent opacity={0.22} depthWrite={false} />
-        </mesh>
-      )}
+      {selected && <SelectionFrame bounds={groupBounds} />}
     </group>
   );
 }
 
-function SceneItemContent({ item, selected, dragging, visualContext }) {
+function SceneItemContent({ item, selected, hovered, dragging, visualContext }) {
+  const bounds = itemGroupBounds(item);
   return (
     <>
-      {item.type === 'chair' && <Chair selected={selected} dragging={dragging} />}
-      {item.type === 'table' && <Table selected={selected} dragging={dragging} />}
-      {item.type === 'counter' && <Counter selected={selected} dragging={dragging} />}
+      {item.type === 'chair' && <Chair selected={selected} hovered={hovered} dragging={dragging} />}
+      {item.type === 'table' && <Table selected={selected} hovered={hovered} dragging={dragging} />}
+      {item.type === 'counter' && <Counter selected={selected} hovered={hovered} dragging={dragging} />}
       {item.modelUrl && (
         <>
-          <ObjHitbox bounds={itemGroupBounds(item)} />
-          <Model3D item={item} selected={selected} dragging={dragging} visualContext={visualContext} />
+          <ObjHitbox bounds={bounds} />
+          <Model3D item={item} selected={selected} hovered={hovered} dragging={dragging} visualContext={visualContext} />
           <ObjectBaseboards item={item} />
         </>
       )}
+      {selected && <SelectionFrame bounds={bounds} />}
     </>
   );
 }
@@ -5582,7 +5637,24 @@ function shouldShowObjectBaseboards(item) {
 
 function activeColor(selected, dragging, base) {
   if (dragging) return '#f6a23a';
-  return selected ? '#ffcf5a' : base;
+  return base;
+}
+
+function hoverMaterialProps(selected, hovered) {
+  return hovered && !selected ? { transparent: true, opacity: 0.48, depthWrite: false } : {};
+}
+
+function SelectionFrame({ bounds = {}, centerY = null }) {
+  const width = Math.max(0.08, Number(bounds.width || 0.7) + 0.045);
+  const height = Math.max(0.08, Number(bounds.height || 0.7) + 0.045);
+  const depth = Math.max(0.08, Number(bounds.depth || 0.7) + 0.045);
+  const y = centerY ?? height / 2;
+  return (
+    <mesh position={[Number(bounds.centerX || 0), y, Number(bounds.centerZ || 0)]} renderOrder={20}>
+      <boxGeometry args={[width, height, depth]} />
+      <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.98} depthTest={false} />
+    </mesh>
+  );
 }
 
 function ObjHitbox({ bounds = null, size = [0.7, 0.7, 0.7] }) {
@@ -5601,20 +5673,20 @@ function ObjHitbox({ bounds = null, size = [0.7, 0.7, 0.7] }) {
   );
 }
 
-function Model3D({ item, selected, dragging, visualContext }) {
+function Model3D({ item, selected, hovered, dragging, visualContext }) {
   const materialUrl = modelMaterialUrl(item);
-  if (item.modelUrl?.toLowerCase().split('?')[0].endsWith('.glb')) return <GlbModel item={item} />;
-  if (materialUrl) return <ObjModelWithMaterials item={item} materialUrl={materialUrl} visualContext={visualContext} />;
-  return <ObjModel item={item} selected={selected} dragging={dragging} />;
+  if (item.modelUrl?.toLowerCase().split('?')[0].endsWith('.glb')) return <GlbModel item={item} selected={selected} hovered={hovered} />;
+  if (materialUrl) return <ObjModelWithMaterials item={item} materialUrl={materialUrl} selected={selected} hovered={hovered} visualContext={visualContext} />;
+  return <ObjModel item={item} selected={selected} hovered={hovered} dragging={dragging} />;
 }
 
-function GlbModel({ item }) {
+function GlbModel({ item, selected, hovered }) {
   const gltf = useLoader(GLTFLoader, item.modelUrl);
-  const model = useMemo(() => prepareLoadedModel(gltf.scene), [gltf]);
+  const model = useMemo(() => prepareLoadedModel(gltf.scene, item, { selected, hovered }), [gltf, item, selected, hovered]);
   return <primitive object={model} dispose={null} />;
 }
 
-function ObjModelWithMaterials({ item, materialUrl, visualContext }) {
+function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualContext }) {
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: [474, 296] });
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext) : null
@@ -5632,7 +5704,12 @@ function ObjModelWithMaterials({ item, materialUrl, visualContext }) {
     materials.preload();
     loader.setMaterials(materials);
   });
-  const model = useMemo(() => prepareLoadedModel(obj, item, { mainImageTexture, exhibitorTexture }), [obj, item, mainImageTexture, exhibitorTexture]);
+  const model = useMemo(() => prepareLoadedModel(obj, item, {
+    mainImageTexture,
+    exhibitorTexture,
+    selected,
+    hovered,
+  }), [obj, item, mainImageTexture, exhibitorTexture, selected, hovered]);
 
   return <primitive object={model} dispose={null} />;
 }
@@ -5641,7 +5718,7 @@ function modelMaterialUrl(item) {
   return item?.materialUrl || item?.dimensions?.materialUrl || null;
 }
 
-function ObjModel({ item, selected, dragging }) {
+function ObjModel({ item, selected, hovered, dragging }) {
   const obj = useLoader(OBJLoader, item.modelUrl);
   const model = useMemo(() => {
     const clone = obj.clone(true);
@@ -5650,6 +5727,7 @@ function ObjModel({ item, selected, dragging }) {
       roughness: defaultModelRoughness(item),
       metalness: defaultModelMetalness(item),
       side: DoubleSide,
+      ...hoverMaterialProps(selected, hovered),
     });
 
     clone.traverse((child) => {
@@ -5661,7 +5739,7 @@ function ObjModel({ item, selected, dragging }) {
     });
 
     return centerModel(clone, item);
-  }, [obj, item.color, selected, dragging]);
+  }, [obj, item.color, selected, hovered, dragging]);
 
   return <primitive object={model} dispose={null} />;
 }
@@ -5674,6 +5752,7 @@ function prepareLoadedModel(source, item = null, textureOptions = {}) {
       child.receiveShadow = true;
       child.material = cloneMeshMaterial(child.material);
       child.material = applyItemOptionMaterials(child.material, item, textureOptions, child.name);
+      child.material = applyVisualStateMaterial(child.material, textureOptions);
     }
   });
   return centerModel(clone, item);
@@ -5768,6 +5847,18 @@ function materialWithTexture(material, texture) {
   next.map = texture;
   next.transparent = false;
   if (next.color?.set) next.color.set('#ffffff');
+  next.needsUpdate = true;
+  return next;
+}
+
+function applyVisualStateMaterial(material, textureOptions = {}) {
+  if (Array.isArray(material)) return material.map((entry) => applyVisualStateMaterial(entry, textureOptions));
+  if (!material) return material;
+  if (!textureOptions.hovered || textureOptions.selected) return material;
+  const next = material.clone?.() || material;
+  next.transparent = true;
+  next.opacity = 0.48;
+  next.depthWrite = false;
   next.needsUpdate = true;
   return next;
 }
@@ -6075,62 +6166,62 @@ function centerModel(model, item = null) {
   return model;
 }
 
-function Chair({ selected, dragging }) {
+function Chair({ selected, hovered, dragging }) {
   return (
     <group>
       <mesh castShadow position={[0, 0.28, 0]}>
         <boxGeometry args={[0.52, 0.12, 0.5]} />
-        <meshStandardMaterial color={activeColor(selected, dragging, '#c85f3f')} roughness={0.55} />
+        <meshStandardMaterial color={activeColor(selected, dragging, '#c85f3f')} roughness={0.55} {...hoverMaterialProps(selected, hovered)} />
       </mesh>
       <mesh castShadow position={[0, 0.72, -0.22]}>
         <boxGeometry args={[0.52, 0.75, 0.1]} />
-        <meshStandardMaterial color={activeColor(selected, dragging, '#bd5138')} roughness={0.55} />
+        <meshStandardMaterial color={activeColor(selected, dragging, '#bd5138')} roughness={0.55} {...hoverMaterialProps(selected, hovered)} />
       </mesh>
       {[-0.18, 0.18].map((x) => [-0.16, 0.16].map((z) => (
         <mesh key={`${x}-${z}`} castShadow position={[x, 0.12, z]}>
           <cylinderGeometry args={[0.025, 0.025, 0.25, 12]} />
-          <meshStandardMaterial color="#3b3a33" />
+          <meshStandardMaterial color="#3b3a33" {...hoverMaterialProps(selected, hovered)} />
         </mesh>
       )))}
     </group>
   );
 }
 
-function Table({ selected, dragging }) {
+function Table({ selected, hovered, dragging }) {
   return (
     <group>
       <mesh castShadow position={[0, 0.58, 0]}>
         <cylinderGeometry args={[0.48, 0.48, 0.08, 48]} />
-        <meshStandardMaterial color={activeColor(selected, dragging, '#1d8f83')} roughness={0.5} />
+        <meshStandardMaterial color={activeColor(selected, dragging, '#1d8f83')} roughness={0.5} {...hoverMaterialProps(selected, hovered)} />
       </mesh>
       <mesh castShadow position={[0, 0.3, 0]}>
         <cylinderGeometry args={[0.055, 0.075, 0.58, 18]} />
-        <meshStandardMaterial color="#35423c" />
+        <meshStandardMaterial color="#35423c" {...hoverMaterialProps(selected, hovered)} />
       </mesh>
       <mesh castShadow position={[0, 0.04, 0]}>
         <cylinderGeometry args={[0.26, 0.26, 0.05, 28]} />
-        <meshStandardMaterial color="#35423c" />
+        <meshStandardMaterial color="#35423c" {...hoverMaterialProps(selected, hovered)} />
       </mesh>
     </group>
   );
 }
 
-function Counter({ selected, dragging }) {
+function Counter({ selected, hovered, dragging }) {
   return (
     <group>
       <mesh castShadow position={[0, 0.48, 0]}>
         <boxGeometry args={[1.05, 0.9, 0.45]} />
-        <meshStandardMaterial color={activeColor(selected, dragging, '#d5b767')} roughness={0.46} />
+        <meshStandardMaterial color={activeColor(selected, dragging, '#d5b767')} roughness={0.46} {...hoverMaterialProps(selected, hovered)} />
       </mesh>
       <mesh castShadow position={[0, 0.96, -0.08]}>
         <boxGeometry args={[1.15, 0.1, 0.5]} />
-        <meshStandardMaterial color="#fff8db" roughness={0.42} />
+        <meshStandardMaterial color="#fff8db" roughness={0.42} {...hoverMaterialProps(selected, hovered)} />
       </mesh>
     </group>
   );
 }
 
-function WallMountedItem({ item, items, width, depth, selected, dragging, onSelect, onDragStart, onDragEnd, onDragMove, visualContext }) {
+function WallMountedItem({ item, items, width, depth, selected, hovered, dragging, onSelect, onHover, onDragStart, onDragEnd, onDragMove, visualContext }) {
   const objectTransform = objectWallTransform(item, items);
   const rotation = objectTransform?.rotation ?? (item.wall === 'left' ? Math.PI / 2 : item.wall === 'right' ? -Math.PI / 2 : 0);
   const offset = objectTransform?.position ?? screenWorldPosition(item, width, depth, items);
@@ -6143,6 +6234,8 @@ function WallMountedItem({ item, items, width, depth, selected, dragging, onSele
       position={offset}
       rotation={[0, rotation, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
+      onPointerEnter={(event) => { event.stopPropagation(); onHover(true); }}
+      onPointerLeave={(event) => { event.stopPropagation(); onHover(false); }}
       onPointerDown={onDragStart}
       onPointerUp={onDragEnd}
       onPointerMove={(event) => {
@@ -6153,26 +6246,28 @@ function WallMountedItem({ item, items, width, depth, selected, dragging, onSele
         <>
           <mesh castShadow>
             <boxGeometry args={[posterWidth, posterHeight, 0.035]} />
-            <meshStandardMaterial color={activeColor(selected, dragging, '#f7f1dc')} roughness={0.48} />
+            <meshStandardMaterial color={activeColor(selected, dragging, '#f7f1dc')} roughness={0.48} {...hoverMaterialProps(selected, hovered)} />
           </mesh>
           <mesh position={[0, 0, 0.026]}>
             <boxGeometry args={[Math.max(0.2, posterWidth - 0.12), Math.max(0.2, posterHeight - 0.12), 0.012]} />
-            <meshStandardMaterial color="#ffffff" roughness={0.36} />
+            <meshStandardMaterial color="#ffffff" roughness={0.36} {...hoverMaterialProps(selected, hovered)} />
           </mesh>
           <Text position={[0, 0, 0.038]} fontSize={0.16} color="#1f4378" anchorX="center" anchorY="middle">AFFICHE</Text>
+          {selected && <SelectionFrame bounds={{ width: posterWidth, height: posterHeight, depth: 0.08 }} centerY={0} />}
         </>
       ) : isCustomModel ? (
-        <SceneItemContent item={item} selected={selected} dragging={dragging} visualContext={visualContext} />
+        <SceneItemContent item={item} selected={selected} hovered={hovered} dragging={dragging} visualContext={visualContext} />
       ) : (
         <>
           <mesh castShadow>
             <boxGeometry args={[0.95, 0.58, 0.06]} />
-            <meshStandardMaterial color={activeColor(selected, dragging, '#182233')} roughness={0.4} />
+            <meshStandardMaterial color={activeColor(selected, dragging, '#182233')} roughness={0.4} {...hoverMaterialProps(selected, hovered)} />
           </mesh>
           <mesh position={[0, 0, 0.035]}>
             <boxGeometry args={[0.82, 0.45, 0.015]} />
-            <meshStandardMaterial color="#67d7ff" emissive="#1c6887" emissiveIntensity={0.55} />
+            <meshStandardMaterial color="#67d7ff" emissive="#1c6887" emissiveIntensity={0.55} {...hoverMaterialProps(selected, hovered)} />
           </mesh>
+          {selected && <SelectionFrame bounds={{ width: 0.95, height: 0.58, depth: 0.08 }} centerY={0} />}
         </>
       )}
     </group>
