@@ -1453,7 +1453,6 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       <OptionAccordion title="Empreinte moquette" icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')}>
-        <CarpetFootprintCard layout={layout} />
         <ColorOptionCard
           title="Couleur empreinte"
           colors={carpetColors}
@@ -1844,30 +1843,6 @@ function rememberAdminTab(tab) {
   } catch {
     // Ignore private browsing / storage failures.
   }
-}
-
-function CarpetFootprintCard({ layout }) {
-  const sideOverflow = layout === 'left'
-    ? 'Placée en coin avant droit : 200 mm sortent à droite'
-    : layout === 'right'
-      ? 'Placée en coin avant gauche : 200 mm sortent à gauche'
-      : 'Placée devant le stand, sans débord latéral';
-
-  return (
-    <div className="carpet-footprint-card">
-      <header>
-        <strong>Dalles moquette 1000 × 1000 mm</strong>
-        <span>Inclus</span>
-      </header>
-      <ul>
-        <li>Dalle 1000 × 1000 mm positionnée à l’extrémité avant</li>
-        <li>200 mm sortent dans l’allée devant le stand</li>
-        <li>{sideOverflow}</li>
-        <li>Même niveau que le sol : les objets peuvent être posés dessus</li>
-      </ul>
-      <small>L’empreinte utilise les mêmes références couleur que la moquette.</small>
-    </div>
-  );
 }
 
 function AdminDashboard({ user, adminProfile }) {

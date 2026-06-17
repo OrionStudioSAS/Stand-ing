@@ -2311,53 +2311,6 @@ select {
   color: #a0a5ad;
 }
 
-.carpet-footprint-card {
-  display: grid;
-  gap: 12px;
-  margin: 0 14px 14px;
-  padding: 16px;
-  border-radius: 10px;
-  background: #fff;
-  color: #202631;
-}
-
-.carpet-footprint-card header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.carpet-footprint-card header span {
-  border-radius: 999px;
-  padding: 4px 9px;
-  color: #147a39;
-  background: #dff4e7;
-  font-size: 0.72rem;
-  font-weight: 900;
-}
-
-.carpet-footprint-card ul {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.carpet-footprint-card li,
-.carpet-footprint-card small {
-  color: #6f7784;
-  font-size: 0.78rem;
-}
-
-.carpet-footprint-card li::before {
-  content: '✓';
-  margin-right: 7px;
-  color: #147a39;
-  font-weight: 900;
-}
-
 .color-dropdown {
   position: relative;
 }
