@@ -651,6 +651,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || '1893');
   const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || '303');
   const [ledRailsEnabled, setLedRailsEnabled] = useState(initialOptions.ledRailsEnabled !== false);
+  const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
@@ -729,8 +730,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const ledRailEntry = useMemo(() => availableCatalog.find(isLedRailEntry), [availableCatalog]);
   const ledSpotCount = ledSpotCountForArea(area);
   const automaticLedItems = useMemo(
-    () => (ledRailsEnabled ? makeAutomaticLedRailItems(ledRailEntry, width, depth, layout, ledSpotCount) : []),
-    [ledRailsEnabled, ledRailEntry, width, depth, layout, ledSpotCount],
+    () => (ledRailsEnabled
+      ? makeAutomaticLedRailItems(ledRailEntry, width, depth, layout, ledSpotCount)
+        .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout))
+      : []),
+    [ledRailsEnabled, ledRailEntry, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticLedItems], [manualHydratedItems, automaticLedItems]);
   const selected = sceneItems.find((item) => item.id === selectedId);
@@ -760,6 +764,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       language,
       ledRailsEnabled,
       ledSpotCount,
+      ledRailOverrides,
     };
 
     return {
@@ -807,7 +812,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedWallFabricColor, language, ledRailsEnabled, ledSpotCount, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedWallFabricColor, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
@@ -837,6 +842,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const updateItem = (id, patch) => {
     if (readOnly) return;
+    const autoLedItem = sceneItems.find((item) => item.id === id && isAutomaticLedRailItem(item));
+    if (autoLedItem) {
+      const constrained = constrainItem({ ...autoLedItem, ...patch }, width, depth, layout);
+      setLedRailOverrides((current) => ({
+        ...current,
+        [id]: pickLedRailOverride(constrained),
+      }));
+      return;
+    }
     setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout));
   };
 
@@ -1429,6 +1443,14 @@ function OptionsStepPanel({
       </OptionAccordion>
       <OptionAccordion title="Empreinte moquette" icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')}>
         <CarpetFootprintCard layout={layout} />
+        <ColorOptionCard
+          title="Couleur empreinte"
+          colors={carpetColors}
+          selectedColor={selectedCarpetColor}
+          optionLabel="En option 36€"
+          disabled={readOnly}
+          onSelect={onCarpetColor}
+        />
       </OptionAccordion>
       <OptionAccordion title="Coton cloison" icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
         <ColorOptionCard
@@ -1830,7 +1852,7 @@ function CarpetFootprintCard({ layout }) {
         <li>{sideOverflow}</li>
         <li>Même niveau que le sol : les objets peuvent être posés dessus</li>
       </ul>
-      <small>Les couleurs de cette empreinte seront ajoutées dès réception des références.</small>
+      <small>L’empreinte utilise les mêmes références couleur que la moquette.</small>
     </div>
   );
 }
@@ -4337,7 +4359,7 @@ function isLockedPlacementRule(rule) {
 }
 
 function itemPlacementLocked(item) {
-  return Boolean(item?.lockedPlacement || isAutomaticLedRailItem(item) || isLockedPlacementRule(item?.placementRule));
+  return Boolean(item?.lockedPlacement || isLockedPlacementRule(item?.placementRule));
 }
 
 function placementRuleLabel(id, withDescription = false) {
@@ -4375,6 +4397,36 @@ function isLedRailEntry(item = {}) {
 
 function isAutomaticLedRailItem(item = {}) {
   return Boolean(item?.autoLedRail || item?.dimensions?.autoLedRail);
+}
+
+function applyLedRailOverride(item, overrides = {}, width, depth, layout) {
+  const override = overrides?.[item.id];
+  if (!override) return item;
+  return constrainItem({
+    ...item,
+    ...override,
+    autoLedRail: true,
+    included: true,
+    priceMode: 'included',
+    collisionEnabled: false,
+    lockedPlacement: false,
+    dimensions: {
+      ...(item.dimensions || {}),
+      autoLedRail: true,
+      collisionEnabled: false,
+    },
+  }, width, depth, layout);
+}
+
+function pickLedRailOverride(item) {
+  return {
+    wall: item.wall || 'back',
+    x: Number(item.x || 0),
+    z: Number(item.z || 0),
+    y: ledRailCenterY(item),
+    wallSide: item.wallSide || null,
+    wallSurface: item.wallSurface || null,
+  };
 }
 
 function defaultWallItemCenterY(entry, type) {
@@ -4415,7 +4467,7 @@ function makeAutomaticLedRailItems(entry, width, depth, layout, spotCount) {
       autoLedRail: true,
       included: true,
       priceMode: 'included',
-      lockedPlacement: true,
+      lockedPlacement: false,
       collisionEnabled: false,
       wall: allocation.wall,
       y: ledRailCenterY(entry),
