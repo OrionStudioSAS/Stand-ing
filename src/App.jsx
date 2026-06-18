@@ -58,7 +58,7 @@ const carpetFootprintOverflow = 0.2;
 const collisionPadding = 0.04;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
-const ledRailDefaultCenterY = fixedWallHeight - 0.15;
+const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
   { id: 'layout', label: 'Aménagement', icon: '📐' },
