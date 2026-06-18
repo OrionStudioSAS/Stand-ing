@@ -1046,7 +1046,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             if (!readOnly) setDraggingId(null);
           }}
           onPointerLeave={() => {
-            if (!readOnly) setDraggingId(null);
+            if (!readOnly) {
+              setDraggingId(null);
+            }
           }}
         >
           <color attach="background" args={['#eef0f4']} />
@@ -5386,9 +5388,14 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
     });
   };
 
+  const setItemHover = (itemId, hovered) => {
+    if (!interactive || draggingId) return;
+    setHoveredId((current) => (hovered ? itemId : (current === itemId ? null : current)));
+  };
+
   return (
-    <group position={cameraPivot}>
-      {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} />}
+    <group position={cameraPivot} onPointerMissed={() => setHoveredId(null)}>
+      {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} />}
       <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} />
       <Walls width={width} depth={depth} height={height} layout={layout} wallColor={wallColor} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
@@ -5405,7 +5412,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
           hovered={item.id === hoveredId}
           dragging={item.id === draggingId}
           onSelect={() => interactive && setSelectedId(item.id)}
-          onHover={(hovered) => interactive && setHoveredId(hovered ? item.id : null)}
+          onHover={(hovered) => setItemHover(item.id, hovered)}
           onDragStart={(event) => {
             event.stopPropagation();
             if (!interactive) return;
@@ -5450,7 +5457,7 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
   );
 }
 
-function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, sceneOffset, draggingId, onDragMove }) {
+function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, sceneOffset, draggingId, onDragMove, onClearHover }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
   const dragPlane = (key, position, size) => (
     <mesh
@@ -5458,8 +5465,11 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
       position={position}
       rotation={[-Math.PI / 2, 0, 0]}
       onPointerMove={(event) => {
-        if (!draggingId) return;
         event.stopPropagation();
+        if (!draggingId) {
+          onClearHover?.();
+          return;
+        }
         onDragMove({
           x: event.point.x - sceneOffset[0],
           z: event.point.z - sceneOffset[2],
@@ -5539,8 +5549,8 @@ function SceneItem({ item, items = [], selected, hovered, dragging, width, depth
       position={[item.x, 0, item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
-      onPointerEnter={(event) => { event.stopPropagation(); onHover(true); }}
-      onPointerLeave={(event) => { event.stopPropagation(); onHover(false); }}
+      onPointerOver={(event) => { event.stopPropagation(); onHover(true); }}
+      onPointerOut={(event) => { event.stopPropagation(); onHover(false); }}
       onPointerDown={onDragStart}
       onPointerUp={onDragEnd}
       onPointerMove={(event) => {
@@ -5559,8 +5569,8 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, onSele
       position={[item.x, 0, item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
-      onPointerEnter={(event) => { event.stopPropagation(); onHover(true); }}
-      onPointerLeave={(event) => { event.stopPropagation(); onHover(false); }}
+      onPointerOver={(event) => { event.stopPropagation(); onHover(true); }}
+      onPointerOut={(event) => { event.stopPropagation(); onHover(false); }}
       onPointerDown={onDragStart}
       onPointerUp={onDragEnd}
       onPointerMove={(event) => {
@@ -6217,8 +6227,8 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
       position={offset}
       rotation={[0, rotation, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
-      onPointerEnter={(event) => { event.stopPropagation(); onHover(true); }}
-      onPointerLeave={(event) => { event.stopPropagation(); onHover(false); }}
+      onPointerOver={(event) => { event.stopPropagation(); onHover(true); }}
+      onPointerOut={(event) => { event.stopPropagation(); onHover(false); }}
       onPointerDown={onDragStart}
       onPointerUp={onDragEnd}
       onPointerMove={(event) => {
