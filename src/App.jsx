@@ -112,7 +112,7 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
   if (isCatalogWallEntry(entry, type)) {
     const side = layout === 'right' ? 'right' : layout === 'left' ? 'left' : 'back';
     const size = entry?.modelSize || entry?.dimensions?.size || [];
-    return {
+    const wallItem = {
       ...base,
       isWallItem: !isWallItemType(type),
       modelUrl: entry?.modelUrl,
@@ -126,7 +126,9 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
       y: defaultWallItemCenterY(entry, type),
       posterHeight: entry?.posterHeight,
       wallDepth: isWallItemType(type) ? undefined : Number(size?.[2] || 0.08),
+      lockedPlacement: isSmclPartitionHeadItem(entry),
     };
+    return constrainItem(wallItem, width, depth, layout);
   }
 
   return {
@@ -700,6 +702,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     language,
     company: sceneExhibitorCompanyName(initialScene, clientInfo, contactDetails),
     standNumber: sceneStandNumber(initialScene, contactDetails, standLabel),
+    hall: sceneHallLabel(initialScene, contactDetails),
   }), [language, initialScene, clientInfo, contactDetails, standLabel]);
 
   useEffect(() => {
@@ -1387,7 +1390,7 @@ function LanguageMenu({ language, onSelect }) {
 }
 
 function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageChange, onResetImage }) {
-  const imageName = item.options?.headMainImageName || 'Texture originale LED_5500k_1.jpg';
+  const imageName = item.options?.headMainImageName || `Texture originale ${partitionHeadMainImageMaterial(item)}.jpg`;
   return (
     <aside className="item-options-panel">
       <div className="item-options-heading">
@@ -4388,7 +4391,7 @@ function isLockedPlacementRule(rule) {
 }
 
 function itemPlacementLocked(item) {
-  return Boolean(item?.lockedPlacement || isLockedPlacementRule(item?.placementRule));
+  return Boolean(item?.lockedPlacement || isSmclPartitionHeadItem(item) || isLockedPlacementRule(item?.placementRule));
 }
 
 function placementRuleLabel(id, withDescription = false) {
@@ -4461,6 +4464,7 @@ function defaultWallItemCenterY(entry, type) {
   if (type === 'screen') return screenCenterHeight;
   if (type === 'poster') return 1.45;
   if (isLedRailEntry(entry)) return ledRailCenterY(entry);
+  if (isPartitionHeadItem(entry)) return 0;
   if (isWallItemType(type)) return screenCenterHeight;
   const y = Number(entry?.dimensions?.wallY);
   return Number.isFinite(y) && y > 0 ? y : 1.5;
@@ -4602,6 +4606,25 @@ function isPartitionHeadItem(item = {}) {
   return text.includes('tete de cloison');
 }
 
+function isSmclPartitionHeadItem(item = {}) {
+  const text = normalizedItemText(item);
+  return text.includes('tete de cloison') && text.includes('smcl');
+}
+
+function smclPartitionHeadSide(item = {}) {
+  const text = normalizedItemText(item);
+  if (text.includes('gauche')) return 'left';
+  if (text.includes('droite')) return 'right';
+  return '';
+}
+
+function normalizedItemText(item = {}) {
+  return `${item.type || ''} ${item.label || ''} ${item.dimensions?.folderName || ''}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
 function sceneExhibitorCompanyName(scene = {}, clientInfo = {}, contactDetails = {}) {
   return scene.source_payload?.name
     || scene.source_payload?.item?.name
@@ -4620,6 +4643,13 @@ function sceneStandNumber(scene = {}, contactDetails = {}, standLabel = '') {
     || contactDetails.emplacement
     || standLabel.replace(/^Stand\s+/i, '')
     || '';
+}
+
+function sceneHallLabel(scene = {}, contactDetails = {}) {
+  return scene.source_payload?.hall
+    || mondayColumnText(scene.source_payload, 'hall')
+    || contactDetails.hall
+    || 'À définir';
 }
 
 function mondayColumnText(sourcePayload = {}, columnId = '') {
@@ -4951,6 +4981,27 @@ function applyPlacementRule(item, width, depth, layout) {
   };
 }
 
+function smclPartitionHeadWallPosition(item, width, depth, layout) {
+  const side = smclPartitionHeadSide(item);
+  const validWalls = availableWalls(layout).map((wall) => wall.id);
+  const preferredWall = side === 'left' && validWalls.includes('left')
+    ? 'left'
+    : side === 'right' && validWalls.includes('right')
+      ? 'right'
+      : 'back';
+  const range = wallItemAxisRange(item, preferredWall, width, depth);
+  const axis = preferredWall === 'back' && side === 'left' ? range.min : range.max;
+
+  return {
+    ...item,
+    wall: preferredWall,
+    x: Number(axis.toFixed(2)),
+    y: 0,
+    z: preferredWall === 'back' ? -depth / 2 + wallThickness : Number(axis.toFixed(2)),
+    lockedPlacement: true,
+  };
+}
+
 function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true) {
   if (isWallItem(item)) {
     if (isObjectWallId(item.wall)) {
@@ -4967,6 +5018,9 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
 
     const validWalls = availableWalls(layout).map((wall) => wall.id);
     const wall = validWalls.includes(item.wall) ? item.wall : 'back';
+    if (isSmclPartitionHeadItem(item)) {
+      return smclPartitionHeadWallPosition({ ...item, y: 0 }, width, depth, layout);
+    }
     const range = wallItemAxisRange(item, wall, width, depth);
     const axis = clamp(snapWallAxis(item.x), range.min, range.max);
     return { ...item, wall, x: axis, y: wallItemCenterY(item), z: wall === 'back' ? -depth / 2 + wallThickness : axis };
@@ -5301,6 +5355,7 @@ function screenWorldPosition(item, width, depth, items = []) {
 function wallItemCenterY(item) {
   if (item?.type === 'screen') return screenCenterHeight;
   if (isLedRailEntry(item)) return ledRailCenterY(item);
+  if (isPartitionHeadItem(item)) return 0;
   return Number(item?.y ?? 1.5);
 }
 
@@ -5679,10 +5734,10 @@ function GlbModel({ item, selected, hovered }) {
 }
 
 function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualContext }) {
-  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: [474, 296] });
+  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: partitionHeadMainImageCoverSize(item) });
   const exhibitorTexture = useMemo(() => (
-    isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext) : null
-  ), [item.type, item.label, item.modelUrl, visualContext?.language, visualContext?.company, visualContext?.standNumber]);
+    isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item) : null
+  ), [item.type, item.label, item.modelUrl, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.hall]);
   const materials = useLoader(MTLLoader, materialUrl, (loader) => {
     const manager = new LoadingManager();
     manager.setURLModifier((url) => resolveModelResourceUrl(url, item));
@@ -5817,17 +5872,29 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   if (!material) return material;
 
   const materialName = normalizeMaterialName(material.name);
-  if (textureOptions.mainImageTexture && materialName.includes('led_5500k_1')) {
+  if (textureOptions.mainImageTexture && materialName.includes(partitionHeadMainImageMaterial(item))) {
     return materialWithTexture(material, textureOptions.mainImageTexture);
   }
-  if (textureOptions.exhibitorTexture && shouldUseExhibitorHeadTexture(materialName, meshName)) {
+  if (textureOptions.exhibitorTexture && shouldUseExhibitorHeadTexture(materialName, meshName, item)) {
     return materialWithTexture(material, textureOptions.exhibitorTexture);
   }
   return material;
 }
 
-function shouldUseExhibitorHeadTexture(materialName = '', meshName = '') {
+function partitionHeadMainImageMaterial(item = {}) {
+  return isSmclPartitionHeadItem(item) ? 'led_5500k_8' : 'led_5500k_1';
+}
+
+function partitionHeadMainImageCoverSize(item = {}) {
+  return isSmclPartitionHeadItem(item) ? [947, 593] : [474, 296];
+}
+
+function shouldUseExhibitorHeadTexture(materialName = '', meshName = '', item = {}) {
   const normalizedMeshName = normalizeMaterialName(meshName);
+  if (isSmclPartitionHeadItem(item)) {
+    const side = smclPartitionHeadSide(item);
+    return side === 'left' ? materialName === '_' : materialName === '_51';
+  }
   return materialName === '_10'
     || materialName === '10'
     || materialName.endsWith('_10')
@@ -5859,8 +5926,10 @@ function normalizeMaterialName(name = '') {
   return String(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
-function createPartitionHeadInfoTexture(visualContext = {}) {
+function createPartitionHeadInfoTexture(visualContext = {}, item = {}) {
   if (typeof document === 'undefined') return null;
+  if (isSmclPartitionHeadItem(item)) return createSmclPartitionHeadInfoTexture(visualContext);
+
   const canvas = document.createElement('canvas');
   // Same pixel format as the original _10.jpg so the SketchUp UVs keep lining up.
   canvas.width = 656;
@@ -5889,6 +5958,32 @@ function createPartitionHeadInfoTexture(visualContext = {}) {
   texture.magFilter = LinearFilter;
   texture.needsUpdate = true;
   return texture;
+}
+
+function createSmclPartitionHeadInfoTexture(visualContext = {}) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1181;
+  canvas.height = 827;
+  const ctx = canvas.getContext('2d');
+  const company = String(visualContext?.company || 'NOM EXPOSANT').trim().toUpperCase();
+  const standNumber = String(visualContext?.standNumber || 'A-14').replace(/^Stand\s+/i, '').trim().toUpperCase();
+  const hall = String(visualContext?.hall || 'À DÉFINIR').replace(/^Hall\s+/i, '').trim().toUpperCase();
+
+  ctx.fillStyle = '#ffd800';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#ffffff';
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  fitCanvasText(ctx, company, 238, 47, 670, 95);
+  fitCanvasText(ctx, standNumber || 'A-14', 245, 202, 360, 130);
+  fitCanvasText(ctx, `HALL ${hall || 'À DÉFINIR'}`, 245, 365, 420, 50);
+  ctx.font = '900 42px Arial, sans-serif';
+  ctx.fillText('salon', 285, 630);
+  ctx.fillText('des maires', 285, 672);
+  ctx.font = '700 22px Arial, sans-serif';
+  ctx.fillText('et des collectivités locales', 285, 720);
+
+  return prepareDynamicTexture(new CanvasTexture(canvas));
 }
 
 function drawLanguageFlag(ctx, language, x, y, width, height) {
