@@ -4465,9 +4465,8 @@ function defaultWallItemCenterY(entry, type) {
   if (type === 'poster') return 1.45;
   if (isLedRailEntry(entry)) return ledRailCenterY(entry);
   if (isPartitionHeadItem(entry)) return 0;
-  if (isWallItemType(type)) return screenCenterHeight;
   const y = Number(entry?.dimensions?.wallY);
-  return Number.isFinite(y) && y > 0 ? y : 1.5;
+  return Number.isFinite(y) && y >= 0 ? y : 0;
 }
 
 function ledRailCenterY(entry) {
@@ -5354,9 +5353,11 @@ function screenWorldPosition(item, width, depth, items = []) {
 
 function wallItemCenterY(item) {
   if (item?.type === 'screen') return screenCenterHeight;
+  if (item?.type === 'poster') return Number(item?.y ?? 1.45);
   if (isLedRailEntry(item)) return ledRailCenterY(item);
   if (isPartitionHeadItem(item)) return 0;
-  return Number(item?.y ?? 1.5);
+  const y = Number(item?.dimensions?.wallY);
+  return Number.isFinite(y) && y >= 0 ? y : 0;
 }
 
 function wallMountedNormalOffset(item) {
