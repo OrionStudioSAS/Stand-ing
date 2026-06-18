@@ -5390,7 +5390,6 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
     <group position={cameraPivot}>
       {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} />}
       <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} />
-      <Grid width={width} depth={depth} layout={layout} />
       <Walls width={width} depth={depth} height={height} layout={layout} wallColor={wallColor} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
         {width}m x {depth}m
@@ -5480,22 +5479,6 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
     <group>
       {dragPlane('stand', [0, 0.015, 0], [width, depth])}
       {carpetFootprintEnabled && dragPlane('footprint', [footprint.centerX, 0.016, footprint.centerZ], [footprint.width, footprint.depth])}
-    </group>
-  );
-}
-
-function Grid({ width, depth }) {
-  const lines = [];
-  for (let x = -width / 2; x <= width / 2 + 0.01; x += 1) lines.push({ key: `x-${x}`, position: [x, 0.006, 0], scale: [0.01, 0.01, depth] });
-  for (let z = -depth / 2; z <= depth / 2 + 0.01; z += 1) lines.push({ key: `z-${z}`, position: [0, 0.007, z], scale: [width, 0.01, 0.01] });
-  return (
-    <group>
-      {lines.map((line) => (
-        <mesh key={line.key} position={line.position}>
-          <boxGeometry args={line.scale} />
-          <meshStandardMaterial color="#d8d0bd" roughness={0.9} />
-        </mesh>
-      ))}
     </group>
   );
 }
