@@ -58,7 +58,7 @@ const carpetFootprintOverflow = 0.2;
 const collisionPadding = 0.04;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
-const ledRailDefaultCenterY = fixedWallHeight - 0.08;
+const ledRailDefaultCenterY = fixedWallHeight - 0.02;
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
   { id: 'layout', label: 'Aménagement', icon: '📐' },
@@ -4452,7 +4452,6 @@ function pickLedRailOverride(item) {
     wall: item.wall || 'back',
     x: Number(item.x || 0),
     z: Number(item.z || 0),
-    y: ledRailCenterY(item),
     wallSide: item.wallSide || null,
     wallSurface: item.wallSurface || null,
   };
@@ -4468,7 +4467,7 @@ function defaultWallItemCenterY(entry, type) {
 }
 
 function ledRailCenterY(entry) {
-  const y = Number(entry?.y ?? entry?.dimensions?.wallY);
+  const y = Number(entry?.dimensions?.wallY ?? entry?.y);
   return Number.isFinite(y) && y > 0 ? y : ledRailDefaultCenterY;
 }
 
