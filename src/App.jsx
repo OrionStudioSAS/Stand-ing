@@ -1516,6 +1516,7 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, readOnly = fa
     ? pricing.baseUsage.map((item) => ({ key: item.type, label: item.label, count: item.used, quota: item.quantity }))
     : sceneItemSummary(items.filter((item) => isIncludedSceneItem(item) && isFurniturePanelType(item)));
   const furnitureEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'furniture');
+  const structureEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'structure');
   const multimediaEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'multimedia');
   const billableCounts = pricing?.billableCounts || new Map();
   const displayedIncludedItems = pricing?.baseItemsConfigured ? includedItems : (includedItems.length ? includedItems : defaultIncludedFurniture());
@@ -1544,6 +1545,15 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, readOnly = fa
       <FurnitureCatalogSection
         title="Mobilier additionnel"
         entries={furnitureEntries}
+        counts={billableCounts}
+        salonLabel={salonLabel}
+        readOnly={readOnly}
+        onAdd={onAdd}
+        onRemove={onRemove}
+      />
+      <FurnitureCatalogSection
+        title="Cloisons & structures"
+        entries={structureEntries}
         counts={billableCounts}
         salonLabel={salonLabel}
         readOnly={readOnly}
@@ -4316,10 +4326,10 @@ function furniturePanelCategory(entry) {
   const category = String(entry?.dimensions?.category || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   if (entry?.isGroup) return 'hidden';
   if (isLedRailEntry(entry)) return 'hidden';
+  if (category.includes('sol') || category.includes('cloison')) return 'structure';
+  if (text.includes('cloison') || text.includes('porte poussant')) return 'structure';
   if (category.includes('multimedia')) return 'multimedia';
   if (category.includes('mobilier')) return 'furniture';
-  if (category.includes('sol') || category.includes('cloison')) return 'hidden';
-  if (text.includes('cloison') || text.includes('porte poussant')) return 'hidden';
   if (isWallItemType(entry?.type) || /tv|ecran|écran|borne|led|multimedia|multimédia|caisson/.test(text)) return 'multimedia';
   return 'furniture';
 }
