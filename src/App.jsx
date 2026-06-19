@@ -91,14 +91,15 @@ const assetCategoryOptions = ['Sol & Cloisons', 'Mobilier', 'Signalétique', 'Mu
 
 function makeItem(type, width, depth, layout, catalogEntry = null) {
   const entry = catalogEntry || catalog.find((item) => item.type === type);
+  const placementRule = effectivePlacementRule(entry);
   const base = {
     id: `${type}-${Date.now()}-${Math.round(Math.random() * 1000)}`,
     type,
     label: entry?.label,
     rotation: 0,
     collisionEnabled: entry?.dimensions?.collisionEnabled !== false,
-    placementRule: normalizePlacementRule(entry?.placementRule || entry?.dimensions?.placementRule),
-    lockedPlacement: isLockedPlacementRule(entry?.placementRule || entry?.dimensions?.placementRule),
+    placementRule,
+    lockedPlacement: isLockedPlacementRule(placementRule),
     movementLocked: Boolean(entry?.movementLocked || entry?.dimensions?.movementLocked),
     deleteLocked: Boolean(entry?.deleteLocked || entry?.dimensions?.deleteLocked),
   };
@@ -133,7 +134,7 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
       y: defaultWallItemCenterY(entry, type),
       posterHeight: entry?.posterHeight,
       wallDepth: isWallItemType(type) ? undefined : Number(size?.[2] || 0.08),
-      lockedPlacement: base.lockedPlacement || isSmclPartitionHeadItem(entry),
+      lockedPlacement: base.lockedPlacement,
     };
     return constrainItem(wallItem, width, depth, layout);
   }
@@ -2996,6 +2997,9 @@ function presetToEditableScene(preset, catalogEntries = []) {
 function normalizePresetItem(item, catalogEntries = []) {
   const config = item.config || {};
   const catalogItem = findCatalogEntry(catalogEntries, item.type) || catalog.find((entry) => entry.type === item.type);
+  const placementRule = hasOwn(config, 'placementRule')
+    ? normalizePlacementRule(config.placementRule)
+    : effectivePlacementRule(catalogItem);
   const isGroup = Boolean(config.isGroup || catalogItem?.isGroup);
   return {
     ...config,
@@ -3005,8 +3009,8 @@ function normalizePresetItem(item, catalogEntries = []) {
     isGroup,
     groupSize: config.groupSize || catalogItem?.groupSize,
     children: isGroup ? resolveGroupChildren(config.children || catalogItem?.children || []) : config.children,
-    placementRule: normalizePlacementRule(config.placementRule || catalogItem?.placementRule),
-    lockedPlacement: config.lockedPlacement ?? isLockedPlacementRule(config.placementRule || catalogItem?.placementRule),
+    placementRule,
+    lockedPlacement: config.lockedPlacement ?? isLockedPlacementRule(placementRule),
     x: Number(item.x ?? config.x ?? 0),
     y: Number(item.y ?? config.y ?? 0),
     z: Number(item.z ?? config.z ?? 0),
@@ -3324,7 +3328,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const sourceAssets = groupSourceAssets(assets);
   const fallbackType = sourceAssets[0]?.type || '';
   const activeGroupRowUid = selectedGroupRowUid || groupRows[0]?.uid || null;
-  const draftPlacementRuleId = normalizePlacementRule(draft.dimensions?.placementRule)?.id || 'free';
+  const draftPlacementRuleId = effectivePlacementRule(draft)?.id || 'free';
   const draftMountType = assetPlacementMode(draft);
   const draftCollisionDisabled = draft.dimensions?.collisionEnabled === false;
   const draftMovementLocked = Boolean(draft.dimensions?.movementLocked);
@@ -4074,7 +4078,7 @@ function assetToCatalogEntry(asset) {
       isGroup: true,
       groupSize: asset.dimensions?.groupSize || computeGroupSize(asset.dimensions?.children || []),
       children: asset.dimensions?.children || [],
-      placementRule: normalizePlacementRule(asset.dimensions?.placementRule),
+      placementRule: effectivePlacementRule(asset),
       movementLocked: Boolean(asset.dimensions?.movementLocked),
       deleteLocked: Boolean(asset.dimensions?.deleteLocked),
       price: asset.dimensions?.price || 0,
@@ -4095,7 +4099,7 @@ function assetToCatalogEntry(asset) {
     thumbnailUrl: asset.thumbnail_url,
     isWallItem: assetPlacementMode(asset) === 'wall',
     collisionEnabled: asset.dimensions?.collisionEnabled !== false,
-    placementRule: normalizePlacementRule(asset.dimensions?.placementRule),
+    placementRule: effectivePlacementRule(asset),
     movementLocked: Boolean(asset.dimensions?.movementLocked),
     deleteLocked: Boolean(asset.dimensions?.deleteLocked),
     dimensions: asset.dimensions || {},
@@ -4336,14 +4340,17 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
     ...(entry.dimensions || {}),
     ...(item.dimensions || {}),
   };
+  const placementRule = hasOwn(item, 'placementRule')
+    ? normalizePlacementRule(item.placementRule)
+    : effectivePlacementRule(entry);
   const materialUrl = item.materialUrl || item.dimensions?.materialUrl || entry.materialUrl || entry.dimensions?.materialUrl;
   const hydrated = {
     ...item,
     label: item.label || entry.label,
     isGroup,
     groupSize: item.groupSize || entry.groupSize,
-    placementRule: item.placementRule || entry.placementRule || entry.dimensions?.placementRule,
-    lockedPlacement: item.lockedPlacement ?? Boolean(item.placementRule || entry.placementRule?.locked || isLockedPlacementRule(entry.dimensions?.placementRule)),
+    placementRule,
+    lockedPlacement: item.lockedPlacement ?? isLockedPlacementRule(placementRule),
     movementLocked: item.movementLocked ?? entry.movementLocked ?? entry.dimensions?.movementLocked,
     deleteLocked: item.deleteLocked ?? entry.deleteLocked ?? entry.dimensions?.deleteLocked,
     modelUrl: item.modelUrl || entry.modelUrl,
@@ -4466,12 +4473,34 @@ function normalizePlacementRule(rule) {
   return { id: rule.id, locked: rule.locked !== false };
 }
 
+function hasOwn(target, key) {
+  return Object.prototype.hasOwnProperty.call(target || {}, key);
+}
+
+function placementRuleValue(assetOrEntry = {}) {
+  if (hasOwn(assetOrEntry, 'placementRule')) return assetOrEntry.placementRule;
+  if (hasOwn(assetOrEntry.dimensions, 'placementRule')) return assetOrEntry.dimensions.placementRule;
+  return defaultPlacementRuleForAsset(assetOrEntry);
+}
+
+function effectivePlacementRule(assetOrEntry = {}) {
+  return normalizePlacementRule(placementRuleValue(assetOrEntry));
+}
+
+function defaultPlacementRuleForAsset(assetOrEntry = {}) {
+  if (!isSmclPartitionHeadItem(assetOrEntry)) return null;
+  const side = smclPartitionHeadSide(assetOrEntry);
+  if (side === 'left') return placementRuleFromId('outer-left');
+  if (side === 'right') return placementRuleFromId('outer-right');
+  return null;
+}
+
 function isLockedPlacementRule(rule) {
   return Boolean(normalizePlacementRule(rule)?.locked);
 }
 
 function itemPlacementLocked(item) {
-  return Boolean(item?.lockedPlacement || isSmclPartitionHeadItem(item) || isLockedPlacementRule(item?.placementRule));
+  return Boolean(item?.lockedPlacement || isLockedPlacementRule(item?.placementRule));
 }
 
 function itemMovementLocked(item) {
@@ -5120,27 +5149,6 @@ function applyWallPlacementRule(item, width, depth, layout) {
   };
 }
 
-function smclPartitionHeadWallPosition(item, width, depth, layout) {
-  const side = smclPartitionHeadSide(item);
-  const validWalls = availableWalls(layout).map((wall) => wall.id);
-  const preferredWall = side === 'left' && validWalls.includes('left')
-    ? 'left'
-    : side === 'right' && validWalls.includes('right')
-      ? 'right'
-      : 'back';
-  const range = wallItemAxisRange(item, preferredWall, width, depth);
-  const axis = preferredWall === 'back' && side === 'left' ? range.min : range.max;
-
-  return {
-    ...item,
-    wall: preferredWall,
-    x: Number(axis.toFixed(2)),
-    y: 0,
-    z: preferredWall === 'back' ? -depth / 2 + wallThickness : Number(axis.toFixed(2)),
-    lockedPlacement: true,
-  };
-}
-
 function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true) {
   if (isWallItem(item)) {
     if (isObjectWallId(item.wall)) {
@@ -5157,9 +5165,6 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
 
     const validWalls = availableWalls(layout).map((wall) => wall.id);
     const wall = validWalls.includes(item.wall) ? item.wall : 'back';
-    if (isSmclPartitionHeadItem(item)) {
-      return smclPartitionHeadWallPosition({ ...item, y: 0 }, width, depth, layout);
-    }
     if (isLockedPlacementRule(item.placementRule)) {
       return applyWallPlacementRule({ ...item, wall }, width, depth, layout);
     }
