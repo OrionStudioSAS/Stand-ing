@@ -83,6 +83,7 @@ const placementRuleOptions = [
   { id: 'back-right', label: 'Coin fond droit', description: 'Le groupe se colle automatiquement au mur du fond, côté droit.' },
   { id: 'back-center', label: 'Centre du mur du fond', description: 'Le groupe reste centré contre le mur du fond.' },
 ];
+const assetCategoryOptions = ['Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
 
 function makeItem(type, width, depth, layout, catalogEntry = null) {
   const entry = catalogEntry || catalog.find((item) => item.type === type);
@@ -729,6 +730,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
     return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
   }, [objectBank, salonLabel]);
+  const placeableCatalog = useMemo(
+    () => availableCatalog.filter((entry) => isAdminViewer || !entry.dimensions?.adminOnly),
+    [availableCatalog, isAdminViewer],
+  );
   const hydratedItems = useMemo(() => (
     objectBankLoaded ? items.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)) : items
   ), [items, availableCatalog, objectBankLoaded]);
@@ -1181,7 +1186,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         {activeStep === 3 ? (
           <FurnitureStepPanel
             items={sceneItems}
-            catalog={availableCatalog}
+            catalog={placeableCatalog}
             pricing={scenePricing}
             salonLabel={salonLabel}
             readOnly={readOnly}
@@ -3199,7 +3204,7 @@ function clientStatusSummary(client) {
 
 function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onUploadAssetFolder }) {
   const [groupCreatorOpen, setGroupCreatorOpen] = useState(false);
-  const categories = ['Tout', 'Groupes', 'Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
+  const categories = ['Tout', 'Groupes', ...assetCategoryOptions];
   const filteredAssets = assets.filter((asset) => {
     const assetCategory = assetCategoryLabel(asset);
     const matchesCategory = category === 'Tout' || assetCategory === category;
@@ -3254,6 +3259,7 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
               <em>{assetSizeLabel(asset)}</em>
               <div className="asset-tags">
                 {assetSalons(asset, scenes).slice(0, 2).map((salon) => <small key={salon}>{salonShortLabel(salon)}</small>)}
+                {asset.dimensions?.adminOnly && <small className="admin-only">Admin</small>}
                 {!asset.is_active && <small className="inactive">Inactif</small>}
               </div>
             </div>
@@ -3454,6 +3460,30 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
         <label className="asset-group-field">
           <span>Nom</span>
           <input value={draft.label || ''} onChange={(event) => setDraft({ ...draft, label: event.target.value })} />
+        </label>
+
+        {!isGroupAsset && (
+          <label className="asset-group-field">
+            <span>Catégorie</span>
+            <select
+              value={draft.dimensions?.category || assetCategoryLabel(draft)}
+              onChange={(event) => updateAssetBehavior({ category: event.target.value })}
+            >
+              {assetCategoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+        )}
+
+        <label className="asset-toggle-row">
+          <input
+            type="checkbox"
+            checked={Boolean(draft.dimensions?.adminOnly)}
+            onChange={(event) => updateAssetBehavior({ adminOnly: event.target.checked })}
+          />
+          <span>
+            <strong>Admin seulement</strong>
+            <small>Si activé, seuls les admins peuvent poser cet objet dans une scène.</small>
+          </span>
         </label>
 
         <dl className="asset-meta-card">

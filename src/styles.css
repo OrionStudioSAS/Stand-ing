@@ -4245,6 +4245,11 @@ select {
   background: #efefef;
 }
 
+.asset-tags small.admin-only {
+  color: #753d0b;
+  background: #ffe8c7;
+}
+
 .asset-drawer-layer {
   position: fixed;
   inset: 0;
@@ -4687,6 +4692,7 @@ select {
 }
 
 .asset-group-field input,
+.asset-group-field select,
 .asset-group-placement select,
 .asset-group-row input,
 .asset-group-row select {
