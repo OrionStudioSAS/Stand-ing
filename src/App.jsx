@@ -3537,21 +3537,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
               <small>L’exposant ne pourra pas supprimer cet objet depuis sa scène.</small>
             </span>
           </label>
-        </section>
-
-        <dl className="asset-meta-card">
-          <div><dt>Nom</dt><dd>{draft.label}</dd></div>
-          <div><dt>Catégorie</dt><dd>{assetCategoryLabel(draft)}</dd></div>
-          <div><dt>Format</dt><dd>{assetFormat(draft)}{assetFormat(draft) === 'OBJ' ? ' (converti depuis OBJ)' : ''}</dd></div>
-          <div><dt>Taille</dt><dd>{assetSizeLabel(draft)}</dd></div>
-          <div><dt>Dimensions</dt><dd>{assetDimensionsLabel(draft)}</dd></div>
-          <div><dt>Ajouté le</dt><dd>{formatDate(draft.created_at)}</dd></div>
-          <div><dt>Ajouté par</dt><dd>{draft.dimensions?.addedBy || 'Stand-ING'}</dd></div>
-        </dl>
-
-        {!isGroupAsset && (
-          <section className="asset-behavior-settings">
-            <h3>Collision</h3>
+          {!isGroupAsset && (
             <label className="asset-toggle-row">
               <input
                 type="checkbox"
@@ -3563,8 +3549,18 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
                 <small>Désactive-la pour permettre de poser ou déplacer des objets au travers/en dessous.</small>
               </span>
             </label>
-          </section>
-        )}
+          )}
+        </section>
+
+        <dl className="asset-meta-card">
+          <div><dt>Nom</dt><dd>{draft.label}</dd></div>
+          <div><dt>Catégorie</dt><dd>{assetCategoryLabel(draft)}</dd></div>
+          <div><dt>Format</dt><dd>{assetFormat(draft)}{assetFormat(draft) === 'OBJ' ? ' (converti depuis OBJ)' : ''}</dd></div>
+          <div><dt>Taille</dt><dd>{assetSizeLabel(draft)}</dd></div>
+          <div><dt>Dimensions</dt><dd>{assetDimensionsLabel(draft)}</dd></div>
+          <div><dt>Ajouté le</dt><dd>{formatDate(draft.created_at)}</dd></div>
+          <div><dt>Ajouté par</dt><dd>{draft.dimensions?.addedBy || 'Stand-ING'}</dd></div>
+        </dl>
 
         <section className="asset-assignment">
           <h3>Affectation par salon</h3>
