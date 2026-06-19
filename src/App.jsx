@@ -3324,7 +3324,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const activeGroupRowUid = selectedGroupRowUid || groupRows[0]?.uid || null;
   const draftPlacementRuleId = normalizePlacementRule(draft.dimensions?.placementRule)?.id || 'free';
   const draftMountType = assetPlacementMode(draft);
-  const draftCollisionEnabled = draft.dimensions?.collisionEnabled !== false;
+  const draftCollisionDisabled = draft.dimensions?.collisionEnabled === false;
   const draftMovementLocked = Boolean(draft.dimensions?.movementLocked);
   const draftDeleteLocked = Boolean(draft.dimensions?.deleteLocked);
 
@@ -3541,12 +3541,12 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             <label className="asset-toggle-row">
               <input
                 type="checkbox"
-                checked={draftCollisionEnabled}
-                onChange={(event) => updateAssetBehavior({ collisionEnabled: event.target.checked })}
+                checked={draftCollisionDisabled}
+                onChange={(event) => updateAssetBehavior({ collisionEnabled: !event.target.checked })}
               />
               <span>
-                <strong>Collision active</strong>
-                <small>Désactive-la pour permettre de poser ou déplacer des objets au travers/en dessous.</small>
+                <strong>Désactiver la collision</strong>
+                <small>Coche cette option pour permettre de poser ou déplacer des objets au travers/en dessous.</small>
               </span>
             </label>
           )}
