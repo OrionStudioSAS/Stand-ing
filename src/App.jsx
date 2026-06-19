@@ -3499,6 +3499,15 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
 
         <section className="asset-behavior-settings">
           <h3>Règles spécifiques</h3>
+          {!isGroupAsset && (
+            <label>
+              <span>Type de placement</span>
+              <select value={draftMountType} onChange={(event) => updateAssetBehavior({ mountType: event.target.value })}>
+                <option value="floor">Objet au sol</option>
+                <option value="wall">Objet rattaché à un mur</option>
+              </select>
+            </label>
+          )}
           <label>
             <span>Position automatique</span>
             <select value={draftPlacementRuleId} onChange={(event) => updatePlacementRule(event.target.value)}>
@@ -3542,14 +3551,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
 
         {!isGroupAsset && (
           <section className="asset-behavior-settings">
-            <h3>Comportement dans la scène</h3>
-            <label>
-              <span>Placement</span>
-              <select value={draftMountType} onChange={(event) => updateAssetBehavior({ mountType: event.target.value })}>
-                <option value="floor">Objet au sol</option>
-                <option value="wall">Objet rattaché à un mur</option>
-              </select>
-            </label>
+            <h3>Collision</h3>
             <label className="asset-toggle-row">
               <input
                 type="checkbox"
