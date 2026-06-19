@@ -4360,6 +4360,12 @@ select {
   font-size: 0.95rem;
 }
 
+.asset-behavior-settings > small {
+  color: #8992a0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .asset-behavior-settings label:not(.asset-toggle-row) {
   display: grid;
   gap: 6px;

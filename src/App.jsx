@@ -78,10 +78,12 @@ const languages = [
 ];
 const defaultPackNames = ['Confort', 'Business', 'SIAE', 'Prestige'];
 const placementRuleOptions = [
-  { id: 'free', label: 'Libre', description: 'L’utilisateur peut poser et déplacer ce groupe normalement.' },
-  { id: 'back-left', label: 'Coin fond gauche', description: 'Le groupe se colle automatiquement au mur du fond, côté gauche.' },
-  { id: 'back-right', label: 'Coin fond droit', description: 'Le groupe se colle automatiquement au mur du fond, côté droit.' },
-  { id: 'back-center', label: 'Centre du mur du fond', description: 'Le groupe reste centré contre le mur du fond.' },
+  { id: 'free', label: 'Libre', description: 'L’utilisateur peut poser et déplacer cet objet normalement.' },
+  { id: 'back-left', label: 'Coin arrière gauche', description: 'L’objet se colle automatiquement dans le coin arrière gauche.' },
+  { id: 'back-right', label: 'Coin arrière droite', description: 'L’objet se colle automatiquement dans le coin arrière droit.' },
+  { id: 'front-left', label: 'Coin avant gauche', description: 'L’objet se colle automatiquement dans le coin avant gauche.' },
+  { id: 'front-right', label: 'Coin avant droite', description: 'L’objet se colle automatiquement dans le coin avant droit.' },
+  { id: 'back-center', label: 'Centre arrière', description: 'L’objet reste centré contre le mur du fond.' },
 ];
 const assetCategoryOptions = ['Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
 
@@ -93,6 +95,10 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
     label: entry?.label,
     rotation: 0,
     collisionEnabled: entry?.dimensions?.collisionEnabled !== false,
+    placementRule: normalizePlacementRule(entry?.placementRule || entry?.dimensions?.placementRule),
+    lockedPlacement: isLockedPlacementRule(entry?.placementRule || entry?.dimensions?.placementRule),
+    movementLocked: Boolean(entry?.movementLocked || entry?.dimensions?.movementLocked),
+    deleteLocked: Boolean(entry?.deleteLocked || entry?.dimensions?.deleteLocked),
   };
 
   if (entry?.isGroup || entry?.children?.length) {
@@ -101,8 +107,6 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
       isGroup: true,
       groupSize: entry.groupSize || [1.2, 1, 1.2],
       children: resolveGroupChildren(entry.children || []),
-      placementRule: normalizePlacementRule(entry.placementRule),
-      lockedPlacement: isLockedPlacementRule(entry.placementRule),
       x: 0,
       z: Math.min(depth / 2 - 0.9, 0.7),
       y: 0,
@@ -127,7 +131,7 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
       y: defaultWallItemCenterY(entry, type),
       posterHeight: entry?.posterHeight,
       wallDepth: isWallItemType(type) ? undefined : Number(size?.[2] || 0.08),
-      lockedPlacement: isSmclPartitionHeadItem(entry),
+      lockedPlacement: base.lockedPlacement || isSmclPartitionHeadItem(entry),
     };
     return constrainItem(wallItem, width, depth, layout);
   }
@@ -890,6 +894,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     if (readOnly || !draggingId) return;
     const dragged = sceneItems.find((item) => item.id === draggingId);
     if (!dragged) return;
+    if (!isAdminViewer && itemMovementLocked(dragged)) return;
 
     if (isWallItem(dragged)) {
       updateItem(draggingId, wallDragPatch(point, dragged, sceneItems, width, depth, layout));
@@ -913,7 +918,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const removeOptionalItem = (type) => {
     if (readOnly) return;
     setItems((current) => {
-      const index = [...current].reverse().findIndex((item) => item.type === type && !isIncludedSceneItem(item));
+      const index = [...current].reverse().findIndex((item) => item.type === type && !isIncludedSceneItem(item) && (isAdminViewer || !itemDeletionLocked(item)));
       if (index < 0) return current;
       const removeIndex = current.length - 1 - index;
       const removedItem = current[removeIndex];
@@ -930,6 +935,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const deleteSelectedItem = () => {
     if (readOnly || !selected) return;
+    if (!isAdminViewer && itemDeletionLocked(selected)) return;
     if (isAutomaticLedRailItem(selected)) {
       setLedRailsEnabled(false);
       setSelectedId(null);
@@ -1075,6 +1081,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
               draggingId={draggingId}
               setDraggingId={setDraggingId}
               interactive={!readOnly}
+              canEditLockedItems={isAdminViewer}
               onDragMove={moveDraggedItem}
               viewAngle={viewAngle}
               carpetColor={selectedCarpetColor.hex}
@@ -1143,8 +1150,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             <>
               <button type="button" disabled={itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
               {isPartitionHeadItem(selected) && <button type="button" onClick={() => setRotationPanelOpen(false)} title="Options visuel"><FileImage size={16} /></button>}
-              <button type="button" onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
-              {itemPlacementLocked(selected) && <span className="toolbar-lock-note">Placement verrouillé</span>}
+              <button type="button" disabled={!isAdminViewer && itemDeletionLocked(selected)} onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
+              {!isAdminViewer && itemMovementLocked(selected) && <span className="toolbar-lock-note">Déplacement verrouillé</span>}
+              {!isAdminViewer && itemDeletionLocked(selected) && <span className="toolbar-lock-note">Suppression verrouillée</span>}
               {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (
                 <label className="toolbar-rotation-slider">
                   <span>{selected.rotation || 0}°</span>
@@ -2904,6 +2912,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
               setSelectedId={setSelectedId}
               draggingId={draggingId}
               setDraggingId={setDraggingId}
+              canEditLockedItems
               onDragMove={moveDraggedItem}
               viewAngle={35}
               carpetColor="#bebebe"
@@ -3316,6 +3325,8 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const draftPlacementRuleId = normalizePlacementRule(draft.dimensions?.placementRule)?.id || 'free';
   const draftMountType = assetPlacementMode(draft);
   const draftCollisionEnabled = draft.dimensions?.collisionEnabled !== false;
+  const draftMovementLocked = Boolean(draft.dimensions?.movementLocked);
+  const draftDeleteLocked = Boolean(draft.dimensions?.deleteLocked);
 
   useEffect(() => {
     setDraft(asset);
@@ -3486,6 +3497,39 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           </span>
         </label>
 
+        <section className="asset-behavior-settings">
+          <h3>Règles spécifiques</h3>
+          <label>
+            <span>Position automatique</span>
+            <select value={draftPlacementRuleId} onChange={(event) => updatePlacementRule(event.target.value)}>
+              {placementRuleOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </label>
+          <small>{placementRuleLabel(draftPlacementRuleId, true)}</small>
+          <label className="asset-toggle-row">
+            <input
+              type="checkbox"
+              checked={draftMovementLocked}
+              onChange={(event) => updateAssetBehavior({ movementLocked: event.target.checked })}
+            />
+            <span>
+              <strong>Désactiver le déplacement</strong>
+              <small>L’exposant pourra sélectionner l’objet, mais pas le déplacer.</small>
+            </span>
+          </label>
+          <label className="asset-toggle-row">
+            <input
+              type="checkbox"
+              checked={draftDeleteLocked}
+              onChange={(event) => updateAssetBehavior({ deleteLocked: event.target.checked })}
+            />
+            <span>
+              <strong>Désactiver la suppression</strong>
+              <small>L’exposant ne pourra pas supprimer cet objet depuis sa scène.</small>
+            </span>
+          </label>
+        </section>
+
         <dl className="asset-meta-card">
           <div><dt>Nom</dt><dd>{draft.label}</dd></div>
           <div><dt>Catégorie</dt><dd>{assetCategoryLabel(draft)}</dd></div>
@@ -3562,17 +3606,6 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
 
         {isGroupAsset && (
           <>
-            <section className="asset-group-placement">
-              <h3>Règle de placement</h3>
-              <label>
-                <span>Position obligatoire</span>
-                <select value={draftPlacementRuleId} onChange={(event) => updatePlacementRule(event.target.value)}>
-                  {placementRuleOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-                </select>
-              </label>
-              <small>{placementRuleLabel(draftPlacementRuleId, true)}</small>
-            </section>
-
             <section className="asset-group-builder">
               <h3>Composition du groupe</h3>
               <p>Tu peux modifier les objets, leur position X/Z et les déplacer directement sur le mini-plan.</p>
@@ -4042,6 +4075,8 @@ function assetToCatalogEntry(asset) {
       groupSize: asset.dimensions?.groupSize || computeGroupSize(asset.dimensions?.children || []),
       children: asset.dimensions?.children || [],
       placementRule: normalizePlacementRule(asset.dimensions?.placementRule),
+      movementLocked: Boolean(asset.dimensions?.movementLocked),
+      deleteLocked: Boolean(asset.dimensions?.deleteLocked),
       price: asset.dimensions?.price || 0,
       thumbnailUrl: asset.thumbnail_url,
       dimensions: asset.dimensions || {},
@@ -4060,6 +4095,9 @@ function assetToCatalogEntry(asset) {
     thumbnailUrl: asset.thumbnail_url,
     isWallItem: assetPlacementMode(asset) === 'wall',
     collisionEnabled: asset.dimensions?.collisionEnabled !== false,
+    placementRule: normalizePlacementRule(asset.dimensions?.placementRule),
+    movementLocked: Boolean(asset.dimensions?.movementLocked),
+    deleteLocked: Boolean(asset.dimensions?.deleteLocked),
     dimensions: asset.dimensions || {},
   };
 }
@@ -4304,8 +4342,10 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
     label: item.label || entry.label,
     isGroup,
     groupSize: item.groupSize || entry.groupSize,
-    placementRule: item.placementRule || entry.placementRule,
-    lockedPlacement: item.lockedPlacement ?? Boolean(item.placementRule || entry.placementRule?.locked),
+    placementRule: item.placementRule || entry.placementRule || entry.dimensions?.placementRule,
+    lockedPlacement: item.lockedPlacement ?? Boolean(item.placementRule || entry.placementRule?.locked || isLockedPlacementRule(entry.dimensions?.placementRule)),
+    movementLocked: item.movementLocked ?? entry.movementLocked ?? entry.dimensions?.movementLocked,
+    deleteLocked: item.deleteLocked ?? entry.deleteLocked ?? entry.dimensions?.deleteLocked,
     modelUrl: item.modelUrl || entry.modelUrl,
     modelSize: item.modelSize || entry.modelSize,
     materialUrl,
@@ -4432,6 +4472,14 @@ function isLockedPlacementRule(rule) {
 
 function itemPlacementLocked(item) {
   return Boolean(item?.lockedPlacement || isSmclPartitionHeadItem(item) || isLockedPlacementRule(item?.placementRule));
+}
+
+function itemMovementLocked(item) {
+  return Boolean(item?.movementLocked || item?.dimensions?.movementLocked || itemPlacementLocked(item));
+}
+
+function itemDeletionLocked(item) {
+  return Boolean(item?.deleteLocked || item?.dimensions?.deleteLocked);
 }
 
 function placementRuleLabel(id, withDescription = false) {
@@ -5013,10 +5061,56 @@ function applyPlacementRule(item, width, depth, layout) {
     };
   }
 
+  if (rule.id === 'front-left') {
+    return {
+      ...base,
+      x: Number((-width / 2 + clearance - bounds.minX).toFixed(2)),
+      z: Number((depth / 2 - clearance - bounds.maxZ).toFixed(2)),
+    };
+  }
+
+  if (rule.id === 'front-right') {
+    return {
+      ...base,
+      x: Number((width / 2 - clearance - bounds.maxX).toFixed(2)),
+      z: Number((depth / 2 - clearance - bounds.maxZ).toFixed(2)),
+    };
+  }
+
   return {
     ...base,
     x: Number((-width / 2 + clearance - bounds.minX).toFixed(2)),
     z: Number((-depth / 2 + clearance - bounds.minZ).toFixed(2)),
+  };
+}
+
+function applyWallPlacementRule(item, width, depth, layout) {
+  const rule = normalizePlacementRule(item?.placementRule);
+  if (!rule?.locked) return item;
+
+  const validWalls = availableWalls(layout).map((wall) => wall.id);
+  const sideWall = rule.id === 'front-left' ? 'left' : rule.id === 'front-right' ? 'right' : null;
+  const wall = sideWall && validWalls.includes(sideWall) ? sideWall : 'back';
+  const range = wallItemAxisRange(item, wall, width, depth);
+  const axisByRule = {
+    'back-left': range.min,
+    'back-right': range.max,
+    'back-center': (range.min + range.max) / 2,
+    'front-left': wall === 'left' ? range.max : range.min,
+    'front-right': wall === 'right' ? range.max : range.max,
+  };
+  const axis = snapWallAxis(axisByRule[rule.id] ?? range.min);
+
+  return {
+    ...item,
+    placementRule: rule,
+    lockedPlacement: true,
+    wall,
+    x: Number(axis.toFixed(2)),
+    y: wallItemCenterY(item),
+    z: wall === 'back' ? -depth / 2 + wallThickness : Number(axis.toFixed(2)),
+    wallSide: null,
+    wallSurface: null,
   };
 }
 
@@ -5059,6 +5153,9 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
     const wall = validWalls.includes(item.wall) ? item.wall : 'back';
     if (isSmclPartitionHeadItem(item)) {
       return smclPartitionHeadWallPosition({ ...item, y: 0 }, width, depth, layout);
+    }
+    if (isLockedPlacementRule(item.placementRule)) {
+      return applyWallPlacementRule({ ...item, wall }, width, depth, layout);
     }
     const range = wallItemAxisRange(item, wall, width, depth);
     const axis = clamp(snapWallAxis(item.x), range.min, range.max);
@@ -5465,7 +5562,7 @@ function floorWallBlocker(item, wall, width, depth) {
   return null;
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallColor, interactive = true, visualContext = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallColor, interactive = true, canEditLockedItems = false, visualContext = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const cameraPivot = useMemo(() => {
     const radians = (viewAngle * Math.PI) / 180;
@@ -5512,7 +5609,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
             event.stopPropagation();
             if (!interactive) return;
             setSelectedId(item.id);
-            if (itemPlacementLocked(item)) return;
+            if (!canEditLockedItems && itemMovementLocked(item)) return;
             event.target.setPointerCapture(event.pointerId);
             setDraggingId(item.id);
           }}
