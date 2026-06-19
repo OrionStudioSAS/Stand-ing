@@ -83,6 +83,8 @@ const placementRuleOptions = [
   { id: 'back-right', label: 'Coin arrière droite', description: 'L’objet se colle automatiquement dans le coin arrière droit.' },
   { id: 'front-left', label: 'Coin avant gauche', description: 'L’objet se colle automatiquement dans le coin avant gauche.' },
   { id: 'front-right', label: 'Coin avant droite', description: 'L’objet se colle automatiquement dans le coin avant droit.' },
+  { id: 'outer-left', label: 'Le plus à gauche', description: 'L’objet se place sur le mur gauche si disponible, sinon au fond côté gauche.' },
+  { id: 'outer-right', label: 'Le plus à droite', description: 'L’objet se place sur le mur droit si disponible, sinon au fond côté droit.' },
   { id: 'back-center', label: 'Centre arrière', description: 'L’objet reste centré contre le mur du fond.' },
 ];
 const assetCategoryOptions = ['Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
@@ -5043,7 +5045,7 @@ function applyPlacementRule(item, width, depth, layout) {
     rotation: Number(rule.rotation || 0),
   };
 
-  if (rule.id === 'back-right') {
+  if (rule.id === 'back-right' || rule.id === 'outer-right') {
     return {
       ...base,
       x: Number((width / 2 - clearance - bounds.maxX).toFixed(2)),
@@ -5087,7 +5089,11 @@ function applyWallPlacementRule(item, width, depth, layout) {
   if (!rule?.locked) return item;
 
   const validWalls = availableWalls(layout).map((wall) => wall.id);
-  const sideWall = rule.id === 'front-left' ? 'left' : rule.id === 'front-right' ? 'right' : null;
+  const sideWall = (rule.id === 'front-left' || rule.id === 'outer-left')
+    ? 'left'
+    : (rule.id === 'front-right' || rule.id === 'outer-right')
+      ? 'right'
+      : null;
   const wall = sideWall && validWalls.includes(sideWall) ? sideWall : 'back';
   const range = wallItemAxisRange(item, wall, width, depth);
   const axisByRule = {
@@ -5096,6 +5102,8 @@ function applyWallPlacementRule(item, width, depth, layout) {
     'back-center': (range.min + range.max) / 2,
     'front-left': wall === 'left' ? range.max : range.min,
     'front-right': wall === 'right' ? range.max : range.max,
+    'outer-left': wall === 'left' ? range.max : range.min,
+    'outer-right': wall === 'right' ? range.max : range.max,
   };
   const axis = snapWallAxis(axisByRule[rule.id] ?? range.min);
 
