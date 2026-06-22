@@ -5650,13 +5650,13 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
     <group>
       <mesh receiveShadow position={[0, -floorThickness / 2, 0]}>
         <boxGeometry args={[width, floorThickness, depth]} />
-        <meshStandardMaterial color={carpetTexture ? '#ffffff' : carpetHex} map={carpetTexture || null} roughness={0.86} />
+        <meshStandardMaterial color={carpetHex} map={carpetTexture || null} roughness={0.82} />
       </mesh>
       {carpetFootprintEnabled && (
         <>
           <mesh receiveShadow position={[footprint.centerX, 0.003, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
             <planeGeometry args={[footprint.width, footprint.depth]} />
-            <meshStandardMaterial color={footprintTexture ? '#ffffff' : footprintHex} map={footprintTexture || null} roughness={0.86} />
+            <meshStandardMaterial color={footprintHex} map={footprintTexture || null} roughness={0.82} />
           </mesh>
           <FootprintOutline bounds={footprint} />
         </>
@@ -5689,16 +5689,14 @@ function useRepeatedTexture(url, width, depth, tileSize = 0.5) {
         loadedTexture.dispose();
         return;
       }
-      const enhancedTexture = createEnhancedCarpetTexture(loadedTexture.image) || loadedTexture;
-      if (enhancedTexture !== loadedTexture) loadedTexture.dispose();
-      enhancedTexture.wrapS = RepeatWrapping;
-      enhancedTexture.wrapT = RepeatWrapping;
-      enhancedTexture.colorSpace = SRGBColorSpace;
-      enhancedTexture.minFilter = LinearFilter;
-      enhancedTexture.magFilter = LinearFilter;
-      enhancedTexture.repeat.set(Math.max(1, Number(width || 1) / tileSize), Math.max(1, Number(depth || 1) / tileSize));
-      enhancedTexture.needsUpdate = true;
-      setTexture(enhancedTexture);
+      loadedTexture.wrapS = RepeatWrapping;
+      loadedTexture.wrapT = RepeatWrapping;
+      loadedTexture.colorSpace = SRGBColorSpace;
+      loadedTexture.minFilter = LinearFilter;
+      loadedTexture.magFilter = LinearFilter;
+      loadedTexture.repeat.set(Math.max(1, Number(width || 1) / tileSize), Math.max(1, Number(depth || 1) / tileSize));
+      loadedTexture.needsUpdate = true;
+      setTexture(loadedTexture);
     }, undefined, () => {
       if (!disposed) setTexture(null);
     });
@@ -5711,20 +5709,6 @@ function useRepeatedTexture(url, width, depth, tileSize = 0.5) {
   return texture;
 }
 
-function createEnhancedCarpetTexture(image) {
-  if (typeof document === 'undefined' || !image) return null;
-  const width = image.naturalWidth || image.width || 0;
-  const height = image.naturalHeight || image.height || 0;
-  if (!width || !height) return null;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  ctx.filter = 'contrast(1.85) saturate(1.08)';
-  ctx.drawImage(image, 0, 0, width, height);
-  return new CanvasTexture(canvas);
-}
 
 function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, sceneOffset, draggingId, onDragMove, onClearHover }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
