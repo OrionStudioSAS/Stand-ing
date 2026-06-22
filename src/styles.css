@@ -4495,6 +4495,11 @@ select {
   grid-template-columns: 1fr 1.3fr 100px 1.1fr 32px;
 }
 
+.asset-variant-row.source-row {
+  grid-template-columns: 1fr 1.4fr 32px;
+  align-items: center;
+}
+
 .asset-variant-row label:not(.asset-toggle-row) {
   display: grid;
   gap: 5px;
@@ -4513,6 +4518,54 @@ select {
   background: #fff;
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.asset-variant-row select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #dce2eb;
+  border-radius: 8px;
+  padding: 0 9px;
+  color: #27303c;
+  background: #fff;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.asset-variant-row.source-row > div {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: center;
+}
+
+.asset-variant-row.source-row > div > span {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 36px;
+  border-radius: 8px;
+  background: #eef3fa;
+  overflow: hidden;
+}
+
+.asset-variant-row.source-row img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.asset-variant-row.source-row strong {
+  color: #253041;
+  font-size: 0.82rem;
+}
+
+.asset-variant-row.source-row small {
+  color: #8b94a1;
+  font-size: 0.72rem;
 }
 
 .asset-variant-row input:focus {

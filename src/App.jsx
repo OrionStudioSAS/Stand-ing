@@ -745,7 +745,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     const dynamicEntries = objectBank
       .filter((asset) => asset.is_active)
       .filter((asset) => assetMatchesSalon(asset, salonLabel))
-      .map(assetToCatalogEntry);
+      .map((asset) => assetToCatalogEntry(asset, objectBank));
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
     return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
   }, [objectBank, salonLabel]);
@@ -912,7 +912,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const openSelectedItemConfigurator = () => {
     if (!selected || readOnly) return;
-    setItemConfigModal({ mode: 'edit', item: selected, entry: findCatalogEntry(availableCatalog, selected.type) });
+    const entry = selected.options?.variantGroupType
+      ? findCatalogEntry(availableCatalog, selected.options.variantGroupType)
+      : findCatalogEntry(availableCatalog, selected.type);
+    setItemConfigModal({ mode: 'edit', item: selected, entry });
   };
 
   const closeItemConfigurator = () => setItemConfigModal(null);
@@ -920,12 +923,38 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const confirmItemConfigurator = ({ entry, item, options, quantity = 1 }) => {
     if (readOnly) return;
     if (item) {
-      updateItem(item.id, { options });
+      if (entry?.type && entry.type !== item.type) {
+        replaceItemWithEntry(item, entry, options);
+      } else {
+        updateItem(item.id, { options });
+      }
       setItemConfigModal(null);
       return;
     }
     addItem(entry, options, quantity);
     setItemConfigModal(null);
+  };
+
+  const replaceItemWithEntry = (item, entry, options = {}) => {
+    const replacement = {
+      ...makeItem(entry.type, width, depth, layout, entry),
+      id: item.id,
+      x: item.x,
+      y: item.y,
+      z: item.z,
+      wall: item.wall,
+      rotation: item.rotation,
+      options,
+    };
+    setItems((current) => updateSceneItemWithCollision(
+      current.map((candidate) => (candidate.id === item.id ? constrainItem(replacement, width, depth, layout, carpetFootprintEnabled) : candidate)),
+      item.id,
+      {},
+      width,
+      depth,
+      layout,
+      carpetFootprintEnabled,
+    ));
   };
 
   const moveDraggedItem = (point) => {
@@ -1593,7 +1622,12 @@ function OptionsStepPanel({
 function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, readOnly = false, onAdd, onRemove, onSelectItem, onConfigureItem, onNext }) {
   const [activeCategory, setActiveCategory] = useState('all');
   const [search, setSearch] = useState('');
-  const entries = catalog.filter((entry) => !['hidden'].includes(furniturePanelCategory(entry)));
+  const groupedVariantTypes = variantGroupMemberTypes(catalog);
+  const entries = catalog.filter((entry) => (
+    !['hidden'].includes(furniturePanelCategory(entry))
+    && !groupedVariantTypes.has(entry.type)
+    && (!isVariantGroupEntry(entry) || entry.dimensions?.variantAssets?.length)
+  ));
   const categories = marketplaceCategories(entries);
   const selectedCategory = categories.find((category) => category.id === activeCategory) || categories[0];
   const filteredEntries = entries.filter((entry) => {
@@ -1630,6 +1664,7 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
             entry={entry}
             index={index}
             salonLabel={salonLabel}
+            catalog={catalog}
             readOnly={readOnly}
             includedCount={pricing?.includedCounts?.get(entry.type) || 0}
             billableCount={pricing?.billableCounts?.get(entry.type) || 0}
@@ -1656,9 +1691,9 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
   );
 }
 
-function MarketplaceCard({ entry, index, salonLabel, readOnly, includedCount = 0, billableCount = 0, onAdd }) {
+function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, includedCount = 0, billableCount = 0, onAdd }) {
   const Icon = entry.icon || Box;
-  const price = assetUnitPrice(entry, salonLabel);
+  const price = marketplaceStartingPrice(entry, catalog, salonLabel);
   const category = marketCategoryMeta(normalizeMarketCategory(entry));
   const badge = includedCount > 0 ? `× ${includedCount} au stand` : (index === 1 ? '🔥 Populaire' : '');
   return (
@@ -1721,6 +1756,7 @@ function ClockIcon() {
 
 function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfirm }) {
   const catalogEntry = entry || item || {};
+  const isVariantGroup = isVariantGroupEntry(catalogEntry);
   const isTv = Boolean(catalogEntry?.dimensions?.isTelevision || item?.dimensions?.isTelevision || /tv|télé|tele|ecran|écran|lcd/i.test(`${catalogEntry.label || ''} ${catalogEntry.type || ''}`));
   const initialOptions = item?.options || {};
   const variants = itemConfigVariants(catalogEntry, salonLabel, isTv);
@@ -1749,18 +1785,21 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfi
   };
 
   const submit = () => {
+    const resolvedEntry = selectedVariant?.entry || catalogEntry;
     onConfirm({
-      entry: catalogEntry,
+      entry: resolvedEntry,
       item,
       quantity,
       options: {
         ...initialOptions,
+        ...(isVariantGroup ? { variantGroupType: catalogEntry.type, variantGroupLabel: catalogEntry.label } : {}),
         format,
         variantId: selectedVariant?.id || format,
         variantLabel: selectedVariant?.label,
         variantDetail: selectedVariant?.detail,
         variantReference: selectedVariant?.reference,
         variantImageUrl: selectedVariant?.imageUrl,
+        variantAssetType: selectedVariant?.assetType,
         mount,
         mountLabel: selectedMount?.label,
         extraOptions: selectedExtras,
@@ -1786,7 +1825,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfi
           <span>{catalogEntry.thumbnailUrl ? <img src={catalogEntry.thumbnailUrl} alt="" /> : <Box size={34} />}</span>
           <div>
             <strong>{catalogEntry.label}</strong>
-            <small>Réf. {assetReference(catalogEntry, salonLabel) || catalogEntry.type || 'Stand-ING'}</small>
+            <small>Réf. {assetReference(selectedVariant?.entry || catalogEntry, salonLabel) || selectedVariant?.assetType || catalogEntry.type || 'Stand-ING'}</small>
             {isTv && <em>✓ Cloison de renfort + fixation + alim. incluses</em>}
           </div>
         </div>
@@ -1861,6 +1900,10 @@ function ToggleOption({ active, label, detail, price, onChange }) {
 }
 
 function itemConfigVariants(entry, salonLabel, isTv = false) {
+  if (isVariantGroupEntry(entry)) {
+    const groupVariants = normalizeVariantGroupOptions(entry?.dimensions?.variantAssets, salonLabel);
+    if (groupVariants.length) return groupVariants;
+  }
   const customVariants = normalizeAssetVariants(entry?.dimensions?.variants);
   if (customVariants.length) return customVariants;
   return isTv ? tvFormatVariants() : genericItemVariants(entry, salonLabel);
@@ -1927,6 +1970,23 @@ function normalizeAssetConfigOptions(options = []) {
     .filter((option) => option.label.trim());
 }
 
+function normalizeVariantGroupOptions(variantAssets = [], salonLabel = '') {
+  if (!Array.isArray(variantAssets)) return [];
+  return variantAssets
+    .filter((entry) => entry?.type)
+    .map((entry, index) => ({
+      id: entry.type,
+      assetType: entry.type,
+      label: entry.label || `Variante ${index + 1}`,
+      detail: entry.dimensions?.variantDetail || assetDimensionsLabel({ dimensions: entry.dimensions }) || '',
+      price: assetUnitPrice(entry, salonLabel),
+      reference: assetReference(entry, salonLabel),
+      imageUrl: entry.thumbnailUrl || entry.thumbnail_url || '',
+      isDefault: index === 0,
+      entry,
+    }));
+}
+
 function itemConfigTitle(entry = {}) {
   const label = entry.label || 'cet objet';
   if (/tv|télé|tele|ecran|écran|lcd/i.test(label)) return 'un téléviseur';
@@ -1939,6 +1999,23 @@ function itemCartLabel(item) {
 
 function cartItemPrice(item, entry, salonLabel) {
   return Number(item.options?.unitPrice ?? assetUnitPrice(entry, salonLabel) ?? 0);
+}
+
+function marketplaceStartingPrice(entry, catalog = [], salonLabel = '') {
+  if (isVariantGroupEntry(entry)) {
+    const prices = normalizeVariantGroupOptions(entry.dimensions?.variantAssets, salonLabel)
+      .map((variant) => Number(variant.price || 0))
+      .filter((price) => price > 0);
+    if (prices.length) return Math.min(...prices);
+  }
+  return assetUnitPrice(entry, salonLabel);
+}
+
+function variantGroupMemberTypes(catalog = []) {
+  return new Set(catalog
+    .filter(isVariantGroupEntry)
+    .flatMap((entry) => entry.dimensions?.variantAssetTypes || [])
+    .filter(Boolean));
 }
 
 function normalizeMarketCategory(entry = {}) {
@@ -1975,6 +2052,7 @@ function marketplaceCategories(entries) {
 }
 
 function marketplaceItemSubtitle(entry, categoryLabel) {
+  if (isVariantGroupEntry(entry)) return `${entry.dimensions?.variantAssetTypes?.length || 0} variantes disponibles`;
   if (entry.dimensions?.isTelevision) return '32 / 43 / 55 / 65 pouces';
   if (entry.dimensions?.category) return entry.dimensions.category;
   return categoryLabel;
@@ -3049,7 +3127,7 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
     const dynamicEntries = (assets || [])
       .filter((asset) => asset.is_active)
       .filter((asset) => assetMatchesSalon(asset, salon?.name))
-      .map(assetToCatalogEntry);
+      .map((asset) => assetToCatalogEntry(asset, assets));
     const all = [...dynamicEntries, ...nativeCatalogEntries()];
     return all
       .filter((entry, index) => all.findIndex((item) => item.type === entry.type) === index)
@@ -3224,7 +3302,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
     const dynamicEntries = (assets || [])
       .filter((asset) => asset.is_active)
       .filter((asset) => assetMatchesSalon(asset, salon.name))
-      .map(assetToCatalogEntry);
+      .map((asset) => assetToCatalogEntry(asset, assets));
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
     return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
   }, [assets, salon.name]);
@@ -3359,7 +3437,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
         <h4>Objets inclus</h4>
         <p className="preset-included-help">Chaque objet sauvegardé ici est inclus dans la formule. Le client ne paiera que les quantités ajoutées au-delà.</p>
         <div className="preset-catalog">
-          {availableCatalog.map((entry) => {
+          {availableCatalog.filter((entry) => !isVariantGroupEntry(entry)).map((entry) => {
             const Icon = entry.icon;
             return (
               <button key={entry.type} type="button" onClick={() => addItem(entry)}>
@@ -3616,7 +3694,8 @@ function clientStatusSummary(client) {
 
 function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onUploadAssetFolder }) {
   const [groupCreatorOpen, setGroupCreatorOpen] = useState(false);
-  const categories = ['Tout', 'Groupes', ...assetCategoryOptions];
+  const [variantGroupCreatorOpen, setVariantGroupCreatorOpen] = useState(false);
+  const categories = ['Tout', 'Groupes', 'Groupes de variantes', ...assetCategoryOptions];
   const filteredAssets = assets.filter((asset) => {
     const assetCategory = assetCategoryLabel(asset);
     const matchesCategory = category === 'Tout' || assetCategory === category;
@@ -3663,6 +3742,10 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
         <button className="asset-group-create-button" type="button" onClick={() => setGroupCreatorOpen(true)}>
           <Layers size={18} />
           Creer un groupe d'objets
+        </button>
+        <button className="asset-group-create-button" type="button" onClick={() => setVariantGroupCreatorOpen(true)}>
+          <Settings2 size={18} />
+          Creer un groupe de variantes
         </button>
       </div>
       {(uploadState?.message || uploadState?.error) && (
@@ -3716,6 +3799,18 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
           }}
         />
       )}
+      {variantGroupCreatorOpen && (
+        <AssetVariantGroupCreator
+          assets={assets}
+          scenes={scenes}
+          onClose={() => setVariantGroupCreatorOpen(false)}
+          onCreate={async (groupAsset) => {
+            const saved = await onSaveAsset(groupAsset);
+            setVariantGroupCreatorOpen(false);
+            onSelectAsset(saved);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -3723,6 +3818,7 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
 function AssetPreview({ asset }) {
   const url = asset.thumbnail_url;
   if (url) return <img className="asset-thumb" src={url} alt="" />;
+  if (asset.dimensions?.isVariantGroup) return <span className="asset-group-preview"><Layers size={34} />{asset.dimensions?.variantAssetTypes?.length || 0} variantes</span>;
   if (asset.dimensions?.isGroup) return <span className="asset-group-preview"><Layers size={34} />{asset.dimensions?.children?.length || 0} objets</span>;
   if (asset.model_url?.toLowerCase().endsWith('.obj')) return <span className="asset-obj-preview" />;
   return <span className="asset-glb-preview">{assetFormat(asset)}</span>;
@@ -3737,7 +3833,9 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const salons = getSalonRows(scenes).map((salon) => salon.title);
   const assignedSalons = assetSalons(draft, scenes);
   const isGroupAsset = Boolean(draft.dimensions?.isGroup);
+  const isVariantGroup = Boolean(draft.dimensions?.isVariantGroup);
   const sourceAssets = groupSourceAssets(assets);
+  const variantSourceAssetsList = variantSourceAssets(assets, draft.type);
   const fallbackType = sourceAssets[0]?.type || '';
   const activeGroupRowUid = selectedGroupRowUid || groupRows[0]?.uid || null;
   const draftPlacementRuleId = effectivePlacementRule(draft)?.id || 'free';
@@ -3749,12 +3847,14 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const draftVariants = normalizeAssetVariants(draft.dimensions?.variants);
   const draftMountVariants = normalizeAssetVariants(draft.dimensions?.mountVariants);
   const draftConfigOptions = normalizeAssetConfigOptions(draft.dimensions?.configOptions);
+  const [variantAssetTypes, setVariantAssetTypes] = useState(() => draft.dimensions?.variantAssetTypes || []);
 
   useEffect(() => {
     setDraft(asset);
     setThumbnailUploading(false);
     setThumbnailError('');
     setGroupRows(assetToGroupRows(asset));
+    setVariantAssetTypes(asset.dimensions?.variantAssetTypes || []);
     setSelectedGroupRowUid(null);
   }, [asset]);
 
@@ -3890,6 +3990,21 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   };
 
   const saveDraft = () => {
+    if (isVariantGroup) {
+      onSave({
+        ...draft,
+        label: draft.label?.trim() || 'Groupe de variantes',
+        dimensions: {
+          ...(draft.dimensions || {}),
+          isVariantGroup: true,
+          category: draft.dimensions?.category || 'Mobilier',
+          variantAssetTypes: variantAssetTypes.filter(Boolean),
+          format: 'Groupe de variantes',
+        },
+      });
+      return;
+    }
+
     if (!isGroupAsset) {
       onSave(draft);
       return;
@@ -3986,6 +4101,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           </span>
         </label>
 
+        {!isVariantGroup && (
         <section className="asset-behavior-settings">
           <h3>Règles spécifiques</h3>
           {!isGroupAsset && (
@@ -4053,24 +4169,31 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             </label>
           )}
         </section>
+        )}
 
-        {!isGroupAsset && (
+        {isVariantGroup && (
           <section className="asset-variants-settings">
             <div className="asset-variants-head">
               <div>
-                <h3>Variantes configurateur</h3>
-                <small>Ces choix apparaissent dans la popup quand l’exposant ajoute ou modifie cet objet.</small>
+                <h3>Objets associés au groupe</h3>
+                <small>Sélectionne les vrais objets 3D qui deviendront les variantes proposées dans la boutique.</small>
               </div>
-              <button type="button" onClick={() => addVariantRow('variants')}><Plus size={14} /> Variante</button>
+              <button type="button" onClick={() => setVariantAssetTypes((current) => [...current, variantSourceAssetsList.find((asset) => !current.includes(asset.type))?.type || variantSourceAssetsList[0]?.type || ''])}>
+                <Plus size={14} /> Objet
+              </button>
             </div>
-            <AssetVariantRows
-              rows={draftVariants}
-              emptyLabel="Aucune variante : le configurateur utilisera le prix de l’objet."
-              onChange={(index, patch) => updateVariantRow('variants', index, patch)}
-              onRemove={(index) => removeVariantRow('variants', index)}
+            <AssetVariantSourceRows
+              rows={variantAssetTypes}
+              sourceAssets={variantSourceAssetsList}
+              onChange={(index, type) => setVariantAssetTypes((current) => current.map((item, itemIndex) => (itemIndex === index ? type : item)))}
+              onRemove={(index) => setVariantAssetTypes((current) => current.filter((_, itemIndex) => itemIndex !== index))}
             />
+          </section>
+        )}
 
-            <div className="asset-variants-head compact">
+        {!isGroupAsset && !isVariantGroup && (
+          <section className="asset-variants-settings">
+            <div className="asset-variants-head">
               <div>
                 <h3>Modes de pose</h3>
                 <small>Optionnel. Utile pour une TV : mural, sur pied, sur table…</small>
@@ -4267,6 +4390,135 @@ function AssetConfigOptionRows({ rows, emptyLabel, onChange, onRemove }) {
           <button type="button" onClick={() => onRemove(index)} aria-label="Supprimer cette option"><Trash2 size={14} /></button>
         </article>
       ))}
+    </div>
+  );
+}
+
+function AssetVariantSourceRows({ rows, sourceAssets, onChange, onRemove }) {
+  if (!sourceAssets.length) return <p className="asset-variants-empty">Aucun objet disponible pour créer des variantes.</p>;
+  if (!rows.length) return <p className="asset-variants-empty">Aucun objet associé : ce groupe ne s’affichera pas encore dans la boutique.</p>;
+  return (
+    <div className="asset-variant-list">
+      {rows.map((type, index) => {
+        const selectedSource = sourceAssets.find((asset) => asset.type === type) || sourceAssets[0];
+        return (
+          <article key={`${type}-${index}`} className="asset-variant-row source-row">
+            <label>
+              <span>Objet variante</span>
+              <select value={type} onChange={(event) => onChange(index, event.target.value)}>
+                {sourceAssets.map((source) => <option key={source.type} value={source.type}>{source.label}</option>)}
+              </select>
+            </label>
+            <div>
+              <span>{selectedSource?.thumbnail_url ? <img src={selectedSource.thumbnail_url} alt="" /> : <Box size={20} />}</span>
+              <strong>{selectedSource?.label || 'Objet'}</strong>
+              <small>{assetCategoryLabel(selectedSource || {})} · {assetSizeLabel(selectedSource || {})}</small>
+            </div>
+            <button type="button" onClick={() => onRemove(index)} aria-label="Retirer cet objet"><Trash2 size={14} /></button>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
+  const sourceAssets = variantSourceAssets(assets);
+  const fallbackType = sourceAssets[0]?.type || '';
+  const [name, setName] = useState('Nouveau groupe de variantes');
+  const [category, setCategory] = useState('Mobilier');
+  const [rows, setRows] = useState(fallbackType ? [fallbackType] : []);
+  const [assignedSalons, setAssignedSalons] = useState(() => getSalonRows(scenes).map((salon) => salon.title).slice(0, 1));
+  const [saving, setSaving] = useState(false);
+
+  const toggleSalon = (salon) => {
+    setAssignedSalons((current) => (current.includes(salon) ? current.filter((item) => item !== salon) : [...current, salon]));
+  };
+
+  const saveGroup = async () => {
+    if (!rows.filter(Boolean).length) return;
+    setSaving(true);
+    const cleanRows = [...new Set(rows.filter(Boolean))];
+    await onCreate({
+      type: `variant-group-${slugForType(name)}-${Date.now().toString(36)}`,
+      label: name.trim() || 'Groupe de variantes',
+      model_url: null,
+      thumbnail_url: null,
+      is_active: assignedSalons.length > 0,
+      dimensions: {
+        isVariantGroup: true,
+        category,
+        variantAssetTypes: cleanRows,
+        salons: assignedSalons,
+        addedBy: 'Admin Stand-ING',
+        format: 'Groupe de variantes',
+      },
+    });
+    setSaving(false);
+  };
+
+  return (
+    <div className="asset-drawer-layer">
+      <aside className="asset-drawer asset-group-drawer">
+        <header>
+          <div>
+            <h2>Créer un groupe de variantes</h2>
+            <span>Une fiche boutique, plusieurs objets 3D réels.</span>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
+        </header>
+
+        <label className="asset-group-field">
+          <span>Nom du groupe</span>
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex : Téléviseurs LCD" />
+        </label>
+
+        <label className="asset-group-field">
+          <span>Catégorie boutique</span>
+          <select value={category} onChange={(event) => setCategory(event.target.value)}>
+            {assetCategoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </label>
+
+        <section className="asset-variants-settings">
+          <div className="asset-variants-head">
+            <div>
+              <h3>Objets variantes</h3>
+              <small>Exemple : TV 32, TV 43, TV 65. Ce sont ces objets qui seront réellement posés sur la scène.</small>
+            </div>
+            <button type="button" onClick={() => setRows((current) => [...current, sourceAssets.find((asset) => !current.includes(asset.type))?.type || fallbackType])} disabled={!sourceAssets.length}>
+              <Plus size={14} /> Objet
+            </button>
+          </div>
+          <AssetVariantSourceRows
+            rows={rows}
+            sourceAssets={sourceAssets}
+            onChange={(index, type) => setRows((current) => current.map((item, itemIndex) => (itemIndex === index ? type : item)))}
+            onRemove={(index) => setRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+          />
+        </section>
+
+        <section className="asset-assignment">
+          <h3>Affectation par salon</h3>
+          {(getSalonRows(scenes).map((salon) => salon.title).length ? getSalonRows(scenes).map((salon) => salon.title) : ['SMCL 2026', 'SIAE 2026']).map((salon) => {
+            const active = assignedSalons.includes(salon);
+            return (
+              <button key={salon} type="button" onClick={() => toggleSalon(salon)}>
+                <strong>{salon}</strong>
+                <span>{active ? 'Actif' : 'Inactif'}</span>
+                <i className={active ? 'active' : ''} />
+              </button>
+            );
+          })}
+        </section>
+
+        <footer>
+          <button type="button" className="asset-delete" onClick={onClose}>Annuler</button>
+          <button type="button" className="asset-save" disabled={saving || !rows.filter(Boolean).length} onClick={saveGroup}>
+            {saving ? 'Création...' : 'Créer le groupe'}
+          </button>
+        </footer>
+      </aside>
     </div>
   );
 }
@@ -4582,6 +4834,7 @@ function formatDate(value) {
 }
 
 function assetCategoryLabel(asset) {
+  if (asset.dimensions?.isVariantGroup) return 'Groupes de variantes';
   if (asset.dimensions?.isGroup) return 'Groupes';
   if (asset.dimensions?.category) return asset.dimensions.category;
   if (asset.type?.includes('screen')) return 'Multimédia';
@@ -4592,6 +4845,7 @@ function assetCategoryLabel(asset) {
 }
 
 function assetFormat(asset) {
+  if (asset.dimensions?.isVariantGroup) return 'Groupe de variantes';
   if (asset.dimensions?.isGroup) return 'Groupe';
   const url = asset.model_url || '';
   const ext = url.split('.').pop()?.toUpperCase();
@@ -4600,6 +4854,7 @@ function assetFormat(asset) {
 }
 
 function assetSizeLabel(asset) {
+  if (asset.dimensions?.isVariantGroup) return `${asset.dimensions?.variantAssetTypes?.length || 0} variantes`;
   if (asset.dimensions?.isGroup) return `${asset.dimensions?.children?.length || 0} objets`;
   if (asset.dimensions?.sizeMb) return `${asset.dimensions.sizeMb} Mo`;
   if (asset.dimensions?.fileSizeMb) return `${asset.dimensions.fileSizeMb} Mo`;
@@ -4610,6 +4865,10 @@ function assetDimensionsLabel(asset) {
   const size = asset.dimensions?.groupSize || asset.dimensions?.size || asset.dimensions?.dimensions;
   if (!Array.isArray(size)) return '—';
   return size.map((value) => `${Number(value).toLocaleString('fr-FR')} m`).join(' × ');
+}
+
+function isVariantGroupEntry(assetOrEntry = {}) {
+  return Boolean(assetOrEntry?.dimensions?.isVariantGroup);
 }
 
 function groupSourceAssets(assets = []) {
@@ -4626,9 +4885,17 @@ function groupSourceAssets(assets = []) {
         materialUrl: entry.materialUrl || null,
       },
     }));
-  const dynamicAssets = assets.filter((asset) => asset.is_active && !asset.dimensions?.isGroup && !isWallItemType(asset.type));
+  const dynamicAssets = assets.filter((asset) => asset.is_active && !asset.dimensions?.isGroup && !asset.dimensions?.isVariantGroup && !isWallItemType(asset.type));
   const all = [...baseAssets, ...dynamicAssets];
   return all.filter((asset, index) => all.findIndex((candidate) => candidate.type === asset.type) === index);
+}
+
+function variantSourceAssets(assets = [], excludedType = '') {
+  return assets
+    .filter((asset) => asset.type !== excludedType)
+    .filter((asset) => asset.is_active)
+    .filter((asset) => !asset.dimensions?.isGroup && !asset.dimensions?.isVariantGroup)
+    .filter((asset, index, all) => all.findIndex((candidate) => candidate.type === asset.type) === index);
 }
 
 function nativeCatalogEntries() {
@@ -4676,7 +4943,27 @@ function assetSalons(asset, scenes = []) {
   return asset.is_active ? salons.slice(0, 1) : [];
 }
 
-function assetToCatalogEntry(asset) {
+function assetToCatalogEntry(asset, allAssets = []) {
+  if (asset.dimensions?.isVariantGroup) {
+    const variantAssets = (asset.dimensions?.variantAssetTypes || [])
+      .map((type) => allAssets.find((candidate) => candidate.type === type))
+      .filter(Boolean)
+      .map((candidate) => assetToCatalogEntry(candidate, allAssets));
+    return {
+      type: asset.type,
+      label: asset.label,
+      icon: Layers,
+      color: asset.dimensions?.color || '#dfe8ec',
+      price: Math.min(...variantAssets.map((entry) => assetUnitPrice(entry, assetSalons(asset)[0])).filter((price) => price > 0), 0) || 0,
+      thumbnailUrl: asset.thumbnail_url,
+      dimensions: {
+        ...(asset.dimensions || {}),
+        isVariantGroup: true,
+        variantAssets,
+      },
+    };
+  }
+
   if (asset.dimensions?.isGroup) {
     return {
       type: asset.type,
@@ -4860,6 +5147,7 @@ function baseItemsToQuantityMap(baseItems = []) {
 }
 
 function isBasePackEligible(entry) {
+  if (isVariantGroupEntry(entry)) return false;
   const category = furniturePanelCategory(entry);
   return category === 'furniture' || category === 'multimedia';
 }
