@@ -5128,14 +5128,26 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
   const entry = findCatalogEntry(catalogEntries, item?.type);
   if (!entry) return item;
   const isGroup = Boolean(item.isGroup || entry.isGroup);
+  const entryDimensions = entry.dimensions || {};
+  const itemDimensions = item.dimensions || {};
   const dimensions = {
-    ...(entry.dimensions || {}),
-    ...(item.dimensions || {}),
+    ...entryDimensions,
+    ...itemDimensions,
+    materialUrl: entry.materialUrl || entryDimensions.materialUrl || item.materialUrl || itemDimensions.materialUrl,
+    storageRoot: entryDimensions.storageRoot || itemDimensions.storageRoot,
+    storagePath: entryDimensions.storagePath || itemDimensions.storagePath,
+    materialPath: entryDimensions.materialPath || itemDimensions.materialPath,
+    storagePaths: entryDimensions.storagePaths || itemDimensions.storagePaths,
+    folderName: entryDimensions.folderName || itemDimensions.folderName,
+    size: entryDimensions.size || itemDimensions.size,
+    dimensions: entryDimensions.dimensions || itemDimensions.dimensions,
+    modelSize: entryDimensions.modelSize || itemDimensions.modelSize,
+    sizeSource: entryDimensions.sizeSource || itemDimensions.sizeSource,
   };
   const placementRule = hasOwn(item, 'placementRule')
     ? normalizePlacementRule(item.placementRule)
     : effectivePlacementRule(entry);
-  const materialUrl = item.materialUrl || item.dimensions?.materialUrl || entry.materialUrl || entry.dimensions?.materialUrl;
+  const materialUrl = entry.materialUrl || entryDimensions.materialUrl || item.materialUrl || itemDimensions.materialUrl;
   const hydrated = {
     ...item,
     label: item.label || entry.label,
@@ -5145,8 +5157,8 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
     lockedPlacement: item.lockedPlacement ?? isLockedPlacementRule(placementRule),
     movementLocked: item.movementLocked ?? entry.movementLocked ?? entry.dimensions?.movementLocked,
     deleteLocked: item.deleteLocked ?? entry.deleteLocked ?? entry.dimensions?.deleteLocked,
-    modelUrl: item.modelUrl || entry.modelUrl,
-    modelSize: item.modelSize || entry.modelSize,
+    modelUrl: entry.modelUrl || item.modelUrl,
+    modelSize: entry.modelSize || item.modelSize,
     materialUrl,
     dimensions,
     color: item.color || entry.color,

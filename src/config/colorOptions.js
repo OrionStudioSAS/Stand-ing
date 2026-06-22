@@ -211,14 +211,14 @@ export const colorGroups = {
   {
     "id": "1896",
     "code": "1896",
-    "name": "Gris Foncé",
+    "name": "Gris Fonce",
     "rgb": [
       70,
       70,
       70
     ],
     "hex": "#464646",
-    "image": "/colors/moquette/1896%20-%20Gris%20Fonce%CC%81%20-%20RVB%2070%2070%2070.jpg",
+    "image": "/colors/moquette/1896%20-%20Gris%20Fonce%20-%20RVB%2070%2070%2070.jpg",
     "included": false
   },
   {
