@@ -88,17 +88,6 @@ const placementRuleOptions = [
   { id: 'back-center', label: 'Centre arrière', description: 'L’objet reste centré contre le mur du fond.' },
 ];
 const assetCategoryOptions = ['Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
-const defaultTvConfigOptions = [
-  { id: 'technician', label: 'Permanence technicien 1/2 j', price: 340, defaultChecked: false },
-  {
-    id: 'fileCheck',
-    label: 'Option vérification et intégration des fichiers vidéo',
-    detail: 'Fichiers à fournir au plus tard 2 semaines avant l’ouverture du salon',
-    price: 55,
-    defaultChecked: false,
-  },
-];
-
 function makeItem(type, width, depth, layout, catalogEntry = null) {
   const entry = catalogEntry || catalog.find((item) => item.type === type);
   const placementRule = effectivePlacementRule(entry);
@@ -1757,15 +1746,14 @@ function ClockIcon() {
 function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfirm }) {
   const catalogEntry = entry || item || {};
   const isVariantGroup = isVariantGroupEntry(catalogEntry);
-  const isTv = Boolean(catalogEntry?.dimensions?.isTelevision || item?.dimensions?.isTelevision || /tv|télé|tele|ecran|écran|lcd/i.test(`${catalogEntry.label || ''} ${catalogEntry.type || ''}`));
   const initialOptions = item?.options || {};
-  const variants = itemConfigVariants(catalogEntry, salonLabel, isTv);
-  const mounts = itemConfigMounts(catalogEntry, isTv);
-  const extraOptions = itemConfigExtraOptions(catalogEntry, isTv);
+  const variants = itemConfigVariants(catalogEntry, salonLabel);
+  const mounts = itemConfigMounts(catalogEntry);
+  const extraOptions = itemConfigExtraOptions(catalogEntry);
   const defaultVariant = variants.find((variant) => variant.isDefault) || variants[0];
-  const defaultMount = mounts.find((variant) => variant.isDefault) || mounts[0];
+  const defaultMount = mounts.find((variant) => variant.isDefault) || mounts[0] || null;
   const [format, setFormat] = useState(initialOptions.variantId || initialOptions.format || defaultVariant?.id || 'standard');
-  const [mount, setMount] = useState(initialOptions.mount || defaultMount?.id || (isTv ? 'wall' : 'standard'));
+  const [mount, setMount] = useState(initialOptions.mount || defaultMount?.id || '');
   const [selectedExtras, setSelectedExtras] = useState(() => {
     const previous = initialOptions.extraOptions || {};
     return extraOptions.reduce((acc, option) => {
@@ -1826,12 +1814,11 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfi
           <div>
             <strong>{catalogEntry.label}</strong>
             <small>Réf. {assetReference(selectedVariant?.entry || catalogEntry, salonLabel) || selectedVariant?.assetType || catalogEntry.type || 'Stand-ING'}</small>
-            {isTv && <em>✓ Cloison de renfort + fixation + alim. incluses</em>}
           </div>
         </div>
 
-        <ConfigChoiceGrid title={isTv ? 'Format' : 'Variante'} choices={variants} value={format} onChange={setFormat} />
-        <ConfigChoiceGrid title={isTv ? 'Mode de pose' : 'Configuration'} choices={mounts} value={mount} onChange={setMount} />
+        <ConfigChoiceGrid title="Variante" choices={variants} value={format} onChange={setFormat} />
+        {mounts.length > 0 && <ConfigChoiceGrid title="Mode de pose" choices={mounts} value={mount} onChange={setMount} />}
 
         {extraOptions.length > 0 && (
           <div className="item-config-options">
@@ -1899,43 +1886,23 @@ function ToggleOption({ active, label, detail, price, onChange }) {
   );
 }
 
-function itemConfigVariants(entry, salonLabel, isTv = false) {
+function itemConfigVariants(entry, salonLabel) {
   if (isVariantGroupEntry(entry)) {
     const groupVariants = normalizeVariantGroupOptions(entry?.dimensions?.variantAssets, salonLabel);
     if (groupVariants.length) return groupVariants;
   }
   const customVariants = normalizeAssetVariants(entry?.dimensions?.variants);
   if (customVariants.length) return customVariants;
-  return isTv ? tvFormatVariants() : genericItemVariants(entry, salonLabel);
+  return genericItemVariants(entry, salonLabel);
 }
 
-function itemConfigMounts(entry, isTv = false) {
+function itemConfigMounts(entry) {
   const customMounts = normalizeAssetVariants(entry?.dimensions?.mountVariants);
-  if (customMounts.length) return customMounts;
-  return isTv ? tvMountVariants() : [{ id: 'standard', label: 'Standard', detail: 'Configuration par défaut', price: 0, isDefault: true }];
+  return customMounts;
 }
 
-function itemConfigExtraOptions(entry, isTv = false) {
-  const customOptions = normalizeAssetConfigOptions(entry?.dimensions?.configOptions);
-  if (customOptions.length) return customOptions;
-  return isTv ? defaultTvConfigOptions : [];
-}
-
-function tvFormatVariants() {
-  return [
-    { id: '32', label: '32"', detail: '43 × 73 cm', price: 637 },
-    { id: '43', label: '43"', detail: '55 × 95 cm', price: 731, isDefault: true },
-    { id: '55', label: '55"', detail: '72 × 124 cm', price: 963 },
-    { id: '65', label: '65"', detail: '84 × 146 cm', price: 1197 },
-  ];
-}
-
-function tvMountVariants() {
-  return [
-    { id: 'stand', label: 'Sur pied', detail: 'Inclus', price: 0 },
-    { id: 'table', label: 'Sur table', detail: 'Inclus', price: 0 },
-    { id: 'wall', label: 'Mural', detail: 'Cloison renfort', price: 0, isDefault: true },
-  ];
+function itemConfigExtraOptions(entry) {
+  return normalizeAssetConfigOptions(entry?.dimensions?.configOptions);
 }
 
 function genericItemVariants(entry, salonLabel) {
