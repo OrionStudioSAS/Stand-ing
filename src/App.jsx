@@ -1087,8 +1087,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
               canEditLockedItems={isAdminViewer}
               onDragMove={moveDraggedItem}
               viewAngle={viewAngle}
-              carpetColor={selectedCarpetColor.hex}
-              carpetFootprintColor={selectedCarpetFootprintColor.hex}
+              carpetColor={selectedCarpetColor}
+              carpetFootprintColor={selectedCarpetFootprintColor}
               carpetFootprintEnabled={carpetFootprintEnabled}
               wallColor={selectedWallFabricColor.hex}
               visualContext={sceneVisualContext}
@@ -2918,7 +2918,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
               canEditLockedItems
               onDragMove={moveDraggedItem}
               viewAngle={35}
-              carpetColor="#bebebe"
+              carpetColor={{ hex: '#bebebe' }}
               wallColor="#f8f7f3"
             />
             <ContactShadows opacity={0.22} scale={12} blur={2.4} far={5} position={[0, -0.01, 0]} />
@@ -5641,23 +5641,72 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
 
 function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
+  const carpetTexture = useRepeatedTexture(colorTextureUrl(carpetColor), width, depth);
+  const footprintTexture = useRepeatedTexture(colorTextureUrl(carpetFootprintColor || carpetColor), footprint.width, footprint.depth);
+  const carpetHex = colorHex(carpetColor, '#bebebe');
+  const footprintHex = colorHex(carpetFootprintColor || carpetColor, carpetHex);
+
   return (
     <group>
       <mesh receiveShadow position={[0, -floorThickness / 2, 0]}>
         <boxGeometry args={[width, floorThickness, depth]} />
-        <meshStandardMaterial color={carpetColor || '#bebebe'} roughness={0.78} />
+        <meshStandardMaterial color={carpetTexture ? '#ffffff' : carpetHex} map={carpetTexture || null} roughness={0.82} />
       </mesh>
       {carpetFootprintEnabled && (
         <>
           <mesh receiveShadow position={[footprint.centerX, 0.003, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
             <planeGeometry args={[footprint.width, footprint.depth]} />
-            <meshStandardMaterial color={carpetFootprintColor || carpetColor || '#bebebe'} roughness={0.78} />
+            <meshStandardMaterial color={footprintTexture ? '#ffffff' : footprintHex} map={footprintTexture || null} roughness={0.82} />
           </mesh>
           <FootprintOutline bounds={footprint} />
         </>
       )}
     </group>
   );
+}
+
+function colorHex(color, fallback = '#bebebe') {
+  return typeof color === 'string' ? color : (color?.hex || fallback);
+}
+
+function colorTextureUrl(color) {
+  return typeof color === 'string' ? '' : (color?.image || '');
+}
+
+function useRepeatedTexture(url, width, depth, tileSize = 1) {
+  const [texture, setTexture] = useState(null);
+
+  useEffect(() => {
+    if (!url) {
+      setTexture(null);
+      return undefined;
+    }
+
+    let disposed = false;
+    const loader = new TextureLoader();
+    loader.load(url, (loadedTexture) => {
+      if (disposed) {
+        loadedTexture.dispose();
+        return;
+      }
+      loadedTexture.wrapS = RepeatWrapping;
+      loadedTexture.wrapT = RepeatWrapping;
+      loadedTexture.colorSpace = SRGBColorSpace;
+      loadedTexture.minFilter = LinearFilter;
+      loadedTexture.magFilter = LinearFilter;
+      loadedTexture.repeat.set(Math.max(1, Number(width || 1) / tileSize), Math.max(1, Number(depth || 1) / tileSize));
+      loadedTexture.needsUpdate = true;
+      setTexture(loadedTexture);
+    }, undefined, () => {
+      if (!disposed) setTexture(null);
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [url, width, depth, tileSize]);
+
+  return texture;
 }
 
 function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, sceneOffset, draggingId, onDragMove, onClearHover }) {
