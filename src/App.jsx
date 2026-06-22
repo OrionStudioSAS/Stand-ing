@@ -925,25 +925,23 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   };
 
   const replaceItemWithEntry = (item, entry, options = {}) => {
-    const replacement = {
-      ...makeItem(entry.type, width, depth, layout, entry),
-      id: item.id,
-      x: item.x,
-      y: item.y,
-      z: item.z,
-      wall: item.wall,
-      rotation: item.rotation,
-      options,
-    };
-    setItems((current) => updateSceneItemWithCollision(
-      current.map((candidate) => (candidate.id === item.id ? constrainItem(replacement, width, depth, layout, carpetFootprintEnabled) : candidate)),
-      item.id,
-      {},
-      width,
-      depth,
-      layout,
-      carpetFootprintEnabled,
-    ));
+    setItems((current) => {
+      const nextBase = { ...makeItem(entry.type, width, depth, layout, entry), id: item.id, options };
+      const samePlacementMode = isWallItem(item) === isWallItem(nextBase);
+      const compatiblePosition = samePlacementMode
+        ? {
+          ...(isWallItem(nextBase) ? { wall: item.wall, x: item.x, y: item.y, z: item.z } : { x: item.x, z: item.z }),
+          rotation: item.rotation,
+        }
+        : {};
+      const candidate = constrainItem({ ...nextBase, ...compatiblePosition }, width, depth, layout, carpetFootprintEnabled);
+      const others = current.filter((sceneItem) => sceneItem.id !== item.id);
+      const placed = collidesWithScene(candidate, others, candidate.id, width, depth)
+        ? placeItemInFreeSpot(candidate, others, width, depth, layout, carpetFootprintEnabled)
+        : candidate;
+      if (!placed) return current;
+      return [...others, placed];
+    });
   };
 
   const moveDraggedItem = (point) => {
@@ -4138,7 +4136,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
                   <span>{active ? 'Actif' : 'Inactif'}</span>
                   <i className={active ? 'active' : ''} />
                 </button>
-                {active && (
+                {active && !isVariantGroup && (
                   <div className="asset-salon-pricing-fields">
                     <label>
                       <span>Prix spécifique {salon}</span>
@@ -4160,6 +4158,9 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
                       />
                     </label>
                   </div>
+                )}
+                {active && isVariantGroup && (
+                  <small className="asset-variant-group-note">Prix et référence gérés par les objets variantes.</small>
                 )}
               </div>
             );
@@ -4210,7 +4211,9 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           </>
         )}
 
-        <small className="asset-price-note">Les prix et références peuvent être différents pour chaque salon actif.</small>
+        <small className="asset-price-note">
+          {isVariantGroup ? 'Le groupe sert uniquement de fiche boutique : les prix et références viennent des objets associés.' : 'Les prix et références peuvent être différents pour chaque salon actif.'}
+        </small>
 
         <footer>
           <button type="button" className="asset-delete" onClick={onDelete}>Supprimer définitivement</button>

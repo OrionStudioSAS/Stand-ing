@@ -4701,6 +4701,14 @@ select {
   background: #fff;
 }
 
+.asset-variant-group-note {
+  display: block;
+  margin-top: -4px;
+  color: #8b94a1;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .asset-price-note {
   color: #b0b5bd;
   font-size: 0.76rem;
