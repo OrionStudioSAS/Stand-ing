@@ -6242,7 +6242,6 @@ function cloneAndNormalizeMaterial(material) {
   if (!cloned) return cloned;
 
   cloned.side = DoubleSide;
-  forceMaterialTexturesRepeat(cloned);
 
   if (cloned.map && cloned.color?.set) {
     // SketchUp MTL often combines map_Kd with a mid-grey Kd, which multiplies
@@ -6260,18 +6259,6 @@ function cloneAndNormalizeMaterial(material) {
 
   cloned.needsUpdate = true;
   return cloned;
-}
-
-
-function forceMaterialTexturesRepeat(material) {
-  ['map', 'alphaMap', 'aoMap', 'bumpMap', 'displacementMap', 'emissiveMap', 'lightMap', 'metalnessMap', 'normalMap', 'roughnessMap'].forEach((key) => {
-    const texture = material?.[key];
-    if (!texture) return;
-    texture.wrapS = RepeatWrapping;
-    texture.wrapT = RepeatWrapping;
-    if (key === 'map' || key === 'emissiveMap') texture.colorSpace = SRGBColorSpace;
-    texture.needsUpdate = true;
-  });
 }
 
 function isAluminiumMaterial(material = {}) {
