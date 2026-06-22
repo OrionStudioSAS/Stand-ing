@@ -3346,6 +3346,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const draftPlacementRuleId = effectivePlacementRule(draft)?.id || 'free';
   const draftMountType = assetPlacementMode(draft);
   const draftCollisionDisabled = draft.dimensions?.collisionEnabled === false;
+  const draftIsTelevision = Boolean(draft.dimensions?.isTelevision);
   const draftMovementLocked = Boolean(draft.dimensions?.movementLocked);
   const draftDeleteLocked = Boolean(draft.dimensions?.deleteLocked);
 
@@ -3388,6 +3389,17 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
       dimensions: {
         ...(draft.dimensions || {}),
         ...patch,
+      },
+    });
+  };
+
+  const updateTelevisionOption = (checked) => {
+    setDraft({
+      ...draft,
+      dimensions: {
+        ...(draft.dimensions || {}),
+        isTelevision: checked,
+        ...(checked ? { mountType: 'wall', wallY: screenCenterHeight } : {}),
       },
     });
   };
@@ -3527,6 +3539,19 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
                 <option value="floor">Objet au sol</option>
                 <option value="wall">Objet rattaché à un mur</option>
               </select>
+            </label>
+          )}
+          {!isGroupAsset && (
+            <label className="asset-toggle-row">
+              <input
+                type="checkbox"
+                checked={draftIsTelevision}
+                onChange={(event) => updateTelevisionOption(event.target.checked)}
+              />
+              <span>
+                <strong>Option télé</strong>
+                <small>Coche pour rattacher automatiquement cet objet au mur, centre à 1,60 m du sol.</small>
+              </span>
             </label>
           )}
           <label>
@@ -4593,7 +4618,7 @@ function pickLedRailOverride(item) {
 }
 
 function defaultWallItemCenterY(entry, type) {
-  if (type === 'screen') return screenCenterHeight;
+  if (type === 'screen' || entry?.dimensions?.isTelevision) return screenCenterHeight;
   if (type === 'poster') return 1.45;
   if (isLedRailEntry(entry)) return ledRailCenterY(entry);
   if (isPartitionHeadItem(entry)) return 0;
@@ -4720,6 +4745,7 @@ function isWallItemType(type) {
 
 function assetPlacementMode(assetOrEntry = {}) {
   const mountType = assetOrEntry?.dimensions?.mountType || assetOrEntry?.mountType;
+  if (assetOrEntry?.dimensions?.isTelevision) return 'wall';
   if (isLedRailEntry(assetOrEntry)) return 'wall';
   return mountType === 'wall' ? 'wall' : 'floor';
 }
@@ -5515,7 +5541,7 @@ function screenWorldPosition(item, width, depth, items = []) {
 }
 
 function wallItemCenterY(item) {
-  if (item?.type === 'screen') return screenCenterHeight;
+  if (item?.type === 'screen' || item?.dimensions?.isTelevision) return screenCenterHeight;
   if (item?.type === 'poster') return Number(item?.y ?? 1.45);
   if (isLedRailEntry(item)) return ledRailCenterY(item);
   if (isPartitionHeadItem(item)) return 0;
