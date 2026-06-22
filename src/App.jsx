@@ -5650,13 +5650,13 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
     <group>
       <mesh receiveShadow position={[0, -floorThickness / 2, 0]}>
         <boxGeometry args={[width, floorThickness, depth]} />
-        <meshStandardMaterial color={carpetTexture ? '#ffffff' : carpetHex} map={carpetTexture || null} roughness={0.82} />
+        <meshStandardMaterial color={carpetHex} map={carpetTexture || null} roughness={0.82} />
       </mesh>
       {carpetFootprintEnabled && (
         <>
           <mesh receiveShadow position={[footprint.centerX, 0.003, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
             <planeGeometry args={[footprint.width, footprint.depth]} />
-            <meshStandardMaterial color={footprintTexture ? '#ffffff' : footprintHex} map={footprintTexture || null} roughness={0.82} />
+            <meshStandardMaterial color={footprintHex} map={footprintTexture || null} roughness={0.82} />
           </mesh>
           <FootprintOutline bounds={footprint} />
         </>
