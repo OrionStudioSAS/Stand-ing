@@ -5654,11 +5654,10 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
       </mesh>
       {carpetFootprintEnabled && (
         <>
-          <mesh receiveShadow position={[footprint.centerX, 0.003, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
+          <mesh receiveShadow position={[footprint.centerX, 0.012, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
             <planeGeometry args={[footprint.width, footprint.depth]} />
             <meshStandardMaterial color={footprintHex} map={footprintTexture || null} roughness={0.82} />
           </mesh>
-          <FootprintOutline bounds={footprint} />
         </>
       )}
     </group>
@@ -5746,19 +5745,6 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
   );
 }
 
-function FootprintOutline({ bounds }) {
-  const y = 0.01;
-  const thickness = 0.018;
-  const color = '#9b927f';
-  return (
-    <group>
-      <mesh position={[bounds.centerX, y, bounds.minZ]}><boxGeometry args={[bounds.width, thickness, thickness]} /><meshStandardMaterial color={color} roughness={0.8} /></mesh>
-      <mesh position={[bounds.centerX, y, bounds.maxZ]}><boxGeometry args={[bounds.width, thickness, thickness]} /><meshStandardMaterial color={color} roughness={0.8} /></mesh>
-      <mesh position={[bounds.minX, y, bounds.centerZ]}><boxGeometry args={[thickness, thickness, bounds.depth]} /><meshStandardMaterial color={color} roughness={0.8} /></mesh>
-      <mesh position={[bounds.maxX, y, bounds.centerZ]}><boxGeometry args={[thickness, thickness, bounds.depth]} /><meshStandardMaterial color={color} roughness={0.8} /></mesh>
-    </group>
-  );
-}
 
 function Walls({ width, depth, height, layout, wallColor }) {
   const sideDepth = Math.max(0.01, depth - wallThickness);
