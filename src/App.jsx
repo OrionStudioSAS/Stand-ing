@@ -3232,15 +3232,30 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
       <div className="asset-actions-row">
         <label className="asset-upload-drop">
           <Upload size={23} />
-          <span>Ajouter un dossier OBJ complet, ou un dossier contenant un .GLB</span>
+          <span>Ajouter un dossier OBJ complet</span>
           <strong>{uploadState?.loading ? 'Import en cours...' : 'Parcourir un dossier'}</strong>
           <small>Le dossier doit contenir l’OBJ, son .MTL et les textures. Les chemins relatifs sont conservés.</small>
           <input
             type="file"
-            accept=".obj,.glb,.mtl,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tga,.tif,.tiff"
+            accept=".obj,.mtl,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tga,.tif,.tiff"
             multiple
             webkitdirectory=""
             directory=""
+            disabled={uploadState?.loading}
+            onChange={(event) => {
+              onUploadAssetFolder(event.target.files);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        <label className="asset-upload-drop asset-upload-file">
+          <Upload size={23} />
+          <span>Importer un fichier GLB</span>
+          <strong>{uploadState?.loading ? 'Import en cours...' : 'Choisir un .glb'}</strong>
+          <small>Format recommandé : un seul fichier .glb contenant géométrie, matériaux et textures.</small>
+          <input
+            type="file"
+            accept=".glb,model/gltf-binary"
             disabled={uploadState?.loading}
             onChange={(event) => {
               onUploadAssetFolder(event.target.files);
