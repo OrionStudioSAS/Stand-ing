@@ -1056,7 +1056,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
       <section className="configurator-stage">
         <Canvas
-          camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
+          camera={{ position: [4.5, 4.2, 5.7], fov: 48, near: 0.08, far: 35 }}
+          gl={{ antialias: true, logarithmicDepthBuffer: true }}
           className={draggingId ? 'dragging-canvas' : ''}
           shadows
           onPointerUp={() => {
@@ -1071,7 +1072,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           <color attach="background" args={['#eef0f4']} />
           <fog attach="fog" args={['#eef0f4', 9, 18]} />
           <ambientLight intensity={0.85} />
-          <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} />
+          <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} shadow-bias={-0.00008} shadow-normalBias={0.025} />
           <Suspense fallback={<Html center>Chargement</Html>}>
           <StandScene
             width={width}
@@ -2896,14 +2897,15 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
     <div className="preset-editor-grid">
       <section className="preset-3d-stage">
         <Canvas
-          camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
+          camera={{ position: [4.5, 4.2, 5.7], fov: 48, near: 0.08, far: 35 }}
+          gl={{ antialias: true, logarithmicDepthBuffer: true }}
           shadows
           onPointerUp={() => setDraggingId(null)}
           onPointerLeave={() => setDraggingId(null)}
         >
           <color attach="background" args={['#eef0f4']} />
           <ambientLight intensity={0.85} />
-          <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} />
+          <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} shadow-bias={-0.00008} shadow-normalBias={0.025} />
           <Suspense fallback={<Html center>Chargement</Html>}>
             <StandScene
               width={width}
