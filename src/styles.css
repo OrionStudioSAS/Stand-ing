@@ -4419,6 +4419,129 @@ select {
   line-height: 1.3;
 }
 
+.asset-variants-settings {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #e0e5ed;
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff;
+}
+
+.asset-variants-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.asset-variants-head.compact {
+  border-top: 1px solid #edf0f4;
+  padding-top: 12px;
+}
+
+.asset-variants-head h3 {
+  margin: 0;
+  color: #172033;
+  font-size: 0.95rem;
+}
+
+.asset-variants-head small,
+.asset-variants-empty {
+  color: #8992a0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.asset-variants-empty {
+  margin: 0;
+  border: 1px dashed #dbe2ec;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fbff;
+}
+
+.asset-variants-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: #fff;
+  background: #1f4378;
+  font-size: 0.76rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.asset-variant-list {
+  display: grid;
+  gap: 10px;
+}
+
+.asset-variant-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 90px 1fr 32px;
+  gap: 8px;
+  align-items: end;
+  border: 1px solid #e5eaf1;
+  border-radius: 12px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.asset-variant-row.option-row {
+  grid-template-columns: 1fr 1.3fr 100px 1.1fr 32px;
+}
+
+.asset-variant-row label:not(.asset-toggle-row) {
+  display: grid;
+  gap: 5px;
+  color: #8992a0;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.asset-variant-row input {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid #dce2eb;
+  border-radius: 8px;
+  padding: 0 9px;
+  color: #27303c;
+  background: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.asset-variant-row input:focus {
+  border-color: #9bbbed;
+  outline: none;
+}
+
+.asset-variant-wide {
+  grid-column: span 2;
+}
+
+.asset-variant-default {
+  grid-column: span 2;
+  margin: 0;
+  padding: 8px;
+  background: #eef4ff;
+}
+
+.asset-variant-row > button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  color: #cf332d;
+  background: #ffe5e2;
+}
+
 .asset-assignment h3 {
   margin: 0 0 12px;
   color: #3b414a;
@@ -5544,6 +5667,14 @@ select {
 .config-choice-section button.active {
   border: 2px solid #1f4378;
   background: #edf4ff;
+}
+
+.config-choice-section button img {
+  justify-self: center;
+  width: 42px;
+  height: 32px;
+  border-radius: 5px;
+  object-fit: cover;
 }
 
 .config-choice-section strong {

@@ -88,6 +88,16 @@ const placementRuleOptions = [
   { id: 'back-center', label: 'Centre arrière', description: 'L’objet reste centré contre le mur du fond.' },
 ];
 const assetCategoryOptions = ['Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
+const defaultTvConfigOptions = [
+  { id: 'technician', label: 'Permanence technicien 1/2 j', price: 340, defaultChecked: false },
+  {
+    id: 'fileCheck',
+    label: 'Option vérification et intégration des fichiers vidéo',
+    detail: 'Fichiers à fournir au plus tard 2 semaines avant l’ouverture du salon',
+    price: 55,
+    defaultChecked: false,
+  },
+];
 
 function makeItem(type, width, depth, layout, catalogEntry = null) {
   const entry = catalogEntry || catalog.find((item) => item.type === type);
@@ -1713,18 +1723,30 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfi
   const catalogEntry = entry || item || {};
   const isTv = Boolean(catalogEntry?.dimensions?.isTelevision || item?.dimensions?.isTelevision || /tv|télé|tele|ecran|écran|lcd/i.test(`${catalogEntry.label || ''} ${catalogEntry.type || ''}`));
   const initialOptions = item?.options || {};
-  const [format, setFormat] = useState(initialOptions.format || (isTv ? '43' : 'standard'));
-  const [mount, setMount] = useState(initialOptions.mount || (isTv ? 'wall' : 'standard'));
-  const [technician, setTechnician] = useState(Boolean(initialOptions.technician));
-  const [fileCheck, setFileCheck] = useState(Boolean(initialOptions.fileCheck));
+  const variants = itemConfigVariants(catalogEntry, salonLabel, isTv);
+  const mounts = itemConfigMounts(catalogEntry, isTv);
+  const extraOptions = itemConfigExtraOptions(catalogEntry, isTv);
+  const defaultVariant = variants.find((variant) => variant.isDefault) || variants[0];
+  const defaultMount = mounts.find((variant) => variant.isDefault) || mounts[0];
+  const [format, setFormat] = useState(initialOptions.variantId || initialOptions.format || defaultVariant?.id || 'standard');
+  const [mount, setMount] = useState(initialOptions.mount || defaultMount?.id || (isTv ? 'wall' : 'standard'));
+  const [selectedExtras, setSelectedExtras] = useState(() => {
+    const previous = initialOptions.extraOptions || {};
+    return extraOptions.reduce((acc, option) => {
+      acc[option.id] = previous[option.id] ?? initialOptions[option.id] ?? Boolean(option.defaultChecked);
+      return acc;
+    }, {});
+  });
   const [quantity, setQuantity] = useState(1);
-  const variants = isTv ? tvFormatVariants() : genericItemVariants(catalogEntry, salonLabel);
-  const mounts = isTv ? tvMountVariants() : [{ id: 'standard', label: 'Standard', detail: 'Configuration par défaut', price: 0 }];
   const selectedVariant = variants.find((variant) => variant.id === format) || variants[0];
-  const selectedMount = mounts.find((variant) => variant.id === mount) || mounts[0];
+  const selectedMount = mounts.find((variant) => variant.id === mount) || defaultMount || mounts[0];
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
-  const extras = (technician ? 340 : 0) + (fileCheck ? 55 : 0) + (selectedMount?.price || 0);
+  const extras = extraOptions.reduce((sum, option) => sum + (selectedExtras[option.id] ? Number(option.price || 0) : 0), 0) + (selectedMount?.price || 0);
   const total = (basePrice + extras) * (mode === 'add' ? quantity : 1);
+
+  const toggleExtra = (id, checked) => {
+    setSelectedExtras((current) => ({ ...current, [id]: checked }));
+  };
 
   const submit = () => {
     onConfirm({
@@ -1734,11 +1756,16 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfi
       options: {
         ...initialOptions,
         format,
+        variantId: selectedVariant?.id || format,
         variantLabel: selectedVariant?.label,
+        variantDetail: selectedVariant?.detail,
+        variantReference: selectedVariant?.reference,
+        variantImageUrl: selectedVariant?.imageUrl,
         mount,
         mountLabel: selectedMount?.label,
-        technician,
-        fileCheck,
+        extraOptions: selectedExtras,
+        technician: Boolean(selectedExtras.technician),
+        fileCheck: Boolean(selectedExtras.fileCheck),
         unitPrice: basePrice + extras,
       },
     });
@@ -1767,10 +1794,18 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfi
         <ConfigChoiceGrid title={isTv ? 'Format' : 'Variante'} choices={variants} value={format} onChange={setFormat} />
         <ConfigChoiceGrid title={isTv ? 'Mode de pose' : 'Configuration'} choices={mounts} value={mount} onChange={setMount} />
 
-        {isTv && (
+        {extraOptions.length > 0 && (
           <div className="item-config-options">
-            <ToggleOption active={technician} label="Permanence technicien 1/2 j" price="+ 340 €" onChange={setTechnician} />
-            <ToggleOption active={fileCheck} label="Option vérification et intégration des fichiers vidéo" detail="Fichiers à fournir au plus tard 2 semaines avant l’ouverture du salon" price="+ 55 €" onChange={setFileCheck} />
+            {extraOptions.map((option) => (
+              <ToggleOption
+                key={option.id}
+                active={Boolean(selectedExtras[option.id])}
+                label={option.label}
+                detail={option.detail}
+                price={`+ ${Number(option.price || 0).toLocaleString('fr-FR')} €`}
+                onChange={(checked) => toggleExtra(option.id, checked)}
+              />
+            ))}
           </div>
         )}
 
@@ -1803,6 +1838,7 @@ function ConfigChoiceGrid({ title, choices, value, onChange }) {
       <div>
         {choices.map((choice) => (
           <button key={choice.id} type="button" className={value === choice.id ? 'active' : ''} onClick={() => onChange(choice.id)}>
+            {choice.imageUrl && <img src={choice.imageUrl} alt="" />}
             <strong>{choice.label}</strong>
             {choice.detail && <small>{choice.detail}</small>}
             <em>{choice.price ? `${choice.price.toLocaleString('fr-FR')} €` : 'Inclus'}</em>
@@ -1824,10 +1860,28 @@ function ToggleOption({ active, label, detail, price, onChange }) {
   );
 }
 
+function itemConfigVariants(entry, salonLabel, isTv = false) {
+  const customVariants = normalizeAssetVariants(entry?.dimensions?.variants);
+  if (customVariants.length) return customVariants;
+  return isTv ? tvFormatVariants() : genericItemVariants(entry, salonLabel);
+}
+
+function itemConfigMounts(entry, isTv = false) {
+  const customMounts = normalizeAssetVariants(entry?.dimensions?.mountVariants);
+  if (customMounts.length) return customMounts;
+  return isTv ? tvMountVariants() : [{ id: 'standard', label: 'Standard', detail: 'Configuration par défaut', price: 0, isDefault: true }];
+}
+
+function itemConfigExtraOptions(entry, isTv = false) {
+  const customOptions = normalizeAssetConfigOptions(entry?.dimensions?.configOptions);
+  if (customOptions.length) return customOptions;
+  return isTv ? defaultTvConfigOptions : [];
+}
+
 function tvFormatVariants() {
   return [
     { id: '32', label: '32"', detail: '43 × 73 cm', price: 637 },
-    { id: '43', label: '43"', detail: '55 × 95 cm', price: 731 },
+    { id: '43', label: '43"', detail: '55 × 95 cm', price: 731, isDefault: true },
     { id: '55', label: '55"', detail: '72 × 124 cm', price: 963 },
     { id: '65', label: '65"', detail: '84 × 146 cm', price: 1197 },
   ];
@@ -1837,12 +1891,40 @@ function tvMountVariants() {
   return [
     { id: 'stand', label: 'Sur pied', detail: 'Inclus', price: 0 },
     { id: 'table', label: 'Sur table', detail: 'Inclus', price: 0 },
-    { id: 'wall', label: 'Mural', detail: 'Cloison renfort', price: 0 },
+    { id: 'wall', label: 'Mural', detail: 'Cloison renfort', price: 0, isDefault: true },
   ];
 }
 
 function genericItemVariants(entry, salonLabel) {
-  return [{ id: 'standard', label: 'Standard', detail: 'Configuration par défaut', price: assetUnitPrice(entry, salonLabel) }];
+  return [{ id: 'standard', label: 'Standard', detail: 'Configuration par défaut', price: assetUnitPrice(entry, salonLabel), isDefault: true }];
+}
+
+function normalizeAssetVariants(variants = []) {
+  if (!Array.isArray(variants)) return [];
+  return variants
+    .map((variant, index) => ({
+      id: String(variant.id || slugForType(variant.label || `variante-${index + 1}`)),
+      label: variant.label || `Variante ${index + 1}`,
+      detail: variant.detail || '',
+      price: Number(variant.price || 0),
+      reference: variant.reference || '',
+      imageUrl: variant.imageUrl || '',
+      isDefault: Boolean(variant.isDefault),
+    }))
+    .filter((variant) => variant.label.trim());
+}
+
+function normalizeAssetConfigOptions(options = []) {
+  if (!Array.isArray(options)) return [];
+  return options
+    .map((option, index) => ({
+      id: String(option.id || slugForType(option.label || `option-${index + 1}`)),
+      label: option.label || `Option ${index + 1}`,
+      detail: option.detail || '',
+      price: Number(option.price || 0),
+      defaultChecked: Boolean(option.defaultChecked),
+    }))
+    .filter((option) => option.label.trim());
 }
 
 function itemConfigTitle(entry = {}) {
@@ -3664,6 +3746,9 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const draftIsTelevision = Boolean(draft.dimensions?.isTelevision);
   const draftMovementLocked = Boolean(draft.dimensions?.movementLocked);
   const draftDeleteLocked = Boolean(draft.dimensions?.deleteLocked);
+  const draftVariants = normalizeAssetVariants(draft.dimensions?.variants);
+  const draftMountVariants = normalizeAssetVariants(draft.dimensions?.mountVariants);
+  const draftConfigOptions = normalizeAssetConfigOptions(draft.dimensions?.configOptions);
 
   useEffect(() => {
     setDraft(asset);
@@ -3706,6 +3791,62 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
         ...patch,
       },
     });
+  };
+
+  const updateAssetList = (key, nextItems) => {
+    setDraft({
+      ...draft,
+      dimensions: {
+        ...(draft.dimensions || {}),
+        [key]: nextItems,
+      },
+    });
+  };
+
+  const updateVariantRow = (key, index, patch) => {
+    const rows = key === 'mountVariants' ? draftMountVariants : draftVariants;
+    const nextRows = rows.map((row, rowIndex) => {
+      if (rowIndex !== index) return patch.isDefault ? { ...row, isDefault: false } : row;
+      const nextRow = { ...row, ...patch };
+      if (patch.label !== undefined && patch.id === undefined) nextRow.id = slugForType(patch.label || row.id || `variante-${index + 1}`);
+      return nextRow;
+    });
+    updateAssetList(key, nextRows);
+  };
+
+  const addVariantRow = (key) => {
+    const rows = key === 'mountVariants' ? draftMountVariants : draftVariants;
+    const label = key === 'mountVariants' ? 'Nouveau mode' : 'Nouvelle variante';
+    updateAssetList(key, [
+      ...rows,
+      { id: `${key}-${Date.now()}`, label, detail: '', price: 0, reference: '', imageUrl: '', isDefault: rows.length === 0 },
+    ]);
+  };
+
+  const removeVariantRow = (key, index) => {
+    const rows = key === 'mountVariants' ? draftMountVariants : draftVariants;
+    updateAssetList(key, rows.filter((_, rowIndex) => rowIndex !== index));
+  };
+
+  const updateConfigOptionRow = (index, patch) => {
+    const nextRows = draftConfigOptions.map((row, rowIndex) => {
+      if (rowIndex !== index) return row;
+      const nextRow = { ...row, ...patch };
+      if (patch.label !== undefined && patch.id === undefined) nextRow.id = slugForType(patch.label || row.id || `option-${index + 1}`);
+      return nextRow;
+    });
+    updateAssetList('configOptions', nextRows);
+  };
+
+  const addConfigOptionRow = () => {
+    updateAssetList('configOptions', [
+      ...draftConfigOptions,
+      { id: `option-${Date.now()}`, label: 'Nouvelle option', detail: '', price: 0, defaultChecked: false },
+    ]);
+  };
+
+  const removeConfigOptionRow = (index) => {
+    updateAssetList('configOptions', draftConfigOptions.filter((_, rowIndex) => rowIndex !== index));
   };
 
   const updateTelevisionOption = (checked) => {
@@ -3913,6 +4054,52 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           )}
         </section>
 
+        {!isGroupAsset && (
+          <section className="asset-variants-settings">
+            <div className="asset-variants-head">
+              <div>
+                <h3>Variantes configurateur</h3>
+                <small>Ces choix apparaissent dans la popup quand l’exposant ajoute ou modifie cet objet.</small>
+              </div>
+              <button type="button" onClick={() => addVariantRow('variants')}><Plus size={14} /> Variante</button>
+            </div>
+            <AssetVariantRows
+              rows={draftVariants}
+              emptyLabel="Aucune variante : le configurateur utilisera le prix de l’objet."
+              onChange={(index, patch) => updateVariantRow('variants', index, patch)}
+              onRemove={(index) => removeVariantRow('variants', index)}
+            />
+
+            <div className="asset-variants-head compact">
+              <div>
+                <h3>Modes de pose</h3>
+                <small>Optionnel. Utile pour une TV : mural, sur pied, sur table…</small>
+              </div>
+              <button type="button" onClick={() => addVariantRow('mountVariants')}><Plus size={14} /> Mode</button>
+            </div>
+            <AssetVariantRows
+              rows={draftMountVariants}
+              emptyLabel={draftIsTelevision ? 'Par défaut : sur pied, sur table, mural.' : 'Aucun mode personnalisé.'}
+              onChange={(index, patch) => updateVariantRow('mountVariants', index, patch)}
+              onRemove={(index) => removeVariantRow('mountVariants', index)}
+            />
+
+            <div className="asset-variants-head compact">
+              <div>
+                <h3>Options supplémentaires</h3>
+                <small>Cases à cocher avec supplément HT dans la popup.</small>
+              </div>
+              <button type="button" onClick={addConfigOptionRow}><Plus size={14} /> Option</button>
+            </div>
+            <AssetConfigOptionRows
+              rows={draftConfigOptions}
+              emptyLabel={draftIsTelevision ? 'Par défaut : technicien et vérification vidéo.' : 'Aucune option supplémentaire.'}
+              onChange={updateConfigOptionRow}
+              onRemove={removeConfigOptionRow}
+            />
+          </section>
+        )}
+
         <dl className="asset-meta-card">
           <div><dt>Nom</dt><dd>{draft.label}</dd></div>
           <div><dt>Catégorie</dt><dd>{assetCategoryLabel(draft)}</dd></div>
@@ -4014,6 +4201,72 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           <button type="button" className="asset-save" onClick={saveDraft}>Enregistrer les modifications</button>
         </footer>
       </aside>
+    </div>
+  );
+}
+
+function AssetVariantRows({ rows, emptyLabel, onChange, onRemove }) {
+  if (!rows.length) return <p className="asset-variants-empty">{emptyLabel}</p>;
+  return (
+    <div className="asset-variant-list">
+      {rows.map((row, index) => (
+        <article key={`${row.id}-${index}`} className="asset-variant-row">
+          <label>
+            <span>Nom</span>
+            <input value={row.label || ''} onChange={(event) => onChange(index, { label: event.target.value })} placeholder="Ex : 43&quot;, Blanc, Grand format" />
+          </label>
+          <label>
+            <span>Description</span>
+            <input value={row.detail || ''} onChange={(event) => onChange(index, { detail: event.target.value })} placeholder="Ex : 55 × 95 cm" />
+          </label>
+          <label>
+            <span>Prix HT</span>
+            <input type="number" min="0" step="1" value={row.price ?? 0} onChange={(event) => onChange(index, { price: event.target.value })} />
+          </label>
+          <label>
+            <span>Référence</span>
+            <input value={row.reference || ''} onChange={(event) => onChange(index, { reference: event.target.value })} placeholder="Réf. interne" />
+          </label>
+          <label className="asset-variant-wide">
+            <span>Image optionnelle</span>
+            <input value={row.imageUrl || ''} onChange={(event) => onChange(index, { imageUrl: event.target.value })} placeholder="URL de l’image" />
+          </label>
+          <label className="asset-toggle-row asset-variant-default">
+            <input type="checkbox" checked={Boolean(row.isDefault)} onChange={(event) => onChange(index, { isDefault: event.target.checked })} />
+            <span><strong>Par défaut</strong><small>Choix pré-sélectionné dans la popup.</small></span>
+          </label>
+          <button type="button" onClick={() => onRemove(index)} aria-label="Supprimer cette variante"><Trash2 size={14} /></button>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function AssetConfigOptionRows({ rows, emptyLabel, onChange, onRemove }) {
+  if (!rows.length) return <p className="asset-variants-empty">{emptyLabel}</p>;
+  return (
+    <div className="asset-variant-list">
+      {rows.map((row, index) => (
+        <article key={`${row.id}-${index}`} className="asset-variant-row option-row">
+          <label>
+            <span>Nom</span>
+            <input value={row.label || ''} onChange={(event) => onChange(index, { label: event.target.value })} placeholder="Ex : Technicien 1/2 j" />
+          </label>
+          <label>
+            <span>Description</span>
+            <input value={row.detail || ''} onChange={(event) => onChange(index, { detail: event.target.value })} placeholder="Texte secondaire" />
+          </label>
+          <label>
+            <span>Supplément HT</span>
+            <input type="number" min="0" step="1" value={row.price ?? 0} onChange={(event) => onChange(index, { price: event.target.value })} />
+          </label>
+          <label className="asset-toggle-row asset-variant-default">
+            <input type="checkbox" checked={Boolean(row.defaultChecked)} onChange={(event) => onChange(index, { defaultChecked: event.target.checked })} />
+            <span><strong>Cochée par défaut</strong><small>L’option est active à l’ouverture.</small></span>
+          </label>
+          <button type="button" onClick={() => onRemove(index)} aria-label="Supprimer cette option"><Trash2 size={14} /></button>
+        </article>
+      ))}
     </div>
   );
 }
