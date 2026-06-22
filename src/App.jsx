@@ -668,6 +668,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
   const [itemOptionState, setItemOptionState] = useState({ uploading: false, error: '' });
+  const [itemConfigModal, setItemConfigModal] = useState(null);
   const [clientInfo, setClientInfo] = useState({
     client: initialScene.client_name || '',
     project: initialScene.project_name || '',
@@ -722,6 +723,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       setDraggingId(null);
       setSelectedId(null);
       setRotationPanelOpen(false);
+      setItemConfigModal(null);
     }
   }, [readOnly]);
 
@@ -893,6 +895,29 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }
   };
 
+  const openAddItemConfigurator = (entry) => {
+    if (readOnly) return;
+    setItemConfigModal({ mode: 'add', entry });
+  };
+
+  const openSelectedItemConfigurator = () => {
+    if (!selected || readOnly) return;
+    setItemConfigModal({ mode: 'edit', item: selected, entry: findCatalogEntry(availableCatalog, selected.type) });
+  };
+
+  const closeItemConfigurator = () => setItemConfigModal(null);
+
+  const confirmItemConfigurator = ({ entry, item, options, quantity = 1 }) => {
+    if (readOnly) return;
+    if (item) {
+      updateItem(item.id, { options });
+      setItemConfigModal(null);
+      return;
+    }
+    addItem(entry, options, quantity);
+    setItemConfigModal(null);
+  };
+
   const moveDraggedItem = (point) => {
     if (readOnly || !draggingId) return;
     const dragged = sceneItems.find((item) => item.id === draggingId);
@@ -907,15 +932,27 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     updateItem(draggingId, { x: point.x, z: point.z });
   };
 
-  const addItem = (entry) => {
+  const addItem = (entry, options = {}, quantity = 1) => {
     if (readOnly) return;
-    const item = makeItem(entry.type, width, depth, layout, entry);
+    let lastPlacedId = null;
+    const safeQuantity = Math.max(1, Number(quantity || 1));
     setItems((current) => {
-      const placed = placeItemInFreeSpot(item, current, width, depth, layout, carpetFootprintEnabled);
-      if (!placed) return current;
-      return [...current, placed];
+      let next = current;
+      for (let index = 0; index < safeQuantity; index += 1) {
+        const item = {
+          ...makeItem(entry.type, width, depth, layout, entry),
+          options: { ...(options || {}) },
+        };
+        const placed = placeItemInFreeSpot(item, next, width, depth, layout, carpetFootprintEnabled);
+        if (!placed) break;
+        lastPlacedId = placed.id;
+        next = [...next, placed];
+      }
+      return next;
     });
-    setSelectedId(item.id);
+    window.setTimeout(() => {
+      if (lastPlacedId) setSelectedId(lastPlacedId);
+    }, 0);
   };
 
   const removeOptionalItem = (type) => {
@@ -1152,6 +1189,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           {selected && !readOnly ? (
             <>
               <button type="button" disabled={itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
+              <button type="button" onClick={openSelectedItemConfigurator} title="Paramètres"><Settings2 size={16} /></button>
               {isPartitionHeadItem(selected) && <button type="button" onClick={() => setRotationPanelOpen(false)} title="Options visuel"><FileImage size={16} /></button>}
               <button type="button" disabled={!isAdminViewer && itemDeletionLocked(selected)} onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
               {!isAdminViewer && itemMovementLocked(selected) && <span className="toolbar-lock-note">Déplacement verrouillé</span>}
@@ -1200,9 +1238,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             catalog={placeableCatalog}
             pricing={scenePricing}
             salonLabel={salonLabel}
+            selectedId={selectedId}
             readOnly={readOnly}
-            onAdd={addItem}
+            onAdd={openAddItemConfigurator}
             onRemove={removeOptionalItem}
+            onSelectItem={setSelectedId}
+            onConfigureItem={(item) => setItemConfigModal({ mode: 'edit', item, entry: findCatalogEntry(availableCatalog, item.type) })}
+            onNext={() => setActiveStep(4)}
           />
         ) : activeStep === 4 ? (
           <ValidationStepPanel
@@ -1248,7 +1290,18 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       </aside>
       )}
 
-      {activeStep > 1 && !readOnly && (
+      {itemConfigModal && (
+        <ItemConfiguratorModal
+          mode={itemConfigModal.mode}
+          entry={itemConfigModal.entry}
+          item={itemConfigModal.item}
+          salonLabel={salonLabel}
+          onClose={closeItemConfigurator}
+          onConfirm={confirmItemConfigurator}
+        />
+      )}
+
+      {activeStep > 1 && activeStep !== 3 && !readOnly && (
       <footer className="configurator-footer">
         <div>
           <span>Total HT estimé</span>
@@ -1527,66 +1580,328 @@ function OptionsStepPanel({
   );
 }
 
-function FurnitureStepPanel({ items, catalog, pricing, salonLabel, readOnly = false, onAdd, onRemove }) {
-  const includedItems = pricing?.baseItemsConfigured
-    ? pricing.baseUsage.map((item) => ({ key: item.type, label: item.label, count: item.used, quota: item.quantity }))
-    : sceneItemSummary(items.filter((item) => isIncludedSceneItem(item) && isFurniturePanelType(item)));
-  const furnitureEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'furniture');
-  const structureEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'structure');
-  const multimediaEntries = catalog.filter((entry) => furniturePanelCategory(entry) === 'multimedia');
-  const billableCounts = pricing?.billableCounts || new Map();
-  const displayedIncludedItems = pricing?.baseItemsConfigured ? includedItems : (includedItems.length ? includedItems : defaultIncludedFurniture());
+function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, readOnly = false, onAdd, onRemove, onSelectItem, onConfigureItem, onNext }) {
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [search, setSearch] = useState('');
+  const entries = catalog.filter((entry) => !['hidden'].includes(furniturePanelCategory(entry)));
+  const categories = marketplaceCategories(entries);
+  const selectedCategory = categories.find((category) => category.id === activeCategory) || categories[0];
+  const filteredEntries = entries.filter((entry) => {
+    const entryCategory = furniturePanelCategory(entry);
+    const matchesCategory = activeCategory === 'all' || entryCategory === activeCategory || normalizeMarketCategory(entry) === activeCategory;
+    const text = `${entry.label || ''} ${entry.type || ''} ${entry.dimensions?.category || ''}`.toLowerCase();
+    return matchesCategory && (!search || text.includes(search.trim().toLowerCase()));
+  });
+  const shopItems = items.filter((item) => !isAutomaticLedRailItem(item) && shopCartItemVisible(item));
+  const total = pricing?.total || 0;
 
   return (
     <>
-      <PanelHead title="Mobilier & Multimedia" step={3} />
-      <section className="furniture-panel-section">
-        <h2>Mobilier standard</h2>
-        <p>Inclus dans votre forfait</p>
-        <div className="included-furniture-list">
-          {displayedIncludedItems.length ? (
-            displayedIncludedItems.map((item) => (
-              <div key={item.key} className="included-furniture-card">
-                <span><Check size={13} /></span>
-                <strong>{item.quota ? basePackUsageText(item) : `${item.label}${item.count > 1 ? ` × ${item.count}` : ''}`}</strong>
-                <em>Inclus</em>
-              </div>
-            ))
-          ) : (
-            <div className="included-furniture-empty">Aucun mobilier inclus dans ce pack.</div>
-          )}
-        </div>
+      <PanelHead title="Bibliothèque accessoires" step={3} />
+      <p className="marketplace-subtitle">Cliquez un accessoire pour le configurer</p>
+
+      <nav className="marketplace-tabs" aria-label="Filtrer les accessoires">
+        {categories.map((category) => (
+          <button key={category.id} type="button" className={selectedCategory?.id === category.id ? 'active' : ''} onClick={() => setActiveCategory(category.id)}>
+            <span>{category.icon}</span>{category.label}<em>{category.count}</em>
+          </button>
+        ))}
+      </nav>
+
+      <label className="marketplace-search">
+        <Search size={14} />
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Rechercher dans ${selectedCategory?.label || 'Tous'}...`} />
+      </label>
+
+      <section className="marketplace-grid">
+        {filteredEntries.map((entry, index) => (
+          <MarketplaceCard
+            key={entry.type}
+            entry={entry}
+            index={index}
+            salonLabel={salonLabel}
+            readOnly={readOnly}
+            includedCount={pricing?.includedCounts?.get(entry.type) || 0}
+            billableCount={pricing?.billableCounts?.get(entry.type) || 0}
+            onAdd={() => onAdd(entry)}
+          />
+        ))}
+        {!filteredEntries.length && <div className="marketplace-empty">Aucun accessoire dans cette catégorie.</div>}
       </section>
 
-      <FurnitureCatalogSection
-        title="Mobilier additionnel"
-        entries={furnitureEntries}
-        counts={billableCounts}
+      <FurnitureCartBar
+        items={shopItems}
+        catalog={catalog}
+        selectedId={selectedId}
+        total={total}
         salonLabel={salonLabel}
         readOnly={readOnly}
-        onAdd={onAdd}
+        onAdd={() => setActiveCategory('all')}
+        onSelectItem={onSelectItem}
+        onConfigureItem={onConfigureItem}
         onRemove={onRemove}
-      />
-      <FurnitureCatalogSection
-        title="Cloisons & structures"
-        entries={structureEntries}
-        counts={billableCounts}
-        salonLabel={salonLabel}
-        readOnly={readOnly}
-        onAdd={onAdd}
-        onRemove={onRemove}
-      />
-      <FurnitureCatalogSection
-        title="Multimedia"
-        entries={multimediaEntries}
-        counts={billableCounts}
-        salonLabel={salonLabel}
-        readOnly={readOnly}
-        onAdd={onAdd}
-        onRemove={onRemove}
+        onNext={onNext}
       />
     </>
   );
+}
+
+function MarketplaceCard({ entry, index, salonLabel, readOnly, includedCount = 0, billableCount = 0, onAdd }) {
+  const Icon = entry.icon || Box;
+  const price = assetUnitPrice(entry, salonLabel);
+  const category = marketCategoryMeta(normalizeMarketCategory(entry));
+  const badge = includedCount > 0 ? `× ${includedCount} au stand` : (index === 1 ? '🔥 Populaire' : '');
+  return (
+    <article className="marketplace-card">
+      <div className="marketplace-card-preview">
+        {entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Icon size={42} />}
+        {badge && <span className={`marketplace-badge ${index === 1 ? 'hot' : ''}`}>{badge}</span>}
+      </div>
+      <div className="marketplace-card-body">
+        <strong>{entry.label}</strong>
+        <em>{price ? `À partir de ${price.toLocaleString('fr-FR')} €` : 'Inclus / sur devis'}</em>
+        <small>{marketplaceItemSubtitle(entry, category.label)}</small>
+        <button type="button" disabled={readOnly} onClick={onAdd} aria-label={`Ajouter ${entry.label}`}>
+          {billableCount > 0 ? <Check size={16} /> : <Plus size={18} />}
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, onAdd, onSelectItem, onConfigureItem, onRemove, onNext }) {
+  return (
+    <div className="furniture-cart-bar">
+      <div className="cart-total-card">
+        <ClockIcon />
+        <span>Mon stand</span>
+        <small>{items.length} article{items.length > 1 ? 's' : ''} AMCO</small>
+        <strong>{total.toLocaleString('fr-FR')} €</strong>
+      </div>
+      <button type="button" className="cart-add-card" onClick={onAdd} disabled={readOnly}>
+        <span><Plus size={18} /></span>
+        <strong>Ajouter</strong>
+        <small>Choisir dans la bibliothèque</small>
+      </button>
+      <div className="cart-item-strip">
+        {items.map((item) => {
+          const entry = findCatalogEntry(catalog, item.type) || item;
+          const selected = item.id === selectedId;
+          return (
+            <button key={item.id} type="button" className={`cart-item-card ${selected ? 'active' : ''}`} onClick={() => onSelectItem(item.id)}>
+              <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
+              <span>
+                <strong>{itemCartLabel(item)}</strong>
+                <small>{item.options?.variantLabel || item.options?.mountLabel || 'Sur pied · 1'}</small>
+                <em>{cartItemPrice(item, entry, salonLabel).toLocaleString('fr-FR')} €</em>
+              </span>
+              <span className="cart-item-settings" onClick={(event) => { event.stopPropagation(); onConfigureItem(item); }}>•••</span>
+            </button>
+          );
+        })}
+      </div>
+      <button type="button" className="cart-next-button" onClick={onNext}>Étape suivante<br /><span>Validation →</span></button>
+    </div>
+  );
+}
+
+function ClockIcon() {
+  return <span className="cart-clock">◷</span>;
+}
+
+function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfirm }) {
+  const catalogEntry = entry || item || {};
+  const isTv = Boolean(catalogEntry?.dimensions?.isTelevision || item?.dimensions?.isTelevision || /tv|télé|tele|ecran|écran|lcd/i.test(`${catalogEntry.label || ''} ${catalogEntry.type || ''}`));
+  const initialOptions = item?.options || {};
+  const [format, setFormat] = useState(initialOptions.format || (isTv ? '43' : 'standard'));
+  const [mount, setMount] = useState(initialOptions.mount || (isTv ? 'wall' : 'standard'));
+  const [technician, setTechnician] = useState(Boolean(initialOptions.technician));
+  const [fileCheck, setFileCheck] = useState(Boolean(initialOptions.fileCheck));
+  const [quantity, setQuantity] = useState(1);
+  const variants = isTv ? tvFormatVariants() : genericItemVariants(catalogEntry, salonLabel);
+  const mounts = isTv ? tvMountVariants() : [{ id: 'standard', label: 'Standard', detail: 'Configuration par défaut', price: 0 }];
+  const selectedVariant = variants.find((variant) => variant.id === format) || variants[0];
+  const selectedMount = mounts.find((variant) => variant.id === mount) || mounts[0];
+  const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
+  const extras = (technician ? 340 : 0) + (fileCheck ? 55 : 0) + (selectedMount?.price || 0);
+  const total = (basePrice + extras) * (mode === 'add' ? quantity : 1);
+
+  const submit = () => {
+    onConfirm({
+      entry: catalogEntry,
+      item,
+      quantity,
+      options: {
+        ...initialOptions,
+        format,
+        variantLabel: selectedVariant?.label,
+        mount,
+        mountLabel: selectedMount?.label,
+        technician,
+        fileCheck,
+        unitPrice: basePrice + extras,
+      },
+    });
+  };
+
+  return (
+    <div className="item-config-overlay">
+      <section className="item-config-modal">
+        <header>
+          <div>
+            <h2>{mode === 'add' ? `Configurer ${itemConfigTitle(catalogEntry)}` : `Paramétrer ${itemConfigTitle(catalogEntry)}`}</h2>
+            <span>Bibliothèque › {marketCategoryMeta(normalizeMarketCategory(catalogEntry)).label} › {catalogEntry.label}</span>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Fermer"><X size={18} /></button>
+        </header>
+
+        <div className="item-config-product">
+          <span>{catalogEntry.thumbnailUrl ? <img src={catalogEntry.thumbnailUrl} alt="" /> : <Box size={34} />}</span>
+          <div>
+            <strong>{catalogEntry.label}</strong>
+            <small>Réf. {assetReference(catalogEntry, salonLabel) || catalogEntry.type || 'Stand-ING'}</small>
+            {isTv && <em>✓ Cloison de renfort + fixation + alim. incluses</em>}
+          </div>
+        </div>
+
+        <ConfigChoiceGrid title={isTv ? 'Format' : 'Variante'} choices={variants} value={format} onChange={setFormat} />
+        <ConfigChoiceGrid title={isTv ? 'Mode de pose' : 'Configuration'} choices={mounts} value={mount} onChange={setMount} />
+
+        {isTv && (
+          <div className="item-config-options">
+            <ToggleOption active={technician} label="Permanence technicien 1/2 j" price="+ 340 €" onChange={setTechnician} />
+            <ToggleOption active={fileCheck} label="Option vérification et intégration des fichiers vidéo" detail="Fichiers à fournir au plus tard 2 semaines avant l’ouverture du salon" price="+ 55 €" onChange={setFileCheck} />
+          </div>
+        )}
+
+        {mode === 'add' && (
+          <div className="item-config-quantity">
+            <span>Quantité</span>
+            <button type="button" onClick={() => setQuantity((value) => Math.max(1, value - 1))}>−</button>
+            <strong>{quantity}</strong>
+            <button type="button" onClick={() => setQuantity((value) => value + 1)}>+</button>
+          </div>
+        )}
+
+        <footer>
+          <div>
+            <span>Total cet article</span>
+            <strong>{total.toLocaleString('fr-FR')} €</strong>
+            {quantity > 1 && <small>{quantity} × {(basePrice + extras).toLocaleString('fr-FR')} €</small>}
+          </div>
+          <button type="button" onClick={submit}>{mode === 'add' ? '+ Ajouter au stand' : 'Enregistrer'}</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function ConfigChoiceGrid({ title, choices, value, onChange }) {
+  return (
+    <section className="config-choice-section">
+      <h3>{title}</h3>
+      <div>
+        {choices.map((choice) => (
+          <button key={choice.id} type="button" className={value === choice.id ? 'active' : ''} onClick={() => onChange(choice.id)}>
+            <strong>{choice.label}</strong>
+            {choice.detail && <small>{choice.detail}</small>}
+            <em>{choice.price ? `${choice.price.toLocaleString('fr-FR')} €` : 'Inclus'}</em>
+            {value === choice.id && <span><Check size={12} /></span>}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ToggleOption({ active, label, detail, price, onChange }) {
+  return (
+    <button type="button" className={`config-toggle-option ${active ? 'active' : ''}`} onClick={() => onChange(!active)}>
+      <i />
+      <span><strong>{label}</strong>{detail && <small>{detail}</small>}</span>
+      <em>{price}</em>
+    </button>
+  );
+}
+
+function tvFormatVariants() {
+  return [
+    { id: '32', label: '32"', detail: '43 × 73 cm', price: 637 },
+    { id: '43', label: '43"', detail: '55 × 95 cm', price: 731 },
+    { id: '55', label: '55"', detail: '72 × 124 cm', price: 963 },
+    { id: '65', label: '65"', detail: '84 × 146 cm', price: 1197 },
+  ];
+}
+
+function tvMountVariants() {
+  return [
+    { id: 'stand', label: 'Sur pied', detail: 'Inclus', price: 0 },
+    { id: 'table', label: 'Sur table', detail: 'Inclus', price: 0 },
+    { id: 'wall', label: 'Mural', detail: 'Cloison renfort', price: 0 },
+  ];
+}
+
+function genericItemVariants(entry, salonLabel) {
+  return [{ id: 'standard', label: 'Standard', detail: 'Configuration par défaut', price: assetUnitPrice(entry, salonLabel) }];
+}
+
+function itemConfigTitle(entry = {}) {
+  const label = entry.label || 'cet objet';
+  if (/tv|télé|tele|ecran|écran|lcd/i.test(label)) return 'un téléviseur';
+  return label;
+}
+
+function itemCartLabel(item) {
+  return item.options?.variantLabel ? `${item.label || item.type} ${item.options.variantLabel}` : (item.label || item.type);
+}
+
+function cartItemPrice(item, entry, salonLabel) {
+  return Number(item.options?.unitPrice ?? assetUnitPrice(entry, salonLabel) ?? 0);
+}
+
+function normalizeMarketCategory(entry = {}) {
+  const category = furniturePanelCategory(entry);
+  if (category === 'structure') return 'structure';
+  if (category === 'multimedia') return 'multimedia';
+  const raw = String(entry.dimensions?.category || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (raw.includes('electric')) return 'electricity';
+  if (raw.includes('signal')) return 'signage';
+  return 'furniture';
+}
+
+function marketCategoryMeta(id) {
+  const meta = {
+    all: { id: 'all', label: 'TOUS', icon: '○' },
+    furniture: { id: 'furniture', label: 'Mobilier', icon: '▤' },
+    multimedia: { id: 'multimedia', label: 'Multimédia', icon: '▣' },
+    electricity: { id: 'electricity', label: 'Électricité', icon: '⚡' },
+    signage: { id: 'signage', label: 'Signalétique', icon: '▦' },
+    structure: { id: 'structure', label: 'Structures', icon: '▥' },
+  };
+  return meta[id] || meta.furniture;
+}
+
+function marketplaceCategories(entries) {
+  const counts = entries.reduce((acc, entry) => {
+    const key = normalizeMarketCategory(entry);
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, { all: entries.length });
+  return ['all', 'furniture', 'multimedia', 'electricity', 'signage', 'structure']
+    .filter((id) => id === 'all' || counts[id])
+    .map((id) => ({ ...marketCategoryMeta(id), count: counts[id] || 0 }));
+}
+
+function marketplaceItemSubtitle(entry, categoryLabel) {
+  if (entry.dimensions?.isTelevision) return '32 / 43 / 55 / 65 pouces';
+  if (entry.dimensions?.category) return entry.dimensions.category;
+  return categoryLabel;
+}
+
+function shopCartItemVisible(item) {
+  if (!item) return false;
+  const label = `${item.type || ''} ${item.label || ''}`.toLowerCase();
+  return !label.includes('spot led');
 }
 
 function ValidationStepPanel({
@@ -4331,8 +4646,11 @@ function calculateScenePricing({ catalog, items, salonLabel, scene }) {
       return;
     }
     const entry = findCatalogEntry(catalog, type);
-    const unitPrice = assetUnitPrice(entry, salonLabel);
-    const lineTotal = unitPrice * billableCount;
+    const typeItems = items.filter((item) => item.type === type);
+    const billableItems = typeItems.slice(includedCount);
+    const itemPrices = billableItems.map((item) => cartItemPrice(item, entry, salonLabel));
+    const lineTotal = itemPrices.reduce((sum, price) => sum + price, 0);
+    const unitPrice = billableCount ? Math.round(lineTotal / billableCount) : assetUnitPrice(entry, salonLabel);
     billableCounts.set(type, billableCount);
     itemsTotal += lineTotal;
     lines.push({
