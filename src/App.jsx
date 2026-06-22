@@ -1726,7 +1726,7 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
               <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
               <span>
                 <strong>{itemCartLabel(item)}</strong>
-                <small>{item.options?.variantLabel || item.options?.mountLabel || 'Sur pied · 1'}</small>
+                <small>{item.options?.variantLabel || 'Quantité · 1'}</small>
                 <em>{cartItemPrice(item, entry, salonLabel).toLocaleString('fr-FR')} €</em>
               </span>
               <span className="cart-item-settings" onClick={(event) => { event.stopPropagation(); onConfigureItem(item); }}>•••</span>
@@ -1748,12 +1748,9 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfi
   const isVariantGroup = isVariantGroupEntry(catalogEntry);
   const initialOptions = item?.options || {};
   const variants = itemConfigVariants(catalogEntry, salonLabel);
-  const mounts = itemConfigMounts(catalogEntry);
   const extraOptions = itemConfigExtraOptions(catalogEntry);
   const defaultVariant = variants.find((variant) => variant.isDefault) || variants[0];
-  const defaultMount = mounts.find((variant) => variant.isDefault) || mounts[0] || null;
   const [format, setFormat] = useState(initialOptions.variantId || initialOptions.format || defaultVariant?.id || 'standard');
-  const [mount, setMount] = useState(initialOptions.mount || defaultMount?.id || '');
   const [selectedExtras, setSelectedExtras] = useState(() => {
     const previous = initialOptions.extraOptions || {};
     return extraOptions.reduce((acc, option) => {
@@ -1763,9 +1760,8 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfi
   });
   const [quantity, setQuantity] = useState(1);
   const selectedVariant = variants.find((variant) => variant.id === format) || variants[0];
-  const selectedMount = mounts.find((variant) => variant.id === mount) || defaultMount || mounts[0];
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
-  const extras = extraOptions.reduce((sum, option) => sum + (selectedExtras[option.id] ? Number(option.price || 0) : 0), 0) + (selectedMount?.price || 0);
+  const extras = extraOptions.reduce((sum, option) => sum + (selectedExtras[option.id] ? Number(option.price || 0) : 0), 0);
   const total = (basePrice + extras) * (mode === 'add' ? quantity : 1);
 
   const toggleExtra = (id, checked) => {
@@ -1788,8 +1784,6 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfi
         variantReference: selectedVariant?.reference,
         variantImageUrl: selectedVariant?.imageUrl,
         variantAssetType: selectedVariant?.assetType,
-        mount,
-        mountLabel: selectedMount?.label,
         extraOptions: selectedExtras,
         technician: Boolean(selectedExtras.technician),
         fileCheck: Boolean(selectedExtras.fileCheck),
@@ -1818,7 +1812,6 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfi
         </div>
 
         <ConfigChoiceGrid title="Variante" choices={variants} value={format} onChange={setFormat} />
-        {mounts.length > 0 && <ConfigChoiceGrid title="Mode de pose" choices={mounts} value={mount} onChange={setMount} />}
 
         {extraOptions.length > 0 && (
           <div className="item-config-options">
@@ -1891,14 +1884,7 @@ function itemConfigVariants(entry, salonLabel) {
     const groupVariants = normalizeVariantGroupOptions(entry?.dimensions?.variantAssets, salonLabel);
     if (groupVariants.length) return groupVariants;
   }
-  const customVariants = normalizeAssetVariants(entry?.dimensions?.variants);
-  if (customVariants.length) return customVariants;
   return genericItemVariants(entry, salonLabel);
-}
-
-function itemConfigMounts(entry) {
-  const customMounts = normalizeAssetVariants(entry?.dimensions?.mountVariants);
-  return customMounts;
 }
 
 function itemConfigExtraOptions(entry) {
@@ -1907,21 +1893,6 @@ function itemConfigExtraOptions(entry) {
 
 function genericItemVariants(entry, salonLabel) {
   return [{ id: 'standard', label: 'Standard', detail: 'Configuration par défaut', price: assetUnitPrice(entry, salonLabel), isDefault: true }];
-}
-
-function normalizeAssetVariants(variants = []) {
-  if (!Array.isArray(variants)) return [];
-  return variants
-    .map((variant, index) => ({
-      id: String(variant.id || slugForType(variant.label || `variante-${index + 1}`)),
-      label: variant.label || `Variante ${index + 1}`,
-      detail: variant.detail || '',
-      price: Number(variant.price || 0),
-      reference: variant.reference || '',
-      imageUrl: variant.imageUrl || '',
-      isDefault: Boolean(variant.isDefault),
-    }))
-    .filter((variant) => variant.label.trim());
 }
 
 function normalizeAssetConfigOptions(options = []) {
@@ -3811,8 +3782,6 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const draftIsTelevision = Boolean(draft.dimensions?.isTelevision);
   const draftMovementLocked = Boolean(draft.dimensions?.movementLocked);
   const draftDeleteLocked = Boolean(draft.dimensions?.deleteLocked);
-  const draftVariants = normalizeAssetVariants(draft.dimensions?.variants);
-  const draftMountVariants = normalizeAssetVariants(draft.dimensions?.mountVariants);
   const draftConfigOptions = normalizeAssetConfigOptions(draft.dimensions?.configOptions);
   const [variantAssetTypes, setVariantAssetTypes] = useState(() => draft.dimensions?.variantAssetTypes || []);
 
@@ -3868,31 +3837,6 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
         [key]: nextItems,
       },
     });
-  };
-
-  const updateVariantRow = (key, index, patch) => {
-    const rows = key === 'mountVariants' ? draftMountVariants : draftVariants;
-    const nextRows = rows.map((row, rowIndex) => {
-      if (rowIndex !== index) return patch.isDefault ? { ...row, isDefault: false } : row;
-      const nextRow = { ...row, ...patch };
-      if (patch.label !== undefined && patch.id === undefined) nextRow.id = slugForType(patch.label || row.id || `variante-${index + 1}`);
-      return nextRow;
-    });
-    updateAssetList(key, nextRows);
-  };
-
-  const addVariantRow = (key) => {
-    const rows = key === 'mountVariants' ? draftMountVariants : draftVariants;
-    const label = key === 'mountVariants' ? 'Nouveau mode' : 'Nouvelle variante';
-    updateAssetList(key, [
-      ...rows,
-      { id: `${key}-${Date.now()}`, label, detail: '', price: 0, reference: '', imageUrl: '', isDefault: rows.length === 0 },
-    ]);
-  };
-
-  const removeVariantRow = (key, index) => {
-    const rows = key === 'mountVariants' ? draftMountVariants : draftVariants;
-    updateAssetList(key, rows.filter((_, rowIndex) => rowIndex !== index));
   };
 
   const updateConfigOptionRow = (index, patch) => {
@@ -4155,35 +4099,17 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
               onChange={(index, type) => setVariantAssetTypes((current) => current.map((item, itemIndex) => (itemIndex === index ? type : item)))}
               onRemove={(index) => setVariantAssetTypes((current) => current.filter((_, itemIndex) => itemIndex !== index))}
             />
-          </section>
-        )}
-
-        {!isGroupAsset && !isVariantGroup && (
-          <section className="asset-variants-settings">
-            <div className="asset-variants-head">
-              <div>
-                <h3>Modes de pose</h3>
-                <small>Optionnel. Utile pour une TV : mural, sur pied, sur table…</small>
-              </div>
-              <button type="button" onClick={() => addVariantRow('mountVariants')}><Plus size={14} /> Mode</button>
-            </div>
-            <AssetVariantRows
-              rows={draftMountVariants}
-              emptyLabel={draftIsTelevision ? 'Par défaut : sur pied, sur table, mural.' : 'Aucun mode personnalisé.'}
-              onChange={(index, patch) => updateVariantRow('mountVariants', index, patch)}
-              onRemove={(index) => removeVariantRow('mountVariants', index)}
-            />
 
             <div className="asset-variants-head compact">
               <div>
-                <h3>Options supplémentaires</h3>
-                <small>Cases à cocher avec supplément HT dans la popup.</small>
+                <h3>Options payantes</h3>
+                <small>Chaque option s’affichera dans la popup comme une ligne activable avec supplément HT.</small>
               </div>
               <button type="button" onClick={addConfigOptionRow}><Plus size={14} /> Option</button>
             </div>
             <AssetConfigOptionRows
               rows={draftConfigOptions}
-              emptyLabel={draftIsTelevision ? 'Par défaut : technicien et vérification vidéo.' : 'Aucune option supplémentaire.'}
+              emptyLabel="Aucune option payante configurée."
               onChange={updateConfigOptionRow}
               onRemove={removeConfigOptionRow}
             />
@@ -4295,43 +4221,6 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   );
 }
 
-function AssetVariantRows({ rows, emptyLabel, onChange, onRemove }) {
-  if (!rows.length) return <p className="asset-variants-empty">{emptyLabel}</p>;
-  return (
-    <div className="asset-variant-list">
-      {rows.map((row, index) => (
-        <article key={`${row.id}-${index}`} className="asset-variant-row">
-          <label>
-            <span>Nom</span>
-            <input value={row.label || ''} onChange={(event) => onChange(index, { label: event.target.value })} placeholder="Ex : 43&quot;, Blanc, Grand format" />
-          </label>
-          <label>
-            <span>Description</span>
-            <input value={row.detail || ''} onChange={(event) => onChange(index, { detail: event.target.value })} placeholder="Ex : 55 × 95 cm" />
-          </label>
-          <label>
-            <span>Prix HT</span>
-            <input type="number" min="0" step="1" value={row.price ?? 0} onChange={(event) => onChange(index, { price: event.target.value })} />
-          </label>
-          <label>
-            <span>Référence</span>
-            <input value={row.reference || ''} onChange={(event) => onChange(index, { reference: event.target.value })} placeholder="Réf. interne" />
-          </label>
-          <label className="asset-variant-wide">
-            <span>Image optionnelle</span>
-            <input value={row.imageUrl || ''} onChange={(event) => onChange(index, { imageUrl: event.target.value })} placeholder="URL de l’image" />
-          </label>
-          <label className="asset-toggle-row asset-variant-default">
-            <input type="checkbox" checked={Boolean(row.isDefault)} onChange={(event) => onChange(index, { isDefault: event.target.checked })} />
-            <span><strong>Par défaut</strong><small>Choix pré-sélectionné dans la popup.</small></span>
-          </label>
-          <button type="button" onClick={() => onRemove(index)} aria-label="Supprimer cette variante"><Trash2 size={14} /></button>
-        </article>
-      ))}
-    </div>
-  );
-}
-
 function AssetConfigOptionRows({ rows, emptyLabel, onChange, onRemove }) {
   if (!rows.length) return <p className="asset-variants-empty">{emptyLabel}</p>;
   return (
@@ -4395,11 +4284,28 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
   const [name, setName] = useState('Nouveau groupe de variantes');
   const [category, setCategory] = useState('Mobilier');
   const [rows, setRows] = useState(fallbackType ? [fallbackType] : []);
+  const [configOptions, setConfigOptions] = useState([]);
   const [assignedSalons, setAssignedSalons] = useState(() => getSalonRows(scenes).map((salon) => salon.title).slice(0, 1));
   const [saving, setSaving] = useState(false);
 
   const toggleSalon = (salon) => {
     setAssignedSalons((current) => (current.includes(salon) ? current.filter((item) => item !== salon) : [...current, salon]));
+  };
+
+  const updateConfigOptionRow = (index, patch) => {
+    setConfigOptions((current) => current.map((row, rowIndex) => {
+      if (rowIndex !== index) return row;
+      const nextRow = { ...row, ...patch };
+      if (patch.label !== undefined && patch.id === undefined) nextRow.id = slugForType(patch.label || row.id || `option-${index + 1}`);
+      return nextRow;
+    }));
+  };
+
+  const addConfigOptionRow = () => {
+    setConfigOptions((current) => [
+      ...current,
+      { id: `option-${Date.now()}`, label: 'Nouvelle option', detail: '', price: 0, defaultChecked: false },
+    ]);
   };
 
   const saveGroup = async () => {
@@ -4416,6 +4322,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
         isVariantGroup: true,
         category,
         variantAssetTypes: cleanRows,
+        configOptions,
         salons: assignedSalons,
         addedBy: 'Admin Stand-ING',
         format: 'Groupe de variantes',
@@ -4462,6 +4369,22 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
             sourceAssets={sourceAssets}
             onChange={(index, type) => setRows((current) => current.map((item, itemIndex) => (itemIndex === index ? type : item)))}
             onRemove={(index) => setRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+          />
+        </section>
+
+        <section className="asset-variants-settings">
+          <div className="asset-variants-head">
+            <div>
+              <h3>Options payantes</h3>
+              <small>Ces lignes seront activables dans la popup et ajouteront leur prix au total.</small>
+            </div>
+            <button type="button" onClick={addConfigOptionRow}><Plus size={14} /> Option</button>
+          </div>
+          <AssetConfigOptionRows
+            rows={configOptions}
+            emptyLabel="Aucune option payante configurée."
+            onChange={updateConfigOptionRow}
+            onRemove={(index) => setConfigOptions((current) => current.filter((_, itemIndex) => itemIndex !== index))}
           />
         </section>
 
