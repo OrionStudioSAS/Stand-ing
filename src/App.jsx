@@ -7381,8 +7381,18 @@ function resolveModelResourceUrl(url, item) {
         : path;
       return normalizeStorageLookup(relativePath) === normalizeStorageLookup(relativeTexturePath);
     });
-    if (matchingRelativePath && rootPath) return textureUrlFromStoragePath(baseUrl, rootPath, matchingRelativePath);
-    return `${baseUrl}${encodeTexturePath(relativeTexturePath)}`;
+    if (matchingRelativePath && rootPath && isStoragePathInsideRoot(matchingRelativePath, rootPath)) {
+      return textureUrlFromStoragePath(baseUrl, rootPath, matchingRelativePath);
+    }
+  }
+
+  if (storagePaths.length) {
+    console.warn('Texture reference ignored because it is missing from object storage paths', {
+      item: item?.label || item?.type,
+      texture: url,
+      rootPath,
+    });
+    return blankTextureDataUrl;
   }
 
   const modelFolder = modelSiblingFolder(item?.modelUrl || modelMaterialUrl(item) || '');
@@ -7391,8 +7401,7 @@ function resolveModelResourceUrl(url, item) {
     return `${baseUrl}${encodeURIComponent(modelFolder)}/${encodeURIComponent(fileName)}`;
   }
 
-  // Fallback for old OBJ uploads where MTL files reference an obsolete folder name.
-  return `${baseUrl}${encodeURIComponent(fileName)}`;
+  return blankTextureDataUrl;
 }
 
 function rewriteRuntimeMtlReferences(text, item) {
@@ -7402,6 +7411,7 @@ function rewriteRuntimeMtlReferences(text, item) {
 
   const texturePaths = storagePaths
     .filter(isTextureResource)
+    .filter((path) => isStoragePathInsideRoot(path, rootPath))
     .map((path) => ({
       path,
       fileName: safeDecodeUri(String(path).replaceAll('\\', '/').split('/').pop() || ''),
@@ -7417,9 +7427,21 @@ function rewriteRuntimeMtlReferences(text, item) {
     const value = match[2].trim();
     const normalizedValue = normalizeStorageLookup(value);
     const texture = texturePaths.find((entry) => normalizedValue.includes(normalizeStorageLookup(entry.fileName)));
-    if (!texture) return line;
+    if (!texture) {
+      console.warn('MTL texture line removed because the file is not part of this asset', {
+        item: item?.label || item?.type,
+        texture: value,
+        rootPath,
+      });
+      return '';
+    }
     return `${match[1]}${texture.relativePath}`;
   }).join('\n');
+}
+
+function isStoragePathInsideRoot(storagePath = '', rootPath = '') {
+  if (!rootPath) return true;
+  return normalizeStorageLookup(storagePath).startsWith(`${normalizeStorageLookup(rootPath)}/`);
 }
 
 function textureRelativePath(rootPath, storagePath) {
