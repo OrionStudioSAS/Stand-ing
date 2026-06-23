@@ -1608,7 +1608,6 @@ function OptionsStepPanel({
 
 function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, readOnly = false, onAdd, onRemove, onSelectItem, onConfigureItem, onNext }) {
   const [activeCategory, setActiveCategory] = useState('all');
-  const [search, setSearch] = useState('');
   const groupedVariantTypes = variantGroupMemberTypes(catalog);
   const entries = catalog.filter((entry) => (
     !['hidden'].includes(furniturePanelCategory(entry))
@@ -1620,8 +1619,7 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
   const filteredEntries = entries.filter((entry) => {
     const entryCategory = furniturePanelCategory(entry);
     const matchesCategory = activeCategory === 'all' || entryCategory === activeCategory || normalizeMarketCategory(entry) === activeCategory;
-    const text = `${entry.label || ''} ${entry.type || ''} ${entry.dimensions?.category || ''}`.toLowerCase();
-    return matchesCategory && (!search || text.includes(search.trim().toLowerCase()));
+    return matchesCategory;
   });
   const shopItems = items.filter((item) => !isAutomaticLedRailItem(item) && shopCartItemVisible(item));
   const total = pricing?.total || 0;
@@ -1639,10 +1637,6 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
         ))}
       </nav>
 
-      <label className="marketplace-search">
-        <Search size={14} />
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Rechercher dans ${selectedCategory?.label || 'Tous'}...`} />
-      </label>
 
       <section className="marketplace-grid">
         {filteredEntries.map((entry, index) => (
