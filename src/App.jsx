@@ -7373,7 +7373,7 @@ function resolveModelResourceUrl(url, item) {
   const rootPath = item?.dimensions?.storageRoot || item?.type || '';
   const storagePaths = Array.isArray(item?.dimensions?.storagePaths) ? item.dimensions.storagePaths : [];
   const normalizedFileName = normalizeStorageLookup(fileName);
-  const matchingPath = storagePaths.find((path) => normalizeStorageLookup(path).endsWith(`/${normalizedFileName}`));
+  const matchingPath = findMatchingTextureStoragePath(storagePaths, fileName, rootPath);
   if (matchingPath && rootPath && normalizeStorageLookup(matchingPath).startsWith(`${normalizeStorageLookup(rootPath)}/`)) {
     return textureUrlFromStoragePath(baseUrl, rootPath, matchingPath);
   }
@@ -7430,8 +7430,7 @@ function rewriteRuntimeMtlReferences(text, item) {
     const match = line.match(/^(\s*(?:map_[a-z0-9_]+|bump|disp|decal|refl)\s+)(.+)$/i);
     if (!match) return line;
     const value = match[2].trim();
-    const normalizedValue = normalizeStorageLookup(value);
-    const texture = texturePaths.find((entry) => normalizedValue.includes(normalizeStorageLookup(entry.fileName)));
+    const texture = texturePaths.find((entry) => textureReferenceMatches(value, entry.fileName));
     if (!texture) {
       logTextureDiagnostic('MTL texture line removed because the file is not part of this asset', {
         item: item?.label || item?.type,
@@ -7442,6 +7441,33 @@ function rewriteRuntimeMtlReferences(text, item) {
     }
     return `${match[1]}${texture.relativePath}`;
   }).join('\n');
+}
+
+function findMatchingTextureStoragePath(storagePaths = [], fileName = '', rootPath = '') {
+  return (storagePaths || [])
+    .filter(isTextureResource)
+    .filter((path) => isStoragePathInsideRoot(path, rootPath))
+    .find((path) => textureReferenceMatches(fileName, String(path).replaceAll('\\', '/').split('/').pop() || ''));
+}
+
+function textureReferenceMatches(reference = '', candidateFileName = '') {
+  const normalizedReference = normalizeTextureName(reference);
+  const normalizedCandidate = normalizeTextureName(candidateFileName);
+  if (!normalizedReference || !normalizedCandidate) return false;
+  if (normalizedReference.includes(normalizedCandidate)) return true;
+
+  const referenceStem = normalizedReference.replace(/\.[a-z0-9]+$/i, '');
+  const candidateStem = normalizedCandidate.replace(/\.[a-z0-9]+$/i, '');
+  return Boolean(referenceStem && candidateStem && (referenceStem.includes(candidateStem) || candidateStem.includes(referenceStem)));
+}
+
+function normalizeTextureName(value = '') {
+  const fileName = safeDecodeUri(String(value || '').replaceAll('\\', '/').split('/').pop() || '');
+  return fileName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9.]+/g, '-');
 }
 
 function isStoragePathInsideRoot(storagePath = '', rootPath = '') {
