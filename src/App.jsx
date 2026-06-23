@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, CanvasTexture, DoubleSide, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
+import { Box3, CanvasTexture, DoubleSide, ImageLoader, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -59,6 +59,8 @@ const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
 const blankTextureDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+const textureRetryAttempts = 4;
+installThreeImageLoaderRetry();
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
   { id: 'layout', label: 'Aménagement', icon: '📐' },
@@ -88,6 +90,45 @@ const placementRuleOptions = [
   { id: 'back-center', label: 'Centre arrière', description: 'L’objet reste centré contre le mur du fond.' },
 ];
 const assetCategoryOptions = ['Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
+
+function installThreeImageLoaderRetry() {
+  if (ImageLoader.prototype.__standingRetryInstalled) return;
+  const originalLoad = ImageLoader.prototype.load;
+
+  ImageLoader.prototype.load = function loadWithRetry(url, onLoad, onProgress, onError) {
+    let attempt = 0;
+    const loader = this;
+
+    const run = (nextUrl) => originalLoad.call(loader, nextUrl, onLoad, onProgress, (error) => {
+      attempt += 1;
+      if (attempt <= textureRetryAttempts && canRetryTextureUrl(url)) {
+        window.setTimeout(() => run(textureRetryUrl(url, attempt)), 180 * attempt);
+        return;
+      }
+      if (onError) onError(error);
+    });
+
+    return run(url);
+  };
+
+  ImageLoader.prototype.__standingRetryInstalled = true;
+}
+
+function canRetryTextureUrl(url = '') {
+  return /^https?:\/\//i.test(String(url || '')) || String(url || '').startsWith('/');
+}
+
+function textureRetryUrl(url = '', attempt = 1) {
+  try {
+    const nextUrl = new URL(url, window.location.origin);
+    nextUrl.searchParams.set('standing_texture_retry', String(attempt));
+    return String(url).startsWith('/') ? `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}` : nextUrl.href;
+  } catch {
+    const separator = String(url).includes('?') ? '&' : '?';
+    return `${url}${separator}standing_texture_retry=${attempt}`;
+  }
+}
+
 function makeItem(type, width, depth, layout, catalogEntry = null) {
   const entry = catalogEntry || catalog.find((item) => item.type === type);
   const placementRule = effectivePlacementRule(entry);
@@ -5278,19 +5319,28 @@ function collectSceneTextureUrls(items = [], extraUrls = []) {
   return [...urls];
 }
 
-function preloadImage(url) {
+function preloadImage(url, attempt = 0) {
   return new Promise((resolve) => {
     if (!url) {
-      resolve();
+      resolve({ ok: true, url });
       return;
     }
 
     const image = new Image();
     image.crossOrigin = 'anonymous';
-    image.onload = () => resolve();
-    image.onerror = () => resolve();
-    image.src = url;
-    if (image.complete) resolve();
+    image.onload = () => resolve({ ok: true, url });
+    image.onerror = () => {
+      if (attempt < textureRetryAttempts && canRetryTextureUrl(url)) {
+        window.setTimeout(() => {
+          preloadImage(textureRetryUrl(url, attempt + 1), attempt + 1).then(resolve);
+        }, 180 * (attempt + 1));
+        return;
+      }
+      console.warn('Texture preload failed after retries', url);
+      resolve({ ok: false, url });
+    };
+    image.src = attempt ? textureRetryUrl(url, attempt) : url;
+    if (image.complete && image.naturalWidth > 0) resolve({ ok: true, url });
   });
 }
 
