@@ -7391,6 +7391,10 @@ function resolveModelResourceUrl(url, item) {
     }
   }
 
+  if (relativeTexturePath && isSafeRelativeTexturePath(relativeTexturePath) && canUseRelativeTextureFallback(relativeTexturePath, storagePaths)) {
+    return `${baseUrl}${encodeTexturePath(relativeTexturePath)}`;
+  }
+
   if (storagePaths.length) {
     logTextureDiagnostic('Texture reference ignored because it is missing from object storage paths', {
       item: item?.label || item?.type,
@@ -7432,12 +7436,12 @@ function rewriteRuntimeMtlReferences(text, item) {
     const value = match[2].trim();
     const texture = texturePaths.find((entry) => textureReferenceMatches(value, entry.fileName));
     if (!texture) {
-      logTextureDiagnostic('MTL texture line removed because the file is not part of this asset', {
+      logTextureDiagnostic('MTL texture line kept for URL resolver fallback', {
         item: item?.label || item?.type,
         texture: value,
         rootPath,
       });
-      return '';
+      return line;
     }
     return `${match[1]}${texture.relativePath}`;
   }).join('\n');
@@ -7470,6 +7474,26 @@ function normalizeTextureName(value = '') {
     .replace(/[^a-z0-9.]+/g, '-');
 }
 
+function canUseRelativeTextureFallback(relativePath = '', storagePaths = []) {
+  if (!storagePaths.length) return true;
+  const requestedFolder = normalizeStorageLookup(String(relativePath).replaceAll('\\', '/').split('/').slice(0, -1).join('/'));
+  if (!requestedFolder) return true;
+  return storagePaths.some((path) => {
+    const parts = String(path || '').replaceAll('\\', '/').split('/').filter(Boolean);
+    const relativeParts = parts.slice(1);
+    const folder = normalizeStorageLookup(relativeParts.slice(0, -1).join('/'));
+    return folder === requestedFolder;
+  });
+}
+
+function isSafeRelativeTexturePath(path = '') {
+  const normalized = String(path || '').replaceAll('\\', '/');
+  return Boolean(normalized)
+    && !normalized.startsWith('/')
+    && !normalized.includes('..')
+    && !/^https?:/i.test(normalized);
+}
+
 function isStoragePathInsideRoot(storagePath = '', rootPath = '') {
   if (!rootPath) return true;
   return normalizeStorageLookup(storagePath).startsWith(`${normalizeStorageLookup(rootPath)}/`);
@@ -7499,10 +7523,17 @@ function relativeTexturePathFromUrl(url, baseUrl, rootPath) {
   }
 
   if (rootPath) {
+    const normalizedRoot = normalizeStorageLookup(rootPath.replace(/^\/+|\/+$/g, ''));
+    const parts = decodedUrl.split('/').filter(Boolean);
+    const rootIndex = parts.findIndex((part) => normalizeStorageLookup(part) === normalizedRoot);
+    if (rootIndex >= 0 && rootIndex < parts.length - 1) return parts.slice(rootIndex + 1).join('/');
+
     const marker = `/${rootPath.replace(/^\/+|\/+$/g, '')}/`;
     const index = decodedUrl.indexOf(marker);
     if (index >= 0) return decodedUrl.slice(index + marker.length);
   }
+
+  if (isSafeRelativeTexturePath(decodedUrl)) return decodedUrl;
 
   return '';
 }
