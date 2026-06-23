@@ -1168,7 +1168,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
               carpetColor={selectedCarpetColor}
               carpetFootprintColor={selectedCarpetFootprintColor}
               carpetFootprintEnabled={carpetFootprintEnabled}
-              wallColor={selectedWallFabricColor.hex}
+              wallFabricColor={selectedWallFabricColor}
               visualContext={sceneVisualContext}
             />
             <ContactShadows opacity={0.22} scale={12} blur={2.4} far={5} position={[0, -0.01, 0]} />
@@ -3335,7 +3335,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
               onDragMove={moveDraggedItem}
               viewAngle={35}
               carpetColor={{ hex: '#bebebe' }}
-              wallColor="#f8f7f3"
+              wallFabricColor={{ hex: '#f8f7f3' }}
             />
             <ContactShadows opacity={0.22} scale={12} blur={2.4} far={5} position={[0, -0.01, 0]} />
           </Suspense>
@@ -6534,7 +6534,7 @@ function floorWallBlocker(item, wall, width, depth) {
   return null;
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallColor, interactive = true, canEditLockedItems = false, visualContext = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, interactive = true, canEditLockedItems = false, visualContext = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const cameraPivot = useMemo(() => {
     const radians = (viewAngle * Math.PI) / 180;
@@ -6567,7 +6567,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
       {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
       <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} />
-      <Walls width={width} depth={depth} height={height} layout={layout} wallColor={wallColor} onDeselect={clearSceneSelection} />
+      <Walls width={width} depth={depth} height={height} layout={layout} wallFabricColor={wallFabricColor} onDeselect={clearSceneSelection} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
         {width}m x {depth}m
       </Text>
@@ -6730,26 +6730,27 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
 }
 
 
-function Walls({ width, depth, height, layout, wallColor, onDeselect }) {
+function Walls({ width, depth, height, layout, wallFabricColor, onDeselect }) {
   const sideDepth = Math.max(0.01, depth - wallThickness);
   const sideZ = -depth / 2 + wallThickness + sideDepth / 2;
   return (
     <group onPointerDown={() => onDeselect?.()}>
-      <Wall position={[0, height / 2, -depth / 2 + wallThickness / 2]} size={[width, height, wallThickness]} color={wallColor} />
+      <Wall position={[0, height / 2, -depth / 2 + wallThickness / 2]} size={[width, height, wallThickness]} color={wallFabricColor} textureWidth={width} textureHeight={height} />
       <Baseboard position={[0, baseboardHeight / 2, -depth / 2 + wallThickness + baseboardThickness / 2]} size={[width, baseboardHeight, baseboardThickness]} />
-      {(layout === 'left' || layout === 'u') && <Wall position={[-width / 2 + wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallColor} />}
+      {(layout === 'left' || layout === 'u') && <Wall position={[-width / 2 + wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallFabricColor} textureWidth={sideDepth} textureHeight={height} />}
       {(layout === 'left' || layout === 'u') && <Baseboard position={[-width / 2 + wallThickness + baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
-      {(layout === 'right' || layout === 'u') && <Wall position={[width / 2 - wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallColor} />}
+      {(layout === 'right' || layout === 'u') && <Wall position={[width / 2 - wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallFabricColor} textureWidth={sideDepth} textureHeight={height} />}
       {(layout === 'right' || layout === 'u') && <Baseboard position={[width / 2 - wallThickness - baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
     </group>
   );
 }
 
-function Wall({ position, size, color }) {
+function Wall({ position, size, color, textureWidth, textureHeight }) {
+  const wallTexture = useRepeatedTexture(colorTextureUrl(color), textureWidth, textureHeight, 1.2);
   return (
     <mesh castShadow receiveShadow position={position}>
       <boxGeometry args={size} />
-      <meshStandardMaterial color={color} roughness={0.62} />
+      <meshStandardMaterial color={colorHex(color, '#f8f7f3')} map={wallTexture || null} roughness={0.72} />
     </mesh>
   );
 }
