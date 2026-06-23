@@ -58,6 +58,7 @@ const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
+const blankTextureDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
   { id: 'layout', label: 'Aménagement', icon: '📐' },
@@ -6639,39 +6640,22 @@ function colorTextureUrl(color) {
 }
 
 function useRepeatedTexture(url, width, depth, tileSize = 0.5) {
-  const [texture, setTexture] = useState(null);
+  const loadedTexture = useLoader(TextureLoader, url || blankTextureDataUrl);
+  const texture = useMemo(() => {
+    const cloned = loadedTexture.clone();
+    cloned.wrapS = RepeatWrapping;
+    cloned.wrapT = RepeatWrapping;
+    cloned.colorSpace = SRGBColorSpace;
+    cloned.minFilter = LinearFilter;
+    cloned.magFilter = LinearFilter;
+    cloned.repeat.set(Math.max(1, Number(width || 1) / tileSize), Math.max(1, Number(depth || 1) / tileSize));
+    cloned.needsUpdate = true;
+    return cloned;
+  }, [loadedTexture, width, depth, tileSize]);
 
-  useEffect(() => {
-    if (!url) {
-      setTexture(null);
-      return undefined;
-    }
+  useEffect(() => () => texture.dispose(), [texture]);
 
-    let disposed = false;
-    const loader = new TextureLoader();
-    loader.load(url, (loadedTexture) => {
-      if (disposed) {
-        loadedTexture.dispose();
-        return;
-      }
-      loadedTexture.wrapS = RepeatWrapping;
-      loadedTexture.wrapT = RepeatWrapping;
-      loadedTexture.colorSpace = SRGBColorSpace;
-      loadedTexture.minFilter = LinearFilter;
-      loadedTexture.magFilter = LinearFilter;
-      loadedTexture.repeat.set(Math.max(1, Number(width || 1) / tileSize), Math.max(1, Number(depth || 1) / tileSize));
-      loadedTexture.needsUpdate = true;
-      setTexture(loadedTexture);
-    }, undefined, () => {
-      if (!disposed) setTexture(null);
-    });
-
-    return () => {
-      disposed = true;
-    };
-  }, [url, width, depth, tileSize]);
-
-  return texture;
+  return url ? texture : null;
 }
 
 
