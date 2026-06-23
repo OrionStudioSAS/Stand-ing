@@ -933,7 +933,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       const samePlacementMode = isWallItem(item) === isWallItem(nextBase);
       const compatiblePosition = samePlacementMode
         ? {
-          ...(isWallItem(nextBase) ? { wall: item.wall, x: item.x, y: item.y, z: item.z } : { x: item.x, z: item.z }),
+          ...(isWallItem(nextBase)
+            ? { wall: item.wall, x: item.x, y: isTelevisionItem(nextBase) ? screenCenterHeight : item.y, z: item.z }
+            : { x: item.x, z: item.z }),
           ...((isAdminViewer || !itemRotationLocked(nextBase)) ? { rotation: item.rotation } : {}),
         }
         : {};
@@ -5156,6 +5158,11 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
     modelSize: entryDimensions.modelSize || itemDimensions.modelSize,
     sizeSource: entryDimensions.sizeSource || itemDimensions.sizeSource,
   };
+  if (isTelevisionItem({ ...item, dimensions }) || isTelevisionItem(entry)) {
+    dimensions.isTelevision = true;
+    dimensions.mountType = 'wall';
+    dimensions.wallY = screenCenterHeight;
+  }
   const placementRule = hasOwn(item, 'placementRule')
     ? normalizePlacementRule(item.placementRule)
     : effectivePlacementRule(entry);
@@ -5399,7 +5406,7 @@ function pickLedRailOverride(item) {
 }
 
 function defaultWallItemCenterY(entry, type) {
-  if (type === 'screen' || entry?.dimensions?.isTelevision) return screenCenterHeight;
+  if (isTelevisionItem({ ...entry, type })) return screenCenterHeight;
   if (type === 'poster') return 1.45;
   if (isLedRailEntry(entry)) return ledRailCenterY(entry);
   if (isPartitionHeadItem(entry)) return 0;
@@ -5524,9 +5531,17 @@ function isWallItemType(type) {
   return ['screen', 'poster'].includes(type);
 }
 
+function isTelevisionItem(item = {}) {
+  return Boolean(item?.type === 'screen' || item?.isTelevision || item?.dimensions?.isTelevision);
+}
+
+function isCenterAnchoredWallModel(item = {}) {
+  return isTelevisionItem(item);
+}
+
 function assetPlacementMode(assetOrEntry = {}) {
   const mountType = assetOrEntry?.dimensions?.mountType || assetOrEntry?.mountType;
-  if (assetOrEntry?.dimensions?.isTelevision) return 'wall';
+  if (isTelevisionItem(assetOrEntry)) return 'wall';
   if (isLedRailEntry(assetOrEntry)) return 'wall';
   return mountType === 'wall' ? 'wall' : 'floor';
 }
@@ -5751,6 +5766,7 @@ function wallFromDrag(point, currentWall, width, depth, layout) {
 }
 
 function wallDragPatch(point, dragged, items, width, depth, layout) {
+  const fixedY = isTelevisionItem(dragged) ? { y: screenCenterHeight } : {};
   const objectWall = objectWallFromDrag(point, items, dragged.id);
   if (objectWall) {
     return {
@@ -5758,6 +5774,7 @@ function wallDragPatch(point, dragged, items, width, depth, layout) {
       x: objectWall.axis,
       wallSide: objectWall.side,
       wallSurface: serializeObjectWallSurface(objectWall.surface),
+      ...fixedY,
     };
   }
 
@@ -5767,6 +5784,7 @@ function wallDragPatch(point, dragged, items, width, depth, layout) {
     x: wall === 'back' ? point.x : point.z,
     wallSide: null,
     wallSurface: null,
+    ...fixedY,
   };
 }
 
@@ -5981,7 +5999,7 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
         const margin = Math.min(itemHalfWidth, Math.max(0, halfLength - 0.02));
         const min = surface.centerAxis - halfLength + margin;
         const max = surface.centerAxis + halfLength - margin;
-        return { ...item, x: clamp(snapWallAxis(item.x), min, max) };
+        return { ...item, x: clamp(snapWallAxis(item.x), min, max), y: wallItemCenterY(item) };
       }
     }
 
@@ -6322,7 +6340,7 @@ function screenWorldPosition(item, width, depth, items = []) {
 }
 
 function wallItemCenterY(item) {
-  if (item?.type === 'screen' || item?.dimensions?.isTelevision) return screenCenterHeight;
+  if (isTelevisionItem(item)) return screenCenterHeight;
   if (item?.type === 'poster') return Number(item?.y ?? 1.45);
   if (isLedRailEntry(item)) return ledRailCenterY(item);
   if (isPartitionHeadItem(item)) return 0;
@@ -6659,6 +6677,7 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, onSele
 
 function SceneItemContent({ item, selected, hovered, dragging, visualContext }) {
   const bounds = itemGroupBounds(item);
+  const centerY = isCenterAnchoredWallModel(item) ? 0 : null;
   return (
     <>
       {item.type === 'chair' && <Chair selected={selected} hovered={hovered} dragging={dragging} />}
@@ -6666,12 +6685,12 @@ function SceneItemContent({ item, selected, hovered, dragging, visualContext }) 
       {item.type === 'counter' && <Counter selected={selected} hovered={hovered} dragging={dragging} />}
       {item.modelUrl && (
         <>
-          <ObjHitbox bounds={bounds} />
+          <ObjHitbox bounds={bounds} centerY={centerY} />
           <Model3D item={item} selected={selected} hovered={hovered} dragging={dragging} visualContext={visualContext} />
           <ObjectBaseboards item={item} />
         </>
       )}
-      {selected && <SelectionFrame bounds={bounds} />}
+      {selected && <SelectionFrame bounds={bounds} centerY={centerY} />}
     </>
   );
 }
@@ -6720,7 +6739,7 @@ function SelectionFrame({ bounds = {}, centerY = null }) {
   );
 }
 
-function ObjHitbox({ bounds = null, size = [0.7, 0.7, 0.7] }) {
+function ObjHitbox({ bounds = null, size = [0.7, 0.7, 0.7], centerY = null }) {
   const x = Number(bounds?.width || size[0] || 0.7);
   const y = Number(bounds?.height || size[1] || 0.7);
   const z = Number(bounds?.depth || size[2] || 0.7);
@@ -6729,7 +6748,7 @@ function ObjHitbox({ bounds = null, size = [0.7, 0.7, 0.7] }) {
   const thinVerticalPanel = Number(y || 0) >= 1.5 && Math.min(Number(x || 0), Number(z || 0)) <= 0.18;
   const minFootprint = thinVerticalPanel ? 0.08 : 0.18;
   return (
-    <mesh position={[centerX, Math.max(y, 0.35) / 2, centerZ]}>
+    <mesh position={[centerX, centerY ?? Math.max(y, 0.35) / 2, centerZ]}>
       <boxGeometry args={[Math.max(x, minFootprint), Math.max(y, 0.35), Math.max(z, minFootprint)]} />
       <meshBasicMaterial transparent opacity={0} depthWrite={false} />
     </mesh>
@@ -6814,7 +6833,7 @@ function ObjModel({ item, selected, hovered, dragging }) {
     });
 
     return centerModel(clone, item);
-  }, [obj, item.color, selected, hovered, dragging]);
+  }, [obj, item, selected, hovered, dragging]);
 
   return <primitive object={model} dispose={null} />;
 }
@@ -7298,7 +7317,8 @@ function centerModel(model, item = null) {
 
   const scaledBox = new Box3().setFromObject(model);
   const center = scaledBox.getCenter(new Vector3());
-  model.position.set(-center.x, -scaledBox.min.y, -center.z);
+  const anchorY = isCenterAnchoredWallModel(item) ? -center.y : -scaledBox.min.y;
+  model.position.set(-center.x, anchorY, -center.z);
   return model;
 }
 
