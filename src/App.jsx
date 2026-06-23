@@ -6778,7 +6778,19 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
 }
 
 function modelMaterialUrl(item) {
-  return item?.materialUrl || item?.dimensions?.materialUrl || null;
+  const explicitUrl = item?.materialUrl || item?.dimensions?.materialUrl || '';
+  const modelRoot = storageRootFromPublicUrl(item?.modelUrl || '');
+  const expectedRoot = item?.dimensions?.storageRoot || modelRoot;
+  const explicitRoot = storageRootFromPublicUrl(explicitUrl);
+
+  if (explicitUrl && rootsMatch(explicitRoot, expectedRoot)) return explicitUrl;
+
+  const materialPath = item?.dimensions?.materialPath
+    || (Array.isArray(item?.dimensions?.storagePaths) ? item.dimensions.storagePaths.find((path) => /\.mtl$/i.test(path)) : '');
+  const rebuiltUrl = publicStorageUrlFromPath(item?.modelUrl || explicitUrl, materialPath);
+  if (rebuiltUrl) return rebuiltUrl;
+
+  return explicitUrl && !expectedRoot ? explicitUrl : null;
 }
 
 function ObjModel({ item, selected, hovered, dragging }) {
@@ -7114,6 +7126,25 @@ function defaultModelRoughness(item) {
 function assetBaseUrl(url = '') {
   if (!url || !url.includes('/')) return '';
   return url.slice(0, url.lastIndexOf('/') + 1);
+}
+
+function storageRootFromPublicUrl(url = '') {
+  const match = String(url || '').match(/\/object\/public\/object-assets\/([^/?#]+)/);
+  return match ? safeDecodeUri(match[1]) : '';
+}
+
+function rootsMatch(left = '', right = '') {
+  if (!left || !right) return true;
+  return normalizeStorageLookup(left) === normalizeStorageLookup(right);
+}
+
+function publicStorageUrlFromPath(referenceUrl = '', storagePath = '') {
+  if (!referenceUrl || !storagePath) return '';
+  const marker = '/object/public/object-assets/';
+  const markerIndex = String(referenceUrl).indexOf(marker);
+  if (markerIndex < 0) return '';
+  const bucketBaseUrl = String(referenceUrl).slice(0, markerIndex + marker.length);
+  return `${bucketBaseUrl}${encodeTexturePath(storagePath)}`;
 }
 
 function resolveModelResourceUrl(url, item) {
