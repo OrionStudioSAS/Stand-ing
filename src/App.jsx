@@ -6639,23 +6639,48 @@ function colorTextureUrl(color) {
   return typeof color === 'string' ? '' : (color?.image || '');
 }
 
-function useRepeatedTexture(url, width, depth, tileSize = 0.5) {
+function useRepeatedTexture(url, width, depth, tileSize = 1) {
   const loadedTexture = useLoader(TextureLoader, url || blankTextureDataUrl);
   const texture = useMemo(() => {
-    const cloned = loadedTexture.clone();
-    cloned.wrapS = RepeatWrapping;
-    cloned.wrapT = RepeatWrapping;
-    cloned.colorSpace = SRGBColorSpace;
-    cloned.minFilter = LinearFilter;
-    cloned.magFilter = LinearFilter;
-    cloned.repeat.set(1, 1);
-    cloned.needsUpdate = true;
-    return cloned;
-  }, [loadedTexture, width, depth, tileSize]);
+    const seamlessTexture = url ? createSeamlessRepeatedTexture(loadedTexture.image) : loadedTexture.clone();
+    seamlessTexture.wrapS = RepeatWrapping;
+    seamlessTexture.wrapT = RepeatWrapping;
+    seamlessTexture.colorSpace = SRGBColorSpace;
+    seamlessTexture.minFilter = LinearFilter;
+    seamlessTexture.magFilter = LinearFilter;
+    seamlessTexture.repeat.set(Math.max(1, Number(width || 1) / tileSize), Math.max(1, Number(depth || 1) / tileSize));
+    seamlessTexture.needsUpdate = true;
+    return seamlessTexture;
+  }, [loadedTexture, url, width, depth, tileSize]);
 
   useEffect(() => () => texture.dispose(), [texture]);
 
   return url ? texture : null;
+}
+
+function createSeamlessRepeatedTexture(image) {
+  if (typeof document === 'undefined' || !image) return new CanvasTexture(document.createElement('canvas'));
+  const imageWidth = image.naturalWidth || image.videoWidth || image.width || 1;
+  const imageHeight = image.naturalHeight || image.videoHeight || image.height || 1;
+  const canvas = document.createElement('canvas');
+  canvas.width = imageWidth * 2;
+  canvas.height = imageHeight * 2;
+  const ctx = canvas.getContext('2d');
+
+  drawMirroredTile(ctx, image, 0, 0, imageWidth, imageHeight, false, false);
+  drawMirroredTile(ctx, image, imageWidth, 0, imageWidth, imageHeight, true, false);
+  drawMirroredTile(ctx, image, 0, imageHeight, imageWidth, imageHeight, false, true);
+  drawMirroredTile(ctx, image, imageWidth, imageHeight, imageWidth, imageHeight, true, true);
+
+  return new CanvasTexture(canvas);
+}
+
+function drawMirroredTile(ctx, image, x, y, width, height, flipX, flipY) {
+  ctx.save();
+  ctx.translate(x + (flipX ? width : 0), y + (flipY ? height : 0));
+  ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+  ctx.drawImage(image, 0, 0, width, height);
+  ctx.restore();
 }
 
 
