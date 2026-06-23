@@ -101,6 +101,7 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
     lockedPlacement: isLockedPlacementRule(placementRule),
     movementLocked: Boolean(entry?.movementLocked || entry?.dimensions?.movementLocked),
     deleteLocked: Boolean(entry?.deleteLocked || entry?.dimensions?.deleteLocked),
+    rotationLocked: Boolean(entry?.rotationLocked || entry?.dimensions?.rotationLocked),
   };
 
   if (entry?.isGroup || entry?.children?.length) {
@@ -865,6 +866,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const updateItem = (id, patch) => {
     if (readOnly) return;
+    const currentItem = sceneItems.find((item) => item.id === id);
+    if (!isAdminViewer && hasOwn(patch, 'rotation') && itemRotationLocked(currentItem)) return;
     const autoLedItem = sceneItems.find((item) => item.id === id && isAutomaticLedRailItem(item));
     if (autoLedItem) {
       const constrained = constrainItem({ ...autoLedItem, ...patch }, width, depth, layout, carpetFootprintEnabled);
@@ -931,7 +934,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       const compatiblePosition = samePlacementMode
         ? {
           ...(isWallItem(nextBase) ? { wall: item.wall, x: item.x, y: item.y, z: item.z } : { x: item.x, z: item.z }),
-          rotation: item.rotation,
+          ...((isAdminViewer || !itemRotationLocked(nextBase)) ? { rotation: item.rotation } : {}),
         }
         : {};
       const candidate = constrainItem({ ...nextBase, ...compatiblePosition }, width, depth, layout, carpetFootprintEnabled);
@@ -1214,13 +1217,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         <div className={`view-toolbar ${selected && !readOnly ? 'selection-mode' : ''}`} aria-label={selected ? 'Actions objet selectionne' : 'Outils de vue'}>
           {selected && !readOnly ? (
             <>
-              <button type="button" disabled={itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
+              <button type="button" disabled={itemPlacementLocked(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
               <button type="button" onClick={openSelectedItemConfigurator} title="Paramètres"><Settings2 size={16} /></button>
               {isPartitionHeadItem(selected) && <button type="button" onClick={() => setRotationPanelOpen(false)} title="Options visuel"><FileImage size={16} /></button>}
               <button type="button" disabled={!isAdminViewer && itemDeletionLocked(selected)} onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
               {!isAdminViewer && itemMovementLocked(selected) && <span className="toolbar-lock-note">Déplacement verrouillé</span>}
+              {!isAdminViewer && itemRotationLocked(selected) && <span className="toolbar-lock-note">Rotation verrouillée</span>}
               {!isAdminViewer && itemDeletionLocked(selected) && <span className="toolbar-lock-note">Suppression verrouillée</span>}
-              {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (
+              {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
                 <label className="toolbar-rotation-slider">
                   <span>{selected.rotation || 0}°</span>
                   <input
@@ -3774,6 +3778,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const draftIsTelevision = Boolean(draft.dimensions?.isTelevision);
   const draftMovementLocked = Boolean(draft.dimensions?.movementLocked);
   const draftDeleteLocked = Boolean(draft.dimensions?.deleteLocked);
+  const draftRotationLocked = Boolean(draft.dimensions?.rotationLocked);
   const draftConfigOptions = normalizeAssetConfigOptions(draft.dimensions?.configOptions);
   const [variantAssetTypes, setVariantAssetTypes] = useState(() => draft.dimensions?.variantAssetTypes || []);
 
@@ -4056,6 +4061,17 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             <span>
               <strong>Désactiver la suppression</strong>
               <small>L’exposant ne pourra pas supprimer cet objet depuis sa scène.</small>
+            </span>
+          </label>
+          <label className="asset-toggle-row">
+            <input
+              type="checkbox"
+              checked={draftRotationLocked}
+              onChange={(event) => updateAssetBehavior({ rotationLocked: event.target.checked })}
+            />
+            <span>
+              <strong>Désactiver la rotation</strong>
+              <small>L’exposant pourra sélectionner l’objet, mais pas changer son angle.</small>
             </span>
           </label>
           {!isGroupAsset && (
@@ -4863,6 +4879,7 @@ function assetToCatalogEntry(asset, allAssets = []) {
       placementRule: effectivePlacementRule(asset),
       movementLocked: Boolean(asset.dimensions?.movementLocked),
       deleteLocked: Boolean(asset.dimensions?.deleteLocked),
+      rotationLocked: Boolean(asset.dimensions?.rotationLocked),
       price: asset.dimensions?.price || 0,
       thumbnailUrl: asset.thumbnail_url,
       dimensions: asset.dimensions || {},
@@ -4884,6 +4901,7 @@ function assetToCatalogEntry(asset, allAssets = []) {
     placementRule: effectivePlacementRule(asset),
     movementLocked: Boolean(asset.dimensions?.movementLocked),
     deleteLocked: Boolean(asset.dimensions?.deleteLocked),
+    rotationLocked: Boolean(asset.dimensions?.rotationLocked),
     dimensions: asset.dimensions || {},
   };
 }
@@ -5151,6 +5169,7 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
     lockedPlacement: item.lockedPlacement ?? isLockedPlacementRule(placementRule),
     movementLocked: item.movementLocked ?? entry.movementLocked ?? entry.dimensions?.movementLocked,
     deleteLocked: item.deleteLocked ?? entry.deleteLocked ?? entry.dimensions?.deleteLocked,
+    rotationLocked: item.rotationLocked ?? entry.rotationLocked ?? entry.dimensions?.rotationLocked,
     modelUrl: entry.modelUrl || item.modelUrl,
     modelSize: entry.modelSize || item.modelSize,
     materialUrl,
@@ -5307,6 +5326,10 @@ function itemMovementLocked(item) {
 
 function itemDeletionLocked(item) {
   return Boolean(item?.deleteLocked || item?.dimensions?.deleteLocked);
+}
+
+function itemRotationLocked(item) {
+  return Boolean(item?.rotationLocked || item?.dimensions?.rotationLocked);
 }
 
 function placementRuleLabel(id, withDescription = false) {
