@@ -5319,6 +5319,11 @@ function collectSceneTextureUrls(items = [], extraUrls = []) {
   return [...urls];
 }
 
+function logTextureDiagnostic(message, details = {}) {
+  if (!import.meta.env.DEV) return;
+  console.warn(message, details);
+}
+
 function preloadImage(url, attempt = 0) {
   return new Promise((resolve) => {
     if (!url) {
@@ -5336,7 +5341,7 @@ function preloadImage(url, attempt = 0) {
         }, 180 * (attempt + 1));
         return;
       }
-      console.warn('Texture preload failed after retries', url);
+      logTextureDiagnostic('Texture preload failed after retries', { url });
       resolve({ ok: false, url });
     };
     image.src = attempt ? textureRetryUrl(url, attempt) : url;
@@ -7387,7 +7392,7 @@ function resolveModelResourceUrl(url, item) {
   }
 
   if (storagePaths.length) {
-    console.warn('Texture reference ignored because it is missing from object storage paths', {
+    logTextureDiagnostic('Texture reference ignored because it is missing from object storage paths', {
       item: item?.label || item?.type,
       texture: url,
       rootPath,
@@ -7428,7 +7433,7 @@ function rewriteRuntimeMtlReferences(text, item) {
     const normalizedValue = normalizeStorageLookup(value);
     const texture = texturePaths.find((entry) => normalizedValue.includes(normalizeStorageLookup(entry.fileName)));
     if (!texture) {
-      console.warn('MTL texture line removed because the file is not part of this asset', {
+      logTextureDiagnostic('MTL texture line removed because the file is not part of this asset', {
         item: item?.label || item?.type,
         texture: value,
         rootPath,
