@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, CanvasTexture, DoubleSide, LinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
+import { Box3, CanvasTexture, DoubleSide, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -6646,7 +6646,7 @@ function useRepeatedTexture(url, width, depth, tileSize = 1) {
     seamlessTexture.wrapS = RepeatWrapping;
     seamlessTexture.wrapT = RepeatWrapping;
     seamlessTexture.colorSpace = SRGBColorSpace;
-    seamlessTexture.minFilter = LinearFilter;
+    seamlessTexture.minFilter = LinearMipmapLinearFilter;
     seamlessTexture.magFilter = LinearFilter;
     seamlessTexture.repeat.set(Math.max(1, Number(width || 1) / tileSize), Math.max(1, Number(depth || 1) / tileSize));
     seamlessTexture.needsUpdate = true;
@@ -6746,11 +6746,16 @@ function Walls({ width, depth, height, layout, wallFabricColor, onDeselect }) {
 }
 
 function Wall({ position, size, color, textureWidth, textureHeight }) {
-  const wallTexture = useRepeatedTexture(colorTextureUrl(color), textureWidth, textureHeight, 1.2);
+  const wallTexture = useRepeatedTexture(colorTextureUrl(color), textureWidth, textureHeight, 1.8);
   return (
     <mesh castShadow receiveShadow position={position}>
       <boxGeometry args={size} />
-      <meshStandardMaterial color={colorHex(color, '#f8f7f3')} map={wallTexture || null} roughness={0.72} />
+      <meshStandardMaterial
+        color={wallTexture ? '#ffffff' : colorHex(color, '#f8f7f3')}
+        map={wallTexture || null}
+        roughness={1}
+        metalness={0}
+      />
     </mesh>
   );
 }
