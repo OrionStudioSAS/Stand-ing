@@ -59,6 +59,7 @@ const collisionPadding = 0.04;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
+const ceilingObjectBottomY = 3;
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
   { id: 'layout', label: 'Aménagement', icon: '📐' },
@@ -103,6 +104,7 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
     deleteLocked: Boolean(entry?.deleteLocked || entry?.dimensions?.deleteLocked),
     rotationLocked: Boolean(entry?.rotationLocked || entry?.dimensions?.rotationLocked),
   };
+  const baseY = floorItemBaseY(base, entry);
 
   if (entry?.isGroup || entry?.children?.length) {
     const item = {
@@ -112,7 +114,7 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
       children: resolveGroupChildren(entry.children || []),
       x: 0,
       z: Math.min(depth / 2 - 0.9, 0.7),
-      y: 0,
+      y: baseY,
     };
     return applyPlacementRule(item, width, depth, layout);
   }
@@ -148,7 +150,7 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
     color: entry?.color,
     x: 0,
     z: Math.min(depth / 2 - 0.9, 0.7),
-    y: 0,
+    y: baseY,
   };
 }
 
@@ -3778,6 +3780,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const draftMountType = assetPlacementMode(draft);
   const draftCollisionDisabled = draft.dimensions?.collisionEnabled === false;
   const draftIsTelevision = Boolean(draft.dimensions?.isTelevision);
+  const draftCeilingMounted = Boolean(draft.dimensions?.ceilingMounted);
   const draftMovementLocked = Boolean(draft.dimensions?.movementLocked);
   const draftDeleteLocked = Boolean(draft.dimensions?.deleteLocked);
   const draftRotationLocked = Boolean(draft.dimensions?.rotationLocked);
@@ -3865,7 +3868,19 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
       dimensions: {
         ...(draft.dimensions || {}),
         isTelevision: checked,
-        ...(checked ? { mountType: 'wall', wallY: screenCenterHeight } : {}),
+        ...(checked ? { mountType: 'wall', wallY: screenCenterHeight, ceilingMounted: false } : {}),
+      },
+    });
+  };
+
+  const updateCeilingMountedOption = (checked) => {
+    setDraft({
+      ...draft,
+      dimensions: {
+        ...(draft.dimensions || {}),
+        ceilingMounted: checked,
+        ceilingBottomY: checked ? ceilingObjectBottomY : draft.dimensions?.ceilingBottomY,
+        ...(checked ? { mountType: 'floor', isTelevision: false } : {}),
       },
     });
   };
@@ -4036,6 +4051,17 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
               </span>
             </label>
           )}
+          <label className="asset-toggle-row">
+            <input
+              type="checkbox"
+              checked={draftCeilingMounted}
+              onChange={(event) => updateCeilingMountedOption(event.target.checked)}
+            />
+            <span>
+              <strong>Objet au plafond</strong>
+              <small>Place le bas de l’objet à 3,00 m de hauteur, avec déplacement libre en X/Z.</small>
+            </span>
+          </label>
           <label>
             <span>Position automatique</span>
             <select value={draftPlacementRuleId} onChange={(event) => updatePlacementRule(event.target.value)}>
@@ -5341,6 +5367,16 @@ function itemRotationLocked(item) {
   return Boolean(item?.rotationLocked || item?.dimensions?.rotationLocked);
 }
 
+function isCeilingMountedItem(item = {}, entry = null) {
+  return Boolean(item?.ceilingMounted || item?.dimensions?.ceilingMounted || entry?.dimensions?.ceilingMounted);
+}
+
+function floorItemBaseY(item = {}, entry = null) {
+  if (!isCeilingMountedItem(item, entry)) return 0;
+  const y = Number(item?.dimensions?.ceilingBottomY ?? entry?.dimensions?.ceilingBottomY ?? ceilingObjectBottomY);
+  return Number.isFinite(y) ? y : ceilingObjectBottomY;
+}
+
 function placementRuleLabel(id, withDescription = false) {
   const option = placementRuleOptions.find((item) => item.id === id) || placementRuleOptions[0];
   return withDescription ? option.description : option.label;
@@ -5544,6 +5580,7 @@ function isCenterAnchoredWallModel(item = {}) {
 function assetPlacementMode(assetOrEntry = {}) {
   const mountType = assetOrEntry?.dimensions?.mountType || assetOrEntry?.mountType;
   if (isTelevisionItem(assetOrEntry)) return 'wall';
+  if (isCeilingMountedItem(assetOrEntry)) return 'floor';
   if (isLedRailEntry(assetOrEntry)) return 'wall';
   return mountType === 'wall' ? 'wall' : 'floor';
 }
@@ -6022,6 +6059,7 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
   return {
     ...positionedItem,
     x: placement.x,
+    y: floorItemBaseY(positionedItem),
     z: placement.z,
   };
 }
@@ -6636,7 +6674,7 @@ function SceneItem({ item, items = [], selected, hovered, dragging, width, depth
   if (item.isGroup) return <GroupedSceneItem item={item} selected={selected} hovered={hovered} dragging={dragging} rotationY={rotationY} onSelect={onSelect} onHover={onHover} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} visualContext={visualContext} />;
   return (
     <group
-      position={[item.x, 0, item.z]}
+      position={[item.x, floorItemBaseY(item), item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
       onPointerOver={(event) => { event.stopPropagation(); onHover(true); }}
@@ -6656,7 +6694,7 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, onSele
   const groupBounds = itemGroupBounds(item);
   return (
     <group
-      position={[item.x, 0, item.z]}
+      position={[item.x, floorItemBaseY(item), item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
       onPointerOver={(event) => { event.stopPropagation(); onHover(true); }}
