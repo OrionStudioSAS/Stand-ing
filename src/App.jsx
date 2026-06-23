@@ -6662,24 +6662,30 @@ function createSeamlessRepeatedTexture(image) {
   if (typeof document === 'undefined' || !image) return new CanvasTexture(document.createElement('canvas'));
   const imageWidth = image.naturalWidth || image.videoWidth || image.width || 1;
   const imageHeight = image.naturalHeight || image.videoHeight || image.height || 1;
+  const cropX = Math.floor(imageWidth * 0.08);
+  const cropY = Math.floor(imageHeight * 0.08);
+  const tileWidth = Math.max(1, imageWidth - cropX * 2);
+  const tileHeight = Math.max(1, imageHeight - cropY * 2);
   const canvas = document.createElement('canvas');
-  canvas.width = imageWidth * 2;
-  canvas.height = imageHeight * 2;
+  canvas.width = tileWidth * 2;
+  canvas.height = tileHeight * 2;
   const ctx = canvas.getContext('2d');
 
-  drawMirroredTile(ctx, image, 0, 0, imageWidth, imageHeight, false, false);
-  drawMirroredTile(ctx, image, imageWidth, 0, imageWidth, imageHeight, true, false);
-  drawMirroredTile(ctx, image, 0, imageHeight, imageWidth, imageHeight, false, true);
-  drawMirroredTile(ctx, image, imageWidth, imageHeight, imageWidth, imageHeight, true, true);
+  // Use the image center only: the source JPG edges often contain subtle borders
+  // that become visible as seams once repeated on a large floor.
+  drawMirroredTile(ctx, image, 0, 0, tileWidth, tileHeight, cropX, cropY, false, false);
+  drawMirroredTile(ctx, image, tileWidth, 0, tileWidth, tileHeight, cropX, cropY, true, false);
+  drawMirroredTile(ctx, image, 0, tileHeight, tileWidth, tileHeight, cropX, cropY, false, true);
+  drawMirroredTile(ctx, image, tileWidth, tileHeight, tileWidth, tileHeight, cropX, cropY, true, true);
 
   return new CanvasTexture(canvas);
 }
 
-function drawMirroredTile(ctx, image, x, y, width, height, flipX, flipY) {
+function drawMirroredTile(ctx, image, x, y, width, height, sourceX, sourceY, flipX, flipY) {
   ctx.save();
   ctx.translate(x + (flipX ? width : 0), y + (flipY ? height : 0));
   ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
-  ctx.drawImage(image, 0, 0, width, height);
+  ctx.drawImage(image, sourceX, sourceY, width, height, 0, 0, width, height);
   ctx.restore();
 }
 
