@@ -7096,7 +7096,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   if (textureOptions.mainImageTexture && materialName.includes(partitionHeadMainImageMaterial(item))) {
     return materialWithTexture(material, textureOptions.mainImageTexture);
   }
-  if (textureOptions.exhibitorTexture && shouldUseExhibitorHeadTexture(materialName, meshName, item)) {
+  if (textureOptions.exhibitorTexture && shouldUseExhibitorHeadTexture(materialName, meshName, item, material)) {
     return materialWithTexture(material, textureOptions.exhibitorTexture);
   }
   return material;
@@ -7110,16 +7110,40 @@ function partitionHeadMainImageCoverSize(item = {}) {
   return isSmclPartitionHeadItem(item) ? [947, 593] : [474, 296];
 }
 
-function shouldUseExhibitorHeadTexture(materialName = '', meshName = '', item = {}) {
+function shouldUseExhibitorHeadTexture(materialName = '', meshName = '', item = {}, material = null) {
   const normalizedMeshName = normalizeMaterialName(meshName);
   if (isSmclPartitionHeadItem(item)) {
     const side = smclPartitionHeadSide(item);
-    return side === 'left' ? materialName === '_' : materialName === '_51';
+    const targetMaterial = side === 'left' ? '_' : '_51';
+    if (materialName !== targetMaterial) return false;
+    if (materialMapMatchesFile(material, `${targetMaterial}.jpg`)) return true;
+    return isLikelySmclInfoPanelMesh(normalizedMeshName);
   }
   return materialName === '_10'
     || materialName === '10'
     || materialName.endsWith('_10')
     || (normalizedMeshName.includes('mesh4') && normalizedMeshName.includes('group3'));
+}
+
+function isLikelySmclInfoPanelMesh(normalizedMeshName = '') {
+  if (!normalizedMeshName) return false;
+  return normalizedMeshName.includes('info')
+    || normalizedMeshName.includes('visuel')
+    || normalizedMeshName.includes('picture')
+    || normalizedMeshName.includes('exhibitor')
+    || normalizedMeshName.includes('mesh4')
+    || (normalizedMeshName.includes('group') && normalizedMeshName.includes('3'));
+}
+
+function materialMapMatchesFile(material = null, targetFileName = '') {
+  const fileName = materialMapFileName(material);
+  return Boolean(fileName && targetFileName && normalizeStorageLookup(fileName) === normalizeStorageLookup(targetFileName));
+}
+
+function materialMapFileName(material = null) {
+  const data = material?.map?.image || material?.map?.source?.data;
+  const source = data?.currentSrc || data?.src || material?.map?.name || '';
+  return safeDecodeUri(String(source || '').replaceAll('\\', '/').split('/').pop() || '');
 }
 
 function materialWithTexture(material, texture) {
@@ -7441,7 +7465,8 @@ function textureReferenceMatches(reference = '', candidateFileName = '') {
 
   const referenceStem = normalizedReference.replace(/\.[a-z0-9]+$/i, '');
   const candidateStem = normalizedCandidate.replace(/\.[a-z0-9]+$/i, '');
-  return Boolean(referenceStem && candidateStem && (referenceStem.includes(candidateStem) || candidateStem.includes(referenceStem)));
+  if (!isMeaningfulTextureStem(referenceStem) || !isMeaningfulTextureStem(candidateStem)) return false;
+  return Boolean(referenceStem.includes(candidateStem) || candidateStem.includes(referenceStem));
 }
 
 function normalizeTextureName(value = '') {
@@ -7451,6 +7476,10 @@ function normalizeTextureName(value = '') {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9.]+/g, '-');
+}
+
+function isMeaningfulTextureStem(stem = '') {
+  return (String(stem).match(/[a-z0-9]/g) || []).length >= 3;
 }
 
 function canUseRelativeTextureFallback(relativePath = '', storagePaths = []) {
