@@ -6745,7 +6745,7 @@ function Model3D({ item, selected, hovered, dragging, visualContext }) {
 
 function GlbModel({ item, selected, hovered }) {
   const gltf = useLoader(GLTFLoader, item.modelUrl);
-  const model = useMemo(() => prepareLoadedModel(gltf.scene, item, { selected, hovered }), [gltf, item, selected, hovered]);
+  const model = useMemo(() => prepareLoadedModel(gltf.scene, item, { selected, hovered, isGlb: true }), [gltf, item, selected, hovered]);
   return <primitive object={model} dispose={null} />;
 }
 
@@ -6932,8 +6932,10 @@ function applyVisualStateMaterial(material, textureOptions = {}) {
   if (!textureOptions.hovered || textureOptions.selected) return material;
   const next = material.clone?.() || material;
   next.transparent = true;
-  next.opacity = 0.48;
-  next.depthWrite = false;
+  next.opacity = textureOptions.isGlb
+    ? Math.max(Number(next.opacity ?? 1) * 0.82, 0.68)
+    : 0.48;
+  next.depthWrite = textureOptions.isGlb ? true : false;
   next.needsUpdate = true;
   return next;
 }
