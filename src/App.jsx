@@ -6648,7 +6648,7 @@ function useRepeatedTexture(url, width, depth, tileSize = 0.5) {
     cloned.colorSpace = SRGBColorSpace;
     cloned.minFilter = LinearFilter;
     cloned.magFilter = LinearFilter;
-    cloned.repeat.set(Math.max(1, Number(width || 1) / tileSize), Math.max(1, Number(depth || 1) / tileSize));
+    cloned.repeat.set(1, 1);
     cloned.needsUpdate = true;
     return cloned;
   }, [loadedTexture, width, depth, tileSize]);
