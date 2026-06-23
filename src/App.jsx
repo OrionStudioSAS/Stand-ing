@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, CanvasTexture, DoubleSide, ImageLoader, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
+import { Box3, CanvasTexture, DoubleSide, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -60,7 +60,6 @@ const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
 const blankTextureDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 const textureRetryAttempts = 4;
-installThreeImageLoaderRetry();
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
   { id: 'layout', label: 'Aménagement', icon: '📐' },
@@ -90,29 +89,6 @@ const placementRuleOptions = [
   { id: 'back-center', label: 'Centre arrière', description: 'L’objet reste centré contre le mur du fond.' },
 ];
 const assetCategoryOptions = ['Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
-
-function installThreeImageLoaderRetry() {
-  if (ImageLoader.prototype.__standingRetryInstalled) return;
-  const originalLoad = ImageLoader.prototype.load;
-
-  ImageLoader.prototype.load = function loadWithRetry(url, onLoad, onProgress, onError) {
-    let attempt = 0;
-    const loader = this;
-
-    const run = (nextUrl) => originalLoad.call(loader, nextUrl, onLoad, onProgress, (error) => {
-      attempt += 1;
-      if (attempt <= textureRetryAttempts && canRetryTextureUrl(url)) {
-        window.setTimeout(() => run(textureRetryUrl(url, attempt)), 180 * attempt);
-        return;
-      }
-      if (onError) onError(error);
-    });
-
-    return run(url);
-  };
-
-  ImageLoader.prototype.__standingRetryInstalled = true;
-}
 
 function canRetryTextureUrl(url = '') {
   return /^https?:\/\//i.test(String(url || '')) || String(url || '').startsWith('/');
@@ -804,9 +780,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     carpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
     selectedWallFabricColor.image,
   ]);
+  const sceneAssetsReady = objectBankLoaded && sceneTextureLoad.ready;
   const sceneCanvasClassName = [
     draggingId ? 'dragging-canvas' : '',
-    !sceneTextureLoad.ready ? 'scene-canvas-loading' : '',
+    !sceneAssetsReady ? 'scene-canvas-loading' : '',
   ].filter(Boolean).join(' ');
   const selected = sceneItems.find((item) => item.id === selectedId);
 
@@ -1191,26 +1168,28 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           <ambientLight intensity={0.85} />
           <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
-          <StandScene
-            width={width}
-            depth={depth}
-            height={height}
-            layout={layout}
-            items={sceneItems}
-              selectedId={selectedId}
-              setSelectedId={setSelectedId}
-              draggingId={draggingId}
-              setDraggingId={setDraggingId}
-              interactive={!readOnly}
-              canEditLockedItems={isAdminViewer}
-              onDragMove={moveDraggedItem}
-              viewAngle={viewAngle}
-              carpetColor={selectedCarpetColor}
-              carpetFootprintColor={selectedCarpetFootprintColor}
-              carpetFootprintEnabled={carpetFootprintEnabled}
-              wallFabricColor={selectedWallFabricColor}
-              visualContext={sceneVisualContext}
-            />
+            {sceneAssetsReady && (
+              <StandScene
+                width={width}
+                depth={depth}
+                height={height}
+                layout={layout}
+                items={sceneItems}
+                selectedId={selectedId}
+                setSelectedId={setSelectedId}
+                draggingId={draggingId}
+                setDraggingId={setDraggingId}
+                interactive={!readOnly}
+                canEditLockedItems={isAdminViewer}
+                onDragMove={moveDraggedItem}
+                viewAngle={viewAngle}
+                carpetColor={selectedCarpetColor}
+                carpetFootprintColor={selectedCarpetFootprintColor}
+                carpetFootprintEnabled={carpetFootprintEnabled}
+                wallFabricColor={selectedWallFabricColor}
+                visualContext={sceneVisualContext}
+              />
+            )}
             <ContactShadows opacity={0.22} scale={12} blur={2.4} far={5} position={[0, -0.01, 0]} />
           </Suspense>
           <OrbitControls
@@ -1225,7 +1204,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           />
         </Canvas>
 
-        {!sceneTextureLoad.ready && <SceneTextureLoaderOverlay loaded={sceneTextureLoad.loaded} total={sceneTextureLoad.total} />}
+        {!sceneAssetsReady && <SceneTextureLoaderOverlay loaded={objectBankLoaded ? sceneTextureLoad.loaded : 0} total={objectBankLoaded ? sceneTextureLoad.total : 1} />}
 
         {readOnly && !headerPanel && (
           <div className="readonly-badge">
