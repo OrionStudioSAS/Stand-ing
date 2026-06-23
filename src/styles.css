@@ -5904,3 +5904,65 @@ select {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.scene-canvas-loading {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scene-texture-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at center, rgba(246, 248, 252, 0.94), rgba(224, 230, 238, 0.96));
+  backdrop-filter: blur(8px);
+}
+
+.scene-texture-loader-card {
+  width: min(360px, 100%);
+  padding: 22px 24px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 20px 60px rgba(18, 35, 62, 0.16);
+  color: #183763;
+  text-align: center;
+}
+
+.scene-texture-loader-card svg {
+  margin-bottom: 8px;
+  color: #1f4378;
+}
+
+.scene-texture-loader-card strong,
+.scene-texture-loader-card span {
+  display: block;
+}
+
+.scene-texture-loader-card strong {
+  font-size: 1rem;
+}
+
+.scene-texture-loader-card span {
+  margin-top: 6px;
+  color: #77808c;
+  font-size: 0.82rem;
+}
+
+.scene-texture-loader-bar {
+  height: 7px;
+  margin-top: 16px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8edf4;
+}
+
+.scene-texture-loader-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1f4378, #2f77b7);
+  transition: width 180ms ease;
+}

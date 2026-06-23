@@ -759,6 +759,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     [ledRailsEnabled, ledRailEntry, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticLedItems], [manualHydratedItems, automaticLedItems]);
+  const sceneTextureLoad = useSceneTexturePreload(sceneItems, [
+    selectedCarpetColor.image,
+    carpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
+    selectedWallFabricColor.image,
+  ]);
+  const sceneCanvasClassName = [
+    draggingId ? 'dragging-canvas' : '',
+    !sceneTextureLoad.ready ? 'scene-canvas-loading' : '',
+  ].filter(Boolean).join(' ');
   const selected = sceneItems.find((item) => item.id === selectedId);
 
   useEffect(() => {
@@ -1127,7 +1136,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       <section className="configurator-stage">
         <Canvas
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
-          className={draggingId ? 'dragging-canvas' : ''}
+          className={sceneCanvasClassName}
           shadows
           onPointerUp={() => {
             if (!readOnly) setDraggingId(null);
@@ -1176,6 +1185,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             enabled={!draggingId}
           />
         </Canvas>
+
+        {!sceneTextureLoad.ready && <SceneTextureLoaderOverlay loaded={sceneTextureLoad.loaded} total={sceneTextureLoad.total} />}
 
         {readOnly && !headerPanel && (
           <div className="readonly-badge">
@@ -3256,6 +3267,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [selectedId, setSelectedId] = useState(initialScene.items[0]?.id || null);
   const [draggingId, setDraggingId] = useState(null);
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
+  const presetTextureLoad = useSceneTexturePreload(items, []);
   const selected = items.find((item) => item.id === selectedId);
 
   useEffect(() => {
@@ -3310,6 +3322,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       <section className="preset-3d-stage">
         <Canvas
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
+          className={!presetTextureLoad.ready ? 'scene-canvas-loading' : ''}
           shadows
           onPointerUp={() => setDraggingId(null)}
           onPointerLeave={() => setDraggingId(null)}
@@ -3338,6 +3351,8 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           </Suspense>
           <OrbitControls makeDefault target={[0, 0.7, 0]} minPolarAngle={Math.PI / 5.2} maxPolarAngle={Math.PI / 2.25} minDistance={4} maxDistance={11} enablePan enabled={!draggingId} />
         </Canvas>
+
+        {!presetTextureLoad.ready && <SceneTextureLoaderOverlay loaded={presetTextureLoad.loaded} total={presetTextureLoad.total} />}
 
         <div className={`view-toolbar preset-toolbar ${selected ? 'selection-mode' : ''}`}>
           {selected ? (
@@ -5226,6 +5241,86 @@ function countSceneItems(sceneItems) {
     counts.set(item.type, (counts.get(item.type) || 0) + 1);
     return counts;
   }, new Map());
+}
+
+function useSceneTexturePreload(items = [], extraUrls = []) {
+  const urls = collectSceneTextureUrls(items, extraUrls);
+  const key = urls.join('|');
+  const [state, setState] = useState(() => ({ ready: urls.length === 0, loaded: 0, total: urls.length }));
+
+  useEffect(() => {
+    if (!urls.length) {
+      setState({ ready: true, loaded: 0, total: 0 });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let loaded = 0;
+    setState({ ready: false, loaded: 0, total: urls.length });
+
+    Promise.all(urls.map((url) => preloadImage(url).then(() => {
+      loaded += 1;
+      if (!cancelled) setState({ ready: false, loaded, total: urls.length });
+    }))).then(() => {
+      if (!cancelled) setState({ ready: true, loaded: urls.length, total: urls.length });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+
+  return state;
+}
+
+function collectSceneTextureUrls(items = [], extraUrls = []) {
+  const urls = new Set((extraUrls || []).filter(Boolean));
+  const visit = (item) => {
+    if (!item) return;
+    if (item.options?.headMainImageUrl) urls.add(item.options.headMainImageUrl);
+
+    const referenceUrl = item.modelUrl || item.materialUrl || item.dimensions?.materialUrl || '';
+    const storagePaths = Array.isArray(item.dimensions?.storagePaths) ? item.dimensions.storagePaths : [];
+    storagePaths.filter(isTextureResource).forEach((path) => {
+      const url = publicStorageUrlFromPath(referenceUrl, path);
+      if (url) urls.add(url);
+    });
+
+    if (item.children?.length) item.children.forEach(visit);
+  };
+
+  (items || []).forEach(visit);
+  return [...urls];
+}
+
+function preloadImage(url) {
+  return new Promise((resolve) => {
+    if (!url) {
+      resolve();
+      return;
+    }
+
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => resolve();
+    image.onerror = () => resolve();
+    image.src = url;
+    if (image.complete) resolve();
+  });
+}
+
+function SceneTextureLoaderOverlay({ loaded = 0, total = 0 }) {
+  const progress = total ? Math.round((loaded / total) * 100) : 100;
+  return (
+    <div className="scene-texture-loader" aria-live="polite">
+      <div className="scene-texture-loader-card">
+        <Sparkles size={20} />
+        <strong>Chargement de la scène 3D</strong>
+        <span>Préparation des modèles et textures… {progress}%</span>
+        <div className="scene-texture-loader-bar"><i style={{ width: `${progress}%` }} /></div>
+      </div>
+    </div>
+  );
 }
 
 function sceneItemSummary(sceneItems) {
