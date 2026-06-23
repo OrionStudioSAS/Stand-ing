@@ -6395,11 +6395,17 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
     setHoveredId((current) => (hovered ? itemId : (current === itemId ? null : current)));
   };
 
+  const clearSceneSelection = () => {
+    if (!interactive || draggingId) return;
+    setHoveredId(null);
+    setSelectedId(null);
+  };
+
   return (
-    <group position={cameraPivot} onPointerMissed={() => setHoveredId(null)}>
-      {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} />}
+    <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
+      {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
       <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} />
-      <Walls width={width} depth={depth} height={height} layout={layout} wallColor={wallColor} />
+      <Walls width={width} depth={depth} height={height} layout={layout} wallColor={wallColor} onDeselect={clearSceneSelection} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
         {width}m x {depth}m
       </Text>
@@ -6508,13 +6514,16 @@ function useRepeatedTexture(url, width, depth, tileSize = 0.5) {
 }
 
 
-function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, sceneOffset, draggingId, onDragMove, onClearHover }) {
+function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, sceneOffset, draggingId, onDragMove, onClearHover, onDeselect }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
   const dragPlane = (key, position, size) => (
     <mesh
       key={key}
       position={position}
       rotation={[-Math.PI / 2, 0, 0]}
+      onPointerDown={() => {
+        if (!draggingId) onDeselect?.();
+      }}
       onPointerMove={(event) => {
         event.stopPropagation();
         if (!draggingId) {
@@ -6545,11 +6554,11 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
 }
 
 
-function Walls({ width, depth, height, layout, wallColor }) {
+function Walls({ width, depth, height, layout, wallColor, onDeselect }) {
   const sideDepth = Math.max(0.01, depth - wallThickness);
   const sideZ = -depth / 2 + wallThickness + sideDepth / 2;
   return (
-    <group>
+    <group onPointerDown={() => onDeselect?.()}>
       <Wall position={[0, height / 2, -depth / 2 + wallThickness / 2]} size={[width, height, wallThickness]} color={wallColor} />
       <Baseboard position={[0, baseboardHeight / 2, -depth / 2 + wallThickness + baseboardThickness / 2]} size={[width, baseboardHeight, baseboardThickness]} />
       {(layout === 'left' || layout === 'u') && <Wall position={[-width / 2 + wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallColor} />}
