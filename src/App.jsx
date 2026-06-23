@@ -20,8 +20,6 @@ import {
   LayoutDashboard,
   LogOut,
   Mail,
-  Maximize2,
-  Minus,
   Orbit,
   Paperclip,
   Plus,
@@ -1229,40 +1227,31 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           </div>
         )}
 
-        <div className={`view-toolbar ${selected && !readOnly ? 'selection-mode' : ''}`} aria-label={selected ? 'Actions objet selectionne' : 'Outils de vue'}>
-          {selected && !readOnly ? (
-            <>
-              <button type="button" disabled={itemPlacementLocked(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
-              <button type="button" onClick={openSelectedItemConfigurator} title="Paramètres"><Settings2 size={16} /></button>
-              {isPartitionHeadItem(selected) && <button type="button" onClick={() => setRotationPanelOpen(false)} title="Options visuel"><FileImage size={16} /></button>}
-              <button type="button" disabled={!isAdminViewer && itemDeletionLocked(selected)} onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
-              {!isAdminViewer && itemMovementLocked(selected) && <span className="toolbar-lock-note">Déplacement verrouillé</span>}
-              {!isAdminViewer && itemRotationLocked(selected) && <span className="toolbar-lock-note">Rotation verrouillée</span>}
-              {!isAdminViewer && itemDeletionLocked(selected) && <span className="toolbar-lock-note">Suppression verrouillée</span>}
-              {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
-                <label className="toolbar-rotation-slider">
-                  <span>{selected.rotation || 0}°</span>
-                  <input
-                    type="range"
-                    min="-180"
-                    max="180"
-                    step="5"
-                    value={selected.rotation || 0}
-                    onInput={(event) => updateItem(selected.id, { rotation: Number(event.currentTarget.value) })}
-                    onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })}
-                  />
-                </label>
-              )}
-            </>
-          ) : (
-            <>
-              <button type="button"><Maximize2 size={16} /></button>
-              <button type="button"><Minus size={16} /></button>
-              <button type="button"><RotateCcw size={16} /></button>
-              <button type="button"><Ruler size={16} /></button>
-            </>
-          )}
-        </div>
+        {selected && !readOnly && (
+          <div className="view-toolbar selection-mode" aria-label="Actions objet selectionne">
+            <button type="button" disabled={itemPlacementLocked(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
+            <button type="button" onClick={openSelectedItemConfigurator} title="Paramètres"><Settings2 size={16} /></button>
+            {isPartitionHeadItem(selected) && <button type="button" onClick={() => setRotationPanelOpen(false)} title="Options visuel"><FileImage size={16} /></button>}
+            <button type="button" disabled={!isAdminViewer && itemDeletionLocked(selected)} onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
+            {!isAdminViewer && itemMovementLocked(selected) && <span className="toolbar-lock-note">Déplacement verrouillé</span>}
+            {!isAdminViewer && itemRotationLocked(selected) && <span className="toolbar-lock-note">Rotation verrouillée</span>}
+            {!isAdminViewer && itemDeletionLocked(selected) && <span className="toolbar-lock-note">Suppression verrouillée</span>}
+            {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
+              <label className="toolbar-rotation-slider">
+                <span>{selected.rotation || 0}°</span>
+                <input
+                  type="range"
+                  min="-180"
+                  max="180"
+                  step="5"
+                  value={selected.rotation || 0}
+                  onInput={(event) => updateItem(selected.id, { rotation: Number(event.currentTarget.value) })}
+                  onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })}
+                />
+              </label>
+            )}
+          </div>
+        )}
 
         {selected && !readOnly && isPartitionHeadItem(selected) && (
           <PartitionHeadOptionsPanel
@@ -3354,23 +3343,19 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
 
         {!presetTextureLoad.ready && <SceneTextureLoaderOverlay loaded={presetTextureLoad.loaded} total={presetTextureLoad.total} />}
 
-        <div className={`view-toolbar preset-toolbar ${selected ? 'selection-mode' : ''}`}>
-          {selected ? (
-            <>
-              <button type="button" disabled={itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
-              <button type="button" onClick={() => { setItems((current) => current.filter((item) => item.id !== selected.id)); setSelectedId(null); }} title="Supprimer"><Trash2 size={16} /></button>
-              {itemPlacementLocked(selected) && <span className="toolbar-lock-note">Placement verrouillé</span>}
-              {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (
-                <label className="toolbar-rotation-slider">
-                  <span>{selected.rotation || 0}°</span>
-                  <input type="range" min="-180" max="180" step="5" value={selected.rotation || 0} onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })} />
-                </label>
-              )}
-            </>
-          ) : (
-            <span>Selectionne un objet pour le déplacer, le tourner ou le supprimer.</span>
-          )}
-        </div>
+        {selected && (
+          <div className="view-toolbar preset-toolbar selection-mode">
+            <button type="button" disabled={itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
+            <button type="button" onClick={() => { setItems((current) => current.filter((item) => item.id !== selected.id)); setSelectedId(null); }} title="Supprimer"><Trash2 size={16} /></button>
+            {itemPlacementLocked(selected) && <span className="toolbar-lock-note">Placement verrouillé</span>}
+            {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (
+              <label className="toolbar-rotation-slider">
+                <span>{selected.rotation || 0}°</span>
+                <input type="range" min="-180" max="180" step="5" value={selected.rotation || 0} onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })} />
+              </label>
+            )}
+          </div>
+        )}
       </section>
 
       <aside className="preset-side-panel">
