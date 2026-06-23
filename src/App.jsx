@@ -4926,6 +4926,8 @@ function normalizeModelSize(size, fallback = [0.55, 0.7, 0.55]) {
 function inferredAssetModelSize(asset = {}) {
   const label = `${asset.type || ''} ${asset.label || ''}`.toLowerCase();
   if (/poubelle|corbeille|trash|bin/.test(label)) return [0.28, 0.45, 0.28];
+  if (/porte(?![-\s]*doc)|door/.test(label)) return [0.9, fixedWallHeight, 0.08];
+  if (/cloison|wall|partition/.test(label)) return [1, fixedWallHeight, wallThickness];
   if (/tabouret/.test(label)) return [0.52, 0.86, 0.5];
   if (/chaise|chair/.test(label)) return [0.52, 0.86, 0.5];
   if (/table|mange/.test(label)) return [0.8, 0.75, 0.8];

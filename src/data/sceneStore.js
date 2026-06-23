@@ -1,3 +1,5 @@
+import { Box3, Vector3 } from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { demoScenes } from './seed.js';
 import { supabase } from './supabaseClient.js';
 import { catalog, layouts } from '../config/catalog.js';
@@ -872,20 +874,24 @@ async function prepareAssetUploadBody(entry, referenceRules) {
 }
 
 async function readUploadedModelSize(file) {
-  if (!file?.name?.toLowerCase().endsWith('.obj')) return null;
+  const name = file?.name?.toLowerCase() || '';
   try {
-    return parseObjModelSize(await file.text());
+    if (name.endsWith('.obj')) return parseObjModelSize(await file.text());
+    if (name.endsWith('.glb')) return parseGlbModelSize(await file.arrayBuffer());
   } catch {
     return null;
   }
+  return null;
 }
 
-async function readRemoteObjModelSize(url) {
-  if (!url || !url.toLowerCase().split('?')[0].endsWith('.obj')) return null;
+async function readRemoteModelSize(url) {
+  const cleanUrl = String(url || '').toLowerCase().split('?')[0];
+  if (!cleanUrl.endsWith('.obj') && !cleanUrl.endsWith('.glb')) return null;
   try {
     const response = await fetch(url);
     if (!response.ok) return null;
-    return parseObjModelSize(await response.text());
+    if (cleanUrl.endsWith('.obj')) return parseObjModelSize(await response.text());
+    return parseGlbModelSize(await response.arrayBuffer());
   } catch {
     return null;
   }
@@ -896,7 +902,7 @@ async function backfillObjectBankModelSizes(items) {
 
   const repairedItems = await Promise.all((items || []).map(async (item) => {
     if (!shouldBackfillModelSize(item)) return item;
-    const measuredSize = await readRemoteObjModelSize(item.model_url);
+    const measuredSize = await readRemoteModelSize(item.model_url);
     if (!measuredSize) return item;
 
     const dimensions = {
@@ -923,7 +929,8 @@ async function backfillObjectBankModelSizes(items) {
 }
 
 function shouldBackfillModelSize(item) {
-  if (!item?.model_url?.toLowerCase().split('?')[0].endsWith('.obj')) return false;
+  const modelUrl = item?.model_url?.toLowerCase().split('?')[0] || '';
+  if (!modelUrl.endsWith('.obj') && !modelUrl.endsWith('.glb')) return false;
   if (item.dimensions?.isGroup) return false;
   if (item.dimensions?.sizeSource === 'manual') return false;
   if (item.dimensions?.sizeSource === 'name') return true;
@@ -936,6 +943,34 @@ function shouldBackfillModelSize(item) {
 function isAdminRoute() {
   if (typeof window === 'undefined') return false;
   return window.location.pathname.replace(/\/$/, '') === '/admin' || new URLSearchParams(window.location.search).get('admin') === '1';
+}
+
+function parseGlbModelSize(arrayBuffer) {
+  return new Promise((resolve) => {
+    const loader = new GLTFLoader();
+    loader.parse(arrayBuffer, '', (gltf) => {
+      const scene = gltf?.scene || gltf?.scenes?.[0];
+      if (!scene) {
+        resolve(null);
+        return;
+      }
+
+      scene.updateMatrixWorld(true);
+      const box = new Box3().setFromObject(scene);
+      const size = box.getSize(new Vector3());
+      resolve(normalizeMeasuredModelSize([size.x, size.y, size.z]));
+    }, () => resolve(null));
+  });
+}
+
+function normalizeMeasuredModelSize(size) {
+  if (!Array.isArray(size) || size.length < 3) return null;
+  const values = size.map(Number);
+  if (values.some((value) => !Number.isFinite(value) || value <= 0)) return null;
+
+  // Most exports are in meters. Very large values usually mean millimeters.
+  const divisor = Math.max(...values) > 100 ? 1000 : 1;
+  return values.map((value) => Number(Math.max(0.05, value / divisor).toFixed(2)));
 }
 
 function parseObjModelSize(text) {
@@ -959,9 +994,7 @@ function parseObjModelSize(text) {
   const size = max.map((value, index) => value - min[index]);
   if (size.some((value) => !Number.isFinite(value) || value <= 0)) return null;
 
-  // Most OBJ exports here are already in meters; very large files are usually in mm.
-  const divisor = Math.max(...size) > 100 ? 1000 : 1;
-  return size.map((value) => Number(Math.max(0.05, value / divisor).toFixed(2)));
+  return normalizeMeasuredModelSize(size);
 }
 
 
