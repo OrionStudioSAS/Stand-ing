@@ -6147,7 +6147,7 @@ function pickLedRailOverride(item) {
 
 function defaultWallItemCenterY(entry, type) {
   if (isTelevisionItem({ ...entry, type })) return screenCenterHeight;
-  if (type === 'poster') return 1.45;
+  if (type === 'poster') return fixedWallHeight / 2;
   if (isLedRailEntry(entry)) return ledRailCenterY(entry);
   if (isPartitionHeadItem(entry)) return 0;
   const y = Number(entry?.dimensions?.wallY);
@@ -6293,6 +6293,18 @@ function isCatalogWallEntry(entry, type) {
 
 function isWallItem(item) {
   return isWallItemType(item?.type) || Boolean(item?.wall && item?.isWallItem);
+}
+
+function isPosterItem(item = {}) {
+  return item?.type === 'poster';
+}
+
+function isReserveSceneItem(item = {}) {
+  return Boolean(isAutomaticReserveItem(item) || item?.dimensions?.isReserve || normalizedItemText(item).includes('reserve'));
+}
+
+function isPosterBlockingItem(item = {}) {
+  return isReserveSceneItem(item) || isPartitionHeadItem(item) || isAutomaticPartitionHeadItem(item);
 }
 
 function isPartitionHeadItem(item = {}) {
@@ -6578,7 +6590,7 @@ function objectWallSurfaces(items = [], ignoreId = null) {
 
 function groupObjectWallSurfaces(group) {
   const groupRotation = Number(group.rotation || 0);
-  return (group.children || [])
+  const surfaces = (group.children || [])
     .flatMap((child) => {
       const rotated = rotatePoint(Number(child.x || 0), Number(child.z || 0), groupRotation);
       return wallSurfaceCandidate(
@@ -6590,6 +6602,45 @@ function groupObjectWallSurfaces(group) {
       );
     })
     .filter(Boolean);
+  return mergeObjectWallSurfaces(group.id, surfaces);
+}
+
+function mergeObjectWallSurfaces(groupId, surfaces = []) {
+  const groups = new Map();
+  surfaces.forEach((surface) => {
+    const normalKey = Math.round(Number(surface.normalAxis || 0) * 20) / 20;
+    const key = `${surface.orientation}:${normalKey}`;
+    groups.set(key, [...(groups.get(key) || []), surface]);
+  });
+
+  return [...groups.values()].flatMap((groupSurfaces, groupIndex) => {
+    const sorted = [...groupSurfaces].sort((a, b) => (a.centerAxis - a.length / 2) - (b.centerAxis - b.length / 2));
+    const merged = [];
+    sorted.forEach((surface) => {
+      const min = surface.centerAxis - surface.length / 2;
+      const max = surface.centerAxis + surface.length / 2;
+      const previous = merged[merged.length - 1];
+      if (previous && min <= previous.max + 0.12) {
+        previous.max = Math.max(previous.max, max);
+        previous.normalAxis = (previous.normalAxis + surface.normalAxis) / 2;
+        return;
+      }
+      merged.push({ ...surface, min, max });
+    });
+
+    return merged.map((surface, index) => {
+      const centerAxis = (surface.min + surface.max) / 2;
+      const length = Math.max(0.1, surface.max - surface.min);
+      return {
+        ...surface,
+        id: `object-wall:${groupId}:merged-${groupIndex}-${index}`,
+        centerAxis,
+        length,
+        centerX: surface.orientation === 'x' ? centerAxis : surface.normalAxis,
+        centerZ: surface.orientation === 'x' ? surface.normalAxis : centerAxis,
+      };
+    });
+  });
 }
 
 function wallSurfaceCandidate(item, id, centerX, centerZ, rotation = 0) {
@@ -6852,6 +6903,7 @@ function collidesWithWallItems(candidate, items, ignoreId = null, width = 0, dep
 
   return (items || []).some((item) => {
     if (!item || item.id === ignoreId || !itemCollisionEnabled(item)) return false;
+    if (isPosterItem(candidate) && !isPosterBlockingItem(item)) return false;
     const itemBox = isWallItem(item)
       ? wallItemCollisionBox(item, items, width, depth)
       : floorItemWallCollisionBox(item, candidateBox.wall, width, depth);
@@ -6862,7 +6914,8 @@ function collidesWithWallItems(candidate, items, ignoreId = null, width = 0, dep
 function wallItemCollisionBox(item, items, width, depth) {
   if (!isWallItem(item) || !itemCollisionEnabled(item)) return null;
   const metrics = wallItemMetrics(item, items, width, depth);
-  const axis = Number(item.x || 0);
+  const region = isPosterItem(item) ? posterSurfaceRegion(item, items, width, depth) : null;
+  const axis = Number(region?.center ?? item.x ?? 0);
   const y = wallItemCenterY(item);
   return {
     wall: item.wall || 'back',
@@ -6874,10 +6927,11 @@ function wallItemCollisionBox(item, items, width, depth) {
 }
 
 function wallItemMetrics(item, items, width, depth) {
-  if (item.type === 'poster') {
+  if (isPosterItem(item)) {
+    const region = posterSurfaceRegion(item, items, width, depth);
     return {
-      width: posterAvailableWidth(item, items, width, depth),
-      height: Number(item.posterHeight || 1.25),
+      width: region.width,
+      height: region.height,
     };
   }
   if (item.modelUrl) {
@@ -7060,7 +7114,8 @@ function objectWallTransform(item, items = []) {
   if (!surface) return null;
   const side = Number(item.wallSide || 1) >= 0 ? 1 : -1;
   const screenOffset = wallMountedNormalOffset(item);
-  const axis = Number(item.x || surface.centerAxis || 0);
+  const region = isPosterItem(item) ? posterObjectSurfaceRegion(item, surface) : null;
+  const axis = Number(region?.center ?? item.x ?? surface.centerAxis ?? 0);
   const y = wallItemCenterY(item);
   const position = surface.orientation === 'x'
     ? [axis, y, Number(surface.normalAxis || 0) + side * screenOffset]
@@ -7076,14 +7131,15 @@ function screenWorldPosition(item, width, depth, items = []) {
   if (objectTransform) return objectTransform.position;
   const screenOffset = wallMountedNormalOffset(item);
   const y = wallItemCenterY(item);
-  if (item.wall === 'left') return [-width / 2 + screenOffset, y, item.x];
-  if (item.wall === 'right') return [width / 2 - screenOffset, y, item.x];
-  return [item.x, y, -depth / 2 + screenOffset];
+  const axis = isPosterItem(item) ? posterSurfaceRegion(item, items, width, depth).center : Number(item.x || 0);
+  if (item.wall === 'left') return [-width / 2 + screenOffset, y, axis];
+  if (item.wall === 'right') return [width / 2 - screenOffset, y, axis];
+  return [axis, y, -depth / 2 + screenOffset];
 }
 
 function wallItemCenterY(item) {
   if (isTelevisionItem(item)) return screenCenterHeight;
-  if (item?.type === 'poster') return Number(item?.y ?? 1.45);
+  if (isPosterItem(item)) return fixedWallHeight / 2;
   if (isLedRailEntry(item)) return ledRailCenterY(item);
   if (isPartitionHeadItem(item)) return 0;
   const y = Number(item?.dimensions?.wallY);
@@ -7091,13 +7147,30 @@ function wallItemCenterY(item) {
 }
 
 function wallMountedNormalOffset(item) {
-  if (item?.type === 'poster') return wallThickness + 0.035 / 2;
+  if (isPosterItem(item)) return wallThickness + 0.006;
   if (item?.type === 'screen') return wallThickness + screenDepth / 2;
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
   return wallThickness + Math.max(0.02, depth / 2);
 }
 
-function posterAvailableWidth(item, items, width, depth) {
+function posterObjectSurfaceRegion(item, surface) {
+  const min = Number(surface.centerAxis || 0) - Number(surface.length || 0) / 2;
+  const max = Number(surface.centerAxis || 0) + Number(surface.length || 0) / 2;
+  return {
+    min,
+    max,
+    center: (min + max) / 2,
+    width: Math.max(0.5, Number((max - min).toFixed(2))),
+    height: fixedWallHeight,
+  };
+}
+
+function posterSurfaceRegion(item, items, width, depth) {
+  if (isObjectWallId(item?.wall)) {
+    const surface = objectWallSurfaceForItem(item, items) || item.wallSurface;
+    if (surface) return posterObjectSurfaceRegion(item, surface);
+  }
+
   const wall = item.wall || 'back';
   const wallLength = wall === 'back' ? width : depth;
   const min = -wallLength / 2;
@@ -7115,16 +7188,28 @@ function posterAvailableWidth(item, items, width, depth) {
     cursor = Math.max(cursor, blocker.max);
   });
   if (cursor < max) segments.push({ min: cursor, max });
+
   const containing = segments.find((segment) => axis >= segment.min && axis <= segment.max);
   const nearest = containing || segments.sort((a, b) => Math.abs(axis - (a.min + a.max) / 2) - Math.abs(axis - (b.min + b.max) / 2))[0] || { min, max };
   const segmentMin = nearest.min;
   const segmentMax = nearest.max;
-  return Math.max(0.5, Number((segmentMax - segmentMin - 0.2).toFixed(2)));
+  return {
+    min: segmentMin,
+    max: segmentMax,
+    center: Number(((segmentMin + segmentMax) / 2).toFixed(2)),
+    width: Math.max(0.5, Number((segmentMax - segmentMin).toFixed(2))),
+    height: fixedWallHeight,
+  };
+}
+
+function posterAvailableWidth(item, items, width, depth) {
+  return posterSurfaceRegion(item, items, width, depth).width;
 }
 
 function wallBlockers(currentItem, items, width, depth, wall) {
   return (items || [])
     .filter((item) => item.id !== currentItem.id)
+    .filter((item) => !isPosterItem(currentItem) || isPosterBlockingItem(item))
     .flatMap((item) => {
       if (isWallItem(item)) return wallMountedBlocker(item, wall, width, depth);
       return floorWallBlocker(item, wall, width, depth);
@@ -8251,10 +8336,11 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
   const objectTransform = objectWallTransform(item, items);
   const rotation = objectTransform?.rotation ?? (item.wall === 'left' ? Math.PI / 2 : item.wall === 'right' ? -Math.PI / 2 : 0);
   const offset = objectTransform?.position ?? screenWorldPosition(item, width, depth, items);
-  const isPoster = item.type === 'poster';
+  const isPoster = isPosterItem(item);
   const isCustomModel = Boolean(item.modelUrl);
-  const posterWidth = isPoster ? posterAvailableWidth(item, items, width, depth) : 0.95;
-  const posterHeight = item.posterHeight || 1.25;
+  const posterRegion = isPoster ? posterSurfaceRegion(item, items, width, depth) : null;
+  const posterWidth = posterRegion?.width || 0.95;
+  const posterHeight = posterRegion?.height || fixedWallHeight;
   return (
     <group
       position={offset}
@@ -8270,16 +8356,16 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
     >
       {isPoster ? (
         <>
-          <mesh castShadow>
-            <boxGeometry args={[posterWidth, posterHeight, 0.035]} />
-            <meshStandardMaterial color={activeColor(selected, dragging, '#f7f1dc')} roughness={0.48} {...hoverMaterialProps(selected, hovered)} />
+          <mesh>
+            <boxGeometry args={[posterWidth, posterHeight, 0.018]} />
+            <meshStandardMaterial color={activeColor(selected, dragging, '#f7f1dc')} roughness={0.62} {...hoverMaterialProps(selected, hovered)} />
           </mesh>
-          <mesh position={[0, 0, 0.026]}>
-            <boxGeometry args={[Math.max(0.2, posterWidth - 0.12), Math.max(0.2, posterHeight - 0.12), 0.012]} />
-            <meshStandardMaterial color="#ffffff" roughness={0.36} {...hoverMaterialProps(selected, hovered)} />
+          <mesh position={[0, 0, 0.014]}>
+            <boxGeometry args={[Math.max(0.2, posterWidth - 0.08), Math.max(0.2, posterHeight - 0.08), 0.006]} />
+            <meshStandardMaterial color="#ffffff" roughness={0.5} {...hoverMaterialProps(selected, hovered)} />
           </mesh>
-          <Text position={[0, 0, 0.038]} fontSize={0.16} color="#1f4378" anchorX="center" anchorY="middle">AFFICHE</Text>
-          {selected && <SelectionFrame bounds={{ width: posterWidth, height: posterHeight, depth: 0.08 }} centerY={0} />}
+          <Text position={[0, 0, 0.022]} fontSize={Math.min(0.18, posterWidth / 8)} color="#1f4378" anchorX="center" anchorY="middle">AFFICHE</Text>
+          {selected && <SelectionFrame bounds={{ width: posterWidth, height: posterHeight, depth: 0.05 }} centerY={0} />}
         </>
       ) : isCustomModel ? (
         <SceneItemContent item={item} selected={selected} hovered={hovered} dragging={dragging} visualContext={visualContext} />
