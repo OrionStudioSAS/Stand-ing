@@ -2246,6 +2246,64 @@ select {
   background: #fff;
 }
 
+.reserve-option-card {
+  display: grid;
+  gap: 12px;
+  margin: 0 14px 14px;
+  padding: 16px;
+  border-radius: 10px;
+  color: #202631;
+  background: #fff;
+}
+
+.reserve-option-card > div {
+  display: grid;
+  gap: 4px;
+}
+
+.reserve-option-card strong {
+  color: #171b22;
+}
+
+.reserve-option-card span,
+.reserve-option-card small {
+  color: #8b929c;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.reserve-option-card button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  border: 1px solid #d8e1ec;
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #1f4378;
+  background: #f7f9fc;
+  font-weight: 950;
+  text-align: left;
+}
+
+.reserve-option-card button.active {
+  border-color: #1f4378;
+  background: #eef4fb;
+}
+
+.reserve-option-card button span {
+  display: grid;
+  gap: 2px;
+}
+
+.reserve-option-card button em {
+  color: #167044;
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
 .led-option-card > div:first-child {
   display: grid;
   gap: 4px;
@@ -3701,6 +3759,64 @@ select {
   background: #eef4fb;
   font-size: 0.73rem;
   font-weight: 800;
+}
+
+.preset-reserve-rules {
+  display: grid;
+  gap: 10px;
+  margin: 2px 0 18px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.preset-reserve-rules h4 {
+  margin-bottom: 0;
+}
+
+.preset-reserve-rules p,
+.preset-reserve-empty {
+  margin: 0;
+  color: #6f7885;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.preset-reserve-rules article {
+  display: grid;
+  gap: 8px;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #e4eaf2;
+}
+
+.preset-reserve-rules article strong {
+  color: #1f4378;
+  font-size: 0.82rem;
+}
+
+.preset-reserve-rules label {
+  display: grid;
+  gap: 4px;
+  color: #596372;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.preset-reserve-rules select,
+.preset-reserve-rules input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  padding: 0 9px;
+  color: #263142;
+  background: #fff;
+  font-size: 0.78rem;
+  font-weight: 850;
 }
 
 .preset-catalog {

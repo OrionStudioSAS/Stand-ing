@@ -78,6 +78,10 @@ const languages = [
   { id: 'en', label: 'English', sublabel: 'Interface in English', short: 'EN', flag: '🇬🇧' },
 ];
 const defaultPackNames = ['Confort', 'Business', 'SIAE', 'Prestige'];
+const reserveRuleBands = [
+  { id: 'medium', label: '18 à 24 m²', minArea: 18, maxArea: 24, includedLabel: 'Réserve 2 m²', upgradeLabel: 'Réserve 3 m²' },
+  { id: 'large', label: '25 m² et plus', minArea: 25, maxArea: null, includedLabel: 'Réserve 3 m²', upgradeLabel: 'Réserve supérieure' },
+];
 const placementRuleOptions = [
   { id: 'free', label: 'Libre', description: 'L’utilisateur peut poser et déplacer cet objet normalement.' },
   { id: 'back-left', label: 'Coin arrière gauche', description: 'L’objet se colle automatiquement dans le coin arrière gauche.' },
@@ -682,6 +686,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || '303');
   const [ledRailsEnabled, setLedRailsEnabled] = useState(initialOptions.ledRailsEnabled !== false);
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
+  const [reserveUpgradeEnabled, setReserveUpgradeEnabled] = useState(Boolean(initialOptions.reserveUpgradeEnabled));
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
@@ -764,9 +769,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const hydratedItems = useMemo(() => (
     objectBankLoaded ? items.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)) : items
   ), [items, availableCatalog, objectBankLoaded]);
-  const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item)), [hydratedItems]);
+  const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item) && !isAutomaticReserveItem(item)), [hydratedItems]);
   const ledRailEntry = useMemo(() => availableCatalog.find(isLedRailEntry), [availableCatalog]);
   const ledSpotCount = ledSpotCountForArea(area);
+  const reserveRules = useMemo(() => sceneReserveRules(initialScene), [initialScene]);
+  const activeReserveRuleConfig = useMemo(() => activeReserveRule(reserveRules, area), [reserveRules, area]);
+  const automaticReserveItems = useMemo(
+    () => makeAutomaticReserveItems(activeReserveRuleConfig, reserveUpgradeEnabled, availableCatalog, width, depth, layout, salonLabel),
+    [activeReserveRuleConfig, reserveUpgradeEnabled, availableCatalog, width, depth, layout, salonLabel],
+  );
   const automaticLedItems = useMemo(
     () => (ledRailsEnabled
       ? makeAutomaticLedRailItems(ledRailEntry, width, depth, layout, ledSpotCount)
@@ -774,7 +785,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       : []),
     [ledRailsEnabled, ledRailEntry, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
-  const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticLedItems], [manualHydratedItems, automaticLedItems]);
+  const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticLedItems], [manualHydratedItems, automaticReserveItems, automaticLedItems]);
   const sceneTextureLoad = useSceneTexturePreload(sceneItems, [
     selectedCarpetColor.image,
     carpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
@@ -817,6 +828,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       ledRailsEnabled,
       ledSpotCount,
       ledRailOverrides,
+      reserveUpgradeEnabled,
     };
 
     return {
@@ -864,7 +876,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, carpetFootprintEnabled, selectedWallFabricColor, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, carpetFootprintEnabled, selectedWallFabricColor, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveUpgradeEnabled, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
@@ -905,7 +917,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       }));
       return;
     }
-    setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout, carpetFootprintEnabled));
+    setItems((current) => {
+      const blockers = automaticReserveItems.filter((item) => item.id !== id);
+      const updated = updateSceneItemWithCollision([...current, ...blockers], id, patch, width, depth, layout, carpetFootprintEnabled);
+      return updated.filter((item) => !isAutomaticReserveItem(item));
+    });
   };
 
   const updateSelectedItemOptions = (patch) => {
@@ -969,8 +985,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         : {};
       const candidate = constrainItem({ ...nextBase, ...compatiblePosition }, width, depth, layout, carpetFootprintEnabled);
       const others = current.filter((sceneItem) => sceneItem.id !== item.id);
-      const placed = collidesWithScene(candidate, others, candidate.id, width, depth)
-        ? placeItemInFreeSpot(candidate, others, width, depth, layout, carpetFootprintEnabled)
+      const blockers = [...others, ...automaticReserveItems];
+      const placed = collidesWithScene(candidate, blockers, candidate.id, width, depth)
+        ? placeItemInFreeSpot(candidate, blockers, width, depth, layout, carpetFootprintEnabled)
         : candidate;
       if (!placed) return current;
       return [...others, placed];
@@ -1002,7 +1019,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           ...makeItem(entry.type, width, depth, layout, entry),
           options: { ...(options || {}) },
         };
-        const placed = placeItemInFreeSpot(item, next, width, depth, layout, carpetFootprintEnabled);
+        const placed = placeItemInFreeSpot(item, [...next, ...automaticReserveItems], width, depth, layout, carpetFootprintEnabled);
         if (!placed) break;
         lastPlacedId = placed.id;
         next = [...next, placed];
@@ -1037,6 +1054,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     if (!isAdminViewer && itemDeletionLocked(selected)) return;
     if (isAutomaticLedRailItem(selected)) {
       setLedRailsEnabled(false);
+      setSelectedId(null);
+      return;
+    }
+    if (isAutomaticReserveItem(selected)) {
+      if (selected.options?.reserveUpgrade) setReserveUpgradeEnabled(false);
       setSelectedId(null);
       return;
     }
@@ -1250,7 +1272,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         {selected && !readOnly && (
           <div className="view-toolbar selection-mode" aria-label="Actions objet selectionne">
             <button type="button" disabled={itemPlacementLocked(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
-            <button type="button" onClick={openSelectedItemConfigurator} title="Paramètres"><Settings2 size={16} /></button>
+            <button type="button" disabled={isAutomaticReserveItem(selected)} onClick={openSelectedItemConfigurator} title="Paramètres"><Settings2 size={16} /></button>
             {isPartitionHeadItem(selected) && <button type="button" onClick={() => setRotationPanelOpen(false)} title="Options visuel"><FileImage size={16} /></button>}
             <button type="button" disabled={!isAdminViewer && itemDeletionLocked(selected)} onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
             {!isAdminViewer && itemMovementLocked(selected) && <span className="toolbar-lock-note">Déplacement verrouillé</span>}
@@ -1311,6 +1333,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             wallFabricColor={selectedWallFabricColor}
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={ledSpotCount}
+            reserveRule={activeReserveRuleConfig}
+            reserveUpgradeEnabled={reserveUpgradeEnabled}
             pricing={scenePricing}
             saveState={saveState}
             confirmState={confirmState}
@@ -1332,12 +1356,17 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             selectedWallFabricColor={selectedWallFabricColor}
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={ledSpotCount}
+            reserveRule={activeReserveRuleConfig}
+            reserveUpgradeEnabled={reserveUpgradeEnabled}
+            salonLabel={salonLabel}
+            catalog={availableCatalog}
             readOnly={readOnly}
             onCarpetColor={(colorId) => !readOnly && setSelectedCarpetId(colorId)}
             onCarpetFootprintColor={(colorId) => !readOnly && setSelectedCarpetFootprintId(colorId)}
             onCarpetFootprintEnabled={(enabled) => !readOnly && setCarpetFootprintEnabled(enabled)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
+            onReserveUpgradeEnabled={(enabled) => !readOnly && setReserveUpgradeEnabled(enabled)}
             onExport={() => exportTechnicalPng({ width, depth, layout, items: sceneItems, catalog: availableCatalog })}
           />
         )}
@@ -1563,19 +1592,24 @@ function OptionsStepPanel({
   selectedWallFabricColor,
   ledRailsEnabled,
   ledSpotCount,
+  reserveRule,
+  reserveUpgradeEnabled,
+  salonLabel,
+  catalog,
   readOnly = false,
   onCarpetColor,
   onCarpetFootprintColor,
   onCarpetFootprintEnabled,
   onWallColor,
   onLedRailsEnabled,
+  onReserveUpgradeEnabled,
   onExport,
 }) {
   return (
     <>
       <PanelHead title="Options de configuration" step={activeStep} />
       <StandSummary area={area} layout={layout} standLabel={standLabel} />
-      <RulesSummary ledSpotCount={ledSpotCount} ledRailsEnabled={ledRailsEnabled} />
+      <RulesSummary ledSpotCount={ledSpotCount} ledRailsEnabled={ledRailsEnabled} reserveRule={reserveRule} />
 
       <section className="panel-section-title">Les options</section>
       <OptionAccordion title="Moquette" icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
@@ -1623,7 +1657,16 @@ function OptionsStepPanel({
           onChange={onLedRailsEnabled}
         />
       </OptionAccordion>
-      <OptionAccordion title="Reserve" icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')} />
+      <OptionAccordion title="Reserve" icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
+        <ReserveOptionCard
+          rule={reserveRule}
+          upgradeEnabled={reserveUpgradeEnabled}
+          catalog={catalog}
+          salonLabel={salonLabel}
+          disabled={readOnly}
+          onChange={onReserveUpgradeEnabled}
+        />
+      </OptionAccordion>
       <OptionAccordion title="Tete de cloison" icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')} />
       <OptionAccordion title="Comptoir" icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')} />
 
@@ -2018,6 +2061,7 @@ function marketplaceItemSubtitle(entry, categoryLabel) {
 
 function shopCartItemVisible(item) {
   if (!item) return false;
+  if (isAutomaticReserveItem(item)) return false;
   const label = `${item.type || ''} ${item.label || ''}`.toLowerCase();
   return !label.includes('spot led');
 }
@@ -2032,6 +2076,8 @@ function ValidationStepPanel({
   wallFabricColor,
   ledRailsEnabled,
   ledSpotCount,
+  reserveRule,
+  reserveUpgradeEnabled,
   pricing,
   saveState,
   confirmState,
@@ -2063,6 +2109,7 @@ function ValidationStepPanel({
         <div className="validation-option-row"><span>Empreinte moquette</span><strong>{carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : 'Retirée'}</strong></div>
         <div className="validation-option-row"><span>Coton cloison</span><strong>{wallFabricColor.name} ({wallFabricColor.code})</strong></div>
         <div className="validation-option-row"><span>Spots LED</span><strong>{ledRailsEnabled ? `${ledSpotCount} spots conserves` : 'Retires'}</strong></div>
+        <div className="validation-option-row"><span>Réserve</span><strong>{reserveUpgradeEnabled && reserveRule?.upgradeType ? reserveRule.upgradeLabel : (reserveRule?.includedLabel || 'Non incluse')}</strong></div>
       </section>
 
       <section className="validation-section">
@@ -2141,11 +2188,11 @@ function StandSummary({ area, layout, standLabel }) {
   );
 }
 
-function RulesSummary({ ledSpotCount, ledRailsEnabled }) {
+function RulesSummary({ ledSpotCount, ledRailsEnabled, reserveRule }) {
   return (
     <div className="rules-card">
       <strong>Regles SMCL appliquees automatiquement</strong>
-      <span>✓ Reserve 2m2 incluse</span>
+      <span>{reserveRule?.includedType ? '✓' : '−'} {reserveRule?.includedLabel || 'Pas de réserve incluse'}</span>
       <span>✓ 2 tetes de cloison</span>
       <span>{ledRailsEnabled ? '✓' : '−'} {ledSpotCount} spots LED (1/3m2)</span>
     </div>
@@ -2235,6 +2282,47 @@ function LedRailOptionCard({ enabled, spotCount, disabled = false, onChange }) {
         </button>
       </div>
       <small>Ils sont places en haut des murs et restent inclus dans la scene de base.</small>
+    </div>
+  );
+}
+
+function ReserveOptionCard({ rule, upgradeEnabled, catalog = [], salonLabel = '', disabled = false, onChange }) {
+  if (!rule?.includedType) {
+    return (
+      <div className="reserve-option-card">
+        <strong>Aucune réserve incluse</strong>
+        <span>Cette surface ne déclenche pas de réserve automatique pour cette implantation.</span>
+      </div>
+    );
+  }
+
+  const includedEntry = findCatalogEntry(catalog, rule.includedType);
+  const upgradeEntry = rule.upgradeType ? findCatalogEntry(catalog, rule.upgradeType) : null;
+  const upgradePrice = reserveRuleUpgradePrice(rule, upgradeEntry, salonLabel);
+
+  return (
+    <div className="reserve-option-card">
+      <div>
+        <strong>{rule.includedLabel || includedEntry?.label || 'Réserve incluse'}</strong>
+        <span>Incluse dans la scène de départ · 0 € HT</span>
+      </div>
+
+      {rule.upgradeType ? (
+        <button
+          type="button"
+          className={upgradeEnabled ? 'active' : ''}
+          disabled={disabled}
+          onClick={() => onChange(!upgradeEnabled)}
+        >
+          <span>
+            {rule.upgradeLabel || upgradeEntry?.label || 'Réserve supérieure'}
+            <em>{upgradeEnabled ? 'Option sélectionnée' : `+ ${upgradePrice.toLocaleString('fr-FR')} € HT`}</em>
+          </span>
+          {upgradeEnabled ? <Check size={16} /> : <Plus size={16} />}
+        </button>
+      ) : (
+        <small>Aucune option complémentaire configurée sur ce pack.</small>
+      )}
     </div>
   );
 }
@@ -3276,12 +3364,17 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [selectedId, setSelectedId] = useState(initialScene.items[0]?.id || null);
   const [draggingId, setDraggingId] = useState(null);
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
+  const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules));
   const presetTextureLoad = useSceneTexturePreload(items, []);
   const selected = items.find((item) => item.id === selectedId);
 
   useEffect(() => {
     setItems((current) => current.map((item) => constrainItem(hydrateSceneItemFromCatalog(item, availableCatalog), width, depth, layout)));
   }, [width, depth, layout, availableCatalog]);
+
+  useEffect(() => {
+    setReserveRules(normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules));
+  }, [preset.id, preset.base_config]);
 
   const updateItem = (id, patch) => {
     setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout));
@@ -3322,7 +3415,8 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       dimensions: { width, depth, height: fixedWallHeight },
       layout,
       items,
-      options: { presetMode: true, includedPack: offer?.name, salon: salon.name },
+      reserveRules,
+      options: { presetMode: true, includedPack: offer?.name, salon: salon.name, reserveRules },
     });
   };
 
@@ -3392,6 +3486,12 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
             </button>
           ))}
         </div>
+        <PresetReserveRulesEditor
+          rules={reserveRules}
+          entries={availableCatalog.filter(isReserveCatalogEntry)}
+          salonLabel={salon.name}
+          onChange={setReserveRules}
+        />
         <h4>Objets inclus</h4>
         <p className="preset-included-help">Chaque objet sauvegardé ici est inclus dans la formule. Le client ne paiera que les quantités ajoutées au-delà.</p>
         <div className="preset-catalog">
@@ -3411,6 +3511,65 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
         </button>
       </aside>
     </div>
+  );
+}
+
+function PresetReserveRulesEditor({ rules, entries, salonLabel, onChange }) {
+  const updateBand = (bandId, patch) => {
+    onChange(normalizeReserveRules({
+      ...(rules || {}),
+      [bandId]: {
+        ...(rules?.[bandId] || {}),
+        ...patch,
+      },
+    }));
+  };
+
+  return (
+    <section className="preset-reserve-rules">
+      <h4>Réserves automatiques</h4>
+      <p>Ces règles sont propres à cette implantation. La réserve incluse est posée à 0 €, l’option complémentaire remplace l’incluse et facture seulement le supplément.</p>
+      {!entries.length && <div className="preset-reserve-empty">Aucun groupe/objet réserve disponible pour ce salon.</div>}
+      {reserveRuleBands.map((band) => {
+        const rule = rules?.[band.id] || {};
+        return (
+          <article key={band.id}>
+            <strong>{band.label}</strong>
+            <label>
+              Réserve incluse
+              <select value={rule.includedType || ''} onChange={(event) => {
+                const entry = entries.find((item) => item.type === event.target.value);
+                updateBand(band.id, { includedType: event.target.value, includedLabel: entry?.label || band.includedLabel });
+              }}>
+                <option value="">Aucune</option>
+                {entries.map((entry) => <option key={entry.type} value={entry.type}>{entry.label}</option>)}
+              </select>
+            </label>
+            <label>
+              Option complémentaire
+              <select value={rule.upgradeType || ''} onChange={(event) => {
+                const entry = entries.find((item) => item.type === event.target.value);
+                updateBand(band.id, { upgradeType: event.target.value, upgradeLabel: entry?.label || band.upgradeLabel });
+              }}>
+                <option value="">Aucune</option>
+                {entries.map((entry) => <option key={entry.type} value={entry.type}>{entry.label}</option>)}
+              </select>
+            </label>
+            <label>
+              Prix supplément HT
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={rule.upgradePrice ?? ''}
+                placeholder={String(reserveRuleUpgradePrice(rule, findCatalogEntry(entries, rule.upgradeType), salonLabel) || 0)}
+                onChange={(event) => updateBand(band.id, { upgradePrice: event.target.value })}
+              />
+            </label>
+          </article>
+        );
+      })}
+    </section>
   );
 }
 
@@ -5107,6 +5266,88 @@ function isBasePackEligible(entry) {
   return category === 'furniture' || category === 'multimedia';
 }
 
+function sceneReserveRules(scene = {}) {
+  return normalizeReserveRules(
+    scene?.source_payload?.reserveRules
+    || scene?.source_payload?.reserve_rules
+    || scene?.source_payload?.pricing?.reserveRules
+    || scene?.options?.reserveRules
+    || scene?.source_payload?.options?.reserveRules
+    || {},
+  );
+}
+
+function normalizeReserveRules(rules = {}) {
+  return reserveRuleBands.reduce((acc, band) => {
+    const source = rules?.[band.id] || {};
+    acc[band.id] = {
+      id: band.id,
+      bandLabel: band.label,
+      minArea: band.minArea,
+      maxArea: band.maxArea,
+      includedType: source.includedType || source.included_type || '',
+      includedLabel: source.includedLabel || source.included_label || band.includedLabel,
+      upgradeType: source.upgradeType || source.upgrade_type || '',
+      upgradeLabel: source.upgradeLabel || source.upgrade_label || band.upgradeLabel,
+      upgradePrice: source.upgradePrice ?? source.upgrade_price ?? '',
+    };
+    return acc;
+  }, {});
+}
+
+function activeReserveRule(rules = {}, area = 0) {
+  const numericArea = Number(area || 0);
+  const band = reserveRuleBands.find((entry) => (
+    numericArea >= entry.minArea
+    && (entry.maxArea === null || numericArea <= entry.maxArea)
+  ));
+  return band ? normalizeReserveRules(rules)[band.id] : null;
+}
+
+function reserveRuleUpgradePrice(rule = {}, entry = null, salonLabel = '') {
+  return firstPriceValue(rule.upgradePrice, assetUnitPrice(entry, salonLabel), 0);
+}
+
+function isReserveCatalogEntry(entry = {}) {
+  const text = `${entry.type || ''} ${entry.label || ''} ${entry.dimensions?.category || ''}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  return Boolean(entry.isGroup || text.includes('reserve'));
+}
+
+function makeAutomaticReserveItems(rule, upgradeEnabled, catalogEntries = [], width, depth, layout, salonLabel) {
+  if (!rule?.includedType) return [];
+  const type = upgradeEnabled && rule.upgradeType ? rule.upgradeType : rule.includedType;
+  const entry = findCatalogEntry(catalogEntries, type);
+  if (!entry) return [];
+
+  const billable = Boolean(upgradeEnabled && rule.upgradeType);
+  const unitPrice = billable ? reserveRuleUpgradePrice(rule, entry, salonLabel) : 0;
+  const base = makeItem(type, width, depth, layout, entry);
+  const item = constrainItem({
+    ...base,
+    id: `auto-reserve-${rule.id}-${type}`,
+    label: billable
+      ? (rule.upgradeLabel || entry.label || 'Réserve complémentaire')
+      : (rule.includedLabel || entry.label || 'Réserve incluse'),
+    autoReserve: true,
+    included: !billable,
+    priceMode: billable ? 'billable' : 'included',
+    movementLocked: true,
+    deleteLocked: true,
+    rotationLocked: true,
+    options: {
+      ...(base.options || {}),
+      unitPrice,
+      reserveRuleId: rule.id,
+      reserveUpgrade: billable,
+    },
+  }, width, depth, layout);
+
+  return [item];
+}
+
 function calculateScenePricing({ catalog, items, salonLabel, scene }) {
   const basePrice = 0;
   const baseItems = sceneBaseItems(scene);
@@ -5526,6 +5767,10 @@ function isLedRailEntry(item = {}) {
 
 function isAutomaticLedRailItem(item = {}) {
   return Boolean(item?.autoLedRail || item?.dimensions?.autoLedRail);
+}
+
+function isAutomaticReserveItem(item = {}) {
+  return Boolean(item?.autoReserve || item?.dimensions?.autoReserve);
 }
 
 function applyLedRailOverride(item, overrides = {}, width, depth, layout) {

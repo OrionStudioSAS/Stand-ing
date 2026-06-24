@@ -107,6 +107,12 @@ Deno.serve(async (req) => {
         source_payload: {
           ...(sceneDraft.source_payload || {}),
           baseItems,
+          reserveRules: presetReserveRules(preset),
+          pricing: {
+            ...((sceneDraft.source_payload || {}).pricing || {}),
+            baseItems,
+            reserveRules: presetReserveRules(preset),
+          },
         },
       };
       const { data: savedScene, error: saveError } = await supabase
@@ -345,6 +351,10 @@ async function fetchOfferBaseItems(supabase: any, offerId?: string) {
     .maybeSingle();
   if (error) throw error;
   return Array.isArray(data?.metadata?.baseItems) ? data.metadata.baseItems : [];
+}
+
+function presetReserveRules(preset: any) {
+  return preset?.base_config?.reserveRules || preset?.base_config?.options?.reserveRules || {};
 }
 
 async function findPresetByLayout(supabase: any, params: { offerId?: string; salonId?: string; layout: string; offerIsNull?: boolean }) {

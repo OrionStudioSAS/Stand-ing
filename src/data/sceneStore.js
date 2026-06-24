@@ -456,6 +456,7 @@ export async function saveStandPresetConfig(preset, scene) {
     base_config: {
       ...(preset.base_config || {}),
       options: scene.options || {},
+      reserveRules: scene.reserveRules || scene.options?.reserveRules || preset.base_config?.reserveRules || {},
       price_mode: 'included',
     },
     is_active: true,
