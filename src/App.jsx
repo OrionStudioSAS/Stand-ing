@@ -3458,7 +3458,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [selectedId, setSelectedId] = useState(initialScene.items[0]?.id || null);
   const [draggingId, setDraggingId] = useState(null);
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
-  const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules));
+  const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true }));
   const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
   const presetTextureLoad = useSceneTexturePreload(items, []);
   const selected = items.find((item) => item.id === selectedId);
@@ -3468,7 +3468,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   }, [width, depth, layout, availableCatalog]);
 
   useEffect(() => {
-    setReserveRules(normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules));
+    setReserveRules(normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true }));
     setPartitionHeadRules(normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
   }, [preset.id, preset.base_config]);
 
@@ -3507,13 +3507,14 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   };
 
   const save = () => {
+    const cleanedReserveRules = normalizeReserveRules(reserveRules);
     onSave({
       dimensions: { width, depth, height: fixedWallHeight },
       layout,
       items,
-      reserveRules,
+      reserveRules: cleanedReserveRules,
       partitionHeadRules,
-      options: { presetMode: true, includedPack: offer?.name, salon: salon.name, reserveRules, partitionHeadRules },
+      options: { presetMode: true, includedPack: offer?.name, salon: salon.name, reserveRules: cleanedReserveRules, partitionHeadRules },
     });
   };
 
@@ -3625,7 +3626,7 @@ function PresetReserveRulesEditor({ rules, entries, salonLabel, onChange }) {
         ...(rules?.[bandId] || {}),
         ...patch,
       },
-    }));
+    }, { keepEmptyOptions: true }));
   };
   const updateOption = (bandId, index, patch) => {
     const currentOptions = normalizeComplementaryOptions(rules?.[bandId]?.options);
@@ -5469,7 +5470,8 @@ function sceneReserveRules(scene = {}) {
   );
 }
 
-function normalizeReserveRules(rules = {}) {
+function normalizeReserveRules(rules = {}, config = {}) {
+  const keepEmptyOptions = Boolean(config.keepEmptyOptions);
   return reserveRuleBands.reduce((acc, band) => {
     const source = rules?.[band.id] || {};
     const legacyOption = source.upgradeType || source.upgrade_type
@@ -5482,7 +5484,7 @@ function normalizeReserveRules(rules = {}) {
       maxArea: band.maxArea,
       includedType: source.includedType || source.included_type || '',
       includedLabel: source.includedLabel || source.included_label || band.includedLabel,
-      options: normalizeComplementaryOptions(source.options || source.complementaryOptions || source.complementary_options || legacyOption),
+      options: normalizeComplementaryOptions(source.options || source.complementaryOptions || source.complementary_options || legacyOption, { keepEmpty: keepEmptyOptions }),
     };
     return acc;
   }, {});
@@ -5497,14 +5499,15 @@ function activeReserveRule(rules = {}, area = 0) {
   return band ? normalizeReserveRules(rules)[band.id] : null;
 }
 
-function normalizeComplementaryOptions(options = []) {
+function normalizeComplementaryOptions(options = [], config = {}) {
+  const keepEmpty = Boolean(config.keepEmpty);
   return (options || [])
     .map((option) => ({
       type: option.type || option.assetType || option.asset_type || '',
       label: option.label || option.name || '',
       price: option.price ?? option.upgradePrice ?? option.upgrade_price ?? '',
     }))
-    .filter((option) => option.type || option.label || option.price !== '');
+    .filter((option) => keepEmpty || option.type || option.label || option.price !== '');
 }
 
 function reserveOptionPrice(option = {}, entry = null, salonLabel = '') {
