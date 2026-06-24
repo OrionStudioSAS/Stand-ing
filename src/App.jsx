@@ -1627,8 +1627,8 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
 function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageChange, onResetImage }) {
   const imageName = item.options?.posterImageName || 'Aucune image personnalisée';
   const printSize = posterSurfaceRegion(item, items, width, depth);
-  const recommendedSpec = recommendedPrintSpec(printSize.width, printSize.height);
-  const imageQuality = usePrintQualityCheck(item.options?.posterImageUrl, printSize.width, printSize.height);
+  const recommendedSpec = recommendedSimulatorImageSpec(printSize.width, printSize.height);
+  const imageQuality = useSimulatorImageQualityCheck(item.options?.posterImageUrl, recommendedSpec);
   return (
     <aside className="item-options-panel">
       <div className="item-options-heading">
@@ -1640,10 +1640,10 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
       </div>
 
       <div className="poster-format-spec">
-        <strong>Format conseillé avant import</strong>
-        <span>Zone : {recommendedSpec.sizeText}</span>
-        <span>Fichier conseillé : {recommendedSpec.pixelText} minimum</span>
-        <small>Ratio à respecter : {recommendedSpec.ratioText} · JPG, PNG ou WebP</small>
+        <strong>Format conseillé pour le simulateur</strong>
+        <span>Zone affichée : {recommendedSpec.sizeText}</span>
+        <span>Image conseillée : {recommendedSpec.pixelText}</span>
+        <small>Ratio à respecter : {recommendedSpec.ratioText} · fichier léger JPG, PNG ou WebP</small>
       </div>
 
       {item.options?.posterImageUrl && (
@@ -1655,8 +1655,8 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
       {item.options?.posterImageUrl && imageQuality && (
         <div className={`poster-print-quality ${imageQuality.level}`}>
           <strong>{imageQuality.label}</strong>
-          <span>{imageQuality.pixelText} pour {imageQuality.sizeText}</span>
-          <small>{imageQuality.dpiText}</small>
+          <span>{imageQuality.pixelText} importés · conseillé {recommendedSpec.pixelText}</span>
+          <small>{imageQuality.detailText}</small>
         </div>
       )}
 
@@ -1682,23 +1682,26 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
 
 
 
-function recommendedPrintSpec(printWidthMeters = 0, printHeightMeters = 0, targetDpi = 100) {
+function recommendedSimulatorImageSpec(printWidthMeters = 0, printHeightMeters = 0, maxLongEdge = 2048) {
   const safeWidth = Math.max(0.001, Number(printWidthMeters || 0));
   const safeHeight = Math.max(0.001, Number(printHeightMeters || 0));
-  const pixelsWidth = Math.ceil(metersToInches(safeWidth) * targetDpi);
-  const pixelsHeight = Math.ceil(metersToInches(safeHeight) * targetDpi);
+  const ratio = safeWidth / safeHeight;
+  const pixelsWidth = ratio >= 1 ? maxLongEdge : Math.round(maxLongEdge * ratio);
+  const pixelsHeight = ratio >= 1 ? Math.round(maxLongEdge / ratio) : maxLongEdge;
   return {
+    pixelsWidth,
+    pixelsHeight,
     pixelText: `${pixelsWidth.toLocaleString('fr-FR')} × ${pixelsHeight.toLocaleString('fr-FR')} px`,
     sizeText: `${safeWidth.toFixed(2)} × ${safeHeight.toFixed(2)} m`,
     ratioText: `${safeWidth.toFixed(2)}:${safeHeight.toFixed(2)}`,
   };
 }
 
-function usePrintQualityCheck(imageUrl, printWidthMeters = 0, printHeightMeters = 0) {
+function useSimulatorImageQualityCheck(imageUrl, recommendedSpec = null) {
   const [quality, setQuality] = useState(null);
 
   useEffect(() => {
-    if (!imageUrl || !printWidthMeters || !printHeightMeters) {
+    if (!imageUrl || !recommendedSpec?.pixelsWidth || !recommendedSpec?.pixelsHeight) {
       setQuality(null);
       return undefined;
     }
@@ -1710,18 +1713,18 @@ function usePrintQualityCheck(imageUrl, printWidthMeters = 0, printHeightMeters 
       if (cancelled) return;
       const pixelsWidth = image.naturalWidth || image.width || 0;
       const pixelsHeight = image.naturalHeight || image.height || 0;
-      const dpiX = pixelsWidth / metersToInches(printWidthMeters);
-      const dpiY = pixelsHeight / metersToInches(printHeightMeters);
-      const dpi = Math.min(dpiX, dpiY);
-      const level = dpi >= 100 ? 'good' : dpi >= 72 ? 'warning' : 'danger';
-      const label = level === 'good' ? 'Qualité impression OK' : level === 'warning' ? 'Qualité limite' : 'Image trop faible';
+      const widthRatio = pixelsWidth / recommendedSpec.pixelsWidth;
+      const heightRatio = pixelsHeight / recommendedSpec.pixelsHeight;
+      const ratioScore = Math.min(widthRatio, heightRatio);
+      const level = ratioScore >= 1 ? 'good' : ratioScore >= 0.7 ? 'warning' : 'danger';
+      const label = level === 'good' ? 'Qualité simulateur OK' : level === 'warning' ? 'Image un peu faible' : 'Image trop petite';
       setQuality({
         level,
         label,
-        dpi,
-        dpiText: `${Math.round(dpi)} DPI effectifs · ${level === 'good' ? 'grand format OK' : level === 'warning' ? 'acceptable mais à surveiller' : 'risque de flou/pixelisation'}`,
+        detailText: level === 'good'
+          ? 'Cette image est adaptée au rendu 3D. Le fichier HD print sera transmis séparément.'
+          : 'Pour un meilleur aperçu 3D, importez une image plus proche du format conseillé.',
         pixelText: `${pixelsWidth.toLocaleString('fr-FR')} × ${pixelsHeight.toLocaleString('fr-FR')} px`,
-        sizeText: `${printWidthMeters.toFixed(2)} × ${printHeightMeters.toFixed(2)} m`,
       });
     };
     image.onerror = () => {
@@ -1732,13 +1735,9 @@ function usePrintQualityCheck(imageUrl, printWidthMeters = 0, printHeightMeters 
     return () => {
       cancelled = true;
     };
-  }, [imageUrl, printWidthMeters, printHeightMeters]);
+  }, [imageUrl, recommendedSpec?.pixelsWidth, recommendedSpec?.pixelsHeight]);
 
   return quality;
-}
-
-function metersToInches(value) {
-  return Math.max(0.001, Number(value || 0) * 39.3701);
 }
 
 function OptionsStepPanel({
@@ -6500,6 +6499,7 @@ function languageFlag(language = 'fr') {
 }
 
 function itemCollisionEnabled(item) {
+  if (isPosterItem(item)) return false;
   return item?.collisionEnabled !== false && item?.dimensions?.collisionEnabled !== false;
 }
 
@@ -6657,7 +6657,7 @@ function wallDragPatch(point, dragged, items, width, depth, layout) {
     return {
       wall: objectWall.surface.id,
       x: objectWall.axis,
-      wallSide: objectWall.side,
+      wallSide: isPosterItem(dragged) ? 1 : objectWall.side,
       wallSurface: serializeObjectWallSurface(objectWall.surface),
       ...fixedY,
     };
@@ -7243,8 +7243,8 @@ function childrenBounds(children) {
 function objectWallTransform(item, items = []) {
   const surface = objectWallSurfaceForItem(item, items);
   if (!surface) return null;
-  const side = Number(item.wallSide || 1) >= 0 ? 1 : -1;
-  const screenOffset = wallMountedNormalOffset(item);
+  const side = isPosterItem(item) ? 1 : (Number(item.wallSide || 1) >= 0 ? 1 : -1);
+  const screenOffset = wallMountedNormalOffset(item, true);
   const region = isPosterItem(item) ? posterObjectSurfaceRegion(item, surface) : null;
   const axis = Number(region?.center ?? item.x ?? surface.centerAxis ?? 0);
   const y = wallItemCenterY(item);
@@ -7260,7 +7260,7 @@ function objectWallTransform(item, items = []) {
 function screenWorldPosition(item, width, depth, items = []) {
   const objectTransform = objectWallTransform(item, items);
   if (objectTransform) return objectTransform.position;
-  const screenOffset = wallMountedNormalOffset(item);
+  const screenOffset = wallMountedNormalOffset(item, false);
   const y = wallItemCenterY(item);
   const axis = isPosterItem(item) ? posterSurfaceRegion(item, items, width, depth).center : Number(item.x || 0);
   if (item.wall === 'left') return [-width / 2 + screenOffset, y, axis];
@@ -7277,8 +7277,8 @@ function wallItemCenterY(item) {
   return Number.isFinite(y) && y >= 0 ? y : 0;
 }
 
-function wallMountedNormalOffset(item) {
-  if (isPosterItem(item)) return wallThickness + 0.006;
+function wallMountedNormalOffset(item, objectSurface = false) {
+  if (isPosterItem(item)) return (objectSurface ? wallThickness / 2 : wallThickness) + 0.006;
   if (item?.type === 'screen') return wallThickness + screenDepth / 2;
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
   return wallThickness + Math.max(0.02, depth / 2);
@@ -8491,11 +8491,11 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
         <>
           <mesh>
             <boxGeometry args={[posterWidth, posterHeight, 0.018]} />
-            <meshStandardMaterial color={activeColor(selected, dragging, '#f7f1dc')} roughness={0.62} {...hoverMaterialProps(selected, hovered)} />
+            <meshStandardMaterial color={activeColor(selected, dragging, '#f7f1dc')} roughness={0.62} />
           </mesh>
           <mesh position={[0, 0, 0.014]}>
             <boxGeometry args={[posterWidth, posterHeight, 0.006]} />
-            <meshStandardMaterial color="#ffffff" map={posterTexture || null} roughness={0.5} {...hoverMaterialProps(selected, hovered)} />
+            <meshStandardMaterial color="#ffffff" map={posterTexture || null} roughness={0.5} />
           </mesh>
           {!posterTexture && <Text position={[0, 0, 0.022]} fontSize={Math.min(0.18, posterWidth / 8)} color="#1f4378" anchorX="center" anchorY="middle">AFFICHE</Text>}
           {selected && <SelectionFrame bounds={{ width: posterWidth, height: posterHeight, depth: 0.05 }} centerY={0} />}
