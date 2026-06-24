@@ -2346,14 +2346,23 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
   }
 
   const includedEntry = findCatalogEntry(catalog, rule.includedType);
+  const includedSelected = !selectedOptionType;
 
   return (
     <div className="reserve-option-card">
       {rule?.includedType ? (
-        <div>
-          <strong>{rule.includedLabel || includedEntry?.label || 'Réserve incluse'}</strong>
-          <span>Incluse dans la scène de départ · 0 € HT</span>
-        </div>
+        <button
+          type="button"
+          className={includedSelected ? 'active' : ''}
+          disabled={disabled}
+          onClick={() => onChange('')}
+        >
+          <span>
+            {rule.includedLabel || includedEntry?.label || 'Réserve incluse'}
+            <em>Incluse dans la scène de départ · 0 € HT</em>
+          </span>
+          {includedSelected ? <Check size={16} /> : <Plus size={16} />}
+        </button>
       ) : (
         <div>
           <strong>Pas de réserve incluse</strong>
@@ -2371,7 +2380,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
             key={option.type}
             className={selected ? 'active' : ''}
             disabled={disabled}
-            onClick={() => onChange(selected ? '' : option.type)}
+            onClick={() => onChange(selected && !rule?.includedType ? '' : option.type)}
           >
             <span>
               {option.label || entry?.label || 'Réserve complémentaire'}
@@ -2386,11 +2395,9 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
 }
 
 function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = '', disabled = false, onChange }) {
-  const selectedCount = Number(Boolean(sides?.left)) + Number(Boolean(sides?.right));
-  const includedCount = Number(rule?.includedCount || 0);
   const rows = [
-    { side: 'left', label: 'Tête de cloison gauche', type: rule?.leftType, included: rule?.includedSides?.includes('left'), price: rule?.leftPrice },
-    { side: 'right', label: 'Tête de cloison droite', type: rule?.rightType, included: rule?.includedSides?.includes('right'), price: rule?.rightPrice },
+    { side: 'left', label: 'Tête de cloison gauche', type: rule?.leftType, price: rule?.leftPrice },
+    { side: 'right', label: 'Tête de cloison droite', type: rule?.rightType, price: rule?.rightPrice },
   ];
 
   return (
@@ -2398,8 +2405,8 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
       {rows.map((row) => {
         const entry = findCatalogEntry(catalog, row.type);
         const selected = Boolean(sides?.[row.side]);
-        const willBeSelectedCount = selected ? selectedCount : selectedCount + 1;
-        const billable = selected ? selectedCount > includedCount && !row.included : willBeSelectedCount > includedCount;
+        const previewSides = selected ? sides : { ...sides, [row.side]: true };
+        const billable = partitionHeadBillableSides(rule, previewSides).has(row.side);
         const price = billable ? firstPriceValue(row.price, assetUnitPrice(entry, salonLabel), 0) : 0;
         return (
           <button
@@ -5627,19 +5634,28 @@ function partitionHeadEnabledSides(rule, choice = {}) {
   };
 }
 
-function makeAutomaticPartitionHeadItems(rule, sides = {}, catalogEntries = [], width, depth, layout, salonLabel) {
-  if (!rule) return [];
-  const selectedSides = [
+function partitionHeadSelectedSides(rule = {}, sides = {}) {
+  return [
     ...(rule.includedSides || []).filter((side) => sides?.[side]),
     ...['left', 'right'].filter((side) => sides?.[side] && !(rule.includedSides || []).includes(side)),
   ];
-  let remainingIncluded = Number(rule.includedCount || 0);
+}
+
+function partitionHeadBillableSides(rule = {}, sides = {}) {
+  const selectedSides = partitionHeadSelectedSides(rule, sides);
+  const includedCount = Math.max(0, Number(rule?.includedCount || 0));
+  return new Set(selectedSides.slice(includedCount));
+}
+
+function makeAutomaticPartitionHeadItems(rule, sides = {}, catalogEntries = [], width, depth, layout, salonLabel) {
+  if (!rule) return [];
+  const selectedSides = partitionHeadSelectedSides(rule, sides);
+  const billableSides = partitionHeadBillableSides(rule, sides);
   return selectedSides.map((side) => {
     const type = side === 'left' ? rule.leftType : rule.rightType;
     const entry = findCatalogEntry(catalogEntries, type);
     if (!entry) return null;
-    const billable = remainingIncluded <= 0;
-    if (!billable) remainingIncluded -= 1;
+    const billable = billableSides.has(side);
     const price = side === 'left' ? rule.leftPrice : rule.rightPrice;
     const unitPrice = billable ? firstPriceValue(price, assetUnitPrice(entry, salonLabel), 0) : 0;
     const base = makeItem(type, width, depth, layout, entry);
