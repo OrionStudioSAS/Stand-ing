@@ -4330,6 +4330,19 @@ select {
   object-fit: cover;
 }
 
+img.asset-thumb {
+  display: block;
+  object-fit: cover;
+  object-position: center;
+  max-width: 100%;
+  min-height: 104px;
+}
+
+.asset-card > img.asset-thumb {
+  height: 104px;
+  flex: 0 0 104px;
+}
+
 .asset-obj-preview {
   background: linear-gradient(#c8ecff, #eaf7ff);
 }
@@ -4466,6 +4479,12 @@ select {
 .asset-drawer > .asset-thumb {
   height: 180px;
   border-radius: 9px;
+}
+
+.asset-drawer > img.asset-thumb {
+  min-height: 180px;
+  object-fit: cover;
+  object-position: center;
 }
 
 .asset-meta-card {
