@@ -2386,6 +2386,8 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
 }
 
 function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = '', disabled = false, onChange }) {
+  const selectedCount = Number(Boolean(sides?.left)) + Number(Boolean(sides?.right));
+  const includedCount = Number(rule?.includedCount || 0);
   const rows = [
     { side: 'left', label: 'Tête de cloison gauche', type: rule?.leftType, included: rule?.includedSides?.includes('left'), price: rule?.leftPrice },
     { side: 'right', label: 'Tête de cloison droite', type: rule?.rightType, included: rule?.includedSides?.includes('right'), price: rule?.rightPrice },
@@ -2396,7 +2398,9 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
       {rows.map((row) => {
         const entry = findCatalogEntry(catalog, row.type);
         const selected = Boolean(sides?.[row.side]);
-        const price = row.included ? 0 : firstPriceValue(row.price, assetUnitPrice(entry, salonLabel), 0);
+        const willBeSelectedCount = selected ? selectedCount : selectedCount + 1;
+        const billable = selected ? selectedCount > includedCount && !row.included : willBeSelectedCount > includedCount;
+        const price = billable ? firstPriceValue(row.price, assetUnitPrice(entry, salonLabel), 0) : 0;
         return (
           <button
             key={row.side}
@@ -2407,7 +2411,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
           >
             <span>
               {row.label}
-              <em>{row.type ? (row.included ? 'Inclus · 0 € HT' : `+ ${price.toLocaleString('fr-FR')} € HT`) : 'Non configurée'}</em>
+              <em>{row.type ? (billable ? `+ ${price.toLocaleString('fr-FR')} € HT` : 'Inclus · 0 € HT') : 'Non configurée'}</em>
             </span>
             {selected ? <Check size={16} /> : <Plus size={16} />}
           </button>
@@ -3705,9 +3709,23 @@ function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, onChange }
       {!entries.length && <div className="preset-reserve-empty">Aucune tête de cloison disponible pour ce salon.</div>}
       {partitionHeadRuleBands.map((band) => {
         const rule = rules?.[band.id] || {};
+        const includedCount = Number(rule.includedCount ?? band.includedCount ?? 0);
+        const includedSideValue = includedCount >= 2 ? 'both' : includedCount <= 0 ? 'none' : (rule.includedSides?.[0] || '');
         return (
           <article key={band.id}>
-            <strong>{band.label} · {band.includedCount} incluse{band.includedCount > 1 ? 's' : ''}</strong>
+            <strong>{band.label} · {includedCount} incluse{includedCount > 1 ? 's' : ''}</strong>
+            {includedCount === 1 && (
+              <label>
+                Placée d’office à la génération
+                <select value={includedSideValue} onChange={(event) => updateBand(band.id, { includedSides: event.target.value ? [event.target.value] : [] })}>
+                  <option value="">À choisir</option>
+                  <option value="left">Tête gauche</option>
+                  <option value="right">Tête droite</option>
+                </select>
+              </label>
+            )}
+            {includedCount >= 2 && <div className="preset-reserve-empty">Gauche + droite incluses et placées d’office.</div>}
+            {includedCount <= 0 && <div className="preset-reserve-empty">Aucune tête placée d’office, les coches seront payantes.</div>}
             {['left', 'right'].map((side) => {
               const sideLabel = side === 'left' ? 'Gauche' : 'Droite';
               const typeKey = side === 'left' ? 'leftType' : 'rightType';
@@ -5555,6 +5573,7 @@ function normalizePartitionHeadRules(rules = {}) {
       minArea: band.minArea,
       maxArea: band.maxArea,
       includedCount: Number(source.includedCount ?? source.included_count ?? band.includedCount),
+      includedSides: normalizePartitionHeadIncludedSides(source.includedSides || source.included_sides, source.includedSide || source.included_side),
       leftType: source.leftType || source.left_type || '',
       leftLabel: source.leftLabel || source.left_label || 'Tête de cloison gauche',
       leftPrice: source.leftPrice ?? source.left_price ?? '',
@@ -5566,6 +5585,11 @@ function normalizePartitionHeadRules(rules = {}) {
   }, {});
 }
 
+function normalizePartitionHeadIncludedSides(sides, side = '') {
+  const values = Array.isArray(sides) ? sides : (side ? [side] : []);
+  return values.filter((value) => value === 'left' || value === 'right');
+}
+
 function activePartitionHeadRule(rules = {}, area = 0, layout = 'u') {
   const numericArea = Number(area || 0);
   const band = partitionHeadRuleBands.find((entry) => (
@@ -5574,8 +5598,15 @@ function activePartitionHeadRule(rules = {}, area = 0, layout = 'u') {
   ));
   if (!band) return null;
   const rule = normalizePartitionHeadRules(rules)[band.id];
-  const includedSides = defaultIncludedPartitionHeadSides(rule.includedCount, layout);
+  const includedSides = partitionHeadRuleIncludedSides(rule, layout);
   return { ...rule, includedSides };
+}
+
+function partitionHeadRuleIncludedSides(rule = {}, layout = 'u') {
+  const count = Number(rule.includedCount || 0);
+  if (count <= 0) return [];
+  if (count >= 2) return ['left', 'right'];
+  return rule.includedSides?.length ? rule.includedSides.slice(0, 1) : defaultIncludedPartitionHeadSides(count, layout);
 }
 
 function defaultIncludedPartitionHeadSides(includedCount = 0, layout = 'u') {
