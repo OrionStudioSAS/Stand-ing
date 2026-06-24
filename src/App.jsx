@@ -6897,13 +6897,12 @@ function collidesWithScene(candidate, items, ignoreId = null, width = 0, depth =
 }
 
 function collidesWithWallItems(candidate, items, ignoreId = null, width = 0, depth = 0) {
-  if (!itemCollisionEnabled(candidate)) return false;
+  if (!itemCollisionEnabled(candidate) || isPosterItem(candidate)) return false;
   const candidateBox = wallItemCollisionBox(candidate, items, width, depth);
   if (!candidateBox) return false;
 
   return (items || []).some((item) => {
     if (!item || item.id === ignoreId || !itemCollisionEnabled(item)) return false;
-    if (isPosterItem(candidate) && !isPosterBlockingItem(item)) return false;
     const itemBox = isWallItem(item)
       ? wallItemCollisionBox(item, items, width, depth)
       : floorItemWallCollisionBox(item, candidateBox.wall, width, depth);
