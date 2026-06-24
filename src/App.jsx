@@ -1336,6 +1336,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         {selected && !readOnly && isPosterItem(selected) && (
           <PosterOptionsPanel
             item={selected}
+            items={sceneItems}
+            width={width}
+            depth={depth}
             uploadState={itemOptionState}
             onImageChange={(file) => uploadSelectedItemImage(file, { urlKey: 'posterImageUrl', nameKey: 'posterImageName' })}
             onResetImage={() => updateSelectedItemOptions({ posterImageUrl: '', posterImageName: '' })}
@@ -1621,8 +1624,10 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
   );
 }
 
-function PosterOptionsPanel({ item, uploadState, onImageChange, onResetImage }) {
+function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageChange, onResetImage }) {
   const imageName = item.options?.posterImageName || 'Aucune image personnalisée';
+  const printSize = posterSurfaceRegion(item, items, width, depth);
+  const imageQuality = usePrintQualityCheck(item.options?.posterImageUrl, printSize.width, printSize.height);
   return (
     <aside className="item-options-panel">
       <div className="item-options-heading">
@@ -1636,6 +1641,14 @@ function PosterOptionsPanel({ item, uploadState, onImageChange, onResetImage }) 
       {item.options?.posterImageUrl && (
         <div className="poster-image-preview">
           <img src={item.options.posterImageUrl} alt="Aperçu affiche" />
+        </div>
+      )}
+
+      {item.options?.posterImageUrl && imageQuality && (
+        <div className={`poster-print-quality ${imageQuality.level}`}>
+          <strong>{imageQuality.label}</strong>
+          <span>{imageQuality.pixelText} pour {imageQuality.sizeText}</span>
+          <small>{imageQuality.dpiText}</small>
         </div>
       )}
 
@@ -1657,6 +1670,54 @@ function PosterOptionsPanel({ item, uploadState, onImageChange, onResetImage }) 
       {uploadState.error && <p className="item-options-error">{uploadState.error}</p>}
     </aside>
   );
+}
+
+
+function usePrintQualityCheck(imageUrl, printWidthMeters = 0, printHeightMeters = 0) {
+  const [quality, setQuality] = useState(null);
+
+  useEffect(() => {
+    if (!imageUrl || !printWidthMeters || !printHeightMeters) {
+      setQuality(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      if (cancelled) return;
+      const pixelsWidth = image.naturalWidth || image.width || 0;
+      const pixelsHeight = image.naturalHeight || image.height || 0;
+      const dpiX = pixelsWidth / metersToInches(printWidthMeters);
+      const dpiY = pixelsHeight / metersToInches(printHeightMeters);
+      const dpi = Math.min(dpiX, dpiY);
+      const level = dpi >= 100 ? 'good' : dpi >= 72 ? 'warning' : 'danger';
+      const label = level === 'good' ? 'Qualité impression OK' : level === 'warning' ? 'Qualité limite' : 'Image trop faible';
+      setQuality({
+        level,
+        label,
+        dpi,
+        dpiText: `${Math.round(dpi)} DPI effectifs · ${level === 'good' ? 'grand format OK' : level === 'warning' ? 'acceptable mais à surveiller' : 'risque de flou/pixelisation'}`,
+        pixelText: `${pixelsWidth.toLocaleString('fr-FR')} × ${pixelsHeight.toLocaleString('fr-FR')} px`,
+        sizeText: `${printWidthMeters.toFixed(2)} × ${printHeightMeters.toFixed(2)} m`,
+      });
+    };
+    image.onerror = () => {
+      if (!cancelled) setQuality(null);
+    };
+    image.src = imageUrl;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [imageUrl, printWidthMeters, printHeightMeters]);
+
+  return quality;
+}
+
+function metersToInches(value) {
+  return Math.max(0.001, Number(value || 0) * 39.3701);
 }
 
 function OptionsStepPanel({

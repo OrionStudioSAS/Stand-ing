@@ -6160,3 +6160,54 @@ select {
   object-fit: cover;
   display: block;
 }
+
+.poster-print-quality {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #f5f8fc;
+}
+
+.poster-print-quality strong {
+  color: #172033;
+  font-size: 0.82rem;
+}
+
+.poster-print-quality span,
+.poster-print-quality small {
+  color: #6d7684;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.poster-print-quality.good {
+  border-color: #bfe5cd;
+  background: #effaf3;
+}
+
+.poster-print-quality.good strong,
+.poster-print-quality.good small {
+  color: #167044;
+}
+
+.poster-print-quality.warning {
+  border-color: #f1d08f;
+  background: #fff8e8;
+}
+
+.poster-print-quality.warning strong,
+.poster-print-quality.warning small {
+  color: #9a650d;
+}
+
+.poster-print-quality.danger {
+  border-color: #efb5ad;
+  background: #fff1ef;
+}
+
+.poster-print-quality.danger strong,
+.poster-print-quality.danger small {
+  color: #b54935;
+}
