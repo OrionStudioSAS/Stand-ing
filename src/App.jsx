@@ -1627,6 +1627,7 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
 function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageChange, onResetImage }) {
   const imageName = item.options?.posterImageName || 'Aucune image personnalisée';
   const printSize = posterSurfaceRegion(item, items, width, depth);
+  const recommendedSpec = recommendedPrintSpec(printSize.width, printSize.height);
   const imageQuality = usePrintQualityCheck(item.options?.posterImageUrl, printSize.width, printSize.height);
   return (
     <aside className="item-options-panel">
@@ -1636,6 +1637,13 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
           <strong>Affiche murale</strong>
           <span>Visuel affiché sur toute la surface disponible</span>
         </div>
+      </div>
+
+      <div className="poster-format-spec">
+        <strong>Format conseillé avant import</strong>
+        <span>Zone : {recommendedSpec.sizeText}</span>
+        <span>Fichier conseillé : {recommendedSpec.pixelText} minimum</span>
+        <small>Ratio à respecter : {recommendedSpec.ratioText} · JPG, PNG ou WebP</small>
       </div>
 
       {item.options?.posterImageUrl && (
@@ -1672,6 +1680,19 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
   );
 }
 
+
+
+function recommendedPrintSpec(printWidthMeters = 0, printHeightMeters = 0, targetDpi = 100) {
+  const safeWidth = Math.max(0.001, Number(printWidthMeters || 0));
+  const safeHeight = Math.max(0.001, Number(printHeightMeters || 0));
+  const pixelsWidth = Math.ceil(metersToInches(safeWidth) * targetDpi);
+  const pixelsHeight = Math.ceil(metersToInches(safeHeight) * targetDpi);
+  return {
+    pixelText: `${pixelsWidth.toLocaleString('fr-FR')} × ${pixelsHeight.toLocaleString('fr-FR')} px`,
+    sizeText: `${safeWidth.toFixed(2)} × ${safeHeight.toFixed(2)} m`,
+    ratioText: `${safeWidth.toFixed(2)}:${safeHeight.toFixed(2)}`,
+  };
+}
 
 function usePrintQualityCheck(imageUrl, printWidthMeters = 0, printHeightMeters = 0) {
   const [quality, setQuality] = useState(null);

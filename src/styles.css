@@ -6211,3 +6211,24 @@ select {
 .poster-print-quality.danger small {
   color: #b54935;
 }
+
+.poster-format-spec {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #d7e2ef;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #f7f9fc;
+}
+
+.poster-format-spec strong {
+  color: #172033;
+  font-size: 0.82rem;
+}
+
+.poster-format-spec span,
+.poster-format-spec small {
+  color: #627082;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
