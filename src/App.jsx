@@ -7892,6 +7892,14 @@ function createCoverImageTexture(image, targetWidth, targetHeight) {
   return prepareDynamicTexture(new CanvasTexture(canvas));
 }
 
+function posterCoverTextureSize(region = null, maxLongEdge = 1600) {
+  const safeWidth = Math.max(0.001, Number(region?.width || 1));
+  const safeHeight = Math.max(0.001, Number(region?.height || 1));
+  const ratio = safeWidth / safeHeight;
+  if (ratio >= 1) return [maxLongEdge, Math.max(256, Math.round(maxLongEdge / ratio))];
+  return [Math.max(256, Math.round(maxLongEdge * ratio)), maxLongEdge];
+}
+
 function applyItemOptionMaterials(material, item, textureOptions = {}, meshName = '') {
   if (!isPartitionHeadItem(item)) return material;
   if (Array.isArray(material)) return material.map((entry) => applyItemOptionMaterials(entry, item, textureOptions, meshName));
@@ -8465,13 +8473,14 @@ function Counter({ selected, hovered, dragging }) {
 }
 
 function WallMountedItem({ item, items, width, depth, selected, hovered, dragging, onSelect, onHover, onDragStart, onDragEnd, onDragMove, visualContext }) {
-  const posterTexture = useExternalTexture(isPosterItem(item) ? item.options?.posterImageUrl : '', { coverSize: [1400, 900] });
+  const isPoster = isPosterItem(item);
+  const posterRegion = isPoster ? posterSurfaceRegion(item, items, width, depth) : null;
+  const posterCoverSize = posterCoverTextureSize(posterRegion);
+  const posterTexture = useExternalTexture(isPoster ? item.options?.posterImageUrl : '', { coverSize: posterCoverSize });
   const objectTransform = objectWallTransform(item, items);
   const rotation = objectTransform?.rotation ?? (item.wall === 'left' ? Math.PI / 2 : item.wall === 'right' ? -Math.PI / 2 : 0);
   const offset = objectTransform?.position ?? screenWorldPosition(item, width, depth, items);
-  const isPoster = isPosterItem(item);
   const isCustomModel = Boolean(item.modelUrl);
-  const posterRegion = isPoster ? posterSurfaceRegion(item, items, width, depth) : null;
   const posterWidth = posterRegion?.width || 0.95;
   const posterHeight = posterRegion?.height || fixedWallHeight;
   return (
