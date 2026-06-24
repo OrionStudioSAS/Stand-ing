@@ -949,12 +949,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     updateItem(selected.id, { options: { ...(selected.options || {}), ...patch } });
   };
 
-  const uploadSelectedItemImage = async (file) => {
+  const uploadSelectedItemImage = async (file, optionKeys = {}) => {
     if (!selected || !file) return;
+    const urlKey = optionKeys.urlKey || 'headMainImageUrl';
+    const nameKey = optionKeys.nameKey || 'headMainImageName';
     setItemOptionState({ uploading: true, error: '' });
     try {
       const imageUrl = await uploadSceneItemOptionImage(initialScene, selected, file);
-      updateSelectedItemOptions({ headMainImageUrl: imageUrl, headMainImageName: file.name });
+      updateSelectedItemOptions({ [urlKey]: imageUrl, [nameKey]: file.name });
       setItemOptionState({ uploading: false, error: '' });
     } catch (error) {
       setItemOptionState({ uploading: false, error: error.message || 'Upload impossible.' });
@@ -1299,7 +1301,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           <div className="view-toolbar selection-mode" aria-label="Actions objet selectionne">
             <button type="button" disabled={itemPlacementLocked(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
             <button type="button" disabled={isAutomaticReserveItem(selected)} onClick={openSelectedItemConfigurator} title="Paramètres"><Settings2 size={16} /></button>
-            {isPartitionHeadItem(selected) && <button type="button" onClick={() => setRotationPanelOpen(false)} title="Options visuel"><FileImage size={16} /></button>}
+            {(isPartitionHeadItem(selected) || isPosterItem(selected)) && <button type="button" onClick={() => setRotationPanelOpen(false)} title="Options visuel"><FileImage size={16} /></button>}
             <button type="button" disabled={!isAdminViewer && itemDeletionLocked(selected)} onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
             {!isAdminViewer && itemMovementLocked(selected) && <span className="toolbar-lock-note">Déplacement verrouillé</span>}
             {!isAdminViewer && itemRotationLocked(selected) && <span className="toolbar-lock-note">Rotation verrouillée</span>}
@@ -1326,8 +1328,17 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             item={selected}
             visualContext={sceneVisualContext}
             uploadState={itemOptionState}
-            onImageChange={uploadSelectedItemImage}
+            onImageChange={(file) => uploadSelectedItemImage(file)}
             onResetImage={() => updateSelectedItemOptions({ headMainImageUrl: '', headMainImageName: '' })}
+          />
+        )}
+
+        {selected && !readOnly && isPosterItem(selected) && (
+          <PosterOptionsPanel
+            item={selected}
+            uploadState={itemOptionState}
+            onImageChange={(file) => uploadSelectedItemImage(file, { urlKey: 'posterImageUrl', nameKey: 'posterImageName' })}
+            onResetImage={() => updateSelectedItemOptions({ posterImageUrl: '', posterImageName: '' })}
           />
         )}
       </section>
@@ -1603,6 +1614,44 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
 
       {item.options?.headMainImageUrl && (
         <button className="item-image-reset" type="button" onClick={onResetImage}>Revenir à l’image d’origine</button>
+      )}
+      {uploadState.uploading && <p className="item-options-status">Upload du visuel...</p>}
+      {uploadState.error && <p className="item-options-error">{uploadState.error}</p>}
+    </aside>
+  );
+}
+
+function PosterOptionsPanel({ item, uploadState, onImageChange, onResetImage }) {
+  const imageName = item.options?.posterImageName || 'Aucune image personnalisée';
+  return (
+    <aside className="item-options-panel">
+      <div className="item-options-heading">
+        <FileImage size={17} />
+        <div>
+          <strong>Affiche murale</strong>
+          <span>Visuel affiché sur toute la surface disponible</span>
+        </div>
+      </div>
+
+      {item.options?.posterImageUrl && (
+        <div className="poster-image-preview">
+          <img src={item.options.posterImageUrl} alt="Aperçu affiche" />
+        </div>
+      )}
+
+      <label className="item-image-upload">
+        <span>Image de l’affiche</span>
+        <small>{imageName}</small>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          disabled={uploadState.uploading}
+          onChange={(event) => onImageChange(event.target.files?.[0])}
+        />
+      </label>
+
+      {item.options?.posterImageUrl && (
+        <button className="item-image-reset" type="button" onClick={onResetImage}>Retirer l’image personnalisée</button>
       )}
       {uploadState.uploading && <p className="item-options-status">Upload du visuel...</p>}
       {uploadState.error && <p className="item-options-error">{uploadState.error}</p>}
@@ -5867,6 +5916,7 @@ function collectSceneTextureUrls(items = [], extraUrls = []) {
   const visit = (item) => {
     if (!item) return;
     if (item.options?.headMainImageUrl) urls.add(item.options.headMainImageUrl);
+    if (item.options?.posterImageUrl) urls.add(item.options.posterImageUrl);
 
     const referenceUrl = item.modelUrl || item.materialUrl || item.dimensions?.materialUrl || '';
     const storagePaths = Array.isArray(item.dimensions?.storagePaths) ? item.dimensions.storagePaths : [];
@@ -7206,25 +7256,26 @@ function posterAvailableWidth(item, items, width, depth) {
 }
 
 function wallBlockers(currentItem, items, width, depth, wall) {
+  const margin = isPosterItem(currentItem) ? 0 : 0.1;
   return (items || [])
     .filter((item) => item.id !== currentItem.id)
     .filter((item) => !isPosterItem(currentItem) || isPosterBlockingItem(item))
     .flatMap((item) => {
-      if (isWallItem(item)) return wallMountedBlocker(item, wall, width, depth);
-      return floorWallBlocker(item, wall, width, depth);
+      if (isWallItem(item)) return wallMountedBlocker(item, wall, width, depth, margin);
+      return floorWallBlocker(item, wall, width, depth, margin);
     })
     .filter(Boolean);
 }
 
-function wallMountedBlocker(item, wall, width, depth) {
+function wallMountedBlocker(item, wall, width, depth, margin = 0.1) {
   if (!itemCollisionEnabled(item)) return null;
   if ((item.wall || 'back') !== wall) return null;
   const axis = Number(item.x || 0);
   const itemWidth = wallItemMetrics(item, [], width, depth).width;
-  return { min: axis - itemWidth / 2 - 0.1, max: axis + itemWidth / 2 + 0.1 };
+  return { min: axis - itemWidth / 2 - margin, max: axis + itemWidth / 2 + margin };
 }
 
-function floorWallBlocker(item, wall, width, depth) {
+function floorWallBlocker(item, wall, width, depth, margin = 0.1) {
   const bounds = itemCollisionBox(item);
   if (!bounds) return null;
   const minX = bounds.minX;
@@ -7233,9 +7284,9 @@ function floorWallBlocker(item, wall, width, depth) {
   const maxZ = bounds.maxZ;
   const wallZone = 0.72;
 
-  if (wall === 'back' && minZ <= -depth / 2 + wallZone) return { min: minX - 0.1, max: maxX + 0.1 };
-  if (wall === 'left' && minX <= -width / 2 + wallZone) return { min: minZ - 0.1, max: maxZ + 0.1 };
-  if (wall === 'right' && maxX >= width / 2 - wallZone) return { min: minZ - 0.1, max: maxZ + 0.1 };
+  if (wall === 'back' && minZ <= -depth / 2 + wallZone) return { min: minX - margin, max: maxX + margin };
+  if (wall === 'left' && minX <= -width / 2 + wallZone) return { min: minZ - margin, max: maxZ + margin };
+  if (wall === 'right' && maxX >= width / 2 - wallZone) return { min: minZ - margin, max: maxZ + margin };
   return null;
 }
 
@@ -8332,6 +8383,7 @@ function Counter({ selected, hovered, dragging }) {
 }
 
 function WallMountedItem({ item, items, width, depth, selected, hovered, dragging, onSelect, onHover, onDragStart, onDragEnd, onDragMove, visualContext }) {
+  const posterTexture = useExternalTexture(isPosterItem(item) ? item.options?.posterImageUrl : '', { coverSize: [1400, 900] });
   const objectTransform = objectWallTransform(item, items);
   const rotation = objectTransform?.rotation ?? (item.wall === 'left' ? Math.PI / 2 : item.wall === 'right' ? -Math.PI / 2 : 0);
   const offset = objectTransform?.position ?? screenWorldPosition(item, width, depth, items);
@@ -8360,10 +8412,10 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
             <meshStandardMaterial color={activeColor(selected, dragging, '#f7f1dc')} roughness={0.62} {...hoverMaterialProps(selected, hovered)} />
           </mesh>
           <mesh position={[0, 0, 0.014]}>
-            <boxGeometry args={[Math.max(0.2, posterWidth - 0.08), Math.max(0.2, posterHeight - 0.08), 0.006]} />
-            <meshStandardMaterial color="#ffffff" roughness={0.5} {...hoverMaterialProps(selected, hovered)} />
+            <boxGeometry args={[posterWidth, posterHeight, 0.006]} />
+            <meshStandardMaterial color="#ffffff" map={posterTexture || null} roughness={0.5} {...hoverMaterialProps(selected, hovered)} />
           </mesh>
-          <Text position={[0, 0, 0.022]} fontSize={Math.min(0.18, posterWidth / 8)} color="#1f4378" anchorX="center" anchorY="middle">AFFICHE</Text>
+          {!posterTexture && <Text position={[0, 0, 0.022]} fontSize={Math.min(0.18, posterWidth / 8)} color="#1f4378" anchorX="center" anchorY="middle">AFFICHE</Text>}
           {selected && <SelectionFrame bounds={{ width: posterWidth, height: posterHeight, depth: 0.05 }} centerY={0} />}
         </>
       ) : isCustomModel ? (
