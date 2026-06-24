@@ -3629,12 +3629,12 @@ function PresetReserveRulesEditor({ rules, entries, salonLabel, onChange }) {
     }, { keepEmptyOptions: true }));
   };
   const updateOption = (bandId, index, patch) => {
-    const currentOptions = normalizeComplementaryOptions(rules?.[bandId]?.options);
+    const currentOptions = normalizeComplementaryOptions(rules?.[bandId]?.options, { keepEmpty: true });
     const nextOptions = currentOptions.map((option, optionIndex) => (optionIndex === index ? { ...option, ...patch } : option));
     updateBand(bandId, { options: nextOptions });
   };
-  const addOption = (bandId) => updateBand(bandId, { options: [...normalizeComplementaryOptions(rules?.[bandId]?.options), { type: '', label: '', price: '' }] });
-  const removeOption = (bandId, index) => updateBand(bandId, { options: normalizeComplementaryOptions(rules?.[bandId]?.options).filter((_, optionIndex) => optionIndex !== index) });
+  const addOption = (bandId) => updateBand(bandId, { options: [...normalizeComplementaryOptions(rules?.[bandId]?.options, { keepEmpty: true }), { type: '', label: '', price: '' }] });
+  const removeOption = (bandId, index) => updateBand(bandId, { options: normalizeComplementaryOptions(rules?.[bandId]?.options, { keepEmpty: true }).filter((_, optionIndex) => optionIndex !== index) });
 
   return (
     <section className="preset-reserve-rules">
@@ -3658,7 +3658,7 @@ function PresetReserveRulesEditor({ rules, entries, salonLabel, onChange }) {
             </label>
             <div className="preset-rule-options">
               <span>Options complémentaires</span>
-              {normalizeComplementaryOptions(rule.options).map((option, index) => {
+              {normalizeComplementaryOptions(rule.options, { keepEmpty: true }).map((option, index) => {
                 const entry = findCatalogEntry(entries, option.type);
                 return (
                   <div className="preset-rule-option-row" key={`${band.id}-${index}`}>
