@@ -108,10 +108,12 @@ Deno.serve(async (req) => {
           ...(sceneDraft.source_payload || {}),
           baseItems,
           reserveRules: presetReserveRules(preset),
+          partitionHeadRules: presetPartitionHeadRules(preset),
           pricing: {
             ...((sceneDraft.source_payload || {}).pricing || {}),
             baseItems,
             reserveRules: presetReserveRules(preset),
+            partitionHeadRules: presetPartitionHeadRules(preset),
           },
         },
       };
@@ -355,6 +357,10 @@ async function fetchOfferBaseItems(supabase: any, offerId?: string) {
 
 function presetReserveRules(preset: any) {
   return preset?.base_config?.reserveRules || preset?.base_config?.options?.reserveRules || {};
+}
+
+function presetPartitionHeadRules(preset: any) {
+  return preset?.base_config?.partitionHeadRules || preset?.base_config?.options?.partitionHeadRules || {};
 }
 
 async function findPresetByLayout(supabase: any, params: { offerId?: string; salonId?: string; layout: string; offerIsNull?: boolean }) {

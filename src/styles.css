@@ -3819,6 +3819,49 @@ select {
   font-weight: 850;
 }
 
+.preset-rule-options {
+  display: grid;
+  gap: 7px;
+}
+
+.preset-rule-options > span {
+  color: #596372;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.preset-rule-option-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 86px 30px;
+  gap: 6px;
+}
+
+.preset-rule-option-row button,
+.preset-add-rule-option {
+  display: inline-grid;
+  place-items: center;
+  min-height: 34px;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  color: #1f4378;
+  background: #fff;
+  font-weight: 900;
+}
+
+.preset-add-rule-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: #eef4fb;
+}
+
+.preset-head-rule-row {
+  display: grid;
+  grid-template-columns: 1fr 105px;
+  gap: 8px;
+}
+
 .preset-catalog {
   display: grid;
   gap: 8px;

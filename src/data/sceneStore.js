@@ -457,6 +457,7 @@ export async function saveStandPresetConfig(preset, scene) {
       ...(preset.base_config || {}),
       options: scene.options || {},
       reserveRules: scene.reserveRules || scene.options?.reserveRules || preset.base_config?.reserveRules || {},
+      partitionHeadRules: scene.partitionHeadRules || scene.options?.partitionHeadRules || preset.base_config?.partitionHeadRules || {},
       price_mode: 'included',
     },
     is_active: true,

@@ -79,8 +79,14 @@ const languages = [
 ];
 const defaultPackNames = ['Confort', 'Business', 'SIAE', 'Prestige'];
 const reserveRuleBands = [
-  { id: 'medium', label: '18 à 24 m²', minArea: 18, maxArea: 24, includedLabel: 'Réserve 2 m²', upgradeLabel: 'Réserve 3 m²' },
-  { id: 'large', label: '25 m² et plus', minArea: 25, maxArea: null, includedLabel: 'Réserve 3 m²', upgradeLabel: 'Réserve supérieure' },
+  { id: 'small', label: 'Moins de 18 m²', minArea: 0, maxArea: 17.999, includedLabel: 'Aucune réserve incluse' },
+  { id: 'medium', label: '18 à 24 m²', minArea: 18, maxArea: 24.999, includedLabel: 'Réserve 2 m²' },
+  { id: 'large', label: '25 m² et plus', minArea: 25, maxArea: null, includedLabel: 'Réserve 3 m²' },
+];
+const partitionHeadRuleBands = [
+  { id: 'small', label: 'Moins de 12 m²', minArea: 0, maxArea: 11.999, includedCount: 0 },
+  { id: 'medium', label: '12 à 24 m²', minArea: 12, maxArea: 24.999, includedCount: 1 },
+  { id: 'large', label: '25 m² et plus', minArea: 25, maxArea: null, includedCount: 2 },
 ];
 const placementRuleOptions = [
   { id: 'free', label: 'Libre', description: 'L’utilisateur peut poser et déplacer cet objet normalement.' },
@@ -686,7 +692,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || '303');
   const [ledRailsEnabled, setLedRailsEnabled] = useState(initialOptions.ledRailsEnabled !== false);
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
-  const [reserveUpgradeEnabled, setReserveUpgradeEnabled] = useState(Boolean(initialOptions.reserveUpgradeEnabled));
+  const [reserveOptionType, setReserveOptionType] = useState(initialOptions.reserveOptionType || (initialOptions.reserveUpgradeEnabled ? '__legacy__' : ''));
+  const [partitionHeadChoice, setPartitionHeadChoice] = useState({
+    left: hasOwn(initialOptions, 'partitionHeadLeftEnabled') ? Boolean(initialOptions.partitionHeadLeftEnabled) : null,
+    right: hasOwn(initialOptions, 'partitionHeadRightEnabled') ? Boolean(initialOptions.partitionHeadRightEnabled) : null,
+  });
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
@@ -769,14 +779,22 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const hydratedItems = useMemo(() => (
     objectBankLoaded ? items.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)) : items
   ), [items, availableCatalog, objectBankLoaded]);
-  const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item) && !isAutomaticReserveItem(item)), [hydratedItems]);
+  const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item) && !isAutomaticReserveItem(item) && !isAutomaticPartitionHeadItem(item)), [hydratedItems]);
   const ledRailEntry = useMemo(() => availableCatalog.find(isLedRailEntry), [availableCatalog]);
   const ledSpotCount = ledSpotCountForArea(area);
   const reserveRules = useMemo(() => sceneReserveRules(initialScene), [initialScene]);
   const activeReserveRuleConfig = useMemo(() => activeReserveRule(reserveRules, area), [reserveRules, area]);
+  const effectiveReserveOptionType = reserveOptionType === '__legacy__' ? normalizeComplementaryOptions(activeReserveRuleConfig?.options)[0]?.type || '' : reserveOptionType;
+  const partitionHeadRules = useMemo(() => scenePartitionHeadRules(initialScene), [initialScene]);
+  const activePartitionHeadRuleConfig = useMemo(() => activePartitionHeadRule(partitionHeadRules, area, layout), [partitionHeadRules, area, layout]);
+  const effectivePartitionHeadSides = useMemo(() => partitionHeadEnabledSides(activePartitionHeadRuleConfig, partitionHeadChoice), [activePartitionHeadRuleConfig, partitionHeadChoice]);
   const automaticReserveItems = useMemo(
-    () => makeAutomaticReserveItems(activeReserveRuleConfig, reserveUpgradeEnabled, availableCatalog, width, depth, layout, salonLabel),
-    [activeReserveRuleConfig, reserveUpgradeEnabled, availableCatalog, width, depth, layout, salonLabel],
+    () => makeAutomaticReserveItems(activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, salonLabel),
+    [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, salonLabel],
+  );
+  const automaticPartitionHeadItems = useMemo(
+    () => makeAutomaticPartitionHeadItems(activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, salonLabel),
+    [activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, salonLabel],
   );
   const automaticLedItems = useMemo(
     () => (ledRailsEnabled
@@ -785,7 +803,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       : []),
     [ledRailsEnabled, ledRailEntry, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
-  const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticLedItems], [manualHydratedItems, automaticReserveItems, automaticLedItems]);
+  const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems]);
   const sceneTextureLoad = useSceneTexturePreload(sceneItems, [
     selectedCarpetColor.image,
     carpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
@@ -828,7 +846,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       ledRailsEnabled,
       ledSpotCount,
       ledRailOverrides,
-      reserveUpgradeEnabled,
+      reserveOptionType: effectiveReserveOptionType,
+      partitionHeadLeftEnabled: effectivePartitionHeadSides.left,
+      partitionHeadRightEnabled: effectivePartitionHeadSides.right,
     };
 
     return {
@@ -876,7 +896,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, carpetFootprintEnabled, selectedWallFabricColor, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveUpgradeEnabled, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, carpetFootprintEnabled, selectedWallFabricColor, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
@@ -918,7 +938,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       return;
     }
     setItems((current) => {
-      const blockers = automaticReserveItems.filter((item) => item.id !== id);
+      const blockers = [...automaticReserveItems, ...automaticPartitionHeadItems].filter((item) => item.id !== id);
       const updated = updateSceneItemWithCollision([...current, ...blockers], id, patch, width, depth, layout, carpetFootprintEnabled);
       return updated.filter((item) => !isAutomaticReserveItem(item));
     });
@@ -985,7 +1005,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         : {};
       const candidate = constrainItem({ ...nextBase, ...compatiblePosition }, width, depth, layout, carpetFootprintEnabled);
       const others = current.filter((sceneItem) => sceneItem.id !== item.id);
-      const blockers = [...others, ...automaticReserveItems];
+      const blockers = [...others, ...automaticReserveItems, ...automaticPartitionHeadItems];
       const placed = collidesWithScene(candidate, blockers, candidate.id, width, depth)
         ? placeItemInFreeSpot(candidate, blockers, width, depth, layout, carpetFootprintEnabled)
         : candidate;
@@ -1019,7 +1039,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           ...makeItem(entry.type, width, depth, layout, entry),
           options: { ...(options || {}) },
         };
-        const placed = placeItemInFreeSpot(item, [...next, ...automaticReserveItems], width, depth, layout, carpetFootprintEnabled);
+        const placed = placeItemInFreeSpot(item, [...next, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth, layout, carpetFootprintEnabled);
         if (!placed) break;
         lastPlacedId = placed.id;
         next = [...next, placed];
@@ -1058,7 +1078,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       return;
     }
     if (isAutomaticReserveItem(selected)) {
-      if (selected.options?.reserveUpgrade) setReserveUpgradeEnabled(false);
+      setReserveOptionType('');
+      setSelectedId(null);
+      return;
+    }
+    if (isAutomaticPartitionHeadItem(selected)) {
+      const side = selected.options?.partitionHeadSide;
+      if (side) setPartitionHeadChoice((current) => ({ ...current, [side]: false }));
       setSelectedId(null);
       return;
     }
@@ -1334,7 +1360,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={ledSpotCount}
             reserveRule={activeReserveRuleConfig}
-            reserveUpgradeEnabled={reserveUpgradeEnabled}
+            reserveOptionType={effectiveReserveOptionType}
+            partitionHeadRule={activePartitionHeadRuleConfig}
+            partitionHeadSides={effectivePartitionHeadSides}
             pricing={scenePricing}
             saveState={saveState}
             confirmState={confirmState}
@@ -1357,7 +1385,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={ledSpotCount}
             reserveRule={activeReserveRuleConfig}
-            reserveUpgradeEnabled={reserveUpgradeEnabled}
+            reserveOptionType={effectiveReserveOptionType}
+            partitionHeadRule={activePartitionHeadRuleConfig}
+            partitionHeadSides={effectivePartitionHeadSides}
             salonLabel={salonLabel}
             catalog={availableCatalog}
             readOnly={readOnly}
@@ -1366,7 +1396,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onCarpetFootprintEnabled={(enabled) => !readOnly && setCarpetFootprintEnabled(enabled)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
-            onReserveUpgradeEnabled={(enabled) => !readOnly && setReserveUpgradeEnabled(enabled)}
+            onReserveOption={(type) => !readOnly && setReserveOptionType(type)}
+            onPartitionHeadSide={(side, enabled) => !readOnly && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
             onExport={() => exportTechnicalPng({ width, depth, layout, items: sceneItems, catalog: availableCatalog })}
           />
         )}
@@ -1593,7 +1624,9 @@ function OptionsStepPanel({
   ledRailsEnabled,
   ledSpotCount,
   reserveRule,
-  reserveUpgradeEnabled,
+  reserveOptionType,
+  partitionHeadRule,
+  partitionHeadSides,
   salonLabel,
   catalog,
   readOnly = false,
@@ -1602,14 +1635,15 @@ function OptionsStepPanel({
   onCarpetFootprintEnabled,
   onWallColor,
   onLedRailsEnabled,
-  onReserveUpgradeEnabled,
+  onReserveOption,
+  onPartitionHeadSide,
   onExport,
 }) {
   return (
     <>
       <PanelHead title="Options de configuration" step={activeStep} />
       <StandSummary area={area} layout={layout} standLabel={standLabel} />
-      <RulesSummary ledSpotCount={ledSpotCount} ledRailsEnabled={ledRailsEnabled} reserveRule={reserveRule} />
+      <RulesSummary ledSpotCount={ledSpotCount} ledRailsEnabled={ledRailsEnabled} reserveRule={reserveRule} partitionHeadRule={partitionHeadRule} />
 
       <section className="panel-section-title">Les options</section>
       <OptionAccordion title="Moquette" icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
@@ -1660,14 +1694,23 @@ function OptionsStepPanel({
       <OptionAccordion title="Reserve" icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
         <ReserveOptionCard
           rule={reserveRule}
-          upgradeEnabled={reserveUpgradeEnabled}
+          selectedOptionType={reserveOptionType}
           catalog={catalog}
           salonLabel={salonLabel}
           disabled={readOnly}
-          onChange={onReserveUpgradeEnabled}
+          onChange={onReserveOption}
         />
       </OptionAccordion>
-      <OptionAccordion title="Tete de cloison" icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')} />
+      <OptionAccordion title="Tete de cloison" icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
+        <PartitionHeadOptionCard
+          rule={partitionHeadRule}
+          sides={partitionHeadSides}
+          catalog={catalog}
+          salonLabel={salonLabel}
+          disabled={readOnly}
+          onChange={onPartitionHeadSide}
+        />
+      </OptionAccordion>
       <OptionAccordion title="Comptoir" icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')} />
 
       <button className="wide export" onClick={onExport}>
@@ -2062,6 +2105,7 @@ function marketplaceItemSubtitle(entry, categoryLabel) {
 function shopCartItemVisible(item) {
   if (!item) return false;
   if (isAutomaticReserveItem(item)) return false;
+  if (isAutomaticPartitionHeadItem(item)) return false;
   const label = `${item.type || ''} ${item.label || ''}`.toLowerCase();
   return !label.includes('spot led');
 }
@@ -2077,7 +2121,9 @@ function ValidationStepPanel({
   ledRailsEnabled,
   ledSpotCount,
   reserveRule,
-  reserveUpgradeEnabled,
+  reserveOptionType,
+  partitionHeadRule,
+  partitionHeadSides,
   pricing,
   saveState,
   confirmState,
@@ -2088,6 +2134,7 @@ function ValidationStepPanel({
   const lines = pricing?.lines || [];
   const baseItems = pricing?.baseUsage || pricing?.baseItems || [];
   const confirmed = saveState === 'configured';
+  const reserveOption = reserveOptionType ? normalizeComplementaryOptions(reserveRule?.options).find((option) => option.type === reserveOptionType) : null;
 
   return (
     <>
@@ -2109,7 +2156,8 @@ function ValidationStepPanel({
         <div className="validation-option-row"><span>Empreinte moquette</span><strong>{carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : 'Retirée'}</strong></div>
         <div className="validation-option-row"><span>Coton cloison</span><strong>{wallFabricColor.name} ({wallFabricColor.code})</strong></div>
         <div className="validation-option-row"><span>Spots LED</span><strong>{ledRailsEnabled ? `${ledSpotCount} spots conserves` : 'Retires'}</strong></div>
-        <div className="validation-option-row"><span>Réserve</span><strong>{reserveUpgradeEnabled && reserveRule?.upgradeType ? reserveRule.upgradeLabel : (reserveRule?.includedLabel || 'Non incluse')}</strong></div>
+        <div className="validation-option-row"><span>Réserve</span><strong>{reserveOption?.label || reserveRule?.includedLabel || 'Non incluse'}</strong></div>
+        <div className="validation-option-row"><span>Têtes de cloison</span><strong>{partitionHeadSummary(partitionHeadRule, partitionHeadSides)}</strong></div>
       </section>
 
       <section className="validation-section">
@@ -2188,12 +2236,12 @@ function StandSummary({ area, layout, standLabel }) {
   );
 }
 
-function RulesSummary({ ledSpotCount, ledRailsEnabled, reserveRule }) {
+function RulesSummary({ ledSpotCount, ledRailsEnabled, reserveRule, partitionHeadRule }) {
   return (
     <div className="rules-card">
       <strong>Regles SMCL appliquees automatiquement</strong>
       <span>{reserveRule?.includedType ? '✓' : '−'} {reserveRule?.includedLabel || 'Pas de réserve incluse'}</span>
-      <span>✓ 2 tetes de cloison</span>
+      <span>✓ {partitionHeadRule?.includedCount || 0} tete{(partitionHeadRule?.includedCount || 0) > 1 ? 's' : ''} de cloison incluse{(partitionHeadRule?.includedCount || 0) > 1 ? 's' : ''}</span>
       <span>{ledRailsEnabled ? '✓' : '−'} {ledSpotCount} spots LED (1/3m2)</span>
     </div>
   );
@@ -2286,43 +2334,85 @@ function LedRailOptionCard({ enabled, spotCount, disabled = false, onChange }) {
   );
 }
 
-function ReserveOptionCard({ rule, upgradeEnabled, catalog = [], salonLabel = '', disabled = false, onChange }) {
-  if (!rule?.includedType) {
+function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonLabel = '', disabled = false, onChange }) {
+  const options = normalizeComplementaryOptions(rule?.options || []);
+  if (!rule?.includedType && !options.length) {
     return (
       <div className="reserve-option-card">
-        <strong>Aucune réserve incluse</strong>
-        <span>Cette surface ne déclenche pas de réserve automatique pour cette implantation.</span>
+        <strong>Aucune réserve configurée</strong>
+        <span>Cette surface ne déclenche pas de réserve automatique ni d’option complémentaire.</span>
       </div>
     );
   }
 
   const includedEntry = findCatalogEntry(catalog, rule.includedType);
-  const upgradeEntry = rule.upgradeType ? findCatalogEntry(catalog, rule.upgradeType) : null;
-  const upgradePrice = reserveRuleUpgradePrice(rule, upgradeEntry, salonLabel);
 
   return (
     <div className="reserve-option-card">
-      <div>
-        <strong>{rule.includedLabel || includedEntry?.label || 'Réserve incluse'}</strong>
-        <span>Incluse dans la scène de départ · 0 € HT</span>
-      </div>
-
-      {rule.upgradeType ? (
-        <button
-          type="button"
-          className={upgradeEnabled ? 'active' : ''}
-          disabled={disabled}
-          onClick={() => onChange(!upgradeEnabled)}
-        >
-          <span>
-            {rule.upgradeLabel || upgradeEntry?.label || 'Réserve supérieure'}
-            <em>{upgradeEnabled ? 'Option sélectionnée' : `+ ${upgradePrice.toLocaleString('fr-FR')} € HT`}</em>
-          </span>
-          {upgradeEnabled ? <Check size={16} /> : <Plus size={16} />}
-        </button>
+      {rule?.includedType ? (
+        <div>
+          <strong>{rule.includedLabel || includedEntry?.label || 'Réserve incluse'}</strong>
+          <span>Incluse dans la scène de départ · 0 € HT</span>
+        </div>
       ) : (
-        <small>Aucune option complémentaire configurée sur ce pack.</small>
+        <div>
+          <strong>Pas de réserve incluse</strong>
+          <span>Tu peux choisir une option payante ci-dessous.</span>
+        </div>
       )}
+
+      {options.length ? options.map((option) => {
+        const entry = findCatalogEntry(catalog, option.type);
+        const selected = selectedOptionType === option.type;
+        const price = reserveOptionPrice(option, entry, salonLabel);
+        return (
+          <button
+            type="button"
+            key={option.type}
+            className={selected ? 'active' : ''}
+            disabled={disabled}
+            onClick={() => onChange(selected ? '' : option.type)}
+          >
+            <span>
+              {option.label || entry?.label || 'Réserve complémentaire'}
+              <em>{selected ? 'Option sélectionnée' : `+ ${price.toLocaleString('fr-FR')} € HT`}</em>
+            </span>
+            {selected ? <Check size={16} /> : <Plus size={16} />}
+          </button>
+        );
+      }) : <small>Aucune option complémentaire configurée sur ce pack.</small>}
+    </div>
+  );
+}
+
+function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = '', disabled = false, onChange }) {
+  const rows = [
+    { side: 'left', label: 'Tête de cloison gauche', type: rule?.leftType, included: rule?.includedSides?.includes('left'), price: rule?.leftPrice },
+    { side: 'right', label: 'Tête de cloison droite', type: rule?.rightType, included: rule?.includedSides?.includes('right'), price: rule?.rightPrice },
+  ];
+
+  return (
+    <div className="reserve-option-card">
+      {rows.map((row) => {
+        const entry = findCatalogEntry(catalog, row.type);
+        const selected = Boolean(sides?.[row.side]);
+        const price = row.included ? 0 : firstPriceValue(row.price, assetUnitPrice(entry, salonLabel), 0);
+        return (
+          <button
+            key={row.side}
+            type="button"
+            className={selected ? 'active' : ''}
+            disabled={disabled || !row.type}
+            onClick={() => onChange(row.side, !selected)}
+          >
+            <span>
+              {row.label}
+              <em>{row.type ? (row.included ? 'Inclus · 0 € HT' : `+ ${price.toLocaleString('fr-FR')} € HT`) : 'Non configurée'}</em>
+            </span>
+            {selected ? <Check size={16} /> : <Plus size={16} />}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -3365,6 +3455,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [draggingId, setDraggingId] = useState(null);
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules));
+  const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
   const presetTextureLoad = useSceneTexturePreload(items, []);
   const selected = items.find((item) => item.id === selectedId);
 
@@ -3374,6 +3465,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
 
   useEffect(() => {
     setReserveRules(normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules));
+    setPartitionHeadRules(normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
   }, [preset.id, preset.base_config]);
 
   const updateItem = (id, patch) => {
@@ -3416,7 +3508,8 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       layout,
       items,
       reserveRules,
-      options: { presetMode: true, includedPack: offer?.name, salon: salon.name, reserveRules },
+      partitionHeadRules,
+      options: { presetMode: true, includedPack: offer?.name, salon: salon.name, reserveRules, partitionHeadRules },
     });
   };
 
@@ -3492,6 +3585,12 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           salonLabel={salon.name}
           onChange={setReserveRules}
         />
+        <PresetPartitionHeadRulesEditor
+          rules={partitionHeadRules}
+          entries={availableCatalog.filter(isPartitionHeadItem)}
+          salonLabel={salon.name}
+          onChange={setPartitionHeadRules}
+        />
         <h4>Objets inclus</h4>
         <p className="preset-included-help">Chaque objet sauvegardé ici est inclus dans la formule. Le client ne paiera que les quantités ajoutées au-delà.</p>
         <div className="preset-catalog">
@@ -3524,11 +3623,18 @@ function PresetReserveRulesEditor({ rules, entries, salonLabel, onChange }) {
       },
     }));
   };
+  const updateOption = (bandId, index, patch) => {
+    const currentOptions = normalizeComplementaryOptions(rules?.[bandId]?.options);
+    const nextOptions = currentOptions.map((option, optionIndex) => (optionIndex === index ? { ...option, ...patch } : option));
+    updateBand(bandId, { options: nextOptions });
+  };
+  const addOption = (bandId) => updateBand(bandId, { options: [...normalizeComplementaryOptions(rules?.[bandId]?.options), { type: '', label: '', price: '' }] });
+  const removeOption = (bandId, index) => updateBand(bandId, { options: normalizeComplementaryOptions(rules?.[bandId]?.options).filter((_, optionIndex) => optionIndex !== index) });
 
   return (
     <section className="preset-reserve-rules">
       <h4>Réserves automatiques</h4>
-      <p>Ces règles sont propres à cette implantation. La réserve incluse est posée à 0 €, l’option complémentaire remplace l’incluse et facture seulement le supplément.</p>
+      <p>Ces règles sont propres à cette implantation. Les options complémentaires remplacent la réserve incluse et facturent le supplément indiqué.</p>
       {!entries.length && <div className="preset-reserve-empty">Aucun groupe/objet réserve disponible pour ce salon.</div>}
       {reserveRuleBands.map((band) => {
         const rule = rules?.[band.id] || {};
@@ -3545,27 +3651,95 @@ function PresetReserveRulesEditor({ rules, entries, salonLabel, onChange }) {
                 {entries.map((entry) => <option key={entry.type} value={entry.type}>{entry.label}</option>)}
               </select>
             </label>
-            <label>
-              Option complémentaire
-              <select value={rule.upgradeType || ''} onChange={(event) => {
-                const entry = entries.find((item) => item.type === event.target.value);
-                updateBand(band.id, { upgradeType: event.target.value, upgradeLabel: entry?.label || band.upgradeLabel });
-              }}>
-                <option value="">Aucune</option>
-                {entries.map((entry) => <option key={entry.type} value={entry.type}>{entry.label}</option>)}
-              </select>
-            </label>
-            <label>
-              Prix supplément HT
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={rule.upgradePrice ?? ''}
-                placeholder={String(reserveRuleUpgradePrice(rule, findCatalogEntry(entries, rule.upgradeType), salonLabel) || 0)}
-                onChange={(event) => updateBand(band.id, { upgradePrice: event.target.value })}
-              />
-            </label>
+            <div className="preset-rule-options">
+              <span>Options complémentaires</span>
+              {normalizeComplementaryOptions(rule.options).map((option, index) => {
+                const entry = findCatalogEntry(entries, option.type);
+                return (
+                  <div className="preset-rule-option-row" key={`${band.id}-${index}`}>
+                    <select value={option.type || ''} onChange={(event) => {
+                      const nextEntry = entries.find((item) => item.type === event.target.value);
+                      updateOption(band.id, index, { type: event.target.value, label: nextEntry?.label || '' });
+                    }}>
+                      <option value="">Objet</option>
+                      {entries.map((entryOption) => <option key={entryOption.type} value={entryOption.type}>{entryOption.label}</option>)}
+                    </select>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={option.price ?? ''}
+                      placeholder={String(reserveOptionPrice(option, entry, salonLabel) || 0)}
+                      onChange={(event) => updateOption(band.id, index, { price: event.target.value })}
+                    />
+                    <button type="button" onClick={() => removeOption(band.id, index)}><Trash2 size={13} /></button>
+                  </div>
+                );
+              })}
+              <button type="button" className="preset-add-rule-option" onClick={() => addOption(band.id)}>
+                <Plus size={13} /> Ajouter une option
+              </button>
+            </div>
+          </article>
+        );
+      })}
+    </section>
+  );
+}
+
+function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, onChange }) {
+  const updateBand = (bandId, patch) => {
+    onChange(normalizePartitionHeadRules({
+      ...(rules || {}),
+      [bandId]: {
+        ...(rules?.[bandId] || {}),
+        ...patch,
+      },
+    }));
+  };
+
+  return (
+    <section className="preset-reserve-rules">
+      <h4>Têtes de cloison automatiques</h4>
+      <p>Le nombre inclus dépend de la surface. Dans l’étape 2, l’exposant coche gauche/droite ; tout dépassement devient payant.</p>
+      {!entries.length && <div className="preset-reserve-empty">Aucune tête de cloison disponible pour ce salon.</div>}
+      {partitionHeadRuleBands.map((band) => {
+        const rule = rules?.[band.id] || {};
+        return (
+          <article key={band.id}>
+            <strong>{band.label} · {band.includedCount} incluse{band.includedCount > 1 ? 's' : ''}</strong>
+            {['left', 'right'].map((side) => {
+              const sideLabel = side === 'left' ? 'Gauche' : 'Droite';
+              const typeKey = side === 'left' ? 'leftType' : 'rightType';
+              const labelKey = side === 'left' ? 'leftLabel' : 'rightLabel';
+              const priceKey = side === 'left' ? 'leftPrice' : 'rightPrice';
+              const entry = findCatalogEntry(entries, rule[typeKey]);
+              return (
+                <div className="preset-head-rule-row" key={`${band.id}-${side}`}>
+                  <label>
+                    Tête {sideLabel.toLowerCase()}
+                    <select value={rule[typeKey] || ''} onChange={(event) => {
+                      const nextEntry = entries.find((item) => item.type === event.target.value);
+                      updateBand(band.id, { [typeKey]: event.target.value, [labelKey]: nextEntry?.label || `Tête ${sideLabel.toLowerCase()}` });
+                    }}>
+                      <option value="">Aucune</option>
+                      {entries.map((entryOption) => <option key={entryOption.type} value={entryOption.type}>{entryOption.label}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Prix supplément HT
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={rule[priceKey] ?? ''}
+                      placeholder={String(firstPriceValue(rule[priceKey], assetUnitPrice(entry, salonLabel), 0))}
+                      onChange={(event) => updateBand(band.id, { [priceKey]: event.target.value })}
+                    />
+                  </label>
+                </div>
+              );
+            })}
           </article>
         );
       })}
@@ -5280,6 +5454,9 @@ function sceneReserveRules(scene = {}) {
 function normalizeReserveRules(rules = {}) {
   return reserveRuleBands.reduce((acc, band) => {
     const source = rules?.[band.id] || {};
+    const legacyOption = source.upgradeType || source.upgrade_type
+      ? [{ type: source.upgradeType || source.upgrade_type, label: source.upgradeLabel || source.upgrade_label || '', price: source.upgradePrice ?? source.upgrade_price ?? '' }]
+      : [];
     acc[band.id] = {
       id: band.id,
       bandLabel: band.label,
@@ -5287,9 +5464,7 @@ function normalizeReserveRules(rules = {}) {
       maxArea: band.maxArea,
       includedType: source.includedType || source.included_type || '',
       includedLabel: source.includedLabel || source.included_label || band.includedLabel,
-      upgradeType: source.upgradeType || source.upgrade_type || '',
-      upgradeLabel: source.upgradeLabel || source.upgrade_label || band.upgradeLabel,
-      upgradePrice: source.upgradePrice ?? source.upgrade_price ?? '',
+      options: normalizeComplementaryOptions(source.options || source.complementaryOptions || source.complementary_options || legacyOption),
     };
     return acc;
   }, {});
@@ -5304,8 +5479,18 @@ function activeReserveRule(rules = {}, area = 0) {
   return band ? normalizeReserveRules(rules)[band.id] : null;
 }
 
-function reserveRuleUpgradePrice(rule = {}, entry = null, salonLabel = '') {
-  return firstPriceValue(rule.upgradePrice, assetUnitPrice(entry, salonLabel), 0);
+function normalizeComplementaryOptions(options = []) {
+  return (options || [])
+    .map((option) => ({
+      type: option.type || option.assetType || option.asset_type || '',
+      label: option.label || option.name || '',
+      price: option.price ?? option.upgradePrice ?? option.upgrade_price ?? '',
+    }))
+    .filter((option) => option.type || option.label || option.price !== '');
+}
+
+function reserveOptionPrice(option = {}, entry = null, salonLabel = '') {
+  return firstPriceValue(option.price, assetUnitPrice(entry, salonLabel), 0);
 }
 
 function isReserveCatalogEntry(entry = {}) {
@@ -5313,23 +5498,24 @@ function isReserveCatalogEntry(entry = {}) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
-  return Boolean(entry.isGroup || text.includes('reserve'));
+  return Boolean(entry.dimensions?.isReserve || text.includes('reserve'));
 }
 
-function makeAutomaticReserveItems(rule, upgradeEnabled, catalogEntries = [], width, depth, layout, salonLabel) {
-  if (!rule?.includedType) return [];
-  const type = upgradeEnabled && rule.upgradeType ? rule.upgradeType : rule.includedType;
+function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = [], width, depth, layout, salonLabel) {
+  if (!rule?.includedType && !selectedOptionType) return [];
+  const selectedOption = normalizeComplementaryOptions(rule?.options).find((option) => option.type === selectedOptionType) || null;
+  const type = selectedOption?.type || rule?.includedType;
   const entry = findCatalogEntry(catalogEntries, type);
   if (!entry) return [];
 
-  const billable = Boolean(upgradeEnabled && rule.upgradeType);
-  const unitPrice = billable ? reserveRuleUpgradePrice(rule, entry, salonLabel) : 0;
+  const billable = Boolean(selectedOption);
+  const unitPrice = billable ? reserveOptionPrice(selectedOption, entry, salonLabel) : 0;
   const base = makeItem(type, width, depth, layout, entry);
   const item = constrainItem({
     ...base,
     id: `auto-reserve-${rule.id}-${type}`,
     label: billable
-      ? (rule.upgradeLabel || entry.label || 'Réserve complémentaire')
+      ? (selectedOption.label || entry.label || 'Réserve complémentaire')
       : (rule.includedLabel || entry.label || 'Réserve incluse'),
     autoReserve: true,
     included: !billable,
@@ -5342,10 +5528,117 @@ function makeAutomaticReserveItems(rule, upgradeEnabled, catalogEntries = [], wi
       unitPrice,
       reserveRuleId: rule.id,
       reserveUpgrade: billable,
+      reserveOptionType: selectedOption?.type || '',
     },
   }, width, depth, layout);
 
   return [item];
+}
+
+function scenePartitionHeadRules(scene = {}) {
+  return normalizePartitionHeadRules(
+    scene?.source_payload?.partitionHeadRules
+    || scene?.source_payload?.partition_head_rules
+    || scene?.source_payload?.pricing?.partitionHeadRules
+    || scene?.options?.partitionHeadRules
+    || scene?.source_payload?.options?.partitionHeadRules
+    || {},
+  );
+}
+
+function normalizePartitionHeadRules(rules = {}) {
+  return partitionHeadRuleBands.reduce((acc, band) => {
+    const source = rules?.[band.id] || {};
+    acc[band.id] = {
+      id: band.id,
+      bandLabel: band.label,
+      minArea: band.minArea,
+      maxArea: band.maxArea,
+      includedCount: Number(source.includedCount ?? source.included_count ?? band.includedCount),
+      leftType: source.leftType || source.left_type || '',
+      leftLabel: source.leftLabel || source.left_label || 'Tête de cloison gauche',
+      leftPrice: source.leftPrice ?? source.left_price ?? '',
+      rightType: source.rightType || source.right_type || '',
+      rightLabel: source.rightLabel || source.right_label || 'Tête de cloison droite',
+      rightPrice: source.rightPrice ?? source.right_price ?? '',
+    };
+    return acc;
+  }, {});
+}
+
+function activePartitionHeadRule(rules = {}, area = 0, layout = 'u') {
+  const numericArea = Number(area || 0);
+  const band = partitionHeadRuleBands.find((entry) => (
+    numericArea >= entry.minArea
+    && (entry.maxArea === null || numericArea <= entry.maxArea)
+  ));
+  if (!band) return null;
+  const rule = normalizePartitionHeadRules(rules)[band.id];
+  const includedSides = defaultIncludedPartitionHeadSides(rule.includedCount, layout);
+  return { ...rule, includedSides };
+}
+
+function defaultIncludedPartitionHeadSides(includedCount = 0, layout = 'u') {
+  const count = Number(includedCount || 0);
+  if (count <= 0) return [];
+  if (count >= 2) return ['left', 'right'];
+  return [layout === 'right' ? 'right' : 'left'];
+}
+
+function partitionHeadEnabledSides(rule, choice = {}) {
+  if (!rule) return { left: false, right: false };
+  return {
+    left: choice.left === null || choice.left === undefined ? rule.includedSides?.includes('left') : Boolean(choice.left),
+    right: choice.right === null || choice.right === undefined ? rule.includedSides?.includes('right') : Boolean(choice.right),
+  };
+}
+
+function makeAutomaticPartitionHeadItems(rule, sides = {}, catalogEntries = [], width, depth, layout, salonLabel) {
+  if (!rule) return [];
+  const selectedSides = [
+    ...(rule.includedSides || []).filter((side) => sides?.[side]),
+    ...['left', 'right'].filter((side) => sides?.[side] && !(rule.includedSides || []).includes(side)),
+  ];
+  let remainingIncluded = Number(rule.includedCount || 0);
+  return selectedSides.map((side) => {
+    const type = side === 'left' ? rule.leftType : rule.rightType;
+    const entry = findCatalogEntry(catalogEntries, type);
+    if (!entry) return null;
+    const billable = remainingIncluded <= 0;
+    if (!billable) remainingIncluded -= 1;
+    const price = side === 'left' ? rule.leftPrice : rule.rightPrice;
+    const unitPrice = billable ? firstPriceValue(price, assetUnitPrice(entry, salonLabel), 0) : 0;
+    const base = makeItem(type, width, depth, layout, entry);
+    return constrainItem({
+      ...base,
+      id: `auto-partition-head-${rule.id}-${side}`,
+      label: side === 'left' ? (rule.leftLabel || entry.label) : (rule.rightLabel || entry.label),
+      autoPartitionHead: true,
+      included: !billable,
+      priceMode: billable ? 'billable' : 'included',
+      movementLocked: true,
+      deleteLocked: true,
+      rotationLocked: true,
+      options: {
+        ...(base.options || {}),
+        unitPrice,
+        partitionHeadRuleId: rule.id,
+        partitionHeadSide: side,
+      },
+    }, width, depth, layout);
+  }).filter(Boolean);
+}
+
+function isAutomaticPartitionHeadItem(item = {}) {
+  return Boolean(item?.autoPartitionHead || item?.dimensions?.autoPartitionHead);
+}
+
+function partitionHeadSummary(rule, sides = {}) {
+  if (!rule) return 'Non configurées';
+  const labels = [];
+  if (sides.left) labels.push('gauche');
+  if (sides.right) labels.push('droite');
+  return labels.length ? labels.join(' + ') : 'Aucune';
 }
 
 function calculateScenePricing({ catalog, items, salonLabel, scene }) {
