@@ -38,7 +38,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, syncSceneContactToMonday, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -778,20 +778,21 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     event: initialScene.event_name || initialScene.salon || '',
   });
   const [contactDetails, setContactDetails] = useState(() => ({
-    firstName: 'Julien',
-    lastName: 'BOURLIEU',
-    company: initialScene.client_name || 'Aérosys Industries',
-    role: 'Responsable commercial',
-    email: initialScene.client_email || 'contact@aerosys.fr',
-    phone: '+33 6 12 34 56 78',
-    address: '12 avenue de la Défense',
-    zip: '92400',
-    city: 'Courbevoie',
-    country: 'France',
-    salon: `${initialScene.salon || 'SMCL 2026'} — Paris-Le Bourget`,
-    hall: '1',
-    emplacement: (initialScene.project_name || 'Stand A-14').replace(/^Stand\s+/i, ''),
+    firstName: savedContactDetail(initialScene, 'firstName') || mondayColumnText(initialScene.source_payload, 'texte2'),
+    lastName: savedContactDetail(initialScene, 'lastName') || mondayColumnText(initialScene.source_payload, 'texte8'),
+    company: savedContactDetail(initialScene, 'company') || sceneExhibitorCompanyName(initialScene, {}, {}) || '',
+    role: savedContactDetail(initialScene, 'role'),
+    email: savedContactDetail(initialScene, 'email') || initialScene.client_email || mondayColumnText(initialScene.source_payload, 'email'),
+    phone: savedContactDetail(initialScene, 'phone') || mondayColumnText(initialScene.source_payload, 'telephone') || mondayColumnText(initialScene.source_payload, 'phone'),
+    address: savedContactDetail(initialScene, 'address'),
+    zip: savedContactDetail(initialScene, 'zip'),
+    city: savedContactDetail(initialScene, 'city'),
+    country: savedContactDetail(initialScene, 'country') || 'France',
+    salon: savedContactDetail(initialScene, 'salon') || `${initialScene.salon || 'SMCL 2026'} — Paris-Le Bourget`,
+    hall: savedContactDetail(initialScene, 'hall') || sceneHallLabel(initialScene, {}),
+    emplacement: savedContactDetail(initialScene, 'emplacement') || sceneStandNumber(initialScene, {}, initialScene.project_name || 'Stand A-14'),
   }));
+  const contactInitials = userInitials(contactDetails.firstName, contactDetails.lastName, contactDetails.company);
   const [questionCategory, setQuestionCategory] = useState('technical');
   const [urgency, setUrgency] = useState('important');
   const [questionForm, setQuestionForm] = useState({ subject: '', message: '' });
@@ -916,7 +917,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   }), [area, availableCatalog, sceneItems, salonLabel, initialScene]);
   const estimatedTotal = scenePricing.total;
 
-  const currentScenePayload = (status, clientStatus) => {
+  const currentScenePayload = (status, clientStatus, overrides = {}) => {
+    const nextContactDetails = overrides.contactDetails || contactDetails;
+    const nextClientInfo = overrides.clientInfo || clientInfo;
     const options = {
       carpetColorId: selectedCarpetColor.id,
       carpetColorName: selectedCarpetColor.name,
@@ -941,15 +944,17 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       ...initialScene,
       status,
       client_status: clientStatus,
-      client_name: clientInfo.client,
-      project_name: clientInfo.project,
-      event_name: clientInfo.event,
+      client_name: nextClientInfo.client,
+      client_email: nextContactDetails.email || initialScene.client_email,
+      project_name: nextClientInfo.project,
+      event_name: nextClientInfo.event,
       dimensions: { width, depth, height },
       layout,
       items: manualHydratedItems,
       options,
       source_payload: {
         ...(initialScene.source_payload || {}),
+        contactDetails: nextContactDetails,
         options,
           pricing: {
             basePrice: scenePricing.basePrice,
@@ -1190,10 +1195,22 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     setHeaderPanel((current) => (current === panel ? null : panel));
   };
 
-  const validateContactDetails = () => {
-    updateClientInfo('client', contactDetails.company);
-    updateClientInfo('project', `Stand ${contactDetails.emplacement}`);
-    updateClientInfo('event', contactDetails.salon);
+  const validateContactDetails = async () => {
+    const nextClientInfo = {
+      client: contactDetails.company,
+      project: `Stand ${contactDetails.emplacement}`,
+      event: contactDetails.salon,
+    };
+    const nextStatus = saveState === 'configured' ? 'configured' : 'created';
+    const nextClientStatus = saveState === 'configured' ? 'configured' : 'draft';
+    setClientInfo(nextClientInfo);
+    try {
+      await saveScene(currentScenePayload(nextStatus, nextClientStatus, { clientInfo: nextClientInfo, contactDetails }));
+      await syncSceneContactToMonday(initialScene, contactDetails);
+      if (saveState !== 'configured') setSaveState('draft');
+    } catch (error) {
+      console.error('Contact details sync failed', error);
+    }
     setHeaderPanel(null);
   };
 
@@ -1241,7 +1258,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           {selectedLanguage.short}
           <ChevronDown size={15} />
         </button>
-        <button className={`user-pill ${headerPanel === 'client' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('client')} aria-label="Renseignements client">VD</button>
+        <button className={`user-pill ${headerPanel === 'client' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('client')} aria-label="Renseignements client">{contactInitials}</button>
       </header>
 
       {headerPanel === 'client' && (
@@ -2835,9 +2852,12 @@ function AdminDashboard({ user, adminProfile }) {
       await refreshScenes();
       await refreshClients();
       await refreshSalons();
+      const createdCount = result?.created ?? result?.processed ?? 0;
       setSyncState({
         loading: false,
-        message: `${result?.processed ?? 0} scene(s) synchronisee(s), ${result?.clients ?? 0} exposant(s) traite(s) depuis Monday.`,
+        message: createdCount
+          ? `${createdCount} nouvelle(s) scène(s) créée(s), ${result?.clients ?? 0} exposant(s) traité(s) depuis Monday.`
+          : 'Aucune nouvelle scène à créer depuis Monday.',
         error: '',
       });
     } catch (error) {
@@ -6992,6 +7012,19 @@ function normalizedItemText(item = {}) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
+}
+
+function savedContactDetail(scene = {}, key = '') {
+  return scene.source_payload?.contactDetails?.[key] || '';
+}
+
+function userInitials(firstName = '', lastName = '', fallback = '') {
+  const first = String(firstName || '').trim();
+  const last = String(lastName || '').trim();
+  const fallbackParts = String(fallback || '').trim().split(/\s+/).filter(Boolean);
+  const chars = [first[0], last[0]].filter(Boolean);
+  const source = chars.length ? chars : fallbackParts.slice(0, 2).map((part) => part[0]);
+  return (source.join('') || 'ST').toUpperCase();
 }
 
 function sceneExhibitorCompanyName(scene = {}, clientInfo = {}, contactDetails = {}) {

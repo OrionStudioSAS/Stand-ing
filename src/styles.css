@@ -1231,14 +1231,14 @@ select {
   bottom: 0;
   left: 0;
   background: rgba(31, 39, 58, 0.84);
-  z-index: 8;
+  z-index: 30;
 }
 
 .header-modal-layer {
   display: grid;
   place-items: start center;
   overflow-y: auto;
-  padding: 4px 24px 24px;
+  padding: 4px 24px 120px;
 }
 
 .header-popover-layer {
@@ -1251,6 +1251,7 @@ select {
 .question-modal {
   overflow: hidden;
   width: min(508px, 100%);
+  max-height: calc(100dvh - 92px);
   border-radius: 16px;
   background: #fff;
   box-shadow: 0 28px 78px rgba(10, 18, 32, 0.26);
@@ -1317,6 +1318,8 @@ select {
 .question-content {
   display: grid;
   gap: 10px;
+  overflow-y: auto;
+  max-height: calc(100dvh - 156px);
   padding: 14px 20px 16px;
 }
 

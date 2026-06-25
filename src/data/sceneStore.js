@@ -248,6 +248,22 @@ export async function syncMondayScenes() {
   return data;
 }
 
+export async function syncSceneContactToMonday(scene, contactDetails) {
+  if (!supabase) return { synced: false };
+
+  const { data, error } = await supabase.functions.invoke('scene-contact-sync', {
+    body: {
+      sceneId: scene?.id,
+      shareToken: scene?.share_token,
+      contactDetails,
+    },
+  });
+
+  const functionError = await getFunctionError(error, data);
+  if (functionError) throw functionError;
+  return data;
+}
+
 export async function listClients(filters = {}) {
   if (!supabase) {
     return filterClients(groupScenesByClient(readLocalScenes()), filters);

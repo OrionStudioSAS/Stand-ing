@@ -57,6 +57,14 @@ Deno.serve(async (req) => {
       const triggerValues = source.create_trigger_values ?? ["OK", "OUI"];
       if (!triggerValues.some((value: string) => normalizeText(createValue) === normalizeText(value))) continue;
 
+      const { data: existingScene, error: existingSceneError } = await supabase
+        .from("scenes")
+        .select("id")
+        .eq("monday_item_id", item.id)
+        .maybeSingle();
+      if (existingSceneError) throw existingSceneError;
+      if (existingScene) continue;
+
       const userProfile = mapMondayItemToUserProfile(item, source);
       const { data: savedProfile, error: profileError } = await supabase
         .from("user_profiles")
@@ -92,12 +100,6 @@ Deno.serve(async (req) => {
         if (membershipError) throw membershipError;
       }
 
-      const { data: existingScene } = await supabase
-        .from("scenes")
-        .select("id")
-        .eq("monday_item_id", item.id)
-        .maybeSingle();
-
       const sceneDraft = mapMondayItemToScene(item, source, savedClient?.id, savedProfile?.id, context);
       const preset = await findActivePreset(supabase, context.offerId, context.salonId, sceneDraft.layout);
       const baseItems = await fetchOfferBaseItems(supabase, context.offerId);
@@ -125,7 +127,7 @@ Deno.serve(async (req) => {
 
       if (saveError) throw saveError;
 
-      if (!existingScene && savedScene?.id && preset?.stand_preset_items?.length) {
+      if (savedScene?.id && preset?.stand_preset_items?.length) {
         const inserted = await applyPresetItems(supabase, savedScene.id, preset, scene);
         baseItemsApplied += inserted;
       }
@@ -134,12 +136,12 @@ Deno.serve(async (req) => {
         ? `${publicAppUrl.replace(/\/$/, "")}?scene=${savedScene.share_token}`
         : "";
 
-      if (source.status_column_id) {
+      if (source.status_column_id && source.status_column_id !== source.create_column_id) {
         await updateMondayColumnValue(mondayToken, source.board_id, item.id, source.status_column_id, {
           label: source.created_status_label ?? "ENVOYE PAR MAIL",
         });
       }
-      if (source.link_column_id && shareUrl) {
+      if (source.link_column_id && source.link_column_id !== source.create_column_id && shareUrl) {
         await updateMondayColumnValue(mondayToken, source.board_id, item.id, source.link_column_id, {
           url: shareUrl,
           text: "Configurer mon stand",
@@ -153,7 +155,7 @@ Deno.serve(async (req) => {
   }
 
   await supabase.from("monday_sync_runs").insert({ status: "success", processed_count: processed });
-  return json({ processed, clients, exhibitors, base_items_applied: baseItemsApplied });
+  return json({ processed, created: processed, clients, exhibitors, base_items_applied: baseItemsApplied });
 });
 
 async function ensureSourceContext(supabase: any, source: any) {
