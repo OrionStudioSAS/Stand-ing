@@ -87,6 +87,7 @@ function _ensureMtlCacheEntry(materialUrl, item) {
 }
 
 function _ensureObjCacheEntry(modelUrl, materials) {
+  if (modelUrl?.toLowerCase().split('?')[0].endsWith('.glb')) return { result: null, promise: Promise.resolve(), error: null };
   if (_objLoadCache.has(modelUrl)) return _objLoadCache.get(modelUrl);
   const entry = {};
   const loader = new OBJLoader();
@@ -6105,7 +6106,7 @@ function useSceneSuspendPreload(items = []) {
     const result = [];
     const visit = (item) => {
       if (!item) return;
-      if (item.modelUrl) result.push(item);
+      if (item.modelUrl && !item.modelUrl.toLowerCase().split('?')[0].endsWith('.glb')) result.push(item);
       item.children?.forEach(visit);
     };
     (items || []).forEach(visit);
