@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
+import { suspend } from 'suspend-react';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
 import { Box3, Cache, CanvasTexture, DoubleSide, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -7835,12 +7836,9 @@ function GlbModel({ item, selected, hovered }) {
   return <primitive object={model} dispose={null} />;
 }
 
-function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualContext }) {
-  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: partitionHeadMainImageCoverSize(item) });
-  const exhibitorTexture = useMemo(() => (
-    isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item) : null
-  ), [item.type, item.label, item.modelUrl, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.hall]);
-  const materials = useLoader(MTLLoader, materialUrl, (loader) => {
+function useMtlMaterials(materialUrl, item) {
+  return suspend(async () => {
+    const loader = new MTLLoader();
     const manager = new LoadingManager();
     manager.setURLModifier((url) => resolveModelResourceUrl(url, item));
     loader.manager = manager;
@@ -7848,7 +7846,25 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
     loader.setResourcePath(assetBaseUrl(materialUrl || item.modelUrl));
     const parse = loader.parse.bind(loader);
     loader.parse = (text, path) => parse(rewriteRuntimeMtlReferences(text, item), path);
-  });
+    return loader.loadAsync(materialUrl);
+  }, [materialUrl]);
+}
+
+function useObjModel(modelUrl, materials) {
+  return suspend(async () => {
+    const loader = new OBJLoader();
+    materials.preload();
+    loader.setMaterials(materials);
+    return loader.loadAsync(modelUrl);
+  }, [modelUrl, materials]);
+}
+
+function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualContext }) {
+  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: partitionHeadMainImageCoverSize(item) });
+  const exhibitorTexture = useMemo(() => (
+    isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item) : null
+  ), [item.type, item.label, item.modelUrl, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.hall]);
+  const materials = useMtlMaterials(materialUrl, item);
   const mtlTexturesReady = useMtlTexturePreload(materials, item, materialUrl);
 
   if (!mtlTexturesReady) return null;
@@ -7866,10 +7882,7 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
 }
 
 function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, exhibitorTexture, selected, hovered }) {
-  const obj = useLoader(OBJLoader, item.modelUrl, (loader) => {
-    materials.preload();
-    loader.setMaterials(materials);
-  });
+  const obj = useObjModel(item.modelUrl, materials);
   const model = useMemo(() => prepareLoadedModel(obj, item, {
     mainImageTexture,
     exhibitorTexture,
