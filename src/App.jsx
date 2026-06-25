@@ -732,14 +732,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     { id: 'chair-1', type: 'chair', x: 0.8, z: 0.45, y: 0, rotation: -15 },
     { id: 'screen-1', type: 'screen', x: 0, z: -1.5, y: screenCenterHeight, wall: 'back', rotation: 0 },
   ]).map((item) => constrainItem(item, initialWidth, initialDepth, initialLayout)));
-  const initialReadOnly = initialScene.client_status === 'configured' && !isAdminViewer;
-  const [selectedId, setSelectedId] = useState(initialReadOnly ? null : 'table-1');
+  const [selectedId, setSelectedId] = useState('table-1');
   const [draggingId, setDraggingId] = useState(null);
   const [language, setLanguage] = useState(initialOptions.language || 'fr');
   const [headerPanel, setHeaderPanel] = useState(null);
   const introStorageKey = useMemo(() => `standing-config-intro:${initialScene.id || initialScene.share_token || initialScene.project_name || 'scene'}`, [initialScene.id, initialScene.share_token, initialScene.project_name]);
   const [activeStep, setActiveStepValue] = useState(() => {
-    if (initialReadOnly) return 4;
     if (typeof window === 'undefined') return 1;
     return window.localStorage.getItem(introStorageKey) === 'started' ? 2 : 1;
   });
@@ -811,7 +809,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const clientLabel = clientInfo.client || contactDetails.company || 'Aerosys Industries';
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
-  const readOnly = saveState === 'configured' && !isAdminViewer;
+  const readOnly = false;
   const sceneVisualContext = useMemo(() => ({
     language,
     company: sceneExhibitorCompanyName(initialScene, clientInfo, contactDetails),
@@ -994,15 +992,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   }, []);
 
   const validateConfiguration = async () => {
-    if (readOnly || confirmState.loading) return;
+    if (confirmState.loading) return;
     setConfirmState({ loading: true, message: '', error: '' });
     try {
       await saveScene(currentScenePayload('configured', 'configured'));
       setSaveState('configured');
-      setSelectedId(null);
       setDraggingId(null);
       setActiveStep(4);
-      setConfirmState({ loading: false, message: 'Votre scène est confirmée. Elle est maintenant verrouillée.', error: '' });
+      setConfirmState({ loading: false, message: 'Votre scène est confirmée. Vous pouvez encore la modifier si besoin.', error: '' });
     } catch (error) {
       setConfirmState({ loading: false, message: '', error: error.message || 'Confirmation impossible.' });
     }
@@ -2446,13 +2443,12 @@ function ValidationStepPanel({
       {confirmState.message && <div className="validation-message success">{confirmState.message}</div>}
       {confirmState.error && <div className="validation-message error">{confirmState.error}</div>}
 
-      {confirmed && !isAdminViewer ? (
-        <div className="validation-locked"><Check size={16} /> Scène confirmée, mode visualisation activé.</div>
-      ) : (
-        <button className="validation-confirm-button" type="button" disabled={readOnly || confirmState.loading} onClick={onConfirm}>
-          {confirmState.loading ? 'Confirmation...' : confirmed ? 'Scène confirmée' : 'Confirmer la scène'}
-        </button>
+      {confirmed && (
+        <div className="validation-message success"><Check size={16} /> Scène confirmée côté admin. Vous pouvez encore la modifier.</div>
       )}
+      <button className="validation-confirm-button" type="button" disabled={confirmState.loading} onClick={onConfirm}>
+        {confirmState.loading ? 'Confirmation...' : confirmed ? 'Mettre à jour la scène confirmée' : 'Confirmer la scène'}
+      </button>
     </>
   );
 }
