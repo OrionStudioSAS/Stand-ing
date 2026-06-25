@@ -773,6 +773,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
   const [itemOptionState, setItemOptionState] = useState({ uploading: false, error: '' });
   const [itemConfigModal, setItemConfigModal] = useState(null);
+  const [sceneHasRendered, setSceneHasRendered] = useState(false);
   const [clientInfo, setClientInfo] = useState({
     client: initialScene.client_name || '',
     project: initialScene.project_name || '',
@@ -884,15 +885,24 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   ]);
   const sceneSuspendLoad = useSceneSuspendPreload(objectBankLoaded ? sceneItems : []);
   const sceneAssetsReady = objectBankLoaded && sceneTextureLoad.ready && sceneSuspendLoad.ready;
+  const shouldRenderScene = sceneAssetsReady || sceneHasRendered;
   const sceneLoadProgress = combineLoadStates(
     objectBankLoaded ? sceneTextureLoad : { loaded: 0, total: 1 },
     objectBankLoaded ? sceneSuspendLoad : { loaded: 0, total: 1 },
   );
   const sceneCanvasClassName = [
     draggingId ? 'dragging-canvas' : '',
-    !sceneAssetsReady ? 'scene-canvas-loading' : '',
+    !sceneHasRendered && !sceneAssetsReady ? 'scene-canvas-loading' : '',
   ].filter(Boolean).join(' ');
   const selected = sceneItems.find((item) => item.id === selectedId);
+
+  useEffect(() => {
+    setSceneHasRendered(false);
+  }, [initialScene?.id]);
+
+  useEffect(() => {
+    if (sceneAssetsReady) setSceneHasRendered(true);
+  }, [sceneAssetsReady]);
 
   useEffect(() => {
     if (!objectBank.length) return;
@@ -1295,7 +1305,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           <ambientLight intensity={0.85} />
           <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
-            {sceneAssetsReady && (
+            {shouldRenderScene && (
               <StandScene
                 width={width}
                 depth={depth}
@@ -1331,7 +1341,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           />
         </Canvas>
 
-        {!sceneAssetsReady && <SceneTextureLoaderOverlay loaded={sceneLoadProgress.loaded} total={sceneLoadProgress.total} />}
+        {!sceneHasRendered && !sceneAssetsReady && <SceneTextureLoaderOverlay loaded={sceneLoadProgress.loaded} total={sceneLoadProgress.total} />}
 
         {readOnly && !headerPanel && (
           <div className="readonly-badge">
@@ -7948,8 +7958,8 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
         {width}m x {depth}m
       </Text>
       {items.map((item) => (
+        <Suspense key={item.id} fallback={null}>
           <SceneItem
-          key={item.id}
           item={item}
           items={items}
           width={width}
@@ -7977,6 +7987,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
             onDragMove={dragFromPointer}
             visualContext={visualContext}
           />
+        </Suspense>
       ))}
     </group>
   );
