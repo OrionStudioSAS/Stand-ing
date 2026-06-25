@@ -54,6 +54,7 @@ const wallItemSnap = 0.25;
 const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
 const collisionPadding = 0.04;
+const partitionHeadEdgeInset = 0.015;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
@@ -7193,7 +7194,7 @@ function closestPlacementInRegions(item, regions) {
 function wallItemAxisRange(item, wall, width, depth) {
   const length = wall === 'back' ? width : depth;
   const bounds = wallItemAxisBounds(item, wall);
-  const sideMargin = wall === 'back' && isPartitionHeadItem(item) ? 0.08 : 0;
+  const sideMargin = wall === 'back' && isPartitionHeadItem(item) ? partitionHeadEdgeInset : 0;
   return {
     min: -length / 2 - bounds.min + sideMargin,
     max: length / 2 - bounds.max - sideMargin,
@@ -7475,7 +7476,7 @@ function applyPlacementRule(item, width, depth, layout) {
 
 
 function placementRuleSideClearance(item = {}) {
-  return wallThickness + (isPartitionHeadItem(item) ? 0.08 : 0);
+  return wallThickness + (isPartitionHeadItem(item) ? partitionHeadEdgeInset : 0);
 }
 
 function applyWallPlacementRule(item, width, depth, layout) {
