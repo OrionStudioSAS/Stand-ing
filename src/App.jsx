@@ -8187,7 +8187,17 @@ function useExternalTexture(url, options = {}) {
 
     let disposed = false;
     let currentTexture = null;
+
     if (options.coverSize) {
+      const applyImage = (image) => {
+        if (!image?.naturalWidth) return false;
+        try {
+          const t = createCoverImageTexture(image, options.coverSize[0], options.coverSize[1]);
+          if (t) { currentTexture = t; setTexture(t); return true; }
+        } catch (_) {}
+        return false;
+      };
+
       const tryFallbackLoader = () => {
         const fallbackLoader = new TextureLoader();
         fallbackLoader.load(url, (loadedTexture) => {
@@ -8197,45 +8207,30 @@ function useExternalTexture(url, options = {}) {
           setTexture(loadedTexture);
         }, undefined, () => { if (!disposed) setTexture(null); });
       };
+
+      // Synchronous cache hit: if preloadImage already put the decoded image in
+      // Three.js Cache, create the CanvasTexture immediately without any async gap.
+      const cachedImage = Cache.get(`image:${url}`);
+      if (cachedImage && applyImage(cachedImage)) {
+        return () => { disposed = true; currentTexture?.dispose?.(); };
+      }
+
+      // Async path for when the preload cache isn't populated yet.
       loadDecodedImage(url).then(({ ok, image }) => {
         if (disposed) return;
-        if (!ok || !image) {
-          if (import.meta.env.DEV) console.warn('[useExternalTexture] decoded image failed, trying TextureLoader', url);
-          tryFallbackLoader();
-          return;
-        }
-        let nextTexture = null;
-        try {
-          nextTexture = createCoverImageTexture(image, options.coverSize[0], options.coverSize[1]);
-        } catch (err) {
-          if (import.meta.env.DEV) console.warn('[useExternalTexture] createCoverImageTexture failed, trying TextureLoader', url, err);
-        }
-        if (nextTexture) {
-          currentTexture = nextTexture;
-          setTexture(nextTexture);
-          return;
-        }
-        tryFallbackLoader();
+        if (!ok || !image || !applyImage(image)) tryFallbackLoader();
       });
-      return () => {
-        disposed = true;
-        currentTexture?.dispose?.();
-      };
+
+      return () => { disposed = true; currentTexture?.dispose?.(); };
     }
 
     const loader = new TextureLoader();
     loader.load(url, (loadedTexture) => {
-      if (disposed) {
-        loadedTexture.dispose();
-        return;
-      }
-      const nextTexture = loadedTexture;
-      prepareDynamicTexture(nextTexture);
-      currentTexture = nextTexture;
-      setTexture(nextTexture);
-    }, undefined, () => {
-      if (!disposed) setTexture(null);
-    });
+      if (disposed) { loadedTexture.dispose(); return; }
+      prepareDynamicTexture(loadedTexture);
+      currentTexture = loadedTexture;
+      setTexture(loadedTexture);
+    }, undefined, () => { if (!disposed) setTexture(null); });
 
     return () => {
       disposed = true;
