@@ -54,7 +54,7 @@ const wallItemSnap = 0.25;
 const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
 const collisionPadding = 0.04;
-const partitionHeadEdgeInset = 0.015;
+const partitionHeadEdgeInset = 0.04;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
@@ -5636,6 +5636,11 @@ function AdminPlaceholder({ tab }) {
       <p>La maquette de ce menu sera intégrée dès que tu me l'envoies.</p>
     </section>
   );
+}
+
+function formatNumber(value) {
+  const rounded = Math.round(Number(value || 0) * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toLocaleString('fr-FR', { maximumFractionDigits: 2 });
 }
 
 function sceneArea(scene) {
