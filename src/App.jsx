@@ -8188,25 +8188,7 @@ function useExternalTexture(url, options = {}) {
     let disposed = false;
     let currentTexture = null;
     if (options.coverSize) {
-      loadDecodedImage(url).then(({ ok, image }) => {
-        if (disposed) return;
-        if (!ok || !image) {
-          if (import.meta.env.DEV) console.warn('[useExternalTexture] image failed to load', url);
-          setTexture(null);
-          return;
-        }
-        let nextTexture = null;
-        try {
-          nextTexture = createCoverImageTexture(image, options.coverSize[0], options.coverSize[1]);
-        } catch (err) {
-          if (import.meta.env.DEV) console.warn('[useExternalTexture] createCoverImageTexture failed, falling back', url, err);
-        }
-        if (nextTexture) {
-          currentTexture = nextTexture;
-          setTexture(nextTexture);
-          return;
-        }
-        // Fallback: load via TextureLoader (no canvas required)
+      const tryFallbackLoader = () => {
         const fallbackLoader = new TextureLoader();
         fallbackLoader.load(url, (loadedTexture) => {
           if (disposed) { loadedTexture.dispose(); return; }
@@ -8214,6 +8196,26 @@ function useExternalTexture(url, options = {}) {
           currentTexture = loadedTexture;
           setTexture(loadedTexture);
         }, undefined, () => { if (!disposed) setTexture(null); });
+      };
+      loadDecodedImage(url).then(({ ok, image }) => {
+        if (disposed) return;
+        if (!ok || !image) {
+          if (import.meta.env.DEV) console.warn('[useExternalTexture] decoded image failed, trying TextureLoader', url);
+          tryFallbackLoader();
+          return;
+        }
+        let nextTexture = null;
+        try {
+          nextTexture = createCoverImageTexture(image, options.coverSize[0], options.coverSize[1]);
+        } catch (err) {
+          if (import.meta.env.DEV) console.warn('[useExternalTexture] createCoverImageTexture failed, trying TextureLoader', url, err);
+        }
+        if (nextTexture) {
+          currentTexture = nextTexture;
+          setTexture(nextTexture);
+          return;
+        }
+        tryFallbackLoader();
       });
       return () => {
         disposed = true;
