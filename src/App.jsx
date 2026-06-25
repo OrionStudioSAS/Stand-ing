@@ -8233,7 +8233,7 @@ function resolveModelResourceUrl(url, item) {
     }
   }
 
-  if (relativeTexturePath && isSafeRelativeTexturePath(relativeTexturePath) && canUseRelativeTextureFallback(relativeTexturePath, storagePaths)) {
+  if (!storagePaths.length && relativeTexturePath && isSafeRelativeTexturePath(relativeTexturePath)) {
     return `${baseUrl}${encodeTexturePath(relativeTexturePath)}`;
   }
 
@@ -8278,12 +8278,12 @@ function rewriteRuntimeMtlReferences(text, item) {
     const value = match[2].trim();
     const texture = texturePaths.find((entry) => textureReferenceMatches(value, entry.fileName));
     if (!texture) {
-      logTextureDiagnostic('MTL texture line kept for URL resolver fallback', {
+      logTextureDiagnostic('MTL texture line removed because the file is not part of this asset', {
         item: item?.label || item?.type,
         texture: value,
         rootPath,
       });
-      return line;
+      return `# ${line}`;
     }
     return `${match[1]}${texture.relativePath}`;
   }).join('\n');
@@ -8319,18 +8319,6 @@ function normalizeTextureName(value = '') {
 
 function isMeaningfulTextureStem(stem = '') {
   return (String(stem).match(/[a-z0-9]/g) || []).length >= 3;
-}
-
-function canUseRelativeTextureFallback(relativePath = '', storagePaths = []) {
-  if (!storagePaths.length) return true;
-  const requestedFolder = normalizeStorageLookup(String(relativePath).replaceAll('\\', '/').split('/').slice(0, -1).join('/'));
-  if (!requestedFolder) return true;
-  return storagePaths.some((path) => {
-    const parts = String(path || '').replaceAll('\\', '/').split('/').filter(Boolean);
-    const relativeParts = parts.slice(1);
-    const folder = normalizeStorageLookup(relativeParts.slice(0, -1).join('/'));
-    return folder === requestedFolder;
-  });
 }
 
 function isSafeRelativeTexturePath(path = '') {
