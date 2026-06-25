@@ -6943,9 +6943,10 @@ function closestPlacementInRegions(item, regions) {
 function wallItemAxisRange(item, wall, width, depth) {
   const length = wall === 'back' ? width : depth;
   const bounds = wallItemAxisBounds(item, wall);
+  const sideMargin = wall === 'back' && isPartitionHeadItem(item) ? 0.08 : 0;
   return {
-    min: -length / 2 - bounds.min,
-    max: length / 2 - bounds.max,
+    min: -length / 2 - bounds.min + sideMargin,
+    max: length / 2 - bounds.max - sideMargin,
   };
 }
 
@@ -7175,6 +7176,7 @@ function applyPlacementRule(item, width, depth, layout) {
 
   const bounds = itemGroupBounds({ ...item, placementRule: null, lockedPlacement: false });
   const clearance = wallThickness;
+  const sideClearance = placementRuleSideClearance(item);
   const base = {
     ...item,
     placementRule: rule,
@@ -7185,7 +7187,7 @@ function applyPlacementRule(item, width, depth, layout) {
   if (rule.id === 'back-right' || rule.id === 'outer-right') {
     return {
       ...base,
-      x: Number((width / 2 - clearance - bounds.maxX).toFixed(2)),
+      x: Number((width / 2 - sideClearance - bounds.maxX).toFixed(2)),
       z: Number((-depth / 2 + clearance - bounds.minZ).toFixed(2)),
     };
   }
@@ -7201,7 +7203,7 @@ function applyPlacementRule(item, width, depth, layout) {
   if (rule.id === 'front-left') {
     return {
       ...base,
-      x: Number((-width / 2 + clearance - bounds.minX).toFixed(2)),
+      x: Number((-width / 2 + sideClearance - bounds.minX).toFixed(2)),
       z: Number((depth / 2 - clearance - bounds.maxZ).toFixed(2)),
     };
   }
@@ -7209,16 +7211,21 @@ function applyPlacementRule(item, width, depth, layout) {
   if (rule.id === 'front-right') {
     return {
       ...base,
-      x: Number((width / 2 - clearance - bounds.maxX).toFixed(2)),
+      x: Number((width / 2 - sideClearance - bounds.maxX).toFixed(2)),
       z: Number((depth / 2 - clearance - bounds.maxZ).toFixed(2)),
     };
   }
 
   return {
     ...base,
-    x: Number((-width / 2 + clearance - bounds.minX).toFixed(2)),
+    x: Number((-width / 2 + sideClearance - bounds.minX).toFixed(2)),
     z: Number((-depth / 2 + clearance - bounds.minZ).toFixed(2)),
   };
+}
+
+
+function placementRuleSideClearance(item = {}) {
+  return wallThickness + (isPartitionHeadItem(item) ? 0.08 : 0);
 }
 
 function applyWallPlacementRule(item, width, depth, layout) {
