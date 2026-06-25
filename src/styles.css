@@ -452,6 +452,7 @@ select {
 .admin-header-actions button,
 .sync-button,
 .stand-actions a,
+.stand-actions button,
 .object-bank button {
   min-height: 38px;
   border: 1px solid var(--ink);
@@ -860,10 +861,15 @@ select {
   gap: 6px;
 }
 
-.stand-actions a {
+.stand-actions a,
+.stand-actions button {
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
+}
+
+.stand-actions button {
+  cursor: pointer;
 }
 
 .object-bank article {

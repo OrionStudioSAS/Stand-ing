@@ -2961,7 +2961,7 @@ function AdminDashboard({ user, adminProfile }) {
             />
           )}
           {tab === 'monday' && <AdminMondayView syncState={syncState} runMondaySync={runMondaySync} />}
-          {tab === 'bat' && <AdminBatView scenes={scenes} />}
+          {tab === 'bat' && <AdminBatView scenes={scenes} assets={assets} />}
           {tab === 'users' && <AdminPlaceholder tab={tab} />}
         </div>
       </section>
@@ -5361,21 +5361,271 @@ function AdminMondayView({ syncState, runMondaySync }) {
   );
 }
 
-function AdminBatView({ scenes }) {
-  const rows = scenes.slice(0, 6);
+function AdminBatView({ scenes, assets = [] }) {
+  const rows = scenes.slice(0, 18);
   return (
-    <section className="admin-table modern">
-      {rows.map((scene) => (
-        <article key={scene.id} className="stand-row">
-          <div><strong>{scene.client_name || 'Exposant sans nom'}</strong><span>{scene.project_name}</span></div>
-          <div><span>Salon</span><strong>{scene.salon}</strong></div>
-          <div><span>BAT</span><strong>{fileSummary(scene.files)}</strong></div>
-          <div><span>Exposant</span><strong>{clientStatusLabel(scene.client_status)}</strong></div>
-          <div className="stand-actions"><a href={sceneShareUrl(scene)}>Voir scene</a></div>
-        </article>
-      ))}
+    <section className="admin-table modern bat-table">
+      {rows.length ? rows.map((scene) => {
+        const order = scenePurchaseOrder(scene, assets);
+        return (
+          <article key={scene.id} className="stand-row bat-row">
+            <div><strong>{scene.client_name || 'Exposant sans nom'}</strong><span>{scene.project_name || sceneStandNumber(scene, {}, 'Stand')}</span></div>
+            <div><span>Salon</span><strong>{scene.event_name || scene.salon || 'A definir'}</strong></div>
+            <div><span>Lots AMCO</span><strong>{order.lines.length ? `${order.lines.length} ligne${order.lines.length > 1 ? 's' : ''} - ${order.total.toLocaleString('fr-FR')} € HT` : 'Aucun lot payant'}</strong></div>
+            <div><span>Exposant</span><strong>{clientStatusLabel(scene.client_status)}</strong></div>
+            <div className="stand-actions">
+              <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a>
+              <button type="button" onClick={() => downloadSceneTechnicalPlan(scene, assets)}>Télécharger BAT</button>
+              <button type="button" onClick={() => downloadScenePurchaseOrder(scene, assets)}>Bon de commande</button>
+            </div>
+          </article>
+        );
+      }) : <div className="admin-empty-row">Aucune scène à afficher.</div>}
     </section>
   );
+}
+
+function sceneAdminCatalog(assets = [], scene = {}) {
+  const salonLabel = scene.event_name || scene.salon || '';
+  const dynamicEntries = (assets || [])
+    .filter((asset) => asset.is_active)
+    .filter((asset) => assetMatchesSalon(asset, salonLabel))
+    .map((asset) => assetToCatalogEntry(asset, assets));
+  const entries = [...dynamicEntries, ...nativeCatalogEntries()];
+  return entries.filter((entry, index, all) => all.findIndex((candidate) => candidate.type === entry.type) === index);
+}
+
+function sceneAdminItems(scene = {}, catalogEntries = []) {
+  return (scene.items || []).map((item) => hydrateSceneItemFromCatalog(item, catalogEntries));
+}
+
+function sceneAllAdminItems(scene = {}, catalogEntries = []) {
+  const width = Number(scene.dimensions?.width || scene.width_m || 4);
+  const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
+  const layout = scene.layout || 'back';
+  const area = width * depth;
+  const salonLabel = scene.event_name || scene.salon || '';
+  const options = scene.options || scene.source_payload?.options || {};
+  const manualItems = sceneAdminItems(scene, catalogEntries);
+  const reserveRule = activeReserveRule(sceneReserveRules(scene), area);
+  const reserveOption = options.reserveOptionType === '__legacy__'
+    ? normalizeComplementaryOptions(reserveRule?.options)[0]?.type || ''
+    : options.reserveOptionType || '';
+  const partitionRule = activePartitionHeadRule(scenePartitionHeadRules(scene), area, layout);
+  const partitionSides = partitionHeadEnabledSides(partitionRule, {
+    left: hasOwn(options, 'partitionHeadLeftEnabled') ? Boolean(options.partitionHeadLeftEnabled) : null,
+    right: hasOwn(options, 'partitionHeadRightEnabled') ? Boolean(options.partitionHeadRightEnabled) : null,
+  });
+  const ledEntry = catalogEntries.find(isLedRailEntry);
+  const ledItems = options.ledRailsEnabled === false
+    ? []
+    : makeAutomaticLedRailItems(ledEntry, width, depth, layout, Number(options.ledSpotCount || ledSpotCountForArea(area)))
+      .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout));
+  return [
+    ...manualItems,
+    ...makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, salonLabel),
+    ...makeAutomaticPartitionHeadItems(partitionRule, partitionSides, catalogEntries, width, depth, layout, salonLabel),
+    ...ledItems,
+  ];
+}
+
+function scenePurchaseOrder(scene = {}, assets = []) {
+  const catalogEntries = sceneAdminCatalog(assets, scene);
+  const savedLines = scene?.source_payload?.pricing?.lines || scene?.pricing?.lines || [];
+  const fallbackPricing = calculateScenePricing({
+    catalog: catalogEntries,
+    items: sceneAllAdminItems(scene, catalogEntries),
+    salonLabel: scene.event_name || scene.salon || '',
+    scene,
+  });
+  const sourceLines = savedLines.length ? savedLines : fallbackPricing.lines;
+  const lines = normalizePurchaseOrderLines(sourceLines, catalogEntries);
+  const total = lines.reduce((sum, line) => sum + line.total, 0);
+  return { lines, total };
+}
+
+function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
+  return (lines || [])
+    .map((line) => {
+      const entry = findCatalogEntry(catalogEntries, line.type);
+      const quantity = Math.max(0, Number(line.quantity || line.qty || 0));
+      const total = Math.max(0, Math.round(Number(line.total ?? line.price ?? 0)));
+      const unitPrice = Math.max(0, Math.round(Number(line.unitPrice ?? line.unit_price ?? (quantity ? total / quantity : 0))));
+      return {
+        type: line.type || entry?.type || '',
+        reference: line.reference || assetReference(entry, '') || '',
+        label: line.label || entry?.label || line.type || 'Lot AMCO',
+        quantity,
+        unitPrice,
+        total: total || unitPrice * quantity,
+      };
+    })
+    .filter((line) => line.quantity > 0 && line.total > 0);
+}
+
+function downloadSceneTechnicalPlan(scene = {}, assets = []) {
+  const catalogEntries = sceneAdminCatalog(assets, scene);
+  const width = Number(scene.dimensions?.width || scene.width_m || 4);
+  const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
+  exportTechnicalPng({
+    width,
+    depth,
+    layout: scene.layout || 'back',
+    items: sceneAllAdminItems(scene, catalogEntries),
+    catalog: catalogEntries,
+  });
+}
+
+function downloadScenePurchaseOrder(scene = {}, assets = []) {
+  const order = scenePurchaseOrder(scene, assets);
+  const fileName = `bon-de-commande-${slugForType(scene.client_name || scene.project_name || scene.id || 'stand')}.pdf`;
+  const blob = buildPurchaseOrderPdf(scene, order);
+  downloadBlob(blob, fileName);
+}
+
+function buildPurchaseOrderPdf(scene = {}, order = {}) {
+  const date = new Date().toLocaleDateString('fr-FR');
+  const width = Number(scene.dimensions?.width || scene.width_m || 0);
+  const depth = Number(scene.dimensions?.depth || scene.depth_m || 0);
+  const area = width && depth ? `${formatNumber(width * depth)} m2` : `${sceneArea(scene)} m2`;
+  const rows = order.lines?.length ? order.lines : [];
+  const commands = [];
+  const page = { w: 595, h: 842, margin: 42 };
+  const right = page.w - page.margin;
+  let y = 790;
+
+  pdfText(commands, 'Stand-ING', page.margin, y, 24, true);
+  pdfText(commands, 'BON DE COMMANDE - LOTS AMCO', page.margin, y - 28, 17, true);
+  pdfText(commands, `Date : ${date}`, right - 100, y, 10);
+  pdfLine(commands, page.margin, y - 42, right, y - 42);
+  y -= 74;
+
+  const infos = [
+    ['Exposant', scene.client_name || 'A definir'],
+    ['Salon', scene.event_name || scene.salon || 'A definir'],
+    ['Stand', scene.project_name || sceneStandNumber(scene, {}, 'Stand') || 'A definir'],
+    ['Surface', area],
+    ['Reference scene', scene.id || scene.share_token || 'A definir'],
+  ];
+  infos.forEach(([label, value]) => {
+    pdfText(commands, label, page.margin, y, 10, true);
+    pdfText(commands, value, page.margin + 105, y, 10);
+    y -= 18;
+  });
+  y -= 18;
+
+  const cols = [page.margin, 118, 330, 382, 452, right];
+  pdfRect(commands, page.margin, y - 19, right - page.margin, 24, true);
+  pdfText(commands, 'Ref.', cols[0] + 6, y - 3, 9, true);
+  pdfText(commands, 'Lot AMCO', cols[1] + 6, y - 3, 9, true);
+  pdfText(commands, 'Qte', cols[2] + 6, y - 3, 9, true);
+  pdfText(commands, 'PU HT', cols[3] + 6, y - 3, 9, true);
+  pdfText(commands, 'Total HT', cols[4] + 6, y - 3, 9, true);
+  y -= 25;
+
+  if (!rows.length) {
+    pdfText(commands, 'Aucun lot AMCO payant pour cette configuration.', page.margin + 6, y - 2, 10);
+    y -= 28;
+  } else {
+    rows.forEach((line, index) => {
+      if (y < 120) return;
+      const fill = index % 2 === 0;
+      pdfRect(commands, page.margin, y - 18, right - page.margin, 23, fill);
+      pdfText(commands, truncatePdfText(line.reference || '-', 18), cols[0] + 6, y - 3, 8);
+      pdfText(commands, truncatePdfText(line.label, 34), cols[1] + 6, y - 3, 8);
+      pdfText(commands, String(line.quantity), cols[2] + 6, y - 3, 8);
+      pdfText(commands, `${line.unitPrice.toLocaleString('fr-FR')} EUR`, cols[3] + 6, y - 3, 8);
+      pdfText(commands, `${line.total.toLocaleString('fr-FR')} EUR`, cols[4] + 6, y - 3, 8);
+      y -= 23;
+    });
+  }
+
+  y -= 14;
+  pdfLine(commands, 360, y, right, y);
+  pdfText(commands, 'Total HT', 370, y - 22, 12, true);
+  pdfText(commands, `${Number(order.total || 0).toLocaleString('fr-FR')} EUR`, 468, y - 22, 14, true);
+  pdfText(commands, 'Document genere automatiquement depuis le configurateur Stand-ING.', page.margin, 48, 8);
+  pdfText(commands, 'Les lots AMCO correspondent uniquement aux objets/options payants hors pack de base.', page.margin, 34, 8);
+
+  return makeSimplePdf(commands, page.w, page.h);
+}
+
+function makeSimplePdf(commands, width = 595, height = 842) {
+  const objects = [];
+  const add = (body) => { objects.push(body); return objects.length; };
+  const content = commands.join('\n');
+  const fontId = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  const contentId = add(`<< /Length ${pdfByteLength(content)} >>\nstream\n${content}\nendstream`);
+  const pageId = add(`<< /Type /Page /Parent 4 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentId} 0 R >>`);
+  const pagesId = add(`<< /Type /Pages /Kids [${pageId} 0 R] /Count 1 >>`);
+  const catalogId = add(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((body, index) => {
+    offsets.push(pdfByteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const xref = pdfByteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => { pdf += `${String(offset).padStart(10, '0')} 00000 n \n`; });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return new Blob([pdfToUint8Array(pdf)], { type: 'application/pdf' });
+}
+
+function pdfText(commands, text, x, y, size = 10, bold = false, invert = false) {
+  const safeText = pdfEscape(toPdfWinAnsi(text));
+  const color = invert ? '1 1 1 rg' : '0.08 0.1 0.14 rg';
+  commands.push(`${color} BT /F1 ${size} Tf ${x.toFixed(1)} ${y.toFixed(1)} Td (${safeText}) Tj ET`);
+}
+
+function pdfLine(commands, x1, y1, x2, y2) {
+  commands.push(`0.72 0.76 0.82 RG 0.8 w ${x1.toFixed(1)} ${y1.toFixed(1)} m ${x2.toFixed(1)} ${y2.toFixed(1)} l S`);
+}
+
+function pdfRect(commands, x, y, w, h, fill = false) {
+  commands.push(`${fill ? '0.94 0.96 0.98 rg' : '1 1 1 rg'} ${x.toFixed(1)} ${y.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)} re f`);
+  commands.push(`0.86 0.89 0.93 RG 0.5 w ${x.toFixed(1)} ${y.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)} re S`);
+}
+
+function toPdfWinAnsi(text = '') {
+  return String(text)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[–—]/g, '-')
+    .replace(/[’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[²]/g, '2')
+    .replace(/€/g, 'EUR');
+}
+
+function pdfEscape(text = '') {
+  return String(text).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+}
+
+function truncatePdfText(text = '', max = 40) {
+  const safe = toPdfWinAnsi(text);
+  return safe.length > max ? `${safe.slice(0, Math.max(0, max - 1))}.` : safe;
+}
+
+function pdfByteLength(text) {
+  return pdfToUint8Array(text).length;
+}
+
+function pdfToUint8Array(text) {
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i += 1) bytes[i] = text.charCodeAt(i) & 0xff;
+  return bytes;
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function AdminPlaceholder({ tab }) {
