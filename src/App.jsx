@@ -60,7 +60,7 @@ const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
 const blankTextureDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
-const textureRetryAttempts = 9;
+const textureRetryAttempts = 3;
 const textureRetryBaseDelay = 260;
 Cache.enabled = true;
 const questionCategories = [
@@ -807,7 +807,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     [ledRailsEnabled, ledRailEntry, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems]);
-  const sceneCanvasClassName = draggingId ? 'dragging-canvas' : '';
+  const sceneTextureLoad = useSceneTexturePreload(sceneItems, [
+    selectedCarpetColor.image,
+    carpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
+    selectedWallFabricColor.image,
+  ]);
+  const sceneAssetsReady = objectBankLoaded && sceneTextureLoad.ready;
+  const sceneCanvasClassName = [
+    draggingId ? 'dragging-canvas' : '',
+    !sceneAssetsReady ? 'scene-canvas-loading' : '',
+  ].filter(Boolean).join(' ');
   const selected = sceneItems.find((item) => item.id === selectedId);
 
   useEffect(() => {
@@ -1212,7 +1221,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           <ambientLight intensity={0.85} />
           <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
-            {objectBankLoaded && (
+            {sceneAssetsReady && (
               <StandScene
                 width={width}
                 depth={depth}
@@ -1248,6 +1257,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           />
         </Canvas>
 
+        {!sceneAssetsReady && <SceneTextureLoaderOverlay loaded={objectBankLoaded ? sceneTextureLoad.loaded : 0} total={objectBankLoaded ? sceneTextureLoad.total : 1} />}
 
         {readOnly && !headerPanel && (
           <div className="readonly-badge">
@@ -3590,6 +3600,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true }));
   const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
+  const presetTextureLoad = useSceneTexturePreload(items, []);
   const selected = items.find((item) => item.id === selectedId);
 
   useEffect(() => {
@@ -3652,7 +3663,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       <section className="preset-3d-stage">
         <Canvas
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
-          className=""
+          className={!presetTextureLoad.ready ? 'scene-canvas-loading' : ''}
           shadows
           onPointerUp={() => setDraggingId(null)}
           onPointerLeave={() => setDraggingId(null)}
@@ -3661,6 +3672,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           <ambientLight intensity={0.85} />
           <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
+            {presetTextureLoad.ready && (
             <StandScene
               width={width}
               depth={depth}
@@ -3677,11 +3689,13 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
               carpetColor={{ hex: '#bebebe' }}
               wallFabricColor={{ hex: '#f8f7f3' }}
             />
+            )}
             <ContactShadows opacity={0.22} scale={12} blur={2.4} far={5} position={[0, -0.01, 0]} />
           </Suspense>
           <OrbitControls makeDefault target={[0, 0.7, 0]} minPolarAngle={Math.PI / 5.2} maxPolarAngle={Math.PI / 2.25} minDistance={4} maxDistance={11} enablePan enabled={!draggingId} />
         </Canvas>
 
+        {!presetTextureLoad.ready && <SceneTextureLoaderOverlay loaded={presetTextureLoad.loaded} total={presetTextureLoad.total} />}
 
         {selected && (
           <div className="view-toolbar preset-toolbar selection-mode">
