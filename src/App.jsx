@@ -6051,10 +6051,10 @@ function logTextureDiagnostic(message, details = {}) {
   console.warn(message, details);
 }
 
-function preloadImage(url, attempt = 0) {
+function loadDecodedImage(url, attempt = 0) {
   return new Promise((resolve) => {
     if (!url) {
-      resolve({ ok: true, url });
+      resolve({ ok: true, url, image: null });
       return;
     }
 
@@ -6068,12 +6068,12 @@ function preloadImage(url, attempt = 0) {
     const retryOrResolve = () => {
       if (attempt < textureRetryAttempts && canRetryTextureUrl(url)) {
         window.setTimeout(() => {
-          preloadImage(textureRetryUrl(url, attempt + 1), attempt + 1).then(finish);
+          loadDecodedImage(textureRetryUrl(url, attempt + 1), attempt + 1).then(finish);
         }, 180 * (attempt + 1));
         return;
       }
       logTextureDiagnostic('Texture preload failed after retries', { url });
-      finish({ ok: false, url });
+      finish({ ok: false, url, image: null });
     };
     const decodeAndResolve = () => {
       if (!image.naturalWidth || !image.naturalHeight) {
@@ -6084,13 +6084,13 @@ function preloadImage(url, attempt = 0) {
         image.decode()
           .then(() => {
             cacheDecodedImage(url, attempt ? textureRetryUrl(url, attempt) : url, image);
-            finish({ ok: true, url });
+            finish({ ok: true, url, image });
           })
           .catch(retryOrResolve);
         return;
       }
       cacheDecodedImage(url, attempt ? textureRetryUrl(url, attempt) : url, image);
-      finish({ ok: true, url });
+      finish({ ok: true, url, image });
     };
 
     image.crossOrigin = 'anonymous';
@@ -6099,6 +6099,10 @@ function preloadImage(url, attempt = 0) {
     image.src = attempt ? textureRetryUrl(url, attempt) : url;
     if (image.complete && image.naturalWidth > 0) decodeAndResolve();
   });
+}
+
+function preloadImage(url, attempt = 0) {
+  return loadDecodedImage(url, attempt).then(({ ok }) => ({ ok, url }));
 }
 
 function cacheDecodedImage(originalUrl, requestedUrl, image) {
@@ -7903,14 +7907,33 @@ function useExternalTexture(url, options = {}) {
     }
 
     let disposed = false;
+    let currentTexture = null;
+    if (options.coverSize) {
+      loadDecodedImage(url).then(({ ok, image }) => {
+        if (disposed) return;
+        if (!ok || !image) {
+          setTexture(null);
+          return;
+        }
+        const nextTexture = createCoverImageTexture(image, options.coverSize[0], options.coverSize[1]);
+        currentTexture = nextTexture;
+        setTexture(nextTexture);
+      });
+      return () => {
+        disposed = true;
+        currentTexture?.dispose?.();
+      };
+    }
+
     const loader = new TextureLoader();
     loader.load(url, (loadedTexture) => {
       if (disposed) {
         loadedTexture.dispose();
         return;
       }
-      const nextTexture = options.coverSize ? createCoverImageTexture(loadedTexture.image, options.coverSize[0], options.coverSize[1]) : loadedTexture;
-      if (!options.coverSize) prepareDynamicTexture(nextTexture);
+      const nextTexture = loadedTexture;
+      prepareDynamicTexture(nextTexture);
+      currentTexture = nextTexture;
       setTexture(nextTexture);
     }, undefined, () => {
       if (!disposed) setTexture(null);
@@ -7918,6 +7941,7 @@ function useExternalTexture(url, options = {}) {
 
     return () => {
       disposed = true;
+      currentTexture?.dispose?.();
     };
   }, [url, options.coverSize?.[0], options.coverSize?.[1]]);
 
