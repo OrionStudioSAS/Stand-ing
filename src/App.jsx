@@ -1,7 +1,6 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
-import { suspend } from 'suspend-react';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
 import { Box3, Cache, CanvasTexture, DoubleSide, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -63,6 +62,42 @@ const blankTextureDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAA
 const textureRetryAttempts = 3;
 const textureRetryBaseDelay = 260;
 Cache.enabled = true;
+
+// Module-level load caches shared between preload phase and components.
+// Ensures items render synchronously from cache when the scene mounts.
+const _mtlLoadCache = new Map(); // materialUrl -> { promise, result?, error? }
+const _objLoadCache = new Map(); // modelUrl   -> { promise, result?, error? }
+
+function _ensureMtlCacheEntry(materialUrl, item) {
+  if (_mtlLoadCache.has(materialUrl)) return _mtlLoadCache.get(materialUrl);
+  const entry = {};
+  const loader = new MTLLoader();
+  const manager = new LoadingManager();
+  manager.setURLModifier((url) => resolveModelResourceUrl(url, item));
+  loader.manager = manager;
+  loader.setMaterialOptions({ ignoreZeroRGBs: true, side: DoubleSide });
+  loader.setResourcePath(assetBaseUrl(materialUrl || item.modelUrl));
+  const origParse = loader.parse.bind(loader);
+  loader.parse = (text, path) => origParse(rewriteRuntimeMtlReferences(text, item), path);
+  entry.promise = loader.loadAsync(materialUrl)
+    .then((result) => { entry.result = result; })
+    .catch((err) => { entry.error = err; });
+  _mtlLoadCache.set(materialUrl, entry);
+  return entry;
+}
+
+function _ensureObjCacheEntry(modelUrl, materials) {
+  if (_objLoadCache.has(modelUrl)) return _objLoadCache.get(modelUrl);
+  const entry = {};
+  const loader = new OBJLoader();
+  if (materials) { materials.preload(); loader.setMaterials(materials); }
+  entry.promise = loader.loadAsync(modelUrl)
+    .then((result) => { entry.result = result; })
+    .catch((err) => { entry.error = err; });
+  _objLoadCache.set(modelUrl, entry);
+  return entry;
+}
+
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
   { id: 'layout', label: 'Aménagement', icon: '📐' },
@@ -812,11 +847,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     carpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
     selectedWallFabricColor.image,
   ]);
-  const sceneModelLoad = useSceneModelFilePreload(sceneItems);
-  const sceneAssetsReady = objectBankLoaded && sceneTextureLoad.ready && sceneModelLoad.ready;
+  const sceneSuspendLoad = useSceneSuspendPreload(objectBankLoaded ? sceneItems : []);
+  const sceneAssetsReady = objectBankLoaded && sceneTextureLoad.ready && sceneSuspendLoad.ready;
   const sceneLoadProgress = combineLoadStates(
-    objectBankLoaded ? sceneTextureLoad : { ready: false, loaded: 0, total: 1 },
-    objectBankLoaded ? sceneModelLoad : { ready: false, loaded: 0, total: 1 },
+    objectBankLoaded ? sceneTextureLoad : { loaded: 0, total: 1 },
+    objectBankLoaded ? sceneSuspendLoad : { loaded: 0, total: 1 },
   );
   const sceneCanvasClassName = [
     draggingId ? 'dragging-canvas' : '',
@@ -3606,9 +3641,9 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true }));
   const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
   const presetTextureLoad = useSceneTexturePreload(items, []);
-  const presetModelLoad = useSceneModelFilePreload(items);
-  const presetAssetsReady = presetTextureLoad.ready && presetModelLoad.ready;
-  const presetLoadProgress = combineLoadStates(presetTextureLoad, presetModelLoad);
+  const presetSuspendLoad = useSceneSuspendPreload(items);
+  const presetAssetsReady = presetTextureLoad.ready && presetSuspendLoad.ready;
+  const presetLoadProgress = combineLoadStates(presetTextureLoad, presetSuspendLoad);
   const selected = items.find((item) => item.id === selectedId);
 
   useEffect(() => {
@@ -6065,6 +6100,65 @@ function useSceneModelFilePreload(items = []) {
   return state;
 }
 
+function useSceneSuspendPreload(items = []) {
+  const modelItems = useMemo(() => {
+    const result = [];
+    const visit = (item) => {
+      if (!item) return;
+      if (item.modelUrl) result.push(item);
+      item.children?.forEach(visit);
+    };
+    (items || []).forEach(visit);
+    return result;
+  }, [items]);
+
+  const key = modelItems.map((i) => `${i.modelUrl}|${modelMaterialUrl(i) || ''}`).join(',');
+  const [state, setState] = useState(() => ({ ready: modelItems.length === 0, loaded: 0, total: modelItems.length }));
+
+  useEffect(() => {
+    if (!modelItems.length) {
+      setState({ ready: true, loaded: 0, total: 0 });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let loaded = 0;
+    setState({ ready: false, loaded: 0, total: modelItems.length });
+
+    const preloadItem = async (item) => {
+      const materialUrl = modelMaterialUrl(item);
+      try {
+        let materials = null;
+        if (materialUrl) {
+          const mtlEntry = _ensureMtlCacheEntry(materialUrl, item);
+          await mtlEntry.promise;
+          materials = mtlEntry.result ?? null;
+          if (materials) {
+            const textureUrls = collectMtlTextureUrls(materials, item, materialUrl);
+            await Promise.all(textureUrls.map((url) => preloadImage(url)));
+          }
+        }
+        if (item.modelUrl) {
+          const objEntry = _ensureObjCacheEntry(item.modelUrl, materials);
+          await objEntry.promise;
+        }
+      } catch {
+        // don't block preload on individual item failures
+      }
+      loaded += 1;
+      if (!cancelled) setState({ ready: false, loaded, total: modelItems.length });
+    };
+
+    Promise.all(modelItems.map(preloadItem)).then(() => {
+      if (!cancelled) setState({ ready: true, loaded: modelItems.length, total: modelItems.length });
+    });
+
+    return () => { cancelled = true; };
+  }, [key]);
+
+  return state;
+}
+
 function combineLoadStates(...states) {
   return states.reduce((acc, state) => ({
     loaded: acc.loaded + Number(state?.loaded || 0),
@@ -7922,26 +8016,17 @@ function GlbModel({ item, selected, hovered }) {
 }
 
 function useMtlMaterials(materialUrl, item) {
-  return suspend(async () => {
-    const loader = new MTLLoader();
-    const manager = new LoadingManager();
-    manager.setURLModifier((url) => resolveModelResourceUrl(url, item));
-    loader.manager = manager;
-    loader.setMaterialOptions({ ignoreZeroRGBs: true, side: DoubleSide });
-    loader.setResourcePath(assetBaseUrl(materialUrl || item.modelUrl));
-    const parse = loader.parse.bind(loader);
-    loader.parse = (text, path) => parse(rewriteRuntimeMtlReferences(text, item), path);
-    return loader.loadAsync(materialUrl);
-  }, [materialUrl]);
+  const entry = _ensureMtlCacheEntry(materialUrl, item);
+  if (entry.error) throw entry.error;
+  if (!entry.result) throw entry.promise;
+  return entry.result;
 }
 
 function useObjModel(modelUrl, materials) {
-  return suspend(async () => {
-    const loader = new OBJLoader();
-    materials.preload();
-    loader.setMaterials(materials);
-    return loader.loadAsync(modelUrl);
-  }, [modelUrl, materials]);
+  const entry = _ensureObjCacheEntry(modelUrl, materials);
+  if (entry.error) throw entry.error;
+  if (!entry.result) throw entry.promise;
+  return entry.result;
 }
 
 function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualContext }) {
