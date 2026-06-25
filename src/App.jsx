@@ -67,6 +67,7 @@ Cache.enabled = true;
 // Ensures items render synchronously from cache when the scene mounts.
 const _mtlLoadCache = new Map(); // materialUrl -> { promise, result?, error? }
 const _objLoadCache = new Map(); // modelUrl   -> { promise, result?, error? }
+const _glbLoadCache = new Map(); // modelUrl   -> { promise, result?, error? }
 
 function _ensureMtlCacheEntry(materialUrl, item) {
   if (_mtlLoadCache.has(materialUrl)) return _mtlLoadCache.get(materialUrl);
@@ -96,6 +97,17 @@ function _ensureObjCacheEntry(modelUrl, materials) {
     .then((result) => { entry.result = result; })
     .catch((err) => { entry.error = err; });
   _objLoadCache.set(modelUrl, entry);
+  return entry;
+}
+
+function _ensureGlbCacheEntry(modelUrl) {
+  if (_glbLoadCache.has(modelUrl)) return _glbLoadCache.get(modelUrl);
+  const entry = {};
+  const loader = new GLTFLoader();
+  entry.promise = loader.loadAsync(modelUrl)
+    .then((result) => { entry.result = result; })
+    .catch((err) => { entry.error = err; });
+  _glbLoadCache.set(modelUrl, entry);
   return entry;
 }
 
@@ -6125,7 +6137,7 @@ function useSceneSuspendPreload(items = []) {
     const result = [];
     const visit = (item) => {
       if (!item) return;
-      if (item.modelUrl && !item.modelUrl.toLowerCase().split('?')[0].endsWith('.glb')) result.push(item);
+      if (item.modelUrl) result.push(item);
       item.children?.forEach(visit);
     };
     (items || []).forEach(visit);
@@ -6146,21 +6158,27 @@ function useSceneSuspendPreload(items = []) {
     setState({ ready: false, loaded: 0, total: modelItems.length });
 
     const preloadItem = async (item) => {
+      const isGlb = item.modelUrl?.toLowerCase().split('?')[0].endsWith('.glb');
       const materialUrl = modelMaterialUrl(item);
       try {
-        let materials = null;
-        if (materialUrl) {
-          const mtlEntry = _ensureMtlCacheEntry(materialUrl, item);
-          await mtlEntry.promise;
-          materials = mtlEntry.result ?? null;
-          if (materials) {
-            const textureUrls = collectMtlTextureUrls(materials, item, materialUrl);
-            await Promise.all(textureUrls.map((url) => preloadImage(url)));
+        if (isGlb) {
+          const glbEntry = _ensureGlbCacheEntry(item.modelUrl);
+          await glbEntry.promise;
+        } else {
+          let materials = null;
+          if (materialUrl) {
+            const mtlEntry = _ensureMtlCacheEntry(materialUrl, item);
+            await mtlEntry.promise;
+            materials = mtlEntry.result ?? null;
+            if (materials) {
+              const textureUrls = collectMtlTextureUrls(materials, item, materialUrl);
+              await Promise.all(textureUrls.map((url) => preloadImage(url)));
+            }
           }
-        }
-        if (item.modelUrl) {
-          const objEntry = _ensureObjCacheEntry(item.modelUrl, materials);
-          await objEntry.promise;
+          if (item.modelUrl) {
+            const objEntry = _ensureObjCacheEntry(item.modelUrl, materials);
+            await objEntry.promise;
+          }
         }
       } catch {
         // don't block preload on individual item failures
@@ -8030,9 +8048,16 @@ function Model3D({ item, selected, hovered, dragging, visualContext }) {
 }
 
 function GlbModel({ item, selected, hovered }) {
-  const gltf = useLoader(GLTFLoader, item.modelUrl);
+  const gltf = useGlbModel(item.modelUrl);
   const model = useMemo(() => prepareLoadedModel(gltf.scene, item, { selected, hovered, isGlb: true }), [gltf, item, selected, hovered]);
   return <primitive object={model} dispose={null} />;
+}
+
+function useGlbModel(modelUrl) {
+  const entry = _ensureGlbCacheEntry(modelUrl);
+  if (entry.error) throw entry.error;
+  if (!entry.result) throw entry.promise;
+  return entry.result;
 }
 
 function useMtlMaterials(materialUrl, item) {
