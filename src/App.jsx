@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, CanvasTexture, DoubleSide, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
+import { Box3, Cache, CanvasTexture, DoubleSide, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -60,6 +60,7 @@ const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
 const blankTextureDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 const textureRetryAttempts = 4;
+Cache.enabled = true;
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
   { id: 'layout', label: 'Aménagement', icon: '📐' },
@@ -6081,10 +6082,14 @@ function preloadImage(url, attempt = 0) {
       }
       if (typeof image.decode === 'function') {
         image.decode()
-          .then(() => finish({ ok: true, url }))
+          .then(() => {
+            cacheDecodedImage(url, attempt ? textureRetryUrl(url, attempt) : url, image);
+            finish({ ok: true, url });
+          })
           .catch(retryOrResolve);
         return;
       }
+      cacheDecodedImage(url, attempt ? textureRetryUrl(url, attempt) : url, image);
       finish({ ok: true, url });
     };
 
@@ -6093,6 +6098,14 @@ function preloadImage(url, attempt = 0) {
     image.onerror = retryOrResolve;
     image.src = attempt ? textureRetryUrl(url, attempt) : url;
     if (image.complete && image.naturalWidth > 0) decodeAndResolve();
+  });
+}
+
+function cacheDecodedImage(originalUrl, requestedUrl, image) {
+  if (!image?.complete || !image.naturalWidth || !image.naturalHeight) return;
+  [originalUrl, requestedUrl].filter(Boolean).forEach((url) => {
+    Cache.remove(`image:${url}`);
+    Cache.add(`image:${url}`, image);
   });
 }
 
