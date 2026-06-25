@@ -988,36 +988,35 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     });
   };
 
-  const updateSelectedItemOptions = (patch) => {
-    if (!selected || readOnly) return;
-    updateItem(selected.id, { options: { ...(selected.options || {}), ...patch } });
+  const updateItemOptions = (targetItem, patch) => {
+    if (!targetItem || readOnly) return;
+    updateItem(targetItem.id, { options: { ...(targetItem.options || {}), ...patch } });
   };
-
-  const uploadSelectedItemImage = async (file, optionKeys = {}) => {
-    if (!selected || !file) return;
+  const uploadItemImage = async (targetItem, file, optionKeys = {}) => {
+    if (!targetItem || !file) return;
     const urlKey = optionKeys.urlKey || 'headMainImageUrl';
     const nameKey = optionKeys.nameKey || 'headMainImageName';
     setItemOptionState({ uploading: true, error: '' });
     try {
-      const imageUrl = await uploadSceneItemOptionImage(initialScene, selected, file);
-      updateSelectedItemOptions({ [urlKey]: imageUrl, [nameKey]: file.name });
+      const imageUrl = await uploadSceneItemOptionImage(initialScene, targetItem, file);
+      updateItemOptions(targetItem, { [urlKey]: imageUrl, [nameKey]: file.name });
       setItemOptionState({ uploading: false, error: '' });
     } catch (error) {
       setItemOptionState({ uploading: false, error: error.message || 'Upload impossible.' });
     }
   };
-
   const openAddItemConfigurator = (entry) => {
     if (readOnly) return;
     setItemConfigModal({ mode: 'add', entry });
   };
 
+  const itemConfiguratorEntry = (item) => (item?.options?.variantGroupType
+    ? findCatalogEntry(availableCatalog, item.options.variantGroupType)
+    : findCatalogEntry(availableCatalog, item?.type));
+
   const openSelectedItemConfigurator = () => {
     if (!selected || readOnly) return;
-    const entry = selected.options?.variantGroupType
-      ? findCatalogEntry(availableCatalog, selected.options.variantGroupType)
-      : findCatalogEntry(availableCatalog, selected.type);
-    setItemConfigModal({ mode: 'edit', item: selected, entry });
+    setItemConfigModal({ mode: 'edit', item: selected, entry: itemConfiguratorEntry(selected) });
   };
 
   const closeItemConfigurator = () => setItemConfigModal(null);
@@ -1345,7 +1344,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           <div className="view-toolbar selection-mode" aria-label="Actions objet selectionne">
             <button type="button" disabled={itemPlacementLocked(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
             <button type="button" disabled={isAutomaticReserveItem(selected)} onClick={openSelectedItemConfigurator} title="Paramètres"><Settings2 size={16} /></button>
-            {(isPartitionHeadItem(selected) || isPosterItem(selected)) && <button type="button" onClick={() => setRotationPanelOpen(false)} title="Options visuel"><FileImage size={16} /></button>}
             <button type="button" disabled={!isAdminViewer && itemDeletionLocked(selected)} onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
             {!isAdminViewer && itemMovementLocked(selected) && <span className="toolbar-lock-note">Déplacement verrouillé</span>}
             {!isAdminViewer && itemRotationLocked(selected) && <span className="toolbar-lock-note">Rotation verrouillée</span>}
@@ -1366,28 +1364,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             )}
           </div>
         )}
-
-        {selected && !readOnly && isPartitionHeadItem(selected) && (
-          <PartitionHeadOptionsPanel
-            item={selected}
-            visualContext={sceneVisualContext}
-            uploadState={itemOptionState}
-            onImageChange={(file) => uploadSelectedItemImage(file)}
-            onResetImage={() => updateSelectedItemOptions({ headMainImageUrl: '', headMainImageName: '' })}
-          />
-        )}
-
-        {selected && !readOnly && isPosterItem(selected) && (
-          <PosterOptionsPanel
-            item={selected}
-            items={sceneItems}
-            width={width}
-            depth={depth}
-            uploadState={itemOptionState}
-            onImageChange={(file) => uploadSelectedItemImage(file, { urlKey: 'posterImageUrl', nameKey: 'posterImageName' })}
-            onResetImage={() => updateSelectedItemOptions({ posterImageUrl: '', posterImageName: '' })}
-          />
-        )}
       </section>
 
       {activeStep > 1 && (
@@ -1403,7 +1379,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onAdd={openAddItemConfigurator}
             onRemove={removeOptionalItem}
             onSelectItem={setSelectedId}
-            onConfigureItem={(item) => setItemConfigModal({ mode: 'edit', item, entry: findCatalogEntry(availableCatalog, item.type) })}
+            onConfigureItem={(item) => setItemConfigModal({ mode: 'edit', item, entry: itemConfiguratorEntry(item) })}
             onNext={() => setActiveStep(4)}
           />
         ) : activeStep === 4 ? (
@@ -1462,16 +1438,28 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       </aside>
       )}
 
-      {itemConfigModal && (
-        <ItemConfiguratorModal
-          mode={itemConfigModal.mode}
-          entry={itemConfigModal.entry}
-          item={itemConfigModal.item}
-          salonLabel={salonLabel}
-          onClose={closeItemConfigurator}
-          onConfirm={confirmItemConfigurator}
-        />
-      )}
+      {itemConfigModal && (() => {
+        const modalItem = itemConfigModal.item
+          ? sceneItems.find((item) => item.id === itemConfigModal.item.id) || itemConfigModal.item
+          : undefined;
+        return (
+          <ItemConfiguratorModal
+            mode={itemConfigModal.mode}
+            entry={itemConfigModal.entry}
+            item={modalItem}
+            salonLabel={salonLabel}
+            visualContext={sceneVisualContext}
+            items={sceneItems}
+            width={width}
+            depth={depth}
+            uploadState={itemOptionState}
+            onImageChange={uploadItemImage}
+            onUpdateItemOptions={updateItemOptions}
+            onClose={closeItemConfigurator}
+            onConfirm={confirmItemConfigurator}
+          />
+        );
+      })()}
 
       {activeStep > 1 && activeStep !== 3 && !readOnly && (
       <footer className="configurator-footer">
@@ -1630,10 +1618,10 @@ function LanguageMenu({ language, onSelect }) {
   );
 }
 
-function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageChange, onResetImage }) {
+function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageChange, onResetImage, embedded = false }) {
   const imageName = item.options?.headMainImageName || `Texture originale ${partitionHeadMainImageMaterial(item)}.jpg`;
   return (
-    <aside className="item-options-panel">
+    <aside className={embedded ? 'item-visual-config' : 'item-options-panel'}>
       <div className="item-options-heading">
         <FileImage size={17} />
         <div>
@@ -1654,27 +1642,30 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
         <input
           type="file"
           accept="image/png,image/jpeg,image/webp"
-          disabled={uploadState.uploading}
-          onChange={(event) => onImageChange(event.target.files?.[0])}
+          disabled={uploadState?.uploading}
+          onChange={(event) => {
+            onImageChange(event.target.files?.[0]);
+            event.target.value = '';
+          }}
         />
       </label>
 
       {item.options?.headMainImageUrl && (
         <button className="item-image-reset" type="button" onClick={onResetImage}>Revenir à l’image d’origine</button>
       )}
-      {uploadState.uploading && <p className="item-options-status">Upload du visuel...</p>}
-      {uploadState.error && <p className="item-options-error">{uploadState.error}</p>}
+      {uploadState?.uploading && <p className="item-options-status">Upload du visuel...</p>}
+      {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
     </aside>
   );
 }
 
-function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageChange, onResetImage }) {
+function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageChange, onResetImage, embedded = false }) {
   const imageName = item.options?.posterImageName || 'Aucune image personnalisée';
   const printSize = posterSurfaceRegion(item, items, width, depth);
   const recommendedSpec = recommendedSimulatorImageSpec(printSize.width, printSize.height);
   const imageQuality = useSimulatorImageQualityCheck(item.options?.posterImageUrl, recommendedSpec);
   return (
-    <aside className="item-options-panel">
+    <aside className={embedded ? 'item-visual-config' : 'item-options-panel'}>
       <div className="item-options-heading">
         <FileImage size={17} />
         <div>
@@ -1710,16 +1701,19 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
         <input
           type="file"
           accept="image/png,image/jpeg,image/webp"
-          disabled={uploadState.uploading}
-          onChange={(event) => onImageChange(event.target.files?.[0])}
+          disabled={uploadState?.uploading}
+          onChange={(event) => {
+            onImageChange(event.target.files?.[0]);
+            event.target.value = '';
+          }}
         />
       </label>
 
       {item.options?.posterImageUrl && (
         <button className="item-image-reset" type="button" onClick={onResetImage}>Retirer l’image personnalisée</button>
       )}
-      {uploadState.uploading && <p className="item-options-status">Upload du visuel...</p>}
-      {uploadState.error && <p className="item-options-error">{uploadState.error}</p>}
+      {uploadState?.uploading && <p className="item-options-status">Upload du visuel...</p>}
+      {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
     </aside>
   );
 }
@@ -2023,7 +2017,7 @@ function ClockIcon() {
   return <span className="cart-clock">◷</span>;
 }
 
-function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfirm }) {
+function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, items, width, depth, uploadState, onImageChange, onUpdateItemOptions, onClose, onConfirm }) {
   const catalogEntry = entry || item || {};
   const isVariantGroup = isVariantGroupEntry(catalogEntry);
   const initialOptions = item?.options || {};
@@ -2043,6 +2037,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfi
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
   const extras = extraOptions.reduce((sum, option) => sum + (selectedExtras[option.id] ? Number(option.price || 0) : 0), 0);
   const total = (basePrice + extras) * (mode === 'add' ? quantity : 1);
+  const hasVisualOptions = mode === 'edit' && item && (isPartitionHeadItem(item) || isPosterItem(item));
 
   const toggleExtra = (id, checked) => {
     setSelectedExtras((current) => ({ ...current, [id]: checked }));
@@ -2093,6 +2088,30 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfi
 
         <ConfigChoiceGrid title="Variante" choices={variants} value={format} onChange={setFormat} />
 
+        {hasVisualOptions && isPartitionHeadItem(item) && (
+          <PartitionHeadOptionsPanel
+            item={item}
+            visualContext={visualContext}
+            uploadState={uploadState}
+            onImageChange={(file) => onImageChange?.(item, file)}
+            onResetImage={() => onUpdateItemOptions?.(item, { headMainImageUrl: '', headMainImageName: '' })}
+            embedded
+          />
+        )}
+
+        {hasVisualOptions && isPosterItem(item) && (
+          <PosterOptionsPanel
+            item={item}
+            items={items}
+            width={width}
+            depth={depth}
+            uploadState={uploadState}
+            onImageChange={(file) => onImageChange?.(item, file, { urlKey: 'posterImageUrl', nameKey: 'posterImageName' })}
+            onResetImage={() => onUpdateItemOptions?.(item, { posterImageUrl: '', posterImageName: '' })}
+            embedded
+          />
+        )}
+
         {extraOptions.length > 0 && (
           <div className="item-config-options">
             {extraOptions.map((option) => (
@@ -2123,7 +2142,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, onClose, onConfi
             <strong>{total.toLocaleString('fr-FR')} €</strong>
             {quantity > 1 && <small>{quantity} × {(basePrice + extras).toLocaleString('fr-FR')} €</small>}
           </div>
-          <button type="button" onClick={submit}>{mode === 'add' ? '+ Ajouter au stand' : 'Enregistrer'}</button>
+          <button type="button" disabled={uploadState?.uploading} onClick={submit}>{uploadState?.uploading ? 'Upload...' : (mode === 'add' ? '+ Ajouter au stand' : 'Enregistrer')}</button>
         </footer>
       </section>
     </div>

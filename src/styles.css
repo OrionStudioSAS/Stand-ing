@@ -1831,6 +1831,15 @@ select {
   z-index: 4;
 }
 
+.item-visual-config {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #dfe7f2;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fbff;
+}
+
 .item-options-heading {
   display: flex;
   align-items: center;
