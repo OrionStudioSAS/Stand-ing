@@ -54,7 +54,7 @@ const wallItemSnap = 0.25;
 const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
 const collisionPadding = 0.04;
-const partitionHeadEdgeInset = 0.04;
+const partitionHeadEdgeInset = 0.025;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
@@ -5485,70 +5485,136 @@ function downloadScenePurchaseOrder(scene = {}, assets = []) {
 }
 
 function buildPurchaseOrderPdf(scene = {}, order = {}) {
-  const date = new Date().toLocaleDateString('fr-FR');
-  const width = Number(scene.dimensions?.width || scene.width_m || 0);
-  const depth = Number(scene.dimensions?.depth || scene.depth_m || 0);
-  const area = width && depth ? `${formatNumber(width * depth)} m2` : `${sceneArea(scene)} m2`;
   const rows = order.lines?.length ? order.lines : [];
   const commands = [];
-  const page = { w: 595, h: 842, margin: 42 };
+  const page = { w: 595, h: 842, margin: 32 };
   const right = page.w - page.margin;
-  let y = 790;
+  const yellow = '1 0.72 0 rg';
+  const red = '0.82 0.05 0.07 rg';
+  const ink = '0.04 0.05 0.07 rg';
+  const gray = '0.86 0.86 0.86 rg';
+  const lightGray = '0.97 0.97 0.97 rg';
+  const client = scene.client_name || 'Exposant';
+  const salon = scene.event_name || scene.salon || 'Salon';
+  const stand = scene.project_name || sceneStandNumber(scene, {}, 'Stand') || 'Stand';
+  const quote = (x, y, flip = false) => {
+    pdfText(commands, flip ? '’' : '‘', x, y, 34, true, false, yellow);
+  };
 
-  pdfText(commands, 'Stand-ING', page.margin, y, 24, true);
-  pdfText(commands, 'BON DE COMMANDE - LOTS AMCO', page.margin, y - 28, 17, true);
-  pdfText(commands, `Date : ${date}`, right - 100, y, 10);
-  pdfLine(commands, page.margin, y - 42, right, y - 42);
-  y -= 74;
+  quote(16, 814);
+  pdfText(commands, 'BON DE COMMANDE', 32, 804, 16, true, false, ink, 3.2);
+  quote(205, 802, true);
+  pdfText(commands, 'Stands CONFORT et PRESTIGE', 32, 784, 10, false, false, '0.62 0.62 0.62 rg', 1.4);
+  pdfText(commands, 'Email :', 32, 760, 8, false, false, yellow);
+  pdfText(commands, 'configurateur@stand-ing.com', 68, 760, 8);
+  pdfText(commands, 'Tel :', 205, 760, 8, false, false, yellow);
+  pdfText(commands, '+33 (0)1 34 64 64 13', 230, 760, 8);
+  pdfText(commands, 'salon', 360, 804, 24, true, false, '0.28 0.31 0.33 rg');
+  pdfText(commands, 'des maires', 360, 782, 21, true, false, '0.28 0.31 0.33 rg');
+  pdfText(commands, 'et des collectivites locales', 360, 764, 8, false, false, '0.28 0.31 0.33 rg');
+  pdfText(commands, 'SALON', 482, 804, 21, true, false, red);
+  pdfText(commands, 'DES SPORTS', 478, 786, 17, true, false, '0.06 0.32 0.72 rg');
+  pdfText(commands, '& PARASPORTS', 481, 771, 10, true, false, '0.05 0.55 0.38 rg');
 
-  const infos = [
-    ['Exposant', scene.client_name || 'A definir'],
-    ['Salon', scene.event_name || scene.salon || 'A definir'],
-    ['Stand', scene.project_name || sceneStandNumber(scene, {}, 'Stand') || 'A definir'],
-    ['Surface', area],
-    ['Reference scene', scene.id || scene.share_token || 'A definir'],
-  ];
-  infos.forEach(([label, value]) => {
-    pdfText(commands, label, page.margin, y, 10, true);
-    pdfText(commands, value, page.margin + 105, y, 10);
-    y -= 18;
-  });
-  y -= 18;
+  sectionBadge(commands, 35, 712, '06.');
+  pdfText(commands, 'COMMANDES', 64, 714, 11, true, false, ink, 2.2);
+  pdfText(commands, '(lots AMCO payants hors pack de base)', 146, 714, 9);
 
-  const cols = [page.margin, 118, 330, 382, 452, right];
-  pdfRect(commands, page.margin, y - 19, right - page.margin, 24, true);
-  pdfText(commands, 'Ref.', cols[0] + 6, y - 3, 9, true);
-  pdfText(commands, 'Lot AMCO', cols[1] + 6, y - 3, 9, true);
-  pdfText(commands, 'Qte', cols[2] + 6, y - 3, 9, true);
-  pdfText(commands, 'PU HT', cols[3] + 6, y - 3, 9, true);
-  pdfText(commands, 'Total HT', cols[4] + 6, y - 3, 9, true);
-  y -= 25;
+  const table = { x: 35, y: 696, w: 525, rowH: 21 };
+  const cols = [table.x, 322, 402, 482, table.x + table.w];
+  pdfRect(commands, table.x, table.y - table.rowH, table.w, table.rowH, true, gray);
+  pdfText(commands, 'REFERENCE', cols[0] + 5, table.y - 14, 7, false);
+  pdfText(commands, 'QUANTITE', cols[1] + 24, table.y - 14, 7, false);
+  pdfText(commands, 'PRIX UNITAIRE HT', cols[2] + 10, table.y - 14, 7, false);
+  pdfText(commands, 'PRIX TOTAL HT', cols[3] + 16, table.y - 14, 7, false);
+  for (let x = 0; x < cols.length; x += 1) pdfLine(commands, cols[x], table.y, cols[x], table.y - table.rowH * 16, '0 0 0 RG', 0.8);
+  pdfLine(commands, table.x, table.y, table.x + table.w, table.y, '0 0 0 RG', 0.8);
 
-  if (!rows.length) {
-    pdfText(commands, 'Aucun lot AMCO payant pour cette configuration.', page.margin + 6, y - 2, 10);
-    y -= 28;
-  } else {
-    rows.forEach((line, index) => {
-      if (y < 120) return;
-      const fill = index % 2 === 0;
-      pdfRect(commands, page.margin, y - 18, right - page.margin, 23, fill);
-      pdfText(commands, truncatePdfText(line.reference || '-', 18), cols[0] + 6, y - 3, 8);
-      pdfText(commands, truncatePdfText(line.label, 34), cols[1] + 6, y - 3, 8);
-      pdfText(commands, String(line.quantity), cols[2] + 6, y - 3, 8);
-      pdfText(commands, `${line.unitPrice.toLocaleString('fr-FR')} EUR`, cols[3] + 6, y - 3, 8);
-      pdfText(commands, `${line.total.toLocaleString('fr-FR')} EUR`, cols[4] + 6, y - 3, 8);
-      y -= 23;
-    });
+  const visibleRows = Math.max(15, rows.length);
+  for (let i = 0; i < visibleRows; i += 1) {
+    const y = table.y - table.rowH * (i + 1);
+    pdfLine(commands, table.x, y, table.x + table.w, y, '0 0 0 RG', 0.8);
+    const line = rows[i];
+    if (line) {
+      const ref = line.reference || line.label;
+      pdfText(commands, truncatePdfText(ref, 46), cols[0] + 5, y + 7, 7);
+      pdfText(commands, String(line.quantity), cols[1] + 39, y + 7, 8);
+      pdfText(commands, moneyPdf(line.unitPrice), cols[2] + 37, y + 7, 8);
+      pdfText(commands, moneyPdf(line.total), cols[3] + 41, y + 7, 8);
+    } else {
+      pdfText(commands, '0', cols[1] + 42, y + 7, 8);
+      pdfText(commands, '0', cols[2] + 42, y + 7, 8);
+      pdfText(commands, '0', cols[3] + 45, y + 7, 8);
+    }
   }
 
+  const totalsX = 402;
+  let totalsY = table.y - table.rowH * 16;
+  const tva = Math.round(Number(order.total || 0) * 0.2);
+  const totals = [
+    ['TOTAL HT', Number(order.total || 0)],
+    ['TVA 20% **', tva],
+    ['TOTAL TTC', Number(order.total || 0) + tva],
+  ];
+  totals.forEach(([label, value], index) => {
+    const y = totalsY - table.rowH * index;
+    pdfRect(commands, totalsX, y - table.rowH, 158, table.rowH, true, index === 1 ? '1 1 1 rg' : gray);
+    pdfLine(commands, 482, y, 482, y - table.rowH, '0 0 0 RG', 0.8);
+    pdfText(commands, label, totalsX + 5, y - 14, 9, true);
+    pdfText(commands, moneyPdf(value), 520, y - 14, 9, true);
+  });
+
+  let y = 244;
+  sectionBadge(commands, 35, y, '07.');
+  pdfText(commands, 'CONDITIONS DE REGLEMENT', 64, y + 2, 11, true, false, ink, 2);
+  y -= 16;
+  pdfText(commands, '- Soit par virement bancaire devant imperativement mentionner votre raison sociale et le nom du salon.', 35, y, 6.5);
+  y -= 12;
+  pdfText(commands, '  Merci de nous transmettre une copie de votre avis de paiement + votre IBAN.', 35, y, 6.5, false, false, '0.32 0.32 0.32 rg');
   y -= 14;
-  pdfLine(commands, 360, y, right, y);
-  pdfText(commands, 'Total HT', 370, y - 22, 12, true);
-  pdfText(commands, `${Number(order.total || 0).toLocaleString('fr-FR')} EUR`, 468, y - 22, 14, true);
-  pdfText(commands, 'Document genere automatiquement depuis le configurateur Stand-ING.', page.margin, 48, 8);
-  pdfText(commands, 'Les lots AMCO correspondent uniquement aux objets/options payants hors pack de base.', page.margin, 34, 8);
+  pdfText(commands, '- Soit par cheque a l’ordre du Salon des Maires et des Collectivites Locales / Salon des Sports.', 35, y, 6.5);
+  y -= 12;
+  pdfText(commands, '  Seule la reception du bon de commande dument complete et signe avec le cheque tiendra lieu de reservation.', 35, y, 6.5, false, false, '0.32 0.32 0.32 rg');
+
+  y -= 30;
+  sectionBadge(commands, 35, y, '08.');
+  pdfText(commands, 'COORDONNEES BANCAIRES POUR REGLEMENTS', 64, y + 2, 11, true, false, ink, 2);
+  y -= 20;
+  pdfText(commands, 'Intitule du compte : Groupe Moniteur', 35, y, 6.5, true);
+  pdfText(commands, 'Domiciliation : BNP PARIBAS CENTRE D AFFAIRES 85-93 RUE DES TROIS FONTANOT 92000 NANTERRE', 240, y, 6.5, true);
+  y -= 14;
+  pdfText(commands, 'RIB : 30004 00274 00010026230 58', 35, y, 6.5, true);
+  pdfText(commands, 'IBAN : FR76 3000 4002 7400 0100 2623 058', 35, y - 14, 6.5, true);
+  pdfText(commands, 'BIC : BNPAFRPPXXX', 240, y - 14, 6.5, true);
+
+  y -= 45;
+  sectionBadge(commands, 35, y, '09.');
+  pdfText(commands, 'SIGNATURE', 64, y + 2, 11, true, false, ink, 2);
+  y -= 17;
+  pdfText(commands, `Je soussigne(e), ${truncatePdfText(client, 42)}, declare avoir pris connaissance des Conditions Generales des Ventes du Salon`, 35, y, 6.5);
+  y -= 12;
+  pdfText(commands, `${salon} et accepte toutes les clauses sans reserve ni restriction.`, 35, y, 6.5);
+  pdfRect(commands, 35, 28, 242, 105, false);
+  pdfText(commands, 'Fait a _______________________ Le ____ / ____ / 2026', 50, 112, 7);
+  pdfText(commands, 'Cachet et Signature (obligatoire)', 50, 92, 7, true, false, red);
+  pdfText(commands, 'Precedes de la mention « Bon pour accord »', 50, 80, 6.5);
+  pdfText(commands, 'BON DE COMMANDE A REMPLIR ET A NOUS', 295, 106, 11, true, false, red);
+  pdfText(commands, 'RENVOYER SIGNE SOUS 8 JOURS', 295, 88, 11, true, false, red);
+  pdfText(commands, 'par mail a configurateur@stand-ing.com', 295, 66, 10, false, false, red);
+  pdfText(commands, '** TVA due par le preneur de la prestation. Prix affiches hors taxes.', 35, 16, 6);
+  pdfText(commands, 'Page 8/8', 450, 14, 7);
+  pdfText(commands, 'Stand-ING', 502, 14, 12, true);
 
   return makeSimplePdf(commands, page.w, page.h);
+}
+
+function sectionBadge(commands, x, y, text) {
+  pdfRect(commands, x, y - 9, 22, 14, true, '1 0.72 0 rg', false);
+  pdfText(commands, text, x + 2, y - 5, 9, true, true);
+}
+
+function moneyPdf(value) {
+  return Number(value || 0).toLocaleString('fr-FR');
 }
 
 function makeSimplePdf(commands, width = 595, height = 842) {
@@ -5573,19 +5639,20 @@ function makeSimplePdf(commands, width = 595, height = 842) {
   return new Blob([pdfToUint8Array(pdf)], { type: 'application/pdf' });
 }
 
-function pdfText(commands, text, x, y, size = 10, bold = false, invert = false) {
+function pdfText(commands, text, x, y, size = 10, bold = false, invert = false, colorOverride = '', charSpace = 0) {
   const safeText = pdfEscape(toPdfWinAnsi(text));
-  const color = invert ? '1 1 1 rg' : '0.08 0.1 0.14 rg';
-  commands.push(`${color} BT /F1 ${size} Tf ${x.toFixed(1)} ${y.toFixed(1)} Td (${safeText}) Tj ET`);
+  const color = colorOverride || (invert ? '1 1 1 rg' : '0.08 0.1 0.14 rg');
+  const spacing = charSpace ? `${charSpace} Tc ` : '';
+  commands.push(`${color} BT /F1 ${size} Tf ${spacing}${x.toFixed(1)} ${y.toFixed(1)} Td (${safeText}) Tj ET`);
 }
 
-function pdfLine(commands, x1, y1, x2, y2) {
-  commands.push(`0.72 0.76 0.82 RG 0.8 w ${x1.toFixed(1)} ${y1.toFixed(1)} m ${x2.toFixed(1)} ${y2.toFixed(1)} l S`);
+function pdfLine(commands, x1, y1, x2, y2, stroke = '0.72 0.76 0.82 RG', width = 0.8) {
+  commands.push(`${stroke} ${width} w ${x1.toFixed(1)} ${y1.toFixed(1)} m ${x2.toFixed(1)} ${y2.toFixed(1)} l S`);
 }
 
-function pdfRect(commands, x, y, w, h, fill = false) {
-  commands.push(`${fill ? '0.94 0.96 0.98 rg' : '1 1 1 rg'} ${x.toFixed(1)} ${y.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)} re f`);
-  commands.push(`0.86 0.89 0.93 RG 0.5 w ${x.toFixed(1)} ${y.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)} re S`);
+function pdfRect(commands, x, y, w, h, fill = false, fillColor = '', stroke = true) {
+  commands.push(`${fillColor || (fill ? '0.94 0.96 0.98 rg' : '1 1 1 rg')} ${x.toFixed(1)} ${y.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)} re f`);
+  if (stroke) commands.push(`0 0 0 RG 0.8 w ${x.toFixed(1)} ${y.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)} re S`);
 }
 
 function toPdfWinAnsi(text = '') {
