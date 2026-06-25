@@ -8191,12 +8191,29 @@ function useExternalTexture(url, options = {}) {
       loadDecodedImage(url).then(({ ok, image }) => {
         if (disposed) return;
         if (!ok || !image) {
+          if (import.meta.env.DEV) console.warn('[useExternalTexture] image failed to load', url);
           setTexture(null);
           return;
         }
-        const nextTexture = createCoverImageTexture(image, options.coverSize[0], options.coverSize[1]);
-        currentTexture = nextTexture;
-        setTexture(nextTexture);
+        let nextTexture = null;
+        try {
+          nextTexture = createCoverImageTexture(image, options.coverSize[0], options.coverSize[1]);
+        } catch (err) {
+          if (import.meta.env.DEV) console.warn('[useExternalTexture] createCoverImageTexture failed, falling back', url, err);
+        }
+        if (nextTexture) {
+          currentTexture = nextTexture;
+          setTexture(nextTexture);
+          return;
+        }
+        // Fallback: load via TextureLoader (no canvas required)
+        const fallbackLoader = new TextureLoader();
+        fallbackLoader.load(url, (loadedTexture) => {
+          if (disposed) { loadedTexture.dispose(); return; }
+          prepareDynamicTexture(loadedTexture);
+          currentTexture = loadedTexture;
+          setTexture(loadedTexture);
+        }, undefined, () => { if (!disposed) setTexture(null); });
       });
       return () => {
         disposed = true;
