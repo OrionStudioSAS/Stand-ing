@@ -59,7 +59,8 @@ const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
 const blankTextureDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
-const textureRetryAttempts = 4;
+const textureRetryAttempts = 9;
+const textureRetryBaseDelay = 260;
 Cache.enabled = true;
 const questionCategories = [
   { id: 'technical', label: 'Question technique', icon: '?' },
@@ -6069,7 +6070,7 @@ function loadDecodedImage(url, attempt = 0) {
       if (attempt < textureRetryAttempts && canRetryTextureUrl(url)) {
         window.setTimeout(() => {
           loadDecodedImage(textureRetryUrl(url, attempt + 1), attempt + 1).then(finish);
-        }, 180 * (attempt + 1));
+        }, textureRetryDelay(attempt));
         return;
       }
       logTextureDiagnostic('Texture preload failed after retries', { url });
@@ -6107,10 +6108,31 @@ function preloadImage(url, attempt = 0) {
 
 function cacheDecodedImage(originalUrl, requestedUrl, image) {
   if (!image?.complete || !image.naturalWidth || !image.naturalHeight) return;
-  [originalUrl, requestedUrl].filter(Boolean).forEach((url) => {
+  textureCacheUrlVariants(originalUrl, requestedUrl).forEach((url) => {
     Cache.remove(`image:${url}`);
     Cache.add(`image:${url}`, image);
   });
+}
+
+function textureRetryDelay(attempt = 0) {
+  return Math.min(1800, Math.round(textureRetryBaseDelay * (1.55 ** attempt)));
+}
+
+function textureCacheUrlVariants(...urls) {
+  const variants = new Set();
+  urls.filter(Boolean).forEach((url) => {
+    variants.add(url);
+    try {
+      const parsed = new URL(url, window.location.origin);
+      variants.add(parsed.href);
+      parsed.searchParams.delete('standing_texture_retry');
+      variants.add(parsed.href);
+      if (parsed.origin === window.location.origin) variants.add(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+    } catch {
+      variants.add(String(url).replace(/[?&]standing_texture_retry=\d+/, ''));
+    }
+  });
+  return [...variants].filter(Boolean);
 }
 
 function SceneTextureLoaderOverlay({ loaded = 0, total = 0 }) {
