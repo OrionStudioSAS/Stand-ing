@@ -7123,13 +7123,18 @@ function closestPlacementInRegions(item, regions) {
 }
 
 function wallItemAxisRange(item, wall, width, depth) {
-  const length = wall === 'back' ? width : depth;
+  const limits = wallAxisLimits(wall, width, depth);
   const bounds = wallItemAxisBounds(item, wall);
   const sideMargin = wall === 'back' && isPartitionHeadItem(item) ? partitionHeadEdgeInset : 0;
   return {
-    min: -length / 2 - bounds.min + sideMargin,
-    max: length / 2 - bounds.max - sideMargin,
+    min: limits.min - bounds.min + sideMargin,
+    max: limits.max - bounds.max - sideMargin,
   };
+}
+
+function wallAxisLimits(wall, width, depth) {
+  if (wall === 'back') return { min: -width / 2, max: width / 2 };
+  return { min: -depth / 2 + wallThickness, max: depth / 2 };
 }
 
 function wallItemAxisBounds(item, wall = 'back') {
@@ -8338,7 +8343,7 @@ function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, exhi
 function useMtlTexturePreload(materials, item, materialUrl) {
   const urls = useMemo(() => collectMtlTextureUrls(materials, item, materialUrl), [materials, item, materialUrl]);
   const key = urls.join('|');
-  const [ready, setReady] = useState(() => urls.length === 0);
+  const [ready, setReady] = useState(() => urls.length === 0 || urls.every(isDecodedTextureCached));
 
   useEffect(() => {
     if (!urls.length) {
@@ -8346,9 +8351,15 @@ function useMtlTexturePreload(materials, item, materialUrl) {
       return undefined;
     }
 
+    const missingUrls = urls.filter((url) => !isDecodedTextureCached(url));
+    if (!missingUrls.length) {
+      setReady(true);
+      return undefined;
+    }
+
     let cancelled = false;
     setReady(false);
-    Promise.all(urls.map((url) => preloadImage(url))).then(() => {
+    Promise.all(missingUrls.map((url) => preloadImage(url))).then(() => {
       if (!cancelled) setReady(true);
     });
 
@@ -8358,6 +8369,11 @@ function useMtlTexturePreload(materials, item, materialUrl) {
   }, [key]);
 
   return ready;
+}
+
+function isDecodedTextureCached(url = '') {
+  if (!url) return true;
+  return textureCacheUrlVariants(url).some((variant) => Boolean(Cache.get(`image:${variant}`)));
 }
 
 function collectMtlTextureUrls(materials, item, materialUrl) {
