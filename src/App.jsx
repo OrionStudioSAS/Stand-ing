@@ -2236,8 +2236,8 @@ function shopCartItemVisible(item) {
   if (!item) return false;
   if (isAutomaticReserveItem(item)) return false;
   if (isAutomaticPartitionHeadItem(item)) return false;
-  const label = `${item.type || ''} ${item.label || ''}`.toLowerCase();
-  return !label.includes('spot led');
+  if (isAutomaticLedRailItem(item)) return false;
+  return true;
 }
 
 function ValidationStepPanel({
@@ -2438,7 +2438,7 @@ function LedRailOptionCard({ enabled, spotCount, disabled = false, onChange }) {
   return (
     <div className="led-option-card">
       <div>
-        <strong>Rails LED automatiques</strong>
+        <strong>Spots LED automatiques</strong>
         <span>{spotCount} spots calcules automatiquement, soit 1 spot tous les 3m2.</span>
       </div>
       <div className="led-option-actions">
@@ -4289,6 +4289,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const draftMountType = assetPlacementMode(draft);
   const draftCollisionDisabled = draft.dimensions?.collisionEnabled === false;
   const draftIsTelevision = Boolean(draft.dimensions?.isTelevision);
+  const draftIsLedSpotOption = Boolean(draft.dimensions?.isLedSpotOption);
   const draftCeilingMounted = Boolean(draft.dimensions?.ceilingMounted);
   const draftMovementLocked = Boolean(draft.dimensions?.movementLocked);
   const draftDeleteLocked = Boolean(draft.dimensions?.deleteLocked);
@@ -4377,7 +4378,18 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
       dimensions: {
         ...(draft.dimensions || {}),
         isTelevision: checked,
-        ...(checked ? { mountType: 'wall', wallY: screenCenterHeight, ceilingMounted: false } : {}),
+        ...(checked ? { mountType: 'wall', wallY: screenCenterHeight, ceilingMounted: false, isLedSpotOption: false } : {}),
+      },
+    });
+  };
+
+  const updateLedSpotOption = (checked) => {
+    setDraft({
+      ...draft,
+      dimensions: {
+        ...(draft.dimensions || {}),
+        isLedSpotOption: checked,
+        ...(checked ? { mountType: 'wall', wallY: ledRailDefaultCenterY, isTelevision: false, ceilingMounted: false } : {}),
       },
     });
   };
@@ -4389,7 +4401,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
         ...(draft.dimensions || {}),
         ceilingMounted: checked,
         ceilingBottomY: checked ? ceilingObjectBottomY : draft.dimensions?.ceilingBottomY,
-        ...(checked ? { mountType: 'floor', isTelevision: false } : {}),
+        ...(checked ? { mountType: 'floor', isTelevision: false, isLedSpotOption: false } : {}),
       },
     });
   };
@@ -4557,6 +4569,19 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
               <span>
                 <strong>Option télé</strong>
                 <small>Coche pour rattacher automatiquement cet objet au mur, centre à 1,60 m du sol.</small>
+              </span>
+            </label>
+          )}
+          {!isGroupAsset && (
+            <label className="asset-toggle-row">
+              <input
+                type="checkbox"
+                checked={draftIsLedSpotOption}
+                onChange={(event) => updateLedSpotOption(event.target.checked)}
+              />
+              <span>
+                <strong>Option spot</strong>
+                <small>Coche pour utiliser cet objet comme spot automatique, placé tout en haut du mur.</small>
               </span>
             </label>
           )}
@@ -5925,6 +5950,11 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
     dimensions.mountType = 'wall';
     dimensions.wallY = screenCenterHeight;
   }
+  if (isLedRailEntry({ ...item, dimensions }) || isLedRailEntry(entry)) {
+    dimensions.isLedSpotOption = true;
+    dimensions.mountType = 'wall';
+    dimensions.wallY = ledRailCenterY({ ...entry, dimensions });
+  }
   const placementRule = hasOwn(item, 'placementRule')
     ? normalizePlacementRule(item.placementRule)
     : effectivePlacementRule(entry);
@@ -6232,11 +6262,7 @@ function ledSpotCountForArea(area) {
 }
 
 function isLedRailEntry(item = {}) {
-  const text = `${item?.type || ''} ${item?.label || ''} ${item?.dimensions?.folderName || ''}`
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-  return text.includes('led') && (text.includes('rail') || text.includes('spot'));
+  return Boolean(item?.isLedSpotOption || item?.dimensions?.isLedSpotOption);
 }
 
 function isAutomaticLedRailItem(item = {}) {
