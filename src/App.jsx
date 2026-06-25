@@ -3669,22 +3669,24 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           <ambientLight intensity={0.85} />
           <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
-            <StandScene
-              width={width}
-              depth={depth}
-              height={height}
-              layout={layout}
-              items={items}
-              selectedId={selectedId}
-              setSelectedId={setSelectedId}
-              draggingId={draggingId}
-              setDraggingId={setDraggingId}
-              canEditLockedItems
-              onDragMove={moveDraggedItem}
-              viewAngle={35}
-              carpetColor={{ hex: '#bebebe' }}
-              wallFabricColor={{ hex: '#f8f7f3' }}
-            />
+            {presetTextureLoad.ready && (
+              <StandScene
+                width={width}
+                depth={depth}
+                height={height}
+                layout={layout}
+                items={items}
+                selectedId={selectedId}
+                setSelectedId={setSelectedId}
+                draggingId={draggingId}
+                setDraggingId={setDraggingId}
+                canEditLockedItems
+                onDragMove={moveDraggedItem}
+                viewAngle={35}
+                carpetColor={{ hex: '#bebebe' }}
+                wallFabricColor={{ hex: '#f8f7f3' }}
+              />
+            )}
             <ContactShadows opacity={0.22} scale={12} blur={2.4} far={5} position={[0, -0.01, 0]} />
           </Suspense>
           <OrbitControls makeDefault target={[0, 0.7, 0]} minPolarAngle={Math.PI / 5.2} maxPolarAngle={Math.PI / 2.25} minDistance={4} maxDistance={11} enablePan enabled={!draggingId} />
@@ -6056,20 +6058,41 @@ function preloadImage(url, attempt = 0) {
     }
 
     const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.onload = () => resolve({ ok: true, url });
-    image.onerror = () => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    const retryOrResolve = () => {
       if (attempt < textureRetryAttempts && canRetryTextureUrl(url)) {
         window.setTimeout(() => {
-          preloadImage(textureRetryUrl(url, attempt + 1), attempt + 1).then(resolve);
+          preloadImage(textureRetryUrl(url, attempt + 1), attempt + 1).then(finish);
         }, 180 * (attempt + 1));
         return;
       }
       logTextureDiagnostic('Texture preload failed after retries', { url });
-      resolve({ ok: false, url });
+      finish({ ok: false, url });
     };
+    const decodeAndResolve = () => {
+      if (!image.naturalWidth || !image.naturalHeight) {
+        retryOrResolve();
+        return;
+      }
+      if (typeof image.decode === 'function') {
+        image.decode()
+          .then(() => finish({ ok: true, url }))
+          .catch(retryOrResolve);
+        return;
+      }
+      finish({ ok: true, url });
+    };
+
+    image.crossOrigin = 'anonymous';
+    image.onload = decodeAndResolve;
+    image.onerror = retryOrResolve;
     image.src = attempt ? textureRetryUrl(url, attempt) : url;
-    if (image.complete && image.naturalWidth > 0) resolve({ ok: true, url });
+    if (image.complete && image.naturalWidth > 0) decodeAndResolve();
   });
 }
 
