@@ -812,7 +812,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     carpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
     selectedWallFabricColor.image,
   ]);
-  const sceneAssetsReady = objectBankLoaded && sceneTextureLoad.ready;
+  const sceneModelLoad = useSceneModelFilePreload(sceneItems);
+  const sceneAssetsReady = objectBankLoaded && sceneTextureLoad.ready && sceneModelLoad.ready;
+  const sceneLoadProgress = combineLoadStates(
+    objectBankLoaded ? sceneTextureLoad : { ready: false, loaded: 0, total: 1 },
+    objectBankLoaded ? sceneModelLoad : { ready: false, loaded: 0, total: 1 },
+  );
   const sceneCanvasClassName = [
     draggingId ? 'dragging-canvas' : '',
     !sceneAssetsReady ? 'scene-canvas-loading' : '',
@@ -1257,7 +1262,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           />
         </Canvas>
 
-        {!sceneAssetsReady && <SceneTextureLoaderOverlay loaded={objectBankLoaded ? sceneTextureLoad.loaded : 0} total={objectBankLoaded ? sceneTextureLoad.total : 1} />}
+        {!sceneAssetsReady && <SceneTextureLoaderOverlay loaded={sceneLoadProgress.loaded} total={sceneLoadProgress.total} />}
 
         {readOnly && !headerPanel && (
           <div className="readonly-badge">
@@ -3601,6 +3606,9 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true }));
   const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
   const presetTextureLoad = useSceneTexturePreload(items, []);
+  const presetModelLoad = useSceneModelFilePreload(items);
+  const presetAssetsReady = presetTextureLoad.ready && presetModelLoad.ready;
+  const presetLoadProgress = combineLoadStates(presetTextureLoad, presetModelLoad);
   const selected = items.find((item) => item.id === selectedId);
 
   useEffect(() => {
@@ -3663,7 +3671,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       <section className="preset-3d-stage">
         <Canvas
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
-          className={!presetTextureLoad.ready ? 'scene-canvas-loading' : ''}
+          className={!presetAssetsReady ? 'scene-canvas-loading' : ''}
           shadows
           onPointerUp={() => setDraggingId(null)}
           onPointerLeave={() => setDraggingId(null)}
@@ -3672,7 +3680,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           <ambientLight intensity={0.85} />
           <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
-            {presetTextureLoad.ready && (
+            {presetAssetsReady && (
             <StandScene
               width={width}
               depth={depth}
@@ -3695,7 +3703,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           <OrbitControls makeDefault target={[0, 0.7, 0]} minPolarAngle={Math.PI / 5.2} maxPolarAngle={Math.PI / 2.25} minDistance={4} maxDistance={11} enablePan enabled={!draggingId} />
         </Canvas>
 
-        {!presetTextureLoad.ready && <SceneTextureLoaderOverlay loaded={presetTextureLoad.loaded} total={presetTextureLoad.total} />}
+        {!presetAssetsReady && <SceneTextureLoaderOverlay loaded={presetLoadProgress.loaded} total={presetLoadProgress.total} />}
 
         {selected && (
           <div className="view-toolbar preset-toolbar selection-mode">
@@ -6027,6 +6035,43 @@ function useSceneTexturePreload(items = [], extraUrls = []) {
   return state;
 }
 
+function useSceneModelFilePreload(items = []) {
+  const urls = collectSceneModelUrls(items);
+  const key = urls.join('|');
+  const [state, setState] = useState(() => ({ ready: urls.length === 0, loaded: 0, total: urls.length }));
+
+  useEffect(() => {
+    if (!urls.length) {
+      setState({ ready: true, loaded: 0, total: 0 });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let loaded = 0;
+    setState({ ready: false, loaded: 0, total: urls.length });
+
+    Promise.all(urls.map((url) => preloadFile(url).then(() => {
+      loaded += 1;
+      if (!cancelled) setState({ ready: false, loaded, total: urls.length });
+    }))).then(() => {
+      if (!cancelled) setState({ ready: true, loaded: urls.length, total: urls.length });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+
+  return state;
+}
+
+function combineLoadStates(...states) {
+  return states.reduce((acc, state) => ({
+    loaded: acc.loaded + Number(state?.loaded || 0),
+    total: acc.total + Number(state?.total || 0),
+  }), { loaded: 0, total: 0 });
+}
+
 function collectSceneTextureUrls(items = [], extraUrls = []) {
   const urls = new Set((extraUrls || []).filter(Boolean));
   const visit = (item) => {
@@ -6046,6 +6091,20 @@ function collectSceneTextureUrls(items = [], extraUrls = []) {
 
   (items || []).forEach(visit);
   return [...urls];
+}
+
+function collectSceneModelUrls(items = []) {
+  const urls = new Set();
+  const visit = (item) => {
+    if (!item) return;
+    if (item.modelUrl) urls.add(item.modelUrl);
+    const materialUrl = modelMaterialUrl(item);
+    if (materialUrl) urls.add(materialUrl);
+    if (item.children?.length) item.children.forEach(visit);
+  };
+
+  (items || []).forEach(visit);
+  return [...urls].filter(Boolean);
 }
 
 function logTextureDiagnostic(message, details = {}) {
@@ -6105,6 +6164,32 @@ function loadDecodedImage(url, attempt = 0) {
 
 function preloadImage(url, attempt = 0) {
   return loadDecodedImage(url, attempt).then(({ ok }) => ({ ok, url }));
+}
+
+function preloadFile(url, attempt = 0) {
+  return new Promise((resolve) => {
+    if (!url) {
+      resolve({ ok: true, url });
+      return;
+    }
+
+    fetch(attempt ? textureRetryUrl(url, attempt) : url, { cache: 'force-cache' })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.arrayBuffer();
+      })
+      .then(() => resolve({ ok: true, url }))
+      .catch(() => {
+        if (attempt < textureRetryAttempts && canRetryTextureUrl(url)) {
+          window.setTimeout(() => {
+            preloadFile(textureRetryUrl(url, attempt + 1), attempt + 1).then(resolve);
+          }, textureRetryDelay(attempt));
+          return;
+        }
+        logTextureDiagnostic('Model preload failed after retries', { url });
+        resolve({ ok: false, url });
+      });
+  });
 }
 
 function cacheDecodedImage(originalUrl, requestedUrl, image) {
