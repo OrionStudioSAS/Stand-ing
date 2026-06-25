@@ -7849,6 +7849,23 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
     const parse = loader.parse.bind(loader);
     loader.parse = (text, path) => parse(rewriteRuntimeMtlReferences(text, item), path);
   });
+  const mtlTexturesReady = useMtlTexturePreload(materials, item, materialUrl);
+
+  if (!mtlTexturesReady) return null;
+
+  return (
+    <ObjModelWithPreparedMaterials
+      item={item}
+      materials={materials}
+      mainImageTexture={mainImageTexture}
+      exhibitorTexture={exhibitorTexture}
+      selected={selected}
+      hovered={hovered}
+    />
+  );
+}
+
+function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, exhibitorTexture, selected, hovered }) {
   const obj = useLoader(OBJLoader, item.modelUrl, (loader) => {
     materials.preload();
     loader.setMaterials(materials);
@@ -7861,6 +7878,62 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   }), [obj, item, mainImageTexture, exhibitorTexture, selected, hovered]);
 
   return <primitive object={model} dispose={null} />;
+}
+
+function useMtlTexturePreload(materials, item, materialUrl) {
+  const urls = useMemo(() => collectMtlTextureUrls(materials, item, materialUrl), [materials, item, materialUrl]);
+  const key = urls.join('|');
+  const [ready, setReady] = useState(() => urls.length === 0);
+
+  useEffect(() => {
+    if (!urls.length) {
+      setReady(true);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setReady(false);
+    Promise.all(urls.map((url) => preloadImage(url))).then(() => {
+      if (!cancelled) setReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+
+  return ready;
+}
+
+function collectMtlTextureUrls(materials, item, materialUrl) {
+  const urls = new Set();
+  const baseUrl = assetBaseUrl(materialUrl || item?.modelUrl || '');
+  const textureProps = ['map_kd', 'map_ks', 'map_ke', 'norm', 'map_bump', 'bump', 'disp', 'map_d'];
+
+  Object.values(materials?.materialsInfo || {}).forEach((materialInfo) => {
+    textureProps.forEach((prop) => {
+      const value = materialInfo?.[prop];
+      if (!value) return;
+      const textureUrl = resolveMtlTextureValueUrl(value, baseUrl, item);
+      if (textureUrl && textureUrl !== blankTextureDataUrl) urls.add(textureUrl);
+    });
+  });
+
+  return [...urls];
+}
+
+function resolveMtlTextureValueUrl(value, baseUrl, item) {
+  const texturePath = mtlTexturePathFromValue(value);
+  if (!texturePath) return '';
+  const rawUrl = /^https?:\/\//i.test(texturePath) ? texturePath : `${baseUrl}${texturePath}`;
+  return resolveModelResourceUrl(rawUrl, item);
+}
+
+function mtlTexturePathFromValue(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const matches = [...raw.replaceAll('\\', '/').matchAll(/([^"'\s]+?\.(?:jpe?g|png|webp|gif|bmp|tga|tiff?))(?:\?.*)?/gi)];
+  return matches[matches.length - 1]?.[1] || '';
 }
 
 function modelMaterialUrl(item) {
