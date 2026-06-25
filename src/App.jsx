@@ -8278,12 +8278,12 @@ function rewriteRuntimeMtlReferences(text, item) {
     const value = match[2].trim();
     const texture = texturePaths.find((entry) => textureReferenceMatches(value, entry.fileName, entry.relativePath));
     if (!texture) {
-      logTextureDiagnostic('MTL texture line removed because the file is not part of this asset', {
+      logTextureDiagnostic('MTL texture line kept for safe URL resolver', {
         item: item?.label || item?.type,
         texture: value,
         rootPath,
       });
-      return `# ${line}`;
+      return line;
     }
     return `${match[1]}${texture.relativePath}`;
   }).join('\n');
