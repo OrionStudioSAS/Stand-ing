@@ -735,7 +735,25 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [draggingId, setDraggingId] = useState(null);
   const [language, setLanguage] = useState(initialOptions.language || 'fr');
   const [headerPanel, setHeaderPanel] = useState(null);
-  const [activeStep, setActiveStep] = useState(initialReadOnly ? 4 : 1);
+  const introStorageKey = useMemo(() => `standing-config-intro:${initialScene.id || initialScene.share_token || initialScene.project_name || 'scene'}`, [initialScene.id, initialScene.share_token, initialScene.project_name]);
+  const [activeStep, setActiveStepValue] = useState(() => {
+    if (initialReadOnly) return 4;
+    if (typeof window === 'undefined') return 1;
+    return window.localStorage.getItem(introStorageKey) === 'started' ? 2 : 1;
+  });
+  const markIntroStarted = () => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(introStorageKey, 'started');
+    } catch (_) {}
+  };
+  const setActiveStep = (nextStep) => {
+    setActiveStepValue((currentStep) => {
+      const resolvedStep = typeof nextStep === 'function' ? nextStep(currentStep) : nextStep;
+      if (resolvedStep > 1) markIntroStarted();
+      return resolvedStep;
+    });
+  };
   const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, led: false, reserve: false, tete: false, comptoir: false });
   const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || '1893');
   const [selectedCarpetFootprintId, setSelectedCarpetFootprintId] = useState(initialOptions.carpetFootprintColorId || initialOptions.carpetColorId || '1893');
@@ -855,6 +873,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     [ledRailsEnabled, ledRailEntry, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems]);
+  const cartItems = useMemo(() => sceneItems.filter(shopCartItemVisible), [sceneItems]);
+  const showCartBar = !readOnly && (activeStep === 2 || activeStep === 3);
   const sceneTextureLoad = useSceneTexturePreload(sceneItems, [
     selectedCarpetColor.image,
     carpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
@@ -1177,7 +1197,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   if (!objectBankLoaded) return <div className="loading-screen">Chargement des objets 3D...</div>;
 
   return (
-    <main className={`configurator-shell ${activeStep === 1 ? 'intro-step' : ''} ${readOnly ? 'readonly-mode' : ''}`}>
+    <main className={`configurator-shell ${activeStep === 1 ? 'intro-step' : ''} ${showCartBar ? 'has-cart-bar' : ''} ${readOnly ? 'readonly-mode' : ''}`}>
       <header className="configurator-topbar">
         <a className="config-logo" href="/">
           <img src="/images/logo.png" alt="Stand-ING" />
@@ -1473,7 +1493,25 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         );
       })()}
 
-      {activeStep > 1 && activeStep !== 3 && !readOnly && (
+      {showCartBar && (
+        <FurnitureCartBar
+          items={cartItems}
+          catalog={availableCatalog}
+          selectedId={selectedId}
+          total={scenePricing.total || 0}
+          salonLabel={salonLabel}
+          readOnly={readOnly}
+          nextLabel={activeStep === 2 ? 'Étape suivante' : 'Étape suivante'}
+          nextDetail={activeStep === 2 ? 'Mobilier →' : 'Validation →'}
+          onAdd={() => setActiveStep(3)}
+          onSelectItem={setSelectedId}
+          onConfigureItem={(item) => setItemConfigModal({ mode: 'edit', item, entry: itemConfiguratorEntry(item) })}
+          onRemove={removeOptionalItem}
+          onNext={() => setActiveStep(activeStep === 2 ? 3 : 4)}
+        />
+      )}
+
+      {activeStep > 1 && !showCartBar && !readOnly && (
       <footer className="configurator-footer">
         <div>
           <span>Total HT estimé</span>
@@ -1915,9 +1953,6 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
     const matchesCategory = activeCategory === 'all' || entryCategory === activeCategory || normalizeMarketCategory(entry) === activeCategory;
     return matchesCategory;
   });
-  const shopItems = items.filter((item) => !isAutomaticLedRailItem(item) && shopCartItemVisible(item));
-  const total = pricing?.total || 0;
-
   return (
     <>
       <PanelHead title="Bibliothèque accessoires" step={3} />
@@ -1948,20 +1983,6 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
         ))}
         {!filteredEntries.length && <div className="marketplace-empty">Aucun accessoire dans cette catégorie.</div>}
       </section>
-
-      <FurnitureCartBar
-        items={shopItems}
-        catalog={catalog}
-        selectedId={selectedId}
-        total={total}
-        salonLabel={salonLabel}
-        readOnly={readOnly}
-        onAdd={() => setActiveCategory('all')}
-        onSelectItem={onSelectItem}
-        onConfigureItem={onConfigureItem}
-        onRemove={onRemove}
-        onNext={onNext}
-      />
     </>
   );
 }
@@ -1989,7 +2010,15 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
   );
 }
 
-function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, onAdd, onSelectItem, onConfigureItem, onRemove, onNext }) {
+function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel = 'Étape suivante', nextDetail = 'Validation →', onAdd, onSelectItem, onConfigureItem, onRemove, onNext }) {
+  const itemRefs = useRef(new Map());
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const selectedNode = itemRefs.current.get(selectedId);
+    selectedNode?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [selectedId, items.length]);
+
   return (
     <div className="furniture-cart-bar">
       <div className="cart-total-card">
@@ -2008,7 +2037,16 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
           const entry = findCatalogEntry(catalog, item.type) || item;
           const selected = item.id === selectedId;
           return (
-            <button key={item.id} type="button" className={`cart-item-card ${selected ? 'active' : ''}`} onClick={() => onSelectItem(item.id)}>
+            <button
+              key={item.id}
+              ref={(node) => {
+                if (node) itemRefs.current.set(item.id, node);
+                else itemRefs.current.delete(item.id);
+              }}
+              type="button"
+              className={`cart-item-card ${selected ? 'active' : ''}`}
+              onClick={() => onSelectItem(item.id)}
+            >
               <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
               <span>
                 <strong>{itemCartLabel(item)}</strong>
@@ -2020,7 +2058,7 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
           );
         })}
       </div>
-      <button type="button" className="cart-next-button" onClick={onNext}>Étape suivante<br /><span>Validation →</span></button>
+      <button type="button" className="cart-next-button" onClick={onNext}>{nextLabel}<br /><span>{nextDetail}</span></button>
     </div>
   );
 }

@@ -1048,6 +1048,10 @@ select {
   grid-template-rows: 68px minmax(0, 1fr);
 }
 
+.configurator-shell.has-cart-bar {
+  grid-template-rows: 68px minmax(0, 1fr) 90px;
+}
+
 .configurator-topbar {
   grid-column: 1 / -1;
   display: grid;
