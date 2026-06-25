@@ -5379,7 +5379,7 @@ function AdminBatView({ scenes, assets = [] }) {
           <article key={scene.id} className="stand-row bat-row">
             <div><strong>{scene.client_name || 'Exposant sans nom'}</strong><span>{scene.project_name || sceneStandNumber(scene, {}, 'Stand')}</span></div>
             <div><span>Salon</span><strong>{scene.event_name || scene.salon || 'A definir'}</strong></div>
-            <div><span>Lots AMCO</span><strong>{order.lines.length ? `${order.lines.length} ligne${order.lines.length > 1 ? 's' : ''} - ${order.total.toLocaleString('fr-FR')} € HT` : 'Aucun lot payant'}</strong></div>
+            <div><span>Lots AMCO</span><strong>{order.lines.length ? `${order.total.toLocaleString('fr-FR')} € HT` : 'Aucun lot payant'}</strong></div>
             <div><span>Exposant</span><strong>{clientStatusLabel(scene.client_status)}</strong></div>
             <div className="stand-actions">
               <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a>
