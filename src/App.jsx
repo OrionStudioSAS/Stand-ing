@@ -851,7 +851,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     objectBankLoaded ? items.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)) : items
   ), [items, availableCatalog, objectBankLoaded]);
   const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item) && !isAutomaticReserveItem(item) && !isAutomaticPartitionHeadItem(item)), [hydratedItems]);
-  const ledRailEntry = useMemo(() => availableCatalog.find(isLedRailEntry), [availableCatalog]);
+  const ledRailEntries = useMemo(() => ledRailCatalogEntries(availableCatalog), [availableCatalog]);
   const ledSpotCount = ledSpotCountForArea(area);
   const reserveRules = useMemo(() => sceneReserveRules(initialScene), [initialScene]);
   const activeReserveRuleConfig = useMemo(() => activeReserveRule(reserveRules, area), [reserveRules, area]);
@@ -869,10 +869,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   );
   const automaticLedItems = useMemo(
     () => (ledRailsEnabled
-      ? makeAutomaticLedRailItems(ledRailEntry, width, depth, layout, ledSpotCount)
+      ? makeAutomaticLedRailItems(ledRailEntries, width, depth, layout, ledSpotCount)
         .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout))
       : []),
-    [ledRailsEnabled, ledRailEntry, width, depth, layout, ledSpotCount, ledRailOverrides],
+    [ledRailsEnabled, ledRailEntries, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems]);
   const cartItems = useMemo(() => sceneItems.filter(shopCartItemVisible), [sceneItems]);
@@ -5444,10 +5444,10 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
     left: hasOwn(options, 'partitionHeadLeftEnabled') ? Boolean(options.partitionHeadLeftEnabled) : null,
     right: hasOwn(options, 'partitionHeadRightEnabled') ? Boolean(options.partitionHeadRightEnabled) : null,
   });
-  const ledEntry = catalogEntries.find(isLedRailEntry);
+  const ledEntries = ledRailCatalogEntries(catalogEntries);
   const ledItems = options.ledRailsEnabled === false
     ? []
-    : makeAutomaticLedRailItems(ledEntry, width, depth, layout, Number(options.ledSpotCount || ledSpotCountForArea(area)))
+    : makeAutomaticLedRailItems(ledEntries, width, depth, layout, ledSpotCountForArea(area))
       .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout));
   return [
     ...manualItems,
@@ -6788,7 +6788,18 @@ function ledSpotCountForArea(area) {
 }
 
 function isLedRailEntry(item = {}) {
-  return Boolean(item?.isLedSpotOption || item?.dimensions?.isLedSpotOption);
+  return Boolean(item?.isLedSpotOption || item?.dimensions?.isLedSpotOption || isLedRailModelEntry(item));
+}
+
+function isLedRailModelEntry(item = {}) {
+  const text = normalizedItemText(item);
+  return text.includes('rail') && text.includes('led') && /(?:^|[^0-9])[23]\s*spots?/.test(text);
+}
+
+function ledRailCatalogEntries(entries = []) {
+  const rails = (entries || []).filter((entry) => isLedRailModelEntry(entry));
+  if (rails.length) return rails;
+  return (entries || []).filter((entry) => isLedRailEntry(entry));
 }
 
 function isAutomaticLedRailItem(item = {}) {
@@ -6842,9 +6853,10 @@ function ledRailCenterY(entry) {
   return Number.isFinite(y) && y > 0 ? y : ledRailDefaultCenterY;
 }
 
-function makeAutomaticLedRailItems(entry, width, depth, layout, spotCount) {
-  if (!entry || !spotCount) return [];
-  const railCount = Math.max(1, Math.ceil(spotCount / ledSpotsPerRail(entry)));
+function makeAutomaticLedRailItems(entries, width, depth, layout, spotCount) {
+  const railPlan = makeLedRailPlan(entries, spotCount);
+  if (!railPlan.length) return [];
+  const railCount = railPlan.length;
   const walls = availableWalls(layout);
   const totalLength = walls.reduce((sum, wall) => sum + wallLength(wall.id, width, depth), 0);
   const allocations = walls.map((wall) => {
@@ -6860,34 +6872,71 @@ function makeAutomaticLedRailItems(entry, width, depth, layout, spotCount) {
       allocated += 1;
     });
 
+  let railIndex = 0;
   return allocations.flatMap((allocation) => {
+    const wallEntries = railPlan.slice(railIndex, railIndex + allocation.count);
+    railIndex += allocation.count;
+    if (!wallEntries.length) return [];
     const baseItem = {
-      ...makeItem(entry.type, width, depth, layout, entry),
       autoLedRail: true,
       included: true,
       priceMode: 'included',
       lockedPlacement: false,
       collisionEnabled: false,
       wall: allocation.wall,
-      y: ledRailCenterY(entry),
-      dimensions: {
-        ...(entry.dimensions || {}),
-        autoLedRail: true,
-        collisionEnabled: false,
-        wallY: ledRailCenterY(entry),
-      },
     };
-    const range = wallItemAxisRange(baseItem, allocation.wall, width, depth);
-    return Array.from({ length: allocation.count }, (_, index) => {
+    return wallEntries.map((entry, index) => {
+      const itemBase = {
+        ...makeItem(entry.type, width, depth, layout, entry),
+        ...baseItem,
+        y: ledRailCenterY(entry),
+        dimensions: {
+          ...(entry.dimensions || {}),
+          autoLedRail: true,
+          collisionEnabled: false,
+          wallY: ledRailCenterY(entry),
+        },
+      };
+      const range = wallItemAxisRange(itemBase, allocation.wall, width, depth);
       const rawAxis = range.min + ((index + 1) * (range.max - range.min)) / (allocation.count + 1);
       const axis = clamp(snapWallAxis(rawAxis), range.min, range.max);
       return constrainItem({
-        ...baseItem,
+        ...itemBase,
         id: `auto-led-${entry.type}-${allocation.wall}-${index + 1}`,
         x: axis,
       }, width, depth, layout);
     });
   });
+}
+
+function makeLedRailPlan(entries, spotCount) {
+  const catalogEntries = Array.isArray(entries) ? entries : [entries].filter(Boolean);
+  if (!catalogEntries.length || !spotCount) return [];
+  const twoSpotRail = catalogEntries.find((entry) => ledSpotsPerRail(entry) === 2) || null;
+  const threeSpotRail = catalogEntries.find((entry) => ledSpotsPerRail(entry) === 3) || null;
+  const fallbackRail = threeSpotRail || twoSpotRail || catalogEntries[0];
+  const wanted = Math.max(1, Number(spotCount || 0));
+  const plan = [];
+
+  if (!twoSpotRail || !threeSpotRail) {
+    const spotsPerRail = Math.max(1, ledSpotsPerRail(fallbackRail));
+    return Array.from({ length: Math.max(1, Math.ceil(wanted / spotsPerRail)) }, () => fallbackRail);
+  }
+
+  if (wanted <= 2) {
+    plan.push(twoSpotRail);
+  } else if (wanted === 3) {
+    plan.push(threeSpotRail);
+  } else if (wanted % 2 === 1) {
+    plan.push(threeSpotRail);
+    for (let remaining = wanted - 3; remaining > 0; remaining -= 2) plan.push(twoSpotRail);
+  } else if (wanted % 3 === 0) {
+    for (let remaining = wanted; remaining > 0; remaining -= 3) plan.push(threeSpotRail);
+  } else {
+    for (let remaining = wanted; remaining > 0; remaining -= 2) plan.push(twoSpotRail);
+  }
+
+  return plan;
 }
 
 function ledSpotsPerRail(entry = {}) {
