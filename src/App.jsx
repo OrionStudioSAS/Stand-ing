@@ -43,7 +43,10 @@ import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
 const floorPlane = new Plane(new Vector3(0, 1, 0), 0);
-const wallSwitchZone = 0.18;
+const wallSwitchZone = 0.55;
+const wallSwitchHysteresis = 0.12;
+const objectWallSnapThreshold = 0.75;
+const objectWallAxisPadding = 0.65;
 const fixedWallHeight = 2.5;
 const wallThickness = 0.06;
 const floorThickness = 0.01;
@@ -7299,37 +7302,22 @@ function wallItemAxisBounds(item, wall = 'back') {
 function wallFromDrag(point, currentWall, width, depth, layout) {
   const validWalls = availableWalls(layout).map((wall) => wall.id);
   const current = validWalls.includes(currentWall) ? currentWall : 'back';
-  const outsideEdge = 0.08;
-
-  if (current === 'back') {
-    if (validWalls.includes('left') && point.x < -width / 2 - outsideEdge) return 'left';
-    if (validWalls.includes('right') && point.x > width / 2 + outsideEdge) return 'right';
-    return 'back';
-  }
-
-  if (current === 'left') {
-    if (validWalls.includes('back') && point.z < -depth / 2 - outsideEdge) return 'back';
-    if (validWalls.includes('right') && point.x > width / 2 + outsideEdge) return 'right';
-    return 'left';
-  }
-
-  if (current === 'right') {
-    if (validWalls.includes('back') && point.z < -depth / 2 - outsideEdge) return 'back';
-    if (validWalls.includes('left') && point.x < -width / 2 - outsideEdge) return 'left';
-    return 'right';
-  }
 
   const wallZones = [
-    { wall: 'back', active: Math.abs(point.z + depth / 2) <= wallSwitchZone, distance: Math.abs(point.z + depth / 2) },
-    { wall: 'left', active: point.x <= -width / 2 + wallSwitchZone, distance: Math.abs(point.x + width / 2) },
-    { wall: 'right', active: point.x >= width / 2 - wallSwitchZone, distance: Math.abs(point.x - width / 2) },
-  ].filter((zone) => validWalls.includes(zone.wall) && zone.active);
+    { wall: 'back', distance: Math.abs(point.z + depth / 2) },
+    { wall: 'left', distance: Math.abs(point.x + width / 2) },
+    { wall: 'right', distance: Math.abs(point.x - width / 2) },
+  ].filter((zone) => validWalls.includes(zone.wall) && zone.distance <= wallSwitchZone);
 
-  if (!wallZones.length || wallZones.some((zone) => zone.wall === current)) {
+  if (!wallZones.length) return current;
+
+  const closest = wallZones.sort((a, b) => a.distance - b.distance)[0];
+  const currentZone = wallZones.find((zone) => zone.wall === current);
+  if (currentZone && closest.wall !== current && closest.distance + wallSwitchHysteresis >= currentZone.distance) {
     return current;
   }
 
-  return wallZones.sort((a, b) => a.distance - b.distance)[0].wall;
+  return closest.wall;
 }
 
 function wallDragPatch(point, dragged, items, width, depth, layout) {
@@ -7356,17 +7344,16 @@ function wallDragPatch(point, dragged, items, width, depth, layout) {
 }
 
 function objectWallFromDrag(point, items, ignoreId = null) {
-  const threshold = 0.35;
   const candidates = objectWallSurfaces(items, ignoreId)
     .map((surface) => {
       const halfLength = surface.length / 2;
-      const minAxis = surface.centerAxis - halfLength - 0.3;
-      const maxAxis = surface.centerAxis + halfLength + 0.3;
+      const minAxis = surface.centerAxis - halfLength - objectWallAxisPadding;
+      const maxAxis = surface.centerAxis + halfLength + objectWallAxisPadding;
       const axisValue = surface.orientation === 'x' ? point.x : point.z;
       const normalValue = surface.orientation === 'x' ? point.z : point.x;
       if (axisValue < minAxis || axisValue > maxAxis) return null;
       const distance = Math.abs(normalValue - surface.normalAxis);
-      if (distance > threshold) return null;
+      if (distance > objectWallSnapThreshold) return null;
       return {
         surface,
         axis: snapWallAxis(clamp(axisValue, surface.centerAxis - halfLength, surface.centerAxis + halfLength)),
@@ -8062,6 +8049,7 @@ function floorWallBlocker(item, wall, width, depth, margin = 0.1) {
 
 function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, interactive = true, canEditLockedItems = false, visualContext = null }) {
   const [hoveredId, setHoveredId] = useState(null);
+  const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
   const cameraPivot = useMemo(() => {
     const radians = (viewAngle * Math.PI) / 180;
     return [Math.sin(radians) * 0.75, 0, Math.cos(radians) * 0.25];
@@ -8091,7 +8079,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
 
   return (
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
-      {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
+      {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
       <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} />
       <Walls width={width} depth={depth} height={height} layout={layout} wallFabricColor={wallFabricColor} onDeselect={clearSceneSelection} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
@@ -8217,41 +8205,58 @@ function drawMirroredTile(ctx, image, x, y, width, height, sourceX, sourceY, fli
 }
 
 
-function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, sceneOffset, draggingId, onDragMove, onClearHover, onDeselect }) {
+function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, sceneOffset, draggingId, draggingItem = null, onDragMove, onClearHover, onDeselect }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
-  const dragPlane = (key, position, size) => (
+  const emitDragPoint = (event) => {
+    onDragMove({
+      x: event.point.x - sceneOffset[0],
+      z: event.point.z - sceneOffset[2],
+    });
+  };
+  const handleDragMove = (event) => {
+    event.stopPropagation();
+    if (!draggingId) {
+      onClearHover?.();
+      return;
+    }
+    emitDragPoint(event);
+  };
+  const dragPlane = (key, position, size, rotation = [-Math.PI / 2, 0, 0]) => (
     <mesh
       key={key}
       position={position}
-      rotation={[-Math.PI / 2, 0, 0]}
+      rotation={rotation}
       onPointerDown={() => {
         if (!draggingId) onDeselect?.();
       }}
-      onPointerMove={(event) => {
-        event.stopPropagation();
-        if (!draggingId) {
-          onClearHover?.();
-          return;
-        }
-        onDragMove({
-          x: event.point.x - sceneOffset[0],
-          z: event.point.z - sceneOffset[2],
-        });
-      }}
+      onPointerMove={handleDragMove}
       onPointerUp={(event) => {
         if (!draggingId) return;
         event.stopPropagation();
       }}
     >
       <planeGeometry args={size} />
-      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} side={DoubleSide} />
     </mesh>
   );
+  const wallDragPlanes = () => {
+    if (!draggingItem || !isWallItem(draggingItem)) return null;
+    const sideDepth = Math.max(0.01, depth - wallThickness);
+    const sideZ = -depth / 2 + wallThickness + sideDepth / 2;
+    return (
+      <>
+        {dragPlane('wall-back', [0, fixedWallHeight / 2, -depth / 2 + wallThickness], [width + wallSwitchZone * 2, fixedWallHeight], [0, 0, 0])}
+        {(layout === 'left' || layout === 'u') && dragPlane('wall-left', [-width / 2 + wallThickness, fixedWallHeight / 2, sideZ], [sideDepth + wallSwitchZone * 2, fixedWallHeight], [0, Math.PI / 2, 0])}
+        {(layout === 'right' || layout === 'u') && dragPlane('wall-right', [width / 2 - wallThickness, fixedWallHeight / 2, sideZ], [sideDepth + wallSwitchZone * 2, fixedWallHeight], [0, -Math.PI / 2, 0])}
+      </>
+    );
+  };
 
   return (
     <group>
       {dragPlane('stand', [0, 0.015, 0], [width, depth])}
       {carpetFootprintEnabled && dragPlane('footprint', [footprint.centerX, 0.016, footprint.centerZ], [footprint.width, footprint.depth])}
+      {wallDragPlanes()}
     </group>
   );
 }
