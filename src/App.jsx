@@ -8432,7 +8432,7 @@ function Model3D({ item, selected, hovered, dragging, visualContext }) {
 
 function GlbModel({ item, selected, hovered }) {
   const gltf = useGlbModel(item.modelUrl);
-  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false });
+  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize() });
   const model = useMemo(() => prepareLoadedModel(gltf.scene, item, {
     selected,
     hovered,
@@ -8759,6 +8759,10 @@ function materialMatchesReference(materialName = '', material = null, normalized
 function isWoodReceptionDeskImageMaterial(materialName = '', material = null) {
   return materialName === '_1'
     || materialMatchesReference(materialName, material, 'binary_3', 'Binary_3.jpeg');
+}
+
+function woodReceptionDeskImageCoverSize() {
+  return [1200, 800];
 }
 
 function isWoodReceptionDeskColorMaterial(materialName = '', material = null) {
