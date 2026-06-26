@@ -7794,7 +7794,9 @@ function wallBoxesOverlap(a, b) {
 }
 
 function floorItemWallCollisionBox(item, wall, width, depth) {
-  const blocker = floorWallBlocker(item, wall, width, depth);
+  const blocker = isReserveSceneItem(item)
+    ? reserveWallBlocker(item, wall, width, depth, collisionPadding)
+    : floorWallBlocker(item, wall, width, depth);
   if (!blocker) return null;
   const bounds = itemGroupBounds(item);
   return {
@@ -8063,6 +8065,7 @@ function wallBlockers(currentItem, items, width, depth, wall) {
     .filter((item) => !isPosterItem(currentItem) || isPosterBlockingItem(item))
     .flatMap((item) => {
       if (isWallItem(item)) return wallMountedBlocker(item, wall, width, depth, margin);
+      if (isReserveSceneItem(item)) return reserveWallBlocker(item, wall, width, depth, Math.max(margin, 0.03));
       return floorWallBlocker(item, wall, width, depth, margin);
     })
     .filter(Boolean);
@@ -8089,6 +8092,39 @@ function floorWallBlocker(item, wall, width, depth, margin = 0.1) {
   if (wall === 'left' && minX <= -width / 2 + wallZone) return { min: minZ - margin, max: maxZ + margin };
   if (wall === 'right' && maxX >= width / 2 - wallZone) return { min: minZ - margin, max: maxZ + margin };
   return null;
+}
+
+function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
+  const bounds = itemHardCollisionBox(item, 0);
+  if (!bounds) return null;
+  const wallZone = 0.9;
+  const cornerZone = 0.9;
+  const limits = wallAxisLimits(wall, width, depth);
+  let blocker = null;
+
+  if (wall === 'back' && bounds.minZ <= -depth / 2 + wallZone) {
+    blocker = { min: bounds.minX - margin, max: bounds.maxX + margin };
+    if (bounds.minX <= -width / 2 + cornerZone) blocker.min = limits.min;
+    if (bounds.maxX >= width / 2 - cornerZone) blocker.max = limits.max;
+  }
+
+  if (wall === 'left' && bounds.minX <= -width / 2 + wallZone) {
+    blocker = { min: bounds.minZ - margin, max: bounds.maxZ + margin };
+    if (bounds.minZ <= -depth / 2 + cornerZone) blocker.min = limits.min;
+    if (bounds.maxZ >= depth / 2 - cornerZone) blocker.max = limits.max;
+  }
+
+  if (wall === 'right' && bounds.maxX >= width / 2 - wallZone) {
+    blocker = { min: bounds.minZ - margin, max: bounds.maxZ + margin };
+    if (bounds.minZ <= -depth / 2 + cornerZone) blocker.min = limits.min;
+    if (bounds.maxZ >= depth / 2 - cornerZone) blocker.max = limits.max;
+  }
+
+  if (!blocker) return null;
+  return {
+    min: clamp(blocker.min, limits.min, limits.max),
+    max: clamp(blocker.max, limits.min, limits.max),
+  };
 }
 
 function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, interactive = true, canEditLockedItems = false, visualContext = null }) {
