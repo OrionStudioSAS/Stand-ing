@@ -1828,7 +1828,7 @@ function WoodReceptionDeskOptionsPanel({ item, uploadState, onImageChange, onRes
       </label>
 
       <label className="item-color-upload">
-        <span>Couleur du matériau Laminate_D02_120cm_2</span>
+        <span>Couleur du matériau Laminate_D02_120cm_6</span>
         <input type="color" value={selectedColor} onChange={(event) => onColorChange?.(event.target.value)} />
         <strong>{item.options?.binary2Color || 'Couleur originale'}</strong>
       </label>
@@ -8762,8 +8762,8 @@ function isWoodReceptionDeskImageMaterial(materialName = '', material = null) {
 }
 
 function isWoodReceptionDeskColorMaterial(materialName = '', material = null) {
-  return materialName === 'laminate_d02_120cm_2'
-    || materialMatchesReference(materialName, material, 'binary_2', 'Binary_2.jpeg');
+  return materialName === 'laminate_d02_120cm_6'
+    || materialMatchesReference(materialName, material, 'binary_0', 'Binary_0.jpeg');
 }
 
 function partitionHeadMainImageMaterial(item = {}) {
