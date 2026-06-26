@@ -8636,7 +8636,7 @@ function useExternalTexture(url, options = {}) {
       const applyImage = (image) => {
         if (!image?.naturalWidth) return false;
         try {
-          const t = createCoverImageTexture(image, options.coverSize[0], options.coverSize[1]);
+          const t = createCoverImageTexture(image, options.coverSize[0], options.coverSize[1], options);
           if (t) { currentTexture = t; setTexture(t); return true; }
         } catch (_) {}
         return false;
@@ -8696,7 +8696,7 @@ function prepareDynamicTexture(texture, options = {}) {
   return texture;
 }
 
-function createCoverImageTexture(image, targetWidth, targetHeight) {
+function createCoverImageTexture(image, targetWidth, targetHeight, options = {}) {
   if (typeof document === 'undefined' || !image) return null;
   const canvas = document.createElement('canvas');
   canvas.width = targetWidth;
@@ -8712,7 +8712,7 @@ function createCoverImageTexture(image, targetWidth, targetHeight) {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, targetWidth, targetHeight);
   ctx.drawImage(image, dx, dy, drawWidth, drawHeight);
-  return prepareDynamicTexture(new CanvasTexture(canvas));
+  return prepareDynamicTexture(new CanvasTexture(canvas), options);
 }
 
 function posterCoverTextureSize(region = null, maxLongEdge = 1600) {
@@ -8913,7 +8913,7 @@ function createSmclPartitionHeadInfoTexture(visualContext = {}) {
   ctx.font = '700 22px Arial, sans-serif';
   ctx.fillText('et des collectivités locales', 285, 720);
 
-  return prepareDynamicTexture(new CanvasTexture(canvas));
+  return prepareDynamicTexture(new CanvasTexture(canvas), options);
 }
 
 function drawLanguageFlag(ctx, language, x, y, width, height) {
