@@ -7354,10 +7354,13 @@ function objectWallFromDrag(point, items, ignoreId = null) {
       if (axisValue < minAxis || axisValue > maxAxis) return null;
       const distance = Math.abs(normalValue - surface.normalAxis);
       if (distance > objectWallSnapThreshold) return null;
+      const side = normalValue >= surface.normalAxis ? 1 : -1;
+      const axis = snapWallAxis(clamp(axisValue, surface.centerAxis - halfLength, surface.centerAxis + halfLength));
+      if (protectedObjectWallSideContains(surface, axis, side)) return null;
       return {
         surface,
-        axis: snapWallAxis(clamp(axisValue, surface.centerAxis - halfLength, surface.centerAxis + halfLength)),
-        side: normalValue >= surface.normalAxis ? 1 : -1,
+        axis,
+        side,
         distance,
       };
     })
@@ -7376,6 +7379,7 @@ function serializeObjectWallSurface(surface) {
     centerAxis: surface.centerAxis,
     normalAxis: surface.normalAxis,
     length: surface.length,
+    protectedBounds: surface.protectedBounds || null,
   } : null;
 }
 
@@ -7391,16 +7395,18 @@ function objectWallSurfaces(items = [], ignoreId = null) {
 
 function groupObjectWallSurfaces(group) {
   const groupRotation = Number(group.rotation || 0);
+  const protectedBounds = isReserveSceneItem(group) ? itemHardCollisionBox(group) : null;
   const surfaces = (group.children || [])
     .flatMap((child) => {
       const rotated = rotatePoint(Number(child.x || 0), Number(child.z || 0), groupRotation);
-      return wallSurfaceCandidate(
+      const surface = wallSurfaceCandidate(
         child,
         `${group.id}:${child.id}`,
         Number(group.x || 0) + rotated.x,
         Number(group.z || 0) + rotated.z,
         groupRotation + Number(child.rotation || 0),
       );
+      return surface && protectedBounds ? { ...surface, protectedBounds } : surface;
     })
     .filter(Boolean);
   return mergeObjectWallSurfaces(group.id, surfaces);
@@ -7439,9 +7445,26 @@ function mergeObjectWallSurfaces(groupId, surfaces = []) {
         length,
         centerX: surface.orientation === 'x' ? centerAxis : surface.normalAxis,
         centerZ: surface.orientation === 'x' ? surface.normalAxis : centerAxis,
+        protectedBounds: surface.protectedBounds || null,
       };
     });
   });
+}
+
+function protectedObjectWallSideContains(surface = {}, axis = 0, side = 1) {
+  const bounds = surface.protectedBounds;
+  if (!bounds) return false;
+  const probeOffset = 0.08;
+  const x = surface.orientation === 'x' ? axis : Number(surface.normalAxis || 0) + side * probeOffset;
+  const z = surface.orientation === 'x' ? Number(surface.normalAxis || 0) + side * probeOffset : axis;
+  return pointInsideBounds(x, z, bounds, 0.025);
+}
+
+function pointInsideBounds(x, z, bounds = {}, inset = 0) {
+  return x > Number(bounds.minX || 0) + inset
+    && x < Number(bounds.maxX || 0) - inset
+    && z > Number(bounds.minZ || 0) + inset
+    && z < Number(bounds.maxZ || 0) - inset;
 }
 
 function wallSurfaceCandidate(item, id, centerX, centerZ, rotation = 0) {
@@ -7593,6 +7616,10 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
     if (isObjectWallId(item.wall)) {
       const surface = item.wallSurface;
       if (surface) {
+        const side = isPosterItem(item) ? 1 : (Number(item.wallSide || 1) >= 0 ? 1 : -1);
+        if (protectedObjectWallSideContains(surface, Number(item.x || surface.centerAxis || 0), side)) {
+          return constrainItem({ ...item, wall: 'back', wallSide: null, wallSurface: null }, width, depth, layout, carpetFootprintEnabled);
+        }
         const halfLength = surface.length / 2;
         const itemHalfWidth = wallItemMetrics(item, [], width, depth).width / 2;
         const margin = Math.min(itemHalfWidth, Math.max(0, halfLength - 0.02));
@@ -7691,6 +7718,7 @@ function placeWallItemInFreeSpot(item, items, width, depth, layout) {
 }
 
 function collidesWithScene(candidate, items, ignoreId = null, width = 0, depth = 0) {
+  if (!isWallItem(candidate) && collidesWithReserveProtectedArea(candidate, items, ignoreId)) return true;
   if (!itemCollisionEnabled(candidate)) return false;
   if (isWallItem(candidate)) return collidesWithWallItems(candidate, items, ignoreId, width, depth);
   const candidateBox = itemCollisionBox(candidate);
@@ -7704,16 +7732,27 @@ function collidesWithScene(candidate, items, ignoreId = null, width = 0, depth =
 }
 
 function collidesWithWallItems(candidate, items, ignoreId = null, width = 0, depth = 0) {
-  if (!itemCollisionEnabled(candidate) || isPosterItem(candidate)) return false;
+  if (!itemCollisionEnabled(candidate)) return false;
   const candidateBox = wallItemCollisionBox(candidate, items, width, depth);
   if (!candidateBox) return false;
 
   return (items || []).some((item) => {
     if (!item || item.id === ignoreId || !itemCollisionEnabled(item)) return false;
+    if (isPosterItem(candidate) && !isPosterBlockingItem(item)) return false;
     const itemBox = isWallItem(item)
       ? wallItemCollisionBox(item, items, width, depth)
       : floorItemWallCollisionBox(item, candidateBox.wall, width, depth);
     return itemBox ? wallBoxesOverlap(candidateBox, itemBox) : false;
+  });
+}
+
+function collidesWithReserveProtectedArea(candidate, items = [], ignoreId = null) {
+  const candidateBox = itemHardCollisionBox(candidate);
+  if (!candidateBox) return false;
+  return (items || []).some((item) => {
+    if (!item || item.id === ignoreId || !isReserveSceneItem(item)) return false;
+    const reserveBox = itemHardCollisionBox(item);
+    return reserveBox ? boxesOverlap(candidateBox, reserveBox) : false;
   });
 }
 
@@ -7769,15 +7808,20 @@ function floorItemWallCollisionBox(item, wall, width, depth) {
 
 function itemCollisionBox(item) {
   if (!item || isWallItem(item) || !itemCollisionEnabled(item)) return null;
+  return itemHardCollisionBox(item, collisionPadding);
+}
+
+function itemHardCollisionBox(item, padding = collisionPadding) {
+  if (!item || isWallItem(item)) return null;
   const bounds = itemPlacementBounds(item);
   const centerX = Number(item.x || 0);
   const centerZ = Number(item.z || 0);
 
   return {
-    minX: centerX + bounds.minX - collisionPadding,
-    maxX: centerX + bounds.maxX + collisionPadding,
-    minZ: centerZ + bounds.minZ - collisionPadding,
-    maxZ: centerZ + bounds.maxZ + collisionPadding,
+    minX: centerX + bounds.minX - padding,
+    maxX: centerX + bounds.maxX + padding,
+    minZ: centerZ + bounds.minZ - padding,
+    maxZ: centerZ + bounds.maxZ + padding,
   };
 }
 
