@@ -1794,6 +1794,55 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
   );
 }
 
+function WoodReceptionDeskOptionsPanel({ item, uploadState, onImageChange, onResetImage, onColorChange, onResetColor, embedded = false }) {
+  const imageName = item.options?.binary3ImageName || 'Texture originale Binary_3.jpeg';
+  const selectedColor = item.options?.binary2Color || '#ffffff';
+  return (
+    <aside className={embedded ? 'item-visual-config' : 'item-options-panel'}>
+      <div className="item-options-heading">
+        <FileImage size={17} />
+        <div>
+          <strong>Banque accueil bois</strong>
+          <span>Image frontale et couleur du panneau</span>
+        </div>
+      </div>
+
+      {item.options?.binary3ImageUrl && (
+        <div className="poster-image-preview">
+          <img src={item.options.binary3ImageUrl} alt="Aperçu banque accueil" />
+        </div>
+      )}
+
+      <label className="item-image-upload">
+        <span>Image à modifier</span>
+        <small>{imageName}</small>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          disabled={uploadState?.uploading}
+          onChange={(event) => {
+            onImageChange(event.target.files?.[0]);
+            event.target.value = '';
+          }}
+        />
+      </label>
+
+      <label className="item-color-upload">
+        <span>Couleur du matériau Binary_2.jpeg</span>
+        <input type="color" value={selectedColor} onChange={(event) => onColorChange?.(event.target.value)} />
+        <strong>{item.options?.binary2Color || 'Couleur originale'}</strong>
+      </label>
+
+      <div className="item-option-actions">
+        {item.options?.binary3ImageUrl && <button className="item-image-reset" type="button" onClick={onResetImage}>Revenir à l’image d’origine</button>}
+        {item.options?.binary2Color && <button className="item-image-reset" type="button" onClick={onResetColor}>Revenir à la couleur d’origine</button>}
+      </div>
+      {uploadState?.uploading && <p className="item-options-status">Upload du visuel...</p>}
+      {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
+    </aside>
+  );
+}
+
 
 
 function recommendedSimulatorImageSpec(printWidthMeters = 0, printHeightMeters = 0, maxLongEdge = 2048) {
@@ -2113,7 +2162,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
   const extras = extraOptions.reduce((sum, option) => sum + (selectedExtras[option.id] ? Number(option.price || 0) : 0), 0);
   const total = (basePrice + extras) * (mode === 'add' ? quantity : 1);
-  const hasVisualOptions = mode === 'edit' && item && (isPartitionHeadItem(item) || isPosterItem(item));
+  const hasVisualOptions = mode === 'edit' && item && (isPartitionHeadItem(item) || isPosterItem(item) || isWoodReceptionDeskItem(item));
 
   const toggleExtra = (id, checked) => {
     setSelectedExtras((current) => ({ ...current, [id]: checked }));
@@ -2184,6 +2233,18 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
             uploadState={uploadState}
             onImageChange={(file) => onImageChange?.(item, file, { urlKey: 'posterImageUrl', nameKey: 'posterImageName' })}
             onResetImage={() => onUpdateItemOptions?.(item, { posterImageUrl: '', posterImageName: '' })}
+            embedded
+          />
+        )}
+
+        {hasVisualOptions && isWoodReceptionDeskItem(item) && (
+          <WoodReceptionDeskOptionsPanel
+            item={item}
+            uploadState={uploadState}
+            onImageChange={(file) => onImageChange?.(item, file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName' })}
+            onResetImage={() => onUpdateItemOptions?.(item, { binary3ImageUrl: '', binary3ImageName: '' })}
+            onColorChange={(color) => onUpdateItemOptions?.(item, { binary2Color: color })}
+            onResetColor={() => onUpdateItemOptions?.(item, { binary2Color: '' })}
             embedded
           />
         )}
@@ -6456,6 +6517,7 @@ function collectSceneTextureUrls(items = [], extraUrls = []) {
     if (!item) return;
     if (item.options?.headMainImageUrl) urls.add(item.options.headMainImageUrl);
     if (item.options?.posterImageUrl) urls.add(item.options.posterImageUrl);
+    if (item.options?.binary3ImageUrl) urls.add(item.options.binary3ImageUrl);
 
     const referenceUrl = item.modelUrl || item.materialUrl || item.dimensions?.materialUrl || '';
     const storagePaths = Array.isArray(item.dimensions?.storagePaths) ? item.dimensions.storagePaths : [];
@@ -8370,7 +8432,13 @@ function Model3D({ item, selected, hovered, dragging, visualContext }) {
 
 function GlbModel({ item, selected, hovered }) {
   const gltf = useGlbModel(item.modelUrl);
-  const model = useMemo(() => prepareLoadedModel(gltf.scene, item, { selected, hovered, isGlb: true }), [gltf, item, selected, hovered]);
+  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false });
+  const model = useMemo(() => prepareLoadedModel(gltf.scene, item, {
+    selected,
+    hovered,
+    isGlb: true,
+    customImageTexture,
+  }), [gltf, item, selected, hovered, customImageTexture]);
   return <primitive object={model} dispose={null} />;
 }
 
@@ -8578,7 +8646,7 @@ function useExternalTexture(url, options = {}) {
         const fallbackLoader = new TextureLoader();
         fallbackLoader.load(url, (loadedTexture) => {
           if (disposed) { loadedTexture.dispose(); return; }
-          prepareDynamicTexture(loadedTexture);
+          prepareDynamicTexture(loadedTexture, options);
           currentTexture = loadedTexture;
           setTexture(loadedTexture);
         }, undefined, () => { if (!disposed) setTexture(null); });
@@ -8603,7 +8671,7 @@ function useExternalTexture(url, options = {}) {
     const loader = new TextureLoader();
     loader.load(url, (loadedTexture) => {
       if (disposed) { loadedTexture.dispose(); return; }
-      prepareDynamicTexture(loadedTexture);
+      prepareDynamicTexture(loadedTexture, options);
       currentTexture = loadedTexture;
       setTexture(loadedTexture);
     }, undefined, () => { if (!disposed) setTexture(null); });
@@ -8612,13 +8680,13 @@ function useExternalTexture(url, options = {}) {
       disposed = true;
       currentTexture?.dispose?.();
     };
-  }, [url, options.coverSize?.[0], options.coverSize?.[1]]);
+  }, [url, options.coverSize?.[0], options.coverSize?.[1], options.flipY]);
 
   return texture;
 }
 
-function prepareDynamicTexture(texture) {
-  texture.flipY = true;
+function prepareDynamicTexture(texture, options = {}) {
+  texture.flipY = options.flipY ?? true;
   texture.wrapS = RepeatWrapping;
   texture.wrapT = RepeatWrapping;
   texture.colorSpace = SRGBColorSpace;
@@ -8656,11 +8724,20 @@ function posterCoverTextureSize(region = null, maxLongEdge = 1600) {
 }
 
 function applyItemOptionMaterials(material, item, textureOptions = {}, meshName = '') {
-  if (!isPartitionHeadItem(item)) return material;
   if (Array.isArray(material)) return material.map((entry) => applyItemOptionMaterials(entry, item, textureOptions, meshName));
   if (!material) return material;
 
   const materialName = normalizeMaterialName(material.name);
+  if (isWoodReceptionDeskItem(item)) {
+    if (textureOptions.customImageTexture && materialMatchesReference(materialName, material, 'binary_3', 'Binary_3.jpeg')) {
+      return materialWithTexture(material, textureOptions.customImageTexture);
+    }
+    if (item?.options?.binary2Color && materialMatchesReference(materialName, material, 'binary_2', 'Binary_2.jpeg')) {
+      return materialWithColor(material, item.options.binary2Color);
+    }
+  }
+
+  if (!isPartitionHeadItem(item)) return material;
   if (textureOptions.mainImageTexture && materialName.includes(partitionHeadMainImageMaterial(item))) {
     return materialWithTexture(material, textureOptions.mainImageTexture);
   }
@@ -8668,6 +8745,15 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
     return materialWithTexture(material, textureOptions.exhibitorTexture);
   }
   return material;
+}
+
+function isWoodReceptionDeskItem(item = {}) {
+  const text = normalizedItemText(item);
+  return text.includes('banque') && text.includes('accueil') && text.includes('bois') && text.includes('1m');
+}
+
+function materialMatchesReference(materialName = '', material = null, normalizedNeedle = '', fileName = '') {
+  return materialName.includes(normalizedNeedle) || materialMapMatchesFile(material, fileName);
 }
 
 function partitionHeadMainImageMaterial(item = {}) {
@@ -8719,6 +8805,15 @@ function materialWithTexture(material, texture) {
   next.map = texture;
   next.transparent = false;
   if (next.color?.set) next.color.set('#ffffff');
+  next.needsUpdate = true;
+  return next;
+}
+
+function materialWithColor(material, color) {
+  const next = material.clone?.() || material;
+  next.map = null;
+  next.transparent = false;
+  if (next.color?.set) next.color.set(color);
   next.needsUpdate = true;
   return next;
 }

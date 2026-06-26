@@ -1942,6 +1942,42 @@ select {
   font-size: 0.72rem;
 }
 
+.item-color-upload {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 12px;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #fff;
+  color: #172033;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.item-color-upload span {
+  grid-column: 1 / -1;
+}
+
+.item-color-upload input {
+  width: 42px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.item-color-upload strong {
+  color: #8b94a2;
+  font-size: 0.72rem;
+}
+
+.item-option-actions {
+  display: grid;
+  gap: 8px;
+}
+
 .item-image-reset {
   min-height: 34px;
   border: 0;
