@@ -8913,7 +8913,7 @@ function createSmclPartitionHeadInfoTexture(visualContext = {}) {
   ctx.font = '700 22px Arial, sans-serif';
   ctx.fillText('et des collectivités locales', 285, 720);
 
-  return prepareDynamicTexture(new CanvasTexture(canvas), options);
+  return prepareDynamicTexture(new CanvasTexture(canvas));
 }
 
 function drawLanguageFlag(ctx, language, x, y, width, height) {
