@@ -8729,10 +8729,10 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
 
   const materialName = normalizeMaterialName(material.name);
   if (isWoodReceptionDeskItem(item)) {
-    if (textureOptions.customImageTexture && materialMatchesReference(materialName, material, 'binary_3', 'Binary_3.jpeg')) {
+    if (textureOptions.customImageTexture && isWoodReceptionDeskImageMaterial(materialName, material)) {
       return materialWithTexture(material, textureOptions.customImageTexture);
     }
-    if (item?.options?.binary2Color && materialMatchesReference(materialName, material, 'binary_2', 'Binary_2.jpeg')) {
+    if (item?.options?.binary2Color && isWoodReceptionDeskColorMaterial(materialName, material)) {
       return materialWithColor(material, item.options.binary2Color);
     }
   }
@@ -8749,11 +8749,21 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
 
 function isWoodReceptionDeskItem(item = {}) {
   const text = normalizedItemText(item);
-  return text.includes('banque') && text.includes('accueil') && text.includes('bois') && text.includes('1m');
+  return text.includes('banque') && text.includes('accueil') && text.includes('bois');
 }
 
 function materialMatchesReference(materialName = '', material = null, normalizedNeedle = '', fileName = '') {
   return materialName.includes(normalizedNeedle) || materialMapMatchesFile(material, fileName);
+}
+
+function isWoodReceptionDeskImageMaterial(materialName = '', material = null) {
+  return materialName === '_1'
+    || materialMatchesReference(materialName, material, 'binary_3', 'Binary_3.jpeg');
+}
+
+function isWoodReceptionDeskColorMaterial(materialName = '', material = null) {
+  return materialMatchesReference(materialName, material, 'binary_2', 'Binary_2.jpeg')
+    || materialName === '_0';
 }
 
 function partitionHeadMainImageMaterial(item = {}) {
@@ -8796,7 +8806,13 @@ function materialMapMatchesFile(material = null, targetFileName = '') {
 
 function materialMapFileName(material = null) {
   const data = material?.map?.image || material?.map?.source?.data;
-  const source = data?.currentSrc || data?.src || material?.map?.name || '';
+  const source = data?.currentSrc
+    || data?.src
+    || data?.name
+    || material?.map?.name
+    || material?.map?.source?.name
+    || material?.map?.userData?.name
+    || '';
   return safeDecodeUri(String(source || '').replaceAll('\\', '/').split('/').pop() || '');
 }
 
