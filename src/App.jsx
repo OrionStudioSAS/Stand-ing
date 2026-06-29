@@ -3209,7 +3209,7 @@ function getPendingBatRows(scenes) {
     .slice(0, 4)
     .map((scene) => ({
       id: scene.id,
-      salon: scene.event_name || scene.salon || 'Salon à définir',
+      salon: normalizeSalonTitle(scene.event_name || scene.salon) || 'Salon à définir',
       client: scene.client_name || 'Exposant sans nom',
       stand: `${scene.project_name || 'Stand'} — ${sceneArea(scene)}m²`,
       status: scene.client_status === 'bat_review' ? 'En attente validation Stand-ING' : statusLabel(scene.status),
@@ -3237,9 +3237,13 @@ function getRecentActivityRows(scenes, assets) {
   return [...sceneRows, ...assetRows].sort((a, b) => b.sortDate - a.sortDate).slice(0, 5);
 }
 
+function normalizeSalonTitle(raw) {
+  return (raw || '').replace(/\s*—\s*.+$/, '').trim();
+}
+
 function getSalonRows(scenes) {
   const grouped = scenes.reduce((acc, scene) => {
-    const key = scene.event_name || scene.salon || 'Salon à définir';
+    const key = normalizeSalonTitle(scene.event_name || scene.salon) || 'Salon à définir';
     if (!acc.has(key)) acc.set(key, { title: key, count: 0, active: false });
     const current = acc.get(key);
     current.count += 1;
@@ -4310,7 +4314,7 @@ function clientPrimaryScene(client) {
 }
 
 function clientSalonSummary(client) {
-  const salons = [...new Set((client.scenes || []).map((scene) => scene.event_name || scene.salon).filter(Boolean))];
+  const salons = [...new Set((client.scenes || []).map((scene) => normalizeSalonTitle(scene.event_name || scene.salon)).filter(Boolean))];
   if (!salons.length) return '—';
   if (salons.length <= 2) return salons.join(', ');
   return `${salons.slice(0, 2).join(', ')} +${salons.length - 2}`;
@@ -5482,7 +5486,7 @@ function AdminBatView({ scenes, assets = [] }) {
         return (
           <article key={scene.id} className="stand-row bat-row">
             <div><strong>{scene.client_name || 'Exposant sans nom'}</strong><span>{scene.project_name || sceneStandNumber(scene, {}, 'Stand')}</span></div>
-            <div><span>Salon</span><strong>{scene.event_name || scene.salon || 'A definir'}</strong></div>
+            <div><span>Salon</span><strong>{normalizeSalonTitle(scene.event_name || scene.salon) || 'A definir'}</strong></div>
             <div><span>Lots AMCO</span><strong>{order.lines.length ? `${order.total.toLocaleString('fr-FR')} € HT` : 'Aucun lot payant'}</strong></div>
             <div><span>Exposant</span><strong>{clientStatusLabel(scene.client_status)}</strong></div>
             <div className="stand-actions">
@@ -5498,7 +5502,7 @@ function AdminBatView({ scenes, assets = [] }) {
 }
 
 function sceneAdminCatalog(assets = [], scene = {}) {
-  const salonLabel = scene.event_name || scene.salon || '';
+  const salonLabel = normalizeSalonTitle(scene.event_name || scene.salon);
   const dynamicEntries = (assets || [])
     .filter((asset) => asset.is_active)
     .filter((asset) => assetMatchesSalon(asset, salonLabel))
@@ -5516,7 +5520,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
   const layout = scene.layout || 'back';
   const area = width * depth;
-  const salonLabel = scene.event_name || scene.salon || '';
+  const salonLabel = normalizeSalonTitle(scene.event_name || scene.salon);
   const options = scene.options || scene.source_payload?.options || {};
   const manualItems = sceneAdminItems(scene, catalogEntries);
   const reserveRule = activeReserveRule(sceneReserveRules(scene), area);
@@ -5547,7 +5551,7 @@ function scenePurchaseOrder(scene = {}, assets = []) {
   const fallbackPricing = calculateScenePricing({
     catalog: catalogEntries,
     items: sceneAllAdminItems(scene, catalogEntries),
-    salonLabel: scene.event_name || scene.salon || '',
+    salonLabel: normalizeSalonTitle(scene.event_name || scene.salon),
     scene,
   });
   const sourceLines = savedLines.length ? savedLines : fallbackPricing.lines;
@@ -5814,7 +5818,7 @@ function buildGroupChildren(rows, sourceAssets) {
 
 function assetSalons(asset, scenes = []) {
   if (Array.isArray(asset.dimensions?.salons)) return asset.dimensions.salons;
-  const salons = [...new Set(scenes.map((scene) => scene.event_name || scene.salon).filter(Boolean))];
+  const salons = [...new Set(scenes.map((scene) => normalizeSalonTitle(scene.event_name || scene.salon)).filter(Boolean))];
   return asset.is_active ? salons.slice(0, 1) : [];
 }
 
