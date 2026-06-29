@@ -775,6 +775,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
   const [itemOptionState, setItemOptionState] = useState({ uploading: false, error: '' });
   const [itemConfigModal, setItemConfigModal] = useState(null);
+  const [basePackOpen, setBasePackOpen] = useState(false);
   const [sceneHasRendered, setSceneHasRendered] = useState(false);
   const [clientInfo, setClientInfo] = useState({
     client: initialScene.client_name || '',
@@ -1387,10 +1388,18 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
         {activeStep > 1 && !headerPanel && scenePricing.baseUsage?.length > 0 && (
           <div className="base-pack-scene-note">
-            <strong>Pack de base</strong>
-            {scenePricing.baseUsage.slice(0, 4).map((item) => (
-              <span key={item.type}>{basePackItemLabel(item.label, item.quantity)} {basePackIncludedWord(item.label, item.quantity)} {item.used}/{item.quantity}</span>
-            ))}
+            <button type="button" onClick={() => setBasePackOpen((open) => !open)} aria-expanded={basePackOpen}>
+              <strong>Pack de base</strong>
+              <span>{scenePricing.baseUsage.length} quota{scenePricing.baseUsage.length > 1 ? 's' : ''}</span>
+              {basePackOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            </button>
+            {basePackOpen && (
+              <div className="base-pack-scene-list">
+                {scenePricing.baseUsage.map((item) => (
+                  <span key={item.type}>{basePackItemLabel(item.label, item.quantity)} {basePackIncludedWord(item.label, item.quantity)} {item.used}/{item.quantity}</span>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

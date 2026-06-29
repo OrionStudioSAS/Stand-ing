@@ -5474,23 +5474,58 @@ img.asset-thumb {
   left: 24px;
   z-index: 6;
   display: grid;
-  gap: 4px;
+  overflow: hidden;
   max-width: min(330px, calc(100% - 48px));
   border: 1px solid rgba(31, 67, 120, 0.14);
   border-radius: 14px;
-  padding: 12px 14px;
   color: #1f4378;
   background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 12px 28px rgba(20, 32, 48, 0.12);
   font-size: 0.78rem;
   font-weight: 850;
-  pointer-events: none;
+  pointer-events: auto;
+  backdrop-filter: blur(10px);
+}
+
+.base-pack-scene-note button {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  padding: 10px 12px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .base-pack-scene-note strong {
   color: #172132;
   font-size: 0.82rem;
   font-weight: 950;
+}
+
+.base-pack-scene-note button > span {
+  color: #7b8492;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.base-pack-scene-list {
+  display: grid;
+  gap: 5px;
+  padding: 0 12px 12px;
+}
+
+.base-pack-scene-list span {
+  border-radius: 10px;
+  padding: 7px 9px;
+  background: #f2f6fb;
+  color: #1f4378;
 }
 
 @media (max-width: 920px) {
