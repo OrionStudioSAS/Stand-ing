@@ -4995,6 +4995,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
                     <label><span>X m</span><input type="number" step="0.10" value={row.x} onChange={(event) => updateGroupRow(row.uid, { x: event.target.value })} /></label>
                     <label><span>Z m</span><input type="number" step="0.10" value={row.z} onChange={(event) => updateGroupRow(row.uid, { z: event.target.value })} /></label>
                     <label><span>Rotation</span><input type="number" step="5" value={row.rotation} onChange={(event) => updateGroupRow(row.uid, { rotation: event.target.value })} /></label>
+                    <label title="Profondeur 6 cm (arrière)"><span>6 cm</span><input type="checkbox" checked={Boolean(row.depthLocked6cm)} onChange={(event) => updateGroupRow(row.uid, { depthLocked6cm: event.target.checked || undefined })} /></label>
                     <button type="button" onClick={() => removeGroupRow(row.uid)} disabled={groupRows.length <= 1}><Trash2 size={14} /></button>
                   </article>
                 );
@@ -5782,6 +5783,7 @@ function assetToGroupRows(asset) {
     x: Number(child.x || 0),
     z: Number(child.z || 0),
     rotation: Number(child.rotation || 0),
+    depthLocked6cm: Boolean(child.dimensions?.depthLocked6cm),
   }));
 }
 
@@ -5801,7 +5803,7 @@ function buildGroupChildren(rows, sourceAssets) {
         modelUrl: source.model_url,
         modelSize: assetModelSize(source),
         materialUrl: source.dimensions?.materialUrl || null,
-        dimensions: source.dimensions || {},
+        dimensions: { ...(source.dimensions || {}), ...(row.depthLocked6cm ? { depthLocked6cm: true } : { depthLocked6cm: undefined }) },
         color: source.dimensions?.color || source.color,
         lockedInGroup: true,
       };
