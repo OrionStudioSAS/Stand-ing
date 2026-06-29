@@ -877,7 +877,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       : []),
     [ledRailsEnabled, ledRailEntries, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
-  const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems]);
+  const autoSpotsRule = useMemo(() => initialOptions.autoSpotsRule || null, [initialOptions]);
+  const automaticSpotItems = useMemo(
+    () => makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout),
+    [autoSpotsRule, availableCatalog, width, depth, layout],
+  );
+  const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems]);
   const cartItems = useMemo(() => sceneItems.filter(shopCartItemVisible), [sceneItems]);
   const showCartBar = !readOnly && (activeStep === 2 || activeStep === 3);
   const sceneTextureLoad = useSceneTexturePreload(sceneItems, [
@@ -2440,6 +2445,7 @@ function shopCartItemVisible(item) {
   if (isAutomaticReserveItem(item)) return false;
   if (isAutomaticPartitionHeadItem(item)) return false;
   if (isAutomaticLedRailItem(item)) return false;
+  if (isAutomaticSpotItem(item)) return false;
   return true;
 }
 
@@ -3806,6 +3812,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true }));
   const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
+  const [autoSpotsRule, setAutoSpotsRule] = useState(() => preset.base_config?.autoSpotsRule || null);
   const presetTextureLoad = useSceneTexturePreload(items, []);
   const presetSuspendLoad = useSceneSuspendPreload(items);
   const presetAssetsReady = presetTextureLoad.ready && presetSuspendLoad.ready;
@@ -3819,6 +3826,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   useEffect(() => {
     setReserveRules(normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true }));
     setPartitionHeadRules(normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
+    setAutoSpotsRule(preset.base_config?.autoSpotsRule || null);
   }, [preset.id, preset.base_config]);
 
   const updateItem = (id, patch) => {
@@ -3863,7 +3871,8 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       items,
       reserveRules: cleanedReserveRules,
       partitionHeadRules,
-      options: { presetMode: true, includedPack: offer?.name, salon: salon.name, reserveRules: cleanedReserveRules, partitionHeadRules },
+      autoSpotsRule: autoSpotsRule || undefined,
+      options: { presetMode: true, includedPack: offer?.name, salon: salon.name, reserveRules: cleanedReserveRules, partitionHeadRules, autoSpotsRule: autoSpotsRule || undefined },
     });
   };
 
@@ -3946,6 +3955,13 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           entries={availableCatalog.filter(isPartitionHeadItem)}
           salonLabel={salon.name}
           onChange={setPartitionHeadRules}
+        />
+        <PresetAutoSpotsEditor
+          rule={autoSpotsRule}
+          entries={availableCatalog.filter((e) => !e.isGroup && !isVariantGroupEntry(e))}
+          width={width}
+          depth={depth}
+          onChange={setAutoSpotsRule}
         />
         <h4>Objets inclus</h4>
         <p className="preset-included-help">Chaque objet sauvegardé ici est inclus dans la formule. Le client ne paiera que les quantités ajoutées au-delà.</p>
@@ -4113,6 +4129,56 @@ function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, onChange }
           </article>
         );
       })}
+    </section>
+  );
+}
+
+function PresetAutoSpotsEditor({ rule, entries, width, depth, onChange }) {
+  const area = Number(width || 0) * Number(depth || 0);
+  const spotsNeeded = area > 0 ? Math.max(1, Math.round(area / ledSpotAreaMeters)) : 0;
+  const spotsPerRail = Math.max(1, Number(rule?.spotsPerRail || 1));
+  const railCount = area > 0 ? Math.max(1, Math.round(spotsNeeded / spotsPerRail)) : 0;
+
+  return (
+    <section className="preset-reserve-rules">
+      <h4>Spots automatiques</h4>
+      <p>Choisissez un objet de la boutique et indiquez le nombre de spots qu'il comporte. Les rails sont placés automatiquement selon la règle 1 spot pour {ledSpotAreaMeters} m².</p>
+      <article>
+        <label>
+          Objet
+          <select
+            value={rule?.type || ''}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (!next) { onChange(null); return; }
+              onChange({ ...(rule || {}), type: next });
+            }}
+          >
+            <option value="">Aucun (désactivé)</option>
+            {entries.map((entry) => (
+              <option key={entry.type} value={entry.type}>{entry.label}</option>
+            ))}
+          </select>
+        </label>
+        {rule?.type && (
+          <label>
+            Spots par rail
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={rule?.spotsPerRail ?? ''}
+              placeholder="1"
+              onChange={(event) => onChange({ ...(rule || {}), spotsPerRail: Number(event.target.value) || 1 })}
+            />
+          </label>
+        )}
+        {rule?.type && area > 0 && (
+          <div className="preset-reserve-empty">
+            Pour {width} × {depth} m ({area} m²) : {spotsNeeded} spots → {railCount} rail{railCount > 1 ? 's' : ''} de {spotsPerRail} spot{spotsPerRail > 1 ? 's' : ''}
+          </div>
+        )}
+      </article>
     </section>
   );
 }
@@ -6888,6 +6954,62 @@ function ledRailCatalogEntries(entries = []) {
 
 function isAutomaticLedRailItem(item = {}) {
   return Boolean(item?.autoLedRail || item?.dimensions?.autoLedRail);
+}
+
+function isAutomaticSpotItem(item = {}) {
+  return Boolean(item?.autoSpot || item?.dimensions?.autoSpot);
+}
+
+function autoSpotsRailCount(rule, area) {
+  if (!rule?.type || !rule?.spotsPerRail) return 0;
+  const spotsPerRail = Math.max(1, Number(rule.spotsPerRail || 1));
+  const spotsNeeded = Math.max(1, Math.round(Number(area || 0) / ledSpotAreaMeters));
+  return Math.max(1, Math.round(spotsNeeded / spotsPerRail));
+}
+
+function makeAutomaticSpotItems(rule, catalogEntries, width, depth, layout) {
+  if (!rule?.type) return [];
+  const entry = findCatalogEntry(catalogEntries, rule.type);
+  if (!entry) return [];
+  const area = Number(width || 0) * Number(depth || 0);
+  const railCount = autoSpotsRailCount(rule, area);
+  const walls = availableWalls(layout);
+  const totalLength = walls.reduce((sum, wall) => sum + wallLength(wall.id, width, depth), 0);
+  const allocations = walls.map((wall) => {
+    const exact = (railCount * wallLength(wall.id, width, depth)) / Math.max(totalLength, 0.01);
+    return { wall: wall.id, count: Math.floor(exact), remainder: exact % 1 };
+  });
+  let allocated = allocations.reduce((sum, a) => sum + a.count, 0);
+  [...allocations].sort((a, b) => b.remainder - a.remainder).forEach((a) => {
+    if (allocated >= railCount) return;
+    a.count += 1;
+    allocated += 1;
+  });
+  return allocations.flatMap(({ wall: wallId, count }) => {
+    if (!count) return [];
+    return Array.from({ length: count }, (_, index) => {
+      const itemBase = {
+        ...makeItem(entry.type, width, depth, layout, entry),
+        autoSpot: true,
+        included: true,
+        priceMode: 'included',
+        lockedPlacement: false,
+        collisionEnabled: false,
+        wall: wallId,
+        y: ledRailCenterY(entry),
+        dimensions: {
+          ...(entry.dimensions || {}),
+          autoSpot: true,
+          collisionEnabled: false,
+          wallY: ledRailCenterY(entry),
+        },
+      };
+      const range = wallItemAxisRange(itemBase, wallId, width, depth);
+      const rawAxis = range.min + ((index + 1) * (range.max - range.min)) / (count + 1);
+      const axis = clamp(snapWallAxis(rawAxis), range.min, range.max);
+      return constrainItem({ ...itemBase, id: `auto-spot-${wallId}-${index + 1}`, x: axis }, width, depth, layout);
+    });
+  });
 }
 
 function isAutomaticReserveItem(item = {}) {
