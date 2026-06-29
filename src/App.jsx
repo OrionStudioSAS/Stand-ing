@@ -8090,9 +8090,27 @@ function wallBlockers(currentItem, items, width, depth, wall) {
       if (isWallItem(item)) return wallMountedBlocker(item, wall, width, depth, margin);
       if (isDoorItem(item)) return doorWallBlocker(item, wall, width, depth, margin);
       if (isReserveSceneItem(item)) return reserveWallBlocker(item, wall, width, depth, Math.max(margin, 0.03));
+      if (item.isGroup && item.children?.length) return groupChildrenWallBlockers(item, wall, width, depth, margin);
       return floorWallBlocker(item, wall, width, depth, margin);
     })
     .filter(Boolean);
+}
+
+// Expands a non-reserve group into its children and computes per-child blockers
+// so that e.g. a door inside a reserve/partition group is handled correctly.
+function groupChildrenWallBlockers(group, wall, width, depth, margin) {
+  const groupRotation = Number(group.rotation || 0);
+  return group.children.flatMap((child) => {
+    const rotated = rotatePoint(Number(child.x || 0), Number(child.z || 0), groupRotation);
+    const worldItem = {
+      ...child,
+      x: Number(group.x || 0) + rotated.x,
+      z: Number(group.z || 0) + rotated.z,
+      rotation: groupRotation + Number(child.rotation || 0),
+    };
+    if (isDoorItem(worldItem)) return doorWallBlocker(worldItem, wall, width, depth, margin);
+    return floorWallBlocker(worldItem, wall, width, depth, margin);
+  });
 }
 
 // When dimensions.wallFrameOnly is true, the blocker uses item.x/z (frame centre) +
