@@ -21,6 +21,7 @@ import {
   LayoutDashboard,
   LogOut,
   Mail,
+  Minus,
   Orbit,
   Paperclip,
   Plus,
@@ -145,14 +146,14 @@ const partitionHeadRuleBands = [
   { id: 'large', label: '25 m² et plus', minArea: 25, maxArea: null, includedCount: 2 },
 ];
 const placementRuleOptions = [
-  { id: 'free', label: 'Libre', description: 'L’utilisateur peut poser et déplacer cet objet normalement.' },
-  { id: 'back-left', label: 'Coin arrière gauche', description: 'L’objet se colle automatiquement dans le coin arrière gauche.' },
-  { id: 'back-right', label: 'Coin arrière droite', description: 'L’objet se colle automatiquement dans le coin arrière droit.' },
-  { id: 'front-left', label: 'Coin avant gauche', description: 'L’objet se colle automatiquement dans le coin avant gauche.' },
-  { id: 'front-right', label: 'Coin avant droite', description: 'L’objet se colle automatiquement dans le coin avant droit.' },
-  { id: 'outer-left', label: 'Le plus à gauche', description: 'L’objet se place sur le mur gauche si disponible, sinon au fond côté gauche.' },
-  { id: 'outer-right', label: 'Le plus à droite', description: 'L’objet se place sur le mur droit si disponible, sinon au fond côté droit.' },
-  { id: 'back-center', label: 'Centre arrière', description: 'L’objet reste centré contre le mur du fond.' },
+  { id: 'free', label: 'Libre', description: "L’utilisateur peut poser et déplacer cet objet normalement." },
+  { id: 'back-left', label: 'Coin arrière gauche', description: "L’objet se colle automatiquement dans le coin arrière gauche." },
+  { id: 'back-right', label: 'Coin arrière droite', description: "L’objet se colle automatiquement dans le coin arrière droit." },
+  { id: 'front-left', label: 'Coin avant gauche', description: "L’objet se colle automatiquement dans le coin avant gauche." },
+  { id: 'front-right', label: 'Coin avant droite', description: "L’objet se colle automatiquement dans le coin avant droit." },
+  { id: 'outer-left', label: 'Le plus à gauche', description: "L’objet se place sur le mur gauche si disponible, sinon au fond côté gauche." },
+  { id: 'outer-right', label: 'Le plus à droite', description: "L’objet se place sur le mur droit si disponible, sinon au fond côté droit." },
+  { id: 'back-center', label: 'Centre arrière', description: "L’objet reste centré contre le mur du fond." },
 ];
 const assetCategoryOptions = ['Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
 
@@ -510,7 +511,7 @@ function LoginHero() {
       </div>
       <div className="login-hero-content">
         <h2>Configurez votre stand en 3D.</h2>
-        <p>Visualisez chaque détail de votre stand d'exposition avant le jour J.</p>
+        <p>Visualisez chaque détail de votre stand d’exposition avant le jour J.</p>
         <div className="login-stand-preview">
           <img src="/images/image_stand_login.png" alt="Apercu stand 3D" />
         </div>
@@ -518,7 +519,7 @@ function LoginHero() {
           <li>Vue 3D temps reel, rotative</li>
           <li>Options, mobilier, signaletique</li>
           <li>BAT electronique integre</li>
-          <li>Acces 24h/24, depuis n'importe ou</li>
+          <li>Acces 24h/24, depuis n’importe ou</li>
         </ul>
       </div>
       <div className="login-orb" aria-hidden="true" />
@@ -700,7 +701,7 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
           {loading ? 'Connexion...' : 'Se connecter'}
         </button>
         <div className="login-divider">ou continuer avec</div>
-        <p className="login-help">Premiere connexion ? Votre commercial Stand-ING vous a envoye un lien d'acces.</p>
+        <p className="login-help">Premiere connexion ? Votre commercial Stand-ING vous a envoye un lien d’acces.</p>
         <button type="button" className="config-link-button" onClick={() => setShowConfigLink((shown) => !shown)}>
           Acceder via mon lien de configuration
         </button>
@@ -870,14 +871,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     () => makeAutomaticPartitionHeadItems(activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, salonLabel),
     [activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, salonLabel],
   );
+  const autoSpotsRule = useMemo(() => initialOptions.autoSpotsRule || null, [initialOptions]);
   const automaticLedItems = useMemo(
     () => (ledRailsEnabled
-      ? makeAutomaticLedRailItems(ledRailEntries, width, depth, layout, ledSpotCount)
-        .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout))
+      ? makeAutomaticLedRailItems(
+          ledRailEntries.filter((e) => e.type !== autoSpotsRule?.type),
+          width, depth, layout, ledSpotCount,
+        ).map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout))
       : []),
-    [ledRailsEnabled, ledRailEntries, width, depth, layout, ledSpotCount, ledRailOverrides],
+    [ledRailsEnabled, ledRailEntries, autoSpotsRule, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
-  const autoSpotsRule = useMemo(() => initialOptions.autoSpotsRule || null, [initialOptions]);
   const automaticSpotItems = useMemo(
     () => makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout),
     [autoSpotsRule, availableCatalog, width, depth, layout],
@@ -1177,7 +1180,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       return;
     }
     if (isAutomaticReserveItem(selected)) {
-      setReserveOptionType('');
+      setReserveOptionType('__none__');
       setSelectedId(null);
       return;
     }
@@ -1628,7 +1631,7 @@ function QuestionModal({ salonLabel, category, urgency, form, onCategoryChange, 
     <form className="question-modal" onSubmit={onSubmit}>
       <ModalHead icon={<HelpCircle size={19} />} title="Questions / Remarques" salonLabel={salonLabel} onClose={onClose} />
       <div className="question-content">
-        <p>Vous avez une question sur votre stand ou souhaitez ajouter une remarque particulière ? L'équipe Stand-ING vous répond sous 24h.</p>
+        <p>Vous avez une question sur votre stand ou souhaitez ajouter une remarque particulière ? L’équipe Stand-ING vous répond sous 24h.</p>
 
         <span className="form-section-label">Catégorie</span>
         <div className="chip-grid">
@@ -1643,7 +1646,7 @@ function QuestionModal({ salonLabel, category, urgency, form, onCategoryChange, 
           <input value={form.subject} onChange={(event) => onFormChange('subject', event.target.value)} placeholder="Ex : Dimension des cloisons pour mon logo..." />
         </label>
 
-        <span className="form-section-label">Niveau d'urgence</span>
+        <span className="form-section-label">Niveau d’urgence</span>
         <div className="urgency-grid">
           {urgencyLevels.map((entry) => (
             <button key={entry.id} className={urgency === entry.id ? 'active' : ''} type="button" onClick={() => onUrgencyChange(entry.id)}>
@@ -1660,7 +1663,7 @@ function QuestionModal({ salonLabel, category, urgency, form, onCategoryChange, 
             value={form.message}
             onChange={(event) => onFormChange('message', event.target.value)}
             maxLength={500}
-            placeholder={"Décrivez votre question ou remarque en détail...\n\nEx : Pour mon stand 25m², j'aimerais savoir si je peux intégrer un écran LED de 80cm sur la cloison de fond, en plus du visuel textile inclus."}
+            placeholder={"Décrivez votre question ou remarque en détail...\n\nEx : Pour mon stand 25m², j’aimerais savoir si je peux intégrer un écran LED de 80cm sur la cloison de fond, en plus du visuel textile inclus."}
           />
           <em>{form.message.length} / 500</em>
         </label>
@@ -2495,7 +2498,7 @@ function ValidationStepPanel({
         <div className="validation-option-row"><span>Empreinte moquette</span><strong>{carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : 'Retirée'}</strong></div>
         <div className="validation-option-row"><span>Coton cloison</span><strong>{wallFabricColor.name} ({wallFabricColor.code})</strong></div>
         <div className="validation-option-row"><span>Spots LED</span><strong>{ledRailsEnabled ? `${ledSpotCount} spots conserves` : 'Retires'}</strong></div>
-        <div className="validation-option-row"><span>Réserve</span><strong>{reserveOption?.label || reserveRule?.includedLabel || 'Non incluse'}</strong></div>
+        <div className="validation-option-row"><span>Réserve</span><strong>{reserveOptionType === '__none__' ? 'Retirée' : (reserveOption?.label || reserveRule?.includedLabel || 'Non incluse')}</strong></div>
         <div className="validation-option-row"><span>Têtes de cloison</span><strong>{partitionHeadSummary(partitionHeadRule, partitionHeadSides)}</strong></div>
       </section>
 
@@ -2684,6 +2687,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
   }
 
   const includedEntry = findCatalogEntry(catalog, rule.includedType);
+  const noneSelected = selectedOptionType === '__none__';
   const includedSelected = !selectedOptionType;
 
   return (
@@ -2728,6 +2732,21 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
           </button>
         );
       }) : <small>Aucune option complémentaire configurée sur ce pack.</small>}
+
+      {rule?.includedType && (
+        <button
+          type="button"
+          className={noneSelected ? 'active' : ''}
+          disabled={disabled}
+          onClick={() => onChange(noneSelected ? '' : '__none__')}
+        >
+          <span>
+            Sans réserve
+            <em>{noneSelected ? 'Réserve retirée' : 'Retirer la réserve de la scène'}</em>
+          </span>
+          {noneSelected ? <Check size={16} /> : <Minus size={16} />}
+        </button>
+      )}
     </div>
   );
 }
@@ -2956,7 +2975,7 @@ function AdminDashboard({ user, adminProfile }) {
 
   const deleteAsset = async (asset) => {
     if (!asset) return;
-    const confirmed = window.confirm(`Supprimer définitivement "${asset.label}" de la banque d'objets ?`);
+    const confirmed = window.confirm(`Supprimer définitivement "${asset.label}" de la banque d’objets ?`);
     if (!confirmed) return;
     await deleteObjectBankItem(asset);
     setAssets((current) => current.filter((item) => item.type !== asset.type));
@@ -2991,7 +3010,7 @@ function AdminDashboard({ user, adminProfile }) {
         <a className="admin-sidebar-logo" href="/admin">
           <img src="/images/logo.png" alt="Stand-ING" />
         </a>
-        <div className="admin-sidebar-product">Simulateur 3D - Stand'ING</div>
+        <div className="admin-sidebar-product">Simulateur 3D - Stand’ING</div>
         <nav className="admin-sidebar-nav" aria-label="Navigation admin">
           <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}><LayoutDashboard size={16} />Dashboard</button>
           <button className={tab === 'salons' ? 'active' : ''} onClick={() => setTab('salons')}><Orbit size={16} />Salons</button>
@@ -3082,7 +3101,7 @@ function adminTitle(tab) {
 }
 
 function adminSubtitle(tab) {
-  if (tab === 'dashboard') return "Vue d'ensemble de l'activité Stand-ING";
+  if (tab === 'dashboard') return "Vue d’ensemble de l’activité Stand-ING";
   if (tab === 'salons') return 'Gestion des salons et de leurs configurations';
   if (tab === 'presets') return 'Gestion des packs disponibles par salon';
   if (tab === 'clients') return 'Exposants synchronisés et configurations associées';
@@ -4142,7 +4161,7 @@ function PresetAutoSpotsEditor({ rule, entries, width, depth, onChange }) {
   return (
     <section className="preset-reserve-rules">
       <h4>Spots automatiques</h4>
-      <p>Choisissez un objet de la boutique et indiquez le nombre de spots qu'il comporte. Les rails sont placés automatiquement selon la règle 1 spot pour {ledSpotAreaMeters} m².</p>
+      <p>Choisissez un objet de la boutique et indiquez le nombre de spots qu’il comporte. Les rails sont placés automatiquement selon la règle 1 spot pour {ledSpotAreaMeters} m².</p>
       <article>
         <label>
           Objet
@@ -4468,7 +4487,7 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
         </label>
         <button className="asset-group-create-button" type="button" onClick={() => setGroupCreatorOpen(true)}>
           <Layers size={18} />
-          Creer un groupe d'objets
+          Creer un groupe d’objets
         </button>
         <button className="asset-group-create-button" type="button" onClick={() => setVariantGroupCreatorOpen(true)}>
           <Settings2 size={18} />
@@ -4938,7 +4957,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
               />
               <span>
                 <strong>Profondeur 6 cm (arrière)</strong>
-                <small>Limite la profondeur de l'objet à 6 cm depuis sa face arrière pour le calcul des collisions et des affiches.</small>
+                <small>Limite la profondeur de l’objet à 6 cm depuis sa face arrière pour le calcul des collisions et des affiches.</small>
               </span>
             </label>
           )}
@@ -5339,7 +5358,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
       <aside className="asset-drawer asset-group-drawer">
         <header>
           <div>
-            <h2>Créer un groupe d'objets</h2>
+            <h2>Créer un groupe d’objets</h2>
             <span>Groupe manipulable en un seul bloc</span>
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
@@ -5363,7 +5382,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
 
         <section className="asset-group-builder">
           <h3>Objets du groupe</h3>
-          <p>Place les objets directement sur le plan en vue du dessus. Les champs X/Z restent disponibles pour l'ajustement précis.</p>
+          <p>Place les objets directement sur le plan en vue du dessus. Les champs X/Z restent disponibles pour l’ajustement précis.</p>
           <MiniGroupPlan
             rows={rows}
             sourceAssets={sourceAssets}
@@ -5707,7 +5726,7 @@ function toPdfWinAnsi(text = '') {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[–—]/g, '-')
     .replace(/[\u00a0\u202f]/g, ' ')
-    .replace(/[’]/g, "'")
+    .replace(/[']/g, "'")
     .replace(/[“”]/g, '"')
     .replace(/[²]/g, '2')
     .replace(/€/g, 'EUR');
@@ -5733,7 +5752,7 @@ function AdminPlaceholder({ tab }) {
   return (
     <section className="admin-placeholder-card">
       <h2>{adminTitle(tab)}</h2>
-      <p>La maquette de ce menu sera intégrée dès que tu me l'envoies.</p>
+      <p>La maquette de ce menu sera intégrée dès que tu me l’envoies.</p>
     </section>
   );
 }
@@ -6160,6 +6179,7 @@ function isReserveCatalogEntry(entry = {}) {
 }
 
 function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = [], width, depth, layout, salonLabel) {
+  if (selectedOptionType === '__none__') return [];
   if (!rule?.includedType && !selectedOptionType) return [];
   const selectedOption = normalizeComplementaryOptions(rule?.options).find((option) => option.type === selectedOptionType) || null;
   const type = selectedOption?.type || rule?.includedType;
@@ -6576,7 +6596,7 @@ function useSceneSuspendPreload(items = []) {
           }
         }
       } catch {
-        // don't block preload on individual item failures
+        // don’t block preload on individual item failures
       }
       loaded += 1;
       if (!cancelled) setState({ ready: false, loaded, total: modelItems.length });
@@ -8910,7 +8930,7 @@ function useExternalTexture(url, options = {}) {
         return () => { disposed = true; currentTexture?.dispose?.(); };
       }
 
-      // Async path for when the preload cache isn't populated yet.
+      // Async path for when the preload cache isn’t populated yet.
       loadDecodedImage(url).then(({ ok, image }) => {
         if (disposed) return;
         if (!ok || !image || !applyImage(image)) tryFallbackLoader();
