@@ -4864,23 +4864,16 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             </label>
           )}
           {!isGroupAsset && isDoorItem(draft) && (
-            <label className="asset-field-row">
-              <span>
-                <strong>Largeur de blocage murale (m)</strong>
-                <small>Largeur du cadre de porte prise en compte pour le placement des affiches. Laisse vide pour utiliser la boîte englobante.</small>
-              </span>
+            <label className="asset-toggle-row">
               <input
-                type="number"
-                min="0.1"
-                max="5"
-                step="0.01"
-                placeholder="ex: 0.90"
-                value={draft.dimensions?.wallBlockWidth ?? ''}
-                onChange={(event) => {
-                  const val = parseFloat(event.target.value);
-                  updateAssetBehavior({ wallBlockWidth: Number.isFinite(val) && val > 0 ? val : undefined });
-                }}
+                type="checkbox"
+                checked={Boolean(draft.dimensions?.wallFrameOnly)}
+                onChange={(event) => updateAssetBehavior({ wallFrameOnly: event.target.checked || undefined })}
               />
+              <span>
+                <strong>Utiliser uniquement le cadre (6 cm)</strong>
+                <small>Le placement des affiches se cale sur la largeur nominale du cadre, pas sur le panneau ouvert.</small>
+              </span>
             </label>
           )}
         </section>
@@ -8102,28 +8095,29 @@ function wallBlockers(currentItem, items, width, depth, wall) {
     .filter(Boolean);
 }
 
-// Doors block the wall using only their frame width (ignoring the open-panel bounding box).
-// If dimensions.wallBlockWidth is set, that width is used; otherwise falls back to the X extent
-// of the bounding box (current behaviour, unchanged for doors without the property set).
+// When dimensions.wallFrameOnly is true, the blocker uses item.x/z (frame centre) +
+// the door's nominal stored width, ignoring the inflated bounding box of the open panel.
 function doorWallBlocker(item, wall, width, depth, margin = 0.1) {
   const bounds = itemHardCollisionBox({ ...item, collisionEnabled: true }, 0);
   if (!bounds) return null;
   const wallZone = 0.72;
-  const frameWidth = Number(item.dimensions?.wallBlockWidth) || null;
+  const frameOnly = Boolean(item.dimensions?.wallFrameOnly);
+
+  const frameHW = frameOnly ? itemDefaultSize(item)[0] / 2 : null;
 
   if (wall === 'back' && bounds.minZ <= -depth / 2 + wallZone) {
-    const cx = frameWidth ? Number(item.x || 0) : (bounds.minX + bounds.maxX) / 2;
-    const hw = frameWidth ? frameWidth / 2 : (bounds.maxX - bounds.minX) / 2;
+    const cx = frameOnly ? Number(item.x || 0) : (bounds.minX + bounds.maxX) / 2;
+    const hw = frameHW ?? (bounds.maxX - bounds.minX) / 2;
     return { min: cx - hw - margin, max: cx + hw + margin };
   }
   if (wall === 'left' && bounds.minX <= -width / 2 + wallZone) {
-    const cz = frameWidth ? Number(item.z || 0) : (bounds.minZ + bounds.maxZ) / 2;
-    const hw = frameWidth ? frameWidth / 2 : (bounds.maxZ - bounds.minZ) / 2;
+    const cz = frameOnly ? Number(item.z || 0) : (bounds.minZ + bounds.maxZ) / 2;
+    const hw = frameHW ?? (bounds.maxZ - bounds.minZ) / 2;
     return { min: cz - hw - margin, max: cz + hw + margin };
   }
   if (wall === 'right' && bounds.maxX >= width / 2 - wallZone) {
-    const cz = frameWidth ? Number(item.z || 0) : (bounds.minZ + bounds.maxZ) / 2;
-    const hw = frameWidth ? frameWidth / 2 : (bounds.maxZ - bounds.minZ) / 2;
+    const cz = frameOnly ? Number(item.z || 0) : (bounds.minZ + bounds.maxZ) / 2;
+    const hw = frameHW ?? (bounds.maxZ - bounds.minZ) / 2;
     return { min: cz - hw - margin, max: cz + hw + margin };
   }
   return null;
