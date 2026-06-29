@@ -4863,16 +4863,16 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
               </span>
             </label>
           )}
-          {!isGroupAsset && isDoorItem(draft) && (
+          {!isGroupAsset && (
             <label className="asset-toggle-row">
               <input
                 type="checkbox"
-                checked={Boolean(draft.dimensions?.wallFrameOnly)}
-                onChange={(event) => updateAssetBehavior({ wallFrameOnly: event.target.checked || undefined })}
+                checked={Boolean(draft.dimensions?.depthLocked6cm)}
+                onChange={(event) => updateAssetBehavior({ depthLocked6cm: event.target.checked || undefined })}
               />
               <span>
-                <strong>Utiliser uniquement le cadre (6 cm)</strong>
-                <small>Le placement des affiches se cale sur la largeur nominale du cadre, pas sur le panneau ouvert.</small>
+                <strong>Profondeur 6 cm (arrière)</strong>
+                <small>Limite la profondeur de l'objet à 6 cm depuis sa face arrière pour le calcul des collisions et des affiches.</small>
               </span>
             </label>
           )}
@@ -7113,11 +7113,6 @@ function isPosterItem(item = {}) {
   return item?.type === 'poster';
 }
 
-function isDoorItem(item = {}) {
-  const text = normalizedItemText(item);
-  return /porte(?![-_ ]?doc)|door/.test(text);
-}
-
 function isReserveSceneItem(item = {}) {
   return Boolean(isAutomaticReserveItem(item) || item?.dimensions?.isReserve || normalizedItemText(item).includes('reserve'));
 }
@@ -7201,7 +7196,6 @@ function languageFlag(language = 'fr') {
 
 function itemCollisionEnabled(item) {
   if (isPosterItem(item)) return false;
-  if (isDoorItem(item)) return false;
   return item?.collisionEnabled !== false && item?.dimensions?.collisionEnabled !== false;
 }
 
@@ -7897,7 +7891,14 @@ function itemGroupBounds(item) {
     };
   };
 
-  if (!item.isGroup || !item.children?.length) return itemPlacementBoundsOverride(item) || centeredBounds(itemDefaultSize(item));
+  if (!item.isGroup || !item.children?.length) {
+    const b = itemPlacementBoundsOverride(item) || centeredBounds(itemDefaultSize(item));
+    if (item?.dimensions?.depthLocked6cm) {
+      const clampedMaxZ = b.minZ + wallThickness;
+      return { ...b, maxZ: clampedMaxZ, depth: wallThickness };
+    }
+    return b;
+  }
 
   if (item.groupSize?.length >= 3) {
     const childBounds = item.children?.length ? childrenBounds(item.children) : null;
@@ -8088,7 +8089,6 @@ function wallBlockers(currentItem, items, width, depth, wall) {
     .filter((item) => !isPosterItem(currentItem) || isPosterBlockingItem(item))
     .flatMap((item) => {
       if (isWallItem(item)) return wallMountedBlocker(item, wall, width, depth, margin);
-      if (isDoorItem(item)) return doorWallBlocker(item, wall, width, depth, margin);
       if (isReserveSceneItem(item)) return reserveWallBlocker(item, wall, width, depth, Math.max(margin, 0.03));
       if (item.isGroup && item.children?.length) return groupChildrenWallBlockers(item, wall, width, depth, margin);
       return floorWallBlocker(item, wall, width, depth, margin);
@@ -8108,38 +8108,10 @@ function groupChildrenWallBlockers(group, wall, width, depth, margin) {
       z: Number(group.z || 0) + rotated.z,
       rotation: groupRotation + Number(child.rotation || 0),
     };
-    if (isDoorItem(worldItem)) return doorWallBlocker(worldItem, wall, width, depth, margin);
     return floorWallBlocker(worldItem, wall, width, depth, margin);
   });
 }
 
-// When dimensions.wallFrameOnly is true, the blocker uses item.x/z (frame centre) +
-// the door's nominal stored width, ignoring the inflated bounding box of the open panel.
-function doorWallBlocker(item, wall, width, depth, margin = 0.1) {
-  const bounds = itemHardCollisionBox({ ...item, collisionEnabled: true }, 0);
-  if (!bounds) return null;
-  const wallZone = 0.72;
-  const frameOnly = Boolean(item.dimensions?.wallFrameOnly);
-
-  const frameHW = frameOnly ? itemDefaultSize(item)[0] / 2 : null;
-
-  if (wall === 'back' && bounds.minZ <= -depth / 2 + wallZone) {
-    const cx = frameOnly ? Number(item.x || 0) : (bounds.minX + bounds.maxX) / 2;
-    const hw = frameHW ?? (bounds.maxX - bounds.minX) / 2;
-    return { min: cx - hw - margin, max: cx + hw + margin };
-  }
-  if (wall === 'left' && bounds.minX <= -width / 2 + wallZone) {
-    const cz = frameOnly ? Number(item.z || 0) : (bounds.minZ + bounds.maxZ) / 2;
-    const hw = frameHW ?? (bounds.maxZ - bounds.minZ) / 2;
-    return { min: cz - hw - margin, max: cz + hw + margin };
-  }
-  if (wall === 'right' && bounds.maxX >= width / 2 - wallZone) {
-    const cz = frameOnly ? Number(item.z || 0) : (bounds.minZ + bounds.maxZ) / 2;
-    const hw = frameHW ?? (bounds.maxZ - bounds.minZ) / 2;
-    return { min: cz - hw - margin, max: cz + hw + margin };
-  }
-  return null;
-}
 
 function wallMountedBlocker(item, wall, width, depth, margin = 0.1) {
   if (!itemCollisionEnabled(item)) return null;
