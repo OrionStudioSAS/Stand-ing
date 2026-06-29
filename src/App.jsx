@@ -791,7 +791,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     zip: savedContactDetail(initialScene, 'zip'),
     city: savedContactDetail(initialScene, 'city'),
     country: savedContactDetail(initialScene, 'country') || 'France',
-    salon: savedContactDetail(initialScene, 'salon') || `${initialScene.salon || 'SMCL 2026'} — Paris-Le Bourget`,
+    salon: savedContactDetail(initialScene, 'salon') || initialScene.salon || 'SMCL 2026',
     hall: savedContactDetail(initialScene, 'hall') || sceneHallLabel(initialScene, {}),
     emplacement: savedContactDetail(initialScene, 'emplacement') || sceneStandNumber(initialScene, {}, initialScene.project_name || 'Stand A-14'),
   }));
@@ -1391,7 +1391,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 <ul>
                   <li><span>🏛</span>{standLabel} · Hall 1 · {faceLabel}</li>
                   <li><span>📐</span>{area.toFixed(0)} m² — récupéré depuis votre dossier SMCL</li>
-                  <li><span>📅</span>{salonLabel} · 14-18 octobre 2026</li>
+                  <li><span>📅</span>{salonLabel}</li>
                 </ul>
                 <button type="button" onClick={() => setActiveStep(2)}>
                   Commencer la configuration →
@@ -4859,6 +4859,26 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
               </span>
             </label>
           )}
+          {!isGroupAsset && isDoorItem(draft) && (
+            <label className="asset-field-row">
+              <span>
+                <strong>Largeur de blocage murale (m)</strong>
+                <small>Largeur du cadre de porte prise en compte pour le placement des affiches. Laisse vide pour utiliser la boîte englobante.</small>
+              </span>
+              <input
+                type="number"
+                min="0.1"
+                max="5"
+                step="0.01"
+                placeholder="ex: 0.90"
+                value={draft.dimensions?.wallBlockWidth ?? ''}
+                onChange={(event) => {
+                  const val = parseFloat(event.target.value);
+                  updateAssetBehavior({ wallBlockWidth: Number.isFinite(val) && val > 0 ? val : undefined });
+                }}
+              />
+            </label>
+          )}
         </section>
         )}
 
@@ -4908,7 +4928,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
 
         <section className="asset-assignment">
           <h3>Affectation par salon</h3>
-          {(salons.length ? salons : ['SMCL 2026', 'SIAE 2026']).map((salon) => {
+          {(salons.length ? salons : ['SMCL 2026']).map((salon) => {
             const active = assignedSalons.includes(salon);
             const salonPricing = getSalonPricing(draft, salon);
             return (
@@ -5175,7 +5195,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
 
         <section className="asset-assignment">
           <h3>Affectation par salon</h3>
-          {(getSalonRows(scenes).map((salon) => salon.title).length ? getSalonRows(scenes).map((salon) => salon.title) : ['SMCL 2026', 'SIAE 2026']).map((salon) => {
+          {(getSalonRows(scenes).map((salon) => salon.title).length ? getSalonRows(scenes).map((salon) => salon.title) : ['SMCL 2026']).map((salon) => {
             const active = assignedSalons.includes(salon);
             return (
               <button key={salon} type="button" onClick={() => toggleSalon(salon)}>
@@ -5319,7 +5339,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
 
         <section className="asset-assignment">
           <h3>Affectation par salon</h3>
-          {(getSalonRows(scenes).map((salon) => salon.title).length ? getSalonRows(scenes).map((salon) => salon.title) : ['SMCL 2026', 'SIAE 2026']).map((salon) => {
+          {(getSalonRows(scenes).map((salon) => salon.title).length ? getSalonRows(scenes).map((salon) => salon.title) : ['SMCL 2026']).map((salon) => {
             const active = assignedSalons.includes(salon);
             return (
               <button key={salon} type="button" onClick={() => toggleSalon(salon)}>
@@ -7096,6 +7116,11 @@ function isPosterItem(item = {}) {
   return item?.type === 'poster';
 }
 
+function isDoorItem(item = {}) {
+  const text = normalizedItemText(item);
+  return /porte(?![-_ ]?doc)|door/.test(text);
+}
+
 function isReserveSceneItem(item = {}) {
   return Boolean(isAutomaticReserveItem(item) || item?.dimensions?.isReserve || normalizedItemText(item).includes('reserve'));
 }
@@ -7179,6 +7204,7 @@ function languageFlag(language = 'fr') {
 
 function itemCollisionEnabled(item) {
   if (isPosterItem(item)) return false;
+  if (isDoorItem(item)) return false;
   return item?.collisionEnabled !== false && item?.dimensions?.collisionEnabled !== false;
 }
 
@@ -8065,10 +8091,38 @@ function wallBlockers(currentItem, items, width, depth, wall) {
     .filter((item) => !isPosterItem(currentItem) || isPosterBlockingItem(item))
     .flatMap((item) => {
       if (isWallItem(item)) return wallMountedBlocker(item, wall, width, depth, margin);
+      if (isDoorItem(item)) return doorWallBlocker(item, wall, width, depth, margin);
       if (isReserveSceneItem(item)) return reserveWallBlocker(item, wall, width, depth, Math.max(margin, 0.03));
       return floorWallBlocker(item, wall, width, depth, margin);
     })
     .filter(Boolean);
+}
+
+// Doors block the wall using only their frame width (ignoring the open-panel bounding box).
+// If dimensions.wallBlockWidth is set, that width is used; otherwise falls back to the X extent
+// of the bounding box (current behaviour, unchanged for doors without the property set).
+function doorWallBlocker(item, wall, width, depth, margin = 0.1) {
+  const bounds = itemHardCollisionBox({ ...item, collisionEnabled: true }, 0);
+  if (!bounds) return null;
+  const wallZone = 0.72;
+  const frameWidth = Number(item.dimensions?.wallBlockWidth) || null;
+
+  if (wall === 'back' && bounds.minZ <= -depth / 2 + wallZone) {
+    const cx = frameWidth ? Number(item.x || 0) : (bounds.minX + bounds.maxX) / 2;
+    const hw = frameWidth ? frameWidth / 2 : (bounds.maxX - bounds.minX) / 2;
+    return { min: cx - hw - margin, max: cx + hw + margin };
+  }
+  if (wall === 'left' && bounds.minX <= -width / 2 + wallZone) {
+    const cz = frameWidth ? Number(item.z || 0) : (bounds.minZ + bounds.maxZ) / 2;
+    const hw = frameWidth ? frameWidth / 2 : (bounds.maxZ - bounds.minZ) / 2;
+    return { min: cz - hw - margin, max: cz + hw + margin };
+  }
+  if (wall === 'right' && bounds.maxX >= width / 2 - wallZone) {
+    const cz = frameWidth ? Number(item.z || 0) : (bounds.minZ + bounds.maxZ) / 2;
+    const hw = frameWidth ? frameWidth / 2 : (bounds.maxZ - bounds.minZ) / 2;
+    return { min: cz - hw - margin, max: cz + hw + margin };
+  }
+  return null;
 }
 
 function wallMountedBlocker(item, wall, width, depth, margin = 0.1) {

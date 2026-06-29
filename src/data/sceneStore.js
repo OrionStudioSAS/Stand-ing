@@ -62,7 +62,7 @@ function catalogToObjectBankItem(item) {
     dimensions: {
       ...(item.modelSize ? { size: item.modelSize } : {}),
       category: objectCategory(item.type),
-      salons: item.type === 'obj-tabouret' ? ['SIAE'] : ['SMCL'],
+      salons: ['SMCL'],
     },
     is_active: true,
     created_at: null,
