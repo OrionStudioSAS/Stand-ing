@@ -6105,7 +6105,7 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
   const base = makeItem(type, width, depth, layout, entry);
   const item = constrainItem({
     ...base,
-    id: `auto-reserve-${rule.id}-${type}`,
+    id: `auto-reserve-${rule.id}`,
     label: billable
       ? (selectedOption.label || entry.label || 'Réserve complémentaire')
       : (rule.includedLabel || entry.label || 'Réserve incluse'),
