@@ -5412,6 +5412,21 @@ img.asset-thumb {
   color: #167044;
 }
 
+.validation-item-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 0 4px 12px;
+  border-left: 2px solid #e2e6ed;
+  margin: 0 0 2px 4px;
+}
+
+.validation-item-options span {
+  font-size: 0.75rem;
+  color: #6b7585;
+  line-height: 1.4;
+}
+
 .validation-confirm-button {
   min-height: 46px;
   border: 0;

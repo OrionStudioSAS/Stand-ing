@@ -882,8 +882,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     [ledRailsEnabled, ledRailEntries, autoSpotsRule, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
   const automaticSpotItems = useMemo(
-    () => makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout),
-    [autoSpotsRule, availableCatalog, width, depth, layout],
+    () => makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...automaticReserveItems, ...manualHydratedItems]),
+    [autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, manualHydratedItems],
   );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems]);
   const cartItems = useMemo(() => sceneItems.filter(shopCartItemVisible), [sceneItems]);
@@ -1171,6 +1171,17 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     setItems((current) => current.map((item) => constrainItem(item, width, depth, nextLayout, carpetFootprintEnabled)));
   };
 
+  const removeReserve = () => {
+    setReserveOptionType('__none__');
+    if (activeReserveRuleConfig?.id) {
+      const reservePrefix = `auto-reserve-${activeReserveRuleConfig.id}`;
+      setItems((current) => current.filter((item) => {
+        if (!isObjectWallId(item.wall)) return true;
+        return !item.wall.includes(reservePrefix);
+      }));
+    }
+  };
+
   const deleteSelectedItem = () => {
     if (readOnly || !selected) return;
     if (!isAdminViewer && itemDeletionLocked(selected)) return;
@@ -1180,7 +1191,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       return;
     }
     if (isAutomaticReserveItem(selected)) {
-      setReserveOptionType('__none__');
+      removeReserve();
       setSelectedId(null);
       return;
     }
@@ -1467,6 +1478,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             partitionHeadRule={activePartitionHeadRuleConfig}
             partitionHeadSides={effectivePartitionHeadSides}
             pricing={scenePricing}
+            items={cartItems}
+            catalog={availableCatalog}
             saveState={saveState}
             confirmState={confirmState}
             readOnly={readOnly}
@@ -1499,7 +1512,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onCarpetFootprintEnabled={(enabled) => !readOnly && setCarpetFootprintEnabled(enabled)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
-            onReserveOption={(type) => !readOnly && setReserveOptionType(type)}
+            onReserveOption={(type) => { if (!readOnly) { if (type === '__none__') { removeReserve(); } else { setReserveOptionType(type); } } }}
             onPartitionHeadSide={(side, enabled) => !readOnly && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
             onExport={() => exportTechnicalPng({ width, depth, layout, items: sceneItems, catalog: availableCatalog })}
           />
@@ -2452,6 +2465,19 @@ function shopCartItemVisible(item) {
   return true;
 }
 
+function itemOptionLines(item) {
+  const opts = item.options || {};
+  const result = [];
+  if (opts.variantLabel) result.push(opts.variantLabel);
+  if (opts.posterImageName) result.push(opts.posterImageName);
+  if (opts.headMainImageName && !opts.headMainImageName.startsWith('Texture originale')) result.push(opts.headMainImageName);
+  if (opts.binary3ImageName && !opts.binary3ImageName.startsWith('Texture originale')) result.push(opts.binary3ImageName);
+  if (opts.binary2Color) result.push(`Couleur : ${opts.binary2Color}`);
+  if (opts.technician) result.push('Technicien inclus');
+  if (opts.fileCheck) result.push('Vérification fichier');
+  return result;
+}
+
 function ValidationStepPanel({
   area,
   layout,
@@ -2467,6 +2493,8 @@ function ValidationStepPanel({
   partitionHeadRule,
   partitionHeadSides,
   pricing,
+  items = [],
+  catalog = [],
   saveState,
   confirmState,
   readOnly,
@@ -2475,13 +2503,13 @@ function ValidationStepPanel({
 }) {
   const lines = pricing?.lines || [];
   const baseItems = pricing?.baseUsage || pricing?.baseItems || [];
+  const includedCounts = pricing?.includedCounts || new Map();
   const confirmed = saveState === 'configured';
   const reserveOption = reserveOptionType ? normalizeComplementaryOptions(reserveRule?.options).find((option) => option.type === reserveOptionType) : null;
 
   return (
     <>
       <PanelHead title="Validation" step={4} />
-      <StandSummary area={area} layout={layout} standLabel={standLabel} />
 
       <section className="validation-summary-card">
         <h2>Récapitulatif HT</h2>
@@ -2505,26 +2533,55 @@ function ValidationStepPanel({
       <section className="validation-section">
         <h3>Objets inclus dans le pack</h3>
         {baseItems.length ? (
-          baseItems.map((item) => (
-            <div key={item.type} className="validation-option-row">
-              <span>{basePackItemLabel(item.label, item.quantity)}</span>
-              <strong>{item.used ?? 0}/{item.quantity}</strong>
-            </div>
-          ))
+          baseItems.map((bu) => {
+            const typeItems = items.filter((i) => i.type === bu.type).slice(0, bu.used ?? bu.quantity);
+            return (
+              <div key={bu.type}>
+                <div className="validation-option-row">
+                  <span>{basePackItemLabel(bu.label, bu.quantity)}</span>
+                  <strong>{bu.used ?? 0}/{bu.quantity}</strong>
+                </div>
+                {typeItems.map((item) => {
+                  const optLines = itemOptionLines(item);
+                  if (!optLines.length) return null;
+                  return (
+                    <div key={item.id} className="validation-item-options">
+                      {optLines.map((line, i) => <span key={i}>{line}</span>)}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })
         ) : (
           <p className="validation-muted">Aucun quota mobilier configuré sur ce pack.</p>
         )}
       </section>
 
       <section className="validation-section">
-        <h3>Suppléments facturés</h3>
+        <h3>Suppléments facturés AMCO</h3>
         {lines.length ? (
-          lines.map((line) => (
-            <div key={line.type} className="validation-price-row">
-              <span>{line.label} × {line.quantity}</span>
-              <strong>{line.total.toLocaleString('fr-FR')} € HT</strong>
-            </div>
-          ))
+          lines.map((line) => {
+            const includedCount = includedCounts.get(line.type) || 0;
+            const billableItems = items.filter((i) => i.type === line.type).slice(includedCount);
+            return (
+              <div key={line.type}>
+                <div className="validation-price-row">
+                  <span>{line.label} × {line.quantity}</span>
+                  <strong>{line.total.toLocaleString('fr-FR')} € HT</strong>
+                </div>
+                {billableItems.map((item) => {
+                  const optLines = itemOptionLines(item);
+                  if (!optLines.length) return null;
+                  return (
+                    <div key={item.id} className="validation-item-options">
+                      {optLines.map((opt, i) => <span key={i}>{opt}</span>)}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })
         ) : (
           <p className="validation-muted">Aucun supplément : la configuration reste à 0 € HT.</p>
         )}
@@ -6987,7 +7044,43 @@ function autoSpotsRailCount(rule, area) {
   return Math.max(1, Math.round(spotsNeeded / spotsPerRail));
 }
 
-function makeAutomaticSpotItems(rule, catalogEntries, width, depth, layout) {
+function freeWallIntervals(range, blockers) {
+  let intervals = [{ min: range.min, max: range.max }];
+  for (const blocker of blockers) {
+    const next = [];
+    for (const iv of intervals) {
+      if (blocker.max <= iv.min || blocker.min >= iv.max) {
+        next.push(iv);
+      } else {
+        if (blocker.min > iv.min + 0.01) next.push({ min: iv.min, max: blocker.min });
+        if (blocker.max < iv.max - 0.01) next.push({ min: blocker.max, max: iv.max });
+      }
+    }
+    intervals = next;
+  }
+  return intervals.filter((iv) => iv.max - iv.min > 0.1);
+}
+
+function distributeInFreeIntervals(count, intervals) {
+  if (!count || !intervals.length) return [];
+  const totalFree = intervals.reduce((sum, iv) => sum + (iv.max - iv.min), 0);
+  if (!totalFree) return [];
+  const step = totalFree / (count + 1);
+  const positions = [];
+  let distSoFar = 0;
+  let nextTarget = step;
+  for (const iv of intervals) {
+    const ivLen = iv.max - iv.min;
+    while (nextTarget <= distSoFar + ivLen + 0.001 && positions.length < count) {
+      positions.push(iv.min + (nextTarget - distSoFar));
+      nextTarget += step;
+    }
+    distSoFar += ivLen;
+  }
+  return positions;
+}
+
+function makeAutomaticSpotItems(rule, catalogEntries, width, depth, layout, contextItems = []) {
   if (!rule?.type) return [];
   const entry = findCatalogEntry(catalogEntries, rule.type);
   if (!entry) return [];
@@ -7005,27 +7098,30 @@ function makeAutomaticSpotItems(rule, catalogEntries, width, depth, layout) {
     a.count += 1;
     allocated += 1;
   });
+  const dummyItem = { id: '__spot_placer__' };
   return allocations.flatMap(({ wall: wallId, count }) => {
     if (!count) return [];
-    return Array.from({ length: count }, (_, index) => {
-      const itemBase = {
-        ...makeItem(entry.type, width, depth, layout, entry),
+    const itemBase = {
+      ...makeItem(entry.type, width, depth, layout, entry),
+      autoSpot: true,
+      included: true,
+      priceMode: 'included',
+      lockedPlacement: false,
+      collisionEnabled: false,
+      wall: wallId,
+      y: ledRailCenterY(entry),
+      dimensions: {
+        ...(entry.dimensions || {}),
         autoSpot: true,
-        included: true,
-        priceMode: 'included',
-        lockedPlacement: false,
         collisionEnabled: false,
-        wall: wallId,
-        y: ledRailCenterY(entry),
-        dimensions: {
-          ...(entry.dimensions || {}),
-          autoSpot: true,
-          collisionEnabled: false,
-          wallY: ledRailCenterY(entry),
-        },
-      };
-      const range = wallItemAxisRange(itemBase, wallId, width, depth);
-      const rawAxis = range.min + ((index + 1) * (range.max - range.min)) / (count + 1);
+        wallY: ledRailCenterY(entry),
+      },
+    };
+    const range = wallItemAxisRange(itemBase, wallId, width, depth);
+    const blockers = wallBlockers(dummyItem, contextItems, width, depth, wallId);
+    const freeIntervals = freeWallIntervals(range, blockers);
+    const positions = distributeInFreeIntervals(count, freeIntervals.length ? freeIntervals : [range]);
+    return positions.map((rawAxis, index) => {
       const axis = clamp(snapWallAxis(rawAxis), range.min, range.max);
       return constrainItem({ ...itemBase, id: `auto-spot-${wallId}-${index + 1}`, x: axis }, width, depth, layout);
     });
