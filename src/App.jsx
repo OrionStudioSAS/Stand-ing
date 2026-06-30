@@ -2340,8 +2340,8 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
             uploadState={uploadState}
             onImageChange={(file) => onImageChange?.(item, file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName' })}
             onResetImage={() => onUpdateItemOptions?.(item, { binary3ImageUrl: '', binary3ImageName: '' })}
-            onColorChange={(color) => onUpdateItemOptions?.(item, { binary2Color: color.hex, binary2ColorId: color.id, binary2ColorName: color.name, binary2ColorReference: color.reference || '', binary2ColorPrice: Number(color.price || 0) })}
-            onResetColor={() => onUpdateItemOptions?.(item, { binary2Color: '', binary2ColorId: '', binary2ColorName: '', binary2ColorReference: '', binary2ColorPrice: 0 })}
+            onColorChange={(color) => onUpdateItemOptions?.(item, { binary2Color: color.hex, binary2ColorImage: color.image || '', binary2ColorId: color.id, binary2ColorName: color.name, binary2ColorReference: color.reference || '', binary2ColorPrice: Number(color.price || 0) })}
+            onResetColor={() => onUpdateItemOptions?.(item, { binary2Color: '', binary2ColorImage: '', binary2ColorId: '', binary2ColorName: '', binary2ColorReference: '', binary2ColorPrice: 0 })}
             embedded
           />
         )}
@@ -9270,12 +9270,14 @@ function Model3D({ item, selected, hovered, dragging, visualContext }) {
 function GlbModel({ item, selected, hovered }) {
   const gltf = useGlbModel(item.modelUrl);
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize() });
+  const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '', { flipY: false });
   const model = useMemo(() => prepareLoadedModel(gltf.scene, item, {
     selected,
     hovered,
     isGlb: true,
     customImageTexture,
-  }), [gltf, item, selected, hovered, customImageTexture]);
+    counterColorTexture,
+  }), [gltf, item, selected, hovered, customImageTexture, counterColorTexture]);
   return <primitive object={model} dispose={null} />;
 }
 
@@ -9302,6 +9304,7 @@ function useObjModel(modelUrl, materials) {
 
 function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualContext }) {
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: partitionHeadMainImageCoverSize(item) });
+  const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '');
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item) : null
   ), [item.type, item.label, item.modelUrl, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.hall]);
@@ -9315,6 +9318,7 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
       item={item}
       materials={materials}
       mainImageTexture={mainImageTexture}
+      counterColorTexture={counterColorTexture}
       exhibitorTexture={exhibitorTexture}
       selected={selected}
       hovered={hovered}
@@ -9322,14 +9326,15 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   );
 }
 
-function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, exhibitorTexture, selected, hovered }) {
+function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, counterColorTexture, exhibitorTexture, selected, hovered }) {
   const obj = useObjModel(item.modelUrl, materials);
   const model = useMemo(() => prepareLoadedModel(obj, item, {
     mainImageTexture,
+    counterColorTexture,
     exhibitorTexture,
     selected,
     hovered,
-  }), [obj, item, mainImageTexture, exhibitorTexture, selected, hovered]);
+  }), [obj, item, mainImageTexture, counterColorTexture, exhibitorTexture, selected, hovered]);
 
   return <primitive object={model} dispose={null} />;
 }
@@ -9569,6 +9574,9 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
     if (textureOptions.customImageTexture && isWoodReceptionDeskImageMaterial(materialName, material)) {
       return materialWithTexture(material, textureOptions.customImageTexture);
     }
+    if (textureOptions.counterColorTexture && isWoodReceptionDeskColorMaterial(materialName, material)) {
+      return materialWithTexture(material, textureOptions.counterColorTexture);
+    }
     if (item?.options?.binary2Color && isWoodReceptionDeskColorMaterial(materialName, material)) {
       return materialWithColor(material, item.options.binary2Color);
     }
@@ -9586,7 +9594,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
 
 function isWoodReceptionDeskItem(item = {}) {
   const text = normalizedItemText(item);
-  return text.includes('banque') && text.includes('accueil') && text.includes('bois');
+  return (text.includes('banque') && text.includes('accueil')) || (text.includes('comptoir') && text.includes('accueil'));
 }
 
 function materialMatchesReference(materialName = '', material = null, normalizedNeedle = '', fileName = '') {
@@ -9603,7 +9611,8 @@ function woodReceptionDeskImageCoverSize() {
 }
 
 function isWoodReceptionDeskColorMaterial(materialName = '', material = null) {
-  return materialName === 'laminate_d02_120cm_6'
+  return materialName.includes('laminate_d02_120cm_6')
+    || materialName.includes('binary_0')
     || materialMatchesReference(materialName, material, 'binary_0', 'Binary_0.jpeg');
 }
 
