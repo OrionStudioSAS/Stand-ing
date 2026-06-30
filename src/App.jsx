@@ -730,6 +730,10 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
 
 function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const initialOptions = initialScene.options || initialScene.source_payload?.options || {};
+  const initialDefaultColorOptions = useMemo(
+    () => initialOptions.defaultColorOptions || initialScene.source_payload?.defaultColorOptions || {},
+    [initialOptions, initialScene.source_payload],
+  );
   const initialWidth = initialScene.dimensions?.width || 4;
   const initialDepth = initialScene.dimensions?.depth || 3;
   const initialLayout = initialScene.layout || 'u';
@@ -820,9 +824,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const footprintPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'footprint', carpetPalette), [objectBank, salonLabel, carpetPalette]);
   const wallFabricPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'wallFabric', wallFabricColors), [objectBank, salonLabel]);
   const counterPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'counter', []), [objectBank, salonLabel]);
-  const selectedCarpetColor = carpetPalette.find((color) => color.id === selectedCarpetId) || carpetPalette[0] || carpetColors[0];
-  const selectedCarpetFootprintColor = footprintPalette.find((color) => color.id === selectedCarpetFootprintId) || selectedCarpetColor;
-  const selectedWallFabricColor = wallFabricPalette.find((color) => color.id === selectedWallFabricId) || wallFabricPalette[0] || wallFabricColors[0];
+  const rawSelectedCarpetColor = carpetPalette.find((color) => color.id === selectedCarpetId) || carpetPalette[0] || carpetColors[0];
+  const rawSelectedCarpetFootprintColor = footprintPalette.find((color) => color.id === selectedCarpetFootprintId) || rawSelectedCarpetColor;
+  const rawSelectedWallFabricColor = wallFabricPalette.find((color) => color.id === selectedWallFabricId) || wallFabricPalette[0] || wallFabricColors[0];
+  const selectedCarpetColor = colorWithDefaultIncluded(rawSelectedCarpetColor, initialDefaultColorOptions.carpetColorId);
+  const selectedCarpetFootprintColor = colorWithDefaultIncluded(rawSelectedCarpetFootprintColor, initialDefaultColorOptions.carpetFootprintColorId || initialDefaultColorOptions.carpetColorId);
+  const selectedWallFabricColor = colorWithDefaultIncluded(rawSelectedWallFabricColor, initialDefaultColorOptions.wallFabricColorId);
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
   const readOnly = false;
@@ -937,12 +944,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     items: sceneItems,
     salonLabel,
     scene: initialScene,
+    width,
+    depth,
+    layout,
     colorSelections: [
-      { usage: 'Moquette', color: selectedCarpetColor },
-      carpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor } : null,
-      { usage: 'Coton cloison', color: selectedWallFabricColor },
+      { usage: 'Moquette', color: selectedCarpetColor, defaultColorId: initialDefaultColorOptions.carpetColorId, quantityM2: area },
+      carpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor, defaultColorId: initialDefaultColorOptions.carpetFootprintColorId || initialDefaultColorOptions.carpetColorId, quantityM2: carpetFootprintAreaM2() } : null,
+      { usage: 'Coton cloison', color: selectedWallFabricColor, defaultColorId: initialDefaultColorOptions.wallFabricColorId, quantityM2: sceneWallFabricArea(width, depth, layout) },
     ],
-  }), [area, availableCatalog, sceneItems, salonLabel, initialScene, selectedCarpetColor, selectedCarpetFootprintColor, carpetFootprintEnabled, selectedWallFabricColor]);
+  }), [area, availableCatalog, sceneItems, salonLabel, initialScene, width, depth, layout, selectedCarpetColor, selectedCarpetFootprintColor, carpetFootprintEnabled, selectedWallFabricColor, initialDefaultColorOptions]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
@@ -960,6 +970,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       carpetFootprintColorPrice: Number(selectedCarpetFootprintColor.price || 0),
       carpetFootprintColorReference: selectedCarpetFootprintColor.reference || '',
       carpetFootprintEnabled,
+      defaultColorOptions: initialDefaultColorOptions,
       wallFabricColorId: selectedWallFabricColor.id,
       wallFabricColorName: selectedWallFabricColor.name,
       wallFabricColorHex: selectedWallFabricColor.hex,
@@ -1902,7 +1913,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
               >
                 <i />
                 <strong>{color.name}</strong>
-                <small>{color.reference || color.code}{Number(color.price || 0) > 0 ? ` · +${Number(color.price).toLocaleString('fr-FR')} € HT` : ' · Inclus'}</small>
+                <small>{color.reference || color.code}{Number(color.price || 0) > 0 ? ` · +${Number(color.price).toLocaleString('fr-FR')} € HT/m²` : ' · Inclus'}</small>
               </button>
             ))}
           </div>
@@ -2458,8 +2469,16 @@ function itemCartLabel(item) {
 
 function cartItemPrice(item, entry, salonLabel) {
   const basePrice = Number(item.options?.unitPrice ?? assetUnitPrice(entry, salonLabel) ?? 0);
-  const colorSupplement = Number(item.options?.binary2ColorPrice || 0);
+  const colorSupplement = Number(item.options?.binary2ColorPrice || 0) * counterColorSurfaceM2(item, entry);
   return basePrice + colorSupplement;
+}
+
+function counterColorSurfaceM2(item = {}, entry = {}) {
+  if (!item.options?.binary2ColorPrice) return 1;
+  const size = itemDefaultSize({ ...entry, ...item, dimensions: { ...(entry?.dimensions || {}), ...(item?.dimensions || {}) } });
+  const width = Number(size?.[0] || 1);
+  const height = Number(size?.[1] || 1);
+  return Math.max(1, roundM2(width * height));
 }
 
 function marketplaceStartingPrice(entry, catalog = [], salonLabel = '') {
@@ -2537,7 +2556,7 @@ function itemOptionLines(item) {
   if (opts.binary3ImageName && !opts.binary3ImageName.startsWith('Texture originale')) result.push(opts.binary3ImageName);
   if (opts.binary2ColorName || opts.binary2Color) {
     const colorPrice = Number(opts.binary2ColorPrice || 0);
-    result.push(`Couleur : ${opts.binary2ColorName || opts.binary2Color}${colorPrice > 0 ? ` (+${colorPrice.toLocaleString('fr-FR')} € HT)` : ''}`);
+    result.push(`Couleur : ${opts.binary2ColorName || opts.binary2Color}${colorPrice > 0 ? ` (+${colorPrice.toLocaleString('fr-FR')} € HT/m²)` : ''}`);
   }
   if (opts.technician) result.push('Technicien inclus');
   if (opts.fileCheck) result.push('Vérification fichier');
@@ -3001,7 +3020,7 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, disabled =
 function colorOptionLabel(color = {}, fallback = 'En option') {
   const price = Number(color.price || 0);
   const reference = color.reference || color.groupLabel || '';
-  const priceText = price > 0 ? `+${price.toLocaleString('fr-FR')} € HT` : fallback;
+  const priceText = price > 0 ? `+${price.toLocaleString('fr-FR')} € HT/m²` : fallback;
   return reference ? `${priceText} · ${reference}` : priceText;
 }
 
@@ -5199,7 +5218,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             </div>
             <div className="asset-color-price-grid">
               <label className="asset-group-field">
-                <span>Prix du groupe HT</span>
+                <span>Prix du groupe HT / m²</span>
                 <input
                   type="number"
                   min="0"
@@ -6158,6 +6177,21 @@ function sceneArea(scene) {
   return Math.round(width * depth);
 }
 
+function carpetFootprintAreaM2() {
+  return 1;
+}
+
+function sceneWallFabricArea(width = 0, depth = 0, layout = 'u') {
+  const backArea = Number(width || 0) * fixedWallHeight;
+  const sideDepth = Math.max(0, Number(depth || 0) - wallThickness);
+  const sideCount = (layout === 'left' || layout === 'right') ? 1 : layout === 'u' ? 2 : 0;
+  return roundM2(backArea + (sideDepth * fixedWallHeight * sideCount));
+}
+
+function roundM2(value = 0) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
 function relativeDays(value) {
   if (!value) return '—';
   const diff = Date.now() - new Date(value).getTime();
@@ -6320,6 +6354,11 @@ function colorOptionsForUsage(assets = [], salonLabel = '', usage = '', fallback
       included: price <= 0,
     }));
   });
+}
+
+function colorWithDefaultIncluded(color = {}, defaultColorId = '') {
+  if (!defaultColorId || normalizeColorId(color.id) !== normalizeColorId(defaultColorId)) return color;
+  return { ...color, included: true, defaultIncluded: true };
 }
 
 function normalizeColorGroupOptions(asset = {}) {
@@ -6846,14 +6885,17 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
 
   colorSelections
     .filter((selection) => selection?.color && Number(selection.color.price || 0) > 0)
+    .filter((selection) => !isDefaultColorSelection(selection))
     .forEach((selection) => {
       const colorPrice = Number(selection.color.price || 0);
+      const quantityM2 = Math.max(0, Number(selection.quantityM2 || 1));
+      const lineTotal = Math.round(colorPrice * quantityM2);
       const line = {
         type: `color-${selection.color.groupId || selection.color.id}`,
-        label: `${selection.usage} — ${selection.color.groupLabel || selection.color.name}`,
-        quantity: 1,
+        label: `${selection.usage} — ${selection.color.groupLabel || selection.color.name} (${formatNumber(quantityM2)} m²)`,
+        quantity: quantityM2,
         unitPrice: colorPrice,
-        total: colorPrice,
+        total: lineTotal,
         reference: selection.color.reference || selection.color.code || '',
       };
       itemsTotal += line.total;
@@ -6871,6 +6913,15 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     lines,
     total: Math.round(basePrice + itemsTotal),
   };
+}
+
+function isDefaultColorSelection(selection = {}) {
+  if (!selection.defaultColorId || !selection.color?.id) return false;
+  return normalizeColorId(selection.defaultColorId) === normalizeColorId(selection.color.id);
+}
+
+function normalizeColorId(value = '') {
+  return String(value || '').trim().toLowerCase();
 }
 
 function mergeIncludedCountMaps(...maps) {
