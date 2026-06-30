@@ -3892,6 +3892,29 @@ select {
   background: #1f4378;
 }
 
+.preset-color-defaults {
+  display: grid;
+  gap: 10px;
+  margin: 2px 0 18px;
+  border: 1px solid #dde5ef;
+  border-radius: 14px;
+  padding: 12px 0 0;
+  background: #f8fbff;
+}
+
+.preset-color-defaults h4,
+.preset-color-defaults p {
+  margin-right: 14px;
+  margin-left: 14px;
+}
+
+.preset-color-defaults p {
+  margin-top: -4px;
+  color: #7d8794;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
 .preset-side-panel h4 {
   margin: 0 0 10px;
   color: #1f2630;

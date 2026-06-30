@@ -3987,6 +3987,16 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true }));
   const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
   const [autoSpotsRule, setAutoSpotsRule] = useState(() => preset.base_config?.autoSpotsRule || null);
+  const initialColorDefaults = useMemo(() => presetDefaultColorOptions(preset), [preset]);
+  const carpetPalette = useMemo(() => colorOptionsForUsage(assets, salon.name, 'carpet', carpetColors), [assets, salon.name]);
+  const footprintPalette = useMemo(() => colorOptionsForUsage(assets, salon.name, 'footprint', carpetPalette), [assets, salon.name, carpetPalette]);
+  const wallFabricPalette = useMemo(() => colorOptionsForUsage(assets, salon.name, 'wallFabric', wallFabricColors), [assets, salon.name]);
+  const [selectedCarpetId, setSelectedCarpetId] = useState(initialColorDefaults.carpetColorId || carpetPalette[0]?.id || '1893');
+  const [selectedCarpetFootprintId, setSelectedCarpetFootprintId] = useState(initialColorDefaults.carpetFootprintColorId || initialColorDefaults.carpetColorId || footprintPalette[0]?.id || carpetPalette[0]?.id || '1893');
+  const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialColorDefaults.wallFabricColorId || wallFabricPalette[0]?.id || '303');
+  const selectedCarpetColor = carpetPalette.find((color) => color.id === selectedCarpetId) || carpetPalette[0] || carpetColors[0];
+  const selectedCarpetFootprintColor = footprintPalette.find((color) => color.id === selectedCarpetFootprintId) || selectedCarpetColor;
+  const selectedWallFabricColor = wallFabricPalette.find((color) => color.id === selectedWallFabricId) || wallFabricPalette[0] || wallFabricColors[0];
   const presetTextureLoad = useSceneTexturePreload(items, []);
   const presetSuspendLoad = useSceneSuspendPreload(items);
   const presetAssetsReady = presetTextureLoad.ready && presetSuspendLoad.ready;
@@ -4001,7 +4011,11 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
     setReserveRules(normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true }));
     setPartitionHeadRules(normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
     setAutoSpotsRule(preset.base_config?.autoSpotsRule || null);
-  }, [preset.id, preset.base_config]);
+    const nextColorDefaults = presetDefaultColorOptions(preset);
+    setSelectedCarpetId(nextColorDefaults.carpetColorId || carpetPalette[0]?.id || '1893');
+    setSelectedCarpetFootprintId(nextColorDefaults.carpetFootprintColorId || nextColorDefaults.carpetColorId || footprintPalette[0]?.id || carpetPalette[0]?.id || '1893');
+    setSelectedWallFabricId(nextColorDefaults.wallFabricColorId || wallFabricPalette[0]?.id || '303');
+  }, [preset.id, preset.base_config, carpetPalette, footprintPalette, wallFabricPalette]);
 
   const updateItem = (id, patch) => {
     setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout));
@@ -4039,6 +4053,11 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
 
   const save = () => {
     const cleanedReserveRules = normalizeReserveRules(reserveRules);
+    const defaultColorOptions = makePresetColorOptions({
+      carpetColor: selectedCarpetColor,
+      carpetFootprintColor: selectedCarpetFootprintColor,
+      wallFabricColor: selectedWallFabricColor,
+    });
     onSave({
       dimensions: { width, depth, height: fixedWallHeight },
       layout,
@@ -4046,7 +4065,17 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       reserveRules: cleanedReserveRules,
       partitionHeadRules,
       autoSpotsRule: autoSpotsRule || undefined,
-      options: { presetMode: true, includedPack: offer?.name, salon: salon.name, reserveRules: cleanedReserveRules, partitionHeadRules, autoSpotsRule: autoSpotsRule || undefined },
+      defaultColorOptions,
+      options: {
+        presetMode: true,
+        includedPack: offer?.name,
+        salon: salon.name,
+        ...defaultColorOptions,
+        defaultColorOptions,
+        reserveRules: cleanedReserveRules,
+        partitionHeadRules,
+        autoSpotsRule: autoSpotsRule || undefined,
+      },
     });
   };
 
@@ -4078,8 +4107,9 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
               canEditLockedItems
               onDragMove={moveDraggedItem}
               viewAngle={35}
-              carpetColor={{ hex: '#bebebe' }}
-              wallFabricColor={{ hex: '#f8f7f3' }}
+              carpetColor={selectedCarpetColor}
+              carpetFootprintColor={selectedCarpetFootprintColor}
+              wallFabricColor={selectedWallFabricColor}
             />
             )}
             <ContactShadows opacity={0.22} scale={12} blur={2.4} far={5} position={[0, -0.01, 0]} />
@@ -4118,6 +4148,17 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
             </button>
           ))}
         </div>
+        <PresetColorDefaultsEditor
+          carpetColors={carpetPalette}
+          footprintColors={footprintPalette}
+          wallFabricColors={wallFabricPalette}
+          selectedCarpetColor={selectedCarpetColor}
+          selectedCarpetFootprintColor={selectedCarpetFootprintColor}
+          selectedWallFabricColor={selectedWallFabricColor}
+          onCarpetColor={setSelectedCarpetId}
+          onCarpetFootprintColor={setSelectedCarpetFootprintId}
+          onWallColor={setSelectedWallFabricId}
+        />
         <PresetReserveRulesEditor
           rules={reserveRules}
           entries={availableCatalog.filter(isReserveCatalogEntry)}
@@ -4156,6 +4197,46 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
         </button>
       </aside>
     </div>
+  );
+}
+
+function PresetColorDefaultsEditor({
+  carpetColors,
+  footprintColors,
+  wallFabricColors,
+  selectedCarpetColor,
+  selectedCarpetFootprintColor,
+  selectedWallFabricColor,
+  onCarpetColor,
+  onCarpetFootprintColor,
+  onWallColor,
+}) {
+  return (
+    <section className="preset-color-defaults">
+      <h4>Couleurs par défaut</h4>
+      <p>Ces couleurs seront appliquées automatiquement au chargement des scènes créées depuis ce pack.</p>
+      <ColorOptionCard
+        title="Moquette"
+        colors={carpetColors}
+        selectedColor={selectedCarpetColor}
+        optionLabel="Coloris payants"
+        onSelect={onCarpetColor}
+      />
+      <ColorOptionCard
+        title="Empreinte moquette"
+        colors={footprintColors}
+        selectedColor={selectedCarpetFootprintColor}
+        optionLabel="Coloris payants"
+        onSelect={onCarpetFootprintColor}
+      />
+      <ColorOptionCard
+        title="Coton cloison"
+        colors={wallFabricColors}
+        selectedColor={selectedWallFabricColor}
+        optionLabel="Coloris payants"
+        onSelect={onWallColor}
+      />
+    </section>
   );
 }
 
@@ -4367,6 +4448,37 @@ function presetToEditableScene(preset, catalogEntries = []) {
     },
     layout: preset.layout || preset.base_config?.layout || 'u',
     items,
+  };
+}
+
+function presetDefaultColorOptions(preset = {}) {
+  const options = preset.base_config?.options || {};
+  return preset.base_config?.defaultColorOptions
+    || options.defaultColorOptions
+    || {
+      carpetColorId: options.carpetColorId,
+      carpetFootprintColorId: options.carpetFootprintColorId || options.carpetColorId,
+      wallFabricColorId: options.wallFabricColorId,
+    };
+}
+
+function makePresetColorOptions({ carpetColor, carpetFootprintColor, wallFabricColor }) {
+  return {
+    carpetColorId: carpetColor?.id || '1893',
+    carpetColorName: carpetColor?.name || '',
+    carpetColorHex: carpetColor?.hex || '',
+    carpetColorPrice: Number(carpetColor?.price || 0),
+    carpetColorReference: carpetColor?.reference || '',
+    carpetFootprintColorId: carpetFootprintColor?.id || carpetColor?.id || '1893',
+    carpetFootprintColorName: carpetFootprintColor?.name || carpetColor?.name || '',
+    carpetFootprintColorHex: carpetFootprintColor?.hex || carpetColor?.hex || '',
+    carpetFootprintColorPrice: Number(carpetFootprintColor?.price || 0),
+    carpetFootprintColorReference: carpetFootprintColor?.reference || '',
+    wallFabricColorId: wallFabricColor?.id || '303',
+    wallFabricColorName: wallFabricColor?.name || '',
+    wallFabricColorHex: wallFabricColor?.hex || '',
+    wallFabricColorPrice: Number(wallFabricColor?.price || 0),
+    wallFabricColorReference: wallFabricColor?.reference || '',
   };
 }
 

@@ -103,11 +103,16 @@ Deno.serve(async (req) => {
       const sceneDraft = mapMondayItemToScene(item, source, savedClient?.id, savedProfile?.id, context);
       const preset = await findActivePreset(supabase, context.offerId, context.salonId, sceneDraft.layout);
       const baseItems = await fetchOfferBaseItems(supabase, context.offerId);
+      const defaultOptions = presetDefaultOptions(preset);
       const scene = {
         ...sceneDraft,
         base_preset_id: preset?.id || null,
         source_payload: {
           ...(sceneDraft.source_payload || {}),
+          options: {
+            ...defaultOptions,
+            ...((sceneDraft.source_payload || {}).options || {}),
+          },
           baseItems,
           reserveRules: presetReserveRules(preset),
           partitionHeadRules: presetPartitionHeadRules(preset),
@@ -363,6 +368,17 @@ function presetReserveRules(preset: any) {
 
 function presetPartitionHeadRules(preset: any) {
   return preset?.base_config?.partitionHeadRules || preset?.base_config?.options?.partitionHeadRules || {};
+}
+
+function presetDefaultOptions(preset: any) {
+  const options = preset?.base_config?.options || {};
+  const defaults = preset?.base_config?.defaultColorOptions || options.defaultColorOptions || {};
+  return {
+    ...defaults,
+    carpetColorId: defaults.carpetColorId || options.carpetColorId,
+    carpetFootprintColorId: defaults.carpetFootprintColorId || options.carpetFootprintColorId || defaults.carpetColorId || options.carpetColorId,
+    wallFabricColorId: defaults.wallFabricColorId || options.wallFabricColorId,
+  };
 }
 
 async function findPresetByLayout(supabase: any, params: { offerId?: string; salonId?: string; layout: string; offerIsNull?: boolean }) {
