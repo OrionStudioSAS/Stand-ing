@@ -862,9 +862,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       .filter((asset) => asset.is_active)
       .filter((asset) => !asset.dimensions?.isColorGroup)
       .filter((asset) => assetMatchesSalon(asset, salonLabel))
-      .map((asset) => assetToCatalogEntry(asset, objectBank));
+      .map((asset) => assetToCatalogEntry(asset, objectBank))
+      .filter(Boolean);
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
-    return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
+    return uniqueCatalogEntries(entries);
   }, [objectBank, salonLabel]);
   const placeableCatalog = useMemo(
     () => availableCatalog.filter((entry) => isAdminViewer || !entry.dimensions?.adminOnly),
@@ -3811,11 +3812,10 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
       .filter((asset) => asset.is_active)
       .filter((asset) => !asset.dimensions?.isColorGroup)
       .filter((asset) => assetMatchesSalon(asset, salon?.name))
-      .map((asset) => assetToCatalogEntry(asset, assets));
+      .map((asset) => assetToCatalogEntry(asset, assets))
+      .filter(Boolean);
     const all = [...dynamicEntries, ...nativeCatalogEntries()];
-    return all
-      .filter((entry, index) => all.findIndex((item) => item.type === entry.type) === index)
-      .filter((entry) => isBasePackEligible(entry));
+    return uniqueCatalogEntries(all).filter((entry) => isBasePackEligible(entry));
   }, [assets, salon?.name]);
   const [quantities, setQuantities] = useState(() => baseItemsToQuantityMap(offer?.metadata?.baseItems));
 
@@ -3987,9 +3987,10 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       .filter((asset) => asset.is_active)
       .filter((asset) => !asset.dimensions?.isColorGroup)
       .filter((asset) => assetMatchesSalon(asset, salon.name))
-      .map((asset) => assetToCatalogEntry(asset, assets));
+      .map((asset) => assetToCatalogEntry(asset, assets))
+      .filter(Boolean);
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
-    return entries.filter((entry, index, all) => all.findIndex((item) => item.type === entry.type) === index);
+    return uniqueCatalogEntries(entries);
   }, [assets, salon.name]);
   const initialScene = useMemo(() => presetToEditableScene(preset, availableCatalog), [preset, availableCatalog]);
   const initialWidth = initialScene.dimensions.width;
@@ -5993,10 +5994,12 @@ function sceneAdminCatalog(assets = [], scene = {}) {
   const salonLabel = normalizeSalonTitle(scene.event_name || scene.salon);
   const dynamicEntries = (assets || [])
     .filter((asset) => asset.is_active)
+    .filter((asset) => !asset.dimensions?.isColorGroup)
     .filter((asset) => assetMatchesSalon(asset, salonLabel))
-    .map((asset) => assetToCatalogEntry(asset, assets));
+    .map((asset) => assetToCatalogEntry(asset, assets))
+    .filter(Boolean);
   const entries = [...dynamicEntries, ...nativeCatalogEntries()];
-  return entries.filter((entry, index, all) => all.findIndex((candidate) => candidate.type === entry.type) === index);
+  return uniqueCatalogEntries(entries);
 }
 
 function sceneAdminItems(scene = {}, catalogEntries = []) {
@@ -6286,6 +6289,12 @@ function variantSourceAssets(assets = [], excludedType = '') {
 
 function nativeCatalogEntries() {
   return catalog.filter((entry) => !entry.modelUrl && !entry.materialUrl && !entry.isGroup);
+}
+
+function uniqueCatalogEntries(entries = []) {
+  return (entries || [])
+    .filter(Boolean)
+    .filter((entry, index, all) => all.findIndex((candidate) => candidate?.type === entry?.type) === index);
 }
 
 function assetToGroupRows(asset) {
