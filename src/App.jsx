@@ -64,6 +64,14 @@ const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
+const technicalFloorOptions = [
+  { id: 'floor4', label: 'Plancher technique 4 cm', height: 0.04, price: 49, reference: 'SMCL02PLA01A', detail: 'Hauteur 4 cm + cornières 4 × 4 cm', rampLabel: 'Rampe PMR 4 cm' },
+  { id: 'floor12', label: 'Plancher technique 12 cm', height: 0.12, price: 59, reference: 'SMCL02PLA01B', detail: 'Hauteur 12 cm + cornières 4 × 4 cm + plinthes blanches', rampLabel: 'Rampe PMR 12 cm' },
+];
+const technicalTrimOptions = [
+  { id: 'straight', label: 'Cornière droite' },
+  { id: 'sloped', label: 'Cornière inclinée' },
+];
 const blankTextureDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 const textureRetryAttempts = 3;
 const textureRetryBaseDelay = 260;
@@ -768,11 +776,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       return resolvedStep;
     });
   };
-  const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, led: false, reserve: false, tete: false, comptoir: false });
+  const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, plancher: false, led: false, reserve: false, tete: false, comptoir: false });
   const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || '1893');
   const [selectedCarpetFootprintId, setSelectedCarpetFootprintId] = useState(initialOptions.carpetFootprintColorId || initialOptions.carpetColorId || '1893');
   const [carpetFootprintEnabled, setCarpetFootprintEnabled] = useState(initialOptions.carpetFootprintEnabled !== false);
   const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || '303');
+  const [technicalFloorType, setTechnicalFloorType] = useState(initialOptions.technicalFloorType || '');
+  const [technicalFloorTrimType, setTechnicalFloorTrimType] = useState(initialOptions.technicalFloorTrimType || 'straight');
+  const [technicalFloorRampEnabled, setTechnicalFloorRampEnabled] = useState(Boolean(initialOptions.technicalFloorRampEnabled));
   const [ledRailsEnabled, setLedRailsEnabled] = useState(initialOptions.ledRailsEnabled !== false);
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
   const [reserveOptionType, setReserveOptionType] = useState(initialOptions.reserveOptionType || (initialOptions.reserveUpgradeEnabled ? '__legacy__' : ''));
@@ -830,6 +841,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const selectedCarpetColor = colorWithDefaultIncluded(rawSelectedCarpetColor, initialDefaultColorOptions.carpetColorId);
   const selectedCarpetFootprintColor = colorWithDefaultIncluded(rawSelectedCarpetFootprintColor, initialDefaultColorOptions.carpetFootprintColorId || initialDefaultColorOptions.carpetColorId);
   const selectedWallFabricColor = colorWithDefaultIncluded(rawSelectedWallFabricColor, initialDefaultColorOptions.wallFabricColorId);
+  const selectedTechnicalFloor = technicalFloorOptions.find((option) => option.id === technicalFloorType) || null;
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
   const readOnly = false;
@@ -948,12 +960,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     width,
     depth,
     layout,
+    technicalFloor: selectedTechnicalFloor ? { ...selectedTechnicalFloor, area } : null,
     colorSelections: [
       { usage: 'Moquette', color: selectedCarpetColor, defaultColorId: initialDefaultColorOptions.carpetColorId, quantityM2: area },
       carpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor, defaultColorId: initialDefaultColorOptions.carpetFootprintColorId || initialDefaultColorOptions.carpetColorId, quantityM2: carpetFootprintAreaM2() } : null,
       { usage: 'Coton cloison', color: selectedWallFabricColor, defaultColorId: initialDefaultColorOptions.wallFabricColorId, quantityM2: sceneWallFabricArea(width, depth, layout) },
     ],
-  }), [area, availableCatalog, sceneItems, salonLabel, initialScene, width, depth, layout, selectedCarpetColor, selectedCarpetFootprintColor, carpetFootprintEnabled, selectedWallFabricColor, initialDefaultColorOptions]);
+  }), [area, availableCatalog, sceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, carpetFootprintEnabled, selectedWallFabricColor, initialDefaultColorOptions]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
@@ -977,6 +990,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       wallFabricColorHex: selectedWallFabricColor.hex,
       wallFabricColorPrice: Number(selectedWallFabricColor.price || 0),
       wallFabricColorReference: selectedWallFabricColor.reference || '',
+      technicalFloorType,
+      technicalFloorLabel: selectedTechnicalFloor?.label || '',
+      technicalFloorHeight: selectedTechnicalFloor?.height || 0,
+      technicalFloorPrice: selectedTechnicalFloor?.price || 0,
+      technicalFloorReference: selectedTechnicalFloor?.reference || '',
+      technicalFloorTrimType,
+      technicalFloorRampEnabled,
       language,
       ledRailsEnabled,
       ledSpotCount,
@@ -1033,7 +1053,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, carpetFootprintEnabled, selectedWallFabricColor, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, carpetFootprintEnabled, selectedWallFabricColor, technicalFloorType, technicalFloorTrimType, technicalFloorRampEnabled, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
@@ -1395,6 +1415,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 carpetFootprintColor={selectedCarpetFootprintColor}
                 carpetFootprintEnabled={carpetFootprintEnabled}
                 wallFabricColor={selectedWallFabricColor}
+                technicalFloor={selectedTechnicalFloor}
+                technicalFloorTrimType={technicalFloorTrimType}
+                technicalFloorRampEnabled={technicalFloorRampEnabled}
                 visualContext={sceneVisualContext}
               />
             )}
@@ -1514,6 +1537,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             carpetFootprintColor={selectedCarpetFootprintColor}
             carpetFootprintEnabled={carpetFootprintEnabled}
             wallFabricColor={selectedWallFabricColor}
+            technicalFloor={selectedTechnicalFloor}
+            technicalFloorTrimType={technicalFloorTrimType}
+            technicalFloorRampEnabled={technicalFloorRampEnabled}
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={ledSpotCount}
             reserveRule={activeReserveRuleConfig}
@@ -1544,6 +1570,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             carpetFootprintEnabled={carpetFootprintEnabled}
             selectedWallFabricColor={selectedWallFabricColor}
             wallFabricColors={wallFabricPalette}
+            technicalFloorType={technicalFloorType}
+            technicalFloorTrimType={technicalFloorTrimType}
+            technicalFloorRampEnabled={technicalFloorRampEnabled}
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={ledSpotCount}
             reserveRule={activeReserveRuleConfig}
@@ -1557,6 +1586,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onCarpetFootprintColor={(colorId) => !readOnly && setSelectedCarpetFootprintId(colorId)}
             onCarpetFootprintEnabled={(enabled) => !readOnly && setCarpetFootprintEnabled(enabled)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
+            onTechnicalFloorType={(type) => !readOnly && setTechnicalFloorType(type)}
+            onTechnicalFloorTrimType={(type) => !readOnly && setTechnicalFloorTrimType(type)}
+            onTechnicalFloorRampEnabled={(enabled) => !readOnly && setTechnicalFloorRampEnabled(enabled)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
             onReserveOption={(type) => { if (!readOnly) { if (type === '__none__') { removeReserve(); } else { setReserveOptionType(type); } } }}
             onPartitionHeadSide={(side, enabled) => !readOnly && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
@@ -2010,6 +2042,9 @@ function OptionsStepPanel({
   carpetFootprintEnabled,
   selectedWallFabricColor,
   wallFabricColors = [],
+  technicalFloorType,
+  technicalFloorTrimType,
+  technicalFloorRampEnabled,
   ledRailsEnabled,
   ledSpotCount,
   reserveRule,
@@ -2023,6 +2058,9 @@ function OptionsStepPanel({
   onCarpetFootprintColor,
   onCarpetFootprintEnabled,
   onWallColor,
+  onTechnicalFloorType,
+  onTechnicalFloorTrimType,
+  onTechnicalFloorRampEnabled,
   onLedRailsEnabled,
   onReserveOption,
   onPartitionHeadSide,
@@ -2070,6 +2108,19 @@ function OptionsStepPanel({
           optionLabel="Coloris payants"
           disabled={readOnly}
           onSelect={onWallColor}
+        />
+      </OptionAccordion>
+      <OptionAccordion title="Plancher technique" icon={<Ruler size={16} />} open={openOptions.plancher} onToggle={() => toggleOption('plancher')}>
+        <TechnicalFloorOptionCard
+          floorType={technicalFloorType}
+          trimType={technicalFloorTrimType}
+          rampEnabled={technicalFloorRampEnabled}
+          area={area}
+          layout={layout}
+          disabled={readOnly}
+          onFloorType={onTechnicalFloorType}
+          onTrimType={onTechnicalFloorTrimType}
+          onRampEnabled={onTechnicalFloorRampEnabled}
         />
       </OptionAccordion>
       <OptionAccordion title="Spots LED" icon={<Sparkles size={16} />} open={openOptions.led} onToggle={() => toggleOption('led')}>
@@ -2572,6 +2623,9 @@ function ValidationStepPanel({
   carpetFootprintColor,
   carpetFootprintEnabled,
   wallFabricColor,
+  technicalFloor,
+  technicalFloorTrimType,
+  technicalFloorRampEnabled,
   ledRailsEnabled,
   ledSpotCount,
   reserveRule,
@@ -2611,6 +2665,7 @@ function ValidationStepPanel({
         <div className="validation-option-row"><span>Moquette</span><strong>{carpetColor.name} ({carpetColor.code})</strong></div>
         <div className="validation-option-row"><span>Empreinte moquette</span><strong>{carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : 'Retirée'}</strong></div>
         <div className="validation-option-row"><span>Coton cloison</span><strong>{wallFabricColor.name} ({wallFabricColor.code})</strong></div>
+        <div className="validation-option-row"><span>Plancher technique</span><strong>{technicalFloor ? `${technicalFloor.label} · ${technicalTrimLabel(technicalFloorTrimType)}${technicalFloorRampEnabled ? ' · rampe' : ''}` : 'Non sélectionné'}</strong></div>
         <div className="validation-option-row"><span>Spots LED</span><strong>{ledRailsEnabled ? `${ledSpotCount} spots conserves` : 'Retires'}</strong></div>
         <div className="validation-option-row"><span>Réserve</span><strong>{reserveOptionType === '__none__' ? 'Retirée' : (reserveOption?.label || reserveRule?.includedLabel || 'Non incluse')}</strong></div>
         <div className="validation-option-row"><span>Têtes de cloison</span><strong>{partitionHeadSummary(partitionHeadRule, partitionHeadSides)}</strong></div>
@@ -2814,6 +2869,51 @@ function LedRailOptionCard({ enabled, spotCount, disabled = false, onChange }) {
         </button>
       </div>
       <small>Ils sont places en haut des murs et restent inclus dans la scene de base.</small>
+    </div>
+  );
+}
+
+function TechnicalFloorOptionCard({ floorType, trimType, rampEnabled, area, layout, disabled = false, onFloorType, onTrimType, onRampEnabled }) {
+  const selectedFloor = technicalFloorOptions.find((option) => option.id === floorType) || null;
+  const openEdges = openTechnicalFloorEdges(layout);
+  const estimated = selectedFloor ? Math.round(Number(area || 0) * selectedFloor.price) : 0;
+
+  return (
+    <div className="technical-floor-card">
+      <div className="technical-floor-choices">
+        <button type="button" className={!floorType ? 'active' : ''} disabled={disabled} onClick={() => onFloorType('')}>Aucun plancher</button>
+        {technicalFloorOptions.map((option) => (
+          <button key={option.id} type="button" className={floorType === option.id ? 'active' : ''} disabled={disabled} onClick={() => onFloorType(option.id)}>
+            <strong>{option.label}</strong>
+            <span>{option.reference} · {option.price} € HT/m²</span>
+          </button>
+        ))}
+      </div>
+
+      {selectedFloor && (
+        <>
+          <div className="technical-floor-detail">
+            <strong>{selectedFloor.detail}</strong>
+            <span>{formatNumber(area)} m² × {selectedFloor.price} € HT/m² = {estimated.toLocaleString('fr-FR')} € HT</span>
+            <small>Cornières uniquement sur : {openEdges.map(technicalFloorEdgeLabel).join(', ')}</small>
+          </div>
+          <div className="technical-floor-actions">
+            <span>Type de cornière</span>
+            {technicalTrimOptions.map((option) => (
+              <button key={option.id} type="button" className={trimType === option.id ? 'active' : ''} disabled={disabled} onClick={() => onTrimType(option.id)}>
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <label className="technical-floor-ramp-toggle">
+            <input type="checkbox" checked={Boolean(rampEnabled)} disabled={disabled} onChange={(event) => onRampEnabled(event.target.checked)} />
+            <span>
+              <strong>Ajouter la rampe</strong>
+              <small>{selectedFloor.rampLabel} · placement uniquement à l’extérieur, sur le devant.</small>
+            </span>
+          </label>
+        </>
+      )}
     </div>
   );
 }
@@ -6195,6 +6295,24 @@ function roundM2(value = 0) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
+function openTechnicalFloorEdges(layout = 'u') {
+  const edges = ['front'];
+  if (layout !== 'left' && layout !== 'u') edges.push('left');
+  if (layout !== 'right' && layout !== 'u') edges.push('right');
+  return edges;
+}
+
+function technicalFloorEdgeLabel(edge = '') {
+  if (edge === 'front') return 'devant';
+  if (edge === 'left') return 'gauche';
+  if (edge === 'right') return 'droite';
+  return edge;
+}
+
+function technicalTrimLabel(trimType = 'straight') {
+  return technicalTrimOptions.find((option) => option.id === trimType)?.label || technicalTrimOptions[0].label;
+}
+
 function relativeDays(value) {
   if (!value) return '—';
   const diff = Date.now() - new Date(value).getTime();
@@ -6840,7 +6958,7 @@ function partitionHeadSummary(rule, sides = {}) {
   return labels.length ? labels.join(' + ') : 'Aucune';
 }
 
-function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelections = [] }) {
+function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelections = [], technicalFloor = null }) {
   const basePrice = 0;
   const baseItems = sceneBaseItems(scene);
   const baseItemsConfigured = sceneHasBaseItems(scene);
@@ -6910,6 +7028,21 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       itemsTotal += line.total;
       lines.push(line);
     });
+
+  if (technicalFloor?.id && Number(technicalFloor.price || 0) > 0) {
+    const quantityM2 = Math.max(0, Number(technicalFloor.area || 0));
+    const unitPrice = Number(technicalFloor.price || 0);
+    const lineTotal = Math.round(quantityM2 * unitPrice);
+    itemsTotal += lineTotal;
+    lines.push({
+      type: `technical-floor-${technicalFloor.id}`,
+      label: `${technicalFloor.label} (${formatNumber(quantityM2)} m²)`,
+      quantity: quantityM2,
+      unitPrice,
+      total: lineTotal,
+      reference: technicalFloor.reference || '',
+    });
+  }
 
   return {
     basePrice,
@@ -8879,7 +9012,7 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
   };
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, interactive = true, canEditLockedItems = false, visualContext = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampEnabled = false, interactive = true, canEditLockedItems = false, visualContext = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
   const cameraPivot = useMemo(() => {
@@ -8912,7 +9045,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   return (
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
       {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
-      <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} />
+      <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRampEnabled={technicalFloorRampEnabled} />
       <Walls width={width} depth={depth} height={height} layout={layout} wallFabricColor={wallFabricColor} onDeselect={clearSceneSelection} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
         {width}m x {depth}m
@@ -8953,19 +9086,21 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   );
 }
 
-function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true }) {
+function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampEnabled = false }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
   const carpetTexture = useRepeatedTexture(colorTextureUrl(carpetColor), width, depth);
   const footprintTexture = useRepeatedTexture(colorTextureUrl(carpetFootprintColor || carpetColor), footprint.width, footprint.depth);
   const carpetHex = colorHex(carpetColor, '#bebebe');
   const footprintHex = colorHex(carpetFootprintColor || carpetColor, carpetHex);
+  const slabHeight = technicalFloor?.height || floorThickness;
 
   return (
     <group>
-      <mesh receiveShadow position={[0, -floorThickness / 2, 0]}>
-        <boxGeometry args={[width, floorThickness, depth]} />
+      <mesh receiveShadow position={[0, -slabHeight / 2, 0]}>
+        <boxGeometry args={[width, slabHeight, depth]} />
         <meshStandardMaterial color={carpetHex} map={carpetTexture || null} roughness={0.82} />
       </mesh>
+      {technicalFloor && <TechnicalFloorAccessories width={width} depth={depth} layout={layout} height={slabHeight} trimType={technicalFloorTrimType} rampEnabled={technicalFloorRampEnabled} />}
       {carpetFootprintEnabled && (
         <>
           <mesh receiveShadow position={[footprint.centerX, 0.012, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -8975,6 +9110,47 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
         </>
       )}
     </group>
+  );
+}
+
+function TechnicalFloorAccessories({ width, depth, layout, height, trimType, rampEnabled }) {
+  const edges = openTechnicalFloorEdges(layout);
+  const trimHeight = Math.max(0.04, Number(height || 0.04));
+  const trimDepth = 0.04;
+  const rampDepth = trimHeight <= 0.05 ? 0.7 : 1.25;
+  const rampWidth = Math.min(1.4, Math.max(0.9, width * 0.25));
+  const sloped = trimType === 'sloped';
+
+  return (
+    <group>
+      {edges.includes('front') && <TechnicalTrim edge="front" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} />}
+      {edges.includes('left') && <TechnicalTrim edge="left" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} />}
+      {edges.includes('right') && <TechnicalTrim edge="right" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} />}
+      {rampEnabled && (
+        <mesh castShadow receiveShadow position={[0, -trimHeight / 2, depth / 2 + rampDepth / 2]} rotation={[sloped ? Math.atan(trimHeight / rampDepth) : 0, 0, 0]}>
+          <boxGeometry args={[rampWidth, Math.max(0.02, trimHeight * 0.55), rampDepth]} />
+          <meshStandardMaterial color="#d9dde2" roughness={0.55} metalness={0.05} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+function TechnicalTrim({ edge, width, depth, height, thickness, sloped }) {
+  const isFront = edge === 'front';
+  const length = isFront ? width : depth;
+  const position = edge === 'front'
+    ? [0, -height / 2, depth / 2 + thickness / 2]
+    : [edge === 'left' ? -width / 2 - thickness / 2 : width / 2 + thickness / 2, -height / 2, 0];
+  const size = isFront ? [length, height, thickness] : [thickness, height, length];
+  const rotation = sloped
+    ? (isFront ? [0.32, 0, 0] : [0, 0, edge === 'left' ? -0.32 : 0.32])
+    : [0, 0, 0];
+  return (
+    <mesh castShadow receiveShadow position={position} rotation={rotation}>
+      <boxGeometry args={size} />
+      <meshStandardMaterial color={sloped ? '#c7ccd2' : '#eef1f4'} roughness={0.48} metalness={0.08} />
+    </mesh>
   );
 }
 
