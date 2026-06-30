@@ -782,6 +782,80 @@ export async function uploadObjectAssetThumbnail(asset, file) {
   };
 }
 
+export async function uploadColorGroupFolder(files) {
+  if (!supabase) throw new Error('Supabase non configure.');
+  const fileList = Array.from(files || []).filter((file) => isProfileImageFile(file));
+  if (!fileList.length) throw new Error('Selectionne un dossier contenant des images JPG, PNG ou WebP.');
+
+  const rootFolder = getUploadRootFolder(fileList) || 'Groupe couleurs';
+  const assetType = `color-group-${slugifyAsset(rootFolder)}-${Date.now().toString(36)}`;
+  const bucket = supabase.storage.from('object-assets');
+  const colors = [];
+
+  for (const file of fileList) {
+    const relativePath = sanitizeStoragePath(getRelativeUploadPath(file, rootFolder));
+    const storagePath = `${assetType}/${relativePath}`;
+    const { error } = await bucket.upload(storagePath, file, {
+      cacheControl: '31536000',
+      contentType: guessContentType(file),
+      upsert: true,
+    });
+    if (error) throw error;
+    const { data } = bucket.getPublicUrl(storagePath);
+    colors.push(colorOptionFromFile(file, data.publicUrl, storagePath));
+  }
+
+  return saveObjectBankItem({
+    type: assetType,
+    label: prettifyAssetLabel(rootFolder),
+    model_url: null,
+    thumbnail_url: colors[0]?.image || null,
+    is_active: false,
+    dimensions: {
+      addedBy: 'Admin Stand-ING',
+      category: 'Groupes de couleurs',
+      isColorGroup: true,
+      colorUsages: [],
+      colorGroupPrice: 0,
+      colorGroupReference: '',
+      colorOptions: colors,
+      uploadedFiles: fileList.length,
+      storageBucket: 'object-assets',
+      storageRoot: assetType,
+      storagePaths: colors.map((color) => color.storagePath).filter(Boolean),
+      thumbnailPath: colors[0]?.storagePath || null,
+    },
+  });
+}
+
+function colorOptionFromFile(file, publicUrl, storagePath) {
+  const baseName = (file.name || '').replace(/\.[^.]+$/, '');
+  const parts = baseName.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
+  const rgbMatch = baseName.match(/RVB\s+(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})/i);
+  const code = parts[0] || baseName;
+  const rawName = parts[1] || baseName;
+  const name = rawName.replace(/\s*RVB\s+\d{1,3}\s+\d{1,3}\s+\d{1,3}.*/i, '').trim() || rawName;
+  const hex = rgbMatch
+    ? rgbToHex(Number(rgbMatch[1]), Number(rgbMatch[2]), Number(rgbMatch[3]))
+    : '#b8b8b8';
+  return {
+    id: slugifyAsset(`${code}-${name}`),
+    code,
+    name,
+    hex,
+    image: publicUrl,
+    storagePath,
+  };
+}
+
+function rgbToHex(r, g, b) {
+  return `#${[r, g, b].map((value) => clampRgb(value).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function clampRgb(value) {
+  return Math.max(0, Math.min(255, Number(value || 0)));
+}
+
 async function uploadObjectAssetThumbnailFile(assetType, file, bucket) {
   const extension = file.name.toLowerCase().match(/\.([a-z0-9]{2,5})$/)?.[1] || 'jpg';
   const path = `${assetType}/profile-${Date.now().toString(36)}.${extension}`;

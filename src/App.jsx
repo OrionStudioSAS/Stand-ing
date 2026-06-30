@@ -39,7 +39,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, syncSceneContactToMonday, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -156,6 +156,12 @@ const placementRuleOptions = [
   { id: 'back-center', label: 'Centre arrière', description: "L’objet reste centré contre le mur du fond." },
 ];
 const assetCategoryOptions = ['Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
+const colorGroupUsageOptions = [
+  { id: 'carpet', label: 'Moquette', detail: 'Couleurs proposées pour le sol principal.' },
+  { id: 'footprint', label: 'Empreinte moquette', detail: 'Couleurs proposées pour la dalle 1000 × 1000 mm.' },
+  { id: 'wallFabric', label: 'Coton cloison', detail: 'Couleurs/textures proposées sur les murs.' },
+  { id: 'counter', label: 'Couleurs comptoir', detail: 'Couleurs autorisées dans la popup du comptoir.' },
+];
 
 function canRetryTextureUrl(url = '') {
   return /^https?:\/\//i.test(String(url || '')) || String(url || '').startsWith('/');
@@ -807,12 +813,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const hasMounted = useRef(false);
 
   const area = width * depth;
-  const selectedCarpetColor = carpetColors.find((color) => color.id === selectedCarpetId) || carpetColors[0];
-  const selectedCarpetFootprintColor = carpetColors.find((color) => color.id === selectedCarpetFootprintId) || selectedCarpetColor;
-  const selectedWallFabricColor = wallFabricColors.find((color) => color.id === selectedWallFabricId) || wallFabricColors[0];
   const salonLabel = initialScene.salon || clientInfo.event || 'SMCL 2026';
   const standLabel = initialScene.project_name || clientInfo.project || 'Stand A-14';
   const clientLabel = clientInfo.client || contactDetails.company || 'Aerosys Industries';
+  const carpetPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'carpet', carpetColors), [objectBank, salonLabel]);
+  const footprintPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'footprint', carpetPalette), [objectBank, salonLabel, carpetPalette]);
+  const wallFabricPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'wallFabric', wallFabricColors), [objectBank, salonLabel]);
+  const counterPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'counter', []), [objectBank, salonLabel]);
+  const selectedCarpetColor = carpetPalette.find((color) => color.id === selectedCarpetId) || carpetPalette[0] || carpetColors[0];
+  const selectedCarpetFootprintColor = footprintPalette.find((color) => color.id === selectedCarpetFootprintId) || selectedCarpetColor;
+  const selectedWallFabricColor = wallFabricPalette.find((color) => color.id === selectedWallFabricId) || wallFabricPalette[0] || wallFabricColors[0];
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
   const readOnly = false;
@@ -843,6 +853,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const availableCatalog = useMemo(() => {
     const dynamicEntries = objectBank
       .filter((asset) => asset.is_active)
+      .filter((asset) => !asset.dimensions?.isColorGroup)
       .filter((asset) => assetMatchesSalon(asset, salonLabel))
       .map((asset) => assetToCatalogEntry(asset, objectBank));
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
@@ -926,7 +937,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     items: sceneItems,
     salonLabel,
     scene: initialScene,
-  }), [area, availableCatalog, sceneItems, salonLabel, initialScene]);
+    colorSelections: [
+      { usage: 'Moquette', color: selectedCarpetColor },
+      carpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor } : null,
+      { usage: 'Coton cloison', color: selectedWallFabricColor },
+    ],
+  }), [area, availableCatalog, sceneItems, salonLabel, initialScene, selectedCarpetColor, selectedCarpetFootprintColor, carpetFootprintEnabled, selectedWallFabricColor]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
@@ -936,13 +952,19 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       carpetColorId: selectedCarpetColor.id,
       carpetColorName: selectedCarpetColor.name,
       carpetColorHex: selectedCarpetColor.hex,
+      carpetColorPrice: Number(selectedCarpetColor.price || 0),
+      carpetColorReference: selectedCarpetColor.reference || '',
       carpetFootprintColorId: selectedCarpetFootprintColor.id,
       carpetFootprintColorName: selectedCarpetFootprintColor.name,
       carpetFootprintColorHex: selectedCarpetFootprintColor.hex,
+      carpetFootprintColorPrice: Number(selectedCarpetFootprintColor.price || 0),
+      carpetFootprintColorReference: selectedCarpetFootprintColor.reference || '',
       carpetFootprintEnabled,
       wallFabricColorId: selectedWallFabricColor.id,
       wallFabricColorName: selectedWallFabricColor.name,
       wallFabricColorHex: selectedWallFabricColor.hex,
+      wallFabricColorPrice: Number(selectedWallFabricColor.price || 0),
+      wallFabricColorReference: selectedWallFabricColor.reference || '',
       language,
       ledRailsEnabled,
       ledSpotCount,
@@ -1505,8 +1527,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             toggleOption={toggleOption}
             selectedCarpetColor={selectedCarpetColor}
             selectedCarpetFootprintColor={selectedCarpetFootprintColor}
+            carpetColors={carpetPalette}
+            footprintColors={footprintPalette}
             carpetFootprintEnabled={carpetFootprintEnabled}
             selectedWallFabricColor={selectedWallFabricColor}
+            wallFabricColors={wallFabricPalette}
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={ledSpotCount}
             reserveRule={activeReserveRuleConfig}
@@ -1546,6 +1571,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             uploadState={itemOptionState}
             onImageChange={uploadItemImage}
             onUpdateItemOptions={updateItemOptions}
+            counterColors={counterPalette}
             onClose={closeItemConfigurator}
             onConfirm={confirmItemConfigurator}
           />
@@ -1827,9 +1853,10 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
   );
 }
 
-function WoodReceptionDeskOptionsPanel({ item, uploadState, onImageChange, onResetImage, onColorChange, onResetColor, embedded = false }) {
+function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onResetColor, embedded = false }) {
   const imageName = item.options?.binary3ImageName || 'Texture originale Binary_3.jpeg';
   const selectedColor = item.options?.binary2Color || '#ffffff';
+  const selectedColorId = item.options?.binary2ColorId || '';
   return (
     <aside className={embedded ? 'item-visual-config' : 'item-options-panel'}>
       <div className="item-options-heading">
@@ -1860,11 +1887,32 @@ function WoodReceptionDeskOptionsPanel({ item, uploadState, onImageChange, onRes
         />
       </label>
 
-      <label className="item-color-upload">
-        <span>Couleur du matériau Laminate_D02_120cm_6</span>
-        <input type="color" value={selectedColor} onChange={(event) => onColorChange?.(event.target.value)} />
-        <strong>{item.options?.binary2Color || 'Couleur originale'}</strong>
-      </label>
+      {colors.length ? (
+        <div className="item-counter-color-palette">
+          <span>Couleur du matériau Laminate_D02_120cm_6</span>
+          <div>
+            {colors.map((color) => (
+              <button
+                key={color.id}
+                type="button"
+                className={selectedColorId === color.id || (!selectedColorId && selectedColor === color.hex) ? 'active' : ''}
+                style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+                title={`${color.name} (${color.code})`}
+                onClick={() => onColorChange?.(color)}
+              >
+                <i />
+                <strong>{color.name}</strong>
+                <small>{color.reference || color.code}{Number(color.price || 0) > 0 ? ` · +${Number(color.price).toLocaleString('fr-FR')} € HT` : ' · Inclus'}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="item-color-upload unavailable">
+          <span>Couleur du matériau Laminate_D02_120cm_6</span>
+          <strong>Aucune couleur comptoir active pour ce salon.</strong>
+        </div>
+      )}
 
       <div className="item-option-actions">
         {item.options?.binary3ImageUrl && <button className="item-image-reset" type="button" onClick={onResetImage}>Revenir à l’image d’origine</button>}
@@ -1945,8 +1993,11 @@ function OptionsStepPanel({
   toggleOption,
   selectedCarpetColor,
   selectedCarpetFootprintColor,
+  carpetColors = [],
+  footprintColors = [],
   carpetFootprintEnabled,
   selectedWallFabricColor,
+  wallFabricColors = [],
   ledRailsEnabled,
   ledSpotCount,
   reserveRule,
@@ -1977,7 +2028,7 @@ function OptionsStepPanel({
           title="Couleur"
           colors={carpetColors}
           selectedColor={selectedCarpetColor}
-          optionLabel="En option 36€"
+          optionLabel="Coloris payants"
           disabled={readOnly}
           onSelect={onCarpetColor}
         />
@@ -1992,9 +2043,9 @@ function OptionsStepPanel({
         />
         <ColorOptionCard
           title="Couleur empreinte"
-          colors={carpetColors}
+          colors={footprintColors}
           selectedColor={selectedCarpetFootprintColor}
-          optionLabel="En option 36€"
+          optionLabel="Coloris payants"
           disabled={readOnly}
           onSelect={onCarpetFootprintColor}
         />
@@ -2004,7 +2055,7 @@ function OptionsStepPanel({
           title="Couleur"
           colors={wallFabricColors}
           selectedColor={selectedWallFabricColor}
-          optionLabel="En option 36€"
+          optionLabel="Coloris payants"
           disabled={readOnly}
           onSelect={onWallColor}
         />
@@ -2175,7 +2226,7 @@ function ClockIcon() {
   return <span className="cart-clock">◷</span>;
 }
 
-function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, items, width, depth, uploadState, onImageChange, onUpdateItemOptions, onClose, onConfirm }) {
+function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, items, width, depth, uploadState, onImageChange, onUpdateItemOptions, counterColors = [], onClose, onConfirm }) {
   const catalogEntry = entry || item || {};
   const isVariantGroup = isVariantGroupEntry(catalogEntry);
   const initialOptions = item?.options || {};
@@ -2273,11 +2324,12 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
         {hasVisualOptions && isWoodReceptionDeskItem(item) && (
           <WoodReceptionDeskOptionsPanel
             item={item}
+            colors={counterColors}
             uploadState={uploadState}
             onImageChange={(file) => onImageChange?.(item, file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName' })}
             onResetImage={() => onUpdateItemOptions?.(item, { binary3ImageUrl: '', binary3ImageName: '' })}
-            onColorChange={(color) => onUpdateItemOptions?.(item, { binary2Color: color })}
-            onResetColor={() => onUpdateItemOptions?.(item, { binary2Color: '' })}
+            onColorChange={(color) => onUpdateItemOptions?.(item, { binary2Color: color.hex, binary2ColorId: color.id, binary2ColorName: color.name, binary2ColorReference: color.reference || '', binary2ColorPrice: Number(color.price || 0) })}
+            onResetColor={() => onUpdateItemOptions?.(item, { binary2Color: '', binary2ColorId: '', binary2ColorName: '', binary2ColorReference: '', binary2ColorPrice: 0 })}
             embedded
           />
         )}
@@ -2405,7 +2457,9 @@ function itemCartLabel(item) {
 }
 
 function cartItemPrice(item, entry, salonLabel) {
-  return Number(item.options?.unitPrice ?? assetUnitPrice(entry, salonLabel) ?? 0);
+  const basePrice = Number(item.options?.unitPrice ?? assetUnitPrice(entry, salonLabel) ?? 0);
+  const colorSupplement = Number(item.options?.binary2ColorPrice || 0);
+  return basePrice + colorSupplement;
 }
 
 function marketplaceStartingPrice(entry, catalog = [], salonLabel = '') {
@@ -2481,7 +2535,10 @@ function itemOptionLines(item) {
   if (opts.posterImageName) result.push(opts.posterImageName);
   if (opts.headMainImageName && !opts.headMainImageName.startsWith('Texture originale')) result.push(opts.headMainImageName);
   if (opts.binary3ImageName && !opts.binary3ImageName.startsWith('Texture originale')) result.push(opts.binary3ImageName);
-  if (opts.binary2Color) result.push(`Couleur : ${opts.binary2Color}`);
+  if (opts.binary2ColorName || opts.binary2Color) {
+    const colorPrice = Number(opts.binary2ColorPrice || 0);
+    result.push(`Couleur : ${opts.binary2ColorName || opts.binary2Color}${colorPrice > 0 ? ` (+${colorPrice.toLocaleString('fr-FR')} € HT)` : ''}`);
+  }
   if (opts.technician) result.push('Technicien inclus');
   if (opts.fileCheck) result.push('Vérification fichier');
   return result;
@@ -2895,7 +2952,7 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, disabled =
           <span className="selected-swatch" style={{ '--swatch-color': selectedColor.hex, '--swatch-image': `url("${selectedColor.image}")` }} />
           <span>
             <strong>{selectedColor.name}</strong>
-            <small>{selectedColor.code} · {selectedColor.included ? 'Inclus' : optionLabel}</small>
+            <small>{selectedColor.code} · {selectedColor.included ? 'Inclus' : colorOptionLabel(selectedColor, optionLabel)}</small>
           </span>
           <ChevronDown size={18} />
         </button>
@@ -2930,6 +2987,7 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, disabled =
                   onClick={() => selectColor(color.id)}
                 >
                   <span>{color.name}</span>
+                  <em>{colorOptionLabel(color, optionLabel)}</em>
                 </button>
               ))}
             </div>
@@ -2938,6 +2996,13 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, disabled =
       </div>
     </div>
   );
+}
+
+function colorOptionLabel(color = {}, fallback = 'En option') {
+  const price = Number(color.price || 0);
+  const reference = color.reference || color.groupLabel || '';
+  const priceText = price > 0 ? `+${price.toLocaleString('fr-FR')} € HT` : fallback;
+  return reference ? `${priceText} · ${reference}` : priceText;
 }
 
 const adminTabStorageKey = 'standing-admin-active-tab';
@@ -3070,6 +3135,27 @@ function AdminDashboard({ user, adminProfile }) {
     }
   };
 
+  const uploadColorGroup = async (files) => {
+    setAssetUploadState({ loading: true, message: '', error: '' });
+    try {
+      const saved = await uploadColorGroupFolder(files);
+      setAssets((current) => [saved, ...current.filter((item) => item.type !== saved.type)]);
+      setSelectedAsset(saved);
+      setAssetCategory('Groupes de couleurs');
+      setAssetUploadState({
+        loading: false,
+        message: `${saved.label} ajouté. Configure les usages, salons, prix et référence du groupe.`,
+        error: '',
+      });
+    } catch (error) {
+      setAssetUploadState({
+        loading: false,
+        message: '',
+        error: error.message || 'Import du groupe de couleurs impossible.',
+      });
+    }
+  };
+
   return (
     <main className="admin-dashboard-shell">
       <aside className="admin-sidebar">
@@ -3141,6 +3227,7 @@ function AdminDashboard({ user, adminProfile }) {
               onSaveAsset={saveAsset}
               onDeleteAsset={deleteAsset}
               onUploadAssetFolder={uploadAssetFolder}
+              onUploadColorGroup={uploadColorGroup}
             />
           )}
           {tab === 'monday' && <AdminMondayView syncState={syncState} runMondaySync={runMondaySync} />}
@@ -3703,6 +3790,7 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
   const entries = useMemo(() => {
     const dynamicEntries = (assets || [])
       .filter((asset) => asset.is_active)
+      .filter((asset) => !asset.dimensions?.isColorGroup)
       .filter((asset) => assetMatchesSalon(asset, salon?.name))
       .map((asset) => assetToCatalogEntry(asset, assets));
     const all = [...dynamicEntries, ...nativeCatalogEntries()];
@@ -3878,6 +3966,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const availableCatalog = useMemo(() => {
     const dynamicEntries = (assets || [])
       .filter((asset) => asset.is_active)
+      .filter((asset) => !asset.dimensions?.isColorGroup)
       .filter((asset) => assetMatchesSalon(asset, salon.name))
       .map((asset) => assetToCatalogEntry(asset, assets));
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
@@ -4504,10 +4593,10 @@ function clientStatusSummary(client) {
   return 'À configurer';
 }
 
-function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onUploadAssetFolder }) {
+function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onUploadAssetFolder, onUploadColorGroup }) {
   const [groupCreatorOpen, setGroupCreatorOpen] = useState(false);
   const [variantGroupCreatorOpen, setVariantGroupCreatorOpen] = useState(false);
-  const categories = ['Tout', 'Groupes', 'Groupes de variantes', ...assetCategoryOptions];
+  const categories = ['Tout', 'Groupes', 'Groupes de variantes', 'Groupes de couleurs', ...assetCategoryOptions];
   const filteredAssets = assets.filter((asset) => {
     const assetCategory = assetCategoryLabel(asset);
     const matchesCategory = category === 'Tout' || assetCategory === category;
@@ -4559,6 +4648,22 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
           <Settings2 size={18} />
           Creer un groupe de variantes
         </button>
+        <label className="asset-group-create-button color-group-upload">
+          <FileImage size={18} />
+          Importer un groupe de couleurs
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            webkitdirectory=""
+            directory=""
+            disabled={uploadState?.loading}
+            onChange={(event) => {
+              onUploadColorGroup(event.target.files);
+              event.target.value = '';
+            }}
+          />
+        </label>
       </div>
       {(uploadState?.message || uploadState?.error) && (
         <div className={`asset-upload-feedback ${uploadState.error ? 'error' : ''}`}>
@@ -4628,6 +4733,15 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
 }
 
 function AssetPreview({ asset }) {
+  if (asset.dimensions?.isColorGroup) {
+    const colors = normalizeColorGroupOptions(asset);
+    return (
+      <span className="asset-color-group-preview">
+        {colors.slice(0, 5).map((color) => <i key={color.id} style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }} />)}
+        <em>{colors.length} couleurs</em>
+      </span>
+    );
+  }
   const url = asset.thumbnail_url;
   if (url) return <img className="asset-thumb" src={url} alt="" />;
   if (asset.dimensions?.isVariantGroup) return <span className="asset-group-preview"><Layers size={34} />{asset.dimensions?.variantAssetTypes?.length || 0} variantes</span>;
@@ -4644,6 +4758,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const [selectedGroupRowUid, setSelectedGroupRowUid] = useState(null);
   const salons = getSalonRows(scenes).map((salon) => salon.title);
   const assignedSalons = assetSalons(draft, scenes);
+  const isColorGroup = Boolean(draft.dimensions?.isColorGroup);
   const isGroupAsset = Boolean(draft.dimensions?.isGroup);
   const isVariantGroup = Boolean(draft.dimensions?.isVariantGroup);
   const sourceAssets = groupSourceAssets(assets);
@@ -4714,6 +4829,23 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
         [key]: nextItems,
       },
     });
+  };
+
+  const updateColorGroupBehavior = (patch) => {
+    setDraft({
+      ...draft,
+      dimensions: {
+        ...(draft.dimensions || {}),
+        ...patch,
+      },
+    });
+  };
+
+  const toggleColorUsage = (usageId) => {
+    const current = new Set(colorGroupUsages(draft));
+    if (current.has(usageId)) current.delete(usageId);
+    else current.add(usageId);
+    updateColorGroupBehavior({ colorUsages: [...current] });
   };
 
   const updateConfigOptionRow = (index, patch) => {
@@ -4801,6 +4933,24 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   };
 
   const saveDraft = () => {
+    if (isColorGroup) {
+      onSave({
+        ...draft,
+        label: draft.label?.trim() || 'Groupe de couleurs',
+        is_active: assignedSalons.length > 0,
+        dimensions: {
+          ...(draft.dimensions || {}),
+          isColorGroup: true,
+          category: 'Groupes de couleurs',
+          colorOptions: normalizeColorGroupOptions(draft),
+          colorUsages: colorGroupUsages(draft),
+          colorGroupPrice: Number(draft.dimensions?.colorGroupPrice || 0),
+          colorGroupReference: draft.dimensions?.colorGroupReference || '',
+        },
+      });
+      return;
+    }
+
     if (isVariantGroup) {
       onSave({
         ...draft,
@@ -4888,7 +5038,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           <input value={draft.label || ''} onChange={(event) => setDraft({ ...draft, label: event.target.value })} />
         </label>
 
-        {!isGroupAsset && (
+        {!isGroupAsset && !isColorGroup && (
           <label className="asset-group-field">
             <span>Catégorie</span>
             <select
@@ -4900,6 +5050,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           </label>
         )}
 
+        {!isColorGroup && (
         <label className="asset-toggle-row">
           <input
             type="checkbox"
@@ -4911,8 +5062,62 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             <small>Si activé, seuls les admins peuvent poser cet objet dans une scène.</small>
           </span>
         </label>
+        )}
 
-        {!isVariantGroup && (
+        {isColorGroup && (
+          <section className="asset-color-settings">
+            <div className="asset-color-settings-head">
+              <h3>Groupe de couleurs</h3>
+              <small>Coche les endroits où ce groupe doit apparaître. Tu peux créer plusieurs groupes pour la même zone si les prix changent.</small>
+            </div>
+            <div className="color-group-usage-grid">
+              {colorGroupUsageOptions.map((usage) => (
+                <label key={usage.id} className="asset-toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={colorGroupUsages(draft).includes(usage.id)}
+                    onChange={() => toggleColorUsage(usage.id)}
+                  />
+                  <span>
+                    <strong>{usage.label}</strong>
+                    <small>{usage.detail}</small>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="asset-color-price-grid">
+              <label className="asset-group-field">
+                <span>Prix du groupe HT</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={draft.dimensions?.colorGroupPrice ?? 0}
+                  onChange={(event) => updateColorGroupBehavior({ colorGroupPrice: event.target.value })}
+                />
+              </label>
+              <label className="asset-group-field">
+                <span>Référence du groupe</span>
+                <input
+                  value={draft.dimensions?.colorGroupReference || ''}
+                  placeholder="Ex : MOQ-GRIS-PLUS"
+                  onChange={(event) => updateColorGroupBehavior({ colorGroupReference: event.target.value })}
+                />
+              </label>
+            </div>
+            <div className="color-group-preview-list">
+              {normalizeColorGroupOptions(draft).map((color) => (
+                <span key={color.id}>
+                  <i style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }} />
+                  <strong>{color.name}</strong>
+                  <small>{color.code}</small>
+                </span>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {!isVariantGroup && !isColorGroup && (
         <section className="asset-behavior-settings">
           <h3>Règles spécifiques</h3>
           {!isGroupAsset && (
@@ -5086,7 +5291,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
                   <span>{active ? 'Actif' : 'Inactif'}</span>
                   <i className={active ? 'active' : ''} />
                 </button>
-                {active && !isVariantGroup && (
+                {active && !isVariantGroup && !isColorGroup && (
                   <div className="asset-salon-pricing-fields">
                     <label>
                       <span>Prix spécifique {salon}</span>
@@ -5111,6 +5316,9 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
                 )}
                 {active && isVariantGroup && (
                   <small className="asset-variant-group-note">Prix et référence gérés par les objets variantes.</small>
+                )}
+                {active && isColorGroup && (
+                  <small className="asset-variant-group-note">Prix et référence gérés au niveau du groupe de couleurs.</small>
                 )}
               </div>
             );
@@ -5163,7 +5371,11 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
         )}
 
         <small className="asset-price-note">
-          {isVariantGroup ? 'Le groupe sert uniquement de fiche boutique : les prix et références viennent des objets associés.' : 'Les prix et références peuvent être différents pour chaque salon actif.'}
+          {isColorGroup
+            ? 'Ce groupe alimente les couleurs disponibles dans le configurateur selon ses usages et salons actifs.'
+            : isVariantGroup
+              ? 'Le groupe sert uniquement de fiche boutique : les prix et références viennent des objets associés.'
+              : 'Les prix et références peuvent être différents pour chaque salon actif.'}
         </small>
 
         <footer>
@@ -5858,6 +6070,7 @@ function formatDate(value) {
 }
 
 function assetCategoryLabel(asset) {
+  if (asset.dimensions?.isColorGroup) return 'Groupes de couleurs';
   if (asset.dimensions?.isVariantGroup) return 'Groupes de variantes';
   if (asset.dimensions?.isGroup) return 'Groupes';
   if (asset.dimensions?.category) return asset.dimensions.category;
@@ -5869,6 +6082,7 @@ function assetCategoryLabel(asset) {
 }
 
 function assetFormat(asset) {
+  if (asset.dimensions?.isColorGroup) return 'Couleurs';
   if (asset.dimensions?.isVariantGroup) return 'Groupe de variantes';
   if (asset.dimensions?.isGroup) return 'Groupe';
   const url = asset.model_url || '';
@@ -5878,6 +6092,7 @@ function assetFormat(asset) {
 }
 
 function assetSizeLabel(asset) {
+  if (asset.dimensions?.isColorGroup) return `${normalizeColorGroupOptions(asset).length} couleurs`;
   if (asset.dimensions?.isVariantGroup) return `${asset.dimensions?.variantAssetTypes?.length || 0} variantes`;
   if (asset.dimensions?.isGroup) return `${asset.dimensions?.children?.length || 0} objets`;
   if (asset.dimensions?.sizeMb) return `${asset.dimensions.sizeMb} Mo`;
@@ -5909,7 +6124,7 @@ function groupSourceAssets(assets = []) {
         materialUrl: entry.materialUrl || null,
       },
     }));
-  const dynamicAssets = assets.filter((asset) => asset.is_active && !asset.dimensions?.isGroup && !asset.dimensions?.isVariantGroup && !isWallItemType(asset.type));
+  const dynamicAssets = assets.filter((asset) => asset.is_active && !asset.dimensions?.isColorGroup && !asset.dimensions?.isGroup && !asset.dimensions?.isVariantGroup && !isWallItemType(asset.type));
   const all = [...baseAssets, ...dynamicAssets];
   return all.filter((asset, index) => all.findIndex((candidate) => candidate.type === asset.type) === index);
 }
@@ -5918,6 +6133,7 @@ function variantSourceAssets(assets = [], excludedType = '') {
   return assets
     .filter((asset) => asset.type !== excludedType)
     .filter((asset) => asset.is_active)
+    .filter((asset) => !asset.dimensions?.isColorGroup)
     .filter((asset) => !asset.dimensions?.isGroup && !asset.dimensions?.isVariantGroup)
     .filter((asset, index, all) => all.findIndex((candidate) => candidate.type === asset.type) === index);
 }
@@ -5968,12 +6184,69 @@ function assetSalons(asset, scenes = []) {
   return asset.is_active ? salons.slice(0, 1) : [];
 }
 
+function colorGroupAssets(assets = [], salonLabel = '', usage = '') {
+  return (assets || [])
+    .filter((asset) => asset?.dimensions?.isColorGroup)
+    .filter((asset) => asset.is_active !== false)
+    .filter((asset) => colorGroupMatchesSalon(asset, salonLabel))
+    .filter((asset) => colorGroupUsages(asset).includes(usage));
+}
+
+function colorOptionsForUsage(assets = [], salonLabel = '', usage = '', fallbackColors = []) {
+  const groups = colorGroupAssets(assets, salonLabel, usage);
+  if (!groups.length) return fallbackColors;
+  return groups.flatMap((group) => {
+    const price = Number(group.dimensions?.colorGroupPrice || 0);
+    const reference = group.dimensions?.colorGroupReference || '';
+    return normalizeColorGroupOptions(group).map((color) => ({
+      ...color,
+      id: `${group.type}:${color.id}`,
+      groupId: group.type,
+      groupLabel: group.label,
+      price,
+      reference,
+      included: price <= 0,
+    }));
+  });
+}
+
+function normalizeColorGroupOptions(asset = {}) {
+  return (asset.dimensions?.colorOptions || [])
+    .map((color, index) => ({
+      id: color.id || slugForType(`${color.code || index}-${color.name || 'couleur'}`),
+      code: color.code || color.id || String(index + 1),
+      name: color.name || color.code || `Couleur ${index + 1}`,
+      hex: color.hex || '#b8b8b8',
+      image: color.image || '',
+      storagePath: color.storagePath || '',
+      included: Number(asset.dimensions?.colorGroupPrice || 0) <= 0,
+    }));
+}
+
+function colorGroupUsages(asset = {}) {
+  return Array.isArray(asset.dimensions?.colorUsages) ? asset.dimensions.colorUsages : [];
+}
+
+function colorGroupMatchesSalon(asset = {}, salonLabel = '') {
+  const salons = assetSalons(asset);
+  if (!salons.length) return false;
+  return salons.some((salon) => sameSalonLabel(salon, salonLabel));
+}
+
+function sameSalonLabel(a = '', b = '') {
+  const left = normalizeTextValue(a).replace(/\s+/g, ' ');
+  const right = normalizeTextValue(b).replace(/\s+/g, ' ');
+  return left === right || left.includes(right) || right.includes(left);
+}
+
 function assetToCatalogEntry(asset, allAssets = []) {
+  if (asset.dimensions?.isColorGroup) return null;
   if (asset.dimensions?.isVariantGroup) {
     const variantAssets = (asset.dimensions?.variantAssetTypes || [])
       .map((type) => allAssets.find((candidate) => candidate.type === type))
       .filter(Boolean)
-      .map((candidate) => assetToCatalogEntry(candidate, allAssets));
+      .map((candidate) => assetToCatalogEntry(candidate, allAssets))
+      .filter(Boolean);
     return {
       type: asset.type,
       label: asset.label,
@@ -6407,7 +6680,7 @@ function partitionHeadSummary(rule, sides = {}) {
   return labels.length ? labels.join(' + ') : 'Aucune';
 }
 
-function calculateScenePricing({ catalog, items, salonLabel, scene }) {
+function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelections = [] }) {
   const basePrice = 0;
   const baseItems = sceneBaseItems(scene);
   const baseItemsConfigured = sceneHasBaseItems(scene);
@@ -6458,6 +6731,22 @@ function calculateScenePricing({ catalog, items, salonLabel, scene }) {
       reference: assetReference(entry, salonLabel),
     });
   });
+
+  colorSelections
+    .filter((selection) => selection?.color && Number(selection.color.price || 0) > 0)
+    .forEach((selection) => {
+      const colorPrice = Number(selection.color.price || 0);
+      const line = {
+        type: `color-${selection.color.groupId || selection.color.id}`,
+        label: `${selection.usage} — ${selection.color.groupLabel || selection.color.name}`,
+        quantity: 1,
+        unitPrice: colorPrice,
+        total: colorPrice,
+        reference: selection.color.reference || selection.color.code || '',
+      };
+      itemsTotal += line.total;
+      lines.push(line);
+    });
 
   return {
     basePrice,
