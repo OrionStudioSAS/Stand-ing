@@ -792,6 +792,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
   const [itemOptionState, setItemOptionState] = useState({ uploading: false, error: '' });
+  const [wallCoverState, setWallCoverState] = useState({ uploading: '', error: '' });
+  const [wallCovers, setWallCovers] = useState(initialOptions.wallCovers || {});
   const [itemConfigModal, setItemConfigModal] = useState(null);
   const [basePackOpen, setBasePackOpen] = useState(false);
   const [sceneHasRendered, setSceneHasRendered] = useState(false);
@@ -926,13 +928,19 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     () => makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...automaticReserveItems, ...manualHydratedItems]),
     [autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, manualHydratedItems],
   );
+  const wallCoverSurfaces = useMemo(
+    () => wallCoverSurfaceOptions(layout, width, depth, [...manualHydratedItems, ...automaticReserveItems]),
+    [layout, width, depth, manualHydratedItems, automaticReserveItems],
+  );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems]);
   const cartItems = useMemo(() => sceneItems.filter(shopCartItemVisible), [sceneItems]);
   const showCartBar = !readOnly && (activeStep === 2 || activeStep === 3);
+  const wallCoverImageUrls = useMemo(() => Object.values(wallCovers || {}).map((cover) => cover?.imageUrl).filter(Boolean), [wallCovers]);
   const sceneTextureLoad = useSceneTexturePreload(sceneItems, [
     selectedCarpetColor.image,
     effectiveCarpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
     selectedWallFabricColor.image,
+    ...wallCoverImageUrls,
   ]);
   const sceneSuspendLoad = useSceneSuspendPreload(objectBankLoaded ? sceneItems : []);
   const sceneAssetsReady = objectBankLoaded && sceneTextureLoad.ready && sceneSuspendLoad.ready;
@@ -975,7 +983,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       effectiveCarpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor, defaultColorId: effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId, quantityM2: carpetFootprintAreaM2() } : null,
       { usage: 'Coton cloison', color: selectedWallFabricColor, defaultColorId: effectiveDefaultColorOptions.wallFabricColorId, quantityM2: sceneWallFabricArea(width, depth, layout) },
     ],
-  }), [area, availableCatalog, sceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions]);
+    wallCovers,
+    wallCoverSurfaces,
+  }), [area, availableCatalog, sceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
@@ -999,6 +1009,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       wallFabricColorHex: selectedWallFabricColor.hex,
       wallFabricColorPrice: Number(selectedWallFabricColor.price || 0),
       wallFabricColorReference: selectedWallFabricColor.reference || '',
+      wallCovers,
       technicalFloorType,
       technicalFloorLabel: selectedTechnicalFloor?.label || '',
       technicalFloorHeight: selectedTechnicalFloor?.height || 0,
@@ -1063,7 +1074,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
@@ -1133,6 +1144,29 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       setItemOptionState({ uploading: false, error: '' });
     } catch (error) {
       setItemOptionState({ uploading: false, error: error.message || 'Upload impossible.' });
+    }
+  };
+
+  const toggleWallCover = (surfaceId, enabled) => {
+    if (readOnly) return;
+    setWallCovers((current) => ({
+      ...current,
+      [surfaceId]: { ...(current?.[surfaceId] || {}), enabled },
+    }));
+  };
+
+  const uploadWallCoverImage = async (surfaceId, file) => {
+    if (!surfaceId || !file || readOnly) return;
+    setWallCoverState({ uploading: surfaceId, error: '' });
+    try {
+      const imageUrl = await uploadSceneItemOptionImage(initialScene, { id: `wall-cover-${surfaceId}`, type: 'wall-cover' }, file);
+      setWallCovers((current) => ({
+        ...current,
+        [surfaceId]: { ...(current?.[surfaceId] || {}), enabled: true, imageUrl, imageName: file.name },
+      }));
+      setWallCoverState({ uploading: '', error: '' });
+    } catch (error) {
+      setWallCoverState({ uploading: '', error: error.message || 'Upload impossible.' });
     }
   };
   const openAddItemConfigurator = (entry) => {
@@ -1433,6 +1467,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 carpetFootprintColor={selectedCarpetFootprintColor}
                 carpetFootprintEnabled={effectiveCarpetFootprintEnabled}
                 wallFabricColor={selectedWallFabricColor}
+                wallCovers={wallCovers}
                 technicalFloor={selectedTechnicalFloor}
                 technicalFloorTrimType={technicalFloorTrimType}
                 technicalFloorRampX={technicalFloorRampX}
@@ -1589,6 +1624,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             carpetFootprintEnabled={effectiveCarpetFootprintEnabled}
             selectedWallFabricColor={selectedWallFabricColor}
             wallFabricColors={wallFabricPalette}
+            wallCovers={wallCovers}
+            wallCoverSurfaces={wallCoverSurfaces}
+            wallCoverState={wallCoverState}
             defaultColorOptions={effectiveDefaultColorOptions}
             technicalFloorType={technicalFloorType}
             technicalFloorTrimType={technicalFloorTrimType}
@@ -1605,6 +1643,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onCarpetFootprintColor={(colorId) => !readOnly && setSelectedCarpetFootprintId(colorId)}
             onCarpetFootprintEnabled={(enabled) => !readOnly && !selectedTechnicalFloor && setCarpetFootprintEnabled(enabled)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
+            onWallCoverToggle={toggleWallCover}
+            onWallCoverImage={uploadWallCoverImage}
             onTechnicalFloorType={(type) => !readOnly && handleTechnicalFloorType(type)}
             onTechnicalFloorTrimType={(type) => !readOnly && setTechnicalFloorTrimType(type)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
@@ -1867,7 +1907,7 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
         <FileImage size={17} />
         <div>
           <strong>Affiche murale</strong>
-          <span>Visuel affiché sur toute la surface disponible</span>
+          <span>Visuel 1000 × 1000 mm à hauteur écran</span>
         </div>
       </div>
 
@@ -2060,6 +2100,9 @@ function OptionsStepPanel({
   carpetFootprintEnabled,
   selectedWallFabricColor,
   wallFabricColors = [],
+  wallCovers = {},
+  wallCoverSurfaces = [],
+  wallCoverState = {},
   defaultColorOptions = {},
   technicalFloorType,
   technicalFloorTrimType,
@@ -2076,6 +2119,8 @@ function OptionsStepPanel({
   onCarpetFootprintColor,
   onCarpetFootprintEnabled,
   onWallColor,
+  onWallCoverToggle,
+  onWallCoverImage,
   onTechnicalFloorType,
   onTechnicalFloorTrimType,
   onLedRailsEnabled,
@@ -2113,7 +2158,7 @@ function OptionsStepPanel({
           onSelect={onCarpetFootprintColor}
         />
       </OptionAccordion>
-      <OptionAccordion title="Coton cloison" icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+      <OptionAccordion title="Cloison" icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
         <ColorOptionCard
           title="Couleur"
           colors={wallFabricColors}
@@ -2123,6 +2168,14 @@ function OptionsStepPanel({
           optionLabel="Options payantes"
           disabled={readOnly}
           onSelect={onWallColor}
+        />
+        <WallCoverOptionCard
+          surfaces={wallCoverSurfaces}
+          covers={wallCovers}
+          uploadState={wallCoverState}
+          disabled={readOnly}
+          onToggle={onWallCoverToggle}
+          onImage={onWallCoverImage}
         />
       </OptionAccordion>
       <OptionAccordion title="Plancher technique" icon={<Ruler size={16} />} open={openOptions.plancher} onToggle={() => toggleOption('plancher')}>
@@ -3128,6 +3181,65 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, disabled = false, onToggle, onImage }) {
+  const activeCount = surfaces.filter((surface) => covers?.[surface.id]?.enabled).length;
+
+  return (
+    <div className="wall-cover-card">
+      <div className="wall-cover-head">
+        <div>
+          <strong>Bâche sur cloisons</strong>
+          <span>245 € / ml</span>
+        </div>
+        <em>{activeCount} / {surfaces.length} actives</em>
+      </div>
+
+      {!surfaces.length && (
+        <div className="wall-cover-empty">Aucune cloison disponible sur cette implantation.</div>
+      )}
+
+      {surfaces.map((surface) => {
+        const cover = covers?.[surface.id] || {};
+        const enabled = Boolean(cover.enabled);
+        const hasImage = Boolean(cover.imageUrl);
+        const spec = recommendedSimulatorImageSpec(surface.width, surface.height, 2048);
+        return (
+          <div key={surface.id} className={`wall-cover-row ${enabled ? 'active' : ''} ${enabled && !hasImage ? 'needs-image' : ''}`}>
+            <button
+              type="button"
+              className={`wall-cover-toggle ${enabled ? 'active' : ''}`}
+              disabled={disabled}
+              aria-label={`${enabled ? 'Retirer' : 'Activer'} ${surface.label}`}
+              onClick={() => onToggle?.(surface.id, !enabled)}
+            >
+              <span />
+            </button>
+            <div>
+              <strong>{surface.label}</strong>
+              <span>{formatNumber(surface.width)} m × {formatNumber(surface.height)} m</span>
+              <small>Format simulateur conseillé : {spec.pixelText}</small>
+            </div>
+            <label className={`wall-cover-upload ${hasImage ? 'ready' : 'missing'}`}>
+              {uploadState.uploading === surface.id ? 'Upload...' : hasImage ? 'VISUEL' : 'Visuel à fournir'}
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                disabled={disabled || uploadState.uploading === surface.id}
+                onChange={(event) => {
+                  onImage?.(surface.id, event.target.files?.[0]);
+                  event.target.value = '';
+                }}
+              />
+            </label>
+          </div>
+        );
+      })}
+
+      {uploadState.error && <p className="wall-cover-error">{uploadState.error}</p>}
     </div>
   );
 }
@@ -7202,7 +7314,7 @@ function partitionHeadSummary(rule, sides = {}) {
   return labels.length ? labels.join(' + ') : 'Aucune';
 }
 
-function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelections = [], technicalFloor = null }) {
+function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelections = [], technicalFloor = null, wallCovers = {}, wallCoverSurfaces = [] }) {
   const basePrice = 0;
   const baseItems = sceneBaseItems(scene);
   const baseItemsConfigured = sceneHasBaseItems(scene);
@@ -7285,6 +7397,22 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       unitPrice,
       total: lineTotal,
       reference: technicalFloor.reference || '',
+    });
+  }
+
+  const activeWallCovers = wallCoverSurfaces.filter((surface) => wallCovers?.[surface.id]?.enabled);
+  if (activeWallCovers.length) {
+    const unitPrice = 245;
+    const quantity = activeWallCovers.reduce((sum, surface) => sum + Number(surface.width || 0), 0);
+    const lineTotal = Math.round(quantity * unitPrice);
+    itemsTotal += lineTotal;
+    lines.push({
+      type: 'wall-cover',
+      label: `Bâche sur cloisons (${formatNumber(quantity)} ml)`,
+      quantity,
+      unitPrice,
+      total: lineTotal,
+      reference: 'BACHE-CLOISON',
     });
   }
 
@@ -7858,6 +7986,68 @@ function availableWalls(layout) {
   ];
 }
 
+function wallCoverSurfaceOptions(layout, width, depth, items = []) {
+  const sideDepth = Math.max(0.01, Number(depth || 0) - wallThickness);
+  const sideZ = -Number(depth || 0) / 2 + wallThickness + sideDepth / 2;
+  const wallSurfaces = availableWalls(layout).map((wall) => {
+    if (wall.id === 'left') {
+      return {
+        id: 'left',
+        label: 'Cloison gauche',
+        kind: 'wall',
+        width: sideDepth,
+        height: fixedWallHeight,
+        position: [-Number(width || 0) / 2 + wallThickness + 0.007, fixedWallHeight / 2, sideZ],
+        rotation: Math.PI / 2,
+      };
+    }
+    if (wall.id === 'right') {
+      return {
+        id: 'right',
+        label: 'Cloison droite',
+        kind: 'wall',
+        width: sideDepth,
+        height: fixedWallHeight,
+        position: [Number(width || 0) / 2 - wallThickness - 0.007, fixedWallHeight / 2, sideZ],
+        rotation: -Math.PI / 2,
+      };
+    }
+    return {
+      id: 'back',
+      label: 'Cloison arrière',
+      kind: 'wall',
+      width: Number(width || 0),
+      height: fixedWallHeight,
+      position: [0, fixedWallHeight / 2, -Number(depth || 0) / 2 + wallThickness + 0.007],
+      rotation: 0,
+    };
+  });
+
+  const reserveSurface = objectWallSurfaces(items)
+    .filter((surface) => String(surface.id || '').includes('reserve') || surface.protectedBounds)
+    .sort((a, b) => Number(b.length || 0) - Number(a.length || 0))[0];
+
+  if (!reserveSurface) return wallSurfaces;
+
+  const outsideSide = protectedObjectWallSideContains(reserveSurface, reserveSurface.centerAxis, 1) ? -1 : 1;
+  return [
+    ...wallSurfaces,
+    {
+      id: 'reserve',
+      label: 'Cloison réserve',
+      kind: 'reserve',
+      width: Math.max(0.5, Number(reserveSurface.length || 1)),
+      height: fixedWallHeight,
+      position: reserveSurface.orientation === 'x'
+        ? [reserveSurface.centerAxis, fixedWallHeight / 2, reserveSurface.normalAxis + outsideSide * 0.012]
+        : [reserveSurface.normalAxis + outsideSide * 0.012, fixedWallHeight / 2, reserveSurface.centerAxis],
+      rotation: reserveSurface.orientation === 'x'
+        ? (outsideSide >= 0 ? 0 : Math.PI)
+        : (outsideSide >= 0 ? Math.PI / 2 : -Math.PI / 2),
+    },
+  ];
+}
+
 function ledSpotCountForArea(area) {
   return Math.max(1, Math.ceil(Number(area || 0) / ledSpotAreaMeters));
 }
@@ -8396,7 +8586,7 @@ function wallAxisLimits(wall, width, depth) {
 }
 
 function wallItemAxisBounds(item, wall = 'back') {
-  if (item?.type === 'poster') return { min: -0.25, max: 0.25 };
+  if (item?.type === 'poster') return { min: -0.5, max: 0.5 };
   const bounds = itemGroupBounds(item);
   if (wall === 'left') {
     return { min: -Number(bounds.maxX || 0), max: -Number(bounds.minX || 0) };
@@ -9103,7 +9293,7 @@ function screenWorldPosition(item, width, depth, items = []) {
 
 function wallItemCenterY(item) {
   if (isTelevisionItem(item)) return screenCenterHeight;
-  if (isPosterItem(item)) return fixedWallHeight / 2;
+  if (isPosterItem(item)) return screenCenterHeight;
   if (isLedRailEntry(item)) return ledRailCenterY(item);
   if (isPartitionHeadItem(item)) return 0;
   const y = Number(item?.dimensions?.wallY);
@@ -9120,12 +9310,16 @@ function wallMountedNormalOffset(item, objectSurface = false) {
 function posterObjectSurfaceRegion(item, surface) {
   const min = Number(surface.centerAxis || 0) - Number(surface.length || 0) / 2;
   const max = Number(surface.centerAxis || 0) + Number(surface.length || 0) / 2;
+  const half = 0.5;
+  const axisMin = min + half;
+  const axisMax = max - half;
+  const center = axisMax >= axisMin ? clamp(Number(item.x ?? surface.centerAxis ?? 0), axisMin, axisMax) : Number(surface.centerAxis || 0);
   return {
-    min,
-    max,
-    center: (min + max) / 2,
-    width: Math.max(0.5, Number((max - min).toFixed(2))),
-    height: fixedWallHeight,
+    min: center - half,
+    max: center + half,
+    center: Number(center.toFixed(2)),
+    width: 1,
+    height: 1,
   };
 }
 
@@ -9137,32 +9331,15 @@ function posterSurfaceRegion(item, items, width, depth) {
 
   const wall = item.wall || 'back';
   const wallLength = wall === 'back' ? width : depth;
-  const min = -wallLength / 2;
-  const max = wallLength / 2;
-  const axis = clamp(Number(item.x || 0), min, max);
-  const blockers = wallBlockers(item, items, width, depth, wall)
-    .map((blocker) => ({ min: clamp(blocker.min, min, max), max: clamp(blocker.max, min, max) }))
-    .filter((blocker) => blocker.max > blocker.min)
-    .sort((a, b) => a.min - b.min);
-
-  const segments = [];
-  let cursor = min;
-  blockers.forEach((blocker) => {
-    if (blocker.min > cursor) segments.push({ min: cursor, max: blocker.min });
-    cursor = Math.max(cursor, blocker.max);
-  });
-  if (cursor < max) segments.push({ min: cursor, max });
-
-  const containing = segments.find((segment) => axis >= segment.min && axis <= segment.max);
-  const nearest = containing || segments.sort((a, b) => Math.abs(axis - (a.min + a.max) / 2) - Math.abs(axis - (b.min + b.max) / 2))[0] || { min, max };
-  const segmentMin = nearest.min;
-  const segmentMax = nearest.max;
+  const min = -wallLength / 2 + 0.5;
+  const max = wallLength / 2 - 0.5;
+  const center = max >= min ? clamp(Number(item.x || 0), min, max) : 0;
   return {
-    min: segmentMin,
-    max: segmentMax,
-    center: Number(((segmentMin + segmentMax) / 2).toFixed(2)),
-    width: Math.max(0.5, Number((segmentMax - segmentMin).toFixed(2))),
-    height: fixedWallHeight,
+    min: center - 0.5,
+    max: center + 0.5,
+    center: Number(center.toFixed(2)),
+    width: 1,
+    height: 1,
   };
 }
 
@@ -9257,7 +9434,7 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
   };
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, canEditLockedItems = false, visualContext = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, wallCovers = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, canEditLockedItems = false, visualContext = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
   const cameraPivot = useMemo(() => {
@@ -9292,6 +9469,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
       {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
       <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRampX={technicalFloorRampX} onTechnicalFloorRampX={onTechnicalFloorRampX} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
       <Walls width={width} depth={depth} height={height} layout={layout} wallFabricColor={wallFabricColor} onDeselect={clearSceneSelection} />
+      <WallCoverSurfaces width={width} depth={depth} layout={layout} items={items} covers={wallCovers} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
         {width}m x {depth}m
       </Text>
@@ -9590,6 +9768,36 @@ function Walls({ width, depth, height, layout, wallFabricColor, onDeselect }) {
       {(layout === 'left' || layout === 'u') && <Baseboard position={[-width / 2 + wallThickness + baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
       {(layout === 'right' || layout === 'u') && <Wall position={[width / 2 - wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallFabricColor} textureWidth={sideDepth} textureHeight={height} />}
       {(layout === 'right' || layout === 'u') && <Baseboard position={[width / 2 - wallThickness - baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
+    </group>
+  );
+}
+
+function WallCoverSurfaces({ width, depth, layout, items = [], covers = {} }) {
+  const surfaces = wallCoverSurfaceOptions(layout, width, depth, items);
+  return (
+    <group>
+      {surfaces.map((surface) => {
+        const cover = covers?.[surface.id];
+        if (!cover?.enabled) return null;
+        return <WallCoverSurface key={surface.id} surface={surface} imageUrl={cover.imageUrl} />;
+      })}
+    </group>
+  );
+}
+
+function WallCoverSurface({ surface, imageUrl }) {
+  const texture = useExternalTexture(imageUrl || '', { coverSize: posterCoverTextureSize(surface, 2048) });
+  return (
+    <group position={surface.position} rotation={[0, surface.rotation, 0]}>
+      <mesh renderOrder={-2}>
+        <planeGeometry args={[surface.width, surface.height]} />
+        <meshStandardMaterial color={texture ? '#ffffff' : '#eef2f6'} map={texture || null} roughness={0.72} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+      </mesh>
+      {!texture && (
+        <Text position={[0, 0, 0.004]} fontSize={Math.min(0.18, surface.width / 10)} color="#1f4378" anchorX="center" anchorY="middle">
+          VISUEL À FOURNIR
+        </Text>
+      )}
     </group>
   );
 }

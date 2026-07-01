@@ -8,7 +8,7 @@ export const catalog = [
   { type: 'chair', label: 'Chaise', icon: Armchair, color: '#c85f3f' },
   { type: 'table', label: 'Table', icon: Table2, color: '#1d8f83' },
   { type: 'screen', label: 'Ecran', icon: Monitor, color: '#22364d' },
-  { type: 'poster', label: 'Affiche murale', icon: Image, color: '#f7f1dc', isWallItem: true, posterHeight: 1.25 },
+  { type: 'poster', label: 'Affiche murale', icon: Image, color: '#f7f1dc', isWallItem: true, posterHeight: 1 },
   { type: 'counter', label: 'Comptoir', icon: Box, color: '#d5b767' },
   {
     type: 'obj-cloison',

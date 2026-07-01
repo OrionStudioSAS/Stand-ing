@@ -6919,3 +6919,152 @@ img.asset-thumb {
   font-size: 0.72rem;
   font-weight: 850;
 }
+
+.wall-cover-card {
+  display: grid;
+  gap: 10px;
+  margin: 0 14px 14px;
+  padding: 0 14px 14px;
+  border-top: 1px solid #dce3ed;
+  background: #fff;
+}
+
+.wall-cover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 14px;
+}
+
+.wall-cover-head div {
+  display: grid;
+  gap: 2px;
+}
+
+.wall-cover-head strong {
+  color: #171b22;
+  font-size: 0.92rem;
+  font-weight: 950;
+}
+
+.wall-cover-head span {
+  color: #1f4378;
+  font-size: 0.76rem;
+  font-weight: 950;
+}
+
+.wall-cover-head em {
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #1f4378;
+  background: #e7eef9;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.wall-cover-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #d8e1ec;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f9fbfe;
+}
+
+.wall-cover-row.active {
+  border-color: #8fb4e8;
+  background: #eef4fb;
+}
+
+.wall-cover-row.needs-image {
+  border-color: #f29916;
+  background: #fff8ea;
+}
+
+.wall-cover-toggle {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: #c8ced6;
+}
+
+.wall-cover-toggle span {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #fff;
+  transform: translateX(-5px);
+  transition: transform 160ms ease;
+}
+
+.wall-cover-toggle.active {
+  background: #1f4378;
+}
+
+.wall-cover-toggle.active span {
+  transform: translateX(5px);
+}
+
+.wall-cover-row div {
+  display: grid;
+  gap: 2px;
+}
+
+.wall-cover-row div strong {
+  color: #223047;
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+
+.wall-cover-row div span,
+.wall-cover-row div small {
+  color: #8a929e;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.wall-cover-upload {
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #fff;
+  background: #1f4378;
+  font-size: 0.68rem;
+  font-weight: 950;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wall-cover-upload.missing {
+  background: #ee8a22;
+}
+
+.wall-cover-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.wall-cover-empty,
+.wall-cover-error {
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #7f8794;
+  background: #f1f4f8;
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.wall-cover-error {
+  color: #b54935;
+  background: #fff1ef;
+}
