@@ -370,15 +370,8 @@ function presetPartitionHeadRules(preset: any) {
   return preset?.base_config?.partitionHeadRules || preset?.base_config?.options?.partitionHeadRules || {};
 }
 
-function presetDefaultOptions(preset: any) {
-  const options = preset?.base_config?.options || {};
-  const defaults = preset?.base_config?.defaultColorOptions || options.defaultColorOptions || {};
-  return {
-    ...defaults,
-    carpetColorId: defaults.carpetColorId || options.carpetColorId,
-    carpetFootprintColorId: defaults.carpetFootprintColorId || options.carpetFootprintColorId || defaults.carpetColorId || options.carpetColorId,
-    wallFabricColorId: defaults.wallFabricColorId || options.wallFabricColorId,
-  };
+function presetDefaultOptions(_preset: any) {
+  return {};
 }
 
 async function findPresetByLayout(supabase: any, params: { offerId?: string; salonId?: string; layout: string; offerIsNull?: boolean }) {

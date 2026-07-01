@@ -475,7 +475,7 @@ export async function saveStandPresetConfig(preset, scene) {
       reserveRules: scene.reserveRules || scene.options?.reserveRules || preset.base_config?.reserveRules || {},
       partitionHeadRules: scene.partitionHeadRules || scene.options?.partitionHeadRules || preset.base_config?.partitionHeadRules || {},
       autoSpotsRule: scene.autoSpotsRule || scene.options?.autoSpotsRule || preset.base_config?.autoSpotsRule || null,
-      defaultColorOptions: scene.defaultColorOptions || scene.options?.defaultColorOptions || preset.base_config?.defaultColorOptions || preset.base_config?.options?.defaultColorOptions || {},
+      defaultColorOptions: {},
       price_mode: 'included',
     },
     is_active: true,
