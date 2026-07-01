@@ -752,6 +752,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   ]).map((item) => constrainItem(item, initialWidth, initialDepth, initialLayout)));
   const [selectedId, setSelectedId] = useState('table-1');
   const [draggingId, setDraggingId] = useState(null);
+  const [technicalFloorRampDragging, setTechnicalFloorRampDragging] = useState(false);
   const [language, setLanguage] = useState(initialOptions.language || 'fr');
   const [headerPanel, setHeaderPanel] = useState(null);
   const introStorageKey = useMemo(() => `standing-config-intro:${initialScene.id || initialScene.share_token || initialScene.project_name || 'scene'}`, [initialScene.id, initialScene.share_token, initialScene.project_name]);
@@ -941,7 +942,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     objectBankLoaded ? sceneSuspendLoad : { loaded: 0, total: 1 },
   );
   const sceneCanvasClassName = [
-    draggingId ? 'dragging-canvas' : '',
+    (draggingId || technicalFloorRampDragging) ? 'dragging-canvas' : '',
     !sceneHasRendered && !sceneAssetsReady ? 'scene-canvas-loading' : '',
   ].filter(Boolean).join(' ');
   const selected = sceneItems.find((item) => item.id === selectedId);
@@ -1434,8 +1435,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 wallFabricColor={selectedWallFabricColor}
                 technicalFloor={selectedTechnicalFloor}
                 technicalFloorTrimType={technicalFloorTrimType}
-                    technicalFloorRampX={technicalFloorRampX}
+                technicalFloorRampX={technicalFloorRampX}
                 onTechnicalFloorRampX={setTechnicalFloorRampX}
+                onTechnicalFloorRampDragChange={setTechnicalFloorRampDragging}
                 visualContext={sceneVisualContext}
               />
             )}
@@ -1449,7 +1451,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             minDistance={4}
             maxDistance={11}
             enablePan
-            enabled={!draggingId}
+            enabled={!draggingId && !technicalFloorRampDragging}
           />
         </Canvas>
 
@@ -9255,7 +9257,7 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
   };
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, interactive = true, canEditLockedItems = false, visualContext = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, canEditLockedItems = false, visualContext = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
   const cameraPivot = useMemo(() => {
@@ -9288,7 +9290,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   return (
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
       {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
-      <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRampX={technicalFloorRampX} onTechnicalFloorRampX={onTechnicalFloorRampX} interactive={interactive} sceneOffset={cameraPivot} />
+      <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRampX={technicalFloorRampX} onTechnicalFloorRampX={onTechnicalFloorRampX} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
       <Walls width={width} depth={depth} height={height} layout={layout} wallFabricColor={wallFabricColor} onDeselect={clearSceneSelection} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
         {width}m x {depth}m
@@ -9329,7 +9331,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   );
 }
 
-function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, interactive = true, sceneOffset = [0, 0, 0] }) {
+function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
   const carpetTexture = useRepeatedTexture(colorTextureUrl(carpetColor), width, depth);
   const footprintTexture = useRepeatedTexture(colorTextureUrl(carpetFootprintColor || carpetColor), footprint.width, footprint.depth);
@@ -9343,7 +9345,7 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
         <boxGeometry args={[width, slabHeight, depth]} />
         <meshStandardMaterial color={carpetTexture ? '#ffffff' : carpetHex} map={carpetTexture || null} roughness={0.88} />
       </mesh>
-      {technicalFloor && <TechnicalFloorAccessories width={width} depth={depth} layout={layout} height={slabHeight} trimType={technicalFloorTrimType} rampX={technicalFloorRampX} onRampXChange={onTechnicalFloorRampX} interactive={interactive} sceneOffset={sceneOffset} />}
+      {technicalFloor && <TechnicalFloorAccessories width={width} depth={depth} layout={layout} height={slabHeight} trimType={technicalFloorTrimType} rampX={technicalFloorRampX} onRampXChange={onTechnicalFloorRampX} onRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={sceneOffset} />}
       {carpetFootprintEnabled && (
         <>
           <mesh receiveShadow position={[footprint.centerX, 0.012, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -9356,7 +9358,7 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
   );
 }
 
-function TechnicalFloorAccessories({ width, depth, layout, height, trimType, rampX = 0, onRampXChange, interactive = true, sceneOffset = [0, 0, 0] }) {
+function TechnicalFloorAccessories({ width, depth, layout, height, trimType, rampX = 0, onRampXChange, onRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
   const [draggingRamp, setDraggingRamp] = useState(false);
   const edges = openTechnicalFloorEdges(layout);
   const trimHeight = Math.max(0.04, Number(height || 0.04));
@@ -9389,14 +9391,19 @@ function TechnicalFloorAccessories({ width, depth, layout, height, trimType, ram
             event.stopPropagation();
             event.target.setPointerCapture?.(event.pointerId);
             setDraggingRamp(true);
+            onRampDragChange?.(true);
           }}
           onPointerMove={moveRamp}
           onPointerUp={(event) => {
             event.stopPropagation();
             event.target.releasePointerCapture?.(event.pointerId);
             setDraggingRamp(false);
+            onRampDragChange?.(false);
           }}
-          onPointerCancel={() => setDraggingRamp(false)}
+          onPointerCancel={() => {
+            setDraggingRamp(false);
+            onRampDragChange?.(false);
+          }}
         >
           <boxGeometry args={[rampWidth, Math.max(0.02, trimHeight * 0.55), rampDepth]} />
           <meshStandardMaterial color={draggingRamp ? '#b9c5d4' : '#d9dde2'} roughness={0.55} metalness={0.05} />
