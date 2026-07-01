@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, Cache, CanvasTexture, DoubleSide, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
+import { Box3, BufferGeometry, Cache, CanvasTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -8696,7 +8696,7 @@ function wallDragPatch(point, dragged, items, width, depth, layout) {
     return {
       wall: objectWall.surface.id,
       x: objectWall.axis,
-      wallSide: isPosterItem(dragged) ? 1 : objectWall.side,
+      wallSide: objectWall.side,
       wallSurface: serializeObjectWallSurface(objectWall.surface),
       ...fixedY,
     };
@@ -8827,6 +8827,15 @@ function protectedObjectWallSideContains(surface = {}, axis = 0, side = 1) {
   const x = surface.orientation === 'x' ? axis : Number(surface.normalAxis || 0) + side * probeOffset;
   const z = surface.orientation === 'x' ? Number(surface.normalAxis || 0) + side * probeOffset : axis;
   return pointInsideBounds(x, z, bounds, 0.025);
+}
+
+function safeObjectWallSide(surface = {}, axis = 0, requestedSide = 1) {
+  const side = Number(requestedSide || 1) >= 0 ? 1 : -1;
+  if (!surface?.protectedBounds) return side;
+  if (!protectedObjectWallSideContains(surface, axis, side)) return side;
+  const opposite = -side;
+  if (!protectedObjectWallSideContains(surface, axis, opposite)) return opposite;
+  return null;
 }
 
 function pointInsideBounds(x, z, bounds = {}, inset = 0) {
@@ -8985,8 +8994,9 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
     if (isObjectWallId(item.wall)) {
       const surface = item.wallSurface;
       if (surface) {
-        const side = isPosterItem(item) ? 1 : (Number(item.wallSide || 1) >= 0 ? 1 : -1);
-        if (protectedObjectWallSideContains(surface, Number(item.x || surface.centerAxis || 0), side)) {
+        const axisForSide = Number(item.x || surface.centerAxis || 0);
+        const side = safeObjectWallSide(surface, axisForSide, Number(item.wallSide || 1));
+        if (!side) {
           return constrainItem({ ...item, wall: 'back', wallSide: null, wallSurface: null }, width, depth, layout, carpetFootprintEnabled);
         }
         const halfLength = surface.length / 2;
@@ -8994,7 +9004,7 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
         const margin = Math.min(itemHalfWidth, Math.max(0, halfLength - 0.02));
         const min = surface.centerAxis - halfLength + margin;
         const max = surface.centerAxis + halfLength - margin;
-        return { ...item, x: clamp(snapWallAxis(item.x), min, max), y: wallItemCenterY(item) };
+        return { ...item, x: clamp(snapWallAxis(item.x), min, max), y: wallItemCenterY(item), wallSide: side };
       }
     }
 
@@ -9339,10 +9349,10 @@ function childrenBounds(children) {
 function objectWallTransform(item, items = []) {
   const surface = objectWallSurfaceForItem(item, items);
   if (!surface) return null;
-  const side = isPosterItem(item) ? 1 : (Number(item.wallSide || 1) >= 0 ? 1 : -1);
   const screenOffset = wallMountedNormalOffset(item, true);
   const region = isPosterItem(item) ? posterObjectSurfaceRegion(item, surface) : null;
   const axis = Number(region?.center ?? item.x ?? surface.centerAxis ?? 0);
+  const side = safeObjectWallSide(surface, axis, Number(item.wallSide || 1)) || 1;
   const y = wallItemCenterY(item);
   const position = surface.orientation === 'x'
     ? [axis, y, Number(surface.normalAxis || 0) + side * screenOffset]
@@ -9635,8 +9645,7 @@ function TechnicalFloorAccessories({ width, depth, layout, height, trimType, ram
       <mesh
           castShadow
           receiveShadow
-          position={[resolvedRampX, Math.max(0.012, trimHeight * 0.28), depth / 2 - rampDepth / 2]}
-          rotation={[sloped ? Math.atan(trimHeight / rampDepth) : 0, 0, 0]}
+          position={[resolvedRampX, 0, depth / 2 - rampDepth / 2]}
           onPointerDown={(event) => {
             if (!interactive || !onRampXChange) return;
             event.stopPropagation();
@@ -9656,11 +9665,46 @@ function TechnicalFloorAccessories({ width, depth, layout, height, trimType, ram
             onRampDragChange?.(false);
           }}
         >
-          <boxGeometry args={[rampWidth, Math.max(0.02, trimHeight * 0.55), rampDepth]} />
+          <RampGeometry width={rampWidth} depth={rampDepth} height={trimHeight} />
           <meshStandardMaterial color={draggingRamp ? '#b9c5d4' : '#d9dde2'} roughness={0.55} metalness={0.05} />
         </mesh>
     </group>
   );
+}
+
+function RampGeometry({ width, depth, height }) {
+  const geometry = useMemo(() => {
+    const w = Math.max(0.2, Number(width || 1));
+    const d = Math.max(0.2, Number(depth || 0.8));
+    const h = Math.max(0.02, Number(height || 0.04));
+    const x0 = -w / 2;
+    const x1 = w / 2;
+    const zFront = d / 2;
+    const zBack = -d / 2;
+    const yLow = 0.006;
+    const yHigh = h + 0.006;
+    const positions = [
+      // Sloped walking surface: low at the entrance, high inside the stand.
+      x0, yLow, zFront, x1, yLow, zFront, x1, yHigh, zBack,
+      x0, yLow, zFront, x1, yHigh, zBack, x0, yHigh, zBack,
+      // Back vertical face.
+      x0, yLow, zBack, x1, yLow, zBack, x1, yHigh, zBack,
+      x0, yLow, zBack, x1, yHigh, zBack, x0, yHigh, zBack,
+      // Left side.
+      x0, yLow, zFront, x0, yHigh, zBack, x0, yLow, zBack,
+      // Right side.
+      x1, yLow, zFront, x1, yLow, zBack, x1, yHigh, zBack,
+      // Thin bottom support, kept coplanar with the floor.
+      x0, yLow, zFront, x0, yLow, zBack, x1, yLow, zBack,
+      x0, yLow, zFront, x1, yLow, zBack, x1, yLow, zFront,
+    ];
+    const rampGeometry = new BufferGeometry();
+    rampGeometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+    rampGeometry.computeVertexNormals();
+    return rampGeometry;
+  }, [width, depth, height]);
+
+  return <primitive object={geometry} attach="geometry" />;
 }
 
 function TechnicalTrim({ edge, width, depth, height, thickness, sloped }) {
