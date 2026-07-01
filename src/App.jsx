@@ -9397,22 +9397,55 @@ function colorTextureUrl(color) {
 }
 
 function useRepeatedTexture(url, width, depth, tileSize = 1) {
-  const loadedTexture = useLoader(TextureLoader, url || blankTextureDataUrl);
-  const texture = useMemo(() => {
-    const seamlessTexture = url ? createSeamlessRepeatedTexture(loadedTexture.image) : loadedTexture.clone();
-    seamlessTexture.wrapS = RepeatWrapping;
-    seamlessTexture.wrapT = RepeatWrapping;
-    seamlessTexture.colorSpace = SRGBColorSpace;
-    seamlessTexture.minFilter = LinearMipmapLinearFilter;
-    seamlessTexture.magFilter = LinearFilter;
-    seamlessTexture.repeat.set(Math.max(1, Number(width || 1) / tileSize), Math.max(1, Number(depth || 1) / tileSize));
-    seamlessTexture.needsUpdate = true;
-    return seamlessTexture;
-  }, [loadedTexture, url, width, depth, tileSize]);
+  const [texture, setTexture] = useState(null);
 
-  useEffect(() => () => texture.dispose(), [texture]);
+  useEffect(() => {
+    let disposed = false;
+    let currentTexture = null;
+    setTexture(null);
 
-  return url ? texture : null;
+    if (!url) return undefined;
+
+    const applyImage = (image) => {
+      if (disposed || !image) return;
+      try {
+        const seamlessTexture = createSeamlessRepeatedTexture(image);
+        configureRepeatedTexture(seamlessTexture, width, depth, tileSize);
+        currentTexture = seamlessTexture;
+        setTexture(seamlessTexture);
+      } catch (error) {
+        logTextureDiagnostic('Repeated floor texture ignored after decode issue', { url, error });
+        setTexture(null);
+      }
+    };
+
+    const cachedImage = Cache.get(`image:${url}`);
+    if (cachedImage) {
+      applyImage(cachedImage);
+    } else {
+      loadDecodedImage(url).then(({ ok, image }) => {
+        if (!disposed && ok) applyImage(image);
+      });
+    }
+
+    return () => {
+      disposed = true;
+      currentTexture?.dispose?.();
+    };
+  }, [url, width, depth, tileSize]);
+
+  return texture;
+}
+
+function configureRepeatedTexture(texture, width, depth, tileSize = 1) {
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  texture.colorSpace = SRGBColorSpace;
+  texture.minFilter = LinearMipmapLinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.repeat.set(Math.max(1, Number(width || 1) / tileSize), Math.max(1, Number(depth || 1) / tileSize));
+  texture.needsUpdate = true;
+  return texture;
 }
 
 function createSeamlessRepeatedTexture(image) {
