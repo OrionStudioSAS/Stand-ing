@@ -2667,7 +2667,7 @@ select {
 .technical-floor-choices span,
 .technical-floor-detail span,
 .technical-floor-detail small,
-.technical-floor-ramp-toggle small {
+.technical-floor-ramp-required small {
   margin-top: 3px;
   color: #8b929c;
   font-size: 0.74rem;
@@ -2693,22 +2693,20 @@ select {
   font-weight: 950;
 }
 
-.technical-floor-ramp-toggle {
+.technical-floor-ramp-required {
   display: grid;
-  grid-template-columns: 18px 1fr;
   gap: 10px;
   align-items: start;
-  border: 1px solid #d8e1ec;
+  border: 1px solid #c8d7ec;
   border-radius: 12px;
   padding: 10px 12px;
-  background: #fbfcfe;
+  color: #1f4378;
+  background: #eef4fb;
 }
 
-.technical-floor-ramp-toggle input {
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
-  accent-color: #1f4378;
+.technical-floor-ramp-required strong,
+.technical-floor-ramp-required small {
+  display: block;
 }
 
 .reserve-option-card {
