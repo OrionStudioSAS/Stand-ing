@@ -186,6 +186,18 @@ function textureRetryUrl(url = '', attempt = 1) {
   }
 }
 
+function cacheBustedUrl(url = '') {
+  if (!url) return '';
+  try {
+    const nextUrl = new URL(url, window.location.origin);
+    nextUrl.searchParams.set('standing_cache', Date.now().toString(36));
+    return String(url).startsWith('/') ? `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}` : nextUrl.href;
+  } catch {
+    const separator = String(url).includes('?') ? '&' : '?';
+    return `${url}${separator}standing_cache=${Date.now().toString(36)}`;
+  }
+}
+
 function makeItem(type, width, depth, layout, catalogEntry = null) {
   const entry = catalogEntry || catalog.find((item) => item.type === type);
   const placementRule = effectivePlacementRule(entry);
@@ -1159,7 +1171,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     if (!surfaceId || !file || readOnly) return;
     setWallCoverState({ uploading: surfaceId, error: '' });
     try {
-      const imageUrl = await uploadSceneItemOptionImage(initialScene, { id: `wall-cover-${surfaceId}`, type: 'wall-cover' }, file);
+      const uploadedUrl = await uploadSceneItemOptionImage(initialScene, { id: `wall-cover-${surfaceId}`, type: 'wall-cover' }, file);
+      const imageUrl = cacheBustedUrl(uploadedUrl);
+      await preloadImage(imageUrl);
       setWallCovers((current) => ({
         ...current,
         [surfaceId]: { ...(current?.[surfaceId] || {}), enabled: true, imageUrl, imageName: file.name },
@@ -9093,7 +9107,6 @@ function collidesWithWallItems(candidate, items, ignoreId = null, width = 0, dep
 
   return (items || []).some((item) => {
     if (!item || item.id === ignoreId || !itemCollisionEnabled(item)) return false;
-    if (isPosterItem(candidate) && !isPosterBlockingItem(item)) return false;
     const itemBox = isWallItem(item)
       ? wallItemCollisionBox(item, items, width, depth)
       : floorItemWallCollisionBox(item, candidateBox.wall, width, depth);
@@ -9528,7 +9541,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
       {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
       <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRampX={technicalFloorRampX} onTechnicalFloorRampX={onTechnicalFloorRampX} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
-      <Walls width={width} depth={depth} height={height} layout={layout} wallFabricColor={wallFabricColor} wallCovers={wallCovers} onDeselect={clearSceneSelection} />
+      <Walls width={width} depth={depth} height={height} layout={layout} items={items} wallFabricColor={wallFabricColor} wallCovers={wallCovers} onDeselect={clearSceneSelection} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
         {width}m x {depth}m
       </Text>
@@ -9622,7 +9635,7 @@ function TechnicalFloorAccessories({ width, depth, layout, height, trimType, ram
       <mesh
           castShadow
           receiveShadow
-          position={[resolvedRampX, -trimHeight / 2, depth / 2 - rampDepth / 2]}
+          position={[resolvedRampX, Math.max(0.012, trimHeight * 0.28), depth / 2 - rampDepth / 2]}
           rotation={[sloped ? Math.atan(trimHeight / rampDepth) : 0, 0, 0]}
           onPointerDown={(event) => {
             if (!interactive || !onRampXChange) return;
@@ -9817,18 +9830,49 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
 }
 
 
-function Walls({ width, depth, height, layout, wallFabricColor, wallCovers = {}, onDeselect }) {
+function Walls({ width, depth, height, layout, items = [], wallFabricColor, wallCovers = {}, onDeselect }) {
   const sideDepth = Math.max(0.01, depth - wallThickness);
   const sideZ = -depth / 2 + wallThickness + sideDepth / 2;
   const covered = (wall) => Boolean(wallCovers?.[wall]?.enabled);
+  const hideBaseboard = (wall) => covered(wall) || wallHasPartitionHead(items, wall);
   return (
     <group onPointerDown={() => onDeselect?.()}>
-      <Wall position={[0, height / 2, -depth / 2 + wallThickness / 2]} size={[width, height, wallThickness]} color={wallFabricColor} textureWidth={width} textureHeight={height} />
-      {!covered('back') && <Baseboard position={[0, baseboardHeight / 2, -depth / 2 + wallThickness + baseboardThickness / 2]} size={[width, baseboardHeight, baseboardThickness]} />}
-      {(layout === 'left' || layout === 'u') && <Wall position={[-width / 2 + wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallFabricColor} textureWidth={sideDepth} textureHeight={height} />}
-      {(layout === 'left' || layout === 'u') && !covered('left') && <Baseboard position={[-width / 2 + wallThickness + baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
-      {(layout === 'right' || layout === 'u') && <Wall position={[width / 2 - wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallFabricColor} textureWidth={sideDepth} textureHeight={height} />}
-      {(layout === 'right' || layout === 'u') && !covered('right') && <Baseboard position={[width / 2 - wallThickness - baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
+      <Wall position={[0, height / 2, -depth / 2 + wallThickness / 2]} size={[width, height, wallThickness]} />
+      {!hideBaseboard('back') && <Baseboard position={[0, baseboardHeight / 2, -depth / 2 + wallThickness + baseboardThickness / 2]} size={[width, baseboardHeight, baseboardThickness]} />}
+      {(layout === 'left' || layout === 'u') && <Wall position={[-width / 2 + wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} />}
+      {(layout === 'left' || layout === 'u') && !hideBaseboard('left') && <Baseboard position={[-width / 2 + wallThickness + baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
+      {(layout === 'right' || layout === 'u') && <Wall position={[width / 2 - wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} />}
+      {(layout === 'right' || layout === 'u') && !hideBaseboard('right') && <Baseboard position={[width / 2 - wallThickness - baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
+      <WallFabricSurfaces width={width} depth={depth} layout={layout} items={items} color={wallFabricColor} />
+    </group>
+  );
+}
+
+function wallHasPartitionHead(items = [], wall = 'back') {
+  return (items || []).some((item) => isPartitionHeadItem(item) && (item.wall || 'back') === wall);
+}
+
+function WallFabricSurfaces({ width, depth, layout, items = [], color }) {
+  const surfaces = wallCoverSurfaceOptions(layout, width, depth, items).filter((surface) => surface.kind === 'wall');
+  return (
+    <group>
+      {surfaces.flatMap((surface) => wallCoverSegmentsForSurface(surface, items, width, depth).map((segment) => (
+        <WallFabricSurface key={`fabric-${segment.id}`} surface={segment} color={color} />
+      )))}
+    </group>
+  );
+}
+
+function WallFabricSurface({ surface, color }) {
+  const fabricHeight = Math.max(0.1, fixedWallHeight - baseboardHeight);
+  const texture = useRepeatedTexture(colorTextureUrl(color), surface.width, fabricHeight, 1.8);
+  const position = [surface.position[0], baseboardHeight + fabricHeight / 2, surface.position[2]];
+  return (
+    <group position={position} rotation={[0, surface.rotation, 0]}>
+      <mesh renderOrder={1} raycast={() => null}>
+        <planeGeometry args={[surface.width, fabricHeight]} />
+        <meshStandardMaterial color={texture ? '#ffffff' : colorHex(color, '#f8f7f3')} map={texture || null} roughness={1} metalness={0} side={DoubleSide} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+      </mesh>
     </group>
   );
 }
@@ -9865,17 +9909,11 @@ function WallCoverSurface({ surface, imageUrl }) {
   );
 }
 
-function Wall({ position, size, color, textureWidth, textureHeight }) {
-  const wallTexture = useRepeatedTexture(colorTextureUrl(color), textureWidth, textureHeight, 1.8);
+function Wall({ position, size }) {
   return (
     <mesh castShadow receiveShadow position={position}>
       <boxGeometry args={size} />
-      <meshStandardMaterial
-        color={wallTexture ? '#ffffff' : colorHex(color, '#f8f7f3')}
-        map={wallTexture || null}
-        roughness={1}
-        metalness={0}
-      />
+      <meshStandardMaterial color="#f4f2ed" roughness={0.96} metalness={0} />
     </mesh>
   );
 }
