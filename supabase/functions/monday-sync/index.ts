@@ -210,7 +210,7 @@ async function fetchMondayItems(token: string, boardId: string, groupId?: string
             id
             name
             group { id title }
-            column_values { id text value }
+            column_values { id text value column { title } }
           }
         }
       }
@@ -288,6 +288,8 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
   const layout = normalizeLayout(readMappingValue(item, mapping.layout));
   const clientName = readMappingValue(item, mapping.client_name) || item.name;
   const standNumber = readMappingValue(item, mapping.stand_number) || readColumn(item, "n_");
+  const aisleNumber = readMappingValue(item, mapping.aisle_number || mapping.allee) || readColumnAny(item, ["text5", "allée", "allee"]);
+  const sector = readMappingValue(item, mapping.sector || mapping.secteur) || readColumnAny(item, ["dup__of_secteur1", "secteur"]);
 
   return {
     monday_item_id: item.id,
@@ -310,7 +312,7 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
     depth_m: depth,
     height_m: 2.5,
     layout,
-    source_payload: { ...item, stand_number: standNumber },
+    source_payload: { ...item, stand_number: standNumber, aisle_number: aisleNumber, sector },
   };
 }
 
@@ -526,6 +528,28 @@ function normalizeEmail(value: string) {
 function readColumn(item: any, columnId?: string) {
   if (!columnId) return "";
   return item.column_values?.find((column: any) => column.id === columnId)?.text ?? "";
+}
+
+function readColumnAny(item: any, keys: string[]) {
+  for (const key of keys) {
+    const direct = readColumn(item, key);
+    if (direct) return direct;
+  }
+  const normalizedKeys = keys.map(normalizeColumnLookup).filter(Boolean);
+  return item.column_values?.find((column: any) => {
+    const candidates = [column.id, column.title, column.column?.title];
+    return candidates.some((candidate) => normalizedKeys.includes(normalizeColumnLookup(candidate)));
+  })?.text ?? "";
+}
+
+function normalizeColumnLookup(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[°º]/g, "")
+    .replace(/[^a-z0-9]+/gi, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
 }
 
 function readMappingValue(item: any, mappingValue?: string | string[]) {

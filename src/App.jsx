@@ -867,7 +867,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     language,
     company: sceneExhibitorCompanyName(initialScene, clientInfo, contactDetails),
     standNumber: sceneStandNumber(initialScene, contactDetails, standLabel),
+    aisleNumber: sceneAisleNumber(initialScene, contactDetails),
     hall: sceneHallLabel(initialScene, contactDetails),
+    sector: sceneSectorLabel(initialScene),
   }), [language, initialScene, clientInfo, contactDetails, standLabel]);
 
   useEffect(() => {
@@ -1884,7 +1886,7 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
       <div className="item-dynamic-preview">
         <span className="preview-flag">{languageFlag(visualContext?.language)}</span>
         <strong>{visualContext?.company || 'Nom société'}</strong>
-        <span>{visualContext?.standNumber || 'A-14'}</span>
+        <span>{isSmclPartitionHeadItem(item) ? `Allée ${visualContext?.aisleNumber || '—'} · ${visualContext?.standNumber || '—'}` : (visualContext?.standNumber || 'A-14')}</span>
       </div>
 
       <label className="item-image-upload">
@@ -8524,22 +8526,61 @@ function sceneExhibitorCompanyName(scene = {}, clientInfo = {}, contactDetails =
 
 function sceneStandNumber(scene = {}, contactDetails = {}, standLabel = '') {
   return scene.source_payload?.stand_number
-    || mondayColumnText(scene.source_payload, 'n_')
+    || mondayColumnTextAny(scene.source_payload, ['n_', 'n°', 'numero', 'numéro'])
     || contactDetails.emplacement
     || standLabel.replace(/^Stand\s+/i, '')
     || '';
 }
 
+function sceneAisleNumber(scene = {}, contactDetails = {}) {
+  return scene.source_payload?.aisle_number
+    || scene.source_payload?.allee
+    || mondayColumnTextAny(scene.source_payload, ['text5', 'allée', 'allee'])
+    || contactDetails.allee
+    || '';
+}
+
 function sceneHallLabel(scene = {}, contactDetails = {}) {
   return scene.source_payload?.hall
-    || mondayColumnText(scene.source_payload, 'hall')
+    || mondayColumnTextAny(scene.source_payload, ['hall', 'pavillon'])
     || contactDetails.hall
     || 'À définir';
+}
+
+function sceneSectorLabel(scene = {}) {
+  return scene.source_payload?.sector
+    || scene.source_payload?.secteur
+    || mondayColumnTextAny(scene.source_payload, ['dup__of_secteur1', 'secteur'])
+    || '';
 }
 
 function mondayColumnText(sourcePayload = {}, columnId = '') {
   if (!columnId || !Array.isArray(sourcePayload?.column_values)) return '';
   return sourcePayload.column_values.find((column) => column.id === columnId)?.text || '';
+}
+
+function mondayColumnTextAny(sourcePayload = {}, keys = []) {
+  if (!Array.isArray(keys)) return mondayColumnText(sourcePayload, keys);
+  for (const key of keys) {
+    const direct = mondayColumnText(sourcePayload, key);
+    if (direct) return direct;
+  }
+  if (!Array.isArray(sourcePayload?.column_values)) return '';
+  const normalizedKeys = keys.map(normalizeLookupText).filter(Boolean);
+  return sourcePayload.column_values.find((column) => {
+    const candidates = [column.id, column.title, column.column?.title, column.text];
+    return candidates.some((candidate) => normalizedKeys.includes(normalizeLookupText(candidate)));
+  })?.text || '';
+}
+
+function normalizeLookupText(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[°º]/g, '')
+    .replace(/[^a-z0-9]+/gi, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
 }
 
 function languageFlag(language = 'fr') {
@@ -9289,6 +9330,9 @@ function itemGroupBounds(item) {
 }
 
 function itemPlacementBoundsOverride(item) {
+  const smclBounds = smclPartitionHeadPlacementBounds(item);
+  if (smclBounds) return smclBounds;
+
   const bounds = item?.dimensions?.placementBounds;
   const minX = Number(bounds?.minX);
   const maxX = Number(bounds?.maxX);
@@ -9309,6 +9353,16 @@ function itemPlacementBoundsOverride(item) {
     depth,
     height: Number(bounds?.height || itemDefaultSize(item)?.[1] || 0.7),
   };
+}
+
+function smclPartitionHeadPlacementBounds(item = {}) {
+  if (!isSmclPartitionHeadItem(item)) return null;
+  const savedBounds = item?.dimensions?.placementBounds;
+  if (savedBounds?.source === 'legacy-smcl-head') return null;
+  const side = item?.dimensions?.smclHeadSide || smclPartitionHeadSide(item);
+  const common = { minZ: -0.055, maxZ: -0.014, depth: 0.041, width: 0.6, height: 2.4, source: 'smcl-head-fallback' };
+  if (side === 'right') return { minX: -0.262075, maxX: 0.337925, ...common, centerX: 0.037925, centerZ: -0.0345 };
+  return { minX: -0.33793, maxX: 0.26207, ...common, centerX: -0.03793, centerZ: -0.0345 };
 }
 
 function itemDefaultSize(item) {
@@ -10186,22 +10240,28 @@ function ObjHitbox({ bounds = null, size = [0.7, 0.7, 0.7], centerY = null }) {
 
 function Model3D({ item, selected, hovered, dragging, visualContext }) {
   const materialUrl = modelMaterialUrl(item);
-  if (item.modelUrl?.toLowerCase().split('?')[0].endsWith('.glb')) return <GlbModel item={item} selected={selected} hovered={hovered} />;
+  if (item.modelUrl?.toLowerCase().split('?')[0].endsWith('.glb')) return <GlbModel item={item} selected={selected} hovered={hovered} visualContext={visualContext} />;
   if (materialUrl) return <ObjModelWithMaterials item={item} materialUrl={materialUrl} selected={selected} hovered={hovered} visualContext={visualContext} />;
   return <ObjModel item={item} selected={selected} hovered={hovered} dragging={dragging} />;
 }
 
-function GlbModel({ item, selected, hovered }) {
+function GlbModel({ item, selected, hovered, visualContext }) {
   const gltf = useGlbModel(item.modelUrl);
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize() });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '', { flipY: false });
+  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item) });
+  const exhibitorTexture = useMemo(() => (
+    isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item, { flipY: false }) : null
+  ), [item.type, item.label, item.modelUrl, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
   const model = useMemo(() => prepareLoadedModel(gltf.scene, item, {
     selected,
     hovered,
     isGlb: true,
     customImageTexture,
     counterColorTexture,
-  }), [gltf, item, selected, hovered, customImageTexture, counterColorTexture]);
+    mainImageTexture,
+    exhibitorTexture,
+  }), [gltf, item, selected, hovered, customImageTexture, counterColorTexture, mainImageTexture, exhibitorTexture]);
   return <primitive object={model} dispose={null} />;
 }
 
@@ -10231,7 +10291,7 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '');
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item) : null
-  ), [item.type, item.label, item.modelUrl, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.hall]);
+  ), [item.type, item.label, item.modelUrl, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
   const materials = useMtlMaterials(materialUrl, item);
   const mtlTexturesReady = useMtlTexturePreload(materials, item, materialUrl);
 
@@ -10507,7 +10567,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   }
 
   if (!isPartitionHeadItem(item)) return material;
-  if (textureOptions.mainImageTexture && materialName.includes(partitionHeadMainImageMaterial(item))) {
+  if (textureOptions.mainImageTexture && isPartitionHeadMainImageMaterial(materialName, material, item)) {
     return materialWithTexture(material, textureOptions.mainImageTexture);
   }
   if (textureOptions.exhibitorTexture && shouldUseExhibitorHeadTexture(materialName, meshName, item, material)) {
@@ -10548,14 +10608,20 @@ function partitionHeadMainImageCoverSize(item = {}) {
   return isSmclPartitionHeadItem(item) ? [947, 593] : [474, 296];
 }
 
+function isPartitionHeadMainImageMaterial(materialName = '', material = null, item = {}) {
+  const target = partitionHeadMainImageMaterial(item);
+  return materialName.includes(target)
+    || materialMatchesReference(materialName, material, target, `${target}.jpg`);
+}
+
 function shouldUseExhibitorHeadTexture(materialName = '', meshName = '', item = {}, material = null) {
   const normalizedMeshName = normalizeMaterialName(meshName);
   if (isSmclPartitionHeadItem(item)) {
     const side = smclPartitionHeadSide(item);
     const targetMaterial = side === 'left' ? '_' : '_51';
-    if (materialName !== targetMaterial) return false;
-    if (materialMapMatchesFile(material, `${targetMaterial}.jpg`)) return true;
-    return isLikelySmclInfoPanelMesh(normalizedMeshName);
+    return materialName === targetMaterial
+      || materialMapMatchesFile(material, `${targetMaterial}.jpg`)
+      || isLikelySmclInfoPanelMesh(normalizedMeshName);
   }
   return materialName === '_10'
     || materialName === '10'
@@ -10626,9 +10692,9 @@ function normalizeMaterialName(name = '') {
   return String(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
-function createPartitionHeadInfoTexture(visualContext = {}, item = {}) {
+function createPartitionHeadInfoTexture(visualContext = {}, item = {}, options = {}) {
   if (typeof document === 'undefined') return null;
-  if (isSmclPartitionHeadItem(item)) return createSmclPartitionHeadInfoTexture(visualContext);
+  if (isSmclPartitionHeadItem(item)) return createSmclPartitionHeadInfoTexture(visualContext, options);
 
   const canvas = document.createElement('canvas');
   // Same pixel format as the original _10.jpg so the SketchUp UVs keep lining up.
@@ -10650,7 +10716,7 @@ function createPartitionHeadInfoTexture(visualContext = {}, item = {}) {
   fitCanvasText(ctx, (standNumber || 'A-14').toUpperCase(), 544, 17, 90, 57);
 
   const texture = new CanvasTexture(canvas);
-  texture.flipY = true;
+  texture.flipY = options.flipY ?? true;
   texture.wrapS = RepeatWrapping;
   texture.wrapT = RepeatWrapping;
   texture.colorSpace = SRGBColorSpace;
@@ -10660,30 +10726,48 @@ function createPartitionHeadInfoTexture(visualContext = {}, item = {}) {
   return texture;
 }
 
-function createSmclPartitionHeadInfoTexture(visualContext = {}) {
+function createSmclPartitionHeadInfoTexture(visualContext = {}, options = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = 1181;
   canvas.height = 827;
   const ctx = canvas.getContext('2d');
   const company = String(visualContext?.company || 'NOM EXPOSANT').trim().toUpperCase();
-  const standNumber = String(visualContext?.standNumber || 'A-14').replace(/^Stand\s+/i, '').trim().toUpperCase();
-  const hall = String(visualContext?.hall || 'À DÉFINIR').replace(/^Hall\s+/i, '').trim().toUpperCase();
+  const aisleNumber = String(visualContext?.aisleNumber || '').replace(/^All[ée]e?\s*/i, '').trim().toUpperCase();
+  const standNumber = String(visualContext?.standNumber || '—').replace(/^Stand\s+/i, '').trim().toUpperCase();
+  const sectorColor = smclSectorColor(visualContext?.sector);
 
-  ctx.fillStyle = '#ffd800';
+  ctx.fillStyle = sectorColor;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#ffffff';
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   fitCanvasText(ctx, company, 238, 47, 670, 95);
-  fitCanvasText(ctx, standNumber || 'A-14', 245, 202, 360, 130);
-  fitCanvasText(ctx, `HALL ${hall || 'À DÉFINIR'}`, 245, 365, 420, 50);
+  fitCanvasText(ctx, aisleNumber ? `ALLÉE ${aisleNumber}` : 'ALLÉE —', 245, 202, 430, 130);
+  fitCanvasText(ctx, standNumber || '—', 245, 365, 420, 70);
   ctx.font = '900 42px Arial, sans-serif';
   ctx.fillText('salon', 285, 630);
   ctx.fillText('des maires', 285, 672);
   ctx.font = '700 22px Arial, sans-serif';
   ctx.fillText('et des collectivités locales', 285, 720);
 
-  return prepareDynamicTexture(new CanvasTexture(canvas));
+  return prepareDynamicTexture(new CanvasTexture(canvas), options);
+}
+
+function smclSectorColor(sector = '') {
+  const key = normalizeLookupText(sector);
+  const matches = [
+    { tokens: ['transport', 'mobilite', 'parkopolis'], color: '#EC7620' },
+    { tokens: ['environnement', 'cadre', 'vie'], color: '#A4B21B' },
+    { tokens: ['construction', 'amenagement'], color: '#9B5416' },
+    { tokens: ['securite', 'prevention', 'protection'], color: '#E20519' },
+    { tokens: ['developpement', 'attractivite', 'territoriale'], color: '#00ADE9' },
+    { tokens: ['energie', 'climat'], color: '#FFD100' },
+    { tokens: ['culture', 'loisirs', 'evenements'], color: '#E84442' },
+    { tokens: ['sante', 'social', 'vivre', 'ensemble'], color: '#E95899' },
+    { tokens: ['numerique', 'connectivite'], color: '#6C2E87' },
+    { tokens: ['salon', 'sports'], color: '#044ED2' },
+  ];
+  return matches.find((entry) => entry.tokens.every((token) => key.includes(token)))?.color || '#FFD100';
 }
 
 function drawLanguageFlag(ctx, language, x, y, width, height) {
