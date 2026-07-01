@@ -1570,6 +1570,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             carpetFootprintEnabled={carpetFootprintEnabled}
             selectedWallFabricColor={selectedWallFabricColor}
             wallFabricColors={wallFabricPalette}
+            defaultColorOptions={initialDefaultColorOptions}
             technicalFloorType={technicalFloorType}
             technicalFloorTrimType={technicalFloorTrimType}
             technicalFloorRampEnabled={technicalFloorRampEnabled}
@@ -2042,6 +2043,7 @@ function OptionsStepPanel({
   carpetFootprintEnabled,
   selectedWallFabricColor,
   wallFabricColors = [],
+  defaultColorOptions = {},
   technicalFloorType,
   technicalFloorTrimType,
   technicalFloorRampEnabled,
@@ -2078,7 +2080,9 @@ function OptionsStepPanel({
           title="Couleur"
           colors={carpetColors}
           selectedColor={selectedCarpetColor}
-          optionLabel="Coloris payants"
+          defaultColorId={defaultColorOptions.carpetColorId}
+          includedLabel="Défaut du pack"
+          optionLabel="Options payantes"
           disabled={readOnly}
           onSelect={onCarpetColor}
         />
@@ -2095,7 +2099,9 @@ function OptionsStepPanel({
           title="Couleur empreinte"
           colors={footprintColors}
           selectedColor={selectedCarpetFootprintColor}
-          optionLabel="Coloris payants"
+          defaultColorId={defaultColorOptions.carpetFootprintColorId || defaultColorOptions.carpetColorId}
+          includedLabel="Défaut du pack"
+          optionLabel="Options payantes"
           disabled={readOnly}
           onSelect={onCarpetFootprintColor}
         />
@@ -2105,7 +2111,9 @@ function OptionsStepPanel({
           title="Couleur"
           colors={wallFabricColors}
           selectedColor={selectedWallFabricColor}
-          optionLabel="Coloris payants"
+          defaultColorId={defaultColorOptions.wallFabricColorId}
+          includedLabel="Défaut du pack"
+          optionLabel="Options payantes"
           disabled={readOnly}
           onSelect={onWallColor}
         />
@@ -3051,10 +3059,12 @@ function ToggleOptionCard({ enabled, enabledLabel, disabledLabel, disabled = fal
   );
 }
 
-function ColorOptionCard({ title, colors, selectedColor, optionLabel, disabled = false, onSelect }) {
+function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', includedLabel = 'Inclus', optionLabel, disabled = false, onSelect }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const includedColors = colors.filter((color) => color.included);
-  const optionalColors = colors.filter((color) => !color.included);
+  const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
+  const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
+  const includedColors = displayColors.filter((color) => color.included);
+  const optionalColors = displayColors.filter((color) => !color.included);
   const selectColor = (colorId) => {
     if (disabled) return;
     onSelect(colorId);
@@ -3065,25 +3075,25 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, disabled =
     <div className="color-option-card">
       <div className="color-card-head">
         <strong>{title}</strong>
-        <span>{selectedColor.name} ({selectedColor.code})</span>
+        <span>{selectedDisplayColor.name} ({selectedDisplayColor.code})</span>
       </div>
       <div className={`color-dropdown ${dropdownOpen ? 'open' : ''}`}>
         <button className="color-dropdown-trigger" type="button" disabled={disabled} onClick={() => setDropdownOpen((open) => !open)}>
-          <span className="selected-swatch" style={{ '--swatch-color': selectedColor.hex, '--swatch-image': `url("${selectedColor.image}")` }} />
+          <span className="selected-swatch" style={{ '--swatch-color': selectedDisplayColor.hex, '--swatch-image': `url("${selectedDisplayColor.image}")` }} />
           <span>
-            <strong>{selectedColor.name}</strong>
-            <small>{selectedColor.code} · {selectedColor.included ? 'Inclus' : colorOptionLabel(selectedColor, optionLabel)}</small>
+            <strong>{selectedDisplayColor.name}</strong>
+            <small>{selectedDisplayColor.code} · {selectedDisplayColor.included ? includedLabel : colorOptionLabel(selectedDisplayColor, optionLabel)}</small>
           </span>
           <ChevronDown size={18} />
         </button>
         {dropdownOpen && (
           <div className="color-dropdown-menu">
-            <small>{includedColors.length} coloris disponibles — Inclus</small>
+            <small>{includedColors.length} couleur{includedColors.length > 1 ? 's' : ''} — {includedLabel}</small>
             <div className="color-swatch-row included">
               {includedColors.map((color) => (
                 <button
                   key={color.id}
-                  className={selectedColor.id === color.id ? 'active' : ''}
+                  className={selectedDisplayColor.id === color.id ? 'active' : ''}
                   type="button"
                   style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
                   title={`${color.name} (${color.code})`}
@@ -3099,7 +3109,7 @@ function ColorOptionCard({ title, colors, selectedColor, optionLabel, disabled =
               {optionalColors.map((color) => (
                 <button
                   key={color.id}
-                  className={selectedColor.id === color.id ? 'active' : ''}
+                  className={selectedDisplayColor.id === color.id ? 'active' : ''}
                   type="button"
                   style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
                   title={`${color.name} (${color.code})`}
@@ -4334,26 +4344,32 @@ function PresetColorDefaultsEditor({
   return (
     <section className="preset-color-defaults">
       <h4>Couleurs par défaut</h4>
-      <p>Ces couleurs seront appliquées automatiquement au chargement des scènes créées depuis ce pack.</p>
+      <p>La couleur choisie ici est la seule incluse gratuitement pour ce pack. Toutes les autres couleurs restent facturées au tarif HT/m² de leur groupe.</p>
       <ColorOptionCard
-        title="Moquette"
+        title="Moquette par défaut"
         colors={carpetColors}
         selectedColor={selectedCarpetColor}
-        optionLabel="Coloris payants"
+        defaultColorId={selectedCarpetColor.id}
+        includedLabel="Couleur par défaut"
+        optionLabel="Autres couleurs payantes"
         onSelect={onCarpetColor}
       />
       <ColorOptionCard
-        title="Empreinte moquette"
+        title="Empreinte par défaut"
         colors={footprintColors}
         selectedColor={selectedCarpetFootprintColor}
-        optionLabel="Coloris payants"
+        defaultColorId={selectedCarpetFootprintColor.id}
+        includedLabel="Couleur par défaut"
+        optionLabel="Autres couleurs payantes"
         onSelect={onCarpetFootprintColor}
       />
       <ColorOptionCard
-        title="Coton cloison"
+        title="Coton cloison par défaut"
         colors={wallFabricColors}
         selectedColor={selectedWallFabricColor}
-        optionLabel="Coloris payants"
+        defaultColorId={selectedWallFabricColor.id}
+        includedLabel="Couleur par défaut"
+        optionLabel="Autres couleurs payantes"
         onSelect={onWallColor}
       />
     </section>
@@ -6478,7 +6494,7 @@ function colorOptionsForUsage(assets = [], salonLabel = '', usage = '', fallback
       groupLabel: group.label,
       price,
       reference,
-      included: price <= 0,
+      included: false,
     }));
   });
 }
@@ -6497,7 +6513,7 @@ function normalizeColorGroupOptions(asset = {}) {
       hex: color.hex || '#b8b8b8',
       image: color.image || '',
       storagePath: color.storagePath || '',
-      included: Number(asset.dimensions?.colorGroupPrice || 0) <= 0,
+      included: false,
     }));
 }
 
