@@ -2517,6 +2517,52 @@ select {
   gap: 9px;
 }
 
+.footprint-choice-card {
+  gap: 12px;
+}
+
+.footprint-choice-card.disabled {
+  opacity: 0.72;
+}
+
+.footprint-disabled-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: #7d8794;
+  background: #f0f3f7;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.footprint-disabled-note button,
+.footprint-remove-button {
+  border: 1px solid #dbe3ee;
+  border-radius: 999px;
+  padding: 7px 11px;
+  color: #1f4378;
+  background: #fff;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.footprint-remove-button {
+  justify-self: start;
+  margin-top: 2px;
+  background: #f7f9fc;
+}
+
+.footprint-standard .carpet-swatch-row {
+  gap: 10px;
+}
+
+.footprint-warning {
+  margin-top: 2px;
+}
+
 .carpet-choice-section.premium p {
   margin: 0;
   color: #4f5765;

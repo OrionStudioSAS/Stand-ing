@@ -2088,21 +2088,14 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       <OptionAccordion title="Empreinte moquette" icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')}>
-        <ToggleOptionCard
+        <FootprintColorOptionCard
           enabled={carpetFootprintEnabled}
-          enabledLabel="La laisser"
-          disabledLabel="La retirer"
-          disabled={readOnly}
-          onChange={onCarpetFootprintEnabled}
-        />
-        <ColorOptionCard
-          title="Couleur empreinte"
           colors={footprintColors}
           selectedColor={selectedCarpetFootprintColor}
           defaultColorId={defaultColorOptions.carpetFootprintColorId || defaultColorOptions.carpetColorId}
-          includedLabel="Inclus"
-          optionLabel="Options payantes"
+          area={carpetFootprintAreaM2()}
           disabled={readOnly}
+          onEnabledChange={onCarpetFootprintEnabled}
           onSelect={onCarpetFootprintColor}
         />
       </OptionAccordion>
@@ -3220,6 +3213,133 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
   );
 }
 
+function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColorId = '', area = 1, disabled = false, onEnabledChange, onSelect }) {
+  const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
+  const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
+  const groups = colorGroupsFromOptions(displayColors);
+  const standardGroups = groups.filter((group) => group.colors.some((color) => color.included));
+  const premiumGroups = groups.filter((group) => !group.colors.some((color) => color.included));
+  const visibleStandardGroups = standardGroups.length ? standardGroups : groups.slice(0, 1);
+  const visiblePremiumGroups = standardGroups.length ? premiumGroups : groups.slice(1);
+  const selectColor = (colorId) => {
+    if (disabled || !enabled) return;
+    onSelect(colorId);
+  };
+
+  return (
+    <div className={`carpet-choice-card footprint-choice-card ${!enabled ? 'disabled' : ''}`}>
+      {!enabled && (
+        <div className="footprint-disabled-note">
+          <span>Empreinte retirée de la scène.</span>
+          <button type="button" disabled={disabled} onClick={() => onEnabledChange(true)}>La remettre</button>
+        </div>
+      )}
+
+      {visibleStandardGroups.map((group) => {
+        const includedColors = group.colors.filter((color) => color.included);
+        const paidColors = group.colors.filter((color) => !color.included);
+        const selectedInGroup = group.colors.some((color) => selectedDisplayColor.id === color.id);
+        const referenceColor = selectedInGroup ? selectedDisplayColor : includedColors[0] || group.colors[0];
+        const minPrice = minColorPrice(paidColors);
+        return (
+          <section key={group.id} className="carpet-choice-section footprint-standard">
+            <div className="carpet-choice-head">
+              <h4>{colorGroupTitle(group.label, 'Moquette Rewind')}</h4>
+              <strong>{referenceColor?.name} ({referenceColor?.code})</strong>
+            </div>
+            <small>{includedColors.length || 1} coloris disponible{includedColors.length > 1 ? 's' : ''} — Inclus</small>
+            <div className="carpet-swatch-row">
+              {(includedColors.length ? includedColors : [referenceColor]).filter(Boolean).map((color) => (
+                <button
+                  key={color.id}
+                  type="button"
+                  className={selectedDisplayColor.id === color.id ? 'active' : ''}
+                  style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+                  title={`${color.name} (${color.code})`}
+                  disabled={disabled || !enabled}
+                  onClick={() => selectColor(color.id)}
+                >
+                  <span>{color.name}</span>
+                </button>
+              ))}
+            </div>
+            {!!paidColors.length && (
+              <>
+                <div className="carpet-locked-notice footprint-warning">
+                  <strong>!</strong>
+                  <span>Couleur de moquette sensible aux salissures et traces d’usage</span>
+                </div>
+                <small>En option {formatNumber(minPrice)} €</small>
+                <div className="carpet-swatch-row premium">
+                  {paidColors.map((color) => (
+                    <button
+                      key={color.id}
+                      type="button"
+                      className={selectedDisplayColor.id === color.id ? 'active' : ''}
+                      style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+                      title={`${color.name} (${color.code}) · ${colorOptionLabel(color, 'Option')}`}
+                      disabled={disabled || !enabled}
+                      onClick={() => selectColor(color.id)}
+                    >
+                      <span>{color.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+        );
+      })}
+
+      {!!visiblePremiumGroups.length && <div className="carpet-choice-separator"><span />ou<span /></div>}
+
+      {visiblePremiumGroups.map((group) => {
+        const price = minColorPrice(group.colors);
+        const selectedInGroup = group.colors.some((color) => selectedDisplayColor.id === color.id);
+        return (
+          <section key={group.id} className={`carpet-choice-section premium ${selectedInGroup ? 'active' : ''}`}>
+            <div className="carpet-choice-head">
+              <h4>{colorGroupTitle(group.label, 'Moquette épaisse Salsa')}</h4>
+              <span>PREMIUM</span>
+            </div>
+            <p>{carpetGroupDescription(group.label)}</p>
+            <div className="carpet-premium-facts">
+              <span>✦ Aspect velours</span>
+              <span>◐ Plus dense</span>
+              <span>◆ {group.colors.length} coloris</span>
+            </div>
+            <div className="carpet-premium-price">
+              <span>À partir de <strong>{formatNumber(price)} €</strong></span>
+              <em>{Number(area || 0) > 1 ? `Pour ${formatNumber(area)} m² · +${formatNumber(Math.round(price * Number(area || 0)))} €` : ''}</em>
+            </div>
+            <div className="carpet-swatch-row premium">
+              {group.colors.map((color) => (
+                <button
+                  key={color.id}
+                  type="button"
+                  className={selectedDisplayColor.id === color.id ? 'active' : ''}
+                  style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+                  title={`${color.name} (${color.code}) · ${colorOptionLabel(color, 'Option')}`}
+                  disabled={disabled || !enabled}
+                  onClick={() => selectColor(color.id)}
+                >
+                  <span>{color.name}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+
+      {enabled && (
+        <button className="footprint-remove-button" type="button" disabled={disabled} onClick={() => onEnabledChange(false)}>
+          Retirer l’empreinte moquette
+        </button>
+      )}
+    </div>
+  );
+}
+
 function colorOptionLabel(color = {}, fallback = 'En option') {
   const price = Number(color.price || 0);
   const reference = color.reference || color.groupLabel || '';
@@ -3235,6 +3355,11 @@ function colorGroupsFromOptions(colors = []) {
     groups.get(id).colors.push(color);
   });
   return [...groups.values()];
+}
+
+function minColorPrice(colors = []) {
+  const prices = colors.map((color) => Number(color.price || 0)).filter((price) => price > 0);
+  return prices.length ? Math.min(...prices) : 0;
 }
 
 function colorGroupTitle(label = '', fallback = '') {
