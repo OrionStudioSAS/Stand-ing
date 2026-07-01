@@ -8547,7 +8547,6 @@ function languageFlag(language = 'fr') {
 }
 
 function itemCollisionEnabled(item) {
-  if (isPosterItem(item)) return false;
   return item?.collisionEnabled !== false && item?.dimensions?.collisionEnabled !== false;
 }
 
@@ -8723,9 +8722,10 @@ function objectWallFromDrag(point, items, ignoreId = null) {
       if (axisValue < minAxis || axisValue > maxAxis) return null;
       const distance = Math.abs(normalValue - surface.normalAxis);
       if (distance > objectWallSnapThreshold) return null;
-      const side = normalValue >= surface.normalAxis ? 1 : -1;
+      const rawSide = normalValue >= surface.normalAxis ? 1 : -1;
       const axis = snapWallAxis(clamp(axisValue, surface.centerAxis - halfLength, surface.centerAxis + halfLength));
-      if (protectedObjectWallSideContains(surface, axis, side)) return null;
+      const side = safeObjectWallSide(surface, axis, rawSide);
+      if (!side) return null;
       return {
         surface,
         axis,
@@ -8778,7 +8778,8 @@ function groupObjectWallSurfaces(group) {
       return surface && protectedBounds ? { ...surface, protectedBounds } : surface;
     })
     .filter(Boolean);
-  return mergeObjectWallSurfaces(group.id, surfaces);
+  return mergeObjectWallSurfaces(group.id, surfaces)
+    .filter((surface) => !protectedBounds || isProtectedBoundarySurface(surface, protectedBounds));
 }
 
 function mergeObjectWallSurfaces(groupId, surfaces = []) {
@@ -8829,13 +8830,30 @@ function protectedObjectWallSideContains(surface = {}, axis = 0, side = 1) {
   return pointInsideBounds(x, z, bounds, 0.025);
 }
 
+function isProtectedBoundarySurface(surface = {}, bounds = {}) {
+  const threshold = 0.14;
+  const normalAxis = Number(surface.normalAxis || 0);
+  if (surface.orientation === 'x') {
+    return Math.abs(normalAxis - Number(bounds.minZ || 0)) <= threshold
+      || Math.abs(normalAxis - Number(bounds.maxZ || 0)) <= threshold;
+  }
+  return Math.abs(normalAxis - Number(bounds.minX || 0)) <= threshold
+    || Math.abs(normalAxis - Number(bounds.maxX || 0)) <= threshold;
+}
+
+function protectedObjectOutsideSide(surface = {}) {
+  const bounds = surface?.protectedBounds;
+  if (!bounds) return null;
+  const center = surface.orientation === 'x'
+    ? (Number(bounds.minZ || 0) + Number(bounds.maxZ || 0)) / 2
+    : (Number(bounds.minX || 0) + Number(bounds.maxX || 0)) / 2;
+  return Number(surface.normalAxis || 0) >= center ? 1 : -1;
+}
+
 function safeObjectWallSide(surface = {}, axis = 0, requestedSide = 1) {
-  const side = Number(requestedSide || 1) >= 0 ? 1 : -1;
-  if (!surface?.protectedBounds) return side;
-  if (!protectedObjectWallSideContains(surface, axis, side)) return side;
-  const opposite = -side;
-  if (!protectedObjectWallSideContains(surface, axis, opposite)) return opposite;
-  return null;
+  const outsideSide = protectedObjectOutsideSide(surface);
+  if (outsideSide) return outsideSide;
+  return Number(requestedSide || 1) >= 0 ? 1 : -1;
 }
 
 function pointInsideBounds(x, z, bounds = {}, inset = 0) {
@@ -9599,13 +9617,21 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
   const carpetHex = colorHex(carpetColor, '#bebebe');
   const footprintHex = colorHex(carpetFootprintColor || carpetColor, carpetHex);
   const slabHeight = technicalFloor?.height || floorThickness;
+  const rampDimensions = technicalFloor ? technicalRampDimensions(width, slabHeight) : null;
+  const rampLimit = rampDimensions ? Math.max(0, width / 2 - rampDimensions.width / 2) : 0;
+  const resolvedRampX = rampDimensions ? clamp(Number(technicalFloorRampX || 0), -rampLimit, rampLimit) : 0;
+  const slabSegments = technicalFloor
+    ? technicalFloorSlabSegments(width, depth, rampDimensions, resolvedRampX)
+    : [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }];
 
   return (
     <group>
-      <mesh receiveShadow position={[0, -slabHeight / 2, 0]}>
-        <boxGeometry args={[width, slabHeight, depth]} />
-        <meshStandardMaterial color={carpetTexture ? '#ffffff' : carpetHex} map={carpetTexture || null} roughness={0.88} />
-      </mesh>
+      {slabSegments.map((segment) => (
+        <mesh key={segment.id} receiveShadow position={[segment.centerX, -slabHeight / 2, segment.centerZ]}>
+          <boxGeometry args={[segment.width, slabHeight, segment.depth]} />
+          <meshStandardMaterial color={carpetTexture ? '#ffffff' : carpetHex} map={carpetTexture || null} roughness={0.88} />
+        </mesh>
+      ))}
       {technicalFloor && <TechnicalFloorAccessories width={width} depth={depth} layout={layout} height={slabHeight} trimType={technicalFloorTrimType} rampX={technicalFloorRampX} onRampXChange={onTechnicalFloorRampX} onRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={sceneOffset} />}
       {carpetFootprintEnabled && (
         <>
@@ -9619,13 +9645,48 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
   );
 }
 
+function technicalRampDimensions(width, floorHeight) {
+  const height = Math.max(0.04, Number(floorHeight || 0.04));
+  return {
+    depth: height <= 0.05 ? 0.7 : 1.25,
+    width: Math.min(1.4, Math.max(0.9, Number(width || 0) * 0.25)),
+  };
+}
+
+function technicalFloorSlabSegments(width, depth, rampDimensions, rampX = 0) {
+  const rampWidth = Number(rampDimensions?.width || 0);
+  const rampDepth = Number(rampDimensions?.depth || 0);
+  if (!rampWidth || !rampDepth) return [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }];
+
+  const rampMinX = Math.max(-width / 2, rampX - rampWidth / 2);
+  const rampMaxX = Math.min(width / 2, rampX + rampWidth / 2);
+  const backDepth = Math.max(0, depth - rampDepth);
+  const segments = [];
+  const addSegment = (id, minX, maxX, minZ, maxZ) => {
+    const segmentWidth = maxX - minX;
+    const segmentDepth = maxZ - minZ;
+    if (segmentWidth <= 0.01 || segmentDepth <= 0.01) return;
+    segments.push({
+      id,
+      width: segmentWidth,
+      depth: segmentDepth,
+      centerX: (minX + maxX) / 2,
+      centerZ: (minZ + maxZ) / 2,
+    });
+  };
+
+  addSegment('left', -width / 2, rampMinX, -depth / 2, depth / 2);
+  addSegment('right', rampMaxX, width / 2, -depth / 2, depth / 2);
+  addSegment('back', rampMinX, rampMaxX, -depth / 2, -depth / 2 + backDepth);
+  return segments.length ? segments : [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }];
+}
+
 function TechnicalFloorAccessories({ width, depth, layout, height, trimType, rampX = 0, onRampXChange, onRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
   const [draggingRamp, setDraggingRamp] = useState(false);
   const edges = openTechnicalFloorEdges(layout);
   const trimHeight = Math.max(0.04, Number(height || 0.04));
   const trimDepth = 0.04;
-  const rampDepth = trimHeight <= 0.05 ? 0.7 : 1.25;
-  const rampWidth = Math.min(1.4, Math.max(0.9, width * 0.25));
+  const { depth: rampDepth, width: rampWidth } = technicalRampDimensions(width, trimHeight);
   const sloped = trimType === 'sloped';
   const rampLimit = Math.max(0, width / 2 - rampWidth / 2);
   const resolvedRampX = clamp(Number(rampX || 0), -rampLimit, rampLimit);
@@ -9639,7 +9700,7 @@ function TechnicalFloorAccessories({ width, depth, layout, height, trimType, ram
 
   return (
     <group>
-      {edges.includes('front') && <TechnicalTrim edge="front" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} />}
+      {edges.includes('front') && <TechnicalTrim edge="front" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} gapCenter={resolvedRampX} gapWidth={rampWidth + 0.08} />}
       {edges.includes('left') && <TechnicalTrim edge="left" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} />}
       {edges.includes('right') && <TechnicalTrim edge="right" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} />}
       <mesh
@@ -9681,8 +9742,8 @@ function RampGeometry({ width, depth, height }) {
     const x1 = w / 2;
     const zFront = d / 2;
     const zBack = -d / 2;
-    const yLow = 0.006;
-    const yHigh = h + 0.006;
+    const yLow = -h + 0.004;
+    const yHigh = 0.006;
     const positions = [
       // Sloped walking surface: low at the entrance, high inside the stand.
       x0, yLow, zFront, x1, yLow, zFront, x1, yHigh, zBack,
@@ -9707,20 +9768,51 @@ function RampGeometry({ width, depth, height }) {
   return <primitive object={geometry} attach="geometry" />;
 }
 
-function TechnicalTrim({ edge, width, depth, height, thickness, sloped }) {
+function TechnicalTrim({ edge, width, depth, height, thickness, sloped, gapCenter = 0, gapWidth = 0 }) {
   const isFront = edge === 'front';
   const length = isFront ? width : depth;
+  const rotation = sloped
+    ? (isFront ? [0.32, 0, 0] : [0, 0, edge === 'left' ? -0.32 : 0.32])
+    : [0, 0, 0];
+  const materialColor = sloped ? '#c7ccd2' : '#eef1f4';
+
+  if (isFront && gapWidth > 0) {
+    const gapMin = clamp(Number(gapCenter || 0) - gapWidth / 2, -width / 2, width / 2);
+    const gapMax = clamp(Number(gapCenter || 0) + gapWidth / 2, -width / 2, width / 2);
+    const segments = [
+      { id: 'left', min: -width / 2, max: gapMin },
+      { id: 'right', min: gapMax, max: width / 2 },
+    ].filter((segment) => segment.max - segment.min > 0.02);
+
+    return (
+      <group>
+        {segments.map((segment) => {
+          const segmentLength = segment.max - segment.min;
+          return (
+            <mesh
+              key={segment.id}
+              castShadow
+              receiveShadow
+              position={[(segment.min + segment.max) / 2, -height / 2, depth / 2 + thickness / 2]}
+              rotation={rotation}
+            >
+              <boxGeometry args={[segmentLength, height, thickness]} />
+              <meshStandardMaterial color={materialColor} roughness={0.48} metalness={0.08} />
+            </mesh>
+          );
+        })}
+      </group>
+    );
+  }
+
   const position = edge === 'front'
     ? [0, -height / 2, depth / 2 + thickness / 2]
     : [edge === 'left' ? -width / 2 - thickness / 2 : width / 2 + thickness / 2, -height / 2, 0];
   const size = isFront ? [length, height, thickness] : [thickness, height, length];
-  const rotation = sloped
-    ? (isFront ? [0.32, 0, 0] : [0, 0, edge === 'left' ? -0.32 : 0.32])
-    : [0, 0, 0];
   return (
     <mesh castShadow receiveShadow position={position} rotation={rotation}>
       <boxGeometry args={size} />
-      <meshStandardMaterial color={sloped ? '#c7ccd2' : '#eef1f4'} roughness={0.48} metalness={0.08} />
+      <meshStandardMaterial color={materialColor} roughness={0.48} metalness={0.08} />
     </mesh>
   );
 }
