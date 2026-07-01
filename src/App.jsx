@@ -2078,13 +2078,11 @@ function OptionsStepPanel({
 
       <section className="panel-section-title">Les options</section>
       <OptionAccordion title="Moquette" icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
-        <ColorOptionCard
-          title="Couleur"
+        <CarpetColorOptionCard
           colors={carpetColors}
           selectedColor={selectedCarpetColor}
           defaultColorId={defaultColorOptions.carpetColorId}
-          includedLabel="Inclus"
-          optionLabel="Options payantes"
+          area={area}
           disabled={readOnly}
           onSelect={onCarpetColor}
         />
@@ -3130,11 +3128,125 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
   );
 }
 
+function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect }) {
+  const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
+  const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
+  const includedColors = displayColors.filter((color) => color.included);
+  const optionalGroups = colorGroupsFromOptions(displayColors.filter((color) => !color.included));
+  const defaultColor = displayColors.find((color) => normalizeColorId(color.id) === normalizeColorId(defaultColorId))
+    || includedColors[0]
+    || selectedDisplayColor;
+  const includedGroupLabel = colorGroupTitle(defaultColor?.groupLabel || includedColors[0]?.groupLabel, 'Moquette Rewind');
+  const selectColor = (colorId) => {
+    if (disabled) return;
+    onSelect(colorId);
+  };
+
+  return (
+    <div className="carpet-choice-card">
+      {defaultColor && (
+        <div className="carpet-locked-notice">
+          <strong>!</strong>
+          <span>La couleur de la moquette standard est {defaultColor.name?.toLowerCase() || 'gris clair'}.</span>
+          <em>—</em>
+        </div>
+      )}
+
+      <section className="carpet-choice-section">
+        <div className="carpet-choice-head">
+          <h4>{includedGroupLabel}</h4>
+          <strong>{selectedDisplayColor.name} ({selectedDisplayColor.code})</strong>
+        </div>
+        <small>{includedColors.length || 1} coloris disponible{includedColors.length > 1 ? 's' : ''} — Inclus</small>
+        <div className="carpet-swatch-row">
+          {(includedColors.length ? includedColors : [defaultColor]).filter(Boolean).map((color) => (
+            <button
+              key={color.id}
+              type="button"
+              className={selectedDisplayColor.id === color.id ? 'active' : ''}
+              style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+              title={`${color.name} (${color.code})`}
+              disabled={disabled}
+              onClick={() => selectColor(color.id)}
+            >
+              <span>{color.name}</span>
+            </button>
+          ))}
+          <b>Inclus</b>
+        </div>
+      </section>
+
+      {!!optionalGroups.length && <div className="carpet-choice-separator"><span />ou<span /></div>}
+
+      {optionalGroups.map((group) => {
+        const minPrice = Math.min(...group.colors.map((color) => Number(color.price || 0)).filter((price) => price > 0));
+        const price = Number.isFinite(minPrice) ? minPrice : 0;
+        const selectedInGroup = group.colors.some((color) => selectedDisplayColor.id === color.id);
+        return (
+          <section key={group.id} className={`carpet-choice-section premium ${selectedInGroup ? 'active' : ''}`}>
+            <div className="carpet-choice-head">
+              <h4>{colorGroupTitle(group.label, 'Moquette épaisse Salsa')}</h4>
+              <span>PREMIUM</span>
+            </div>
+            <p>{carpetGroupDescription(group.label)}</p>
+            <div className="carpet-premium-facts">
+              <span>✦ Aspect velours</span>
+              <span>◐ Plus dense</span>
+              <span>◆ {group.colors.length} coloris</span>
+            </div>
+            <div className="carpet-premium-price">
+              <span>À partir de <strong>{formatNumber(price)} € /m²</strong></span>
+              <em>Pour {formatNumber(area)} m² · +{formatNumber(Math.round(price * Number(area || 0)))} €</em>
+            </div>
+            <div className="carpet-swatch-row premium">
+              {group.colors.map((color) => (
+                <button
+                  key={color.id}
+                  type="button"
+                  className={selectedDisplayColor.id === color.id ? 'active' : ''}
+                  style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+                  title={`${color.name} (${color.code}) · ${colorOptionLabel(color, 'Option')}`}
+                  disabled={disabled}
+                  onClick={() => selectColor(color.id)}
+                >
+                  <span>{color.name}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function colorOptionLabel(color = {}, fallback = 'En option') {
   const price = Number(color.price || 0);
   const reference = color.reference || color.groupLabel || '';
   const priceText = price > 0 ? `+${price.toLocaleString('fr-FR')} € HT/m²` : fallback;
   return reference ? `${priceText} · ${reference}` : priceText;
+}
+
+function colorGroupsFromOptions(colors = []) {
+  const groups = new Map();
+  colors.forEach((color) => {
+    const id = color.groupId || color.groupLabel || 'colors';
+    if (!groups.has(id)) groups.set(id, { id, label: color.groupLabel || 'Options payantes', colors: [] });
+    groups.get(id).colors.push(color);
+  });
+  return [...groups.values()];
+}
+
+function colorGroupTitle(label = '', fallback = '') {
+  if (!label) return fallback;
+  return String(label).replace(/^pack\s+/i, '').replace(/^groupe\s+/i, '').trim() || fallback;
+}
+
+function carpetGroupDescription(label = '') {
+  if (/salsa/i.test(label)) {
+    return "Moquette Salsa à l'aspect velours, dotée d'une finition plus élégante et qualitative que la moquette standard. Idéale pour rehausser l'esthétique de votre stand.";
+  }
+  return 'Moquette premium avec une texture plus travaillée et une finition plus dense que la moquette standard.';
 }
 
 const adminTabStorageKey = 'standing-admin-active-tab';
