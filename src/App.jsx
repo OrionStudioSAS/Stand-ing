@@ -1445,8 +1445,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           }}
         >
           <color attach="background" args={['#eef0f4']} />
-          <ambientLight intensity={0.85} />
-          <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} />
+          <ambientLight intensity={1.05} />
+          <directionalLight position={[3, 7, 4]} intensity={1.1} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
             {shouldRenderScene && (
               <StandScene
@@ -1476,7 +1476,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 visualContext={sceneVisualContext}
               />
             )}
-            <ContactShadows opacity={0.22} scale={12} blur={2.4} far={5} position={[0, -0.01, 0]} />
+            <ContactShadows opacity={0.12} scale={12} blur={2.8} far={5} position={[0, -0.01, 0]} />
           </Suspense>
           <OrbitControls
             makeDefault
@@ -3206,7 +3206,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, dis
         const cover = covers?.[surface.id] || {};
         const enabled = Boolean(cover.enabled);
         const hasImage = Boolean(cover.imageUrl);
-        const spec = recommendedSimulatorImageSpec(surface.width, surface.height, 2048);
+        const spec = recommendedSimulatorImageSpec(surface.visibleWidth || surface.width, surface.height, 2048);
         return (
           <div key={surface.id} className={`wall-cover-row ${enabled ? 'active' : ''} ${enabled && !hasImage ? 'needs-image' : ''}`}>
             <button
@@ -3220,7 +3220,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, dis
             </button>
             <div>
               <strong>{surface.label}</strong>
-              <span>{formatNumber(surface.width)} m × {formatNumber(surface.height)} m</span>
+              <span>{formatNumber(surface.visibleWidth || surface.width)} m × {formatNumber(surface.height)} m</span>
               <small>Format simulateur conseillé : {spec.pixelText}</small>
             </div>
             <label className={`wall-cover-upload ${hasImage ? 'ready' : 'missing'}`}>
@@ -4566,8 +4566,8 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           onPointerLeave={() => setDraggingId(null)}
         >
           <color attach="background" args={['#eef0f4']} />
-          <ambientLight intensity={0.85} />
-          <directionalLight position={[3, 7, 4]} intensity={1.65} castShadow shadow-mapSize={[2048, 2048]} />
+          <ambientLight intensity={1.05} />
+          <directionalLight position={[3, 7, 4]} intensity={1.1} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
             {presetAssetsReady && (
             <StandScene
@@ -4588,7 +4588,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
               wallFabricColor={selectedWallFabricColor}
             />
             )}
-            <ContactShadows opacity={0.22} scale={12} blur={2.4} far={5} position={[0, -0.01, 0]} />
+            <ContactShadows opacity={0.12} scale={12} blur={2.8} far={5} position={[0, -0.01, 0]} />
           </Suspense>
           <OrbitControls makeDefault target={[0, 0.7, 0]} minPolarAngle={Math.PI / 5.2} maxPolarAngle={Math.PI / 2.25} minDistance={4} maxDistance={11} enablePan enabled={!draggingId} />
         </Canvas>
@@ -7403,7 +7403,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
   const activeWallCovers = wallCoverSurfaces.filter((surface) => wallCovers?.[surface.id]?.enabled);
   if (activeWallCovers.length) {
     const unitPrice = 245;
-    const quantity = activeWallCovers.reduce((sum, surface) => sum + Number(surface.width || 0), 0);
+    const quantity = activeWallCovers.reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0);
     const lineTotal = Math.round(quantity * unitPrice);
     itemsTotal += lineTotal;
     lines.push({
@@ -7995,6 +7995,7 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
         id: 'left',
         label: 'Cloison gauche',
         kind: 'wall',
+        wall: 'left',
         width: sideDepth,
         height: fixedWallHeight,
         position: [-Number(width || 0) / 2 + wallThickness + 0.007, fixedWallHeight / 2, sideZ],
@@ -8006,6 +8007,7 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
         id: 'right',
         label: 'Cloison droite',
         kind: 'wall',
+        wall: 'right',
         width: sideDepth,
         height: fixedWallHeight,
         position: [Number(width || 0) / 2 - wallThickness - 0.007, fixedWallHeight / 2, sideZ],
@@ -8016,12 +8018,16 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
       id: 'back',
       label: 'Cloison arrière',
       kind: 'wall',
+      wall: 'back',
       width: Number(width || 0),
       height: fixedWallHeight,
       position: [0, fixedWallHeight / 2, -Number(depth || 0) / 2 + wallThickness + 0.007],
       rotation: 0,
     };
-  });
+  }).map((surface) => ({
+    ...surface,
+    visibleWidth: wallCoverVisibleWidth(surface, items, width, depth),
+  }));
 
   const reserveSurface = objectWallSurfaces(items)
     .filter((surface) => String(surface.id || '').includes('reserve') || surface.protectedBounds)
@@ -8036,6 +8042,7 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
       id: 'reserve',
       label: 'Cloison réserve',
       kind: 'reserve',
+      wall: 'reserve',
       width: Math.max(0.5, Number(reserveSurface.length || 1)),
       height: fixedWallHeight,
       position: reserveSurface.orientation === 'x'
@@ -8044,8 +8051,61 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
       rotation: reserveSurface.orientation === 'x'
         ? (outsideSide >= 0 ? 0 : Math.PI)
         : (outsideSide >= 0 ? Math.PI / 2 : -Math.PI / 2),
+      visibleWidth: Math.max(0.5, Number(reserveSurface.length || 1)),
     },
   ];
+}
+
+function wallCoverVisibleWidth(surface, items, width, depth) {
+  return wallCoverSegmentsForSurface(surface, items, width, depth).reduce((sum, segment) => sum + Number(segment.width || 0), 0);
+}
+
+function wallCoverSegmentsForSurface(surface, items = [], width = 0, depth = 0) {
+  if (!surface) return [];
+  if (surface.kind === 'reserve') return [surface];
+  const wall = surface.wall || surface.id;
+  const range = wallAxisLimits(wall, width, depth);
+  const fakePoster = { id: `wall-cover-${wall}`, type: 'poster', wall };
+  const intervals = freeWallIntervals(
+    range,
+    wallBlockers(fakePoster, items, width, depth, wall)
+      .map((blocker) => ({ min: clamp(blocker.min, range.min, range.max), max: clamp(blocker.max, range.min, range.max) }))
+      .filter((blocker) => blocker.max > blocker.min),
+  );
+  return intervals
+    .filter((interval) => interval.max - interval.min >= 0.2)
+    .map((interval, index) => wallCoverSegmentFromInterval(surface, interval, width, depth, index));
+}
+
+function wallCoverSegmentFromInterval(surface, interval, width, depth, index = 0) {
+  const segmentWidth = Math.max(0.01, interval.max - interval.min);
+  const center = (interval.min + interval.max) / 2;
+  const offset = 0.018;
+  if (surface.wall === 'left') {
+    return {
+      ...surface,
+      id: `${surface.id}-${index}`,
+      width: segmentWidth,
+      position: [-Number(width || 0) / 2 + wallThickness + offset, fixedWallHeight / 2, center],
+      rotation: Math.PI / 2,
+    };
+  }
+  if (surface.wall === 'right') {
+    return {
+      ...surface,
+      id: `${surface.id}-${index}`,
+      width: segmentWidth,
+      position: [Number(width || 0) / 2 - wallThickness - offset, fixedWallHeight / 2, center],
+      rotation: -Math.PI / 2,
+    };
+  }
+  return {
+    ...surface,
+    id: `${surface.id}-${index}`,
+    width: segmentWidth,
+    position: [center, fixedWallHeight / 2, -Number(depth || 0) / 2 + wallThickness + offset],
+    rotation: 0,
+  };
 }
 
 function ledSpotCountForArea(area) {
@@ -9468,8 +9528,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
       {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
       <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRampX={technicalFloorRampX} onTechnicalFloorRampX={onTechnicalFloorRampX} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
-      <Walls width={width} depth={depth} height={height} layout={layout} wallFabricColor={wallFabricColor} onDeselect={clearSceneSelection} />
-      <WallCoverSurfaces width={width} depth={depth} layout={layout} items={items} covers={wallCovers} />
+      <Walls width={width} depth={depth} height={height} layout={layout} wallFabricColor={wallFabricColor} wallCovers={wallCovers} onDeselect={clearSceneSelection} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
         {width}m x {depth}m
       </Text>
@@ -9505,6 +9564,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
           />
         </Suspense>
       ))}
+      <WallCoverSurfaces width={width} depth={depth} layout={layout} items={items} covers={wallCovers} />
     </group>
   );
 }
@@ -9562,7 +9622,7 @@ function TechnicalFloorAccessories({ width, depth, layout, height, trimType, ram
       <mesh
           castShadow
           receiveShadow
-          position={[resolvedRampX, -trimHeight / 2, depth / 2 + rampDepth / 2]}
+          position={[resolvedRampX, -trimHeight / 2, depth / 2 - rampDepth / 2]}
           rotation={[sloped ? Math.atan(trimHeight / rampDepth) : 0, 0, 0]}
           onPointerDown={(event) => {
             if (!interactive || !onRampXChange) return;
@@ -9757,17 +9817,18 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
 }
 
 
-function Walls({ width, depth, height, layout, wallFabricColor, onDeselect }) {
+function Walls({ width, depth, height, layout, wallFabricColor, wallCovers = {}, onDeselect }) {
   const sideDepth = Math.max(0.01, depth - wallThickness);
   const sideZ = -depth / 2 + wallThickness + sideDepth / 2;
+  const covered = (wall) => Boolean(wallCovers?.[wall]?.enabled);
   return (
     <group onPointerDown={() => onDeselect?.()}>
       <Wall position={[0, height / 2, -depth / 2 + wallThickness / 2]} size={[width, height, wallThickness]} color={wallFabricColor} textureWidth={width} textureHeight={height} />
-      <Baseboard position={[0, baseboardHeight / 2, -depth / 2 + wallThickness + baseboardThickness / 2]} size={[width, baseboardHeight, baseboardThickness]} />
+      {!covered('back') && <Baseboard position={[0, baseboardHeight / 2, -depth / 2 + wallThickness + baseboardThickness / 2]} size={[width, baseboardHeight, baseboardThickness]} />}
       {(layout === 'left' || layout === 'u') && <Wall position={[-width / 2 + wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallFabricColor} textureWidth={sideDepth} textureHeight={height} />}
-      {(layout === 'left' || layout === 'u') && <Baseboard position={[-width / 2 + wallThickness + baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
+      {(layout === 'left' || layout === 'u') && !covered('left') && <Baseboard position={[-width / 2 + wallThickness + baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
       {(layout === 'right' || layout === 'u') && <Wall position={[width / 2 - wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} color={wallFabricColor} textureWidth={sideDepth} textureHeight={height} />}
-      {(layout === 'right' || layout === 'u') && <Baseboard position={[width / 2 - wallThickness - baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
+      {(layout === 'right' || layout === 'u') && !covered('right') && <Baseboard position={[width / 2 - wallThickness - baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
     </group>
   );
 }
@@ -9776,10 +9837,12 @@ function WallCoverSurfaces({ width, depth, layout, items = [], covers = {} }) {
   const surfaces = wallCoverSurfaceOptions(layout, width, depth, items);
   return (
     <group>
-      {surfaces.map((surface) => {
+      {surfaces.flatMap((surface) => {
         const cover = covers?.[surface.id];
-        if (!cover?.enabled) return null;
-        return <WallCoverSurface key={surface.id} surface={surface} imageUrl={cover.imageUrl} />;
+        if (!cover?.enabled) return [];
+        return wallCoverSegmentsForSurface(surface, items, width, depth).map((segment) => (
+          <WallCoverSurface key={segment.id} surface={segment} imageUrl={cover.imageUrl} />
+        ));
       })}
     </group>
   );
@@ -9789,12 +9852,12 @@ function WallCoverSurface({ surface, imageUrl }) {
   const texture = useExternalTexture(imageUrl || '', { coverSize: posterCoverTextureSize(surface, 2048) });
   return (
     <group position={surface.position} rotation={[0, surface.rotation, 0]}>
-      <mesh renderOrder={-2}>
+      <mesh renderOrder={2} raycast={() => null}>
         <planeGeometry args={[surface.width, surface.height]} />
-        <meshStandardMaterial color={texture ? '#ffffff' : '#eef2f6'} map={texture || null} roughness={0.72} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+        <meshBasicMaterial color={texture ? '#ffffff' : '#eef2f6'} map={texture || null} side={DoubleSide} toneMapped={false} depthWrite />
       </mesh>
       {!texture && (
-        <Text position={[0, 0, 0.004]} fontSize={Math.min(0.18, surface.width / 10)} color="#1f4378" anchorX="center" anchorY="middle">
+        <Text position={[0, 0, 0.006]} fontSize={Math.min(0.18, surface.width / 10)} color="#1f4378" anchorX="center" anchorY="middle">
           VISUEL À FOURNIR
         </Text>
       )}
