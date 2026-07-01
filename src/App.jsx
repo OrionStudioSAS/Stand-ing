@@ -9833,32 +9833,26 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
 function Walls({ width, depth, height, layout, items = [], wallFabricColor, wallCovers = {}, onDeselect }) {
   const sideDepth = Math.max(0.01, depth - wallThickness);
   const sideZ = -depth / 2 + wallThickness + sideDepth / 2;
-  const covered = (wall) => Boolean(wallCovers?.[wall]?.enabled);
-  const hideBaseboard = (wall) => covered(wall) || wallHasPartitionHead(items, wall);
   return (
     <group onPointerDown={() => onDeselect?.()}>
       <Wall position={[0, height / 2, -depth / 2 + wallThickness / 2]} size={[width, height, wallThickness]} />
-      {!hideBaseboard('back') && <Baseboard position={[0, baseboardHeight / 2, -depth / 2 + wallThickness + baseboardThickness / 2]} size={[width, baseboardHeight, baseboardThickness]} />}
+      <Baseboard position={[0, baseboardHeight / 2, -depth / 2 + wallThickness + baseboardThickness / 2]} size={[width, baseboardHeight, baseboardThickness]} />
       {(layout === 'left' || layout === 'u') && <Wall position={[-width / 2 + wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} />}
-      {(layout === 'left' || layout === 'u') && !hideBaseboard('left') && <Baseboard position={[-width / 2 + wallThickness + baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
+      {(layout === 'left' || layout === 'u') && <Baseboard position={[-width / 2 + wallThickness + baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
       {(layout === 'right' || layout === 'u') && <Wall position={[width / 2 - wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} />}
-      {(layout === 'right' || layout === 'u') && !hideBaseboard('right') && <Baseboard position={[width / 2 - wallThickness - baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
+      {(layout === 'right' || layout === 'u') && <Baseboard position={[width / 2 - wallThickness - baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
       <WallFabricSurfaces width={width} depth={depth} layout={layout} items={items} color={wallFabricColor} />
     </group>
   );
-}
-
-function wallHasPartitionHead(items = [], wall = 'back') {
-  return (items || []).some((item) => isPartitionHeadItem(item) && (item.wall || 'back') === wall);
 }
 
 function WallFabricSurfaces({ width, depth, layout, items = [], color }) {
   const surfaces = wallCoverSurfaceOptions(layout, width, depth, items).filter((surface) => surface.kind === 'wall');
   return (
     <group>
-      {surfaces.flatMap((surface) => wallCoverSegmentsForSurface(surface, items, width, depth).map((segment) => (
-        <WallFabricSurface key={`fabric-${segment.id}`} surface={segment} color={color} />
-      )))}
+      {surfaces.map((surface) => (
+        <WallFabricSurface key={`fabric-${surface.id}`} surface={surface} color={color} />
+      ))}
     </group>
   );
 }
