@@ -9332,14 +9332,14 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
     <group>
       <mesh receiveShadow position={[0, -slabHeight / 2, 0]}>
         <boxGeometry args={[width, slabHeight, depth]} />
-        <meshStandardMaterial color={carpetHex} map={carpetTexture || null} roughness={0.82} />
+        <meshStandardMaterial color={carpetTexture ? '#ffffff' : carpetHex} map={carpetTexture || null} roughness={0.88} />
       </mesh>
       {technicalFloor && <TechnicalFloorAccessories width={width} depth={depth} layout={layout} height={slabHeight} trimType={technicalFloorTrimType} rampEnabled={technicalFloorRampEnabled} />}
       {carpetFootprintEnabled && (
         <>
           <mesh receiveShadow position={[footprint.centerX, 0.012, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
             <planeGeometry args={[footprint.width, footprint.depth]} />
-            <meshStandardMaterial color={footprintHex} map={footprintTexture || null} roughness={0.82} />
+            <meshStandardMaterial color={footprintTexture ? '#ffffff' : footprintHex} map={footprintTexture || null} roughness={0.88} />
           </mesh>
         </>
       )}
