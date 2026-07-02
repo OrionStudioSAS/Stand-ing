@@ -757,12 +757,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [depth, setDepth] = useState(initialDepth);
   const height = fixedWallHeight;
   const [layout, setLayout] = useState(initialLayout);
-  const [items, setItems] = useState(() => (initialScene.items?.length ? initialScene.items : [
-    { id: 'table-1', type: 'table', x: -0.75, z: 0.3, y: 0, rotation: 0 },
-    { id: 'chair-1', type: 'chair', x: 0.8, z: 0.45, y: 0, rotation: -15 },
-    { id: 'screen-1', type: 'screen', x: 0, z: -1.5, y: screenCenterHeight, wall: 'back', rotation: 0 },
-  ]).map((item) => constrainItem(item, initialWidth, initialDepth, initialLayout)));
-  const [selectedId, setSelectedId] = useState('table-1');
+  const [items, setItems] = useState(() => (initialScene.items || []).map((item) => constrainItem(item, initialWidth, initialDepth, initialLayout)));
+  const [selectedId, setSelectedId] = useState(() => initialScene.items?.[0]?.id || null);
   const [draggingId, setDraggingId] = useState(null);
   const [technicalFloorRampDragging, setTechnicalFloorRampDragging] = useState(false);
   const [language, setLanguage] = useState(initialOptions.language || 'fr');
