@@ -8062,8 +8062,8 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
       width: Math.max(0.5, Number(reserveSurface.length || 1)),
       height: fixedWallHeight,
       position: reserveSurface.orientation === 'x'
-        ? [reserveSurface.centerAxis, fixedWallHeight / 2, reserveSurface.normalAxis + outsideSide * 0.012]
-        : [reserveSurface.normalAxis + outsideSide * 0.012, fixedWallHeight / 2, reserveSurface.centerAxis],
+        ? [reserveSurface.centerAxis, fixedWallHeight / 2, reserveSurface.normalAxis + outsideSide * 0.0075]
+        : [reserveSurface.normalAxis + outsideSide * 0.0075, fixedWallHeight / 2, reserveSurface.centerAxis],
       rotation: reserveSurface.orientation === 'x'
         ? (outsideSide >= 0 ? 0 : Math.PI)
         : (outsideSide >= 0 ? Math.PI / 2 : -Math.PI / 2),
@@ -8096,7 +8096,7 @@ function wallCoverSegmentsForSurface(surface, items = [], width = 0, depth = 0) 
 function wallCoverSegmentFromInterval(surface, interval, width, depth, index = 0) {
   const segmentWidth = Math.max(0.01, interval.max - interval.min);
   const center = (interval.min + interval.max) / 2;
-  const offset = 0.018;
+  const offset = 0.0075;
   if (surface.wall === 'left') {
     return {
       ...surface,
@@ -10082,7 +10082,7 @@ function WallCoverSurface({ surface, imageUrl }) {
     <group position={surface.position} rotation={[0, surface.rotation, 0]}>
       <mesh renderOrder={2} raycast={() => null}>
         <planeGeometry args={[surface.width, surface.height]} />
-        <meshBasicMaterial color={texture ? '#ffffff' : '#eef2f6'} map={texture || null} side={DoubleSide} toneMapped={false} depthWrite />
+        <meshBasicMaterial color={texture ? '#ffffff' : '#eef2f6'} map={texture || null} side={DoubleSide} toneMapped={false} depthWrite={false} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
       </mesh>
       {!texture && (
         <Text position={[0, 0, 0.006]} fontSize={Math.min(0.18, surface.width / 10)} color="#1f4378" anchorX="center" anchorY="middle">
