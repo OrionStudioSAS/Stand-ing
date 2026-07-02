@@ -2,7 +2,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, BufferGeometry, Cache, CanvasTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three';
+import { Box3, BufferGeometry, Cache, CanvasTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -73,8 +73,8 @@ const technicalTrimOptions = [
   { id: 'sloped', label: 'Cornière inclinée' },
 ];
 const blankTextureDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
-const textureRetryAttempts = 3;
-const textureRetryBaseDelay = 260;
+const textureRetryAttempts = 6;
+const textureRetryBaseDelay = 320;
 Cache.enabled = true;
 
 // Module-level load caches shared between preload phase and components.
@@ -7705,13 +7705,14 @@ function logTextureDiagnostic(message, details = {}) {
   console.warn(message, details);
 }
 
-function loadDecodedImage(url, attempt = 0) {
+function loadDecodedImage(url, attempt = 0, originalUrl = url) {
   return new Promise((resolve) => {
     if (!url) {
       resolve({ ok: true, url, image: null });
       return;
     }
 
+    const requestUrl = attempt ? textureRetryUrl(originalUrl, attempt) : url;
     const image = new Image();
     let settled = false;
     const finish = (result) => {
@@ -7720,14 +7721,14 @@ function loadDecodedImage(url, attempt = 0) {
       resolve(result);
     };
     const retryOrResolve = () => {
-      if (attempt < textureRetryAttempts && canRetryTextureUrl(url)) {
+      if (attempt < textureRetryAttempts && canRetryTextureUrl(originalUrl)) {
         window.setTimeout(() => {
-          loadDecodedImage(textureRetryUrl(url, attempt + 1), attempt + 1).then(finish);
+          loadDecodedImage(textureRetryUrl(originalUrl, attempt + 1), attempt + 1, originalUrl).then(finish);
         }, textureRetryDelay(attempt));
         return;
       }
-      logTextureDiagnostic('Texture preload failed after retries', { url });
-      finish({ ok: false, url, image: null });
+      logTextureDiagnostic('Texture preload failed after retries', { url: originalUrl });
+      finish({ ok: false, url: originalUrl, image: null });
     };
     const decodeAndResolve = () => {
       if (!image.naturalWidth || !image.naturalHeight) {
@@ -7737,20 +7738,20 @@ function loadDecodedImage(url, attempt = 0) {
       if (typeof image.decode === 'function') {
         image.decode()
           .then(() => {
-            cacheDecodedImage(url, attempt ? textureRetryUrl(url, attempt) : url, image);
-            finish({ ok: true, url, image });
+            cacheDecodedImage(originalUrl, requestUrl, image);
+            finish({ ok: true, url: originalUrl, image });
           })
           .catch(retryOrResolve);
         return;
       }
-      cacheDecodedImage(url, attempt ? textureRetryUrl(url, attempt) : url, image);
-      finish({ ok: true, url, image });
+      cacheDecodedImage(originalUrl, requestUrl, image);
+      finish({ ok: true, url: originalUrl, image });
     };
 
     image.crossOrigin = 'anonymous';
     image.onload = decodeAndResolve;
     image.onerror = retryOrResolve;
-    image.src = attempt ? textureRetryUrl(url, attempt) : url;
+    image.src = requestUrl;
     if (image.complete && image.naturalWidth > 0) decodeAndResolve();
   });
 }
@@ -10112,6 +10113,7 @@ function WallCoverSurface({ surface, imageUrl }) {
   const coverSurface = { ...surface, height: coverHeight };
   const texture = useExternalTexture(imageUrl || '', { coverSize: posterCoverTextureSize(coverSurface, 2048) });
   const position = [surface.position[0], baseboardHeight + coverHeight / 2, surface.position[2]];
+  if (imageUrl && !texture) return null;
   return (
     <group position={position} rotation={[0, surface.rotation, 0]}>
       <mesh renderOrder={2} raycast={() => null}>
@@ -10502,16 +10504,6 @@ function useExternalTexture(url, options = {}) {
         return false;
       };
 
-      const tryFallbackLoader = () => {
-        const fallbackLoader = new TextureLoader();
-        fallbackLoader.load(url, (loadedTexture) => {
-          if (disposed) { loadedTexture.dispose(); return; }
-          prepareDynamicTexture(loadedTexture, options);
-          currentTexture = loadedTexture;
-          setTexture(loadedTexture);
-        }, undefined, () => { if (!disposed) setTexture(null); });
-      };
-
       // Synchronous cache hit: if preloadImage already put the decoded image in
       // Three.js Cache, create the CanvasTexture immediately without any async gap.
       const cachedImage = Cache.get(`image:${url}`);
@@ -10522,19 +10514,22 @@ function useExternalTexture(url, options = {}) {
       // Async path for when the preload cache isn’t populated yet.
       loadDecodedImage(url).then(({ ok, image }) => {
         if (disposed) return;
-        if (!ok || !image || !applyImage(image)) tryFallbackLoader();
+        if (!ok || !image || !applyImage(image)) setTexture(null);
       });
 
       return () => { disposed = true; currentTexture?.dispose?.(); };
     }
 
-    const loader = new TextureLoader();
-    loader.load(url, (loadedTexture) => {
-      if (disposed) { loadedTexture.dispose(); return; }
-      prepareDynamicTexture(loadedTexture, options);
+    loadDecodedImage(url).then(({ ok, image }) => {
+      if (disposed) return;
+      if (!ok || !image) {
+        setTexture(null);
+        return;
+      }
+      const loadedTexture = createDecodedImageTexture(image, options);
       currentTexture = loadedTexture;
       setTexture(loadedTexture);
-    }, undefined, () => { if (!disposed) setTexture(null); });
+    });
 
     return () => {
       disposed = true;
@@ -10554,6 +10549,18 @@ function prepareDynamicTexture(texture, options = {}) {
   texture.magFilter = LinearFilter;
   texture.needsUpdate = true;
   return texture;
+}
+
+function createDecodedImageTexture(image, options = {}) {
+  if (typeof document === 'undefined' || !image) return null;
+  const width = image.naturalWidth || image.videoWidth || image.width || 1;
+  const height = image.naturalHeight || image.videoHeight || image.height || 1;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(image, 0, 0, width, height);
+  return prepareDynamicTexture(new CanvasTexture(canvas), options);
 }
 
 function createCoverImageTexture(image, targetWidth, targetHeight, options = {}) {
