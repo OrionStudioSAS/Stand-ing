@@ -9459,7 +9459,7 @@ function wallMountedNormalOffset(item, objectSurface = false) {
   if (isPosterItem(item)) return (objectSurface ? wallThickness / 2 : wallThickness) + 0.006;
   if (item?.type === 'screen') return wallThickness + screenDepth / 2;
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
-  const extraOffset = isPartitionHeadItem(item) ? 0.005 : 0;
+  const extraOffset = isPartitionHeadItem(item) ? 0.0075 : 0;
   return wallThickness + Math.max(0.02, depth / 2) + extraOffset;
 }
 
@@ -10063,8 +10063,8 @@ function WallBaseboards({ wall, width, depth, items = [] }) {
 function wallBaseboardSegments(wall, width, depth, items = []) {
   const limits = wallAxisLimits(wall, width, depth);
   const blockers = (items || [])
-    .filter((item) => isPartitionHeadItem(item) && (item.wall || 'back') === wall)
-    .map((item) => wallMountedBlocker(item, wall, width, depth, 0.03))
+    .filter((item) => (isPartitionHeadItem(item) || isAutomaticPartitionHeadItem(item)) && (item.wall || 'back') === wall)
+    .map((item) => wallMountedBlocker(item, wall, width, depth, 0.08))
     .filter(Boolean)
     .map((blocker) => ({ min: clamp(blocker.min, limits.min, limits.max), max: clamp(blocker.max, limits.min, limits.max) }))
     .filter((blocker) => blocker.max > blocker.min);
@@ -10075,8 +10075,10 @@ function WallFabricSurfaces({ width, depth, layout, items = [], color }) {
   const surfaces = wallCoverSurfaceOptions(layout, width, depth, items).filter((surface) => surface.kind === 'wall');
   return (
     <group>
-      {surfaces.map((surface) => (
-        <WallFabricSurface key={`fabric-${surface.id}`} surface={surface} color={color} />
+      {surfaces.flatMap((surface) => (
+        wallCoverSegmentsForSurface(surface, items, width, depth).map((segment) => (
+          <WallFabricSurface key={`fabric-${segment.id}`} surface={segment} color={color} />
+        ))
       ))}
     </group>
   );
