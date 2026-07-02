@@ -10089,8 +10089,8 @@ function WallFabricSurface({ surface, color }) {
   return (
     <group position={position} rotation={[0, surface.rotation, 0]}>
       <mesh renderOrder={1} raycast={() => null}>
-        <planeGeometry args={[surface.width, fabricHeight]} />
-        <meshStandardMaterial color={texture ? '#ffffff' : colorHex(color, '#f8f7f3')} map={texture || null} roughness={1} metalness={0} side={DoubleSide} depthWrite={false} polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2} />
+        <boxGeometry args={[surface.width, fabricHeight, 0.001]} />
+        <meshStandardMaterial color={texture ? '#ffffff' : colorHex(color, '#f8f7f3')} map={texture || null} roughness={1} metalness={0} />
       </mesh>
     </group>
   );
