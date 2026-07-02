@@ -59,7 +59,7 @@ const wallItemSnap = 0.25;
 const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
 const collisionPadding = 0.04;
-const partitionHeadEdgeInset = 0;
+const partitionHeadEdgeInset = 0.04;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
@@ -8687,7 +8687,7 @@ function closestPlacementInRegions(item, regions) {
 function wallItemAxisRange(item, wall, width, depth) {
   const limits = wallAxisLimits(wall, width, depth);
   const bounds = wallItemAxisBounds(item, wall);
-  const sideMargin = wall === 'back' && isPartitionHeadItem(item) ? partitionHeadEdgeInset : 0;
+  const sideMargin = isPartitionHeadItem(item) ? partitionHeadEdgeInset : 0;
   return {
     min: limits.min - bounds.min + sideMargin,
     max: limits.max - bounds.max - sideMargin,
@@ -9459,7 +9459,7 @@ function wallMountedNormalOffset(item, objectSurface = false) {
   if (isPosterItem(item)) return (objectSurface ? wallThickness / 2 : wallThickness) + 0.006;
   if (item?.type === 'screen') return wallThickness + screenDepth / 2;
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
-  const extraOffset = isPartitionHeadItem(item) ? 0.0075 : 0;
+  const extraOffset = isPartitionHeadItem(item) ? 0.012 : 0;
   return wallThickness + Math.max(0.02, depth / 2) + extraOffset;
 }
 
