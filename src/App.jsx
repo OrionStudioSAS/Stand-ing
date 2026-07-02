@@ -8014,7 +8014,7 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
         wall: 'left',
         width: sideDepth,
         height: fixedWallHeight,
-        position: [-Number(width || 0) / 2 + wallThickness + 0.007, fixedWallHeight / 2, sideZ],
+        position: [-Number(width || 0) / 2 + wallThickness + 0.0015, fixedWallHeight / 2, sideZ],
         rotation: Math.PI / 2,
       };
     }
@@ -8026,7 +8026,7 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
         wall: 'right',
         width: sideDepth,
         height: fixedWallHeight,
-        position: [Number(width || 0) / 2 - wallThickness - 0.007, fixedWallHeight / 2, sideZ],
+        position: [Number(width || 0) / 2 - wallThickness - 0.0015, fixedWallHeight / 2, sideZ],
         rotation: -Math.PI / 2,
       };
     }
@@ -8037,7 +8037,7 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
       wall: 'back',
       width: Number(width || 0),
       height: fixedWallHeight,
-      position: [0, fixedWallHeight / 2, -Number(depth || 0) / 2 + wallThickness + 0.007],
+      position: [0, fixedWallHeight / 2, -Number(depth || 0) / 2 + wallThickness + 0.0015],
       rotation: 0,
     };
   }).map((surface) => ({
@@ -8062,8 +8062,8 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
       width: Math.max(0.5, Number(reserveSurface.length || 1)),
       height: fixedWallHeight,
       position: reserveSurface.orientation === 'x'
-        ? [reserveSurface.centerAxis, fixedWallHeight / 2, reserveSurface.normalAxis + outsideSide * 0.0075]
-        : [reserveSurface.normalAxis + outsideSide * 0.0075, fixedWallHeight / 2, reserveSurface.centerAxis],
+        ? [reserveSurface.centerAxis, fixedWallHeight / 2, reserveSurface.normalAxis + outsideSide * 0.0015]
+        : [reserveSurface.normalAxis + outsideSide * 0.0015, fixedWallHeight / 2, reserveSurface.centerAxis],
       rotation: reserveSurface.orientation === 'x'
         ? (outsideSide >= 0 ? 0 : Math.PI)
         : (outsideSide >= 0 ? Math.PI / 2 : -Math.PI / 2),
@@ -8096,7 +8096,7 @@ function wallCoverSegmentsForSurface(surface, items = [], width = 0, depth = 0) 
 function wallCoverSegmentFromInterval(surface, interval, width, depth, index = 0) {
   const segmentWidth = Math.max(0.01, interval.max - interval.min);
   const center = (interval.min + interval.max) / 2;
-  const offset = 0.0075;
+  const offset = 0.0015;
   if (surface.wall === 'left') {
     return {
       ...surface,
@@ -10184,11 +10184,12 @@ function PartitionHeadWallMask({ item, bounds }) {
   const width = Math.max(0.62, Number(bounds?.width || 0.6) + 0.025);
   const height = Math.max(2.45, Number(bounds?.height || 2.4) + 0.08);
   const centerX = Number(bounds?.centerX || 0);
-  const z = Number(bounds?.minZ ?? bounds?.centerZ ?? -0.05) - 0.006;
+  const wallPlaneZ = -wallMountedNormalOffset(item, false) + wallThickness + 0.006;
+  const z = Math.max(Number(bounds?.minZ ?? -0.055), wallPlaneZ);
   return (
     <mesh position={[centerX, height / 2, z]} renderOrder={0}>
       <planeGeometry args={[width, height]} />
-      <meshStandardMaterial color="#d8cfbd" roughness={0.92} metalness={0} side={DoubleSide} />
+      <meshBasicMaterial color="#d8cfbd" side={DoubleSide} />
     </mesh>
   );
 }
