@@ -7473,3 +7473,176 @@ img.asset-thumb {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+/* Plancher technique — aligned with the newer blue option panels. */
+.technical-floor-card {
+  display: grid;
+  gap: 14px;
+  margin: 0 14px 14px;
+  padding: 0;
+  color: #fff;
+  background: transparent;
+}
+
+.technical-floor-info {
+  border: 1px solid #ff9f1a;
+  border-radius: 6px;
+  padding: 12px 14px;
+  color: #c87300;
+  background: #fff7e8;
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+
+.technical-floor-info span {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.technical-floor-info b {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  color: #fff;
+  background: #ff9f1a;
+  font-size: 0.8rem;
+}
+
+.technical-floor-title {
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 950;
+}
+
+.technical-floor-choices {
+  display: grid;
+  gap: 10px;
+}
+
+.technical-floor-choices button {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 68px;
+  border: 1px solid #dce5ef;
+  border-radius: 7px;
+  padding: 12px 14px;
+  color: #171b22;
+  background: #fff;
+  box-shadow: 0 8px 16px rgba(7, 23, 53, 0.08);
+  text-align: left;
+}
+
+.technical-floor-choices button.active {
+  border-color: #4e82dd;
+  background: #f3f7ff;
+  box-shadow: inset 0 0 0 1px #4e82dd, 0 8px 16px rgba(7, 23, 53, 0.1);
+}
+
+.technical-floor-choices button > span:not(.reserve-choice-radio) {
+  display: grid;
+  gap: 3px;
+}
+
+.technical-floor-choices strong {
+  color: #171b22;
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+.technical-floor-choices small {
+  color: #8b929c;
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.technical-floor-choices em {
+  color: #171b22;
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.technical-floor-detail,
+.technical-floor-actions,
+.technical-floor-ramp-required {
+  border: 1px solid #dce5ef;
+  border-radius: 7px;
+  padding: 12px 14px;
+  color: #171b22;
+  background: #fff;
+  box-shadow: 0 8px 16px rgba(7, 23, 53, 0.08);
+}
+
+.technical-floor-detail {
+  display: grid;
+  gap: 4px;
+}
+
+.technical-floor-detail strong,
+.technical-floor-detail span,
+.technical-floor-detail small,
+.technical-floor-ramp-required strong,
+.technical-floor-ramp-required small {
+  display: block;
+}
+
+.technical-floor-detail strong {
+  color: #1f4378;
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+
+.technical-floor-detail span {
+  color: #171b22;
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+
+.technical-floor-detail small,
+.technical-floor-ramp-required small {
+  color: #8b929c;
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.technical-floor-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.technical-floor-actions > span {
+  grid-column: 1 / -1;
+  color: #171b22;
+  font-size: 0.84rem;
+  font-weight: 950;
+}
+
+.technical-floor-actions button {
+  min-height: 42px;
+  border: 1px solid #dce5ef;
+  border-radius: 7px;
+  padding: 9px 12px;
+  color: #1f4378;
+  background: #f7f9fc;
+  font-weight: 950;
+  text-align: center;
+}
+
+.technical-floor-actions button.active {
+  border-color: #4e82dd;
+  background: #eef4fb;
+  box-shadow: inset 0 0 0 1px #4e82dd;
+}
+
+.technical-floor-ramp-required strong {
+  color: #1f4378;
+  font-size: 0.88rem;
+  font-weight: 950;
+}

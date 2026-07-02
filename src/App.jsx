@@ -2997,23 +2997,35 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
 
   return (
     <div className="technical-floor-card">
+      <div className="technical-floor-info">
+        <span><b>!</b> Le plancher technique retire automatiquement l’empreinte moquette.</span>
+      </div>
+
+      <strong className="technical-floor-title">Choisissez une hauteur</strong>
       <div className="technical-floor-choices">
-        <button type="button" className={!floorType ? 'active' : ''} disabled={disabled} onClick={() => onFloorType('')}>Aucun plancher</button>
-        {technicalFloorOptions.map((option) => (
-          <button key={option.id} type="button" className={floorType === option.id ? 'active' : ''} disabled={disabled} onClick={() => onFloorType(option.id)}>
-            <strong>{option.label}</strong>
-            <span>{option.reference} · {option.price} € HT/m²</span>
-          </button>
-        ))}
+        <button type="button" className={!floorType ? 'active' : ''} disabled={disabled} onClick={() => onFloorType('')}>
+          <span className="reserve-choice-radio" aria-hidden="true">{!floorType ? <span /> : null}</span>
+          <span><strong>Aucun plancher</strong><small>Sol moquette standard conservé</small></span>
+          <em>Inclus</em>
+        </button>
+        {technicalFloorOptions.map((option) => {
+          const active = floorType === option.id;
+          return (
+            <button key={option.id} type="button" className={active ? 'active' : ''} disabled={disabled} onClick={() => onFloorType(option.id)}>
+              <span className="reserve-choice-radio" aria-hidden="true">{active ? <span /> : null}</span>
+              <span><strong>{option.label.replace('Plancher technique ', '')}</strong><small>{option.detail}</small></span>
+              <em>{option.price} € HT/m²</em>
+            </button>
+          );
+        })}
       </div>
 
       {selectedFloor && (
         <>
           <div className="technical-floor-detail">
-            <strong>{selectedFloor.detail}</strong>
+            <strong>{selectedFloor.reference}</strong>
             <span>{formatNumber(area)} m² × {selectedFloor.price} € HT/m² = {estimated.toLocaleString('fr-FR')} € HT</span>
             <small>Cornières uniquement sur : {openEdges.map(technicalFloorEdgeLabel).join(', ')}</small>
-            <small>Le plancher technique retire automatiquement l’empreinte moquette : son prix est donc retiré du total.</small>
           </div>
           <div className="technical-floor-actions">
             <span>Type de cornière</span>
@@ -3026,7 +3038,7 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
           <div className="technical-floor-ramp-required">
             <span>
               <strong>Rampe obligatoire</strong>
-              <small>{selectedFloor.rampLabel} · elle se place devant la scène et peut être déplacée horizontalement dans la vue 3D.</small>
+              <small>{selectedFloor.rampLabel} · elle est intégrée au plancher et peut être déplacée horizontalement dans la vue 3D.</small>
             </span>
           </div>
         </>
