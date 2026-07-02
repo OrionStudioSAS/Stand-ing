@@ -9459,7 +9459,8 @@ function wallMountedNormalOffset(item, objectSurface = false) {
   if (isPosterItem(item)) return (objectSurface ? wallThickness / 2 : wallThickness) + 0.006;
   if (item?.type === 'screen') return wallThickness + screenDepth / 2;
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
-  return wallThickness + Math.max(0.02, depth / 2);
+  const extraOffset = isPartitionHeadItem(item) ? 0.01 : 0;
+  return wallThickness + Math.max(0.02, depth / 2) + extraOffset;
 }
 
 function posterObjectSurfaceRegion(item, surface) {
@@ -10169,28 +10170,12 @@ function SceneItemContent({ item, selected, hovered, dragging, visualContext }) 
       {item.modelUrl && (
         <>
           <ObjHitbox bounds={bounds} centerY={centerY} />
-          <PartitionHeadWallMask item={item} bounds={bounds} />
           <Model3D item={item} selected={selected} hovered={hovered} dragging={dragging} visualContext={visualContext} />
           <ObjectBaseboards item={item} />
         </>
       )}
       {selected && <SelectionFrame bounds={bounds} centerY={centerY} />}
     </>
-  );
-}
-
-function PartitionHeadWallMask({ item, bounds }) {
-  if (!isSmclPartitionHeadItem(item)) return null;
-  const width = Math.max(0.62, Number(bounds?.width || 0.6) + 0.025);
-  const height = Math.max(2.45, Number(bounds?.height || 2.4) + 0.08);
-  const centerX = Number(bounds?.centerX || 0);
-  const wallPlaneZ = -wallMountedNormalOffset(item, false) + wallThickness + 0.006;
-  const z = Math.max(Number(bounds?.minZ ?? -0.055), wallPlaneZ);
-  return (
-    <mesh position={[centerX, height / 2, z]} renderOrder={0}>
-      <planeGeometry args={[width, height]} />
-      <meshBasicMaterial color="#d8cfbd" side={DoubleSide} />
-    </mesh>
   );
 }
 
