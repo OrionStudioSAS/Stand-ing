@@ -10169,12 +10169,27 @@ function SceneItemContent({ item, selected, hovered, dragging, visualContext }) 
       {item.modelUrl && (
         <>
           <ObjHitbox bounds={bounds} centerY={centerY} />
+          <PartitionHeadWallMask item={item} bounds={bounds} />
           <Model3D item={item} selected={selected} hovered={hovered} dragging={dragging} visualContext={visualContext} />
           <ObjectBaseboards item={item} />
         </>
       )}
       {selected && <SelectionFrame bounds={bounds} centerY={centerY} />}
     </>
+  );
+}
+
+function PartitionHeadWallMask({ item, bounds }) {
+  if (!isSmclPartitionHeadItem(item)) return null;
+  const width = Math.max(0.62, Number(bounds?.width || 0.6) + 0.025);
+  const height = Math.max(2.45, Number(bounds?.height || 2.4) + 0.08);
+  const centerX = Number(bounds?.centerX || 0);
+  const z = Number(bounds?.minZ ?? bounds?.centerZ ?? -0.05) - 0.006;
+  return (
+    <mesh position={[centerX, height / 2, z]} renderOrder={0}>
+      <planeGeometry args={[width, height]} />
+      <meshStandardMaterial color="#d8cfbd" roughness={0.92} metalness={0} side={DoubleSide} />
+    </mesh>
   );
 }
 
