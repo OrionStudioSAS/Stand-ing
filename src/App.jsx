@@ -2280,6 +2280,7 @@ function OptionsStepPanel({
 
 function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, readOnly = false, onAdd, onRemove, onSelectItem, onConfigureItem, onNext }) {
   const [activeCategory, setActiveCategory] = useState('all');
+  const [search, setSearch] = useState('');
   const groupedVariantTypes = variantGroupMemberTypes(catalog);
   const entries = catalog.filter((entry) => (
     !['hidden'].includes(furniturePanelCategory(entry))
@@ -2291,12 +2292,22 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
   const filteredEntries = entries.filter((entry) => {
     const entryCategory = furniturePanelCategory(entry);
     const matchesCategory = activeCategory === 'all' || entryCategory === activeCategory || normalizeMarketCategory(entry) === activeCategory;
-    return matchesCategory;
+    const searchText = [entry.label, entry.type, entry.dimensions?.category, marketplaceItemSubtitle(entry, marketCategoryMeta(normalizeMarketCategory(entry)).label)]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    const matchesSearch = !search || searchText.includes(search.toLowerCase());
+    return matchesCategory && matchesSearch;
   });
   return (
     <>
       <PanelHead title="Bibliothèque accessoires" step={3} />
       <p className="marketplace-subtitle">Cliquez un accessoire pour le configurer</p>
+
+      <label className="marketplace-search">
+        <Search size={15} />
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un accessoire..." />
+      </label>
 
       <nav className="marketplace-tabs" aria-label="Filtrer les accessoires">
         {categories.map((category) => (
@@ -5316,11 +5327,13 @@ function clientStatusSummary(client) {
 function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onUploadAssetFolder, onUploadColorGroup }) {
   const [groupCreatorOpen, setGroupCreatorOpen] = useState(false);
   const [variantGroupCreatorOpen, setVariantGroupCreatorOpen] = useState(false);
+  const [assetSearch, setAssetSearch] = useState(search || '');
   const categories = ['Tout', 'Groupes', 'Groupes de variantes', 'Groupes de couleurs', ...assetCategoryOptions];
   const filteredAssets = assets.filter((asset) => {
     const assetCategory = assetCategoryLabel(asset);
     const matchesCategory = category === 'Tout' || assetCategory === category;
-    const matchesSearch = !search || [asset.label, asset.type, assetCategory].filter(Boolean).some((value) => value.toLowerCase().includes(search.toLowerCase()));
+    const normalizedSearch = assetSearch.trim().toLowerCase();
+    const matchesSearch = !normalizedSearch || [asset.label, asset.type, assetCategory].filter(Boolean).some((value) => value.toLowerCase().includes(normalizedSearch));
     return matchesCategory && matchesSearch;
   });
 
@@ -5390,6 +5403,11 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
           {uploadState.error || uploadState.message}
         </div>
       )}
+
+      <label className="asset-search-box">
+        <Search size={16} />
+        <input value={assetSearch} onChange={(event) => setAssetSearch(event.target.value)} placeholder="Rechercher un asset 3D..." />
+      </label>
 
       <nav className="asset-category-tabs" aria-label="Categories assets">
         {categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => onCategoryChange(item)}>{item}</button>)}
