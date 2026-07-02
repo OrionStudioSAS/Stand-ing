@@ -59,7 +59,7 @@ const wallItemSnap = 0.25;
 const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
 const collisionPadding = 0.04;
-const partitionHeadEdgeInset = 0.04;
+const partitionHeadEdgeInset = 0.015;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
@@ -9459,7 +9459,7 @@ function wallMountedNormalOffset(item, objectSurface = false) {
   if (isPosterItem(item)) return (objectSurface ? wallThickness / 2 : wallThickness) + 0.006;
   if (item?.type === 'screen') return wallThickness + screenDepth / 2;
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
-  const extraOffset = isPartitionHeadItem(item) ? 0.012 : 0;
+  const extraOffset = isPartitionHeadItem(item) ? 0.0075 : 0;
   return wallThickness + Math.max(0.02, depth / 2) + extraOffset;
 }
 
@@ -10072,13 +10072,11 @@ function wallBaseboardSegments(wall, width, depth, items = []) {
 }
 
 function WallFabricSurfaces({ width, depth, layout, items = [], color }) {
-  const surfaces = wallCoverSurfaceOptions(layout, width, depth, items).filter((surface) => surface.kind === 'wall');
+  const surfaces = wallCoverSurfaceOptions(layout, width, depth, items);
   return (
     <group>
-      {surfaces.flatMap((surface) => (
-        wallCoverSegmentsForSurface(surface, items, width, depth).map((segment) => (
-          <WallFabricSurface key={`fabric-${segment.id}`} surface={segment} color={color} />
-        ))
+      {surfaces.map((surface) => (
+        <WallFabricSurface key={`fabric-${surface.id}`} surface={surface} color={color} />
       ))}
     </group>
   );
