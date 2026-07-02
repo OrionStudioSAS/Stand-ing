@@ -2209,7 +2209,7 @@ function OptionsStepPanel({
           onChange={onLedRailsEnabled}
         />
       </OptionAccordion>
-      <OptionAccordion title="Reserve" icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
+      <OptionAccordion title="Réserve" icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
         <ReserveOptionCard
           rule={reserveRule}
           selectedOptionType={reserveOptionType}
@@ -2996,79 +2996,153 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
 }
 
 function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonLabel = '', disabled = false, onChange }) {
-  const options = normalizeComplementaryOptions(rule?.options || []);
-  if (!rule?.includedType && !options.length) {
+  const [formulaOpen, setFormulaOpen] = useState(false);
+  const rows = reserveChoiceRows(rule, catalog, salonLabel);
+  const includedRow = rows.find((row) => row.included) || null;
+  const noneSelected = selectedOptionType === '__none__';
+
+  if (!rule?.includedType && !rows.length) {
     return (
-      <div className="reserve-option-card">
-        <strong>Aucune réserve configurée</strong>
-        <span>Cette surface ne déclenche pas de réserve automatique ni d’option complémentaire.</span>
+      <div className="reserve-choice-panel">
+        <FormulaIncludedBox open={formulaOpen} onToggle={() => setFormulaOpen((current) => !current)} includedRow={null} />
+        <div className="reserve-empty-card">
+          <strong>Aucune réserve configurée</strong>
+          <span>Cette surface ne déclenche pas de réserve automatique ni d’option complémentaire.</span>
+        </div>
       </div>
     );
   }
 
-  const includedEntry = findCatalogEntry(catalog, rule.includedType);
-  const noneSelected = selectedOptionType === '__none__';
-  const includedSelected = !selectedOptionType;
-
   return (
-    <div className="reserve-option-card">
-      {rule?.includedType ? (
-        <button
-          type="button"
-          className={includedSelected ? 'active' : ''}
-          disabled={disabled}
-          onClick={() => onChange('')}
-        >
-          <span>
-            {rule.includedLabel || includedEntry?.label || 'Réserve incluse'}
-            <em>Incluse dans la scène de départ · 0 € HT</em>
-          </span>
-          {includedSelected ? <Check size={16} /> : <Plus size={16} />}
-        </button>
-      ) : (
+    <div className="reserve-choice-panel">
+      <FormulaIncludedBox open={formulaOpen} onToggle={() => setFormulaOpen((current) => !current)} includedRow={includedRow} />
+      <strong className="reserve-choice-title">Choisissez une taille</strong>
+      <div className="reserve-choice-list">
+        {rows.map((row) => {
+          const selected = !noneSelected && (row.included ? !selectedOptionType : selectedOptionType === row.type);
+          return (
+            <button
+              key={row.key}
+              type="button"
+              className={selected ? 'reserve-choice-card active' : 'reserve-choice-card'}
+              disabled={disabled}
+              onClick={() => onChange(row.included ? '' : (selected && !rule?.includedType ? '' : row.type))}
+            >
+              <span className="reserve-choice-radio" aria-hidden="true">{selected ? <span /> : null}</span>
+              <span className="reserve-choice-copy">
+                <strong>{row.sizeName} <b>{row.areaLabel}</b>{row.recommended ? <em>Recommandé</em> : null}</strong>
+                <small>{row.description}</small>
+                <i />
+              </span>
+              <span className={row.included ? 'reserve-choice-price included' : 'reserve-choice-price'}>
+                {row.included ? 'Inclus' : `+ ${row.price.toLocaleString('fr-FR')} € HT`}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        className={noneSelected ? 'reserve-remove-button active' : 'reserve-remove-button'}
+        disabled={disabled || (!rule?.includedType && !selectedOptionType)}
+        onClick={() => onChange(noneSelected ? '' : '__none__')}
+      >
+        <X size={15} /> Supprimer la réserve
+      </button>
+    </div>
+  );
+}
+
+function FormulaIncludedBox({ open, onToggle, includedRow }) {
+  return (
+    <div className={open ? 'formula-included-box open' : 'formula-included-box'}>
+      <button type="button" onClick={onToggle}>
+        <span><b>!</b> Votre formule inclus :</span>
+        {open ? <Minus size={16} /> : <Plus size={16} />}
+      </button>
+      {open && (
         <div>
-          <strong>Pas de réserve incluse</strong>
-          <span>Tu peux choisir une option payante ci-dessous.</span>
+          {includedRow ? (
+            <>
+              <p>Une réserve {includedRow.areaLabel} est incluse dans votre formule.</p>
+              <p>Une enseigne de 1000 × 1000 mm ht.</p>
+              <p>Une réserve permet de stocker votre matériel, vos sacs et documents à l'abri des regards.</p>
+            </>
+          ) : (
+            <p>Aucune réserve n'est incluse automatiquement pour cette surface.</p>
+          )}
         </div>
-      )}
-
-      {options.length ? options.map((option) => {
-        const entry = findCatalogEntry(catalog, option.type);
-        const selected = selectedOptionType === option.type;
-        const price = reserveOptionPrice(option, entry, salonLabel);
-        return (
-          <button
-            type="button"
-            key={option.type}
-            className={selected ? 'active' : ''}
-            disabled={disabled}
-            onClick={() => onChange(selected && !rule?.includedType ? '' : option.type)}
-          >
-            <span>
-              {option.label || entry?.label || 'Réserve complémentaire'}
-              <em>{selected ? 'Option sélectionnée' : `+ ${price.toLocaleString('fr-FR')} € HT`}</em>
-            </span>
-            {selected ? <Check size={16} /> : <Plus size={16} />}
-          </button>
-        );
-      }) : <small>Aucune option complémentaire configurée sur ce pack.</small>}
-
-      {rule?.includedType && (
-        <button
-          type="button"
-          className={noneSelected ? 'active' : ''}
-          disabled={disabled}
-          onClick={() => onChange(noneSelected ? '' : '__none__')}
-        >
-          <span>
-            Sans réserve
-            <em>{noneSelected ? 'Réserve retirée' : 'Retirer la réserve de la scène'}</em>
-          </span>
-          {noneSelected ? <Check size={16} /> : <Minus size={16} />}
-        </button>
       )}
     </div>
   );
+}
+
+function reserveChoiceRows(rule, catalog = [], salonLabel = '') {
+  const rows = [];
+  if (rule?.includedType) {
+    const entry = findCatalogEntry(catalog, rule.includedType);
+    rows.push(reserveChoiceRow({ type: rule.includedType, label: rule.includedLabel, entry, included: true, price: 0 }));
+  }
+
+  normalizeComplementaryOptions(rule?.options || []).forEach((option) => {
+    const entry = findCatalogEntry(catalog, option.type);
+    rows.push(reserveChoiceRow({
+      type: option.type,
+      label: option.label,
+      entry,
+      included: false,
+      price: reserveOptionPrice(option, entry, salonLabel),
+    }));
+  });
+
+  return rows
+    .filter((row, index, list) => row.type && list.findIndex((item) => item.type === row.type) === index)
+    .sort((a, b) => a.area - b.area || Number(b.included) - Number(a.included));
+}
+
+function reserveChoiceRow({ type, label, entry, included = false, price = 0 }) {
+  const fullLabel = label || entry?.label || 'Réserve';
+  const area = reserveAreaFromText(`${fullLabel} ${type}`);
+  return {
+    key: included ? `included-${type}` : `option-${type}`,
+    type,
+    included,
+    price: Math.max(0, Number(price || 0)),
+    area,
+    areaLabel: area ? `${formatAreaValue(area)} m²` : '',
+    sizeName: reserveSizeName(area, fullLabel),
+    description: reserveSizeDescription(area, fullLabel),
+    recommended: area >= 1.75 && area <= 2.5,
+  };
+}
+
+function reserveAreaFromText(text = '') {
+  const normalized = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(',', '.');
+  const match = normalized.match(/(\d+(?:\.\d+)?)\s*m\s*(?:2|²|carre|²)?/);
+  if (match) return Number(match[1]);
+  const compact = normalized.match(/(\d+(?:\.\d+)?)m2/);
+  return compact ? Number(compact[1]) : 0;
+}
+
+function formatAreaValue(value = 0) {
+  return Number(value || 0).toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+}
+
+function reserveSizeName(area = 0, label = '') {
+  const text = normalizeTextValue(label);
+  if (text.includes('petite')) return 'Petite';
+  if (text.includes('standard')) return 'Standard';
+  if (text.includes('grande')) return 'Grande';
+  if (area && area <= 1.25) return 'Petite';
+  if (area && area <= 2.5) return 'Standard';
+  return 'Grande';
+}
+
+function reserveSizeDescription(area = 0, label = '') {
+  if (area && area <= 1.25) return '1m × 1m · 1 personne';
+  if (area && area <= 2.5) return '1m × 2m · idéale petits salons';
+  if (area) return '2m × 2m · bagages + sacs équipe';
+  return label || 'Réserve complémentaire';
 }
 
 function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = '', disabled = false, onChange }) {

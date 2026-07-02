@@ -7068,3 +7068,212 @@ img.asset-thumb {
   color: #b54935;
   background: #fff1ef;
 }
+
+.reserve-choice-panel {
+  display: grid;
+  gap: 14px;
+  margin: 0 14px 14px;
+  color: #ffffff;
+}
+
+.formula-included-box {
+  overflow: hidden;
+  border: 1px solid #ff9f1a;
+  border-radius: 6px;
+  background: #fff7e8;
+  color: #c87300;
+}
+
+.formula-included-box > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: 0;
+  padding: 12px 14px;
+  color: #c87300;
+  background: transparent;
+  font-weight: 950;
+  text-align: left;
+}
+
+.formula-included-box > button span {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.formula-included-box b {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  color: #fff;
+  background: #ff9f1a;
+  font-size: 0.8rem;
+}
+
+.formula-included-box > div {
+  display: grid;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.formula-included-box p {
+  margin: 0;
+  color: #c87300;
+  font-size: 0.78rem;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.reserve-choice-title {
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 950;
+}
+
+.reserve-choice-list {
+  display: grid;
+  gap: 10px;
+}
+
+.reserve-choice-card {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  min-height: 74px;
+  border: 1px solid #dce5ef;
+  border-radius: 7px;
+  padding: 12px 14px;
+  color: #171b22;
+  background: #fff;
+  box-shadow: 0 8px 16px rgba(7, 23, 53, 0.08);
+  text-align: left;
+}
+
+.reserve-choice-card.active {
+  border-color: #4e82dd;
+  box-shadow: inset 0 0 0 1px #4e82dd, 0 8px 16px rgba(7, 23, 53, 0.1);
+}
+
+.reserve-choice-radio {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border: 2px solid #d8dee8;
+  border-radius: 999px;
+}
+
+.reserve-choice-card.active .reserve-choice-radio {
+  border-color: #4778d0;
+}
+
+.reserve-choice-radio span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #4778d0;
+}
+
+.reserve-choice-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.reserve-choice-copy strong {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: #171b22;
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+.reserve-choice-copy b {
+  color: #1f4378;
+  font-size: 0.78rem;
+}
+
+.reserve-choice-copy em {
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #fff;
+  background: #41679e;
+  font-size: 0.56rem;
+  font-style: normal;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.reserve-choice-copy small {
+  color: #8b929c;
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.reserve-choice-copy i {
+  width: 16px;
+  height: 20px;
+  margin-top: 3px;
+  border: 1px solid #3f71bd;
+  background: #e9eef8;
+}
+
+.reserve-choice-price {
+  align-self: center;
+  color: #171b22;
+  font-size: 0.82rem;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.reserve-choice-price.included {
+  border-radius: 5px;
+  padding: 5px 7px;
+  color: #198047;
+  background: #d9f3df;
+}
+
+.reserve-remove-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid #ff3f3f;
+  border-radius: 5px;
+  color: #ff3f3f;
+  background: #fff;
+  font-weight: 950;
+}
+
+.reserve-remove-button.active {
+  color: #fff;
+  background: #ff3f3f;
+}
+
+.reserve-remove-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.reserve-empty-card {
+  display: grid;
+  gap: 4px;
+  border-radius: 7px;
+  padding: 14px;
+  color: #202631;
+  background: #fff;
+}
+
+.reserve-empty-card span {
+  color: #8b929c;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
