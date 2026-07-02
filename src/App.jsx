@@ -9459,7 +9459,7 @@ function wallMountedNormalOffset(item, objectSurface = false) {
   if (isPosterItem(item)) return (objectSurface ? wallThickness / 2 : wallThickness) + 0.006;
   if (item?.type === 'screen') return wallThickness + screenDepth / 2;
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
-  const extraOffset = isPartitionHeadItem(item) ? 0.01 : 0;
+  const extraOffset = isPartitionHeadItem(item) ? 0.005 : 0;
   return wallThickness + Math.max(0.02, depth / 2) + extraOffset;
 }
 
@@ -10027,14 +10027,48 @@ function Walls({ width, depth, height, layout, items = [], wallFabricColor, wall
   return (
     <group onPointerDown={() => onDeselect?.()}>
       <Wall position={[0, height / 2, -depth / 2 + wallThickness / 2]} size={[width, height, wallThickness]} />
-      <Baseboard position={[0, baseboardHeight / 2, -depth / 2 + wallThickness + baseboardThickness / 2]} size={[width, baseboardHeight, baseboardThickness]} />
+      <WallBaseboards wall="back" width={width} depth={depth} items={items} />
       {(layout === 'left' || layout === 'u') && <Wall position={[-width / 2 + wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} />}
-      {(layout === 'left' || layout === 'u') && <Baseboard position={[-width / 2 + wallThickness + baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
+      {(layout === 'left' || layout === 'u') && <WallBaseboards wall="left" width={width} depth={depth} items={items} />}
       {(layout === 'right' || layout === 'u') && <Wall position={[width / 2 - wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} />}
-      {(layout === 'right' || layout === 'u') && <Baseboard position={[width / 2 - wallThickness - baseboardThickness / 2, baseboardHeight / 2, sideZ]} size={[baseboardThickness, baseboardHeight, sideDepth]} />}
+      {(layout === 'right' || layout === 'u') && <WallBaseboards wall="right" width={width} depth={depth} items={items} />}
       <WallFabricSurfaces width={width} depth={depth} layout={layout} items={items} color={wallFabricColor} />
     </group>
   );
+}
+
+function WallBaseboards({ wall, width, depth, items = [] }) {
+  const y = baseboardHeight / 2;
+  return (
+    <>
+      {wallBaseboardSegments(wall, width, depth, items).map((segment, index) => {
+        const length = segment.max - segment.min;
+        const center = (segment.min + segment.max) / 2;
+        const position = wall === 'back'
+          ? [center, y, -depth / 2 + wallThickness + baseboardThickness / 2]
+          : [
+              wall === 'left' ? -width / 2 + wallThickness + baseboardThickness / 2 : width / 2 - wallThickness - baseboardThickness / 2,
+              y,
+              center,
+            ];
+        const size = wall === 'back'
+          ? [length, baseboardHeight, baseboardThickness]
+          : [baseboardThickness, baseboardHeight, length];
+        return <Baseboard key={`${wall}-baseboard-${index}`} position={position} size={size} />;
+      })}
+    </>
+  );
+}
+
+function wallBaseboardSegments(wall, width, depth, items = []) {
+  const limits = wallAxisLimits(wall, width, depth);
+  const blockers = (items || [])
+    .filter((item) => isPartitionHeadItem(item) && (item.wall || 'back') === wall)
+    .map((item) => wallMountedBlocker(item, wall, width, depth, 0.03))
+    .filter(Boolean)
+    .map((blocker) => ({ min: clamp(blocker.min, limits.min, limits.max), max: clamp(blocker.max, limits.min, limits.max) }))
+    .filter((blocker) => blocker.max > blocker.min);
+  return freeWallIntervals(limits, blockers).filter((segment) => segment.max - segment.min > 0.05);
 }
 
 function WallFabricSurfaces({ width, depth, layout, items = [], color }) {
@@ -10056,7 +10090,7 @@ function WallFabricSurface({ surface, color }) {
     <group position={position} rotation={[0, surface.rotation, 0]}>
       <mesh renderOrder={1} raycast={() => null}>
         <planeGeometry args={[surface.width, fabricHeight]} />
-        <meshStandardMaterial color={texture ? '#ffffff' : colorHex(color, '#f8f7f3')} map={texture || null} roughness={1} metalness={0} side={DoubleSide} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />
+        <meshStandardMaterial color={texture ? '#ffffff' : colorHex(color, '#f8f7f3')} map={texture || null} roughness={1} metalness={0} side={DoubleSide} depthWrite={false} polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2} />
       </mesh>
     </group>
   );
