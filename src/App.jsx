@@ -10112,11 +10112,14 @@ function WallCoverSurfaces({ width, depth, layout, items = [], covers = {} }) {
 }
 
 function WallCoverSurface({ surface, imageUrl }) {
-  const texture = useExternalTexture(imageUrl || '', { coverSize: posterCoverTextureSize(surface, 2048) });
+  const coverHeight = Math.max(0.1, Number(surface.height || fixedWallHeight) - baseboardHeight);
+  const coverSurface = { ...surface, height: coverHeight };
+  const texture = useExternalTexture(imageUrl || '', { coverSize: posterCoverTextureSize(coverSurface, 2048) });
+  const position = [surface.position[0], baseboardHeight + coverHeight / 2, surface.position[2]];
   return (
-    <group position={surface.position} rotation={[0, surface.rotation, 0]}>
+    <group position={position} rotation={[0, surface.rotation, 0]}>
       <mesh renderOrder={2} raycast={() => null}>
-        <planeGeometry args={[surface.width, surface.height]} />
+        <planeGeometry args={[surface.width, coverHeight]} />
         <meshBasicMaterial color={texture ? '#ffffff' : '#eef2f6'} map={texture || null} side={DoubleSide} toneMapped={false} depthWrite={false} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
       </mesh>
       {!texture && (
