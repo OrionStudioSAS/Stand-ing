@@ -796,6 +796,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     left: hasOwn(initialOptions, 'partitionHeadLeftEnabled') ? Boolean(initialOptions.partitionHeadLeftEnabled) : null,
     right: hasOwn(initialOptions, 'partitionHeadRightEnabled') ? Boolean(initialOptions.partitionHeadRightEnabled) : null,
   });
+  const [partitionHeadVisuals, setPartitionHeadVisuals] = useState(initialOptions.partitionHeadVisuals || {});
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
@@ -921,8 +922,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, salonLabel],
   );
   const automaticPartitionHeadItems = useMemo(
-    () => makeAutomaticPartitionHeadItems(activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, salonLabel),
-    [activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, salonLabel],
+    () => makeAutomaticPartitionHeadItems(activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, salonLabel)
+      .map((item) => applyPartitionHeadVisualOptions(item, partitionHeadVisuals)),
+    [activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, salonLabel, partitionHeadVisuals],
   );
   const autoSpotsRule = useMemo(() => initialOptions.autoSpotsRule || null, [initialOptions]);
   const automaticLedItems = useMemo(
@@ -1035,6 +1037,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       reserveOptionType: effectiveReserveOptionType,
       partitionHeadLeftEnabled: effectivePartitionHeadSides.left,
       partitionHeadRightEnabled: effectivePartitionHeadSides.right,
+      partitionHeadVisuals,
     };
 
     return {
@@ -1084,7 +1087,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
@@ -1141,6 +1144,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const updateItemOptions = (targetItem, patch) => {
     if (!targetItem || readOnly) return;
+    if (isAutomaticPartitionHeadItem(targetItem)) {
+      const side = targetItem.options?.partitionHeadSide || smclPartitionHeadSide(targetItem);
+      if (side) {
+        setPartitionHeadVisuals((current) => ({
+          ...current,
+          [side]: { ...(current?.[side] || {}), ...patch },
+        }));
+      }
+      return;
+    }
     updateItem(targetItem.id, { options: { ...(targetItem.options || {}), ...patch } });
   };
   const uploadItemImage = async (targetItem, file, optionKeys = {}) => {
@@ -1179,6 +1192,24 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       setWallCoverState({ uploading: '', error: '' });
     } catch (error) {
       setWallCoverState({ uploading: '', error: error.message || 'Upload impossible.' });
+    }
+  };
+
+
+  const uploadPartitionHeadVisual = async (side, file) => {
+    if (!side || !file || readOnly) return;
+    setItemOptionState({ uploading: side, error: '' });
+    try {
+      const uploadedUrl = await uploadSceneItemOptionImage(initialScene, { id: `partition-head-${side}`, type: 'partition-head' }, file);
+      const imageUrl = cacheBustedUrl(uploadedUrl);
+      await preloadImage(imageUrl);
+      setPartitionHeadVisuals((current) => ({
+        ...current,
+        [side]: { ...(current?.[side] || {}), headMainImageUrl: imageUrl, headMainImageName: file.name },
+      }));
+      setItemOptionState({ uploading: '', error: '' });
+    } catch (error) {
+      setItemOptionState({ uploading: '', error: error.message || 'Upload impossible.' });
     }
   };
   const openAddItemConfigurator = (entry) => {
@@ -1648,6 +1679,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             reserveOptionType={effectiveReserveOptionType}
             partitionHeadRule={activePartitionHeadRuleConfig}
             partitionHeadSides={effectivePartitionHeadSides}
+            partitionHeadVisuals={partitionHeadVisuals}
+            partitionHeadUploadState={itemOptionState}
             salonLabel={salonLabel}
             catalog={availableCatalog}
             readOnly={readOnly}
@@ -1662,6 +1695,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
             onReserveOption={(type) => { if (!readOnly) { if (type === '__none__') { removeReserve(); } else { setReserveOptionType(type); } } }}
             onPartitionHeadSide={(side, enabled) => !readOnly && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
+            onPartitionHeadImage={uploadPartitionHeadVisual}
             onExport={() => exportTechnicalPng({ width, depth, layout, items: sceneItems, catalog: availableCatalog })}
           />
         )}
@@ -2124,6 +2158,8 @@ function OptionsStepPanel({
   reserveOptionType,
   partitionHeadRule,
   partitionHeadSides,
+  partitionHeadVisuals = {},
+  partitionHeadUploadState = {},
   salonLabel,
   catalog,
   readOnly = false,
@@ -2138,6 +2174,7 @@ function OptionsStepPanel({
   onLedRailsEnabled,
   onReserveOption,
   onPartitionHeadSide,
+  onPartitionHeadImage,
   onExport,
 }) {
   return (
@@ -2219,14 +2256,17 @@ function OptionsStepPanel({
           onChange={onReserveOption}
         />
       </OptionAccordion>
-      <OptionAccordion title="Tete de cloison" icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
+      <OptionAccordion title="Tête de cloison" icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
         <PartitionHeadOptionCard
           rule={partitionHeadRule}
           sides={partitionHeadSides}
           catalog={catalog}
           salonLabel={salonLabel}
           disabled={readOnly}
+          visualOptions={partitionHeadVisuals}
+          uploadState={partitionHeadUploadState}
           onChange={onPartitionHeadSide}
+          onImage={onPartitionHeadImage}
         />
       </OptionAccordion>
       <OptionAccordion title="Comptoir" icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')} />
@@ -3145,36 +3185,112 @@ function reserveSizeDescription(area = 0, label = '') {
   return label || 'Réserve complémentaire';
 }
 
-function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = '', disabled = false, onChange }) {
+function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onImage }) {
+  const [formulaOpen, setFormulaOpen] = useState(true);
   const rows = [
-    { side: 'left', label: 'Tête de cloison gauche', type: rule?.leftType, price: rule?.leftPrice },
-    { side: 'right', label: 'Tête de cloison droite', type: rule?.rightType, price: rule?.rightPrice },
+    { side: 'left', label: 'Tête de cloison gauche', visualLabel: 'Visuel haut de cloison gauche', type: rule?.leftType, price: rule?.leftPrice },
+    { side: 'right', label: 'Tête de cloison droite', visualLabel: 'Visuel haut de cloison droite', type: rule?.rightType, price: rule?.rightPrice },
   ];
+  const selectedRows = rows.filter((row) => Boolean(sides?.[row.side]));
+  const selectedCount = selectedRows.length;
 
   return (
-    <div className="reserve-option-card">
-      {rows.map((row) => {
-        const entry = findCatalogEntry(catalog, row.type);
-        const selected = Boolean(sides?.[row.side]);
-        const previewSides = selected ? sides : { ...sides, [row.side]: true };
-        const billable = partitionHeadBillableSides(rule, previewSides).has(row.side);
-        const price = billable ? firstPriceValue(row.price, assetUnitPrice(entry, salonLabel), 0) : 0;
-        return (
-          <button
-            key={row.side}
-            type="button"
-            className={selected ? 'active' : ''}
-            disabled={disabled || !row.type}
-            onClick={() => onChange(row.side, !selected)}
-          >
-            <span>
-              {row.label}
-              <em>{row.type ? (billable ? `+ ${price.toLocaleString('fr-FR')} € HT` : 'Inclus · 0 € HT') : 'Non configurée'}</em>
-            </span>
-            {selected ? <Check size={16} /> : <Plus size={16} />}
-          </button>
-        );
-      })}
+    <div className="partition-head-panel">
+      <PartitionHeadFormulaBox open={formulaOpen} onToggle={() => setFormulaOpen((current) => !current)} />
+
+      <div className="partition-head-choice-grid">
+        {rows.map((row) => {
+          const entry = findCatalogEntry(catalog, row.type);
+          const selected = Boolean(sides?.[row.side]);
+          const previewSides = selected ? sides : { ...sides, [row.side]: true };
+          const billable = partitionHeadBillableSides(rule, previewSides).has(row.side);
+          const price = billable ? firstPriceValue(row.price, assetUnitPrice(entry, salonLabel), 0) : 0;
+          return (
+            <button
+              key={row.side}
+              type="button"
+              className={selected ? 'partition-head-side-card active' : 'partition-head-side-card'}
+              disabled={disabled || !row.type}
+              onClick={() => onChange(row.side, !selected)}
+            >
+              <span className="reserve-choice-radio" aria-hidden="true">{selected ? <span /> : null}</span>
+              <span>
+                <strong>{row.side === 'left' ? 'Gauche' : 'Droite'}</strong>
+                <small>{row.type ? (billable ? `+ ${price.toLocaleString('fr-FR')} € HT` : 'Inclus') : 'Non configurée'}</small>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {selectedRows.length ? selectedRows.map((row) => (
+        <PartitionHeadVisualUpload
+          key={row.side}
+          row={row}
+          visual={visualOptions?.[row.side] || {}}
+          uploading={uploadState?.uploading === row.side}
+          disabled={disabled}
+          onImage={(file) => onImage?.(row.side, file)}
+        />
+      )) : (
+        <div className="partition-head-empty">Sélectionnez une tête de cloison pour ajouter un visuel.</div>
+      )}
+
+      <button
+        type="button"
+        className="partition-head-remove-button"
+        disabled={disabled || !selectedCount}
+        onClick={() => {
+          onChange('left', false);
+          onChange('right', false);
+        }}
+      >
+        <X size={15} /> Supprimer les têtes de cloison
+      </button>
+    </div>
+  );
+}
+
+function PartitionHeadFormulaBox({ open, onToggle }) {
+  return (
+    <div className={open ? 'formula-included-box partition-head-formula open' : 'formula-included-box partition-head-formula'}>
+      <button type="button" onClick={onToggle}>
+        <span><b>!</b> Votre formule inclus :</span>
+        {open ? <Minus size={16} /> : <Plus size={16} />}
+      </button>
+      {open && (
+        <div>
+          <p>Cliquer directement sur le(s) visuel(s) puis sur le crayon pour ajouter votre logo ou visuel au format de 800 × 500 mm ht.</p>
+          <p>Pour modifier votre nom, N° ou drapeau, cliquer sur « mes informations » en haut à droite.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabled = false, onImage }) {
+  const hasImage = Boolean(visual.headMainImageUrl);
+  return (
+    <div className="partition-head-upload-block">
+      <div className="partition-head-upload-title">
+        <strong>{row.visualLabel}</strong>
+        <span>800 × 500 mm</span>
+      </div>
+      <label className={hasImage ? 'partition-head-dropzone has-image' : 'partition-head-dropzone'}>
+        {hasImage ? <img src={visual.headMainImageUrl} alt={row.visualLabel} /> : <FileImage size={24} />}
+        <strong>{uploading ? 'Upload...' : 'Glissez votre visuel'}</strong>
+        <span>Parcourir</span>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          disabled={disabled || uploading}
+          onChange={(event) => {
+            onImage?.(event.target.files?.[0]);
+            event.target.value = '';
+          }}
+        />
+      </label>
+      {visual.headMainImageName && <small className="partition-head-file-name">{visual.headMainImageName}</small>}
     </div>
   );
 }
@@ -7390,6 +7506,19 @@ function makeAutomaticPartitionHeadItems(rule, sides = {}, catalogEntries = [], 
 
 function isAutomaticPartitionHeadItem(item = {}) {
   return Boolean(item?.autoPartitionHead || item?.dimensions?.autoPartitionHead);
+}
+
+function applyPartitionHeadVisualOptions(item = {}, visuals = {}) {
+  const side = item.options?.partitionHeadSide || item.dimensions?.smclHeadSide || smclPartitionHeadSide(item);
+  const visual = side ? visuals?.[side] : null;
+  if (!visual) return item;
+  return {
+    ...item,
+    options: {
+      ...(item.options || {}),
+      ...visual,
+    },
+  };
 }
 
 function partitionHeadSummary(rule, sides = {}) {
