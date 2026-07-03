@@ -2223,7 +2223,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
               const supplement = Math.max(0, Number(variant.price || 0) - baseVariantPrice);
               return (
                 <button key={variant.id} type="button" className={active ? 'active' : ''} disabled={disabled} onClick={() => selectVariant(variant)}>
-                  <span><strong>{counterSizeLabel(variant)}</strong><small>{variant.detail || variant.label}</small></span>
+                  <span><strong>{counterSizeLabel(variant)}</strong></span>
                   <em>{supplement > 0 ? `+ ${supplement.toLocaleString('fr-FR')} € HT` : 'Inclus'}</em>
                 </button>
               );
@@ -2375,11 +2375,13 @@ function isCounterVariantGroup(entry = {}) {
 }
 
 function counterSizeLabel(variant = {}) {
+  const text = normalizeTextValue(`${variant.label || ''} ${variant.assetType || ''} ${variant.detail || ''}`);
   const size = itemDefaultSize(variant.entry || {});
   const width = Number(size?.[0] || 0);
-  if (width) return `${formatNumber(width)} m`;
-  const match = `${variant.label || ''}`.match(/(\d+(?:[,.]\d+)?)\s*m/i);
-  return match ? `${match[1].replace(',', '.')} m` : variant.label || 'Taille';
+  const raw = width || Number((text.match(/(\d+(?:[,.]\d+)?)\s*m/) || [])[1]?.replace(',', '.') || 0);
+  if (raw >= 1.85) return '2 mètres';
+  if (raw >= 1.25) return '1 mètre 50';
+  return '1 mètre';
 }
 
 function counterWhiteFinish() {
