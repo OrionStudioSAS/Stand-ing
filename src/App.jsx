@@ -10567,9 +10567,9 @@ function TechnicalFloorAccessories({ width, depth, layout, height, trimType, ram
 
   return (
     <group>
-      {edges.includes('front') && <TechnicalTrim edge="front" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} gapCenter={resolvedRampX} gapWidth={sloped ? 0 : rampWidth + 0.08} />}
-      {edges.includes('left') && <TechnicalTrim edge="left" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} />}
-      {edges.includes('right') && <TechnicalTrim edge="right" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} />}
+      {edges.includes('front') && <TechnicalTrim edge="front" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} gapCenter={resolvedRampX} gapWidth={sloped ? 0 : rampWidth + 0.08} hasLeftEdge={edges.includes('left')} hasRightEdge={edges.includes('right')} />}
+      {edges.includes('left') && <TechnicalTrim edge="left" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} hasFrontEdge={edges.includes('front')} />}
+      {edges.includes('right') && <TechnicalTrim edge="right" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} hasFrontEdge={edges.includes('front')} />}
       {!sloped && <mesh
           castShadow
           receiveShadow
@@ -10641,21 +10641,29 @@ function RampGeometry({ width, depth, height, yOffset = 0.006, includeBackFace =
   return <primitive object={geometry} attach="geometry" />;
 }
 
-function TechnicalTrim({ edge, width, depth, height, thickness, sloped, gapCenter = 0, gapWidth = 0 }) {
+function TechnicalTrim({ edge, width, depth, height, thickness, sloped, gapCenter = 0, gapWidth = 0, hasFrontEdge = false, hasLeftEdge = false, hasRightEdge = false }) {
   const isFront = edge === 'front';
   const length = isFront ? width : depth;
   const materialColor = sloped ? '#c7ccd2' : '#eef1f4';
 
   if (sloped) {
     const slopeDepth = Math.max(0.02, Number(thickness || height || 0.04));
+    const cornerInsetLeft = isFront && hasLeftEdge ? slopeDepth : 0;
+    const cornerInsetRight = isFront && hasRightEdge ? slopeDepth : 0;
+    const frontInset = !isFront && hasFrontEdge ? slopeDepth : 0;
+    const effectiveLength = Math.max(0.02, length - cornerInsetLeft - cornerInsetRight - frontInset);
     const position = isFront
-      ? [0, -height, depth / 2 - slopeDepth / 2]
-      : [edge === 'left' ? -width / 2 + slopeDepth / 2 : width / 2 - slopeDepth / 2, -height, 0];
+      ? [(cornerInsetLeft - cornerInsetRight) / 2, -height, depth / 2 - slopeDepth / 2]
+      : [
+        edge === 'left' ? -width / 2 + slopeDepth / 2 : width / 2 - slopeDepth / 2,
+        -height,
+        -frontInset / 2,
+      ];
     const rotation = isFront ? [0, 0, 0] : [0, edge === 'left' ? -Math.PI / 2 : Math.PI / 2, 0];
     return (
       <mesh castShadow receiveShadow position={position} rotation={rotation}>
-        <RampGeometry width={length} depth={slopeDepth} height={height} yOffset={0} includeBackFace={false} includeBottomFace={false} />
-        <meshStandardMaterial color={materialColor} roughness={0.52} metalness={0.04} />
+        <RampGeometry width={effectiveLength} depth={slopeDepth} height={height} yOffset={0.001} includeBackFace={false} includeBottomFace={false} />
+        <meshStandardMaterial color={materialColor} roughness={0.52} metalness={0.04} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
       </mesh>
     );
   }
