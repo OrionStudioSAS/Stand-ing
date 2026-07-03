@@ -2442,7 +2442,7 @@ function OptionsStepPanel({
           onImage={onPartitionHeadImage}
         />
       </OptionAccordion>
-      <OptionAccordion title="Comptoir" icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
+      <OptionAccordion title="Banque d’accueil" icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
         <CounterOptionCard
           items={counterItems}
           colors={counterColors}
