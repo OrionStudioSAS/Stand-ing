@@ -3672,6 +3672,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
       )) : (
         <div className="partition-head-empty">Sélectionnez une tête de cloison pour ajouter un visuel.</div>
       )}
+      {uploadState?.error && <small className="partition-head-upload-error">{uploadState.error}</small>}
 
       <button
         type="button"

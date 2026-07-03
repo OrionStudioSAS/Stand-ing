@@ -7510,6 +7510,16 @@ img.asset-thumb {
   font-weight: 800;
 }
 
+.partition-head-upload-error {
+  display: block;
+  border-radius: 7px;
+  padding: 10px 12px;
+  color: #b42318;
+  background: #fff2f1;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
 .partition-head-empty {
   border: 1px dashed rgba(255, 255, 255, 0.35);
   border-radius: 7px;
