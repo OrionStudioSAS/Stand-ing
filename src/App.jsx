@@ -1172,6 +1172,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }
     updateItem(targetItem.id, { options: { ...(targetItem.options || {}), ...patch } });
   };
+
+  const updateIncludedCounterVariant = (targetItem, variantEntry, patch = {}) => {
+    if (!targetItem || !variantEntry || readOnly) return;
+    replaceItemWithEntry(targetItem, variantEntry, { ...(targetItem.options || {}), ...patch });
+  };
+
   const uploadItemImage = async (targetItem, file, optionKeys = {}) => {
     if (!targetItem || !file) return;
     const urlKey = optionKeys.urlKey || 'headMainImageUrl';
@@ -1261,7 +1267,17 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const replaceItemWithEntry = (item, entry, options = {}) => {
     setItems((current) => {
-      const nextBase = { ...makeItem(entry.type, width, depth, layout, entry), id: item.id, options };
+      const nextBase = {
+        ...makeItem(entry.type, width, depth, layout, entry),
+        id: item.id,
+        options,
+        included: item.included,
+        priceMode: item.priceMode,
+        price_mode: item.price_mode,
+        basePresetId: item.basePresetId,
+        presetAnchor: item.presetAnchor,
+        presetReferenceSize: item.presetReferenceSize,
+      };
       const samePlacementMode = isWallItem(item) === isWallItem(nextBase);
       const compatiblePosition = samePlacementMode
         ? {
@@ -1718,6 +1734,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onPartitionHeadImage={uploadPartitionHeadVisual}
             onCounterImage={(item, file, optionKeys) => uploadItemImage(item, file, optionKeys)}
             onCounterOptions={updateItemOptions}
+            onCounterVariant={updateIncludedCounterVariant}
             onSelectCounter={setSelectedId}
             onExport={() => exportTechnicalPng({ width, depth, layout, items: sceneItems, catalog: availableCatalog })}
           />
@@ -2095,7 +2112,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
   );
 }
 
-function CounterOptionCard({ items = [], colors = [], uploadState = {}, disabled = false, onImage, onOptions, onSelect }) {
+function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel = '', uploadState = {}, disabled = false, onImage, onOptions, onVariant, onSelect }) {
   const [selectedCounterId, setSelectedCounterId] = useState(items[0]?.id || '');
 
   useEffect(() => {
@@ -2109,8 +2126,20 @@ function CounterOptionCard({ items = [], colors = [], uploadState = {}, disabled
   }, [items, selectedCounterId]);
 
   const selectedItem = items.find((item) => item.id === selectedCounterId) || items[0] || null;
-  const selectedColorId = selectedItem?.options?.binary2ColorId || '';
+  const counterVariants = counterVariantOptions(catalog, salonLabel);
+  const baseVariant = counterVariants[0] || null;
+  const selectedVariant = counterVariants.find((variant) => variant.assetType === selectedItem?.type || variant.id === selectedItem?.options?.variantId) || baseVariant;
+  const baseVariantPrice = Number(baseVariant?.price || 0);
+  const selectedColorId = selectedItem?.options?.binary2ColorId || counterWhiteFinish().id;
+  const selectedFinish = counterFinishOptions(colors).find((finish) => finish.id === selectedColorId) || counterWhiteFinish();
   const imageName = selectedItem?.options?.binary3ImageName || 'Aucun logo personnalisé';
+  const logoInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!selectedItem || disabled) return;
+    if (selectedItem.options?.binary2ColorId || selectedItem.options?.binary2Color) return;
+    onOptions?.(selectedItem, counterFinishPatch(counterWhiteFinish()));
+  }, [selectedItem?.id, disabled]);
 
   const selectCounter = (id) => {
     setSelectedCounterId(id);
@@ -2124,12 +2153,31 @@ function CounterOptionCard({ items = [], colors = [], uploadState = {}, disabled
     if (!selectedItem || !file) return;
     onImage?.(selectedItem, file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName' });
   };
+  const selectVariant = (variant) => {
+    if (!selectedItem || !variant?.entry) return;
+    const upgradePrice = Math.max(0, Number(variant.price || 0) - baseVariantPrice);
+    onVariant?.(selectedItem, variant.entry, {
+      ...(selectedItem.options || {}),
+      variantId: variant.id,
+      variantLabel: variant.label,
+      variantReference: variant.reference,
+      variantAssetType: variant.assetType,
+      variantUpgradePrice: upgradePrice,
+      variantBasePrice: baseVariantPrice,
+      includedBaseType: baseVariant?.assetType || '',
+      unitPrice: 0,
+    });
+  };
+  const selectFinish = (finish) => {
+    if (!selectedItem) return;
+    updateSelected(counterFinishPatch(finish));
+  };
 
   if (!items.length) {
     return (
       <div className="counter-option-panel">
         <div className="counter-empty-card">
-          <strong>Aucun comptoir sur cette scène</strong>
+          <strong>Aucune banque d’accueil sur cette scène</strong>
           <span>Le paramétrage apparaîtra ici dès qu’une banque d’accueil sera incluse dans la configuration de base.</span>
         </div>
       </div>
@@ -2140,12 +2188,12 @@ function CounterOptionCard({ items = [], colors = [], uploadState = {}, disabled
     <div className="counter-option-panel">
       <div className="counter-formula-box">
         <span><b>!</b> Votre formule inclut :</span>
-        <p>Votre banque d’accueil est déjà posée sur le stand. Vous pouvez personnaliser son logo et sa finition ici.</p>
+        <p>Une banque d’accueil 1m en finition blanche, avec l’emplacement logo personnalisable.</p>
       </div>
 
       {items.length > 1 && (
         <div className="counter-selector">
-          <span>Comptoir à personnaliser</span>
+          <span>Banque à personnaliser</span>
           <div>
             {items.map((item, index) => (
               <button
@@ -2154,12 +2202,60 @@ function CounterOptionCard({ items = [], colors = [], uploadState = {}, disabled
                 className={item.id === selectedItem?.id ? 'active' : ''}
                 onClick={() => selectCounter(item.id)}
               >
-                {item.label || `Comptoir ${index + 1}`}
+                {item.label || `Banque ${index + 1}`}
               </button>
             ))}
           </div>
         </div>
       )}
+
+      {counterVariants.length > 1 && (
+        <section className="counter-size-card">
+          <header>
+            <div>
+              <strong>Taille</strong>
+              <span>{selectedVariant?.label || selectedItem?.label || 'Banque d’accueil'}</span>
+            </div>
+          </header>
+          <div className="counter-size-grid">
+            {counterVariants.map((variant) => {
+              const active = selectedVariant?.assetType === variant.assetType;
+              const supplement = Math.max(0, Number(variant.price || 0) - baseVariantPrice);
+              return (
+                <button key={variant.id} type="button" className={active ? 'active' : ''} disabled={disabled} onClick={() => selectVariant(variant)}>
+                  <span><strong>{counterSizeLabel(variant)}</strong><small>{variant.detail || variant.label}</small></span>
+                  <em>{supplement > 0 ? `+ ${supplement.toLocaleString('fr-FR')} € HT` : 'Inclus'}</em>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      <section className="counter-color-card">
+        <header>
+          <div>
+            <strong>Couleur</strong>
+            <span>{selectedFinish.name}{selectedFinish.code ? ` (${selectedFinish.code})` : ''}</span>
+          </div>
+        </header>
+        <div className="counter-color-grid compact">
+          {counterFinishOptions(colors).map((finish) => (
+            <button
+              key={finish.id}
+              type="button"
+              className={selectedColorId === finish.id ? 'active' : ''}
+              style={{ '--swatch-color': finish.hex, '--swatch-image': finish.image ? `url("${finish.image}")` : 'none' }}
+              disabled={disabled}
+              onClick={() => selectFinish(finish)}
+            >
+              <i className={finish.mode === 'wood' ? 'wood' : ''} />
+              <span><strong>{finish.name}</strong><small>{Number(finish.price || 0) > 0 ? `+ ${Number(finish.price).toLocaleString('fr-FR')} € HT` : 'Inclus'}</small></span>
+            </button>
+          ))}
+        </div>
+        {!colors.length && <p>Blanc inclus et finition bois disponible. Ajoute des couleurs comptoir dans l’admin pour proposer plus d’options.</p>}
+      </section>
 
       <section className="counter-logo-card">
         <header>
@@ -2177,6 +2273,7 @@ function CounterOptionCard({ items = [], colors = [], uploadState = {}, disabled
             <small>{selectedItem?.options?.binary3ImageUrl ? 'Cliquer pour remplacer' : 'Importer une image JPG, PNG ou WebP'}</small>
           </span>
           <input
+            ref={logoInputRef}
             type="file"
             accept="image/png,image/jpeg,image/webp"
             disabled={disabled || uploadState?.uploading}
@@ -2187,50 +2284,31 @@ function CounterOptionCard({ items = [], colors = [], uploadState = {}, disabled
           />
         </label>
 
-        {selectedItem?.options?.binary3ImageUrl && (
-          <button
-            type="button"
-            className="counter-secondary-button danger"
-            disabled={disabled}
-            onClick={() => updateSelected({ binary3ImageUrl: '', binary3ImageName: '' })}
-          >
-            <X size={15} /> Retirer
+        <div className="counter-logo-actions">
+          <button type="button" className="counter-secondary-button" disabled={disabled || uploadState?.uploading} onClick={() => logoInputRef.current?.click()}>
+            Remplacer
           </button>
-        )}
+          {selectedItem?.options?.binary3ImageUrl && (
+            <button
+              type="button"
+              className="counter-secondary-button danger"
+              disabled={disabled}
+              onClick={() => updateSelected({ binary3ImageUrl: '', binary3ImageName: '' })}
+            >
+              <X size={15} /> Retirer
+            </button>
+          )}
+        </div>
       </section>
 
-      <section className="counter-color-card">
-        <header>
-          <div>
-            <strong>Couleur</strong>
-            <span>{selectedItem?.options?.binary2ColorName || 'Bois original'}</span>
-          </div>
-        </header>
-        <div className="counter-color-grid">
-          <button
-            type="button"
-            className={!selectedItem?.options?.binary2Color ? 'active' : ''}
-            disabled={disabled}
-            onClick={() => updateSelected({ binary2Color: '', binary2ColorImage: '', binary2ColorId: '', binary2ColorName: '', binary2ColorReference: '', binary2ColorPrice: 0 })}
-          >
-            <i className="wood" />
-            <span><strong>Bois</strong><small>Inclus</small></span>
-          </button>
-          {colors.map((color) => (
-            <button
-              key={color.id}
-              type="button"
-              className={selectedColorId === color.id ? 'active' : ''}
-              style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
-              disabled={disabled}
-              onClick={() => updateSelected({ binary2Color: color.hex, binary2ColorImage: color.image || '', binary2ColorId: color.id, binary2ColorName: color.name, binary2ColorReference: '', binary2ColorPrice: Number(color.price || 0) })}
-            >
-              <i />
-              <span><strong>{color.name}</strong><small>{Number(color.price || 0) > 0 ? `+ ${Number(color.price).toLocaleString('fr-FR')} € HT/m²` : 'Inclus'}</small></span>
-            </button>
-          ))}
-        </div>
-        {!colors.length && <p>Aucune couleur comptoir active pour ce salon.</p>}
+      <section className="counter-info-card">
+        <strong>Pourquoi ajouter un comptoir ?</strong>
+        <ul>
+          <li>Surface d’accueil pour vos prospects</li>
+          <li>Affichage de votre logo et identité</li>
+          <li>Rangement intégré (documents, sacs)</li>
+          <li>Plus professionnel et structuré</li>
+        </ul>
       </section>
 
       {uploadState?.uploading && <p className="counter-status">Upload du visuel...</p>}
@@ -2240,6 +2318,95 @@ function CounterOptionCard({ items = [], colors = [], uploadState = {}, disabled
 }
 
 
+
+function counterVariantOptions(catalog = [], salonLabel = '') {
+  const group = catalog.find((entry) => isVariantGroupEntry(entry) && isCounterVariantGroup(entry));
+  if (group) return normalizeVariantGroupOptions(group.dimensions?.variantAssets, salonLabel).filter((variant) => isWoodReceptionDeskItem(variant.entry));
+  return catalog
+    .filter(isWoodReceptionDeskItem)
+    .map((entry, index) => ({
+      id: entry.type,
+      assetType: entry.type,
+      label: entry.label || `Banque ${index + 1}`,
+      detail: assetDimensionsLabel({ dimensions: entry.dimensions }) || '',
+      price: assetUnitPrice(entry, salonLabel),
+      reference: assetReference(entry, salonLabel),
+      imageUrl: entry.thumbnailUrl || '',
+      isDefault: index === 0,
+      entry,
+    }));
+}
+
+function isCounterVariantGroup(entry = {}) {
+  const text = normalizeTextValue(`${entry.label || ''} ${entry.type || ''}`);
+  if (text.includes('banque') && text.includes('accueil')) return true;
+  if (text.includes('comptoir')) return true;
+  return (entry.dimensions?.variantAssets || []).some(isWoodReceptionDeskItem);
+}
+
+function counterSizeLabel(variant = {}) {
+  const size = itemDefaultSize(variant.entry || {});
+  const width = Number(size?.[0] || 0);
+  if (width) return `${formatNumber(width)} m`;
+  const match = `${variant.label || ''}`.match(/(\d+(?:[,.]\d+)?)\s*m/i);
+  return match ? `${match[1].replace(',', '.')} m` : variant.label || 'Taille';
+}
+
+function counterWhiteFinish() {
+  return { id: '__counter-white__', name: 'Blanc', code: '', hex: '#ffffff', image: '', price: 0, mode: 'white', included: true };
+}
+
+function counterWoodFinish(colors = []) {
+  const configured = colors.find((color) => /bois|wood/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`));
+  return {
+    id: configured?.id || '__counter-wood__',
+    name: configured?.name || 'Bois',
+    code: configured?.code || configured?.reference || 'H3303',
+    hex: configured?.hex || '#c49b63',
+    image: configured?.image || '',
+    price: Number(configured?.price ?? 98),
+    reference: configured?.reference || 'H3303',
+    mode: 'wood',
+  };
+}
+
+function counterFinishOptions(colors = []) {
+  const white = counterWhiteFinish();
+  const wood = counterWoodFinish(colors);
+  const paidColors = colors
+    .filter((color) => normalizeColorId(color.id) !== normalizeColorId(wood.id))
+    .filter((color) => !/bois|wood/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`))
+    .map((color) => ({ ...color, mode: 'color', price: Number(color.price || 0) }));
+  return [white, wood, ...paidColors];
+}
+
+function counterFinishPatch(finish = {}) {
+  const isWhite = finish.mode === 'white' || finish.id === counterWhiteFinish().id;
+  const isWood = finish.mode === 'wood';
+  return {
+    binary2Color: isWood ? '' : (finish.hex || '#ffffff'),
+    binary2ColorImage: isWood ? '' : (finish.image || ''),
+    binary2ColorId: finish.id || '',
+    binary2ColorName: finish.name || '',
+    binary2ColorReference: finish.reference || finish.code || '',
+    binary2ColorPrice: isWhite ? 0 : Number(finish.price || 0),
+    binary2ColorMode: finish.mode || 'color',
+  };
+}
+
+function counterVariantUpgradeOptionLine(item = {}, entry = {}, salonLabel = '', index = 0) {
+  const upgradePrice = Number(item.options?.variantUpgradePrice || 0);
+  if (!isIncludedSceneItem(item) || !isWoodReceptionDeskItem({ ...entry, ...item }) || upgradePrice <= 0) return null;
+  return {
+    type: `counter-size-${item.id || entry?.type || index}`,
+    label: `Option taille banque d’accueil — ${item.options?.variantLabel || entry?.label || item.label || item.type}`,
+    quantity: 1,
+    unitPrice: upgradePrice,
+    total: upgradePrice,
+    reference: item.options?.variantReference || assetReference(entry, salonLabel),
+    optionForItemId: item.id || '',
+  };
+}
 
 function recommendedSimulatorImageSpec(printWidthMeters = 0, printHeightMeters = 0, maxLongEdge = 2048) {
   const safeWidth = Math.max(0.001, Number(printWidthMeters || 0));
@@ -2347,6 +2514,7 @@ function OptionsStepPanel({
   onPartitionHeadImage,
   onCounterImage,
   onCounterOptions,
+  onCounterVariant,
   onSelectCounter,
   onExport,
 }) {
@@ -2447,9 +2615,12 @@ function OptionsStepPanel({
           items={counterItems}
           colors={counterColors}
           uploadState={counterUploadState}
+          catalog={catalog}
+          salonLabel={salonLabel}
           disabled={readOnly}
           onImage={onCounterImage}
           onOptions={onCounterOptions}
+          onVariant={onCounterVariant}
           onSelect={onSelectCounter}
         />
       </OptionAccordion>
@@ -2859,16 +3030,14 @@ function counterColorSurfaceM2(item = {}, entry = {}) {
 function counterColorOptionLine(item = {}, entry = {}, salonLabel = '', index = 0) {
   const colorPrice = Number(item.options?.binary2ColorPrice || 0);
   if (!isBillableCounterColorOption(item, entry) || colorPrice <= 0) return null;
-  const quantity = counterColorSurfaceM2(item, entry);
-  const colorName = item.options?.binary2ColorName || item.options?.binary2Color || 'couleur';
-  const lineTotal = Math.round(colorPrice * quantity);
+  const colorName = item.options?.binary2ColorName || item.options?.binary2Color || 'finition';
   return {
     type: `counter-color-${item.id || entry?.type || index}`,
-    label: `Option couleur comptoir — ${entry?.label || item.label || item.type} (${colorName})`,
-    quantity,
+    label: `Option finition banque d’accueil — ${colorName}`,
+    quantity: 1,
     unitPrice: colorPrice,
-    total: lineTotal,
-    reference: assetReference(entry, salonLabel),
+    total: Math.round(colorPrice),
+    reference: item.options?.binary2ColorReference || assetReference(entry, salonLabel),
     optionForItemId: item.id || '',
   };
 }
@@ -7910,6 +8079,12 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
   const includedCounts = baseItemsConfigured
     ? mergeIncludedCountMaps(includedSceneCounts, baseItemCounts)
     : includedSceneCounts;
+  items.filter(isIncludedSceneItem).forEach((item) => {
+    const baseType = item.options?.includedBaseType;
+    if (baseType && baseType !== item.type) {
+      includedCounts.set(baseType, Math.max(0, (includedCounts.get(baseType) || 0) - 1));
+    }
+  });
   const totalCounts = countSceneItems(items);
   const baseUsage = baseItemsConfigured
     ? baseItems.map((item) => {
@@ -7955,10 +8130,16 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
 
   items.forEach((item, index) => {
     const entry = findCatalogEntry(catalog, item.type) || item;
+    const sizeLine = counterVariantUpgradeOptionLine(item, entry, salonLabel, index);
+    if (sizeLine) {
+      itemsTotal += sizeLine.total;
+      lines.push(sizeLine);
+    }
     const colorLine = counterColorOptionLine(item, entry, salonLabel, index);
-    if (!colorLine) return;
-    itemsTotal += colorLine.total;
-    lines.push(colorLine);
+    if (colorLine) {
+      itemsTotal += colorLine.total;
+      lines.push(colorLine);
+    }
   });
 
   colorSelections

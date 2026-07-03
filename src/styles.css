@@ -7983,3 +7983,108 @@ img.asset-thumb {
   font: inherit;
   font-size: 0.86rem;
 }
+
+.counter-size-card,
+.counter-info-card {
+  display: grid;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 12px;
+  color: #171b22;
+  background: #ffffff;
+}
+
+.counter-size-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.counter-size-card header div {
+  display: grid;
+  gap: 2px;
+}
+
+.counter-size-card strong,
+.counter-info-card strong {
+  color: #171b22;
+  font-size: 0.88rem;
+  font-weight: 950;
+}
+
+.counter-size-card header span {
+  color: #1f4378;
+  font-size: 0.76rem;
+  font-weight: 950;
+}
+
+.counter-size-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.counter-size-grid button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #dbe4f0;
+  border-radius: 9px;
+  padding: 10px;
+  background: #f8fbff;
+  text-align: left;
+}
+
+.counter-size-grid button.active {
+  border-color: #1f4378;
+  background: #edf4ff;
+  box-shadow: inset 0 0 0 1px #1f4378;
+}
+
+.counter-size-grid button span {
+  display: grid;
+  gap: 2px;
+}
+
+.counter-size-grid button small {
+  color: #8a929e;
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.counter-size-grid button em {
+  color: #171b22;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.counter-color-grid.compact {
+  grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+}
+
+.counter-logo-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.counter-logo-actions .counter-secondary-button:only-child {
+  grid-column: 1 / -1;
+}
+
+.counter-info-card ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: #42506a;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.counter-info-card li::marker {
+  color: #1f4378;
+}
