@@ -937,17 +937,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   );
   const autoSpotsRule = useMemo(() => initialOptions.autoSpotsRule || null, [initialOptions]);
   const automaticLedItems = useMemo(
-    () => (ledRailsEnabled
-      ? makeAutomaticLedRailItems(
-          ledRailEntries.filter((e) => e.type !== autoSpotsRule?.type),
-          width, depth, layout, ledSpotCount,
-        ).map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout))
+    () => (ledRailsEnabled && !autoSpotsRule?.type
+      ? makeAutomaticLedRailItems(ledRailEntries, width, depth, layout, ledSpotCount)
+        .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout))
       : []),
     [ledRailsEnabled, ledRailEntries, autoSpotsRule, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
   const automaticSpotItems = useMemo(
-    () => makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...automaticReserveItems, ...manualHydratedItems]),
-    [autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, manualHydratedItems],
+    () => makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...automaticReserveItems, ...manualHydratedItems])
+      .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout)),
+    [autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, manualHydratedItems, ledRailOverrides],
   );
   const wallCoverSurfaces = useMemo(
     () => wallCoverSurfaceOptions(layout, width, depth, [...manualHydratedItems, ...automaticReserveItems]),
@@ -1048,6 +1047,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       technicalFloorRampX,
       language,
       ledRailsEnabled,
+      autoSpotsRule,
       ledSpotCount,
       ledRailOverrides,
       reserveOptionType: effectiveReserveOptionType,
@@ -7171,13 +7171,18 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
     right: hasOwn(options, 'partitionHeadRightEnabled') ? Boolean(options.partitionHeadRightEnabled) : null,
   });
   const ledEntries = ledRailCatalogEntries(catalogEntries);
+  const autoSpotsRule = options.autoSpotsRule || null;
+  const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, salonLabel);
   const ledItems = options.ledRailsEnabled === false
     ? []
-    : makeAutomaticLedRailItems(ledEntries, width, depth, layout, ledSpotCountForArea(area))
-      .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout));
+    : autoSpotsRule?.type
+      ? makeAutomaticSpotItems(autoSpotsRule, catalogEntries, width, depth, layout, [...automaticReserveItems, ...manualItems])
+        .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout))
+      : makeAutomaticLedRailItems(ledEntries, width, depth, layout, ledSpotCountForArea(area))
+        .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout));
   return [
     ...manualItems,
-    ...makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, salonLabel),
+    ...automaticReserveItems,
     ...makeAutomaticPartitionHeadItems(partitionRule, partitionSides, catalogEntries, width, depth, layout, salonLabel),
     ...ledItems,
   ];
@@ -9009,21 +9014,23 @@ function makeAutomaticSpotItems(rule, catalogEntries, width, depth, layout, cont
   const dummyItem = { id: '__spot_placer__' };
   return allocations.flatMap(({ wall: wallId, count }) => {
     if (!count) return [];
-    const itemBase = {
-      ...makeItem(entry.type, width, depth, layout, entry),
-      autoSpot: true,
-      included: true,
-      priceMode: 'included',
-      lockedPlacement: false,
-      collisionEnabled: false,
-      wall: wallId,
+      const itemBase = {
+        ...makeItem(entry.type, width, depth, layout, entry),
+        autoSpot: true,
+        autoLedRail: true,
+        included: true,
+        priceMode: 'included',
+        lockedPlacement: false,
+        collisionEnabled: false,
+        wall: wallId,
       y: ledRailCenterY(entry),
       dimensions: {
-        ...(entry.dimensions || {}),
-        autoSpot: true,
-        collisionEnabled: false,
-        wallY: ledRailCenterY(entry),
-      },
+          ...(entry.dimensions || {}),
+          autoSpot: true,
+          autoLedRail: true,
+          collisionEnabled: false,
+          wallY: ledRailCenterY(entry),
+        },
     };
     const range = wallItemAxisRange(itemBase, wallId, width, depth);
     const blockers = wallBlockers(dummyItem, contextItems, width, depth, wallId);

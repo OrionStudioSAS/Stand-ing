@@ -372,11 +372,16 @@ function presetPartitionHeadRules(preset: any) {
   return preset?.base_config?.partitionHeadRules || preset?.base_config?.options?.partitionHeadRules || {};
 }
 
+function presetAutoSpotsRule(preset: any) {
+  return preset?.base_config?.autoSpotsRule || preset?.base_config?.options?.autoSpotsRule || null;
+}
+
 function presetDefaultOptions(preset: any) {
   const defaults = preset?.base_config?.defaultColorOptions || preset?.base_config?.options?.defaultColorOptions || {};
   return {
     ...defaults,
     defaultColorOptions: defaults,
+    ...(presetAutoSpotsRule(preset) ? { autoSpotsRule: presetAutoSpotsRule(preset) } : {}),
   };
 }
 

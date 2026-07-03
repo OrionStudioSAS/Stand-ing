@@ -124,17 +124,53 @@ function applyPresetDefaultColorOptions(row) {
   const presetDefaults = row.stand_presets?.base_config?.defaultColorOptions
     || row.stand_presets?.base_config?.options?.defaultColorOptions
     || null;
+  const presetAutoSpotsRule = row.stand_presets?.base_config?.autoSpotsRule
+    || row.stand_presets?.base_config?.options?.autoSpotsRule
+    || null;
 
-  if (!presetDefaults || typeof presetDefaults !== 'object') return sourcePayload;
+  if ((!presetDefaults || typeof presetDefaults !== 'object') && !presetAutoSpotsRule) return sourcePayload;
 
   const currentOptions = { ...(sourcePayload.options || {}) };
-  const defaultPayload = { ...presetDefaults, defaultColorOptions: presetDefaults };
+  const defaultPayload = presetDefaults && typeof presetDefaults === 'object'
+    ? { ...presetDefaults, defaultColorOptions: presetDefaults }
+    : {};
   const shouldForcePresetDefaults = !row.client_status || row.client_status === 'not_started';
-  sourcePayload.options = shouldForcePresetDefaults
+  const nextOptions = shouldForcePresetDefaults
     ? { ...currentOptions, ...defaultPayload }
-    : { ...defaultPayload, ...currentOptions, defaultColorOptions: currentOptions.defaultColorOptions || presetDefaults };
+    : mergePresetDefaultsIntoDraftOptions(currentOptions, presetDefaults);
+
+  if (presetAutoSpotsRule && !nextOptions.autoSpotsRule) nextOptions.autoSpotsRule = presetAutoSpotsRule;
+  sourcePayload.options = nextOptions;
 
   return sourcePayload;
+}
+
+function mergePresetDefaultsIntoDraftOptions(currentOptions = {}, presetDefaults = null) {
+  if (!presetDefaults || typeof presetDefaults !== 'object') return { ...currentOptions };
+  const currentDefaults = currentOptions.defaultColorOptions || {};
+  const nextOptions = { ...currentOptions, defaultColorOptions: presetDefaults };
+
+  ['carpetColor', 'carpetFootprintColor', 'wallFabricColor', 'reserveWallFabricColor'].forEach((prefix) => {
+    const idKey = `${prefix}Id`;
+    const currentId = currentOptions[idKey] || '';
+    const previousDefaultId = currentDefaults[idKey] || '';
+    const presetDefaultId = presetDefaults[idKey] || '';
+
+    // If the scene still uses an old preset default, migrate it to the current preset default.
+    // If the user selected a custom color, currentId differs from previousDefaultId and is preserved.
+    if (previousDefaultId && presetDefaultId && currentId && currentId === previousDefaultId && currentId !== presetDefaultId) {
+      copyPresetColorFields(nextOptions, presetDefaults, prefix);
+    }
+  });
+
+  return nextOptions;
+}
+
+function copyPresetColorFields(target, presetDefaults, prefix) {
+  ['Id', 'Name', 'Hex', 'Price', 'Reference'].forEach((suffix) => {
+    const key = `${prefix}${suffix}`;
+    if (presetDefaults[key] !== undefined) target[key] = presetDefaults[key];
+  });
 }
 
 export async function listScenes(filters = {}) {
