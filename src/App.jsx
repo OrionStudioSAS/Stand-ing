@@ -1619,13 +1619,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
         {selected && !readOnly && (
           <div className="view-toolbar selection-mode" aria-label="Actions objet selectionne">
-            <button type="button" disabled={itemPlacementLocked(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
+            <button type="button" disabled={!isAdminViewer && itemRotationLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
             <button type="button" disabled={isAutomaticReserveItem(selected)} onClick={openSelectedItemConfigurator} title="Paramètres"><Settings2 size={16} /></button>
             <button type="button" disabled={!isAdminViewer && itemDeletionLocked(selected)} onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
             {!isAdminViewer && itemMovementLocked(selected) && <span className="toolbar-lock-note">Déplacement verrouillé</span>}
             {!isAdminViewer && itemRotationLocked(selected) && <span className="toolbar-lock-note">Rotation verrouillée</span>}
             {!isAdminViewer && itemDeletionLocked(selected) && <span className="toolbar-lock-note">Suppression verrouillée</span>}
-            {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
+            {rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
               <label className="toolbar-rotation-slider">
                 <span>{selected.rotation || 0}°</span>
                 <input
@@ -8759,7 +8759,7 @@ function itemPlacementLocked(item) {
 }
 
 function itemMovementLocked(item) {
-  return Boolean(item?.movementLocked || item?.dimensions?.movementLocked || itemPlacementLocked(item));
+  return Boolean(item?.movementLocked || item?.dimensions?.movementLocked);
 }
 
 function itemDeletionLocked(item) {
@@ -9895,9 +9895,18 @@ function updateSceneItemWithCollision(items, id, patch, width, depth, layout, ca
   const currentItem = items.find((item) => item.id === id);
   if (!currentItem) return items;
 
-  const candidate = constrainItem({ ...currentItem, ...patch }, width, depth, layout, carpetFootprintEnabled);
+  const editableItem = releasePlacementRuleForManualEdit(currentItem, patch);
+  const candidate = constrainItem({ ...editableItem, ...patch }, width, depth, layout, carpetFootprintEnabled);
   if (collidesWithScene(candidate, items, id, width, depth)) return items;
   return items.map((item) => (item.id === id ? candidate : item));
+}
+
+function releasePlacementRuleForManualEdit(item = {}, patch = {}) {
+  const transformKeys = ['x', 'z', 'wall', 'wallSide', 'wallSurface', 'rotation'];
+  const isTransformEdit = transformKeys.some((key) => hasOwn(patch, key));
+  if (!isTransformEdit || itemMovementLocked(item)) return item;
+  if (!item.placementRule && !item.lockedPlacement) return item;
+  return { ...item, placementRule: null, lockedPlacement: false };
 }
 
 function placeItemInFreeSpot(item, items, width, depth, layout, carpetFootprintEnabled = true) {
