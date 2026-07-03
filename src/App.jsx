@@ -10469,9 +10469,9 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
   const rampDimensions = technicalFloor ? technicalRampDimensions(width, slabHeight) : null;
   const rampLimit = rampDimensions ? Math.max(0, width / 2 - rampDimensions.width / 2) : 0;
   const resolvedRampX = rampDimensions ? clamp(Number(technicalFloorRampX || 0), -rampLimit, rampLimit) : 0;
-  const slabSegments = technicalFloor && rampDimensions
-    ? technicalFloorSlabSegments(width, depth, rampDimensions, resolvedRampX)
-    : [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }];
+  const slabSegments = technicalFloor && technicalFloorTrimType === 'sloped'
+    ? technicalFloorSlabSegmentsForSlopedEdges(width, depth, slabHeight, openTechnicalFloorEdges(layout))
+    : (technicalFloor && rampDimensions ? technicalFloorSlabSegments(width, depth, rampDimensions, resolvedRampX) : [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }]);
 
   return (
     <group>
@@ -10530,13 +10530,31 @@ function technicalFloorSlabSegments(width, depth, rampDimensions, rampX = 0) {
   return segments.length ? segments : [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }];
 }
 
+
+function technicalFloorSlabSegmentsForSlopedEdges(width, depth, floorHeight, edges = []) {
+  const inset = Math.max(0.02, Number(floorHeight || 0.04));
+  const minX = -width / 2 + (edges.includes('left') ? inset : 0);
+  const maxX = width / 2 - (edges.includes('right') ? inset : 0);
+  const minZ = -depth / 2;
+  const maxZ = depth / 2 - (edges.includes('front') ? inset : 0);
+  const segmentWidth = Math.max(0.01, maxX - minX);
+  const segmentDepth = Math.max(0.01, maxZ - minZ);
+  return [{
+    id: 'sloped-inner',
+    width: segmentWidth,
+    depth: segmentDepth,
+    centerX: (minX + maxX) / 2,
+    centerZ: (minZ + maxZ) / 2,
+  }];
+}
+
 function TechnicalFloorAccessories({ width, depth, layout, height, trimType, rampX = 0, onRampXChange, onRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
   const [draggingRamp, setDraggingRamp] = useState(false);
   const edges = openTechnicalFloorEdges(layout);
   const trimHeight = Math.max(0.04, Number(height || 0.04));
-  const trimDepth = 0.04;
-  const { depth: rampDepth, width: rampWidth } = technicalRampDimensions(width, trimHeight);
   const sloped = trimType === 'sloped';
+  const trimDepth = sloped ? trimHeight : 0.04;
+  const { depth: rampDepth, width: rampWidth } = technicalRampDimensions(width, trimHeight);
   const rampLimit = Math.max(0, width / 2 - rampWidth / 2);
   const resolvedRampX = clamp(Number(rampX || 0), -rampLimit, rampLimit);
   const moveRamp = (event) => {
@@ -10549,13 +10567,13 @@ function TechnicalFloorAccessories({ width, depth, layout, height, trimType, ram
 
   return (
     <group>
-      {edges.includes('front') && <TechnicalTrim edge="front" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} gapCenter={resolvedRampX} gapWidth={rampWidth + 0.08} />}
+      {edges.includes('front') && <TechnicalTrim edge="front" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} gapCenter={resolvedRampX} gapWidth={sloped ? 0 : rampWidth + 0.08} />}
       {edges.includes('left') && <TechnicalTrim edge="left" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} />}
       {edges.includes('right') && <TechnicalTrim edge="right" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} />}
-      <mesh
+      {!sloped && <mesh
           castShadow
           receiveShadow
-          position={[resolvedRampX, 0, depth / 2 - rampDepth / 2]}
+          position={[resolvedRampX, -trimHeight, depth / 2 - rampDepth / 2]}
           onPointerDown={(event) => {
             if (!interactive || !onRampXChange) return;
             event.stopPropagation();
@@ -10577,12 +10595,12 @@ function TechnicalFloorAccessories({ width, depth, layout, height, trimType, ram
         >
           <RampGeometry width={rampWidth} depth={rampDepth} height={trimHeight} />
           <meshStandardMaterial color={draggingRamp ? '#b9c5d4' : '#d9dde2'} roughness={0.55} metalness={0.05} />
-        </mesh>
+        </mesh>}
     </group>
   );
 }
 
-function RampGeometry({ width, depth, height }) {
+function RampGeometry({ width, depth, height, yOffset = 0.006 }) {
   const geometry = useMemo(() => {
     const w = Math.max(0.2, Number(width || 1));
     const d = Math.max(0.2, Number(depth || 0.8));
@@ -10591,8 +10609,8 @@ function RampGeometry({ width, depth, height }) {
     const x1 = w / 2;
     const zFront = d / 2;
     const zBack = -d / 2;
-    const yLow = 0.006;
-    const yHigh = h + 0.006;
+    const yLow = Number(yOffset || 0);
+    const yHigh = h + Number(yOffset || 0);
     const positions = [
       // Sloped walking surface: low at the entrance, high inside the stand.
       x0, yLow, zFront, x1, yLow, zFront, x1, yHigh, zBack,
@@ -10620,10 +10638,21 @@ function RampGeometry({ width, depth, height }) {
 function TechnicalTrim({ edge, width, depth, height, thickness, sloped, gapCenter = 0, gapWidth = 0 }) {
   const isFront = edge === 'front';
   const length = isFront ? width : depth;
-  const rotation = sloped
-    ? (isFront ? [0.32, 0, 0] : [0, 0, edge === 'left' ? -0.32 : 0.32])
-    : [0, 0, 0];
   const materialColor = sloped ? '#c7ccd2' : '#eef1f4';
+
+  if (sloped) {
+    const slopeDepth = Math.max(0.02, Number(thickness || height || 0.04));
+    const position = isFront
+      ? [0, -height, depth / 2 - slopeDepth / 2]
+      : [edge === 'left' ? -width / 2 + slopeDepth / 2 : width / 2 - slopeDepth / 2, -height, 0];
+    const rotation = isFront ? [0, 0, 0] : [0, edge === 'left' ? -Math.PI / 2 : Math.PI / 2, 0];
+    return (
+      <mesh castShadow receiveShadow position={position} rotation={rotation}>
+        <RampGeometry width={length} depth={slopeDepth} height={height} yOffset={0} />
+        <meshStandardMaterial color={materialColor} roughness={0.52} metalness={0.04} />
+      </mesh>
+    );
+  }
 
   if (isFront && gapWidth > 0) {
     const gapMin = clamp(Number(gapCenter || 0) - gapWidth / 2, -width / 2, width / 2);
@@ -10642,8 +10671,7 @@ function TechnicalTrim({ edge, width, depth, height, thickness, sloped, gapCente
               key={segment.id}
               castShadow
               receiveShadow
-              position={[(segment.min + segment.max) / 2, -height / 2, depth / 2 + thickness / 2]}
-              rotation={rotation}
+              position={[(segment.min + segment.max) / 2, -height / 2, depth / 2 - thickness / 2]}
             >
               <boxGeometry args={[segmentLength, height, thickness]} />
               <meshStandardMaterial color={materialColor} roughness={0.48} metalness={0.08} />
@@ -10655,11 +10683,11 @@ function TechnicalTrim({ edge, width, depth, height, thickness, sloped, gapCente
   }
 
   const position = edge === 'front'
-    ? [0, -height / 2, depth / 2 + thickness / 2]
-    : [edge === 'left' ? -width / 2 - thickness / 2 : width / 2 + thickness / 2, -height / 2, 0];
+    ? [0, -height / 2, depth / 2 - thickness / 2]
+    : [edge === 'left' ? -width / 2 + thickness / 2 : width / 2 - thickness / 2, -height / 2, 0];
   const size = isFront ? [length, height, thickness] : [thickness, height, length];
   return (
-    <mesh castShadow receiveShadow position={position} rotation={rotation}>
+    <mesh castShadow receiveShadow position={position}>
       <boxGeometry args={size} />
       <meshStandardMaterial color={materialColor} roughness={0.48} metalness={0.08} />
     </mesh>
