@@ -859,9 +859,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const rawSelectedCarpetColor = findColorInPalette(carpetPalette, selectedCarpetId) || defaultColorFromPalette(carpetPalette) || carpetPalette[0] || carpetColors[0];
   const rawSelectedCarpetFootprintColor = findColorInPalette(footprintPalette, selectedCarpetFootprintId) || defaultColorFromPalette(footprintPalette) || rawSelectedCarpetColor;
   const rawSelectedWallFabricColor = findColorInPalette(wallFabricPalette, selectedWallFabricId) || defaultColorFromPalette(wallFabricPalette) || wallFabricPalette[0] || wallFabricColors[0];
+  const rawReserveWallFabricColor = findColorInPalette(wallFabricPalette, effectiveDefaultColorOptions.reserveWallFabricColorId) || rawSelectedWallFabricColor;
   const selectedCarpetColor = colorWithDefaultIncluded(rawSelectedCarpetColor, effectiveDefaultColorOptions.carpetColorId);
   const selectedCarpetFootprintColor = colorWithDefaultIncluded(rawSelectedCarpetFootprintColor, effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId);
   const selectedWallFabricColor = colorWithDefaultIncluded(rawSelectedWallFabricColor, effectiveDefaultColorOptions.wallFabricColorId);
+  const selectedReserveWallFabricColor = colorWithDefaultIncluded(rawReserveWallFabricColor, effectiveDefaultColorOptions.reserveWallFabricColorId || effectiveDefaultColorOptions.wallFabricColorId);
   const selectedTechnicalFloor = technicalFloorOptions.find((option) => option.id === technicalFloorType) || null;
   const effectiveCarpetFootprintEnabled = carpetFootprintEnabled && !selectedTechnicalFloor;
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
@@ -960,6 +962,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     selectedCarpetColor.image,
     effectiveCarpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
     selectedWallFabricColor.image,
+    selectedReserveWallFabricColor.image,
     ...wallCoverImageUrls,
   ]);
   const sceneSuspendLoad = useSceneSuspendPreload(objectBankLoaded ? sceneItems : []);
@@ -1029,6 +1032,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       wallFabricColorHex: selectedWallFabricColor.hex,
       wallFabricColorPrice: Number(selectedWallFabricColor.price || 0),
       wallFabricColorReference: selectedWallFabricColor.reference || '',
+      reserveWallFabricColorId: selectedReserveWallFabricColor.id,
+      reserveWallFabricColorName: selectedReserveWallFabricColor.name,
+      reserveWallFabricColorHex: selectedReserveWallFabricColor.hex,
+      reserveWallFabricColorPrice: Number(selectedReserveWallFabricColor.price || 0),
+      reserveWallFabricColorReference: selectedReserveWallFabricColor.reference || '',
       wallCovers,
       technicalFloorType,
       technicalFloorLabel: selectedTechnicalFloor?.label || '',
@@ -1095,7 +1103,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
@@ -1518,6 +1526,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 carpetFootprintColor={selectedCarpetFootprintColor}
                 carpetFootprintEnabled={effectiveCarpetFootprintEnabled}
                 wallFabricColor={selectedWallFabricColor}
+                reserveWallFabricColor={selectedReserveWallFabricColor}
                 wallCovers={wallCovers}
                 technicalFloor={selectedTechnicalFloor}
                 technicalFloorTrimType={technicalFloorTrimType}
@@ -4917,12 +4926,19 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const selectedCarpetColor = findColorInPalette(carpetPalette, presetColorIds.carpetColorId) || defaultColorFromPalette(carpetPalette) || carpetPalette[0] || carpetColors[0];
   const selectedCarpetFootprintColor = findColorInPalette(footprintPalette, presetColorIds.carpetFootprintColorId) || defaultColorFromPalette(footprintPalette) || selectedCarpetColor;
   const selectedWallFabricColor = findColorInPalette(wallFabricPalette, presetColorIds.wallFabricColorId) || defaultColorFromPalette(wallFabricPalette) || wallFabricPalette[0] || wallFabricColors[0];
+  const selectedReserveWallFabricColor = findColorInPalette(wallFabricPalette, presetColorIds.reserveWallFabricColorId) || selectedWallFabricColor;
   const selectedDefaultColorOptions = useMemo(() => defaultColorOptionsFromColors({
     carpetColor: selectedCarpetColor,
     carpetFootprintColor: selectedCarpetFootprintColor,
     wallFabricColor: selectedWallFabricColor,
-  }), [selectedCarpetColor, selectedCarpetFootprintColor, selectedWallFabricColor]);
-  const presetTextureLoad = useSceneTexturePreload(items, []);
+    reserveWallFabricColor: selectedReserveWallFabricColor,
+  }), [selectedCarpetColor, selectedCarpetFootprintColor, selectedWallFabricColor, selectedReserveWallFabricColor]);
+  const presetTextureLoad = useSceneTexturePreload(items, [
+    selectedCarpetColor.image,
+    selectedCarpetFootprintColor.image,
+    selectedWallFabricColor.image,
+    selectedReserveWallFabricColor.image,
+  ]);
   const presetSuspendLoad = useSceneSuspendPreload(items);
   const presetAssetsReady = presetTextureLoad.ready && presetSuspendLoad.ready;
   const presetLoadProgress = combineLoadStates(presetTextureLoad, presetSuspendLoad);
@@ -5027,6 +5043,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
               carpetColor={selectedCarpetColor}
               carpetFootprintColor={selectedCarpetFootprintColor}
               wallFabricColor={selectedWallFabricColor}
+              reserveWallFabricColor={selectedReserveWallFabricColor}
             />
             )}
             <ContactShadows opacity={0.12} scale={12} blur={2.8} far={5} position={[0, -0.01, 0]} />
@@ -5140,6 +5157,13 @@ function PresetDefaultColorsEditor({ carpetColors = [], footprintColors = [], wa
         value={selectedIds.wallFabricColorId}
         onChange={(value) => update('wallFabricColorId', value)}
       />
+      <PresetColorSelect
+        label="Cloisons de la réserve"
+        colors={wallFabricColors}
+        value={selectedIds.reserveWallFabricColorId}
+        fallbackValue={selectedIds.wallFabricColorId}
+        onChange={(value) => update('reserveWallFabricColorId', value)}
+      />
     </section>
   );
 }
@@ -5167,6 +5191,7 @@ function presetDefaultColorIds(preset = {}) {
     carpetColorId: defaults.carpetColorId || preset?.base_config?.options?.carpetColorId || '',
     carpetFootprintColorId: defaults.carpetFootprintColorId || preset?.base_config?.options?.carpetFootprintColorId || '',
     wallFabricColorId: defaults.wallFabricColorId || preset?.base_config?.options?.wallFabricColorId || '',
+    reserveWallFabricColorId: defaults.reserveWallFabricColorId || preset?.base_config?.options?.reserveWallFabricColorId || '',
   };
 }
 
@@ -7331,10 +7356,11 @@ function makePaletteDefaultColorOptions({ carpetPalette = [], footprintPalette =
   const carpetColor = defaultColorFromPalette(carpetPalette);
   const carpetFootprintColor = defaultColorFromPalette(footprintPalette) || carpetColor;
   const wallFabricColor = defaultColorFromPalette(wallFabricPalette);
-  return defaultColorOptionsFromColors({ carpetColor, carpetFootprintColor, wallFabricColor });
+  return defaultColorOptionsFromColors({ carpetColor, carpetFootprintColor, wallFabricColor, reserveWallFabricColor: wallFabricColor });
 }
 
-function defaultColorOptionsFromColors({ carpetColor = null, carpetFootprintColor = null, wallFabricColor = null }) {
+function defaultColorOptionsFromColors({ carpetColor = null, carpetFootprintColor = null, wallFabricColor = null, reserveWallFabricColor = null }) {
+  const reserveColor = reserveWallFabricColor || wallFabricColor;
   return {
     carpetColorId: carpetColor?.id || '',
     carpetColorName: carpetColor?.name || '',
@@ -7351,11 +7377,16 @@ function defaultColorOptionsFromColors({ carpetColor = null, carpetFootprintColo
     wallFabricColorHex: wallFabricColor?.hex || '',
     wallFabricColorPrice: Number(wallFabricColor?.price || 0),
     wallFabricColorReference: wallFabricColor?.reference || '',
+    reserveWallFabricColorId: reserveColor?.id || wallFabricColor?.id || '',
+    reserveWallFabricColorName: reserveColor?.name || wallFabricColor?.name || '',
+    reserveWallFabricColorHex: reserveColor?.hex || wallFabricColor?.hex || '',
+    reserveWallFabricColorPrice: Number(reserveColor?.price || wallFabricColor?.price || 0),
+    reserveWallFabricColorReference: reserveColor?.reference || wallFabricColor?.reference || '',
   };
 }
 
 function defaultColorOptionsFromFlatOptions(options = {}) {
-  const hasDefaults = ['carpetColorId', 'carpetFootprintColorId', 'wallFabricColorId'].some((key) => options?.[key]);
+  const hasDefaults = ['carpetColorId', 'carpetFootprintColorId', 'wallFabricColorId', 'reserveWallFabricColorId'].some((key) => options?.[key]);
   if (!hasDefaults) return {};
   return {
     carpetColorId: options.carpetColorId || '',
@@ -7373,6 +7404,11 @@ function defaultColorOptionsFromFlatOptions(options = {}) {
     wallFabricColorHex: options.wallFabricColorHex || '',
     wallFabricColorPrice: Number(options.wallFabricColorPrice || 0),
     wallFabricColorReference: options.wallFabricColorReference || '',
+    reserveWallFabricColorId: options.reserveWallFabricColorId || options.wallFabricColorId || '',
+    reserveWallFabricColorName: options.reserveWallFabricColorName || options.wallFabricColorName || '',
+    reserveWallFabricColorHex: options.reserveWallFabricColorHex || options.wallFabricColorHex || '',
+    reserveWallFabricColorPrice: Number(options.reserveWallFabricColorPrice || options.wallFabricColorPrice || 0),
+    reserveWallFabricColorReference: options.reserveWallFabricColorReference || options.wallFabricColorReference || '',
   };
 }
 
@@ -10135,7 +10171,7 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
   };
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, wallCovers = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, canEditLockedItems = false, visualContext = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, canEditLockedItems = false, visualContext = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
   const cameraPivot = useMemo(() => {
@@ -10169,7 +10205,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
       {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
       <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRampX={technicalFloorRampX} onTechnicalFloorRampX={onTechnicalFloorRampX} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
-      <Walls width={width} depth={depth} height={height} layout={layout} items={items} wallFabricColor={wallFabricColor} wallCovers={wallCovers} onDeselect={clearSceneSelection} />
+      <Walls width={width} depth={depth} height={height} layout={layout} items={items} wallFabricColor={wallFabricColor} reserveWallFabricColor={reserveWallFabricColor} wallCovers={wallCovers} onDeselect={clearSceneSelection} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
         {width}m x {depth}m
       </Text>
@@ -10589,7 +10625,7 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
 }
 
 
-function Walls({ width, depth, height, layout, items = [], wallFabricColor, wallCovers = {}, onDeselect }) {
+function Walls({ width, depth, height, layout, items = [], wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, onDeselect }) {
   const sideDepth = Math.max(0.01, depth - wallThickness);
   const sideZ = -depth / 2 + wallThickness + sideDepth / 2;
   return (
@@ -10600,7 +10636,7 @@ function Walls({ width, depth, height, layout, items = [], wallFabricColor, wall
       {(layout === 'left' || layout === 'u') && <WallBaseboards wall="left" width={width} depth={depth} items={items} />}
       {(layout === 'right' || layout === 'u') && <Wall position={[width / 2 - wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} />}
       {(layout === 'right' || layout === 'u') && <WallBaseboards wall="right" width={width} depth={depth} items={items} />}
-      <WallFabricSurfaces width={width} depth={depth} layout={layout} items={items} color={wallFabricColor} />
+      <WallFabricSurfaces width={width} depth={depth} layout={layout} items={items} color={wallFabricColor} reserveColor={reserveWallFabricColor} />
     </group>
   );
 }
@@ -10639,12 +10675,12 @@ function wallBaseboardSegments(wall, width, depth, items = []) {
   return freeWallIntervals(limits, blockers).filter((segment) => segment.max - segment.min > 0.05);
 }
 
-function WallFabricSurfaces({ width, depth, layout, items = [], color }) {
+function WallFabricSurfaces({ width, depth, layout, items = [], color, reserveColor = null }) {
   const surfaces = wallCoverSurfaceOptions(layout, width, depth, items);
   return (
     <group>
       {surfaces.map((surface) => (
-        <WallFabricSurface key={`fabric-${surface.id}`} surface={surface} color={color} />
+        <WallFabricSurface key={`fabric-${surface.id}`} surface={surface} color={surface.kind === 'reserve' ? (reserveColor || color) : color} />
       ))}
     </group>
   );
