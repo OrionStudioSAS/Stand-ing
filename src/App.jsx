@@ -10593,14 +10593,14 @@ function TechnicalFloorAccessories({ width, depth, layout, height, trimType, ram
             onRampDragChange?.(false);
           }}
         >
-          <RampGeometry width={rampWidth} depth={rampDepth} height={trimHeight} />
+          <RampGeometry width={rampWidth} depth={rampDepth} height={trimHeight} includeBackFace={false} />
           <meshStandardMaterial color={draggingRamp ? '#b9c5d4' : '#d9dde2'} roughness={0.55} metalness={0.05} />
         </mesh>}
     </group>
   );
 }
 
-function RampGeometry({ width, depth, height, yOffset = 0.006 }) {
+function RampGeometry({ width, depth, height, yOffset = 0.006, includeBackFace = true, includeBottomFace = true }) {
   const geometry = useMemo(() => {
     const w = Math.max(0.2, Number(width || 1));
     const d = Math.max(0.2, Number(depth || 0.8));
@@ -10615,22 +10615,28 @@ function RampGeometry({ width, depth, height, yOffset = 0.006 }) {
       // Sloped walking surface: low at the entrance, high inside the stand.
       x0, yLow, zFront, x1, yLow, zFront, x1, yHigh, zBack,
       x0, yLow, zFront, x1, yHigh, zBack, x0, yHigh, zBack,
-      // Back vertical face.
-      x0, yLow, zBack, x1, yLow, zBack, x1, yHigh, zBack,
-      x0, yLow, zBack, x1, yHigh, zBack, x0, yHigh, zBack,
       // Left side.
       x0, yLow, zFront, x0, yHigh, zBack, x0, yLow, zBack,
       // Right side.
       x1, yLow, zFront, x1, yLow, zBack, x1, yHigh, zBack,
-      // Thin bottom support, kept coplanar with the floor.
-      x0, yLow, zFront, x0, yLow, zBack, x1, yLow, zBack,
-      x0, yLow, zFront, x1, yLow, zBack, x1, yLow, zFront,
     ];
+    if (includeBackFace) {
+      positions.push(
+        x0, yLow, zBack, x1, yLow, zBack, x1, yHigh, zBack,
+        x0, yLow, zBack, x1, yHigh, zBack, x0, yHigh, zBack,
+      );
+    }
+    if (includeBottomFace) {
+      positions.push(
+        x0, yLow, zFront, x0, yLow, zBack, x1, yLow, zBack,
+        x0, yLow, zFront, x1, yLow, zBack, x1, yLow, zFront,
+      );
+    }
     const rampGeometry = new BufferGeometry();
     rampGeometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
     rampGeometry.computeVertexNormals();
     return rampGeometry;
-  }, [width, depth, height]);
+  }, [width, depth, height, yOffset, includeBackFace, includeBottomFace]);
 
   return <primitive object={geometry} attach="geometry" />;
 }
@@ -10648,7 +10654,7 @@ function TechnicalTrim({ edge, width, depth, height, thickness, sloped, gapCente
     const rotation = isFront ? [0, 0, 0] : [0, edge === 'left' ? -Math.PI / 2 : Math.PI / 2, 0];
     return (
       <mesh castShadow receiveShadow position={position} rotation={rotation}>
-        <RampGeometry width={length} depth={slopeDepth} height={height} yOffset={0} />
+        <RampGeometry width={length} depth={slopeDepth} height={height} yOffset={0} includeBackFace={false} includeBottomFace={false} />
         <meshStandardMaterial color={materialColor} roughness={0.52} metalness={0.04} />
       </mesh>
     );
