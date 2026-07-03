@@ -10469,9 +10469,10 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
   const rampDimensions = technicalFloor ? technicalRampDimensions(width, slabHeight) : null;
   const rampLimit = rampDimensions ? Math.max(0, width / 2 - rampDimensions.width / 2) : 0;
   const resolvedRampX = rampDimensions ? clamp(Number(technicalFloorRampX || 0), -rampLimit, rampLimit) : 0;
-  const slabSegments = technicalFloor && technicalFloorTrimType === 'sloped'
-    ? technicalFloorSlabSegmentsForSlopedEdges(width, depth, slabHeight, openTechnicalFloorEdges(layout))
-    : (technicalFloor && rampDimensions ? technicalFloorSlabSegments(width, depth, rampDimensions, resolvedRampX) : [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }]);
+  const openEdges = technicalFloor ? openTechnicalFloorEdges(layout) : [];
+  const slabSegments = technicalFloor && rampDimensions
+    ? technicalFloorSlabSegments(width, depth, rampDimensions, resolvedRampX, openEdges, technicalFloorTrimType === 'sloped' ? slabHeight : 0.04)
+    : [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }];
 
   return (
     <group>
@@ -10502,50 +10503,41 @@ function technicalRampDimensions(width, floorHeight) {
   };
 }
 
-function technicalFloorSlabSegments(width, depth, rampDimensions, rampX = 0) {
+function technicalFloorSlabSegments(width, depth, rampDimensions, rampX = 0, edges = [], edgeInset = 0.04) {
   const rampWidth = Number(rampDimensions?.width || 0);
   const rampDepth = Number(rampDimensions?.depth || 0);
-  if (!rampWidth || !rampDepth) return [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }];
+  const inset = Math.max(0, Number(edgeInset || 0));
+  const minX = -width / 2 + (edges.includes('left') ? inset : 0);
+  const maxX = width / 2 - (edges.includes('right') ? inset : 0);
+  const minZ = -depth / 2;
+  const maxZ = depth / 2 - (edges.includes('front') ? inset : 0);
+  const safeWidth = Math.max(0.01, maxX - minX);
+  const safeDepth = Math.max(0.01, maxZ - minZ);
+  if (!rampWidth || !rampDepth) {
+    return [{ id: 'inset-full', width: safeWidth, depth: safeDepth, centerX: (minX + maxX) / 2, centerZ: (minZ + maxZ) / 2 }];
+  }
 
-  const rampMinX = Math.max(-width / 2, rampX - rampWidth / 2);
-  const rampMaxX = Math.min(width / 2, rampX + rampWidth / 2);
-  const backDepth = Math.max(0, depth - rampDepth);
+  const rampMinX = Math.max(minX, rampX - rampWidth / 2);
+  const rampMaxX = Math.min(maxX, rampX + rampWidth / 2);
+  const rampBackZ = Math.max(minZ, depth / 2 - rampDepth);
   const segments = [];
-  const addSegment = (id, minX, maxX, minZ, maxZ) => {
-    const segmentWidth = maxX - minX;
-    const segmentDepth = maxZ - minZ;
+  const addSegment = (id, left, right, back, front) => {
+    const segmentWidth = right - left;
+    const segmentDepth = front - back;
     if (segmentWidth <= 0.01 || segmentDepth <= 0.01) return;
     segments.push({
       id,
       width: segmentWidth,
       depth: segmentDepth,
-      centerX: (minX + maxX) / 2,
-      centerZ: (minZ + maxZ) / 2,
+      centerX: (left + right) / 2,
+      centerZ: (back + front) / 2,
     });
   };
 
-  addSegment('left', -width / 2, rampMinX, -depth / 2, depth / 2);
-  addSegment('right', rampMaxX, width / 2, -depth / 2, depth / 2);
-  addSegment('back', rampMinX, rampMaxX, -depth / 2, -depth / 2 + backDepth);
-  return segments.length ? segments : [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }];
-}
-
-
-function technicalFloorSlabSegmentsForSlopedEdges(width, depth, floorHeight, edges = []) {
-  const inset = Math.max(0.02, Number(floorHeight || 0.04));
-  const minX = -width / 2 + (edges.includes('left') ? inset : 0);
-  const maxX = width / 2 - (edges.includes('right') ? inset : 0);
-  const minZ = -depth / 2;
-  const maxZ = depth / 2 - (edges.includes('front') ? inset : 0);
-  const segmentWidth = Math.max(0.01, maxX - minX);
-  const segmentDepth = Math.max(0.01, maxZ - minZ);
-  return [{
-    id: 'sloped-inner',
-    width: segmentWidth,
-    depth: segmentDepth,
-    centerX: (minX + maxX) / 2,
-    centerZ: (minZ + maxZ) / 2,
-  }];
+  addSegment('left', minX, rampMinX, minZ, maxZ);
+  addSegment('right', rampMaxX, maxX, minZ, maxZ);
+  addSegment('back', rampMinX, rampMaxX, minZ, Math.min(maxZ, rampBackZ));
+  return segments.length ? segments : [{ id: 'inset-full', width: safeWidth, depth: safeDepth, centerX: (minX + maxX) / 2, centerZ: (minZ + maxZ) / 2 }];
 }
 
 function TechnicalFloorAccessories({ width, depth, layout, height, trimType, rampX = 0, onRampXChange, onRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
