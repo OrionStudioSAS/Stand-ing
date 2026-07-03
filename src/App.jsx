@@ -2728,12 +2728,10 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
   const Icon = entry.icon || Box;
   const price = marketplaceStartingPrice(entry, catalog, salonLabel);
   const category = marketCategoryMeta(normalizeMarketCategory(entry));
-  const badge = includedCount > 0 ? `× ${includedCount} au stand` : (index === 1 ? '🔥 Populaire' : '');
   return (
     <article className="marketplace-card">
       <div className="marketplace-card-preview">
         {entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Icon size={42} />}
-        {badge && <span className={`marketplace-badge ${index === 1 ? 'hot' : ''}`}>{badge}</span>}
       </div>
       <div className="marketplace-card-body">
         <strong>{entry.label}</strong>
