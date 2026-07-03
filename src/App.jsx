@@ -945,6 +945,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     [layout, width, depth, manualHydratedItems, automaticReserveItems],
   );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems]);
+  const includedCounterItems = useMemo(() => sceneItems.filter((item) => isWoodReceptionDeskItem(item) && isIncludedSceneItem(item)), [sceneItems]);
   const cartItems = useMemo(() => sceneItems.filter(shopCartItemVisible), [sceneItems]);
   const showCartBar = !readOnly && (activeStep === 2 || activeStep === 3);
   const wallCoverImageUrls = useMemo(() => Object.values(wallCovers || {}).map((cover) => cover?.imageUrl).filter(Boolean), [wallCovers]);
@@ -1681,6 +1682,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             partitionHeadSides={effectivePartitionHeadSides}
             partitionHeadVisuals={partitionHeadVisuals}
             partitionHeadUploadState={itemOptionState}
+            counterItems={includedCounterItems}
+            counterColors={counterPalette}
+            counterUploadState={itemOptionState}
             salonLabel={salonLabel}
             catalog={availableCatalog}
             readOnly={readOnly}
@@ -1696,6 +1700,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onReserveOption={(type) => { if (!readOnly) { if (type === '__none__') { removeReserve(); } else { setReserveOptionType(type); } } }}
             onPartitionHeadSide={(side, enabled) => !readOnly && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
             onPartitionHeadImage={uploadPartitionHeadVisual}
+            onCounterImage={(item, file, optionKeys) => uploadItemImage(item, file, optionKeys)}
+            onCounterOptions={updateItemOptions}
+            onSelectCounter={setSelectedId}
             onExport={() => exportTechnicalPng({ width, depth, layout, items: sceneItems, catalog: availableCatalog })}
           />
         )}
@@ -2001,7 +2008,7 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
   );
 }
 
-function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onResetColor, embedded = false }) {
+function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onResetColor, embedded = false, optionsFree = false }) {
   const imageName = item.options?.binary3ImageName || 'Texture originale Binary_3.jpeg';
   const selectedColor = item.options?.binary2Color || '#ffffff';
   const selectedColorId = item.options?.binary2ColorId || '';
@@ -2050,7 +2057,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
               >
                 <i />
                 <strong>{color.name}</strong>
-                <small>{color.reference || color.code}{Number(color.price || 0) > 0 ? ` · +${Number(color.price).toLocaleString('fr-FR')} € HT/m²` : ' · Inclus'}</small>
+                <small>{color.reference || color.code}{!optionsFree && Number(color.price || 0) > 0 ? ` · +${Number(color.price).toLocaleString('fr-FR')} € HT/m²` : ' · Inclus'}</small>
               </button>
             ))}
           </div>
@@ -2069,6 +2076,150 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
       {uploadState?.uploading && <p className="item-options-status">Upload du visuel...</p>}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
     </aside>
+  );
+}
+
+function CounterOptionCard({ items = [], colors = [], uploadState = {}, disabled = false, onImage, onOptions, onSelect }) {
+  const [selectedCounterId, setSelectedCounterId] = useState(items[0]?.id || '');
+
+  useEffect(() => {
+    if (!items.length) {
+      setSelectedCounterId('');
+      return;
+    }
+    if (!items.some((item) => item.id === selectedCounterId)) {
+      setSelectedCounterId(items[0].id);
+    }
+  }, [items, selectedCounterId]);
+
+  const selectedItem = items.find((item) => item.id === selectedCounterId) || items[0] || null;
+  const selectedColorId = selectedItem?.options?.binary2ColorId || '';
+  const imageName = selectedItem?.options?.binary3ImageName || 'Aucun logo personnalisé';
+
+  const selectCounter = (id) => {
+    setSelectedCounterId(id);
+    onSelect?.(id);
+  };
+  const updateSelected = (patch) => {
+    if (!selectedItem) return;
+    onOptions?.(selectedItem, patch);
+  };
+  const uploadSelectedImage = (file) => {
+    if (!selectedItem || !file) return;
+    onImage?.(selectedItem, file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName' });
+  };
+
+  if (!items.length) {
+    return (
+      <div className="counter-option-panel">
+        <div className="counter-empty-card">
+          <strong>Aucun comptoir sur cette scène</strong>
+          <span>Le paramétrage apparaîtra ici dès qu’une banque d’accueil sera incluse dans la configuration de base.</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="counter-option-panel">
+      <div className="counter-formula-box">
+        <span><b>!</b> Votre formule inclut :</span>
+        <p>Votre banque d’accueil est déjà posée sur le stand. Vous pouvez personnaliser son logo et sa finition ici.</p>
+      </div>
+
+      {items.length > 1 && (
+        <div className="counter-selector">
+          <span>Comptoir à personnaliser</span>
+          <div>
+            {items.map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                className={item.id === selectedItem?.id ? 'active' : ''}
+                onClick={() => selectCounter(item.id)}
+              >
+                {item.label || `Comptoir ${index + 1}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <section className="counter-logo-card">
+        <header>
+          <div>
+            <strong>Logo de votre entreprise</strong>
+            <span>{selectedItem?.options?.binary3ImageUrl ? 'Visuel personnalisé' : 'Image frontale du comptoir'}</span>
+          </div>
+          {selectedItem?.options?.binary3ImageUrl && <em>Conforme</em>}
+        </header>
+
+        <label className={selectedItem?.options?.binary3ImageUrl ? 'counter-image-dropzone has-image' : 'counter-image-dropzone'}>
+          {selectedItem?.options?.binary3ImageUrl ? <img src={selectedItem.options.binary3ImageUrl} alt="" /> : <FileImage size={22} />}
+          <span>
+            <strong>{imageName}</strong>
+            <small>{selectedItem?.options?.binary3ImageUrl ? 'Cliquer pour remplacer' : 'Importer une image JPG, PNG ou WebP'}</small>
+          </span>
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            disabled={disabled || uploadState?.uploading}
+            onChange={(event) => {
+              uploadSelectedImage(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+        </label>
+
+        {selectedItem?.options?.binary3ImageUrl && (
+          <button
+            type="button"
+            className="counter-secondary-button danger"
+            disabled={disabled}
+            onClick={() => updateSelected({ binary3ImageUrl: '', binary3ImageName: '' })}
+          >
+            <X size={15} /> Retirer
+          </button>
+        )}
+      </section>
+
+      <section className="counter-color-card">
+        <header>
+          <div>
+            <strong>Couleur</strong>
+            <span>{selectedItem?.options?.binary2ColorName || 'Bois original'}</span>
+          </div>
+        </header>
+        <div className="counter-color-grid">
+          <button
+            type="button"
+            className={!selectedItem?.options?.binary2Color ? 'active' : ''}
+            disabled={disabled}
+            onClick={() => updateSelected({ binary2Color: '', binary2ColorImage: '', binary2ColorId: '', binary2ColorName: '', binary2ColorReference: '', binary2ColorPrice: 0 })}
+          >
+            <i className="wood" />
+            <span><strong>Bois</strong><small>Inclus</small></span>
+          </button>
+          {colors.map((color) => (
+            <button
+              key={color.id}
+              type="button"
+              className={selectedColorId === color.id ? 'active' : ''}
+              style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+              disabled={disabled}
+              onClick={() => updateSelected({ binary2Color: color.hex, binary2ColorImage: color.image || '', binary2ColorId: color.id, binary2ColorName: color.name, binary2ColorReference: '', binary2ColorPrice: Number(color.price || 0) })}
+            >
+              <i />
+              <span><strong>{color.name}</strong><small>{Number(color.price || 0) > 0 ? `+ ${Number(color.price).toLocaleString('fr-FR')} € HT/m²` : 'Inclus'}</small></span>
+            </button>
+          ))}
+        </div>
+        {!colors.length && <p>Aucune couleur comptoir active pour ce salon.</p>}
+      </section>
+
+      {uploadState?.uploading && <p className="counter-status">Upload du visuel...</p>}
+      {uploadState?.error && <p className="counter-error">{uploadState.error}</p>}
+    </div>
   );
 }
 
@@ -2160,6 +2311,9 @@ function OptionsStepPanel({
   partitionHeadSides,
   partitionHeadVisuals = {},
   partitionHeadUploadState = {},
+  counterItems = [],
+  counterColors = [],
+  counterUploadState = {},
   salonLabel,
   catalog,
   readOnly = false,
@@ -2175,6 +2329,9 @@ function OptionsStepPanel({
   onReserveOption,
   onPartitionHeadSide,
   onPartitionHeadImage,
+  onCounterImage,
+  onCounterOptions,
+  onSelectCounter,
   onExport,
 }) {
   return (
@@ -2269,7 +2426,17 @@ function OptionsStepPanel({
           onImage={onPartitionHeadImage}
         />
       </OptionAccordion>
-      <OptionAccordion title="Comptoir" icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')} />
+      <OptionAccordion title="Comptoir" icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
+        <CounterOptionCard
+          items={counterItems}
+          colors={counterColors}
+          uploadState={counterUploadState}
+          disabled={readOnly}
+          onImage={onCounterImage}
+          onOptions={onCounterOptions}
+          onSelect={onSelectCounter}
+        />
+      </OptionAccordion>
 
       <button className="wide export" onClick={onExport}>
         <FileImage size={16} /> Generer PNG technique
@@ -2438,7 +2605,11 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
   const extras = extraOptions.reduce((sum, option) => sum + (selectedExtras[option.id] ? Number(option.price || 0) : 0), 0);
   const total = (basePrice + extras) * (mode === 'add' ? quantity : 1);
-  const hasVisualOptions = mode === 'edit' && item && (isPartitionHeadItem(item) || isPosterItem(item) || isWoodReceptionDeskItem(item));
+  const hasVisualOptions = mode === 'edit' && item && (
+    isPartitionHeadItem(item)
+    || isPosterItem(item)
+    || (isWoodReceptionDeskItem(item) && !isIncludedSceneItem(item))
+  );
 
   const toggleExtra = (id, checked) => {
     setSelectedExtras((current) => ({ ...current, [id]: checked }));
@@ -2520,9 +2691,10 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
             uploadState={uploadState}
             onImageChange={(file) => onImageChange?.(item, file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName' })}
             onResetImage={() => onUpdateItemOptions?.(item, { binary3ImageUrl: '', binary3ImageName: '' })}
-            onColorChange={(color) => onUpdateItemOptions?.(item, { binary2Color: color.hex, binary2ColorImage: color.image || '', binary2ColorId: color.id, binary2ColorName: color.name, binary2ColorReference: color.reference || '', binary2ColorPrice: Number(color.price || 0) })}
+            onColorChange={(color) => onUpdateItemOptions?.(item, { binary2Color: color.hex, binary2ColorImage: color.image || '', binary2ColorId: color.id, binary2ColorName: color.name, binary2ColorReference: '', binary2ColorPrice: 0 })}
             onResetColor={() => onUpdateItemOptions?.(item, { binary2Color: '', binary2ColorImage: '', binary2ColorId: '', binary2ColorName: '', binary2ColorReference: '', binary2ColorPrice: 0 })}
             embedded
+            optionsFree
           />
         )}
 
@@ -2649,9 +2821,15 @@ function itemCartLabel(item) {
 }
 
 function cartItemPrice(item, entry, salonLabel) {
-  const basePrice = Number(item.options?.unitPrice ?? assetUnitPrice(entry, salonLabel) ?? 0);
-  const colorSupplement = Number(item.options?.binary2ColorPrice || 0) * counterColorSurfaceM2(item, entry);
+  const basePrice = cartItemBasePrice(item, entry, salonLabel);
+  const colorSupplement = isBillableCounterColorOption(item, entry)
+    ? Number(item.options?.binary2ColorPrice || 0) * counterColorSurfaceM2(item, entry)
+    : 0;
   return basePrice + colorSupplement;
+}
+
+function cartItemBasePrice(item, entry, salonLabel) {
+  return Number(item.options?.unitPrice ?? assetUnitPrice(entry, salonLabel) ?? 0);
 }
 
 function counterColorSurfaceM2(item = {}, entry = {}) {
@@ -2660,6 +2838,27 @@ function counterColorSurfaceM2(item = {}, entry = {}) {
   const width = Number(size?.[0] || 1);
   const height = Number(size?.[1] || 1);
   return Math.max(1, roundM2(width * height));
+}
+
+function counterColorOptionLine(item = {}, entry = {}, salonLabel = '', index = 0) {
+  const colorPrice = Number(item.options?.binary2ColorPrice || 0);
+  if (!isBillableCounterColorOption(item, entry) || colorPrice <= 0) return null;
+  const quantity = counterColorSurfaceM2(item, entry);
+  const colorName = item.options?.binary2ColorName || item.options?.binary2Color || 'couleur';
+  const lineTotal = Math.round(colorPrice * quantity);
+  return {
+    type: `counter-color-${item.id || entry?.type || index}`,
+    label: `Option couleur comptoir — ${entry?.label || item.label || item.type} (${colorName})`,
+    quantity,
+    unitPrice: colorPrice,
+    total: lineTotal,
+    reference: assetReference(entry, salonLabel),
+    optionForItemId: item.id || '',
+  };
+}
+
+function isBillableCounterColorOption(item = {}, entry = {}) {
+  return isIncludedSceneItem(item) && isWoodReceptionDeskItem({ ...entry, ...item });
 }
 
 function marketplaceStartingPrice(entry, catalog = [], salonLabel = '') {
@@ -7596,7 +7795,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     const entry = findCatalogEntry(catalog, type);
     const typeItems = items.filter((item) => item.type === type);
     const billableItems = typeItems.slice(includedCount);
-    const itemPrices = billableItems.map((item) => cartItemPrice(item, entry, salonLabel));
+    const itemPrices = billableItems.map((item) => cartItemBasePrice(item, entry, salonLabel));
     const lineTotal = itemPrices.reduce((sum, price) => sum + price, 0);
     const unitPrice = billableCount ? Math.round(lineTotal / billableCount) : assetUnitPrice(entry, salonLabel);
     billableCounts.set(type, billableCount);
@@ -7609,6 +7808,14 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       total: lineTotal,
       reference: assetReference(entry, salonLabel),
     });
+  });
+
+  items.forEach((item, index) => {
+    const entry = findCatalogEntry(catalog, item.type) || item;
+    const colorLine = counterColorOptionLine(item, entry, salonLabel, index);
+    if (!colorLine) return;
+    itemsTotal += colorLine.total;
+    lines.push(colorLine);
   });
 
   colorSelections
@@ -8282,6 +8489,7 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
   if (!reserveSurface) return wallSurfaces;
 
   const outsideSide = protectedObjectWallSideContains(reserveSurface, reserveSurface.centerAxis, 1) ? -1 : 1;
+  const reserveFaceOffset = wallThickness / 2 + 0.004;
   return [
     ...wallSurfaces,
     {
@@ -8292,8 +8500,8 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
       width: Math.max(0.5, Number(reserveSurface.length || 1)),
       height: fixedWallHeight,
       position: reserveSurface.orientation === 'x'
-        ? [reserveSurface.centerAxis, fixedWallHeight / 2, reserveSurface.normalAxis + outsideSide * 0.0015]
-        : [reserveSurface.normalAxis + outsideSide * 0.0015, fixedWallHeight / 2, reserveSurface.centerAxis],
+        ? [reserveSurface.centerAxis, fixedWallHeight / 2, reserveSurface.normalAxis + outsideSide * reserveFaceOffset]
+        : [reserveSurface.normalAxis + outsideSide * reserveFaceOffset, fixedWallHeight / 2, reserveSurface.centerAxis],
       rotation: reserveSurface.orientation === 'x'
         ? (outsideSide >= 0 ? 0 : Math.PI)
         : (outsideSide >= 0 ? Math.PI / 2 : -Math.PI / 2),
@@ -9905,9 +10113,7 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
   const rampDimensions = technicalFloor ? technicalRampDimensions(width, slabHeight) : null;
   const rampLimit = rampDimensions ? Math.max(0, width / 2 - rampDimensions.width / 2) : 0;
   const resolvedRampX = rampDimensions ? clamp(Number(technicalFloorRampX || 0), -rampLimit, rampLimit) : 0;
-  const slabSegments = technicalFloor
-    ? technicalFloorSlabSegments(width, depth, rampDimensions, resolvedRampX)
-    : [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }];
+  const slabSegments = [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }];
 
   return (
     <group>
@@ -10027,8 +10233,8 @@ function RampGeometry({ width, depth, height }) {
     const x1 = w / 2;
     const zFront = d / 2;
     const zBack = -d / 2;
-    const yLow = -h + 0.004;
-    const yHigh = 0.006;
+    const yLow = 0.006;
+    const yHigh = h + 0.006;
     const positions = [
       // Sloped walking surface: low at the entrance, high inside the stand.
       x0, yLow, zFront, x1, yLow, zFront, x1, yHigh, zBack,
@@ -10111,24 +10317,34 @@ function colorTextureUrl(color) {
 }
 
 function useRepeatedTexture(url, width, depth, tileSize = 1) {
-  const [texture, setTexture] = useState(null);
+  const [texture, setTexture] = useState(() => {
+    const cachedImage = url ? Cache.get(`image:${url}`) : null;
+    return cachedImage ? createRepeatedTextureFromImage(cachedImage, width, depth, tileSize, url) : null;
+  });
 
   useEffect(() => {
     let disposed = false;
     let currentTexture = null;
-    setTexture(null);
 
-    if (!url) return undefined;
+    if (!url) {
+      setTexture((previous) => {
+        previous?.dispose?.();
+        return null;
+      });
+      return undefined;
+    }
 
     const applyImage = (image) => {
       if (disposed || !image) return;
-      try {
-        const seamlessTexture = createSeamlessRepeatedTexture(image);
-        configureRepeatedTexture(seamlessTexture, width, depth, tileSize);
+      const seamlessTexture = createRepeatedTextureFromImage(image, width, depth, tileSize, url);
+      if (seamlessTexture) {
         currentTexture = seamlessTexture;
-        setTexture(seamlessTexture);
-      } catch (error) {
-        logTextureDiagnostic('Repeated floor texture ignored after decode issue', { url, error });
+        setTexture((previous) => {
+          if (previous && previous !== seamlessTexture) previous.dispose?.();
+          return seamlessTexture;
+        });
+      } else {
+        logTextureDiagnostic('Repeated floor texture ignored after decode issue', { url });
         setTexture(null);
       }
     };
@@ -10137,6 +10353,10 @@ function useRepeatedTexture(url, width, depth, tileSize = 1) {
     if (cachedImage) {
       applyImage(cachedImage);
     } else {
+      setTexture((previous) => {
+        previous?.dispose?.();
+        return null;
+      });
       loadDecodedImage(url).then(({ ok, image }) => {
         if (!disposed && ok) applyImage(image);
       });
@@ -10149,6 +10369,17 @@ function useRepeatedTexture(url, width, depth, tileSize = 1) {
   }, [url, width, depth, tileSize]);
 
   return texture;
+}
+
+function createRepeatedTextureFromImage(image, width, depth, tileSize = 1, url = '') {
+  try {
+    const seamlessTexture = createSeamlessRepeatedTexture(image);
+    configureRepeatedTexture(seamlessTexture, width, depth, tileSize);
+    return seamlessTexture;
+  } catch (error) {
+    logTextureDiagnostic('Repeated texture ignored after decode issue', { url, error });
+    return null;
+  }
 }
 
 function configureRepeatedTexture(texture, width, depth, tileSize = 1) {

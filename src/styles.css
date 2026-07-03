@@ -7474,6 +7474,255 @@ img.asset-thumb {
   cursor: not-allowed;
 }
 
+.counter-option-panel {
+  display: grid;
+  gap: 14px;
+  margin: 0 14px 14px;
+  color: #ffffff;
+}
+
+.counter-formula-box,
+.counter-empty-card {
+  border: 1px solid #ff9f1a;
+  border-radius: 6px;
+  padding: 12px 14px;
+  color: #c87300;
+  background: #fff7e8;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.counter-formula-box span {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 950;
+}
+
+.counter-formula-box b {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  color: #fff;
+  background: #ff9f1a;
+  font-size: 0.8rem;
+}
+
+.counter-formula-box p,
+.counter-empty-card span {
+  margin: 8px 0 0;
+  line-height: 1.35;
+}
+
+.counter-empty-card {
+  display: grid;
+  gap: 4px;
+}
+
+.counter-selector,
+.counter-logo-card,
+.counter-color-card {
+  display: grid;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 12px;
+  color: #171b22;
+  background: #ffffff;
+}
+
+.counter-selector > span {
+  color: #fff;
+}
+
+.counter-selector {
+  color: #fff;
+  background: transparent;
+  padding: 0;
+}
+
+.counter-selector > div {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.counter-selector button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.counter-selector button.active {
+  color: #1f4378;
+  background: #ffffff;
+}
+
+.counter-logo-card header,
+.counter-color-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.counter-logo-card header div,
+.counter-color-card header div {
+  display: grid;
+  gap: 2px;
+}
+
+.counter-logo-card strong,
+.counter-color-card strong {
+  color: #171b22;
+  font-size: 0.88rem;
+  font-weight: 950;
+}
+
+.counter-logo-card span,
+.counter-color-card span {
+  color: #8a929e;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.counter-logo-card header em {
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: #167044;
+  background: #d9f2e2;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.counter-image-dropzone {
+  position: relative;
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  overflow: hidden;
+  border: 1px solid #dbe4f0;
+  border-radius: 7px;
+  padding: 10px;
+  background: #f5f8fc;
+  cursor: pointer;
+}
+
+.counter-image-dropzone > svg,
+.counter-image-dropzone > img {
+  width: 56px;
+  height: 52px;
+  border-radius: 5px;
+  object-fit: cover;
+  background: #dfe8f5;
+}
+
+.counter-image-dropzone > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.counter-image-dropzone strong,
+.counter-image-dropzone small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.counter-image-dropzone input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.counter-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid #d8e1ec;
+  border-radius: 7px;
+  color: #1f4378;
+  background: #fff;
+  font-weight: 950;
+}
+
+.counter-secondary-button.danger {
+  border-color: #ff3f3f;
+  color: #ff3f3f;
+}
+
+.counter-color-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.counter-color-grid button {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  align-items: center;
+  gap: 8px;
+  min-height: 50px;
+  border: 1px solid #dbe3ee;
+  border-radius: 9px;
+  padding: 7px;
+  background: #f8fafc;
+  text-align: left;
+}
+
+.counter-color-grid button.active {
+  border-color: #1f4378;
+  box-shadow: inset 0 0 0 1px #1f4378;
+}
+
+.counter-color-grid i {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--swatch-color);
+  background-image: var(--swatch-image);
+  background-size: cover;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+.counter-color-grid i.wood {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 42%),
+    repeating-linear-gradient(90deg, #c49b63 0 5px, #8b6335 5px 7px);
+}
+
+.counter-color-grid span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.counter-color-grid small,
+.counter-color-card p,
+.counter-status,
+.counter-error {
+  color: #7d8794;
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.counter-error {
+  color: #ffdad5;
+}
+
 /* Plancher technique — aligned with the newer blue option panels. */
 .technical-floor-card {
   display: grid;
