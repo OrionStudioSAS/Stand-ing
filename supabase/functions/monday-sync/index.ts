@@ -110,8 +110,8 @@ Deno.serve(async (req) => {
         source_payload: {
           ...(sceneDraft.source_payload || {}),
           options: {
-            ...defaultOptions,
             ...((sceneDraft.source_payload || {}).options || {}),
+            ...defaultOptions,
           },
           baseItems,
           reserveRules: presetReserveRules(preset),

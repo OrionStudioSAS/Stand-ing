@@ -97,8 +97,11 @@ function writeLocalScenes(scenes) {
 }
 
 function dbSceneToScene(row) {
+  const sourcePayload = applyPresetDefaultColorOptions(row);
+
   return {
     ...row,
+    source_payload: sourcePayload,
     client: row.clients || row.client || null,
     dimensions: row.dimensions ? { ...row.dimensions, height: fixedWallHeight } : { width: row.width_m, depth: row.depth_m, height: fixedWallHeight },
     items: (row.scene_items || []).map((item) => ({
@@ -115,6 +118,25 @@ function dbSceneToScene(row) {
   };
 }
 
+
+function applyPresetDefaultColorOptions(row) {
+  const sourcePayload = { ...(row.source_payload || {}) };
+  const presetDefaults = row.stand_presets?.base_config?.defaultColorOptions
+    || row.stand_presets?.base_config?.options?.defaultColorOptions
+    || null;
+
+  if (!presetDefaults || typeof presetDefaults !== 'object') return sourcePayload;
+
+  const currentOptions = { ...(sourcePayload.options || {}) };
+  const defaultPayload = { ...presetDefaults, defaultColorOptions: presetDefaults };
+  const shouldForcePresetDefaults = !row.client_status || row.client_status === 'not_started';
+  sourcePayload.options = shouldForcePresetDefaults
+    ? { ...currentOptions, ...defaultPayload }
+    : { ...defaultPayload, ...currentOptions, defaultColorOptions: currentOptions.defaultColorOptions || presetDefaults };
+
+  return sourcePayload;
+}
+
 export async function listScenes(filters = {}) {
   if (!supabase) {
     return filterScenes(readLocalScenes(), filters);
@@ -122,7 +144,7 @@ export async function listScenes(filters = {}) {
 
   let query = supabase
     .from('scenes')
-    .select('*, scene_items(*), scene_files(*)')
+    .select('*, scene_items(*), scene_files(*), stand_presets(base_config)')
     .order('created_at', { ascending: false });
 
   if (filters.salon) query = query.ilike('salon', `%${filters.salon}%`);
@@ -142,7 +164,7 @@ export async function getSceneByToken(token) {
 
   const { data, error } = await supabase
     .from('scenes')
-    .select('*, scene_items(*), scene_files(*)')
+    .select('*, scene_items(*), scene_files(*), stand_presets(base_config)')
     .eq('share_token', token)
     .single();
 
