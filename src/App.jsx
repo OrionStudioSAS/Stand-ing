@@ -6606,7 +6606,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           <>
             <section className="asset-group-builder">
               <h3>Composition du groupe</h3>
-              <p>Tu peux modifier les objets, leur position X/Z et les déplacer directement sur le mini-plan.</p>
+              <p>Tu peux modifier les objets, leur position X/Z et les déplacer directement sur le mini-plan, avec un pas précis de 1 cm.</p>
               <MiniGroupPlan
                 rows={groupRows}
                 sourceAssets={sourceAssets}
@@ -6628,8 +6628,8 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
                       <span>Libellé plan</span>
                       <input value={row.label || selectedSource?.label || ''} onChange={(event) => updateGroupRow(row.uid, { label: event.target.value })} />
                     </label>
-                    <label><span>X m</span><input type="number" step="0.10" value={row.x} onChange={(event) => updateGroupRow(row.uid, { x: event.target.value })} /></label>
-                    <label><span>Z m</span><input type="number" step="0.10" value={row.z} onChange={(event) => updateGroupRow(row.uid, { z: event.target.value })} /></label>
+                    <label><span>X m</span><input type="number" step={assetGroupPlacementStep} value={row.x} onChange={(event) => updateGroupRow(row.uid, { x: event.target.value })} /></label>
+                    <label><span>Z m</span><input type="number" step={assetGroupPlacementStep} value={row.z} onChange={(event) => updateGroupRow(row.uid, { z: event.target.value })} /></label>
                     <label><span>Rotation</span><input type="number" step="5" value={row.rotation} onChange={(event) => updateGroupRow(row.uid, { rotation: event.target.value })} /></label>
                     <label title="Profondeur 6 cm (arrière)"><span>6 cm</span><input type="checkbox" checked={Boolean(row.depthLocked6cm)} onChange={(event) => updateGroupRow(row.uid, { depthLocked6cm: event.target.checked || undefined })} /></label>
                     <button type="button" onClick={() => removeGroupRow(row.uid)} disabled={groupRows.length <= 1}><Trash2 size={14} /></button>
@@ -6937,7 +6937,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
 
         <section className="asset-group-builder">
           <h3>Objets du groupe</h3>
-          <p>Place les objets directement sur le plan en vue du dessus. Les champs X/Z restent disponibles pour l’ajustement précis.</p>
+          <p>Place les objets directement sur le plan en vue du dessus. Les champs X/Z restent disponibles pour l’ajustement précis au centimètre.</p>
           <MiniGroupPlan
             rows={rows}
             sourceAssets={sourceAssets}
@@ -6959,8 +6959,8 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
                   <span>Libellé plan</span>
                   <input value={row.label || selectedSource?.label || ''} onChange={(event) => updateRow(row.uid, { label: event.target.value })} />
                 </label>
-                <label><span>X m</span><input type="number" step="0.10" value={row.x} onChange={(event) => updateRow(row.uid, { x: event.target.value })} /></label>
-                <label><span>Z m</span><input type="number" step="0.10" value={row.z} onChange={(event) => updateRow(row.uid, { z: event.target.value })} /></label>
+                <label><span>X m</span><input type="number" step={assetGroupPlacementStep} value={row.x} onChange={(event) => updateRow(row.uid, { x: event.target.value })} /></label>
+                <label><span>Z m</span><input type="number" step={assetGroupPlacementStep} value={row.z} onChange={(event) => updateRow(row.uid, { z: event.target.value })} /></label>
                 <label><span>Rotation</span><input type="number" step="5" value={row.rotation} onChange={(event) => updateRow(row.uid, { rotation: event.target.value })} /></label>
                 <button type="button" onClick={() => removeRow(row.uid)} disabled={rows.length <= 1}><Trash2 size={14} /></button>
               </article>
@@ -7000,10 +7000,12 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
   );
 }
 
+const assetGroupPlacementStep = 0.01;
+
 function MiniGroupPlan({ rows, sourceAssets, selectedUid, onSelect, onMove }) {
   const svgRef = useRef(null);
   const [draggingUid, setDraggingUid] = useState(null);
-  const snapStep = 0.1;
+  const snapStep = assetGroupPlacementStep;
   const planItems = rows.map((row) => {
     const asset = sourceAssets.find((item) => item.type === row.type);
     const [width = 0.6, , depth = 0.6] = assetModelSize(asset || {});
