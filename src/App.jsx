@@ -2232,30 +2232,12 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
         </section>
       )}
 
-      <section className="counter-color-card">
-        <header>
-          <div>
-            <strong>Couleur</strong>
-            <span>{selectedFinish.name}{selectedFinish.code ? ` (${selectedFinish.code})` : ''}</span>
-          </div>
-        </header>
-        <div className="counter-color-grid compact">
-          {counterFinishOptions(colors).map((finish) => (
-            <button
-              key={finish.id}
-              type="button"
-              className={selectedColorId === finish.id ? 'active' : ''}
-              style={{ '--swatch-color': finish.hex, '--swatch-image': finish.image ? `url("${finish.image}")` : 'none' }}
-              disabled={disabled}
-              onClick={() => selectFinish(finish)}
-            >
-              <i className={finish.mode === 'wood' ? 'wood' : ''} />
-              <span><strong>{finish.name}</strong><small>{Number(finish.price || 0) > 0 ? `+ ${Number(finish.price).toLocaleString('fr-FR')} € HT` : 'Inclus'}</small></span>
-            </button>
-          ))}
-        </div>
-        {!colors.length && <p>Blanc inclus et finition bois disponible. Ajoute des couleurs comptoir dans l’admin pour proposer plus d’options.</p>}
-      </section>
+      <CounterFinishCard
+        finishes={counterFinishOptions(colors)}
+        selectedFinish={selectedFinish}
+        disabled={disabled}
+        onSelect={selectFinish}
+      />
 
       <section className="counter-logo-card">
         <header>
@@ -2318,6 +2300,54 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
 }
 
 
+
+
+function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = false, onSelect }) {
+  const includedFinishes = finishes.filter((finish) => finish.included || finish.mode === 'white');
+  const optionalFinishes = finishes.filter((finish) => !includedFinishes.some((included) => included.id === finish.id));
+  const optionPrice = optionalFinishes.find((finish) => Number(finish.price || 0) > 0)?.price || 0;
+  const selectedCode = selectedFinish.code || selectedFinish.reference || '';
+  return (
+    <section className="counter-color-card counter-finish-card">
+      <div className="counter-finish-head">
+        <strong>Couleur</strong>
+        <span>{selectedFinish.name}{selectedCode ? ` (${selectedCode})` : ''}</span>
+      </div>
+      <small>{includedFinishes.length || 1} coloris disponible{includedFinishes.length > 1 ? 's' : ''} — Inclus</small>
+      <div className="counter-finish-swatches included">
+        {(includedFinishes.length ? includedFinishes : [counterWhiteFinish()]).map((finish) => (
+          <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
+        ))}
+      </div>
+      {optionalFinishes.length > 0 && (
+        <>
+          <small>En option {Number(optionPrice || 0) > 0 ? `${Number(optionPrice).toLocaleString('fr-FR')} €` : ''}</small>
+          <div className="counter-finish-swatches optional">
+            {optionalFinishes.map((finish) => (
+              <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function CounterFinishSwatch({ finish = {}, active = false, disabled = false, onClick }) {
+  return (
+    <button
+      type="button"
+      className={active ? 'active' : ''}
+      style={{ '--swatch-color': finish.hex, '--swatch-image': finish.image ? `url("${finish.image}")` : 'none' }}
+      title={`${finish.name}${finish.code ? ` (${finish.code})` : ''}`}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <i className={finish.mode === 'wood' ? 'wood' : ''} />
+      <span>{finish.name}</span>
+    </button>
+  );
+}
 
 function counterVariantOptions(catalog = [], salonLabel = '') {
   const group = catalog.find((entry) => isVariantGroupEntry(entry) && isCounterVariantGroup(entry));
@@ -10437,7 +10467,9 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
   const rampDimensions = technicalFloor ? technicalRampDimensions(width, slabHeight) : null;
   const rampLimit = rampDimensions ? Math.max(0, width / 2 - rampDimensions.width / 2) : 0;
   const resolvedRampX = rampDimensions ? clamp(Number(technicalFloorRampX || 0), -rampLimit, rampLimit) : 0;
-  const slabSegments = [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }];
+  const slabSegments = technicalFloor && rampDimensions
+    ? technicalFloorSlabSegments(width, depth, rampDimensions, resolvedRampX)
+    : [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }];
 
   return (
     <group>

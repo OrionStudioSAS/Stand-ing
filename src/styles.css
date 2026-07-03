@@ -8088,3 +8088,84 @@ img.asset-thumb {
 .counter-info-card li::marker {
   color: #1f4378;
 }
+
+.counter-finish-card {
+  gap: 8px;
+  padding: 14px;
+}
+
+.counter-finish-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.counter-finish-head strong {
+  color: #171b22;
+  font-size: 0.92rem;
+  font-weight: 950;
+}
+
+.counter-finish-head span {
+  color: #1b3f74;
+  font-size: 0.82rem;
+  font-weight: 950;
+  text-align: right;
+}
+
+.counter-finish-card > small {
+  color: #a0a6af;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.counter-finish-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  padding: 4px 0 8px;
+}
+
+.counter-finish-swatches button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.counter-finish-swatches button i {
+  display: block;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--swatch-color, #fff);
+  background-image: var(--swatch-image);
+  background-size: cover;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.counter-finish-swatches button i.wood {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 42%),
+    repeating-linear-gradient(90deg, #d7bd92 0 5px, #a8763d 5px 7px);
+}
+
+.counter-finish-swatches button.active i {
+  box-shadow: 0 0 0 3px #1f4378, inset 0 0 0 2px #fff;
+}
+
+.counter-finish-swatches button span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
