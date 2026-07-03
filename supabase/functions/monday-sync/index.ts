@@ -372,8 +372,12 @@ function presetPartitionHeadRules(preset: any) {
   return preset?.base_config?.partitionHeadRules || preset?.base_config?.options?.partitionHeadRules || {};
 }
 
-function presetDefaultOptions(_preset: any) {
-  return {};
+function presetDefaultOptions(preset: any) {
+  const defaults = preset?.base_config?.defaultColorOptions || preset?.base_config?.options?.defaultColorOptions || {};
+  return {
+    ...defaults,
+    defaultColorOptions: defaults,
+  };
 }
 
 async function findPresetByLayout(supabase: any, params: { offerId?: string; salonId?: string; layout: string; offerIsNull?: boolean }) {

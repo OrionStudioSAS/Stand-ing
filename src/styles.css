@@ -4230,6 +4230,70 @@ select {
   background: #1f4378;
 }
 
+.preset-default-colors {
+  display: grid;
+  gap: 10px;
+  margin: 2px 0 18px;
+  border: 1px solid #dce7f4;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f7faff;
+}
+
+.preset-default-colors header {
+  display: grid;
+  gap: 3px;
+}
+
+.preset-default-colors header strong {
+  color: #1f4378;
+  font-size: 0.86rem;
+  font-weight: 950;
+}
+
+.preset-default-colors header span {
+  color: #748091;
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.preset-color-select {
+  display: grid;
+  grid-template-columns: 1fr 32px;
+  gap: 5px 9px;
+  align-items: center;
+  color: #596372;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.preset-color-select > span {
+  grid-column: 1 / -1;
+}
+
+.preset-color-select select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  padding: 0 9px;
+  color: #263142;
+  background: #fff;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.preset-color-select i {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--swatch-color);
+  background-image: var(--swatch-image);
+  background-size: cover;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.16), 0 0 0 3px #fff;
+}
+
 .preset-side-panel h4 {
   margin: 0 0 10px;
   color: #1f2630;
