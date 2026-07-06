@@ -2064,6 +2064,9 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
       <label className="item-image-upload">
         <span>Image à modifier</span>
         <small>{imageName}</small>
+        <small>
+          {(() => { const [w, h] = woodReceptionDeskImageCoverSize(item); return `Format conseillé : ${w.toLocaleString('fr-FR')} × ${h.toLocaleString('fr-FR')} px · JPG ou PNG`; })()}
+        </small>
         <input
           type="file"
           accept="image/png,image/jpeg,image/webp"
@@ -2130,16 +2133,10 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   const baseVariant = counterVariants[0] || null;
   const selectedVariant = counterVariants.find((variant) => variant.assetType === selectedItem?.type || variant.id === selectedItem?.options?.variantId) || baseVariant;
   const baseVariantPrice = Number(baseVariant?.price || 0);
-  const selectedColorId = selectedItem?.options?.binary2ColorId || counterWhiteFinish().id;
-  const selectedFinish = counterFinishOptions(colors).find((finish) => finish.id === selectedColorId) || counterWhiteFinish();
+  const selectedColorId = selectedItem?.options?.binary2ColorId || counterWoodFinish(colors).id;
+  const selectedFinish = counterFinishOptions(colors).find((finish) => finish.id === selectedColorId) || counterWoodFinish(colors);
   const imageName = selectedItem?.options?.binary3ImageName || 'Aucun logo personnalisé';
   const logoInputRef = useRef(null);
-
-  useEffect(() => {
-    if (!selectedItem || disabled) return;
-    if (selectedItem.options?.binary2ColorId || selectedItem.options?.binary2Color) return;
-    onOptions?.(selectedItem, counterFinishPatch(counterWhiteFinish()));
-  }, [selectedItem?.id, disabled]);
 
   const selectCounter = (id) => {
     setSelectedCounterId(id);
@@ -2188,7 +2185,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
     <div className="counter-option-panel">
       <div className="counter-formula-box">
         <span><b>!</b> Votre formule inclut :</span>
-        <p>Une banque d’accueil 1m en finition blanche, avec l’emplacement logo personnalisable.</p>
+        <p>Une banque d’accueil 1m en finition bois naturel, avec l’emplacement logo personnalisable.</p>
       </div>
 
       {items.length > 1 && (
@@ -2247,6 +2244,9 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
           </div>
           {selectedItem?.options?.binary3ImageUrl && <em>Conforme</em>}
         </header>
+        <small className="counter-logo-spec">
+          {(() => { const [w, h] = woodReceptionDeskImageCoverSize(selectedItem); return `Format conseillé : ${w.toLocaleString('fr-FR')} × ${h.toLocaleString('fr-FR')} px · JPG ou PNG`; })()}
+        </small>
 
         <label className={selectedItem?.options?.binary3ImageUrl ? 'counter-image-dropzone has-image' : 'counter-image-dropzone'}>
           {selectedItem?.options?.binary3ImageUrl ? <img src={selectedItem.options.binary3ImageUrl} alt="" /> : <FileImage size={22} />}
@@ -2303,7 +2303,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
 
 
 function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = false, onSelect }) {
-  const includedFinishes = finishes.filter((finish) => finish.included || finish.mode === 'white');
+  const includedFinishes = finishes.filter((finish) => finish.included || finish.mode === 'wood');
   const optionalFinishes = finishes.filter((finish) => !includedFinishes.some((included) => included.id === finish.id));
   const optionPrice = optionalFinishes.find((finish) => Number(finish.price || 0) > 0)?.price || 0;
   const selectedCode = selectedFinish.code || selectedFinish.reference || '';
@@ -2315,7 +2315,7 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
       </div>
       <small>{includedFinishes.length || 1} coloris disponible{includedFinishes.length > 1 ? 's' : ''} — Inclus</small>
       <div className="counter-finish-swatches included">
-        {(includedFinishes.length ? includedFinishes : [counterWhiteFinish()]).map((finish) => (
+        {(includedFinishes.length ? includedFinishes : [counterWoodFinish()]).map((finish) => (
           <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
         ))}
       </div>
@@ -2385,7 +2385,7 @@ function counterSizeLabel(variant = {}) {
 }
 
 function counterWhiteFinish() {
-  return { id: '__counter-white__', name: 'Blanc', code: '', hex: '#ffffff', image: '', price: 0, mode: 'white', included: true };
+  return { id: '__counter-white__', name: 'Blanc', code: '', hex: '#ffffff', image: '', price: 98, mode: 'white' };
 }
 
 function counterWoodFinish(colors = []) {
@@ -2396,9 +2396,10 @@ function counterWoodFinish(colors = []) {
     code: configured?.code || configured?.reference || 'H3303',
     hex: configured?.hex || '#c49b63',
     image: configured?.image || '',
-    price: Number(configured?.price ?? 98),
+    price: 0,
     reference: configured?.reference || 'H3303',
     mode: 'wood',
+    included: true,
   };
 }
 
@@ -2409,7 +2410,7 @@ function counterFinishOptions(colors = []) {
     .filter((color) => normalizeColorId(color.id) !== normalizeColorId(wood.id))
     .filter((color) => !/bois|wood/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`))
     .map((color) => ({ ...color, mode: 'color', price: Number(color.price || 0) }));
-  return [white, wood, ...paidColors];
+  return [wood, white, ...paidColors];
 }
 
 function counterFinishPatch(finish = {}) {
@@ -2421,7 +2422,7 @@ function counterFinishPatch(finish = {}) {
     binary2ColorId: finish.id || '',
     binary2ColorName: finish.name || '',
     binary2ColorReference: finish.reference || finish.code || '',
-    binary2ColorPrice: isWhite ? 0 : Number(finish.price || 0),
+    binary2ColorPrice: isWood ? 0 : Number(finish.price || 0),
     binary2ColorMode: finish.mode || 'color',
   };
 }
@@ -11156,7 +11157,7 @@ function Model3D({ item, selected, hovered, dragging, visualContext }) {
 
 function GlbModel({ item, selected, hovered, visualContext }) {
   const gltf = useGlbModel(item.modelUrl);
-  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize() });
+  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item) });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '', { flipY: false });
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item) });
   const exhibitorTexture = useMemo(() => (
@@ -11197,6 +11198,7 @@ function useObjModel(modelUrl, materials) {
 
 function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualContext }) {
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: partitionHeadMainImageCoverSize(item) });
+  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item) });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '');
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item) : null
@@ -11211,6 +11213,7 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
       item={item}
       materials={materials}
       mainImageTexture={mainImageTexture}
+      customImageTexture={customImageTexture}
       counterColorTexture={counterColorTexture}
       exhibitorTexture={exhibitorTexture}
       selected={selected}
@@ -11219,15 +11222,16 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   );
 }
 
-function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, counterColorTexture, exhibitorTexture, selected, hovered }) {
+function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, customImageTexture, counterColorTexture, exhibitorTexture, selected, hovered }) {
   const obj = useObjModel(item.modelUrl, materials);
   const model = useMemo(() => prepareLoadedModel(obj, item, {
     mainImageTexture,
+    customImageTexture,
     counterColorTexture,
     exhibitorTexture,
     selected,
     hovered,
-  }), [obj, item, mainImageTexture, counterColorTexture, exhibitorTexture, selected, hovered]);
+  }), [obj, item, mainImageTexture, customImageTexture, counterColorTexture, exhibitorTexture, selected, hovered]);
 
   return <primitive object={model} dispose={null} />;
 }
@@ -11500,11 +11504,14 @@ function materialMatchesReference(materialName = '', material = null, normalized
 }
 
 function isWoodReceptionDeskImageMaterial(materialName = '', material = null) {
-  return materialName === '_1'
+  return materialName === '_1' || /^_1(\.\d+)?$/.test(materialName)
     || materialMatchesReference(materialName, material, 'binary_3', 'Binary_3.jpeg');
 }
 
-function woodReceptionDeskImageCoverSize() {
+function woodReceptionDeskImageCoverSize(item = {}) {
+  const width = itemDefaultSize(item)?.[0] || 1.0;
+  if (width >= 1.85) return [2400, 800];
+  if (width >= 1.25) return [1800, 800];
   return [1200, 800];
 }
 
