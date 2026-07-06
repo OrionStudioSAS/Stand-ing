@@ -6623,27 +6623,13 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             <AssetConfigOptionRows
               rows={draftConfigOptions}
               emptyLabel="Aucune option configurée."
+              variantTypes={variantAssetTypes.filter(Boolean)}
+              sourceAssets={variantSourceAssetsList}
+              links={variantOptionLinks}
               onChange={updateConfigOptionRow}
               onRemove={removeConfigOptionRow}
+              onSetLink={setVariantOptionLink}
             />
-
-            {variantAssetTypes.filter(Boolean).length > 0 && draftConfigOptions.length > 0 && (
-              <>
-                <div className="asset-variants-head compact">
-                  <div>
-                    <h3>Liaisons option → objet</h3>
-                    <small>Pour chaque variante, l'objet posé quand une option est cochée.</small>
-                  </div>
-                </div>
-                <AssetVariantOptionLinkRows
-                  variantTypes={variantAssetTypes.filter(Boolean)}
-                  options={draftConfigOptions}
-                  links={variantOptionLinks}
-                  sourceAssets={variantSourceAssetsList}
-                  onSet={setVariantOptionLink}
-                />
-              </>
-            )}
           </section>
         )}
 
@@ -6765,31 +6751,59 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   );
 }
 
-function AssetConfigOptionRows({ rows, emptyLabel, onChange, onRemove }) {
+function AssetConfigOptionRows({ rows, emptyLabel, variantTypes = [], sourceAssets = [], links = [], onChange, onRemove, onSetLink }) {
   if (!rows.length) return <p className="asset-variants-empty">{emptyLabel}</p>;
   return (
     <div className="asset-variant-list">
-      {rows.map((row, index) => (
-        <article key={`${row.id}-${index}`} className="asset-variant-row option-row">
-          <label>
-            <span>Nom</span>
-            <input value={row.label || ''} onChange={(event) => onChange(index, { label: event.target.value })} placeholder="Ex : Technicien 1/2 j" />
-          </label>
-          <label>
-            <span>Description</span>
-            <input value={row.detail || ''} onChange={(event) => onChange(index, { detail: event.target.value })} placeholder="Texte secondaire" />
-          </label>
-          <label>
-            <span>Supplément HT</span>
-            <input type="number" min="0" step="1" value={row.price ?? 0} onChange={(event) => onChange(index, { price: event.target.value })} />
-          </label>
-          <label className="asset-toggle-row asset-variant-default">
-            <input type="checkbox" checked={Boolean(row.defaultChecked)} onChange={(event) => onChange(index, { defaultChecked: event.target.checked })} />
-            <span><strong>Cochée par défaut</strong><small>L’option est active à l’ouverture.</small></span>
-          </label>
-          <button type="button" onClick={() => onRemove(index)} aria-label="Supprimer cette option"><Trash2 size={14} /></button>
-        </article>
-      ))}
+      {rows.map((row, index) => {
+        const optionLinks = links.filter((link) => link.optionId === row.id);
+        return (
+          <article key={`${row.id}-${index}`} className="asset-variant-row option-row">
+            <div className="option-row-fields">
+              <label>
+                <span>Nom</span>
+                <input value={row.label || ''} onChange={(event) => onChange(index, { label: event.target.value })} placeholder="Ex : Sur pied" />
+              </label>
+              <label>
+                <span>Description</span>
+                <input value={row.detail || ''} onChange={(event) => onChange(index, { detail: event.target.value })} placeholder="Texte secondaire" />
+              </label>
+              <label>
+                <span>Supplément HT</span>
+                <input type="number" min="0" step="1" value={row.price ?? 0} onChange={(event) => onChange(index, { price: event.target.value })} />
+              </label>
+              <label className="asset-toggle-row asset-variant-default">
+                <input type="checkbox" checked={Boolean(row.defaultChecked)} onChange={(event) => onChange(index, { defaultChecked: event.target.checked })} />
+                <span><strong>Cochée par défaut</strong><small>L’option est active à l’ouverture.</small></span>
+              </label>
+              <button type="button" onClick={() => onRemove(index)} aria-label="Supprimer cette option"><Trash2 size={14} /></button>
+            </div>
+            {variantTypes.length > 0 && (
+              <div className="option-variant-links">
+                <span className="option-variant-links-label">Objets liés par variante</span>
+                {variantTypes.map((variantType) => {
+                  const variantSource = sourceAssets.find((a) => a.type === variantType);
+                  const currentLink = optionLinks.find((link) => link.variantType === variantType);
+                  return (
+                    <label key={variantType} className="option-variant-link-row">
+                      <span>{variantSource?.label || variantType}</span>
+                      <select
+                        value={currentLink?.linkedType || ''}
+                        onChange={(event) => onSetLink?.(variantType, row.id, event.target.value)}
+                      >
+                        <option value="">— Aucun —</option>
+                        {sourceAssets.map((source) => (
+                          <option key={source.type} value={source.type}>{source.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -6822,38 +6836,6 @@ function AssetVariantSourceRows({ rows, sourceAssets, onChange, onRemove }) {
   );
 }
 
-function AssetVariantOptionLinkRows({ variantTypes, options, links, sourceAssets, onSet }) {
-  return (
-    <div className="asset-variant-list">
-      {variantTypes.map((variantType) => {
-        const variantSource = sourceAssets.find((a) => a.type === variantType);
-        return options.map((option) => {
-          const currentLink = links.find((link) => link.variantType === variantType && link.optionId === option.id);
-          return (
-            <article key={`${variantType}-${option.id}`} className="asset-variant-row option-link-row">
-              <div className="option-link-labels">
-                <strong>{variantSource?.label || variantType}</strong>
-                <span>→ {option.label}</span>
-              </div>
-              <label>
-                <span>Objet lié</span>
-                <select
-                  value={currentLink?.linkedType || ''}
-                  onChange={(event) => onSet(variantType, option.id, event.target.value)}
-                >
-                  <option value="">— Aucun (option sans remplacement) —</option>
-                  {sourceAssets.map((source) => (
-                    <option key={source.type} value={source.type}>{source.label}</option>
-                  ))}
-                </select>
-              </label>
-            </article>
-          );
-        });
-      })}
-    </div>
-  );
-}
 
 function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
   const sourceAssets = variantSourceAssets(assets);
@@ -6969,28 +6951,14 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
           <AssetConfigOptionRows
             rows={configOptions}
             emptyLabel="Aucune option configurée."
+            variantTypes={rows.filter(Boolean)}
+            sourceAssets={sourceAssets}
+            links={variantOptionLinks}
             onChange={updateConfigOptionRow}
             onRemove={(index) => setConfigOptions((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+            onSetLink={setVariantOptionLink}
           />
         </section>
-
-        {rows.filter(Boolean).length > 0 && configOptions.length > 0 && (
-          <section className="asset-variants-settings">
-            <div className="asset-variants-head">
-              <div>
-                <h3>Liaisons option → objet</h3>
-                <small>Pour chaque variante, choisir l'objet posé quand une option est cochée. Laisser vide = pas de remplacement.</small>
-              </div>
-            </div>
-            <AssetVariantOptionLinkRows
-              variantTypes={rows.filter(Boolean)}
-              options={configOptions}
-              links={variantOptionLinks}
-              sourceAssets={sourceAssets}
-              onSet={setVariantOptionLink}
-            />
-          </section>
-        )}
 
         <section className="asset-assignment">
           <h3>Affectation par salon</h3>

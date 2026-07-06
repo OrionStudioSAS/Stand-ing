@@ -5352,7 +5352,43 @@ img.asset-thumb {
 }
 
 .asset-variant-row.option-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.option-row-fields {
+  display: grid;
   grid-template-columns: 1fr 1.3fr 100px 1.1fr 32px;
+  gap: 8px;
+  align-items: end;
+}
+
+.option-variant-links {
+  display: grid;
+  gap: 6px;
+  padding: 10px 0 2px;
+  border-top: 1px solid #e5eaf1;
+  margin-top: 10px;
+}
+
+.option-variant-links-label {
+  font-size: 0.68rem;
+  font-weight: 900;
+  color: #8992a0;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.option-variant-link-row {
+  display: grid !important;
+  grid-template-columns: 1fr 1.5fr !important;
+  gap: 8px !important;
+  align-items: center;
+  color: #27303c;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .asset-variant-row.source-row {
