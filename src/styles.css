@@ -6440,7 +6440,7 @@ img.asset-thumb {
   white-space: nowrap;
 }
 
-.marketplace-card-body button {
+.marketplace-card-body > button {
   position: absolute;
   right: 12px;
   bottom: 14px;
@@ -6452,6 +6452,42 @@ img.asset-thumb {
   border-radius: 999px;
   color: #1f4378;
   background: #e8edf4;
+}
+
+.marketplace-card-counter {
+  position: absolute;
+  right: 10px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #1f4378;
+  border-radius: 999px;
+  padding: 3px 4px;
+}
+
+.marketplace-card-counter button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(255,255,255,0.18);
+  cursor: pointer;
+}
+
+.marketplace-card-counter button:hover {
+  background: rgba(255,255,255,0.28);
+}
+
+.marketplace-card-counter span {
+  min-width: 22px;
+  text-align: center;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
 .marketplace-empty {

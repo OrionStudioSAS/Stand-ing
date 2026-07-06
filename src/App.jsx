@@ -1239,7 +1239,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   };
   const openAddItemConfigurator = (entry) => {
     if (readOnly) return;
-    setItemConfigModal({ mode: 'add', entry });
+    if (entryNeedsConfigurator(entry)) {
+      setItemConfigModal({ mode: 'add', entry });
+    } else {
+      addItem(entry, {}, 1);
+    }
   };
 
   const itemConfiguratorEntry = (item) => (item?.options?.variantGroupType
@@ -2729,6 +2733,7 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
             includedCount={pricing?.includedCounts?.get(entry.type) || 0}
             billableCount={pricing?.billableCounts?.get(entry.type) || 0}
             onAdd={() => onAdd(entry)}
+            onRemoveOne={() => onRemove(entry.type)}
           />
         ))}
         {!filteredEntries.length && <div className="marketplace-empty">Aucun accessoire dans cette catégorie.</div>}
@@ -2737,7 +2742,7 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
   );
 }
 
-function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, includedCount = 0, billableCount = 0, onAdd }) {
+function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, includedCount = 0, billableCount = 0, onAdd, onRemoveOne }) {
   const Icon = entry.icon || Box;
   const price = marketplaceStartingPrice(entry, catalog, salonLabel);
   const category = marketCategoryMeta(normalizeMarketCategory(entry));
@@ -2750,9 +2755,21 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
         <strong>{entry.label}</strong>
         <em>{price ? `À partir de ${price.toLocaleString('fr-FR')} €` : 'Inclus / sur devis'}</em>
         <small>{marketplaceItemSubtitle(entry, category.label)}</small>
-        <button type="button" disabled={readOnly} onClick={onAdd} aria-label={`Ajouter ${entry.label}`}>
-          {billableCount > 0 ? <Check size={16} /> : <Plus size={18} />}
-        </button>
+        {billableCount > 0 ? (
+          <div className="marketplace-card-counter">
+            <button type="button" disabled={readOnly} onClick={() => onRemoveOne?.()} aria-label={`Retirer un ${entry.label}`}>
+              <Minus size={14} />
+            </button>
+            <span>{billableCount}</span>
+            <button type="button" disabled={readOnly} onClick={onAdd} aria-label={`Ajouter ${entry.label}`}>
+              <Plus size={14} />
+            </button>
+          </div>
+        ) : (
+          <button type="button" disabled={readOnly} onClick={onAdd} aria-label={`Ajouter ${entry.label}`}>
+            <Plus size={18} />
+          </button>
+        )}
       </div>
     </article>
   );
@@ -3049,6 +3066,11 @@ function normalizeSelectOptionVariants(selectOption, variantOptionLinks = [], sa
 function itemConfigExtraOptions(entry) {
   const options = (entry?.dimensions?.configOptions || []).filter((o) => (o.type || 'toggle') !== 'select');
   return normalizeAssetConfigOptions(options);
+}
+
+function entryNeedsConfigurator(entry = {}) {
+  if (isVariantGroupEntry(entry)) return true;
+  return itemConfigExtraOptions(entry).length > 0;
 }
 
 function resolveVariantOptionLink(variant, selectedExtras = {}) {
