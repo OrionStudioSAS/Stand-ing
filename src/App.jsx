@@ -64,6 +64,7 @@ const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
+const dirtyCarpetColorCodes = ['0219', '0400', '0939'];
 const technicalFloorOptions = [
   { id: 'floor4', label: 'Plancher technique 4 cm', height: 0.04, price: 49, reference: 'SMCL02PLA01A', detail: 'Hauteur 4 cm + cornières 4 × 4 cm', rampLabel: 'Rampe PMR 4 cm' },
   { id: 'floor12', label: 'Plancher technique 12 cm', height: 0.12, price: 59, reference: 'SMCL02PLA01B', detail: 'Hauteur 12 cm + cornières 4 × 4 cm + plinthes blanches', rampLabel: 'Rampe PMR 12 cm' },
@@ -1606,14 +1607,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 <span>{salonLabel} · {standLabel}</span>
               </div>
               <div className="intro-card-body">
-                <h2>Bienvenue, {clientLabel} 👋</h2>
                 <p>
                   Votre espace de configuration est prêt. Renseignez les informations
                   de votre stand pour démarrer la visualisation 3D en temps réel.
                 </p>
                 <ul>
                   <li><span>🏛</span>{standLabel} · Hall 1 · {faceLabel}</li>
-                  <li><span>📐</span>{area.toFixed(0)} m² — récupéré depuis votre dossier SMCL</li>
+                  <li><span>📐</span>{area.toFixed(0)} m²</li>
                   <li><span>📅</span>{salonLabel}</li>
                 </ul>
                 <button type="button" onClick={() => setActiveStep(2)}>
@@ -4024,6 +4024,12 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
           ))}
           <b>Inclus</b>
         </div>
+        {dirtyCarpetColorCodes.includes(selectedDisplayColor.code) && (
+          <div className="carpet-locked-notice footprint-warning">
+            <strong>!</strong>
+            <span>Couleur de moquette sensible aux salissures et traces d'usage</span>
+          </div>
+        )}
       </section>
 
       {!!optionalGroups.length && <div className="carpet-choice-separator"><span />ou<span /></div>}
@@ -4142,10 +4148,12 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
             </div>
             {!!paidColors.length && (
               <>
-                <div className="carpet-locked-notice footprint-warning">
-                  <strong>!</strong>
-                  <span>Couleur de moquette sensible aux salissures et traces d'usage</span>
-                </div>
+                {dirtyCarpetColorCodes.includes(selectedDisplayColor.code) && (
+                  <div className="carpet-locked-notice footprint-warning">
+                    <strong>!</strong>
+                    <span>Couleur de moquette sensible aux salissures et traces d'usage</span>
+                  </div>
+                )}
                 <small>En option {formatNumber(minPrice)} €</small>
                 <div className="carpet-swatch-row premium">
                   {paidColors.map((color) => (
@@ -8379,8 +8387,8 @@ function partitionHeadSelectedSides(rule = {}, sides = {}) {
 
 function partitionHeadBillableSides(rule = {}, sides = {}) {
   const selectedSides = partitionHeadSelectedSides(rule, sides);
-  const includedCount = Math.max(0, Number(rule?.includedCount || 0));
-  return new Set(selectedSides.slice(includedCount));
+  const ruleIncludedSides = new Set(rule.includedSides || []);
+  return new Set(selectedSides.filter((side) => !ruleIncludedSides.has(side)));
 }
 
 function makeAutomaticPartitionHeadItems(rule, sides = {}, catalogEntries = [], width, depth, layout, salonLabel) {
