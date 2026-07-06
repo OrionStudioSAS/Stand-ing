@@ -1916,7 +1916,6 @@ function QuestionModal({ salonLabel, category, urgency, form, onCategoryChange, 
             value={form.message}
             onChange={(event) => onFormChange('message', event.target.value)}
             maxLength={500}
-            placeholder={"Décrivez votre question ou remarque en détail...\n\nEx : Pour mon stand 25m², j'aimerais savoir si je peux intégrer un écran LED de 80cm sur la cloison de fond, en plus du visuel textile inclus."}
           />
           <em>{form.message.length} / 500</em>
         </label>
