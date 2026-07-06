@@ -154,14 +154,14 @@ const partitionHeadRuleBands = [
   { id: 'large', label: '25 m² et plus', minArea: 25, maxArea: null, includedCount: 2 },
 ];
 const placementRuleOptions = [
-  { id: 'free', label: 'Libre', description: "L’utilisateur peut poser et déplacer cet objet normalement." },
-  { id: 'back-left', label: 'Coin arrière gauche', description: "L’objet se colle automatiquement dans le coin arrière gauche." },
-  { id: 'back-right', label: 'Coin arrière droite', description: "L’objet se colle automatiquement dans le coin arrière droit." },
-  { id: 'front-left', label: 'Coin avant gauche', description: "L’objet se colle automatiquement dans le coin avant gauche." },
-  { id: 'front-right', label: 'Coin avant droite', description: "L’objet se colle automatiquement dans le coin avant droit." },
-  { id: 'outer-left', label: 'Le plus à gauche', description: "L’objet se place sur le mur gauche si disponible, sinon au fond côté gauche." },
-  { id: 'outer-right', label: 'Le plus à droite', description: "L’objet se place sur le mur droit si disponible, sinon au fond côté droit." },
-  { id: 'back-center', label: 'Centre arrière', description: "L’objet reste centré contre le mur du fond." },
+  { id: 'free', label: 'Libre', description: "L'utilisateur peut poser et déplacer cet objet normalement." },
+  { id: 'back-left', label: 'Coin arrière gauche', description: "L'objet se colle automatiquement dans le coin arrière gauche." },
+  { id: 'back-right', label: 'Coin arrière droite', description: "L'objet se colle automatiquement dans le coin arrière droit." },
+  { id: 'front-left', label: 'Coin avant gauche', description: "L'objet se colle automatiquement dans le coin avant gauche." },
+  { id: 'front-right', label: 'Coin avant droite', description: "L'objet se colle automatiquement dans le coin avant droit." },
+  { id: 'outer-left', label: 'Le plus à gauche', description: "L'objet se place sur le mur gauche si disponible, sinon au fond côté gauche." },
+  { id: 'outer-right', label: 'Le plus à droite', description: "L'objet se place sur le mur droit si disponible, sinon au fond côté droit." },
+  { id: 'back-center', label: 'Centre arrière', description: "L'objet reste centré contre le mur du fond." },
 ];
 const assetCategoryOptions = ['Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
 const colorGroupUsageOptions = [
@@ -537,7 +537,7 @@ function LoginHero() {
       </div>
       <div className="login-hero-content">
         <h2>Configurez votre stand en 3D.</h2>
-        <p>Visualisez chaque détail de votre stand d’exposition avant le jour J.</p>
+        <p>Visualisez chaque détail de votre stand d'exposition avant le jour J.</p>
         <div className="login-stand-preview">
           <img src="/images/image_stand_login.png" alt="Apercu stand 3D" />
         </div>
@@ -545,7 +545,7 @@ function LoginHero() {
           <li>Vue 3D temps reel, rotative</li>
           <li>Options, mobilier, signaletique</li>
           <li>BAT electronique integre</li>
-          <li>Acces 24h/24, depuis n’importe ou</li>
+          <li>Acces 24h/24, depuis n'importe ou</li>
         </ul>
       </div>
       <div className="login-orb" aria-hidden="true" />
@@ -571,7 +571,7 @@ function SceneAccessGate({ sceneToken, initialError = '', onVerified }) {
       setMaskedEmail(result.masked_email || '');
       setMessage('Un code de connexion vient de vous être envoyé.');
     } catch (requestError) {
-      setError(requestError.message || 'Impossible d’envoyer le code de connexion.');
+      setError(requestError.message || "Impossible d'envoyer le code de connexion.");
     } finally {
       setSending(false);
     }
@@ -610,7 +610,7 @@ function SceneAccessGate({ sceneToken, initialError = '', onVerified }) {
           <div className="scene-access-icon"><KeyRound size={24} /></div>
           <div className="login-form-heading">
             <h1>Vérifiez votre accès</h1>
-            <p>Pour protéger votre configuration, saisissez le code envoyé à l’adresse liée à votre stand.</p>
+            <p>Pour protéger votre configuration, saisissez le code envoyé à l'adresse liée à votre stand.</p>
           </div>
           {maskedEmail && <div className="scene-access-email"><Mail size={16} /> Code envoyé à <strong>{maskedEmail}</strong></div>}
           <label>
@@ -727,7 +727,7 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
           {loading ? 'Connexion...' : 'Se connecter'}
         </button>
         <div className="login-divider">ou continuer avec</div>
-        <p className="login-help">Premiere connexion ? Votre commercial Stand-ING vous a envoye un lien d’acces.</p>
+        <p className="login-help">Premiere connexion ? Votre commercial Stand-ING vous a envoye un lien d'acces.</p>
         <button type="button" className="config-link-button" onClick={() => setShowConfigLink((shown) => !shown)}>
           Acceder via mon lien de configuration
         </button>
@@ -788,6 +788,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || initialOptions.defaultColorOptions?.carpetColorId || '');
   const [selectedCarpetFootprintId, setSelectedCarpetFootprintId] = useState(initialOptions.carpetFootprintColorId || initialOptions.defaultColorOptions?.carpetFootprintColorId || initialOptions.carpetColorId || initialOptions.defaultColorOptions?.carpetColorId || '');
   const [carpetConfigOptions, setCarpetConfigOptions] = useState(initialOptions.carpetConfigOptions || {});
+  const [carpetThick, setCarpetThick] = useState(Boolean(initialOptions.carpetThick));
+  const [footprintThick, setFootprintThick] = useState(Boolean(initialOptions.footprintThick));
   const [carpetFootprintEnabled, setCarpetFootprintEnabled] = useState(initialOptions.carpetFootprintEnabled !== false);
   const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || initialOptions.defaultColorOptions?.wallFabricColorId || '');
   const [technicalFloorType, setTechnicalFloorType] = useState(initialOptions.technicalFloorType || '');
@@ -1003,13 +1005,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     layout,
     technicalFloor: selectedTechnicalFloor ? { ...selectedTechnicalFloor, area } : null,
     colorSelections: [
-      { usage: 'Moquette', color: selectedCarpetColor, defaultColorId: effectiveDefaultColorOptions.carpetColorId, quantityM2: area, configOptions: carpetGroupConfigOptionsList, selectedConfigOptions: carpetConfigOptions },
-      effectiveCarpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor, defaultColorId: effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId, quantityM2: carpetFootprintAreaM2() } : null,
+      { usage: 'Moquette', color: selectedCarpetColor, defaultColorId: effectiveDefaultColorOptions.carpetColorId, quantityM2: area, configOptions: [...carpetGroupConfigOptionsList, { id: '__carpet-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { ...carpetConfigOptions, '__carpet-thick__': carpetThick } },
+      effectiveCarpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor, defaultColorId: effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId, quantityM2: carpetFootprintAreaM2(), configOptions: [{ id: '__footprint-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { '__footprint-thick__': footprintThick } } : null,
       { usage: 'Coton cloison', color: selectedWallFabricColor, defaultColorId: effectiveDefaultColorOptions.wallFabricColorId, quantityM2: sceneWallFabricArea(width, depth, layout) },
     ],
     wallCovers,
     wallCoverSurfaces,
-  }), [area, availableCatalog, sceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions]);
+  }), [area, availableCatalog, sceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, carpetThick, footprintThick]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
@@ -1028,6 +1030,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       carpetFootprintColorReference: selectedCarpetFootprintColor.reference || '',
       carpetFootprintEnabled: effectiveCarpetFootprintEnabled,
       carpetConfigOptions: Object.keys(carpetConfigOptions).length ? carpetConfigOptions : undefined,
+      carpetThick: carpetThick || undefined,
+      footprintThick: footprintThick || undefined,
       defaultColorOptions: effectiveDefaultColorOptions,
       wallFabricColorId: selectedWallFabricColor.id,
       wallFabricColorName: selectedWallFabricColor.name,
@@ -1729,8 +1733,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             readOnly={readOnly}
             carpetGroupConfigOptions={carpetGroupConfigOptionsList}
             carpetConfigOptions={carpetConfigOptions}
+            carpetThick={carpetThick}
+            footprintThick={footprintThick}
             onCarpetColor={(colorId) => !readOnly && setSelectedCarpetId(colorId)}
             onCarpetConfigOption={(optionId, checked) => !readOnly && setCarpetConfigOptions((current) => ({ ...current, [optionId]: checked }))}
+            onCarpetThick={(v) => !readOnly && setCarpetThick(v)}
+            onFootprintThick={(v) => !readOnly && setFootprintThick(v)}
             onCarpetFootprintColor={(colorId) => !readOnly && setSelectedCarpetFootprintId(colorId)}
             onCarpetFootprintEnabled={(enabled) => !readOnly && !selectedTechnicalFloor && setCarpetFootprintEnabled(enabled)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
@@ -1746,7 +1754,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onCounterOptions={updateItemOptions}
             onCounterVariant={updateIncludedCounterVariant}
             onSelectCounter={setSelectedId}
-            onExport={() => exportTechnicalPng({ width, depth, layout, items: sceneItems, catalog: availableCatalog })}
           />
         )}
       </aside>
@@ -1877,7 +1884,7 @@ function QuestionModal({ salonLabel, category, urgency, form, onCategoryChange, 
     <form className="question-modal" onSubmit={onSubmit}>
       <ModalHead icon={<HelpCircle size={19} />} title="Questions / Remarques" salonLabel={salonLabel} onClose={onClose} />
       <div className="question-content">
-        <p>Vous avez une question sur votre stand ou souhaitez ajouter une remarque particulière ? L’équipe Stand-ING vous répond sous 24h.</p>
+        <p>Vous avez une question sur votre stand ou souhaitez ajouter une remarque particulière ? L'équipe Stand-ING vous répond sous 24h.</p>
 
         <span className="form-section-label">Catégorie</span>
         <div className="chip-grid">
@@ -1892,7 +1899,7 @@ function QuestionModal({ salonLabel, category, urgency, form, onCategoryChange, 
           <input value={form.subject} onChange={(event) => onFormChange('subject', event.target.value)} placeholder="Ex : Dimension des cloisons pour mon logo..." />
         </label>
 
-        <span className="form-section-label">Niveau d’urgence</span>
+        <span className="form-section-label">Niveau d'urgence</span>
         <div className="urgency-grid">
           {urgencyLevels.map((entry) => (
             <button key={entry.id} className={urgency === entry.id ? 'active' : ''} type="button" onClick={() => onUrgencyChange(entry.id)}>
@@ -1909,7 +1916,7 @@ function QuestionModal({ salonLabel, category, urgency, form, onCategoryChange, 
             value={form.message}
             onChange={(event) => onFormChange('message', event.target.value)}
             maxLength={500}
-            placeholder={"Décrivez votre question ou remarque en détail...\n\nEx : Pour mon stand 25m², j’aimerais savoir si je peux intégrer un écran LED de 80cm sur la cloison de fond, en plus du visuel textile inclus."}
+            placeholder={"Décrivez votre question ou remarque en détail...\n\nEx : Pour mon stand 25m², j'aimerais savoir si je peux intégrer un écran LED de 80cm sur la cloison de fond, en plus du visuel textile inclus."}
           />
           <em>{form.message.length} / 500</em>
         </label>
@@ -1984,7 +1991,7 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
       </label>
 
       {item.options?.headMainImageUrl && (
-        <button className="item-image-reset" type="button" onClick={onResetImage}>Revenir à l’image d’origine</button>
+        <button className="item-image-reset" type="button" onClick={onResetImage}>Revenir à l'image d'origine</button>
       )}
       {uploadState?.uploading && <p className="item-options-status">Upload du visuel...</p>}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
@@ -2029,7 +2036,7 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
       )}
 
       <label className="item-image-upload">
-        <span>Image de l’affiche</span>
+        <span>Image de l'affiche</span>
         <small>{imageName}</small>
         <input
           type="file"
@@ -2043,7 +2050,7 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
       </label>
 
       {item.options?.posterImageUrl && (
-        <button className="item-image-reset" type="button" onClick={onResetImage}>Retirer l’image personnalisée</button>
+        <button className="item-image-reset" type="button" onClick={onResetImage}>Retirer l'image personnalisée</button>
       )}
       {uploadState?.uploading && <p className="item-options-status">Upload du visuel...</p>}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
@@ -2116,8 +2123,8 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
       )}
 
       <div className="item-option-actions">
-        {item.options?.binary3ImageUrl && <button className="item-image-reset" type="button" onClick={onResetImage}>Revenir à l’image d’origine</button>}
-        {item.options?.binary2Color && <button className="item-image-reset" type="button" onClick={onResetColor}>Revenir à la couleur d’origine</button>}
+        {item.options?.binary3ImageUrl && <button className="item-image-reset" type="button" onClick={onResetImage}>Revenir à l'image d'origine</button>}
+        {item.options?.binary2Color && <button className="item-image-reset" type="button" onClick={onResetColor}>Revenir à la couleur d'origine</button>}
       </div>
       {uploadState?.uploading && <p className="item-options-status">Upload du visuel...</p>}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
@@ -2184,8 +2191,8 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
     return (
       <div className="counter-option-panel">
         <div className="counter-empty-card">
-          <strong>Aucune banque d’accueil sur cette scène</strong>
-          <span>Le paramétrage apparaîtra ici dès qu’une banque d’accueil sera incluse dans la configuration de base.</span>
+          <strong>Aucune banque d'accueil sur cette scène</strong>
+          <span>Le paramétrage apparaîtra ici dès qu'une banque d'accueil sera incluse dans la configuration de base.</span>
         </div>
       </div>
     );
@@ -2195,7 +2202,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
     <div className="counter-option-panel">
       <div className="counter-formula-box">
         <span><b>!</b> Votre formule inclut :</span>
-        <p>Une banque d’accueil 1m en finition bois naturel, avec l’emplacement logo personnalisable.</p>
+        <p>Une banque d'accueil 1m en finition bois naturel, avec l'emplacement logo personnalisable.</p>
       </div>
 
       {items.length > 1 && (
@@ -2221,7 +2228,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
           <header>
             <div>
               <strong>Taille</strong>
-              <span>{selectedVariant?.label || selectedItem?.label || 'Banque d’accueil'}</span>
+              <span>{selectedVariant?.label || selectedItem?.label || "Banque d'accueil"}</span>
             </div>
           </header>
           <div className="counter-size-grid">
@@ -2296,7 +2303,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
       <section className="counter-info-card">
         <strong>Pourquoi ajouter un comptoir ?</strong>
         <ul>
-          <li>Surface d’accueil pour vos prospects</li>
+          <li>Surface d'accueil pour vos prospects</li>
           <li>Affichage de votre logo et identité</li>
           <li>Rangement intégré (documents, sacs)</li>
           <li>Plus professionnel et structuré</li>
@@ -2442,7 +2449,7 @@ function counterVariantUpgradeOptionLine(item = {}, entry = {}, salonLabel = '',
   if (!isIncludedSceneItem(item) || !isWoodReceptionDeskItem({ ...entry, ...item }) || upgradePrice <= 0) return null;
   return {
     type: `counter-size-${item.id || entry?.type || index}`,
-    label: `Option taille banque d’accueil — ${item.options?.variantLabel || entry?.label || item.label || item.type}`,
+    label: `Option taille banque d'accueil — ${item.options?.variantLabel || entry?.label || item.label || item.type}`,
     quantity: 1,
     unitPrice: upgradePrice,
     total: upgradePrice,
@@ -2545,8 +2552,12 @@ function OptionsStepPanel({
   readOnly = false,
   carpetGroupConfigOptions = [],
   carpetConfigOptions = {},
+  carpetThick = false,
+  footprintThick = false,
   onCarpetColor,
   onCarpetConfigOption,
+  onCarpetThick,
+  onFootprintThick,
   onCarpetFootprintColor,
   onCarpetFootprintEnabled,
   onWallColor,
@@ -2562,7 +2573,6 @@ function OptionsStepPanel({
   onCounterOptions,
   onCounterVariant,
   onSelectCounter,
-  onExport,
 }) {
   return (
     <>
@@ -2580,8 +2590,10 @@ function OptionsStepPanel({
           disabled={readOnly}
           configOptions={carpetGroupConfigOptions}
           selectedOptions={carpetConfigOptions}
+          thick={carpetThick}
           onSelect={onCarpetColor}
           onOptionToggle={onCarpetConfigOption}
+          onThickChange={onCarpetThick}
         />
       </OptionAccordion>
       <OptionAccordion title="Empreinte moquette" icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')}>
@@ -2592,9 +2604,11 @@ function OptionsStepPanel({
           defaultColorId={defaultColorOptions.carpetFootprintColorId || defaultColorOptions.carpetColorId}
           area={carpetFootprintAreaM2()}
           disabled={readOnly || Boolean(technicalFloorType)}
-          disabledReason={technicalFloorType ? 'Le plancher technique retire automatiquement l’empreinte moquette.' : ''}
+          disabledReason={technicalFloorType ? "Le plancher technique retire automatiquement l'empreinte moquette." : ''}
+          thick={footprintThick}
           onEnabledChange={onCarpetFootprintEnabled}
           onSelect={onCarpetFootprintColor}
+          onThickChange={onFootprintThick}
         />
       </OptionAccordion>
       <OptionAccordion title="Cloison" icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
@@ -2659,7 +2673,7 @@ function OptionsStepPanel({
           onImage={onPartitionHeadImage}
         />
       </OptionAccordion>
-      <OptionAccordion title="Banque d’accueil" icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
+      <OptionAccordion title="Banque d'accueil" icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
         <CounterOptionCard
           items={counterItems}
           colors={counterColors}
@@ -2674,9 +2688,6 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
 
-      <button className="wide export" onClick={onExport}>
-        <FileImage size={16} /> Generer PNG technique
-      </button>
     </>
   );
 }
@@ -3156,7 +3167,7 @@ function counterColorOptionLine(item = {}, entry = {}, salonLabel = '', index = 
   const colorName = item.options?.binary2ColorName || item.options?.binary2Color || 'finition';
   return {
     type: `counter-color-${item.id || entry?.type || index}`,
-    label: `Option finition banque d’accueil — ${colorName}`,
+    label: `Option finition banque d'accueil — ${colorName}`,
     quantity: 1,
     unitPrice: colorPrice,
     total: Math.round(colorPrice),
@@ -3516,7 +3527,7 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
   return (
     <div className="technical-floor-card">
       <div className="technical-floor-info">
-        <span><b>!</b> Le plancher technique retire automatiquement l’empreinte moquette.</span>
+        <span><b>!</b> Le plancher technique retire automatiquement l'empreinte moquette.</span>
       </div>
 
       <strong className="technical-floor-title">Choisissez une hauteur</strong>
@@ -3577,7 +3588,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
         <FormulaIncludedBox open={formulaOpen} onToggle={() => setFormulaOpen((current) => !current)} includedRow={null} />
         <div className="reserve-empty-card">
           <strong>Aucune réserve configurée</strong>
-          <span>Cette surface ne déclenche pas de réserve automatique ni d’option complémentaire.</span>
+          <span>Cette surface ne déclenche pas de réserve automatique ni d'option complémentaire.</span>
         </div>
       </div>
     );
@@ -3977,7 +3988,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, dis
   );
 }
 
-function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, configOptions = [], selectedOptions = {}, onSelect, onOptionToggle }) {
+function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, configOptions = [], selectedOptions = {}, thick = false, onSelect, onOptionToggle, onThickChange }) {
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
   const includedColors = displayColors.filter((color) => color.included);
@@ -4066,25 +4077,30 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
         );
       })}
 
-      {configOptions.length > 0 && (
-        <div className="carpet-config-options">
-          {configOptions.map((option) => (
-            <ToggleOption
-              key={option.id}
-              active={Boolean(selectedOptions[option.id])}
-              label={option.label}
-              detail={option.detail}
-              price={`+ ${Number(option.price || 0).toLocaleString('fr-FR')} €`}
-              onChange={(checked) => onOptionToggle?.(option.id, checked)}
-            />
-          ))}
-        </div>
-      )}
+      <div className="carpet-config-options">
+        <ToggleOption
+          active={thick}
+          label="Moquette épaisse"
+          detail="Épaisseur 8mm, aspect velours"
+          price={`+ 30 €/m² (+${Math.round(30 * Number(area || 0)).toLocaleString('fr-FR')} €)`}
+          onChange={(v) => onThickChange?.(v)}
+        />
+        {configOptions.map((option) => (
+          <ToggleOption
+            key={option.id}
+            active={Boolean(selectedOptions[option.id])}
+            label={option.label}
+            detail={option.detail}
+            price={`+ ${Number(option.price || 0).toLocaleString('fr-FR')} €`}
+            onChange={(checked) => onOptionToggle?.(option.id, checked)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
 
-function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColorId = '', area = 1, disabled = false, disabledReason = '', onEnabledChange, onSelect }) {
+function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColorId = '', area = 1, disabled = false, disabledReason = '', thick = false, onEnabledChange, onSelect, onThickChange }) {
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
   const groups = colorGroupsFromOptions(displayColors);
@@ -4138,7 +4154,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
               <>
                 <div className="carpet-locked-notice footprint-warning">
                   <strong>!</strong>
-                  <span>Couleur de moquette sensible aux salissures et traces d’usage</span>
+                  <span>Couleur de moquette sensible aux salissures et traces d'usage</span>
                 </div>
                 <small>En option {formatNumber(minPrice)} €</small>
                 <div className="carpet-swatch-row premium">
@@ -4202,9 +4218,19 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
         );
       })}
 
+      <div className="carpet-config-options">
+        <ToggleOption
+          active={thick}
+          label="Moquette épaisse"
+          detail="Épaisseur 8mm, aspect velours"
+          price={`+ 30 €/m² (+${Math.round(30 * Number(area || 0)).toLocaleString('fr-FR')} €)`}
+          onChange={(v) => onThickChange?.(v)}
+        />
+      </div>
+
       {enabled && (
         <button className="footprint-remove-button" type="button" disabled={disabled} onClick={() => onEnabledChange(false)}>
-          Retirer l’empreinte moquette
+          Retirer l'empreinte moquette
         </button>
       )}
     </div>
@@ -4346,7 +4372,7 @@ function AdminDashboard({ user, adminProfile }) {
 
   const deleteAsset = async (asset) => {
     if (!asset) return;
-    const confirmed = window.confirm(`Supprimer définitivement "${asset.label}" de la banque d’objets ?`);
+    const confirmed = window.confirm(`Supprimer définitivement "${asset.label}" de la banque d'objets ?`);
     if (!confirmed) return;
     await deleteObjectBankItem(asset);
     setAssets((current) => current.filter((item) => item.type !== asset.type));
@@ -4402,7 +4428,7 @@ function AdminDashboard({ user, adminProfile }) {
         <a className="admin-sidebar-logo" href="/admin">
           <img src="/images/logo.png" alt="Stand-ING" />
         </a>
-        <div className="admin-sidebar-product">Simulateur 3D - Stand’ING</div>
+        <div className="admin-sidebar-product">Simulateur 3D - Stand'ING</div>
         <nav className="admin-sidebar-nav" aria-label="Navigation admin">
           <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}><LayoutDashboard size={16} />Dashboard</button>
           <button className={tab === 'salons' ? 'active' : ''} onClick={() => setTab('salons')}><Orbit size={16} />Salons</button>
@@ -4494,7 +4520,7 @@ function adminTitle(tab) {
 }
 
 function adminSubtitle(tab) {
-  if (tab === 'dashboard') return "Vue d’ensemble de l’activité Stand-ING";
+  if (tab === 'dashboard') return "Vue d'ensemble de l'activité Stand-ING";
   if (tab === 'salons') return 'Gestion des salons et de leurs configurations';
   if (tab === 'presets') return 'Gestion des packs disponibles par salon';
   if (tab === 'clients') return 'Exposants synchronisés et configurations associées';
@@ -4804,7 +4830,7 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
       setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `${entry.packName} activé sur ${selectedSalon.name}.`, error: '' });
       await onSalonChanged?.();
     } catch (error) {
-      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’activer ce pack.' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || "Impossible d'activer ce pack." });
     }
   };
 
@@ -4826,7 +4852,7 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
       setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
       await onSalonChanged?.();
     } catch (error) {
-      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’ouvrir ce pack.' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || "Impossible d'ouvrir ce pack." });
     }
   };
 
@@ -4844,7 +4870,7 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
       setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
       await onSalonChanged?.();
     } catch (error) {
-      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’ouvrir le pack de base.' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || "Impossible d'ouvrir le pack de base." });
     }
   };
 
@@ -4870,7 +4896,7 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
       setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Board Monday enregistré pour ${entry.packName}.`, error: '' });
       await onSalonChanged?.();
     } catch (error) {
-      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible d’enregistrer le board Monday.' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || "Impossible d'enregistrer le board Monday." });
     }
   };
 
@@ -5157,7 +5183,7 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
           <div>
             <span>Configuration de base</span>
             <h2>{localSalon.name}{selectedOffer ? ` · ${selectedOffer.name}` : ''}</h2>
-            <p>Les objets placés ici composent la scène de départ selon l’implantation. Les quotas gratuits se règlent dans “Pack de base”.</p>
+            <p>Les objets placés ici composent la scène de départ selon l'implantation. Les quotas gratuits se règlent dans “Pack de base”.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
         </header>
@@ -5378,7 +5404,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
 
       <aside className="preset-side-panel">
         <h3>{offer?.name || 'Pack'} · {salon.name}</h3>
-        <p>Cette base est spécifique à l’implantation {layoutLabel(layout)}. Change d’onglet pour configurer les autres murs.</p>
+        <p>Cette base est spécifique à l'implantation {layoutLabel(layout)}. Change d'onglet pour configurer les autres murs.</p>
         <div className="preset-dimensions">
           <label>Largeur <span>{width} m</span><input type="range" min="2" max="12" step="0.5" value={width} onChange={(event) => setWidth(Number(event.target.value))} /></label>
           <label>Profondeur <span>{depth} m</span><input type="range" min="2" max="10" step="0.5" value={depth} onChange={(event) => setDepth(Number(event.target.value))} /></label>
@@ -5444,7 +5470,7 @@ function PresetDefaultColorsEditor({ carpetColors = [], footprintColors = [], wa
     <section className="preset-default-colors">
       <header>
         <strong>Couleurs de base</strong>
-        <span>Ces couleurs seront appliquées d’office aux scènes générées depuis cette implantation.</span>
+        <span>Ces couleurs seront appliquées d'office aux scènes générées depuis cette implantation.</span>
       </header>
       <PresetColorSelect
         label="Sol / moquette"
@@ -5591,7 +5617,7 @@ function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, onChange }
   return (
     <section className="preset-reserve-rules">
       <h4>Têtes de cloison automatiques</h4>
-      <p>Le nombre inclus dépend de la surface. Dans l’étape 2, l’exposant coche gauche/droite ; tout dépassement devient payant.</p>
+      <p>Le nombre inclus dépend de la surface. Dans l'étape 2, l'exposant coche gauche/droite ; tout dépassement devient payant.</p>
       {!entries.length && <div className="preset-reserve-empty">Aucune tête de cloison disponible pour ce salon.</div>}
       {partitionHeadRuleBands.map((band) => {
         const rule = rules?.[band.id] || {};
@@ -5602,7 +5628,7 @@ function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, onChange }
             <strong>{band.label} · {includedCount} incluse{includedCount > 1 ? 's' : ''}</strong>
             {includedCount === 1 && (
               <label>
-                Placée d’office à la génération
+                Placée d'office à la génération
                 <select value={includedSideValue} onChange={(event) => updateBand(band.id, { includedSides: event.target.value ? [event.target.value] : [] })}>
                   <option value="">À choisir</option>
                   <option value="left">Tête gauche</option>
@@ -5610,8 +5636,8 @@ function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, onChange }
                 </select>
               </label>
             )}
-            {includedCount >= 2 && <div className="preset-reserve-empty">Gauche + droite incluses et placées d’office.</div>}
-            {includedCount <= 0 && <div className="preset-reserve-empty">Aucune tête placée d’office, les coches seront payantes.</div>}
+            {includedCount >= 2 && <div className="preset-reserve-empty">Gauche + droite incluses et placées d'office.</div>}
+            {includedCount <= 0 && <div className="preset-reserve-empty">Aucune tête placée d'office, les coches seront payantes.</div>}
             {['left', 'right'].map((side) => {
               const sideLabel = side === 'left' ? 'Gauche' : 'Droite';
               const typeKey = side === 'left' ? 'leftType' : 'rightType';
@@ -5660,7 +5686,7 @@ function PresetAutoSpotsEditor({ rule, entries, width, depth, onChange }) {
   return (
     <section className="preset-reserve-rules">
       <h4>Spots automatiques</h4>
-      <p>Choisissez un objet de la boutique et indiquez le nombre de spots qu’il comporte. Les rails sont placés automatiquement selon la règle 1 spot pour {ledSpotAreaMeters} m².</p>
+      <p>Choisissez un objet de la boutique et indiquez le nombre de spots qu'il comporte. Les rails sont placés automatiquement selon la règle 1 spot pour {ledSpotAreaMeters} m².</p>
       <article>
         <label>
           Objet
@@ -5957,7 +5983,7 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
           <Upload size={23} />
           <span>Ajouter un dossier OBJ complet</span>
           <strong>{uploadState?.loading ? 'Import en cours...' : 'Parcourir un dossier'}</strong>
-          <small>Le dossier doit contenir l’OBJ, son .MTL et les textures. Les chemins relatifs sont conservés.</small>
+          <small>Le dossier doit contenir l'OBJ, son .MTL et les textures. Les chemins relatifs sont conservés.</small>
           <input
             type="file"
             accept=".obj,.mtl,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tga,.tif,.tiff"
@@ -5988,7 +6014,7 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
         </label>
         <button className="asset-group-create-button" type="button" onClick={() => setGroupCreatorOpen(true)}>
           <Layers size={18} />
-          Creer un groupe d’objets
+          Creer un groupe d'objets
         </button>
         <button className="asset-group-create-button" type="button" onClick={() => setVariantGroupCreatorOpen(true)}>
           <Settings2 size={18} />
@@ -6386,7 +6412,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
     if (!children.length) return;
     onSave({
       ...draft,
-      label: draft.label?.trim() || 'Groupe d’objets',
+      label: draft.label?.trim() || "Groupe d'objets",
       dimensions: {
         ...(draft.dimensions || {}),
         isGroup: true,
@@ -6407,7 +6433,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
       const saved = await onSave(updated);
       setDraft(saved);
     } catch (error) {
-      setThumbnailError(error.message || 'Upload de l’image impossible.');
+      setThumbnailError(error.message || "Upload de l'image impossible.");
     } finally {
       setThumbnailUploading(false);
     }
@@ -6429,8 +6455,8 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
         <label className="asset-thumbnail-edit">
           <FileImage size={18} />
           <span>
-            <strong>{thumbnailUploading ? 'Image en cours d’envoi...' : 'Image de l’objet'}</strong>
-            <small>{draft.thumbnail_url ? 'Remplacer l’image qui représente cet objet.' : 'Ajouter une image pour représenter cet objet.'}</small>
+            <strong>{thumbnailUploading ? "Image en cours d'envoi..." : "Image de l'objet"}</strong>
+            <small>{draft.thumbnail_url ? "Remplacer l'image qui représente cet objet." : "Ajouter une image pour représenter cet objet."}</small>
             {thumbnailError && <em>{thumbnailError}</em>}
           </span>
           <input
@@ -6606,7 +6632,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             />
             <span>
               <strong>Objet au plafond</strong>
-              <small>Place le bas de l’objet à 3,00 m de hauteur, avec déplacement libre en X/Z.</small>
+              <small>Place le bas de l'objet à 3,00 m de hauteur, avec déplacement libre en X/Z.</small>
             </span>
           </label>
           <label>
@@ -6624,7 +6650,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             />
             <span>
               <strong>Désactiver le déplacement</strong>
-              <small>L’exposant pourra sélectionner l’objet, mais pas le déplacer.</small>
+              <small>L'exposant pourra sélectionner l'objet, mais pas le déplacer.</small>
             </span>
           </label>
           <label className="asset-toggle-row">
@@ -6635,7 +6661,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             />
             <span>
               <strong>Désactiver la suppression</strong>
-              <small>L’exposant ne pourra pas supprimer cet objet depuis sa scène.</small>
+              <small>L'exposant ne pourra pas supprimer cet objet depuis sa scène.</small>
             </span>
           </label>
           <label className="asset-toggle-row">
@@ -6646,7 +6672,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             />
             <span>
               <strong>Désactiver la rotation</strong>
-              <small>L’exposant pourra sélectionner l’objet, mais pas changer son angle.</small>
+              <small>L'exposant pourra sélectionner l'objet, mais pas changer son angle.</small>
             </span>
           </label>
           {!isGroupAsset && (
@@ -6671,7 +6697,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
               />
               <span>
                 <strong>Profondeur 6 cm (arrière)</strong>
-                <small>Limite la profondeur de l’objet à 6 cm depuis sa face arrière pour le calcul des collisions et des affiches.</small>
+                <small>Limite la profondeur de l'objet à 6 cm depuis sa face arrière pour le calcul des collisions et des affiches.</small>
               </span>
             </label>
           )}
@@ -6699,7 +6725,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             <div className="asset-variants-head compact">
               <div>
                 <h3>Options payantes</h3>
-                <small>Chaque option s’affichera dans la popup comme une ligne activable avec supplément HT.</small>
+                <small>Chaque option s'affichera dans la popup comme une ligne activable avec supplément HT.</small>
               </div>
               <button type="button" onClick={addConfigOptionRow}><Plus size={14} /> Option</button>
             </div>
@@ -6946,7 +6972,7 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], links = []
 
 function AssetVariantSourceRows({ rows, sourceAssets, onChange, onRemove }) {
   if (!sourceAssets.length) return <p className="asset-variants-empty">Aucun objet disponible pour créer des variantes.</p>;
-  if (!rows.length) return <p className="asset-variants-empty">Aucun objet associé : ce groupe ne s’affichera pas encore dans la boutique.</p>;
+  if (!rows.length) return <p className="asset-variants-empty">Aucun objet associé : ce groupe ne s'affichera pas encore dans la boutique.</p>;
   return (
     <div className="asset-variant-list">
       {rows.map((type, index) => {
@@ -7179,7 +7205,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
     setSaving(true);
     await onCreate({
       type: `group-${slugForType(name)}-${Date.now().toString(36)}`,
-      label: name.trim() || 'Groupe d’objets',
+      label: name.trim() || "Groupe d'objets",
       model_url: null,
       thumbnail_url: null,
       is_active: true,
@@ -7202,7 +7228,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
       <aside className="asset-drawer asset-group-drawer">
         <header>
           <div>
-            <h2>Créer un groupe d’objets</h2>
+            <h2>Créer un groupe d'objets</h2>
             <span>Groupe manipulable en un seul bloc</span>
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
@@ -7226,7 +7252,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
 
         <section className="asset-group-builder">
           <h3>Objets du groupe</h3>
-          <p>Place les objets directement sur le plan en vue du dessus. Les champs X/Z restent disponibles pour l’ajustement précis au centimètre.</p>
+          <p>Place les objets directement sur le plan en vue du dessus. Les champs X/Z restent disponibles pour l'ajustement précis au centimètre.</p>
           <MiniGroupPlan
             rows={rows}
             sourceAssets={sourceAssets}
@@ -7605,7 +7631,7 @@ function AdminPlaceholder({ tab }) {
   return (
     <section className="admin-placeholder-card">
       <h2>{adminTitle(tab)}</h2>
-      <p>La maquette de ce menu sera intégrée dès que tu me l’envoies.</p>
+      <p>La maquette de ce menu sera intégrée dès que tu me l'envoies.</p>
     </section>
   );
 }
@@ -7665,7 +7691,7 @@ function relativeDays(value) {
 function relativeTime(value) {
   if (!value) return '—';
   const diffHours = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 3600000));
-  if (diffHours < 1) return 'à l’instant';
+  if (diffHours < 1) return "à l'instant";
   if (diffHours < 24) return `il y a ${diffHours}h`;
   const days = Math.round(diffHours / 24);
   if (days === 1) return 'hier';
@@ -8519,14 +8545,19 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     .filter((selection) => selection?.configOptions?.length && selection?.selectedConfigOptions)
     .forEach((selection) => {
       (selection.configOptions || []).forEach((option) => {
-        if (!selection.selectedConfigOptions[option.id] || Number(option.price || 0) <= 0) return;
-        const lineTotal = Math.round(Number(option.price));
+        if (!selection.selectedConfigOptions[option.id]) return;
+        const pricePerM2 = Number(option.pricePerM2 || 0);
+        const flatPrice = Number(option.price || 0);
+        if (pricePerM2 <= 0 && flatPrice <= 0) return;
+        const lineTotal = pricePerM2 > 0
+          ? Math.round(pricePerM2 * Number(selection.quantityM2 || 1))
+          : Math.round(flatPrice);
         itemsTotal += lineTotal;
         lines.push({
           type: `color-option-${selection.color?.groupId || selection.usage}-${option.id}`,
           label: `${selection.usage} — ${option.label}`,
-          quantity: 1,
-          unitPrice: lineTotal,
+          quantity: pricePerM2 > 0 ? Number(selection.quantityM2 || 1) : 1,
+          unitPrice: pricePerM2 > 0 ? pricePerM2 : flatPrice,
           total: lineTotal,
           reference: '',
         });
@@ -8777,7 +8808,7 @@ function useSceneSuspendPreload(items = []) {
           }
         }
       } catch {
-        // don’t block preload on individual item failures
+        // don't block preload on individual item failures
       }
       loaded += 1;
       if (!cancelled) setState({ ready: false, loaded, total: modelItems.length });
@@ -11723,7 +11754,7 @@ function useExternalTexture(url, options = {}) {
         return () => { disposed = true; currentTexture?.dispose?.(); };
       }
 
-      // Async path for when the preload cache isn’t populated yet.
+      // Async path for when the preload cache isn't populated yet.
       loadDecodedImage(url).then(({ ok, image }) => {
         if (disposed) return;
         if (!ok || !image || !applyImage(image)) setTexture(null);

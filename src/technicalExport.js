@@ -150,6 +150,22 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
       return;
     }
 
+    if (item.ceilingMounted || item.dimensions?.ceilingMounted) {
+      const solidW = 0.06 * scale;
+      const solidH = Math.max(0.06, dims.depth) * scale;
+      ctx.save();
+      ctx.fillStyle = item.color || entry?.color || '#c8c0d8';
+      ctx.strokeStyle = technicalColors.ink;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 3]);
+      ctx.fillRect(center.x - solidW / 2, center.y - solidH / 2, solidW, solidH);
+      ctx.strokeRect(center.x - solidW / 2, center.y - solidH / 2, solidW, solidH);
+      ctx.setLineDash([]);
+      ctx.restore();
+      drawBadge(ctx, center.x, center.y, label);
+      return;
+    }
+
     drawRotatedObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, color, label);
     drawObjectDimensions(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, dims, item.rotation || 0);
   });
