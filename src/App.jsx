@@ -10231,7 +10231,9 @@ function updateSceneItemWithCollision(items, id, patch, width, depth, layout, ca
 
   const editableItem = releasePlacementRuleForManualEdit(currentItem, patch);
   const candidate = constrainItem({ ...editableItem, ...patch }, width, depth, layout, carpetFootprintEnabled);
-  if (collidesWithScene(candidate, items, id, width, depth)) return items;
+  const positionKeys = ['x', 'z', 'wall', 'wallSide', 'wallSurface', 'rotation'];
+  const isPositionPatch = positionKeys.some((key) => hasOwn(patch, key));
+  if (isPositionPatch && collidesWithScene(candidate, items, id, width, depth)) return items;
   return items.map((item) => (item.id === id ? candidate : item));
 }
 
