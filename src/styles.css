@@ -2098,28 +2098,11 @@ select {
   font-size: 0.78rem;
 }
 
-.stand-summary-card,
 .rules-card {
   margin: 0 0 0;
   border-radius: 11px;
   padding: 15px 16px;
   background: #eef2f7;
-}
-
-.stand-summary-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: #1f4378;
-  font-size: 0.88rem;
-}
-
-.stand-summary-card button {
-  border: 0;
-  color: #8b929c;
-  background: transparent;
-  font-size: 0.75rem;
-  font-weight: 900;
 }
 
 .rules-card {

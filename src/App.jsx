@@ -2576,7 +2576,6 @@ function OptionsStepPanel({
   return (
     <>
       <PanelHead title="Options de configuration" step={activeStep} />
-      <StandSummary area={area} layout={layout} standLabel={standLabel} />
       <RulesSummary ledSpotCount={ledSpotCount} ledRailsEnabled={ledRailsEnabled} reserveRule={reserveRule} partitionHeadRule={partitionHeadRule} />
 
       <section className="panel-section-title">Les options</section>
@@ -3408,14 +3407,6 @@ function PanelHead({ title, step }) {
     <div className="config-panel-head">
       <h1>{title}</h1>
       <span>Etape {step} / 4</span>
-    </div>
-  );
-}
-
-function StandSummary({ area, layout, standLabel }) {
-  return (
-    <div className="stand-summary-card">
-      <strong>{area.toFixed(0)} m2 · {layout === 'u' ? '3 faces' : layout === 'back' ? '1 face' : '2 faces'} · {standLabel}</strong>
     </div>
   );
 }
