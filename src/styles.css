@@ -5364,6 +5364,91 @@ img.asset-thumb {
   align-items: end;
 }
 
+.asset-variant-row.option-row-select .option-row-fields {
+  grid-template-columns: 1fr 32px;
+}
+
+.option-type-tabs {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 4px;
+  background: #eef1f6;
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.option-type-tabs button {
+  flex: 1;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #6b7685;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.option-type-tabs button.active {
+  background: #fff;
+  color: #1f2937;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.option-variant-links-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.option-add-choice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid #c5d0e0;
+  border-radius: 6px;
+  background: #fff;
+  color: #4b5563;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.option-choice-row {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr 28px;
+  gap: 6px;
+  align-items: center;
+}
+
+.option-choice-row input {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid #dce2eb;
+  border-radius: 8px;
+  padding: 0 9px;
+  color: #27303c;
+  background: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.option-choice-row button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  color: #cf332d;
+  background: #ffe5e2;
+  cursor: pointer;
+}
+
 .option-variant-links {
   display: grid;
   gap: 6px;

@@ -3008,6 +3008,12 @@ function ToggleOption({ active, label, detail, price, onChange }) {
 
 function itemConfigVariants(entry, salonLabel) {
   if (isVariantGroupEntry(entry)) {
+    const configOptions = entry?.dimensions?.configOptions || [];
+    const selectOption = configOptions.find((o) => o.type === 'select' && o.choices?.length);
+    if (selectOption) {
+      const variants = normalizeSelectOptionVariants(selectOption, entry?.dimensions?.variantOptionLinks || [], salonLabel);
+      if (variants.length) return variants;
+    }
     const groupVariants = normalizeVariantGroupOptions(
       entry?.dimensions?.variantAssets,
       salonLabel,
@@ -3018,8 +3024,31 @@ function itemConfigVariants(entry, salonLabel) {
   return genericItemVariants(entry, salonLabel);
 }
 
+function normalizeSelectOptionVariants(selectOption, variantOptionLinks = [], salonLabel = '') {
+  return (selectOption.choices || [])
+    .filter((choice) => choice.entry)
+    .map((choice, index) => {
+      const optionLinks = variantOptionLinks
+        .filter((link) => link.selectOptionId === selectOption.id && link.choiceId === choice.id && link.linkedEntry)
+        .map((link) => ({ optionId: link.toggleOptionId, entry: link.linkedEntry }));
+      return {
+        id: choice.id,
+        assetType: choice.assetType,
+        label: choice.label,
+        detail: assetDimensionsLabel({ dimensions: choice.entry?.dimensions }) || '',
+        price: assetUnitPrice(choice.entry, salonLabel),
+        reference: assetReference(choice.entry, salonLabel),
+        imageUrl: choice.entry?.thumbnailUrl || '',
+        isDefault: index === 0,
+        optionLinks,
+        entry: choice.entry,
+      };
+    });
+}
+
 function itemConfigExtraOptions(entry) {
-  return normalizeAssetConfigOptions(entry?.dimensions?.configOptions);
+  const options = (entry?.dimensions?.configOptions || []).filter((o) => (o.type || 'toggle') !== 'select');
+  return normalizeAssetConfigOptions(options);
 }
 
 function resolveVariantOptionLink(variant, selectedExtras = {}) {
@@ -3040,6 +3069,8 @@ function normalizeAssetConfigOptions(options = []) {
       detail: option.detail || '',
       price: Number(option.price || 0),
       defaultChecked: Boolean(option.defaultChecked),
+      type: option.type || 'toggle',
+      choices: option.type === 'select' ? (option.choices || []) : undefined,
     }))
     .filter((option) => option.label.trim());
 }
@@ -6086,10 +6117,12 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
     setSelectedGroupRowUid(null);
   }, [asset]);
 
-  const setVariantOptionLink = (variantType, optionId, linkedType) => {
+  const setVariantOptionLink = (selectOptionId, choiceId, toggleOptionId, linkedType) => {
     setVariantOptionLinks((current) => {
-      const filtered = current.filter((link) => !(link.variantType === variantType && link.optionId === optionId));
-      return linkedType ? [...filtered, { variantType, optionId, linkedType }] : filtered;
+      const filtered = current.filter(
+        (link) => !(link.selectOptionId === selectOptionId && link.choiceId === choiceId && link.toggleOptionId === toggleOptionId),
+      );
+      return linkedType ? [...filtered, { selectOptionId, choiceId, toggleOptionId, linkedType }] : filtered;
     });
   };
 
@@ -6193,6 +6226,37 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
     updateAssetList('configOptions', draftConfigOptions.filter((_, rowIndex) => rowIndex !== index));
   };
 
+  const addConfigOptionChoice = (optionIndex) => {
+    const nextRows = draftConfigOptions.map((row, rowIndex) => {
+      if (rowIndex !== optionIndex) return row;
+      const newChoice = { id: `choice-${Date.now()}`, label: '', assetType: '' };
+      return { ...row, choices: [...(row.choices || []), newChoice] };
+    });
+    updateAssetList('configOptions', nextRows);
+  };
+
+  const updateConfigOptionChoice = (optionIndex, choiceIndex, patch) => {
+    const nextRows = draftConfigOptions.map((row, rowIndex) => {
+      if (rowIndex !== optionIndex) return row;
+      const nextChoices = (row.choices || []).map((choice, ci) => {
+        if (ci !== choiceIndex) return choice;
+        const next = { ...choice, ...patch };
+        if (patch.label !== undefined && patch.id === undefined) next.id = slugForType(patch.label || `choice-${choiceIndex + 1}`);
+        return next;
+      });
+      return { ...row, choices: nextChoices };
+    });
+    updateAssetList('configOptions', nextRows);
+  };
+
+  const removeConfigOptionChoice = (optionIndex, choiceIndex) => {
+    const nextRows = draftConfigOptions.map((row, rowIndex) => {
+      if (rowIndex !== optionIndex) return row;
+      return { ...row, choices: (row.choices || []).filter((_, ci) => ci !== choiceIndex) };
+    });
+    updateAssetList('configOptions', nextRows);
+  };
+
   const updateTelevisionOption = (checked) => {
     setDraft({
       ...draft,
@@ -6278,6 +6342,10 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
 
     if (isVariantGroup) {
       const cleanTypes = variantAssetTypes.filter(Boolean);
+      const selectChoiceTypes = draftConfigOptions
+        .filter((o) => o.type === 'select')
+        .flatMap((o) => (o.choices || []).map((c) => c.assetType).filter(Boolean));
+      const allTypes = [...new Set([...cleanTypes, ...selectChoiceTypes])];
       onSave({
         ...draft,
         label: draft.label?.trim() || 'Groupe de variantes',
@@ -6285,9 +6353,9 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           ...(draft.dimensions || {}),
           isVariantGroup: true,
           category: draft.dimensions?.category || 'Mobilier',
-          variantAssetTypes: cleanTypes,
+          variantAssetTypes: allTypes,
           configOptions: draftConfigOptions,
-          variantOptionLinks: variantOptionLinks.filter((link) => cleanTypes.includes(link.variantType) && link.linkedType),
+          variantOptionLinks,
           format: 'Groupe de variantes',
         },
       });
@@ -6623,11 +6691,13 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             <AssetConfigOptionRows
               rows={draftConfigOptions}
               emptyLabel="Aucune option configurée."
-              variantTypes={variantAssetTypes.filter(Boolean)}
               sourceAssets={variantSourceAssetsList}
               links={variantOptionLinks}
               onChange={updateConfigOptionRow}
               onRemove={removeConfigOptionRow}
+              onAddChoice={addConfigOptionChoice}
+              onUpdateChoice={updateConfigOptionChoice}
+              onRemoveChoice={removeConfigOptionChoice}
               onSetLink={setVariantOptionLink}
             />
           </section>
@@ -6751,45 +6821,96 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   );
 }
 
-function AssetConfigOptionRows({ rows, emptyLabel, variantTypes = [], sourceAssets = [], links = [], onChange, onRemove, onSetLink }) {
+function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], links = [], onChange, onRemove, onAddChoice, onUpdateChoice, onRemoveChoice, onSetLink }) {
   if (!rows.length) return <p className="asset-variants-empty">{emptyLabel}</p>;
+  const selectOption = rows.find((r) => r.type === 'select');
   return (
     <div className="asset-variant-list">
       {rows.map((row, index) => {
-        const optionLinks = links.filter((link) => link.optionId === row.id);
+        const isSelect = row.type === 'select';
+        const isToggle = !isSelect;
         return (
-          <article key={`${row.id}-${index}`} className="asset-variant-row option-row">
+          <article key={`${row.id}-${index}`} className={`asset-variant-row option-row ${isSelect ? 'option-row-select' : ''}`}>
             <div className="option-row-fields">
+              <div className="option-type-tabs">
+                <button
+                  type="button"
+                  className={!isSelect ? 'active' : ''}
+                  onClick={() => onChange(index, { type: 'toggle', choices: undefined })}
+                  title="Case à cocher"
+                >Case à cocher</button>
+                <button
+                  type="button"
+                  className={isSelect ? 'active' : ''}
+                  onClick={() => onChange(index, { type: 'select', choices: row.choices || [] })}
+                  title="Sélection exclusive"
+                >Sélection</button>
+              </div>
               <label>
                 <span>Nom</span>
-                <input value={row.label || ''} onChange={(event) => onChange(index, { label: event.target.value })} placeholder="Ex : Sur pied" />
+                <input value={row.label || ''} onChange={(event) => onChange(index, { label: event.target.value })} placeholder={isSelect ? 'Ex : Taille' : 'Ex : Sur pied'} />
               </label>
-              <label>
-                <span>Description</span>
-                <input value={row.detail || ''} onChange={(event) => onChange(index, { detail: event.target.value })} placeholder="Texte secondaire" />
-              </label>
-              <label>
-                <span>Supplément HT</span>
-                <input type="number" min="0" step="1" value={row.price ?? 0} onChange={(event) => onChange(index, { price: event.target.value })} />
-              </label>
-              <label className="asset-toggle-row asset-variant-default">
-                <input type="checkbox" checked={Boolean(row.defaultChecked)} onChange={(event) => onChange(index, { defaultChecked: event.target.checked })} />
-                <span><strong>Cochée par défaut</strong><small>L’option est active à l’ouverture.</small></span>
-              </label>
+              {isToggle && (
+                <>
+                  <label>
+                    <span>Description</span>
+                    <input value={row.detail || ''} onChange={(event) => onChange(index, { detail: event.target.value })} placeholder="Texte secondaire" />
+                  </label>
+                  <label>
+                    <span>Supplément HT</span>
+                    <input type="number" min="0" step="1" value={row.price ?? 0} onChange={(event) => onChange(index, { price: event.target.value })} />
+                  </label>
+                  <label className="asset-toggle-row asset-variant-default">
+                    <input type="checkbox" checked={Boolean(row.defaultChecked)} onChange={(event) => onChange(index, { defaultChecked: event.target.checked })} />
+                    <span><strong>Cochée par défaut</strong><small>L'option est active à l'ouverture.</small></span>
+                  </label>
+                </>
+              )}
               <button type="button" onClick={() => onRemove(index)} aria-label="Supprimer cette option"><Trash2 size={14} /></button>
             </div>
-            {variantTypes.length > 0 && (
+
+            {isSelect && (
               <div className="option-variant-links">
-                <span className="option-variant-links-label">Objets liés par variante</span>
-                {variantTypes.map((variantType) => {
-                  const variantSource = sourceAssets.find((a) => a.type === variantType);
-                  const currentLink = optionLinks.find((link) => link.variantType === variantType);
+                <div className="option-variant-links-head">
+                  <span className="option-variant-links-label">Choix proposés au client</span>
+                  <button type="button" className="option-add-choice" onClick={() => onAddChoice?.(index)}><Plus size={12} /> Choix</button>
+                </div>
+                {(row.choices || []).length === 0 && <p className="asset-variants-empty" style={{ margin: '4px 0' }}>Aucun choix — ajoute-en un.</p>}
+                {(row.choices || []).map((choice, choiceIndex) => (
+                  <div key={choice.id || choiceIndex} className="option-choice-row">
+                    <input
+                      value={choice.label || ''}
+                      placeholder="Libellé (ex : 15&quot;)"
+                      onChange={(event) => onUpdateChoice?.(index, choiceIndex, { label: event.target.value })}
+                    />
+                    <select
+                      value={choice.assetType || ''}
+                      onChange={(event) => onUpdateChoice?.(index, choiceIndex, { assetType: event.target.value })}
+                    >
+                      <option value="">— Objet lié —</option>
+                      {sourceAssets.map((source) => (
+                        <option key={source.type} value={source.type}>{source.label}</option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={() => onRemoveChoice?.(index, choiceIndex)} aria-label="Supprimer ce choix"><Trash2 size={12} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {isToggle && selectOption && (selectOption.choices || []).length > 0 && (
+              <div className="option-variant-links">
+                <span className="option-variant-links-label">Objet placé selon la sélection</span>
+                {(selectOption.choices || []).map((choice) => {
+                  const currentLink = links.find(
+                    (link) => link.selectOptionId === selectOption.id && link.choiceId === choice.id && link.toggleOptionId === row.id,
+                  );
                   return (
-                    <label key={variantType} className="option-variant-link-row">
-                      <span>{variantSource?.label || variantType}</span>
+                    <label key={choice.id} className="option-variant-link-row">
+                      <span>{choice.label || choice.id}</span>
                       <select
                         value={currentLink?.linkedType || ''}
-                        onChange={(event) => onSetLink?.(variantType, row.id, event.target.value)}
+                        onChange={(event) => onSetLink?.(selectOption.id, choice.id, row.id, event.target.value)}
                       >
                         <option value="">— Aucun —</option>
                         {sourceAssets.map((source) => (
@@ -6868,17 +6989,49 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
     ]);
   };
 
-  const setVariantOptionLink = (variantType, optionId, linkedType) => {
+  const setVariantOptionLink = (selectOptionId, choiceId, toggleOptionId, linkedType) => {
     setVariantOptionLinks((current) => {
-      const filtered = current.filter((link) => !(link.variantType === variantType && link.optionId === optionId));
-      return linkedType ? [...filtered, { variantType, optionId, linkedType }] : filtered;
+      const filtered = current.filter(
+        (link) => !(link.selectOptionId === selectOptionId && link.choiceId === choiceId && link.toggleOptionId === toggleOptionId),
+      );
+      return linkedType ? [...filtered, { selectOptionId, choiceId, toggleOptionId, linkedType }] : filtered;
     });
   };
 
+  const addConfigOptionChoice = (optionIndex) => {
+    setConfigOptions((current) => current.map((row, rowIndex) => {
+      if (rowIndex !== optionIndex) return row;
+      return { ...row, choices: [...(row.choices || []), { id: `choice-${Date.now()}`, label: '', assetType: '' }] };
+    }));
+  };
+
+  const updateConfigOptionChoice = (optionIndex, choiceIndex, patch) => {
+    setConfigOptions((current) => current.map((row, rowIndex) => {
+      if (rowIndex !== optionIndex) return row;
+      const nextChoices = (row.choices || []).map((choice, ci) => {
+        if (ci !== choiceIndex) return choice;
+        const next = { ...choice, ...patch };
+        if (patch.label !== undefined && patch.id === undefined) next.id = slugForType(patch.label || `choice-${choiceIndex + 1}`);
+        return next;
+      });
+      return { ...row, choices: nextChoices };
+    }));
+  };
+
+  const removeConfigOptionChoice = (optionIndex, choiceIndex) => {
+    setConfigOptions((current) => current.map((row, rowIndex) => {
+      if (rowIndex !== optionIndex) return row;
+      return { ...row, choices: (row.choices || []).filter((_, ci) => ci !== choiceIndex) };
+    }));
+  };
+
   const saveGroup = async () => {
-    if (!rows.filter(Boolean).length) return;
     setSaving(true);
     const cleanRows = [...new Set(rows.filter(Boolean))];
+    const selectChoiceTypes = configOptions
+      .filter((o) => o.type === 'select')
+      .flatMap((o) => (o.choices || []).map((c) => c.assetType).filter(Boolean));
+    const allTypes = [...new Set([...cleanRows, ...selectChoiceTypes])];
     await onCreate({
       type: `variant-group-${slugForType(name)}-${Date.now().toString(36)}`,
       label: name.trim() || 'Groupe de variantes',
@@ -6888,9 +7041,9 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
       dimensions: {
         isVariantGroup: true,
         category,
-        variantAssetTypes: cleanRows,
+        variantAssetTypes: allTypes,
         configOptions,
-        variantOptionLinks: variantOptionLinks.filter((link) => cleanRows.includes(link.variantType) && link.linkedType),
+        variantOptionLinks,
         salons: assignedSalons,
         addedBy: 'Admin Stand-ING',
         format: 'Groupe de variantes',
@@ -6951,11 +7104,13 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
           <AssetConfigOptionRows
             rows={configOptions}
             emptyLabel="Aucune option configurée."
-            variantTypes={rows.filter(Boolean)}
             sourceAssets={sourceAssets}
             links={variantOptionLinks}
             onChange={updateConfigOptionRow}
             onRemove={(index) => setConfigOptions((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+            onAddChoice={addConfigOptionChoice}
+            onUpdateChoice={updateConfigOptionChoice}
+            onRemoveChoice={removeConfigOptionChoice}
             onSetLink={setVariantOptionLink}
           />
         </section>
@@ -7802,18 +7957,33 @@ function assetToCatalogEntry(asset, allAssets = []) {
         return { ...link, linkedEntry };
       })
       .filter((link) => link.linkedEntry);
+    const configOptions = (asset.dimensions?.configOptions || []).map((opt) => {
+      if (opt.type !== 'select' || !opt.choices?.length) return opt;
+      return {
+        ...opt,
+        choices: opt.choices.map((choice) => {
+          const choiceAsset = allAssets.find((candidate) => candidate.type === choice.assetType);
+          return { ...choice, entry: choiceAsset ? assetToCatalogEntry(choiceAsset, allAssets) : null };
+        }),
+      };
+    });
+    const allEntryPrices = [
+      ...variantAssets.map((entry) => assetUnitPrice(entry, assetSalons(asset)[0])),
+      ...configOptions.filter((o) => o.type === 'select').flatMap((o) => (o.choices || []).map((c) => c.entry ? assetUnitPrice(c.entry, assetSalons(asset)[0]) : 0)),
+    ].filter((price) => price > 0);
     return {
       type: asset.type,
       label: asset.label,
       icon: Layers,
       color: asset.dimensions?.color || '#dfe8ec',
-      price: Math.min(...variantAssets.map((entry) => assetUnitPrice(entry, assetSalons(asset)[0])).filter((price) => price > 0), 0) || 0,
+      price: Math.min(...allEntryPrices, 0) || 0,
       thumbnailUrl: asset.thumbnail_url,
       dimensions: {
         ...(asset.dimensions || {}),
         isVariantGroup: true,
         variantAssets,
         variantOptionLinks,
+        configOptions,
       },
     };
   }
