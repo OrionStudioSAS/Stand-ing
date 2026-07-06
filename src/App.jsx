@@ -3733,8 +3733,10 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
         {rows.map((row) => {
           const entry = findCatalogEntry(catalog, row.type);
           const selected = Boolean(sides?.[row.side]);
-          const previewSides = selected ? sides : { ...sides, [row.side]: true };
-          const billable = partitionHeadBillableSides(rule, previewSides).has(row.side);
+          const currentSelectedCount = Object.values(sides).filter(Boolean).length;
+          const freeSlots = Math.max(0, Number(rule?.includedCount || 0));
+          const billableSides = partitionHeadBillableSides(rule, sides);
+          const billable = selected ? billableSides.has(row.side) : currentSelectedCount >= freeSlots;
           const price = billable ? firstPriceValue(row.price, assetUnitPrice(entry, salonLabel), 0) : 0;
           return (
             <button
@@ -8387,8 +8389,8 @@ function partitionHeadSelectedSides(rule = {}, sides = {}) {
 
 function partitionHeadBillableSides(rule = {}, sides = {}) {
   const selectedSides = partitionHeadSelectedSides(rule, sides);
-  const ruleIncludedSides = new Set(rule.includedSides || []);
-  return new Set(selectedSides.filter((side) => !ruleIncludedSides.has(side)));
+  const includedCount = Math.max(0, Number(rule?.includedCount || 0));
+  return new Set(selectedSides.slice(includedCount));
 }
 
 function makeAutomaticPartitionHeadItems(rule, sides = {}, catalogEntries = [], width, depth, layout, salonLabel) {
