@@ -1492,11 +1492,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         <div className="header-modal-layer" onMouseDown={(event) => event.target === event.currentTarget && setHeaderPanel(null)}>
           <QuestionModal
             salonLabel={salonLabel}
-            category={questionCategory}
-            urgency={urgency}
             form={questionForm}
-            onCategoryChange={setQuestionCategory}
-            onUrgencyChange={setUrgency}
             onFormChange={(key, value) => setQuestionForm((current) => ({ ...current, [key]: value }))}
             onClose={() => setHeaderPanel(null)}
             onSubmit={submitQuestion}
@@ -1879,37 +1875,43 @@ function ClientInfoModal({ salonLabel, contactDetails, onChange, onClose, onVali
   );
 }
 
-function QuestionModal({ salonLabel, category, urgency, form, onCategoryChange, onUrgencyChange, onFormChange, onClose, onSubmit }) {
+const questionFaq = [
+  { q: "Puis-je modifier ma configuration après validation ?", a: "Tant que votre BAT n'est pas validé, vous pouvez modifier votre configuration en nous contactant. Une fois le BAT signé, toute modification est soumise à faisabilité et peut entraîner un surcoût." },
+  { q: "Quels formats sont acceptés pour les visuels logo ?", a: "Nous acceptons les fichiers PDF vectoriels, AI, EPS ou PNG haute résolution (300 dpi minimum). Les fichiers Word, PowerPoint et JPEG basse résolution ne sont pas adaptés à l'impression." },
+  { q: "Quel est le délai de réponse ?", a: "Notre équipe répond sous 24h ouvrées. Pour les demandes urgentes en période de salon, n'hésitez pas à nous appeler directement." },
+  { q: "Quand mon stand sera-t-il livré sur le salon ?", a: "La livraison est organisée avant l'ouverture du salon. Vous recevrez les informations logistiques (horaires, lieu de montage) par email dès la validation de votre commande." },
+];
+
+function QuestionFaq() {
+  const [openIndex, setOpenIndex] = React.useState(null);
+  return (
+    <div className="question-faq">
+      <span className="form-section-label">Questions fréquentes</span>
+      {questionFaq.map((entry, index) => (
+        <div key={index} className={openIndex === index ? 'faq-item open' : 'faq-item'}>
+          <button type="button" onClick={() => setOpenIndex(openIndex === index ? null : index)}>
+            <span>{entry.q}</span>
+            {openIndex === index ? <Minus size={14} /> : <Plus size={14} />}
+          </button>
+          {openIndex === index && <p>{entry.a}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function QuestionModal({ salonLabel, form, onFormChange, onClose, onSubmit }) {
   return (
     <form className="question-modal" onSubmit={onSubmit}>
       <ModalHead icon={<HelpCircle size={19} />} title="Questions / Remarques" salonLabel={salonLabel} onClose={onClose} />
       <div className="question-content">
         <p>Vous avez une question sur votre stand ou souhaitez ajouter une remarque particulière ? L'équipe Stand-ING vous répond sous 24h.</p>
 
-        <span className="form-section-label">Catégorie</span>
-        <div className="chip-grid">
-          {questionCategories.map((entry) => (
-            <button key={entry.id} className={category === entry.id ? 'active' : ''} type="button" onClick={() => onCategoryChange(entry.id)}>
-              <span>{entry.icon}</span>{entry.label}
-            </button>
-          ))}
-        </div>
+        <QuestionFaq />
 
         <label className="form-row">Objet
           <input value={form.subject} onChange={(event) => onFormChange('subject', event.target.value)} placeholder="Ex : Dimension des cloisons pour mon logo..." />
         </label>
-
-        <span className="form-section-label">Niveau d'urgence</span>
-        <div className="urgency-grid">
-          {urgencyLevels.map((entry) => (
-            <button key={entry.id} className={urgency === entry.id ? 'active' : ''} type="button" onClick={() => onUrgencyChange(entry.id)}>
-              <span style={{ background: entry.color }} />
-              <strong>{entry.label}</strong>
-              <small>{entry.delay}</small>
-              {urgency === entry.id && <Check size={14} />}
-            </button>
-          ))}
-        </div>
 
         <label className="form-row">Message
           <textarea
@@ -1929,7 +1931,7 @@ function QuestionModal({ salonLabel, category, urgency, form, onCategoryChange, 
           <input type="file" />
         </label>
 
-        <div className="question-note">ℹ️ Notre équipe vous répondra directement par email et mettra à jour votre configuration si nécessaire.</div>
+        <div className="question-note">Notre équipe vous répondra directement par email et mettra à jour votre configuration si nécessaire.</div>
         <button className="modal-primary-button centered" type="submit"><Mail size={15} /> Envoyer ma question</button>
         <button className="modal-cancel-button" type="button" onClick={onClose}>Annuler</button>
       </div>
@@ -3601,9 +3603,8 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
             >
               <span className="reserve-choice-radio" aria-hidden="true">{selected ? <span /> : null}</span>
               <span className="reserve-choice-copy">
-                <strong>{row.sizeName} <b>{row.areaLabel}</b>{row.recommended ? <em>Recommandé</em> : null}</strong>
+                <strong>{row.sizeName} <b>{row.areaLabel}</b></strong>
                 <small>{row.description}</small>
-                <i />
               </span>
               <span className={row.included ? 'reserve-choice-price included' : 'reserve-choice-price'}>
                 {row.included ? 'Inclus' : `+ ${row.price.toLocaleString('fr-FR')} € HT`}
@@ -3636,7 +3637,6 @@ function FormulaIncludedBox({ open, onToggle, includedRow }) {
           {includedRow ? (
             <>
               <p>Une réserve {includedRow.areaLabel} est incluse dans votre formule.</p>
-              <p>Une enseigne de 1000 × 1000 mm ht.</p>
               <p>Une réserve permet de stocker votre matériel, vos sacs et documents à l'abri des regards.</p>
             </>
           ) : (
@@ -10236,7 +10236,7 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
 
   const positionedItem = applyPlacementRule(item, width, depth, layout);
   const bounds = itemPlacementBounds(positionedItem);
-  const placement = closestPlacementInRegions(positionedItem, placementRegions(width, depth, layout, bounds, carpetFootprintEnabled));
+  const placement = closestPlacementInRegions(positionedItem, placementRegions(width, depth, layout, bounds, carpetFootprintEnabled && !isCeilingMountedItem(positionedItem)));
 
   return {
     ...positionedItem,
