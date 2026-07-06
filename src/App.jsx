@@ -787,6 +787,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, plancher: false, led: false, reserve: false, tete: false, comptoir: false });
   const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || initialOptions.defaultColorOptions?.carpetColorId || '');
   const [selectedCarpetFootprintId, setSelectedCarpetFootprintId] = useState(initialOptions.carpetFootprintColorId || initialOptions.defaultColorOptions?.carpetFootprintColorId || initialOptions.carpetColorId || initialOptions.defaultColorOptions?.carpetColorId || '');
+  const [carpetConfigOptions, setCarpetConfigOptions] = useState(initialOptions.carpetConfigOptions || {});
   const [carpetFootprintEnabled, setCarpetFootprintEnabled] = useState(initialOptions.carpetFootprintEnabled !== false);
   const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || initialOptions.defaultColorOptions?.wallFabricColorId || '');
   const [technicalFloorType, setTechnicalFloorType] = useState(initialOptions.technicalFloorType || '');
@@ -846,6 +847,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const footprintPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'footprint', carpetPalette), [objectBank, salonLabel, carpetPalette]);
   const wallFabricPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'wallFabric', wallFabricColors), [objectBank, salonLabel]);
   const counterPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'counter', []), [objectBank, salonLabel]);
+  const carpetGroupConfigOptionsList = useMemo(() => colorGroupConfigOptions(objectBank, salonLabel, 'carpet'), [objectBank, salonLabel]);
   const groupDefaultColorOptions = useMemo(() => makePaletteDefaultColorOptions({
     carpetPalette,
     footprintPalette,
@@ -1001,13 +1003,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     layout,
     technicalFloor: selectedTechnicalFloor ? { ...selectedTechnicalFloor, area } : null,
     colorSelections: [
-      { usage: 'Moquette', color: selectedCarpetColor, defaultColorId: effectiveDefaultColorOptions.carpetColorId, quantityM2: area },
+      { usage: 'Moquette', color: selectedCarpetColor, defaultColorId: effectiveDefaultColorOptions.carpetColorId, quantityM2: area, configOptions: carpetGroupConfigOptionsList, selectedConfigOptions: carpetConfigOptions },
       effectiveCarpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor, defaultColorId: effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId, quantityM2: carpetFootprintAreaM2() } : null,
       { usage: 'Coton cloison', color: selectedWallFabricColor, defaultColorId: effectiveDefaultColorOptions.wallFabricColorId, quantityM2: sceneWallFabricArea(width, depth, layout) },
     ],
     wallCovers,
     wallCoverSurfaces,
-  }), [area, availableCatalog, sceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces]);
+  }), [area, availableCatalog, sceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
@@ -1025,6 +1027,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       carpetFootprintColorPrice: Number(selectedCarpetFootprintColor.price || 0),
       carpetFootprintColorReference: selectedCarpetFootprintColor.reference || '',
       carpetFootprintEnabled: effectiveCarpetFootprintEnabled,
+      carpetConfigOptions: Object.keys(carpetConfigOptions).length ? carpetConfigOptions : undefined,
       defaultColorOptions: effectiveDefaultColorOptions,
       wallFabricColorId: selectedWallFabricColor.id,
       wallFabricColorName: selectedWallFabricColor.name,
@@ -1720,7 +1723,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             salonLabel={salonLabel}
             catalog={availableCatalog}
             readOnly={readOnly}
+            carpetGroupConfigOptions={carpetGroupConfigOptionsList}
+            carpetConfigOptions={carpetConfigOptions}
             onCarpetColor={(colorId) => !readOnly && setSelectedCarpetId(colorId)}
+            onCarpetConfigOption={(optionId, checked) => !readOnly && setCarpetConfigOptions((current) => ({ ...current, [optionId]: checked }))}
             onCarpetFootprintColor={(colorId) => !readOnly && setSelectedCarpetFootprintId(colorId)}
             onCarpetFootprintEnabled={(enabled) => !readOnly && !selectedTechnicalFloor && setCarpetFootprintEnabled(enabled)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
@@ -2533,7 +2539,10 @@ function OptionsStepPanel({
   salonLabel,
   catalog,
   readOnly = false,
+  carpetGroupConfigOptions = [],
+  carpetConfigOptions = {},
   onCarpetColor,
+  onCarpetConfigOption,
   onCarpetFootprintColor,
   onCarpetFootprintEnabled,
   onWallColor,
@@ -2565,7 +2574,10 @@ function OptionsStepPanel({
           defaultColorId={defaultColorOptions.carpetColorId}
           area={area}
           disabled={readOnly}
+          configOptions={carpetGroupConfigOptions}
+          selectedOptions={carpetConfigOptions}
           onSelect={onCarpetColor}
+          onOptionToggle={onCarpetConfigOption}
         />
       </OptionAccordion>
       <OptionAccordion title="Empreinte moquette" icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')}>
@@ -2820,8 +2832,14 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
   });
   const [quantity, setQuantity] = useState(1);
   const selectedVariant = variants.find((variant) => variant.id === format) || variants[0];
-  const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
-  const extras = extraOptions.reduce((sum, option) => sum + (selectedExtras[option.id] ? Number(option.price || 0) : 0), 0);
+  const optionLink = resolveVariantOptionLink(selectedVariant, selectedExtras);
+  const resolvedEntry = optionLink?.entry || selectedVariant?.entry || catalogEntry;
+  const basePrice = optionLink
+    ? assetUnitPrice(optionLink.entry, salonLabel)
+    : (selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel));
+  const extras = extraOptions
+    .filter((option) => !selectedVariant?.optionLinks?.some((link) => link.optionId === option.id))
+    .reduce((sum, option) => sum + (selectedExtras[option.id] ? Number(option.price || 0) : 0), 0);
   const total = (basePrice + extras) * (mode === 'add' ? quantity : 1);
   const hasVisualOptions = mode === 'edit' && item && (
     isPartitionHeadItem(item)
@@ -2834,7 +2852,6 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
   };
 
   const submit = () => {
-    const resolvedEntry = selectedVariant?.entry || catalogEntry;
     onConfirm({
       entry: resolvedEntry,
       item,
@@ -2848,7 +2865,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
         variantDetail: selectedVariant?.detail,
         variantReference: selectedVariant?.reference,
         variantImageUrl: selectedVariant?.imageUrl,
-        variantAssetType: selectedVariant?.assetType,
+        variantAssetType: resolvedEntry?.type || selectedVariant?.assetType,
         extraOptions: selectedExtras,
         technician: Boolean(selectedExtras.technician),
         fileCheck: Boolean(selectedExtras.fileCheck),
@@ -2869,7 +2886,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
         </header>
 
         <div className="item-config-product">
-          <span>{catalogEntry.thumbnailUrl ? <img src={catalogEntry.thumbnailUrl} alt="" /> : <Box size={34} />}</span>
+          <span>{(optionLink?.entry?.thumbnailUrl || selectedVariant?.imageUrl || catalogEntry.thumbnailUrl) ? <img src={optionLink?.entry?.thumbnailUrl || selectedVariant?.imageUrl || catalogEntry.thumbnailUrl} alt="" /> : <Box size={34} />}</span>
           <div>
             <strong>{catalogEntry.label}</strong>
             <small>Réf. {assetReference(selectedVariant?.entry || catalogEntry, salonLabel) || selectedVariant?.assetType || catalogEntry.type || 'Stand-ING'}</small>
@@ -2918,16 +2935,23 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
 
         {extraOptions.length > 0 && (
           <div className="item-config-options">
-            {extraOptions.map((option) => (
-              <ToggleOption
-                key={option.id}
-                active={Boolean(selectedExtras[option.id])}
-                label={option.label}
-                detail={option.detail}
-                price={`+ ${Number(option.price || 0).toLocaleString('fr-FR')} €`}
-                onChange={(checked) => toggleExtra(option.id, checked)}
-              />
-            ))}
+            {extraOptions.map((option) => {
+              const linkedOption = selectedVariant?.optionLinks?.find((link) => link.optionId === option.id);
+              const linkedPrice = linkedOption ? assetUnitPrice(linkedOption.entry, salonLabel) : null;
+              const displayPrice = linkedOption
+                ? (linkedPrice != null ? `${linkedPrice.toLocaleString('fr-FR')} €` : 'Inclus')
+                : `+ ${Number(option.price || 0).toLocaleString('fr-FR')} €`;
+              return (
+                <ToggleOption
+                  key={option.id}
+                  active={Boolean(selectedExtras[option.id])}
+                  label={option.label}
+                  detail={option.detail}
+                  price={displayPrice}
+                  onChange={(checked) => toggleExtra(option.id, checked)}
+                />
+              );
+            })}
           </div>
         )}
 
@@ -2984,7 +3008,11 @@ function ToggleOption({ active, label, detail, price, onChange }) {
 
 function itemConfigVariants(entry, salonLabel) {
   if (isVariantGroupEntry(entry)) {
-    const groupVariants = normalizeVariantGroupOptions(entry?.dimensions?.variantAssets, salonLabel);
+    const groupVariants = normalizeVariantGroupOptions(
+      entry?.dimensions?.variantAssets,
+      salonLabel,
+      entry?.dimensions?.variantOptionLinks || [],
+    );
     if (groupVariants.length) return groupVariants;
   }
   return genericItemVariants(entry, salonLabel);
@@ -2992,6 +3020,11 @@ function itemConfigVariants(entry, salonLabel) {
 
 function itemConfigExtraOptions(entry) {
   return normalizeAssetConfigOptions(entry?.dimensions?.configOptions);
+}
+
+function resolveVariantOptionLink(variant, selectedExtras = {}) {
+  if (!variant?.optionLinks?.length) return null;
+  return variant.optionLinks.find((link) => Boolean(selectedExtras[link.optionId])) || null;
 }
 
 function genericItemVariants(entry, salonLabel) {
@@ -3011,21 +3044,27 @@ function normalizeAssetConfigOptions(options = []) {
     .filter((option) => option.label.trim());
 }
 
-function normalizeVariantGroupOptions(variantAssets = [], salonLabel = '') {
+function normalizeVariantGroupOptions(variantAssets = [], salonLabel = '', variantOptionLinks = []) {
   if (!Array.isArray(variantAssets)) return [];
   return variantAssets
     .filter((entry) => entry?.type)
-    .map((entry, index) => ({
-      id: entry.type,
-      assetType: entry.type,
-      label: entry.label || `Variante ${index + 1}`,
-      detail: entry.dimensions?.variantDetail || assetDimensionsLabel({ dimensions: entry.dimensions }) || '',
-      price: assetUnitPrice(entry, salonLabel),
-      reference: assetReference(entry, salonLabel),
-      imageUrl: entry.thumbnailUrl || entry.thumbnail_url || '',
-      isDefault: index === 0,
-      entry,
-    }));
+    .map((entry, index) => {
+      const optionLinks = variantOptionLinks
+        .filter((link) => link.variantType === entry.type && link.linkedEntry)
+        .map((link) => ({ optionId: link.optionId, entry: link.linkedEntry }));
+      return {
+        id: entry.type,
+        assetType: entry.type,
+        label: entry.label || `Variante ${index + 1}`,
+        detail: entry.dimensions?.variantDetail || assetDimensionsLabel({ dimensions: entry.dimensions }) || '',
+        price: assetUnitPrice(entry, salonLabel),
+        reference: assetReference(entry, salonLabel),
+        imageUrl: entry.thumbnailUrl || entry.thumbnail_url || '',
+        isDefault: index === 0,
+        optionLinks,
+        entry,
+      };
+    });
 }
 
 function itemConfigTitle(entry = {}) {
@@ -3885,7 +3924,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, dis
   );
 }
 
-function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect }) {
+function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, configOptions = [], selectedOptions = {}, onSelect, onOptionToggle }) {
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
   const includedColors = displayColors.filter((color) => color.included);
@@ -3973,6 +4012,21 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
           </section>
         );
       })}
+
+      {configOptions.length > 0 && (
+        <div className="carpet-config-options">
+          {configOptions.map((option) => (
+            <ToggleOption
+              key={option.id}
+              active={Boolean(selectedOptions[option.id])}
+              label={option.label}
+              detail={option.detail}
+              price={`+ ${Number(option.price || 0).toLocaleString('fr-FR')} €`}
+              onChange={(checked) => onOptionToggle?.(option.id, checked)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -6020,6 +6074,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const draftRotationLocked = Boolean(draft.dimensions?.rotationLocked);
   const draftConfigOptions = normalizeAssetConfigOptions(draft.dimensions?.configOptions);
   const [variantAssetTypes, setVariantAssetTypes] = useState(() => draft.dimensions?.variantAssetTypes || []);
+  const [variantOptionLinks, setVariantOptionLinks] = useState(() => draft.dimensions?.variantOptionLinks || []);
 
   useEffect(() => {
     setDraft(asset);
@@ -6027,8 +6082,16 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
     setThumbnailError('');
     setGroupRows(assetToGroupRows(asset));
     setVariantAssetTypes(asset.dimensions?.variantAssetTypes || []);
+    setVariantOptionLinks(asset.dimensions?.variantOptionLinks || []);
     setSelectedGroupRowUid(null);
   }, [asset]);
+
+  const setVariantOptionLink = (variantType, optionId, linkedType) => {
+    setVariantOptionLinks((current) => {
+      const filtered = current.filter((link) => !(link.variantType === variantType && link.optionId === optionId));
+      return linkedType ? [...filtered, { variantType, optionId, linkedType }] : filtered;
+    });
+  };
 
   const toggleSalon = (salon) => {
     const current = new Set(assetSalons(draft, scenes));
@@ -6207,12 +6270,14 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           colorUsages: colorGroupUsages(draft),
           colorGroupPrice: Number(draft.dimensions?.colorGroupPrice || 0),
           colorGroupReference: draft.dimensions?.colorGroupReference || '',
+          configOptions: draftConfigOptions,
         },
       });
       return;
     }
 
     if (isVariantGroup) {
+      const cleanTypes = variantAssetTypes.filter(Boolean);
       onSave({
         ...draft,
         label: draft.label?.trim() || 'Groupe de variantes',
@@ -6220,7 +6285,9 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           ...(draft.dimensions || {}),
           isVariantGroup: true,
           category: draft.dimensions?.category || 'Mobilier',
-          variantAssetTypes: variantAssetTypes.filter(Boolean),
+          variantAssetTypes: cleanTypes,
+          configOptions: draftConfigOptions,
+          variantOptionLinks: variantOptionLinks.filter((link) => cleanTypes.includes(link.variantType) && link.linkedType),
           format: 'Groupe de variantes',
         },
       });
@@ -6393,6 +6460,20 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
                 </span>
               ))}
             </div>
+
+            <div className="asset-variants-head compact">
+              <div>
+                <h3>Options supplémentaires</h3>
+                <small>Options activables dans l'interface client (ex : épaisseur premium). Supplément HT en plus du prix/m².</small>
+              </div>
+              <button type="button" onClick={addConfigOptionRow}><Plus size={14} /> Option</button>
+            </div>
+            <AssetConfigOptionRows
+              rows={draftConfigOptions}
+              emptyLabel="Aucune option configurée pour ce groupe."
+              onChange={updateConfigOptionRow}
+              onRemove={removeConfigOptionRow}
+            />
           </section>
         )}
 
@@ -6541,10 +6622,28 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             </div>
             <AssetConfigOptionRows
               rows={draftConfigOptions}
-              emptyLabel="Aucune option payante configurée."
+              emptyLabel="Aucune option configurée."
               onChange={updateConfigOptionRow}
               onRemove={removeConfigOptionRow}
             />
+
+            {variantAssetTypes.filter(Boolean).length > 0 && draftConfigOptions.length > 0 && (
+              <>
+                <div className="asset-variants-head compact">
+                  <div>
+                    <h3>Liaisons option → objet</h3>
+                    <small>Pour chaque variante, l'objet posé quand une option est cochée.</small>
+                  </div>
+                </div>
+                <AssetVariantOptionLinkRows
+                  variantTypes={variantAssetTypes.filter(Boolean)}
+                  options={draftConfigOptions}
+                  links={variantOptionLinks}
+                  sourceAssets={variantSourceAssetsList}
+                  onSet={setVariantOptionLink}
+                />
+              </>
+            )}
           </section>
         )}
 
@@ -6723,6 +6822,39 @@ function AssetVariantSourceRows({ rows, sourceAssets, onChange, onRemove }) {
   );
 }
 
+function AssetVariantOptionLinkRows({ variantTypes, options, links, sourceAssets, onSet }) {
+  return (
+    <div className="asset-variant-list">
+      {variantTypes.map((variantType) => {
+        const variantSource = sourceAssets.find((a) => a.type === variantType);
+        return options.map((option) => {
+          const currentLink = links.find((link) => link.variantType === variantType && link.optionId === option.id);
+          return (
+            <article key={`${variantType}-${option.id}`} className="asset-variant-row option-link-row">
+              <div className="option-link-labels">
+                <strong>{variantSource?.label || variantType}</strong>
+                <span>→ {option.label}</span>
+              </div>
+              <label>
+                <span>Objet lié</span>
+                <select
+                  value={currentLink?.linkedType || ''}
+                  onChange={(event) => onSet(variantType, option.id, event.target.value)}
+                >
+                  <option value="">— Aucun (option sans remplacement) —</option>
+                  {sourceAssets.map((source) => (
+                    <option key={source.type} value={source.type}>{source.label}</option>
+                  ))}
+                </select>
+              </label>
+            </article>
+          );
+        });
+      })}
+    </div>
+  );
+}
+
 function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
   const sourceAssets = variantSourceAssets(assets);
   const fallbackType = sourceAssets[0]?.type || '';
@@ -6730,6 +6862,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
   const [category, setCategory] = useState('Mobilier');
   const [rows, setRows] = useState(fallbackType ? [fallbackType] : []);
   const [configOptions, setConfigOptions] = useState([]);
+  const [variantOptionLinks, setVariantOptionLinks] = useState([]);
   const [assignedSalons, setAssignedSalons] = useState(() => getSalonRows(scenes).map((salon) => salon.title).slice(0, 1));
   const [saving, setSaving] = useState(false);
 
@@ -6753,6 +6886,13 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
     ]);
   };
 
+  const setVariantOptionLink = (variantType, optionId, linkedType) => {
+    setVariantOptionLinks((current) => {
+      const filtered = current.filter((link) => !(link.variantType === variantType && link.optionId === optionId));
+      return linkedType ? [...filtered, { variantType, optionId, linkedType }] : filtered;
+    });
+  };
+
   const saveGroup = async () => {
     if (!rows.filter(Boolean).length) return;
     setSaving(true);
@@ -6768,6 +6908,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
         category,
         variantAssetTypes: cleanRows,
         configOptions,
+        variantOptionLinks: variantOptionLinks.filter((link) => cleanRows.includes(link.variantType) && link.linkedType),
         salons: assignedSalons,
         addedBy: 'Admin Stand-ING',
         format: 'Groupe de variantes',
@@ -6820,18 +6961,36 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
         <section className="asset-variants-settings">
           <div className="asset-variants-head">
             <div>
-              <h3>Options payantes</h3>
-              <small>Ces lignes seront activables dans la popup et ajouteront leur prix au total.</small>
+              <h3>Options</h3>
+              <small>Ces lignes seront activables dans la popup. Supplément à 0 si l'option change seulement l'objet posé.</small>
             </div>
             <button type="button" onClick={addConfigOptionRow}><Plus size={14} /> Option</button>
           </div>
           <AssetConfigOptionRows
             rows={configOptions}
-            emptyLabel="Aucune option payante configurée."
+            emptyLabel="Aucune option configurée."
             onChange={updateConfigOptionRow}
             onRemove={(index) => setConfigOptions((current) => current.filter((_, itemIndex) => itemIndex !== index))}
           />
         </section>
+
+        {rows.filter(Boolean).length > 0 && configOptions.length > 0 && (
+          <section className="asset-variants-settings">
+            <div className="asset-variants-head">
+              <div>
+                <h3>Liaisons option → objet</h3>
+                <small>Pour chaque variante, choisir l'objet posé quand une option est cochée. Laisser vide = pas de remplacement.</small>
+              </div>
+            </div>
+            <AssetVariantOptionLinkRows
+              variantTypes={rows.filter(Boolean)}
+              options={configOptions}
+              links={variantOptionLinks}
+              sourceAssets={sourceAssets}
+              onSet={setVariantOptionLink}
+            />
+          </section>
+        )}
 
         <section className="asset-assignment">
           <h3>Affectation par salon</h3>
@@ -7519,6 +7678,11 @@ function colorGroupAssets(assets = [], salonLabel = '', usage = '') {
     .filter((asset) => colorGroupUsages(asset).includes(usage));
 }
 
+function colorGroupConfigOptions(assets = [], salonLabel = '', usage = '') {
+  const group = colorGroupAssets(assets, salonLabel, usage)[0];
+  return normalizeAssetConfigOptions(group?.dimensions?.configOptions || []);
+}
+
 function colorOptionsForUsage(assets = [], salonLabel = '', usage = '', fallbackColors = []) {
   const groups = colorGroupAssets(assets, salonLabel, usage);
   if (!groups.length) return fallbackColors;
@@ -7663,6 +7827,13 @@ function assetToCatalogEntry(asset, allAssets = []) {
       .filter(Boolean)
       .map((candidate) => assetToCatalogEntry(candidate, allAssets))
       .filter(Boolean);
+    const variantOptionLinks = (asset.dimensions?.variantOptionLinks || [])
+      .map((link) => {
+        const linkedAsset = allAssets.find((candidate) => candidate.type === link.linkedType);
+        const linkedEntry = linkedAsset ? assetToCatalogEntry(linkedAsset, allAssets) : null;
+        return { ...link, linkedEntry };
+      })
+      .filter((link) => link.linkedEntry);
     return {
       type: asset.type,
       label: asset.label,
@@ -7674,6 +7845,7 @@ function assetToCatalogEntry(asset, allAssets = []) {
         ...(asset.dimensions || {}),
         isVariantGroup: true,
         variantAssets,
+        variantOptionLinks,
       },
     };
   }
@@ -8198,6 +8370,24 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       };
       itemsTotal += line.total;
       lines.push(line);
+    });
+
+  colorSelections
+    .filter((selection) => selection?.configOptions?.length && selection?.selectedConfigOptions)
+    .forEach((selection) => {
+      (selection.configOptions || []).forEach((option) => {
+        if (!selection.selectedConfigOptions[option.id] || Number(option.price || 0) <= 0) return;
+        const lineTotal = Math.round(Number(option.price));
+        itemsTotal += lineTotal;
+        lines.push({
+          type: `color-option-${selection.color?.groupId || selection.usage}-${option.id}`,
+          label: `${selection.usage} — ${option.label}`,
+          quantity: 1,
+          unitPrice: lineTotal,
+          total: lineTotal,
+          reference: '',
+        });
+      });
     });
 
   if (technicalFloor?.id && Number(technicalFloor.price || 0) > 0) {
