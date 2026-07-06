@@ -946,9 +946,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     [ledRailsEnabled, ledRailEntries, autoSpotsRule, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
   const automaticSpotItems = useMemo(
-    () => makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...automaticReserveItems, ...manualHydratedItems])
+    () => makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems)
       .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout)),
-    [autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, manualHydratedItems, ledRailOverrides],
+    [autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, ledRailOverrides],
   );
   const wallCoverSurfaces = useMemo(
     () => wallCoverSurfaceOptions(layout, width, depth, [...manualHydratedItems, ...automaticReserveItems]),
