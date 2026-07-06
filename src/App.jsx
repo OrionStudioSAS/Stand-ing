@@ -11473,7 +11473,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
 
   const materialName = normalizeMaterialName(material.name);
   if (isWoodReceptionDeskItem(item)) {
-    if (textureOptions.customImageTexture && isWoodReceptionDeskImageMaterial(materialName, material)) {
+    if (textureOptions.customImageTexture && isWoodReceptionDeskImageMaterial(materialName, material, item)) {
       return materialWithTexture(material, textureOptions.customImageTexture);
     }
     if (textureOptions.counterColorTexture && isWoodReceptionDeskColorMaterial(materialName, material)) {
@@ -11503,8 +11503,10 @@ function materialMatchesReference(materialName = '', material = null, normalized
   return materialName.includes(normalizedNeedle) || materialMapMatchesFile(material, fileName);
 }
 
-function isWoodReceptionDeskImageMaterial(materialName = '', material = null) {
-  return materialName === '_1' || /^_1(\.\d+)?$/.test(materialName)
+function isWoodReceptionDeskImageMaterial(materialName = '', material = null, item = {}) {
+  const width = itemDefaultSize(item)?.[0] || 1.0;
+  const target = width >= 1.85 ? '_2' : '_1';
+  return materialName === target || new RegExp(`^${target}(\\.\\d+)?$`).test(materialName)
     || materialMatchesReference(materialName, material, 'binary_3', 'Binary_3.jpeg');
 }
 
