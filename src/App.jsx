@@ -10238,6 +10238,20 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
   const bounds = itemPlacementBounds(positionedItem);
   const placement = closestPlacementInRegions(positionedItem, placementRegions(width, depth, layout, bounds, carpetFootprintEnabled && !isCeilingMountedItem(positionedItem)));
 
+  if (isCeilingMountedItem(positionedItem)) {
+    const sb = standFloorBounds(width, depth, layout);
+    const xMin = sb.minX - bounds.minX;
+    const xMax = sb.maxX - bounds.maxX;
+    const zMin = sb.minZ - bounds.minZ;
+    const zMax = sb.maxZ - bounds.maxZ;
+    return {
+      ...positionedItem,
+      x: clamp(placement.x, Math.min(xMin, xMax), Math.max(xMin, xMax)),
+      y: floorItemBaseY(positionedItem),
+      z: clamp(placement.z, Math.min(zMin, zMax), Math.max(zMin, zMax)),
+    };
+  }
+
   return {
     ...positionedItem,
     x: placement.x,
@@ -10273,7 +10287,7 @@ function placeItemInFreeSpot(item, items, width, depth, layout, carpetFootprintE
   if (!collidesWithScene(firstCandidate, items, firstCandidate.id, width, depth)) return firstCandidate;
 
   const bounds = itemPlacementBounds(firstCandidate);
-  const regions = placementRegions(width, depth, layout, bounds, carpetFootprintEnabled);
+  const regions = placementRegions(width, depth, layout, bounds, carpetFootprintEnabled && !isCeilingMountedItem(firstCandidate));
   const candidates = [];
 
   for (const region of regions) {

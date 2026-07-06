@@ -1559,6 +1559,54 @@ select {
   line-height: 1.28;
 }
 
+.question-faq {
+  display: grid;
+  gap: 6px;
+}
+
+.faq-item {
+  border: 1px solid #dfe3ea;
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.faq-item button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  padding: 9px 13px;
+  color: #343a43;
+  background: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.faq-item.open button {
+  color: #1f4378;
+  background: #eef2f7;
+}
+
+.faq-item button svg {
+  flex-shrink: 0;
+  color: #9aa0aa;
+}
+
+.faq-item p {
+  margin: 0 !important;
+  padding: 10px 13px 12px;
+  color: #9aa0aa;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  border-top: 1px solid #dfe3ea;
+  background: #fafbfc;
+}
+
 .modal-cancel-button {
   justify-self: center;
   border: 0;
