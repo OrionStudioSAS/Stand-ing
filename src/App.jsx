@@ -60,6 +60,7 @@ const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
 const collisionPadding = 0.04;
 const partitionHeadEdgeInset = 0.02;
+const partitionHeadBackInset = 0.04;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
@@ -2329,7 +2330,7 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
     <section className="counter-color-card counter-finish-card">
       <div className="counter-finish-head">
         <strong>Couleur</strong>
-        <span>{selectedFinish.name}{selectedCode ? ` (${selectedCode})` : ''}</span>
+        <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedCode) ? ` (${shortFinishCode(selectedCode)})` : ''}</span>
       </div>
       <small>{includedFinishes.length || 1} coloris disponible{includedFinishes.length > 1 ? 's' : ''} — Inclus</small>
       <div className="counter-finish-swatches included">
@@ -2357,12 +2358,12 @@ function CounterFinishSwatch({ finish = {}, active = false, disabled = false, on
       type="button"
       className={active ? 'active' : ''}
       style={{ '--swatch-color': finish.hex, '--swatch-image': finish.image ? `url("${finish.image}")` : 'none' }}
-      title={`${finish.name}${finish.code ? ` (${finish.code})` : ''}`}
+      title={`${shortFinishName(finish.name)}${finish.code ? ` (${shortFinishCode(finish.code)})` : ''}`}
       disabled={disabled}
       onClick={onClick}
     >
       <i className={finish.mode === 'wood' ? 'wood' : ''} />
-      <span>{finish.name}</span>
+      <span>{shortFinishName(finish.name)}</span>
     </button>
   );
 }
@@ -2404,6 +2405,19 @@ function counterSizeLabel(variant = {}) {
 
 function counterWhiteFinish() {
   return { id: '__counter-white__', name: 'Blanc', code: '', hex: '#ffffff', image: '', price: 98, mode: 'white' };
+}
+
+function shortFinishName(name = '') {
+  const stripped = String(name)
+    .replace(/^\s*[A-Z]\d+\s+/, '')
+    .replace(/\s+[A-Z]{2,3}\d+.*$/, '')
+    .trim();
+  return stripped || name;
+}
+
+function shortFinishCode(code = '') {
+  const match = String(code).match(/^([A-Z]\d+)\b/);
+  return match ? match[1] : code;
 }
 
 function counterWoodFinish(colors = []) {
@@ -10128,6 +10142,7 @@ function applyPlacementRule(item, width, depth, layout) {
   const bounds = itemGroupBounds({ ...item, placementRule: null, lockedPlacement: false });
   const clearance = wallThickness;
   const sideClearance = placementRuleSideClearance(item);
+  const backClearance = clearance + (isSmclPartitionHeadItem(item) ? partitionHeadBackInset : 0);
   const base = {
     ...item,
     placementRule: rule,
@@ -10139,7 +10154,7 @@ function applyPlacementRule(item, width, depth, layout) {
     return {
       ...base,
       x: Number((width / 2 - sideClearance - bounds.maxX).toFixed(2)),
-      z: Number((-depth / 2 + clearance - bounds.minZ).toFixed(2)),
+      z: Number((-depth / 2 + backClearance - bounds.minZ).toFixed(2)),
     };
   }
 
@@ -10147,7 +10162,7 @@ function applyPlacementRule(item, width, depth, layout) {
     return {
       ...base,
       x: Number((-(bounds.minX + bounds.maxX) / 2).toFixed(2)),
-      z: Number((-depth / 2 + clearance - bounds.minZ).toFixed(2)),
+      z: Number((-depth / 2 + backClearance - bounds.minZ).toFixed(2)),
     };
   }
 
@@ -10170,7 +10185,7 @@ function applyPlacementRule(item, width, depth, layout) {
   return {
     ...base,
     x: Number((-width / 2 + sideClearance - bounds.minX).toFixed(2)),
-    z: Number((-depth / 2 + clearance - bounds.minZ).toFixed(2)),
+    z: Number((-depth / 2 + backClearance - bounds.minZ).toFixed(2)),
   };
 }
 
@@ -10197,8 +10212,8 @@ function applyWallPlacementRule(item, width, depth, layout) {
     'back-center': (range.min + range.max) / 2,
     'front-left': wall === 'left' ? range.max : range.min,
     'front-right': wall === 'right' ? range.max : range.max,
-    'outer-left': wall === 'left' ? range.max : range.min,
-    'outer-right': wall === 'right' ? range.max : range.max,
+    'outer-left': range.min,
+    'outer-right': wall === 'right' ? range.min : range.max,
   };
   const axis = snapWallAxis(axisByRule[rule.id] ?? range.min);
 
