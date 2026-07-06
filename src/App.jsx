@@ -6230,9 +6230,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const updateConfigOptionRow = (index, patch) => {
     const nextRows = draftConfigOptions.map((row, rowIndex) => {
       if (rowIndex !== index) return row;
-      const nextRow = { ...row, ...patch };
-      if (patch.label !== undefined && patch.id === undefined) nextRow.id = slugForType(patch.label || row.id || `option-${index + 1}`);
-      return nextRow;
+      return { ...row, ...patch };
     });
     updateAssetList('configOptions', nextRows);
   };
@@ -6260,12 +6258,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const updateConfigOptionChoice = (optionIndex, choiceIndex, patch) => {
     const nextRows = draftConfigOptions.map((row, rowIndex) => {
       if (rowIndex !== optionIndex) return row;
-      const nextChoices = (row.choices || []).map((choice, ci) => {
-        if (ci !== choiceIndex) return choice;
-        const next = { ...choice, ...patch };
-        if (patch.label !== undefined && patch.id === undefined) next.id = slugForType(patch.label || `choice-${choiceIndex + 1}`);
-        return next;
-      });
+      const nextChoices = (row.choices || []).map((choice, ci) => (ci !== choiceIndex ? choice : { ...choice, ...patch }));
       return { ...row, choices: nextChoices };
     });
     updateAssetList('configOptions', nextRows);
@@ -6713,7 +6706,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             <AssetConfigOptionRows
               rows={draftConfigOptions}
               emptyLabel="Aucune option configurée."
-              sourceAssets={variantSourceAssetsList}
+              sourceAssets={variantSourceAssetsList.filter((a) => variantAssetTypes.includes(a.type))}
               links={variantOptionLinks}
               onChange={updateConfigOptionRow}
               onRemove={removeConfigOptionRow}
@@ -6996,12 +6989,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
   };
 
   const updateConfigOptionRow = (index, patch) => {
-    setConfigOptions((current) => current.map((row, rowIndex) => {
-      if (rowIndex !== index) return row;
-      const nextRow = { ...row, ...patch };
-      if (patch.label !== undefined && patch.id === undefined) nextRow.id = slugForType(patch.label || row.id || `option-${index + 1}`);
-      return nextRow;
-    }));
+    setConfigOptions((current) => current.map((row, rowIndex) => (rowIndex !== index ? row : { ...row, ...patch })));
   };
 
   const addConfigOptionRow = () => {
@@ -7030,12 +7018,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
   const updateConfigOptionChoice = (optionIndex, choiceIndex, patch) => {
     setConfigOptions((current) => current.map((row, rowIndex) => {
       if (rowIndex !== optionIndex) return row;
-      const nextChoices = (row.choices || []).map((choice, ci) => {
-        if (ci !== choiceIndex) return choice;
-        const next = { ...choice, ...patch };
-        if (patch.label !== undefined && patch.id === undefined) next.id = slugForType(patch.label || `choice-${choiceIndex + 1}`);
-        return next;
-      });
+      const nextChoices = (row.choices || []).map((choice, ci) => (ci !== choiceIndex ? choice : { ...choice, ...patch }));
       return { ...row, choices: nextChoices };
     }));
   };
@@ -7126,7 +7109,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
           <AssetConfigOptionRows
             rows={configOptions}
             emptyLabel="Aucune option configurée."
-            sourceAssets={sourceAssets}
+            sourceAssets={sourceAssets.filter((a) => rows.filter(Boolean).includes(a.type))}
             links={variantOptionLinks}
             onChange={updateConfigOptionRow}
             onRemove={(index) => setConfigOptions((current) => current.filter((_, itemIndex) => itemIndex !== index))}
