@@ -151,8 +151,8 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
     }
 
     if (item.ceilingMounted || item.dimensions?.ceilingMounted) {
-      const solidW = 0.06 * scale;
-      const solidH = Math.max(0.06, dims.depth) * scale;
+      const solidW = 0.6 * scale;
+      const solidH = Math.max(0.6, dims.depth) * scale;
       ctx.save();
       ctx.fillStyle = item.color || entry?.color || '#c8c0d8';
       ctx.strokeStyle = technicalColors.ink;

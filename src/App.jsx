@@ -2425,7 +2425,7 @@ function counterFinishOptions(colors = []) {
   const paidColors = colors
     .filter((color) => normalizeColorId(color.id) !== normalizeColorId(wood.id))
     .filter((color) => !/bois|wood/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`))
-    .map((color) => ({ ...color, mode: 'color', price: Number(color.price || 0) }));
+    .map((color) => ({ ...color, mode: 'color', price: (color.isFree || color.included) ? 0 : Number(color.price || white.price) }));
   return [wood, white, ...paidColors];
 }
 
@@ -10480,6 +10480,11 @@ function itemGroupBounds(item) {
   };
 
   if (!item.isGroup || !item.children?.length) {
+    if (isCeilingMountedItem(item)) {
+      const size = itemDefaultSize(item);
+      const d = Number(size?.[2] || 0.7);
+      return centeredBounds([0.6, 0.05, d]);
+    }
     const b = itemPlacementBoundsOverride(item) || centeredBounds(itemDefaultSize(item));
     if (item?.dimensions?.depthLocked6cm) {
       const clampedMaxZ = b.minZ + wallThickness;
@@ -11424,9 +11429,31 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, onSele
   );
 }
 
+function CeilingItemStrip({ item, selected, hovered, dragging }) {
+  const size = itemDefaultSize(item);
+  const depth = Number(size?.[2] || 0.7);
+  const w = 0.6;
+  const h = 0.05;
+  const color = item.color || '#c8c0d8';
+  const bounds = { width: w, height: h, depth };
+  return (
+    <>
+      <ObjHitbox bounds={bounds} />
+      <mesh position={[0, 0, 0]}>
+        <boxGeometry args={[w, h, depth]} />
+        <meshStandardMaterial color={color} opacity={hovered || dragging ? 0.7 : 1} transparent={hovered || dragging} />
+      </mesh>
+      {selected && <SelectionFrame bounds={bounds} centerY={0} />}
+    </>
+  );
+}
+
 function SceneItemContent({ item, selected, hovered, dragging, visualContext }) {
   const bounds = itemGroupBounds(item);
   const centerY = isCenterAnchoredWallModel(item) ? 0 : null;
+  if (isCeilingMountedItem(item)) {
+    return <CeilingItemStrip item={item} selected={selected} hovered={hovered} dragging={dragging} />;
+  }
   return (
     <>
       {item.type === 'chair' && <Chair selected={selected} hovered={hovered} dragging={dragging} />}
