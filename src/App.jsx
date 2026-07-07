@@ -1278,6 +1278,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       setItemOptionState({ uploading: '', error: error.message || 'Upload impossible.' });
     }
   };
+
+  const resetPartitionHeadVisual = (side) => {
+    if (!side || readOnly) return;
+    setPartitionHeadVisuals((current) => ({
+      ...current,
+      [side]: { ...(current?.[side] || {}), headMainImageUrl: '', headMainImageName: '' },
+    }));
+  };
   const openAddItemConfigurator = (entry) => {
     if (readOnly) return;
     if (entryNeedsConfigurator(entry)) {
@@ -1784,6 +1792,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onReserveOption={(type) => { if (!readOnly) { if (type === '__none__') { removeReserve(); } else { setReserveOptionType(type); } } }}
             onPartitionHeadSide={(side, enabled) => !readOnly && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
             onPartitionHeadImage={uploadPartitionHeadVisual}
+            onPartitionHeadResetImage={resetPartitionHeadVisual}
             onCounterImage={(item, file, optionKeys) => uploadItemImage(item, file, optionKeys)}
             onCounterOptions={updateItemOptions}
             onCounterVariant={updateIncludedCounterVariant}
@@ -2627,6 +2636,7 @@ function OptionsStepPanel({
   onReserveOption,
   onPartitionHeadSide,
   onPartitionHeadImage,
+  onPartitionHeadResetImage,
   onCounterImage,
   onCounterOptions,
   onCounterVariant,
@@ -2732,6 +2742,7 @@ function OptionsStepPanel({
           uploadState={partitionHeadUploadState}
           onChange={onPartitionHeadSide}
           onImage={onPartitionHeadImage}
+          onResetImage={onPartitionHeadResetImage}
         />
       </OptionAccordion>
       <OptionAccordion title={t('option_counter')} icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
@@ -3793,7 +3804,7 @@ function reserveSizeDescription(area = 0, label = '') {
   return label || 'Réserve complémentaire';
 }
 
-function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onImage }) {
+function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onImage, onResetImage }) {
   const t = useT();
   const [formulaOpen, setFormulaOpen] = useState(true);
   const rows = [
@@ -3842,6 +3853,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
           uploading={uploadState?.uploading === row.side}
           disabled={disabled}
           onImage={(file) => onImage?.(row.side, file)}
+          onReset={() => onResetImage?.(row.side)}
         />
       )) : (
         <div className="partition-head-empty">{t('partition_select_visual')}</div>
@@ -3881,7 +3893,7 @@ function PartitionHeadFormulaBox({ open, onToggle }) {
   );
 }
 
-function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabled = false, onImage }) {
+function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabled = false, onImage, onReset }) {
   const t = useT();
   const hasImage = Boolean(visual.headMainImageUrl);
   return (
@@ -3905,6 +3917,11 @@ function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabl
         />
       </label>
       {visual.headMainImageName && <small className="partition-head-file-name">{visual.headMainImageName}</small>}
+      {hasImage && onReset && (
+        <button className="item-image-reset" type="button" disabled={disabled} onClick={onReset}>
+          {t('img_upload_reset')}
+        </button>
+      )}
     </div>
   );
 }
