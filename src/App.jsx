@@ -11921,7 +11921,11 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   if (textureOptions.mainImageTexture && isPartitionHeadMainImageMaterial(materialName, material, item)) {
     return materialWithTexture(material, textureOptions.mainImageTexture);
   }
-  if (textureOptions.exhibitorTexture && shouldUseExhibitorHeadTexture(materialName, meshName, item, material)) {
+  const smclExhibitorTexture = smclExhibitorTextureForMaterial(textureOptions.exhibitorTexture, materialName, material, item);
+  if (smclExhibitorTexture) {
+    return materialWithTexture(material, smclExhibitorTexture);
+  }
+  if (textureOptions.exhibitorTexture && !isSmclPartitionHeadItem(item) && shouldUseExhibitorHeadTexture(materialName, meshName, item, material)) {
     return materialWithTexture(material, textureOptions.exhibitorTexture);
   }
   return material;
@@ -11973,16 +11977,29 @@ function isPartitionHeadMainImageMaterial(materialName = '', material = null, it
 function shouldUseExhibitorHeadTexture(materialName = '', meshName = '', item = {}, material = null) {
   const normalizedMeshName = normalizeMaterialName(meshName);
   if (isSmclPartitionHeadItem(item)) {
-    const side = smclPartitionHeadSide(item);
-    const targetMaterial = side === 'left' ? '_' : '_51';
-    return materialName === targetMaterial
-      || materialMapMatchesFile(material, `${targetMaterial}.jpg`)
-      || isLikelySmclInfoPanelMesh(normalizedMeshName);
+    return Boolean(smclInfoLayoutSideForMaterial(materialName, material, item)) || isLikelySmclInfoPanelMesh(normalizedMeshName);
   }
   return materialName === '_10'
     || materialName === '10'
     || materialName.endsWith('_10')
     || (normalizedMeshName.includes('mesh4') && normalizedMeshName.includes('group3'));
+}
+
+function smclExhibitorTextureForMaterial(exhibitorTexture, materialName = '', material = null, item = {}) {
+  if (!isSmclPartitionHeadItem(item) || !exhibitorTexture) return null;
+  const layoutSide = smclInfoLayoutSideForMaterial(materialName, material, item);
+  if (!layoutSide) return null;
+  return exhibitorTexture[layoutSide] || null;
+}
+
+function smclInfoLayoutSideForMaterial(materialName = '', material = null, item = {}) {
+  if (!isSmclPartitionHeadItem(item)) return null;
+  const itemSide = smclPartitionHeadSide(item);
+  const mirroredSide = itemSide === 'right' ? 'left' : 'right';
+  const normalSide = itemSide === 'right' ? 'right' : 'left';
+  if (materialName === '_' || materialMapMatchesFile(material, '_.jpg')) return mirroredSide;
+  if (materialName === '_51' || materialMapMatchesFile(material, '_51.jpg')) return normalSide;
+  return null;
 }
 
 function isLikelySmclInfoPanelMesh(normalizedMeshName = '') {
@@ -12050,7 +12067,12 @@ function normalizeMaterialName(name = '') {
 
 function createPartitionHeadInfoTexture(visualContext = {}, item = {}, options = {}) {
   if (typeof document === 'undefined') return null;
-  if (isSmclPartitionHeadItem(item)) return createSmclPartitionHeadInfoTexture(visualContext, item, options);
+  if (isSmclPartitionHeadItem(item)) {
+    return {
+      left: createSmclPartitionHeadInfoTexture(visualContext, item, { ...options, layoutSide: 'left' }),
+      right: createSmclPartitionHeadInfoTexture(visualContext, item, { ...options, layoutSide: 'right' }),
+    };
+  }
 
   const canvas = document.createElement('canvas');
   // Same pixel format as the original _10.jpg so the SketchUp UVs keep lining up.
@@ -12091,8 +12113,7 @@ function createSmclPartitionHeadInfoTexture(visualContext = {}, item = {}, optio
   const aisleNumber = String(visualContext?.aisleNumber || '').replace(/^All[ée]e?\s*/i, '').trim().toUpperCase();
   const standNumber = String(visualContext?.standNumber || '—').replace(/^Stand\s+/i, '').trim().toUpperCase();
   const sectorColor = smclSectorColor(visualContext?.sector);
-  const side = smclPartitionHeadSide(item);
-  const isRight = side === 'right';
+  const isRight = (options.layoutSide || smclPartitionHeadSide(item)) === 'right';
 
   ctx.fillStyle = sectorColor;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
