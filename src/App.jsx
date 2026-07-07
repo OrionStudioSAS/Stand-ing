@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
@@ -41,7 +41,18 @@ import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
 import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
+import { t as tRaw } from './i18n.js';
 import './styles.css';
+
+const LanguageContext = createContext('fr');
+function useT() {
+  const lang = useContext(LanguageContext);
+  return (key, vars) => tRaw(lang, key, vars);
+}
+function localizeItemLabel(entry = {}, lang = 'fr') {
+  if (lang === 'en' && entry?.dimensions?.labelEn) return entry.dimensions.labelEn;
+  return entry?.label || '';
+}
 
 const floorPlane = new Plane(new Vector3(0, 1, 0), 0);
 const wallSwitchZone = 0.55;
@@ -768,7 +779,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [draggingId, setDraggingId] = useState(null);
   const [orbitControlsActive, setOrbitControlsActive] = useState(false);
   const [technicalFloorRampDragging, setTechnicalFloorRampDragging] = useState(false);
-  const [language, setLanguage] = useState(initialOptions.language || 'fr');
+  const [language, setLanguage] = useState(() => {
+    if (initialOptions.language) return initialOptions.language;
+    const mondayLang = mondayColumnTextAny(initialScene.source_payload, ['langue', 'language']);
+    if (/^en(g(lish)?)?$/i.test(mondayLang) || /^anglais$/i.test(mondayLang)) return 'en';
+    return 'fr';
+  });
   const [fontRevision, setFontRevision] = useState(0);
   const [headerPanel, setHeaderPanel] = useState(null);
   const introStorageKey = useMemo(() => `standing-config-intro:${initialScene.id || initialScene.share_token || initialScene.project_name || 'scene'}`, [initialScene.id, initialScene.share_token, initialScene.project_name]);
@@ -1456,9 +1472,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     setHeaderPanel(null);
   };
 
-  if (!objectBankLoaded) return <div className="loading-screen">Chargement des objets 3D...</div>;
+  if (!objectBankLoaded) return <div className="loading-screen">{tRaw(language, 'loading_objects')}</div>;
 
   return (
+    <LanguageContext.Provider value={language}>
     <main className={`configurator-shell ${activeStep === 1 ? 'intro-step' : ''} ${showCartBar ? 'has-cart-bar' : ''} ${readOnly ? 'readonly-mode' : ''}`}>
       <header className="configurator-topbar">
         <a className="config-logo" href="/">
@@ -1469,32 +1486,32 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           <span>{standLabel}</span>
           <span>{area.toFixed(0)} m²</span>
         </div>
-        <nav className="stepper" aria-label="Etapes de configuration">
+        <nav className="stepper" aria-label={tRaw(language, 'step_home')}>
           {[
-            { id: 1, label: 'Accueil' },
-            { id: 2, label: 'Options' },
-            { id: 3, label: 'Mobilier' },
-            { id: 4, label: 'Validation' },
+            { id: 1, key: 'step_home' },
+            { id: 2, key: 'step_options' },
+            { id: 3, key: 'step_furniture' },
+            { id: 4, key: 'step_validation' },
           ].map((step) => (
             <button key={step.id} className={activeStep === step.id ? 'active' : step.id < activeStep ? 'done' : ''} onClick={() => setActiveStep(step.id)}>
               <span>{step.id < activeStep ? <Check size={13} /> : step.id}</span>
-              {step.label}
+              {tRaw(language, step.key)}
             </button>
           ))}
         </nav>
         <div className="top-estimate">
           <strong>{estimatedTotal.toLocaleString('fr-FR')} € HT</strong>
-          <span>Total HT estimé</span>
+          <span>{tRaw(language, 'total_ht_estimated')}</span>
         </div>
-        <button className={`round-tool ${headerPanel === 'question' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('question')} aria-label="Questions et remarques">
+        <button className={`round-tool ${headerPanel === 'question' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('question')} aria-label={tRaw(language, 'aria_questions')}>
           <HelpCircle size={18} />
         </button>
-        <button className={`language-pill ${headerPanel === 'language' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('language')} aria-label="Choisir la langue">
+        <button className={`language-pill ${headerPanel === 'language' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('language')} aria-label={tRaw(language, 'aria_language')}>
           <span className="flag-dot">{selectedLanguage.flag}</span>
           {selectedLanguage.short}
           <ChevronDown size={15} />
         </button>
-        <button className={`user-pill ${headerPanel === 'client' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('client')} aria-label="Renseignements client">{contactInitials}</button>
+        <button className={`user-pill ${headerPanel === 'client' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('client')} aria-label={tRaw(language, 'aria_client')}>{contactInitials}</button>
       </header>
 
       {headerPanel === 'client' && (
@@ -1602,14 +1619,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
         {readOnly && !headerPanel && (
           <div className="readonly-badge">
-            <Check size={15} /> Scène confirmée — mode visualisation
+            <Check size={15} /> {tRaw(language, 'scene_confirmed_badge')}
           </div>
         )}
 
         {activeStep > 1 && !headerPanel && scenePricing.baseUsage?.length > 0 && (
           <div className="base-pack-scene-note">
             <button type="button" onClick={() => setBasePackOpen((open) => !open)} aria-expanded={basePackOpen}>
-              <strong>Pack de base</strong>
+              <strong>{tRaw(language, 'base_pack')}</strong>
               <span>{scenePricing.baseUsage.length} quota{scenePricing.baseUsage.length > 1 ? 's' : ''}</span>
               {basePackOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
             </button>
@@ -1625,23 +1642,20 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
         {activeStep === 1 && !headerPanel && !readOnly && (
           <div className="intro-overlay">
-            <article className="intro-card" aria-label="Accueil configurateur">
+            <article className="intro-card" aria-label={tRaw(language, 'step_home')}>
               <div className="intro-card-head">
-                <h1>Stand·ING — Configurateur 3D</h1>
+                <h1>{tRaw(language, 'intro_title')}</h1>
                 <span>{salonLabel} · {standLabel}</span>
               </div>
               <div className="intro-card-body">
-                <p>
-                  Votre espace de configuration est prêt. Renseignez les informations
-                  de votre stand pour démarrer la visualisation 3D en temps réel.
-                </p>
+                <p>{tRaw(language, 'intro_subtitle')}</p>
                 <ul>
                   <li><span>🏛</span>{standLabel} · Hall 1 · {faceLabel}</li>
                   <li><span>📐</span>{area.toFixed(0)} m²</li>
                   <li><span>📅</span>{salonLabel}</li>
                 </ul>
                 <button type="button" onClick={() => setActiveStep(2)}>
-                  Commencer la configuration →
+                  {tRaw(language, 'intro_start')}
                 </button>
               </div>
             </article>
@@ -1651,11 +1665,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         {selected && !readOnly && (
           <div className="view-toolbar selection-mode" aria-label="Actions objet selectionne">
             <button type="button" disabled={!isAdminViewer && itemRotationLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
-            <button type="button" disabled={isAutomaticReserveItem(selected)} onClick={openSelectedItemConfigurator} title="Paramètres"><Settings2 size={16} /></button>
-            <button type="button" disabled={!isAdminViewer && itemDeletionLocked(selected)} onClick={deleteSelectedItem} title="Supprimer"><Trash2 size={16} /></button>
-            {!isAdminViewer && itemMovementLocked(selected) && <span className="toolbar-lock-note">Déplacement verrouillé</span>}
-            {!isAdminViewer && itemRotationLocked(selected) && <span className="toolbar-lock-note">Rotation verrouillée</span>}
-            {!isAdminViewer && itemDeletionLocked(selected) && <span className="toolbar-lock-note">Suppression verrouillée</span>}
+            <button type="button" disabled={isAutomaticReserveItem(selected)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Settings2 size={16} /></button>
+            <button type="button" disabled={!isAdminViewer && itemDeletionLocked(selected)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={16} /></button>
+            {!isAdminViewer && itemMovementLocked(selected) && <span className="toolbar-lock-note">{tRaw(language, 'toolbar_locked_move')}</span>}
+            {!isAdminViewer && itemRotationLocked(selected) && <span className="toolbar-lock-note">{tRaw(language, 'toolbar_locked_rotation')}</span>}
+            {!isAdminViewer && itemDeletionLocked(selected) && <span className="toolbar-lock-note">{tRaw(language, 'toolbar_locked_delete')}</span>}
             {rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
               <label className="toolbar-rotation-slider">
                 <span>{selected.rotation || 0}°</span>
@@ -1812,8 +1826,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           total={scenePricing.total || 0}
           salonLabel={salonLabel}
           readOnly={readOnly}
-          nextLabel={activeStep === 2 ? 'Étape suivante' : 'Étape suivante'}
-          nextDetail={activeStep === 2 ? 'Mobilier →' : 'Validation →'}
+          nextLabel={tRaw(language, 'cart_next')}
+          nextDetail={activeStep === 2 ? tRaw(language, 'cart_next_furniture') : tRaw(language, 'cart_next_detail')}
           onAdd={() => setActiveStep(3)}
           onSelectItem={setSelectedId}
           onConfigureItem={(item) => setItemConfigModal({ mode: 'edit', item, entry: itemConfiguratorEntry(item) })}
@@ -1825,20 +1839,22 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       {activeStep > 1 && !showCartBar && !readOnly && (
       <footer className="configurator-footer">
         <div>
-          <span>Total HT estimé</span>
+          <span>{tRaw(language, 'total_ht_estimated')}</span>
           <strong>{estimatedTotal.toLocaleString('fr-FR')} €</strong>
         </div>
         <nav>
-          <button type="button" onClick={() => setActiveStep((step) => Math.max(1, step - 1))}>← Retour</button>
-          {activeStep < 4 && <button type="button" onClick={() => setActiveStep((step) => Math.min(4, step + 1))}>Etape suivante →</button>}
+          <button type="button" onClick={() => setActiveStep((step) => Math.max(1, step - 1))}>{tRaw(language, 'back')}</button>
+          {activeStep < 4 && <button type="button" onClick={() => setActiveStep((step) => Math.min(4, step + 1))}>{tRaw(language, 'next_step')}</button>}
         </nav>
       </footer>
       )}
     </main>
+    </LanguageContext.Provider>
   );
 }
 
 function ModalHead({ icon, title, salonLabel, onClose }) {
+  const t = useT();
   return (
     <header className="modal-head">
       <div className="modal-title-group">
@@ -1847,7 +1863,7 @@ function ModalHead({ icon, title, salonLabel, onClose }) {
       </div>
       <div className="modal-head-actions">
         <span>{salonLabel}</span>
-        <button type="button" onClick={onClose} aria-label="Fermer">
+        <button type="button" onClick={onClose} aria-label={t('modal_close')}>
           <X size={18} />
         </button>
       </div>
@@ -1856,63 +1872,64 @@ function ModalHead({ icon, title, salonLabel, onClose }) {
 }
 
 function ClientInfoModal({ salonLabel, contactDetails, onChange, onClose, onValidate }) {
+  const t = useT();
   return (
     <section className="client-info-modal">
-      <ModalHead title="Renseignements" salonLabel={salonLabel} onClose={onClose} />
+      <ModalHead title={t('client_title')} salonLabel={salonLabel} onClose={onClose} />
       <div className="client-info-content">
-        <p>Ces informations seront associées à votre configuration et à votre BAT.</p>
+        <p>{t('client_intro')}</p>
         <div className="form-grid two">
-          <label>Prénom<input value={contactDetails.firstName} onChange={(event) => onChange('firstName', event.target.value)} /></label>
-          <label>Nom<input value={contactDetails.lastName} onChange={(event) => onChange('lastName', event.target.value)} /></label>
+          <label>{t('client_firstname')}<input value={contactDetails.firstName} onChange={(event) => onChange('firstName', event.target.value)} /></label>
+          <label>{t('client_lastname')}<input value={contactDetails.lastName} onChange={(event) => onChange('lastName', event.target.value)} /></label>
         </div>
-        <label className="form-row">Société<input value={contactDetails.company} onChange={(event) => onChange('company', event.target.value)} /></label>
+        <label className="form-row">{t('client_company')}<input value={contactDetails.company} onChange={(event) => onChange('company', event.target.value)} /></label>
         <div className="form-grid two">
-          <label>Fonction<input value={contactDetails.role} onChange={(event) => onChange('role', event.target.value)} /></label>
-          <label>Email<input type="email" value={contactDetails.email} onChange={(event) => onChange('email', event.target.value)} /></label>
+          <label>{t('client_role')}<input value={contactDetails.role} onChange={(event) => onChange('role', event.target.value)} /></label>
+          <label>{t('client_email')}<input type="email" value={contactDetails.email} onChange={(event) => onChange('email', event.target.value)} /></label>
         </div>
-        <label className="form-row">Téléphone<input value={contactDetails.phone} onChange={(event) => onChange('phone', event.target.value)} /></label>
+        <label className="form-row">{t('client_phone')}<input value={contactDetails.phone} onChange={(event) => onChange('phone', event.target.value)} /></label>
 
-        <span className="form-section-label">Localisation</span>
-        <label className="form-row">Adresse<input value={contactDetails.address} onChange={(event) => onChange('address', event.target.value)} /></label>
+        <span className="form-section-label">{t('client_location')}</span>
+        <label className="form-row">{t('client_address')}<input value={contactDetails.address} onChange={(event) => onChange('address', event.target.value)} /></label>
         <div className="form-grid two">
-          <label>Code postal<input value={contactDetails.zip} onChange={(event) => onChange('zip', event.target.value)} /></label>
-          <label>Ville<input value={contactDetails.city} onChange={(event) => onChange('city', event.target.value)} /></label>
+          <label>{t('client_zip')}<input value={contactDetails.zip} onChange={(event) => onChange('zip', event.target.value)} /></label>
+          <label>{t('client_city')}<input value={contactDetails.city} onChange={(event) => onChange('city', event.target.value)} /></label>
         </div>
-        <label className="form-row">Pays
+        <label className="form-row">{t('client_country')}
           <select value={contactDetails.country} onChange={(event) => onChange('country', event.target.value)}>
-            <option>France</option>
-            <option>Belgique</option>
-            <option>Suisse</option>
-            <option>Luxembourg</option>
+            <option>{t('country_france')}</option>
+            <option>{t('country_belgium')}</option>
+            <option>{t('country_switzerland')}</option>
+            <option>{t('country_luxembourg')}</option>
           </select>
         </label>
 
-        <span className="form-section-label">Emplacement</span>
-        <label className="form-row locked-field">Salon<input value={contactDetails.salon} readOnly /><span>🔒</span></label>
+        <span className="form-section-label">{t('client_placement')}</span>
+        <label className="form-row locked-field">{t('client_salon')}<input value={contactDetails.salon} readOnly /><span>🔒</span></label>
         <div className="form-grid two locked">
-          <label>Hall<input value={contactDetails.hall} readOnly /></label>
-          <label>Emplacement<input value={contactDetails.emplacement} readOnly /></label>
+          <label>{t('client_hall')}<input value={contactDetails.hall} readOnly /></label>
+          <label>{t('client_placement_field')}<input value={contactDetails.emplacement} readOnly /></label>
         </div>
-        <small>Les prix affichés sont hors taxes. Ces informations sont transmises à Stand-ING pour la gestion de votre dossier.</small>
-        <button className="modal-primary-button" type="button" onClick={onValidate}>Valider</button>
+        <small>{t('client_note')}</small>
+        <button className="modal-primary-button" type="button" onClick={onValidate}>{t('client_validate')}</button>
       </div>
     </section>
   );
 }
 
-const questionFaq = [
-  { q: "Puis-je modifier ma configuration après validation ?", a: "Tant que votre BAT n'est pas validé, vous pouvez modifier votre configuration en nous contactant. Une fois le BAT signé, toute modification est soumise à faisabilité et peut entraîner un surcoût." },
-  { q: "Quels formats sont acceptés pour les visuels logo ?", a: "Nous acceptons les fichiers PDF vectoriels, AI, EPS ou PNG haute résolution (300 dpi minimum). Les fichiers Word, PowerPoint et JPEG basse résolution ne sont pas adaptés à l'impression." },
-  { q: "Quel est le délai de réponse ?", a: "Notre équipe répond sous 24h ouvrées. Pour les demandes urgentes en période de salon, n'hésitez pas à nous appeler directement." },
-  { q: "Quand mon stand sera-t-il livré sur le salon ?", a: "La livraison est organisée avant l'ouverture du salon. Vous recevrez les informations logistiques (horaires, lieu de montage) par email dès la validation de votre commande." },
-];
-
 function QuestionFaq() {
+  const t = useT();
   const [openIndex, setOpenIndex] = React.useState(null);
+  const faq = [
+    { q: t('faq_q1'), a: t('faq_a1') },
+    { q: t('faq_q2'), a: t('faq_a2') },
+    { q: t('faq_q3'), a: t('faq_a3') },
+    { q: t('faq_q4'), a: t('faq_a4') },
+  ];
   return (
     <div className="question-faq">
-      <span className="form-section-label">Questions fréquentes</span>
-      {questionFaq.map((entry, index) => (
+      <span className="form-section-label">{t('question_faq_title')}</span>
+      {faq.map((entry, index) => (
         <div key={index} className={openIndex === index ? 'faq-item open' : 'faq-item'}>
           <button type="button" onClick={() => setOpenIndex(openIndex === index ? null : index)}>
             <span>{entry.q}</span>
@@ -1926,19 +1943,20 @@ function QuestionFaq() {
 }
 
 function QuestionModal({ salonLabel, form, onFormChange, onClose, onSubmit }) {
+  const t = useT();
   return (
     <form className="question-modal" onSubmit={onSubmit}>
-      <ModalHead icon={<HelpCircle size={19} />} title="Questions / Remarques" salonLabel={salonLabel} onClose={onClose} />
+      <ModalHead icon={<HelpCircle size={19} />} title={t('question_title')} salonLabel={salonLabel} onClose={onClose} />
       <div className="question-content">
-        <p>Vous avez une question sur votre stand ou souhaitez ajouter une remarque particulière ? L'équipe Stand-ING vous répond sous 24h.</p>
+        <p>{t('question_intro')}</p>
 
         <QuestionFaq />
 
-        <label className="form-row">Objet
-          <input value={form.subject} onChange={(event) => onFormChange('subject', event.target.value)} placeholder="Ex : Dimension des cloisons pour mon logo..." />
+        <label className="form-row">{t('question_subject')}
+          <input value={form.subject} onChange={(event) => onFormChange('subject', event.target.value)} placeholder={t('question_subject_placeholder')} />
         </label>
 
-        <label className="form-row">Message
+        <label className="form-row">{t('question_message')}
           <textarea
             value={form.message}
             onChange={(event) => onFormChange('message', event.target.value)}
@@ -1947,27 +1965,28 @@ function QuestionModal({ salonLabel, form, onFormChange, onClose, onSubmit }) {
           <em>{form.message.length} / 500</em>
         </label>
 
-        <span className="form-section-label">Pièces jointes (optionnel)</span>
+        <span className="form-section-label">{t('question_attachments')}</span>
         <label className="file-drop">
           <Paperclip size={18} />
-          <span>Glisser un fichier ou</span>
-          <strong>Parcourir</strong>
-          <small>PNG, JPG, PDF — Max 10 Mo</small>
+          <span>{t('question_drag')}</span>
+          <strong>{t('question_browse')}</strong>
+          <small>{t('question_file_types')}</small>
           <input type="file" />
         </label>
 
-        <div className="question-note">Notre équipe vous répondra directement par email et mettra à jour votre configuration si nécessaire.</div>
-        <button className="modal-primary-button centered" type="submit"><Mail size={15} /> Envoyer ma question</button>
-        <button className="modal-cancel-button" type="button" onClick={onClose}>Annuler</button>
+        <div className="question-note">{t('question_note')}</div>
+        <button className="modal-primary-button centered" type="submit"><Mail size={15} /> {t('question_send')}</button>
+        <button className="modal-cancel-button" type="button" onClick={onClose}>{t('question_cancel')}</button>
       </div>
     </form>
   );
 }
 
 function LanguageMenu({ language, onSelect }) {
+  const t = useT();
   return (
     <section className="language-menu" onMouseDown={(event) => event.stopPropagation()}>
-      <h3>Choisir la langue</h3>
+      <h3>{t('lang_title')}</h3>
       {languages.map((entry) => (
         <button key={entry.id} className={language === entry.id ? 'active' : ''} type="button" onClick={() => onSelect(entry.id)}>
           <span className="language-flag">{entry.flag}</span>
@@ -1979,31 +1998,32 @@ function LanguageMenu({ language, onSelect }) {
           {language === entry.id && <Check size={14} />}
         </button>
       ))}
-      <p>Les textes du stand restent en français</p>
+      <p>{t('lang_note')}</p>
     </section>
   );
 }
 
 function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageChange, onResetImage, embedded = false }) {
+  const t = useT();
   const imageName = item.options?.headMainImageName || `Texture originale ${partitionHeadMainImageMaterial(item)}.jpg`;
   return (
     <aside className={embedded ? 'item-visual-config' : 'item-options-panel'}>
       <div className="item-options-heading">
         <FileImage size={17} />
         <div>
-          <strong>Tête de cloison</strong>
-          <span>Options de cet objet uniquement</span>
+          <strong>{t('partition_head_title')}</strong>
+          <span>{t('partition_head_subtitle')}</span>
         </div>
       </div>
 
       <div className="item-dynamic-preview">
         <span className="preview-flag">{languageFlag(visualContext?.language)}</span>
-        <strong>{visualContext?.company || 'Nom société'}</strong>
+        <strong>{visualContext?.company || t('partition_head_company')}</strong>
         <span>{isSmclPartitionHeadItem(item) ? `Allée ${visualContext?.aisleNumber || '—'} · ${visualContext?.standNumber || '—'}` : (visualContext?.standNumber || 'A-14')}</span>
       </div>
 
       <label className="item-image-upload">
-        <span>Image à modifier</span>
+        <span>{t('partition_head_image')}</span>
         <small>{imageName}</small>
         <input
           type="file"
@@ -2017,16 +2037,17 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
       </label>
 
       {item.options?.headMainImageUrl && (
-        <button className="item-image-reset" type="button" onClick={onResetImage}>Revenir à l'image d'origine</button>
+        <button className="item-image-reset" type="button" onClick={onResetImage}>{t('img_upload_reset')}</button>
       )}
-      {uploadState?.uploading && <p className="item-options-status">Upload du visuel...</p>}
+      {uploadState?.uploading && <p className="item-options-status">{t('img_uploading')}</p>}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
     </aside>
   );
 }
 
 function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageChange, onResetImage, embedded = false }) {
-  const imageName = item.options?.posterImageName || 'Aucune image personnalisée';
+  const t = useT();
+  const imageName = item.options?.posterImageName || t('poster_no_image');
   const printSize = posterSurfaceRegion(item, items, width, depth);
   const recommendedSpec = recommendedSimulatorImageSpec(printSize.width, printSize.height);
   const imageQuality = useSimulatorImageQualityCheck(item.options?.posterImageUrl, recommendedSpec);
@@ -2035,34 +2056,34 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
       <div className="item-options-heading">
         <FileImage size={17} />
         <div>
-          <strong>Affiche murale</strong>
-          <span>Visuel 1000 × 1000 mm à hauteur écran</span>
+          <strong>{t('poster_title')}</strong>
+          <span>{t('poster_subtitle')}</span>
         </div>
       </div>
 
       <div className="poster-format-spec">
-        <strong>Format conseillé pour le simulateur</strong>
-        <span>Zone affichée : {recommendedSpec.sizeText}</span>
-        <span>Image conseillée : {recommendedSpec.pixelText}</span>
-        <small>Ratio à respecter : {recommendedSpec.ratioText} · fichier léger JPG, PNG ou WebP</small>
+        <strong>{t('poster_format_title')}</strong>
+        <span>{t('poster_format_zone', { size: recommendedSpec.sizeText })}</span>
+        <span>{t('poster_format_image', { pixels: recommendedSpec.pixelText })}</span>
+        <small>{t('poster_format_ratio', { ratio: recommendedSpec.ratioText })}</small>
       </div>
 
       {item.options?.posterImageUrl && (
         <div className="poster-image-preview">
-          <img src={item.options.posterImageUrl} alt="Aperçu affiche" />
+          <img src={item.options.posterImageUrl} alt="" />
         </div>
       )}
 
       {item.options?.posterImageUrl && imageQuality && (
         <div className={`poster-print-quality ${imageQuality.level}`}>
-          <strong>{imageQuality.label}</strong>
+          <strong>{imageQuality.level === 'good' ? t('img_quality_ok') : imageQuality.level === 'warning' ? t('img_quality_warning') : t('img_quality_danger')}</strong>
           <span>{imageQuality.pixelText} importés · conseillé {recommendedSpec.pixelText}</span>
-          <small>{imageQuality.detailText}</small>
+          <small>{imageQuality.level === 'good' ? t('img_quality_ok_detail') : t('img_quality_low_detail')}</small>
         </div>
       )}
 
       <label className="item-image-upload">
-        <span>Image de l'affiche</span>
+        <span>{t('poster_image_label')}</span>
         <small>{imageName}</small>
         <input
           type="file"
@@ -2076,15 +2097,16 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
       </label>
 
       {item.options?.posterImageUrl && (
-        <button className="item-image-reset" type="button" onClick={onResetImage}>Retirer l'image personnalisée</button>
+        <button className="item-image-reset" type="button" onClick={onResetImage}>{t('poster_reset')}</button>
       )}
-      {uploadState?.uploading && <p className="item-options-status">Upload du visuel...</p>}
+      {uploadState?.uploading && <p className="item-options-status">{t('img_uploading')}</p>}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
     </aside>
   );
 }
 
 function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onResetColor, embedded = false, optionsFree = false }) {
+  const t = useT();
   const imageName = item.options?.binary3ImageName || 'Texture originale Binary_3.jpeg';
   const selectedColor = item.options?.binary2Color || '#ffffff';
   const selectedColorId = item.options?.binary2ColorId || '';
@@ -2093,22 +2115,22 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
       <div className="item-options-heading">
         <FileImage size={17} />
         <div>
-          <strong>Banque accueil bois</strong>
-          <span>Image frontale et couleur du panneau</span>
+          <strong>{t('wood_desk_title')}</strong>
+          <span>{t('wood_desk_subtitle')}</span>
         </div>
       </div>
 
       {item.options?.binary3ImageUrl && (
         <div className="poster-image-preview">
-          <img src={item.options.binary3ImageUrl} alt="Aperçu banque accueil" />
+          <img src={item.options.binary3ImageUrl} alt="" />
         </div>
       )}
 
       <label className="item-image-upload">
-        <span>Image à modifier</span>
+        <span>{t('wood_desk_image_label')}</span>
         <small>{imageName}</small>
         <small>
-          {(() => { const [w, h] = woodReceptionDeskImageCoverSize(item); return `Format conseillé : ${w.toLocaleString('fr-FR')} × ${h.toLocaleString('fr-FR')} px · JPG ou PNG`; })()}
+          {(() => { const [w, h] = woodReceptionDeskImageCoverSize(item); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
         </small>
         <input
           type="file"
@@ -2136,7 +2158,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
               >
                 <i />
                 <strong>{color.name}</strong>
-                <small>{color.reference || color.code}{!optionsFree && Number(color.price || 0) > 0 ? ` · +${Number(color.price).toLocaleString('fr-FR')} € HT/m²` : ' · Inclus'}</small>
+                <small>{color.reference || color.code}{!optionsFree && Number(color.price || 0) > 0 ? ` · +${Number(color.price).toLocaleString('fr-FR')} € HT/m²` : ` ${t('wood_desk_color_included')}`}</small>
               </button>
             ))}
           </div>
@@ -2144,21 +2166,22 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
       ) : (
         <div className="item-color-upload unavailable">
           <span>Couleur du matériau Laminate_D02_120cm_6</span>
-          <strong>Aucune couleur comptoir active pour ce salon.</strong>
+          <strong>{t('wood_desk_no_color')}</strong>
         </div>
       )}
 
       <div className="item-option-actions">
-        {item.options?.binary3ImageUrl && <button className="item-image-reset" type="button" onClick={onResetImage}>Revenir à l'image d'origine</button>}
-        {item.options?.binary2Color && <button className="item-image-reset" type="button" onClick={onResetColor}>Revenir à la couleur d'origine</button>}
+        {item.options?.binary3ImageUrl && <button className="item-image-reset" type="button" onClick={onResetImage}>{t('wood_desk_reset_image')}</button>}
+        {item.options?.binary2Color && <button className="item-image-reset" type="button" onClick={onResetColor}>{t('wood_desk_reset_color')}</button>}
       </div>
-      {uploadState?.uploading && <p className="item-options-status">Upload du visuel...</p>}
+      {uploadState?.uploading && <p className="item-options-status">{t('img_uploading')}</p>}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
     </aside>
   );
 }
 
 function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel = '', uploadState = {}, disabled = false, onImage, onOptions, onVariant, onSelect }) {
+  const t = useT();
   const [selectedCounterId, setSelectedCounterId] = useState(items[0]?.id || '');
 
   useEffect(() => {
@@ -2178,7 +2201,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   const baseVariantPrice = Number(baseVariant?.price || 0);
   const selectedColorId = selectedItem?.options?.binary2ColorId || counterWoodFinish(colors).id;
   const selectedFinish = counterFinishOptions(colors).find((finish) => finish.id === selectedColorId) || counterWoodFinish(colors);
-  const imageName = selectedItem?.options?.binary3ImageName || 'Aucun logo personnalisé';
+  const imageName = selectedItem?.options?.binary3ImageName || t('counter_no_logo');
   const logoInputRef = useRef(null);
 
   const selectCounter = (id) => {
@@ -2217,8 +2240,8 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
     return (
       <div className="counter-option-panel">
         <div className="counter-empty-card">
-          <strong>Aucune banque d'accueil sur cette scène</strong>
-          <span>Le paramétrage apparaîtra ici dès qu'une banque d'accueil sera incluse dans la configuration de base.</span>
+          <strong>{t('counter_empty_title')}</strong>
+          <span>{t('counter_empty_detail')}</span>
         </div>
       </div>
     );
@@ -2227,13 +2250,13 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   return (
     <div className="counter-option-panel">
       <div className="counter-formula-box">
-        <span><b>!</b> Votre formule inclut :</span>
-        <p>Une banque d'accueil 1m en finition bois naturel, avec l'emplacement logo personnalisable.</p>
+        <span><b>!</b> {t('counter_formula_title')}</span>
+        <p>{t('counter_formula_detail')}</p>
       </div>
 
       {items.length > 1 && (
         <div className="counter-selector">
-          <span>Banque à personnaliser</span>
+          <span>{t('counter_selector_label')}</span>
           <div>
             {items.map((item, index) => (
               <button
@@ -2253,8 +2276,8 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
         <section className="counter-size-card">
           <header>
             <div>
-              <strong>Taille</strong>
-              <span>{selectedVariant?.label || selectedItem?.label || "Banque d'accueil"}</span>
+              <strong>{t('counter_size_title')}</strong>
+              <span>{selectedVariant?.label || selectedItem?.label || t('option_counter')}</span>
             </div>
           </header>
           <div className="counter-size-grid">
@@ -2264,7 +2287,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
               return (
                 <button key={variant.id} type="button" className={active ? 'active' : ''} disabled={disabled} onClick={() => selectVariant(variant)}>
                   <span><strong>{counterSizeLabel(variant)}</strong></span>
-                  <em>{supplement > 0 ? `+ ${supplement.toLocaleString('fr-FR')} € HT` : 'Inclus'}</em>
+                  <em>{supplement > 0 ? `+ ${supplement.toLocaleString('fr-FR')} € HT` : t('color_included')}</em>
                 </button>
               );
             })}
@@ -2282,20 +2305,20 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
       <section className="counter-logo-card">
         <header>
           <div>
-            <strong>Logo de votre entreprise</strong>
-            <span>{selectedItem?.options?.binary3ImageUrl ? 'Visuel personnalisé' : 'Image frontale du comptoir'}</span>
+            <strong>{t('counter_logo_title')}</strong>
+            <span>{selectedItem?.options?.binary3ImageUrl ? t('counter_logo_custom') : t('counter_logo_default')}</span>
           </div>
-          {selectedItem?.options?.binary3ImageUrl && <em>Conforme</em>}
+          {selectedItem?.options?.binary3ImageUrl && <em>{t('counter_logo_ok')}</em>}
         </header>
         <small className="counter-logo-spec">
-          {(() => { const [w, h] = woodReceptionDeskImageCoverSize(selectedItem); return `Format conseillé : ${w.toLocaleString('fr-FR')} × ${h.toLocaleString('fr-FR')} px · JPG ou PNG`; })()}
+          {(() => { const [w, h] = woodReceptionDeskImageCoverSize(selectedItem); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
         </small>
 
         <label className={selectedItem?.options?.binary3ImageUrl ? 'counter-image-dropzone has-image' : 'counter-image-dropzone'}>
           {selectedItem?.options?.binary3ImageUrl ? <img src={selectedItem.options.binary3ImageUrl} alt="" /> : <FileImage size={22} />}
           <span>
             <strong>{imageName}</strong>
-            <small>{selectedItem?.options?.binary3ImageUrl ? 'Cliquer pour remplacer' : 'Importer une image JPG, PNG ou WebP'}</small>
+            <small>{selectedItem?.options?.binary3ImageUrl ? t('counter_logo_replace_hint') : t('counter_logo_add')}</small>
           </span>
           <input
             ref={logoInputRef}
@@ -2311,7 +2334,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
 
         <div className="counter-logo-actions">
           <button type="button" className="counter-secondary-button" disabled={disabled || uploadState?.uploading} onClick={() => logoInputRef.current?.click()}>
-            Remplacer
+            {t('counter_replace')}
           </button>
           {selectedItem?.options?.binary3ImageUrl && (
             <button
@@ -2320,23 +2343,23 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
               disabled={disabled}
               onClick={() => updateSelected({ binary3ImageUrl: '', binary3ImageName: '' })}
             >
-              <X size={15} /> Retirer
+              <X size={15} /> {t('counter_remove')}
             </button>
           )}
         </div>
       </section>
 
       <section className="counter-info-card">
-        <strong>Pourquoi ajouter un comptoir ?</strong>
+        <strong>{t('counter_why_title')}</strong>
         <ul>
-          <li>Surface d'accueil pour vos prospects</li>
-          <li>Affichage de votre logo et identité</li>
-          <li>Rangement intégré (documents, sacs)</li>
-          <li>Plus professionnel et structuré</li>
+          <li>{t('counter_why_1')}</li>
+          <li>{t('counter_why_2')}</li>
+          <li>{t('counter_why_3')}</li>
+          <li>{t('counter_why_4')}</li>
         </ul>
       </section>
 
-      {uploadState?.uploading && <p className="counter-status">Upload du visuel...</p>}
+      {uploadState?.uploading && <p className="counter-status">{t('counter_uploading')}</p>}
       {uploadState?.error && <p className="counter-error">{uploadState.error}</p>}
     </div>
   );
@@ -2346,6 +2369,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
 
 
 function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = false, onSelect }) {
+  const t = useT();
   const includedFinishes = finishes.filter((finish) => finish.included || finish.mode === 'wood');
   const optionalFinishes = finishes.filter((finish) => !includedFinishes.some((included) => included.id === finish.id));
   const optionPrice = optionalFinishes.find((finish) => Number(finish.price || 0) > 0)?.price || 0;
@@ -2353,10 +2377,10 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
   return (
     <section className="counter-color-card counter-finish-card">
       <div className="counter-finish-head">
-        <strong>Couleur</strong>
+        <strong>{t('counter_finish_title')}</strong>
         <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedCode) ? ` (${shortFinishCode(selectedCode)})` : ''}</span>
       </div>
-      <small>{includedFinishes.length || 1} coloris disponible{includedFinishes.length > 1 ? 's' : ''} — Inclus</small>
+      <small>{t('carpet_included_count', { count: includedFinishes.length || 1, s: (includedFinishes.length || 1) > 1 ? 's' : '' })}</small>
       <div className="counter-finish-swatches included">
         {(includedFinishes.length ? includedFinishes : [counterWoodFinish()]).map((finish) => (
           <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
@@ -2364,7 +2388,7 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
       </div>
       {optionalFinishes.length > 0 && (
         <>
-          <small>En option {Number(optionPrice || 0) > 0 ? `${Number(optionPrice).toLocaleString('fr-FR')} €` : ''}</small>
+          <small>{t('carpet_option_from', { price: Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '' })}</small>
           <div className="counter-finish-swatches optional">
             {optionalFinishes.map((finish) => (
               <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
@@ -2532,13 +2556,8 @@ function useSimulatorImageQualityCheck(imageUrl, recommendedSpec = null) {
       const heightRatio = pixelsHeight / recommendedSpec.pixelsHeight;
       const ratioScore = Math.min(widthRatio, heightRatio);
       const level = ratioScore >= 1 ? 'good' : ratioScore >= 0.7 ? 'warning' : 'danger';
-      const label = level === 'good' ? 'Qualité simulateur OK' : level === 'warning' ? 'Image un peu faible' : 'Image trop petite';
       setQuality({
         level,
-        label,
-        detailText: level === 'good'
-          ? 'Cette image est adaptée au rendu 3D. Le fichier HD print sera transmis séparément.'
-          : 'Pour un meilleur aperçu 3D, importez une image plus proche du format conseillé.',
         pixelText: `${pixelsWidth.toLocaleString('fr-FR')} × ${pixelsHeight.toLocaleString('fr-FR')} px`,
       });
     };
@@ -2614,13 +2633,14 @@ function OptionsStepPanel({
   onSelectCounter,
   isAdminViewer = false,
 }) {
+  const t = useT();
   return (
     <>
-      <PanelHead title="Options de configuration" step={activeStep} />
+      <PanelHead title={t('panel_options_title')} step={activeStep} />
       <RulesSummary ledSpotCount={ledSpotCount} ledRailsEnabled={ledRailsEnabled} reserveRule={reserveRule} partitionHeadRule={partitionHeadRule} />
 
-      <section className="panel-section-title">Les options</section>
-      <OptionAccordion title="Moquette" icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+      <section className="panel-section-title">{t('section_options')}</section>
+      <OptionAccordion title={t('option_carpet')} icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
           colors={carpetColors}
           selectedColor={selectedCarpetColor}
@@ -2635,7 +2655,7 @@ function OptionsStepPanel({
           onThickChange={onCarpetThick}
         />
       </OptionAccordion>
-      <OptionAccordion title="Empreinte moquette" icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')}>
+      <OptionAccordion title={t('option_footprint')} icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')}>
         <FootprintColorOptionCard
           enabled={carpetFootprintEnabled}
           colors={footprintColors}
@@ -2643,21 +2663,21 @@ function OptionsStepPanel({
           defaultColorId={defaultColorOptions.carpetFootprintColorId || defaultColorOptions.carpetColorId}
           area={carpetFootprintAreaM2()}
           disabled={readOnly || Boolean(technicalFloorType)}
-          disabledReason={technicalFloorType ? "Le plancher technique retire automatiquement l'empreinte moquette." : ''}
+          disabledReason={technicalFloorType ? t('floor_warning') : ''}
           thick={footprintThick}
           onEnabledChange={onCarpetFootprintEnabled}
           onSelect={onCarpetFootprintColor}
           onThickChange={onFootprintThick}
         />
       </OptionAccordion>
-      <OptionAccordion title="Cloison" icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+      <OptionAccordion title={t('option_wall')} icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
         <ColorOptionCard
-          title="Couleur"
+          title={t('color_title')}
           colors={wallFabricColors}
           selectedColor={selectedWallFabricColor}
           defaultColorId={defaultColorOptions.wallFabricColorId}
-          includedLabel="Inclus"
-          optionLabel="Options payantes"
+          includedLabel={t('color_included')}
+          optionLabel={t('color_options_paid')}
           disabled={readOnly}
           onSelect={onWallColor}
         />
@@ -2671,7 +2691,7 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       {isAdminViewer && (
-      <OptionAccordion title="Plancher technique" icon={<Ruler size={16} />} open={openOptions.plancher} onToggle={() => toggleOption('plancher')}>
+      <OptionAccordion title={t('option_floor')} icon={<Ruler size={16} />} open={openOptions.plancher} onToggle={() => toggleOption('plancher')}>
         <TechnicalFloorOptionCard
           floorType={technicalFloorType}
           trimType={technicalFloorTrimType}
@@ -2683,7 +2703,7 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       )}
-      <OptionAccordion title="Spots LED" icon={<Sparkles size={16} />} open={openOptions.led} onToggle={() => toggleOption('led')}>
+      <OptionAccordion title={t('option_led')} icon={<Sparkles size={16} />} open={openOptions.led} onToggle={() => toggleOption('led')}>
         <LedRailOptionCard
           enabled={ledRailsEnabled}
           spotCount={ledSpotCount}
@@ -2691,7 +2711,7 @@ function OptionsStepPanel({
           onChange={onLedRailsEnabled}
         />
       </OptionAccordion>
-      <OptionAccordion title="Réserve" icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
+      <OptionAccordion title={t('option_reserve')} icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
         <ReserveOptionCard
           rule={reserveRule}
           selectedOptionType={reserveOptionType}
@@ -2701,7 +2721,7 @@ function OptionsStepPanel({
           onChange={onReserveOption}
         />
       </OptionAccordion>
-      <OptionAccordion title="Tête de cloison" icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
+      <OptionAccordion title={t('option_partition_head')} icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
         <PartitionHeadOptionCard
           rule={partitionHeadRule}
           sides={partitionHeadSides}
@@ -2714,7 +2734,7 @@ function OptionsStepPanel({
           onImage={onPartitionHeadImage}
         />
       </OptionAccordion>
-      <OptionAccordion title="Banque d'accueil" icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
+      <OptionAccordion title={t('option_counter')} icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
         <CounterOptionCard
           items={counterItems}
           colors={counterColors}
@@ -2734,6 +2754,7 @@ function OptionsStepPanel({
 }
 
 function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, readOnly = false, onAdd, onRemove, onSelectItem, onConfigureItem, onNext }) {
+  const t = useT();
   const [activeCategory, setActiveCategory] = useState('all');
   const [search, setSearch] = useState('');
   const groupedVariantTypes = variantGroupMemberTypes(catalog);
@@ -2756,15 +2777,15 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
   });
   return (
     <>
-      <PanelHead title="Bibliothèque accessoires" step={3} />
-      <p className="marketplace-subtitle">Cliquez un accessoire pour le configurer</p>
+      <PanelHead title={t('panel_furniture_title')} step={3} />
+      <p className="marketplace-subtitle">{t('furniture_subtitle')}</p>
 
       <label className="marketplace-search">
         <Search size={15} />
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un accessoire..." />
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('furniture_search')} />
       </label>
 
-      <nav className="marketplace-tabs" aria-label="Filtrer les accessoires">
+      <nav className="marketplace-tabs" aria-label={t('furniture_aria_filter')}>
         {categories.map((category) => (
           <button key={category.id} type="button" className={selectedCategory?.id === category.id ? 'active' : ''} onClick={() => setActiveCategory(category.id)}>
             <span>{category.icon}</span>{category.label}<em>{category.count}</em>
@@ -2788,37 +2809,40 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
             onRemoveOne={() => onRemove(entry.type)}
           />
         ))}
-        {!filteredEntries.length && <div className="marketplace-empty">Aucun accessoire dans cette catégorie.</div>}
+        {!filteredEntries.length && <div className="marketplace-empty">{t('furniture_empty')}</div>}
       </section>
     </>
   );
 }
 
 function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, includedCount = 0, billableCount = 0, onAdd, onRemoveOne }) {
+  const t = useT();
+  const lang = useContext(LanguageContext);
   const Icon = entry.icon || Box;
   const price = marketplaceStartingPrice(entry, catalog, salonLabel);
   const category = marketCategoryMeta(normalizeMarketCategory(entry));
+  const label = localizeItemLabel(entry, lang);
   return (
     <article className="marketplace-card">
       <div className="marketplace-card-preview">
         {entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Icon size={42} />}
       </div>
       <div className="marketplace-card-body">
-        <strong>{entry.label}</strong>
-        <em>{price ? `À partir de ${price.toLocaleString('fr-FR')} €` : 'Inclus / sur devis'}</em>
+        <strong>{label}</strong>
+        <em>{price ? t('market_from_price', { price: price.toLocaleString('fr-FR') }) : t('market_included')}</em>
         <small>{marketplaceItemSubtitle(entry, category.label)}</small>
         {billableCount > 0 ? (
           <div className="marketplace-card-counter">
-            <button type="button" disabled={readOnly} onClick={() => onRemoveOne?.()} aria-label={`Retirer un ${entry.label}`}>
+            <button type="button" disabled={readOnly} onClick={() => onRemoveOne?.()} aria-label={`- ${label}`}>
               <Minus size={14} />
             </button>
             <span>{billableCount}</span>
-            <button type="button" disabled={readOnly} onClick={onAdd} aria-label={`Ajouter ${entry.label}`}>
+            <button type="button" disabled={readOnly} onClick={onAdd} aria-label={`+ ${label}`}>
               <Plus size={14} />
             </button>
           </div>
         ) : (
-          <button type="button" disabled={readOnly} onClick={onAdd} aria-label={`Ajouter ${entry.label}`}>
+          <button type="button" disabled={readOnly} onClick={onAdd} aria-label={`+ ${label}`}>
             <Plus size={18} />
           </button>
         )}
@@ -2827,7 +2851,9 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
   );
 }
 
-function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel = 'Étape suivante', nextDetail = 'Validation →', onAdd, onSelectItem, onConfigureItem, onRemove, onNext }) {
+function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel, nextDetail, onAdd, onSelectItem, onConfigureItem, onRemove, onNext }) {
+  const t = useT();
+  const lang = useContext(LanguageContext);
   const itemRefs = useRef(new Map());
 
   useEffect(() => {
@@ -2840,14 +2866,14 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
     <div className="furniture-cart-bar">
       <div className="cart-total-card">
         <ClockIcon />
-        <span>Mon stand</span>
-        <small>{items.length} article{items.length > 1 ? 's' : ''} AMCO</small>
+        <span>{t('cart_my_stand')}</span>
+        <small>{t('cart_articles', { count: items.length, s: items.length > 1 ? 's' : '' })}</small>
         <strong>{total.toLocaleString('fr-FR')} €</strong>
       </div>
       <button type="button" className="cart-add-card" onClick={onAdd} disabled={readOnly}>
         <span><Plus size={18} /></span>
-        <strong>Ajouter</strong>
-        <small>Choisir dans la bibliothèque</small>
+        <strong>{t('cart_add')}</strong>
+        <small>{t('cart_add_detail')}</small>
       </button>
       <div className="cart-item-strip">
         {items.map((item) => {
@@ -2867,7 +2893,7 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
               <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
               <span>
                 <strong>{itemCartLabel(item)}</strong>
-                <small>{item.options?.variantLabel || 'Quantité · 1'}</small>
+                <small>{item.options?.variantLabel || t('cart_quantity')}</small>
                 <em>{cartItemPrice(item, entry, salonLabel).toLocaleString('fr-FR')} €</em>
               </span>
               <span className="cart-item-settings" onClick={(event) => { event.stopPropagation(); onConfigureItem(item); }}>•••</span>
@@ -2885,6 +2911,8 @@ function ClockIcon() {
 }
 
 function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, items, width, depth, uploadState, onImageChange, onUpdateItemOptions, counterColors = [], onClose, onConfirm }) {
+  const t = useT();
+  const lang = useContext(LanguageContext);
   const catalogEntry = entry || item || {};
   const isVariantGroup = isVariantGroupEntry(catalogEntry);
   const initialOptions = item?.options || {};
@@ -2948,21 +2976,21 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
       <section className="item-config-modal">
         <header>
           <div>
-            <h2>{mode === 'add' ? `Configurer ${itemConfigTitle(catalogEntry)}` : `Paramétrer ${itemConfigTitle(catalogEntry)}`}</h2>
-            <span>Bibliothèque › {marketCategoryMeta(normalizeMarketCategory(catalogEntry)).label} › {catalogEntry.label}</span>
+            <h2>{t(mode === 'add' ? 'item_config_add' : 'item_config_edit', { name: itemConfigTitle(catalogEntry) })}</h2>
+            <span>{t('item_config_breadcrumb')} {marketCategoryMeta(normalizeMarketCategory(catalogEntry)).label} › {localizeItemLabel(catalogEntry, lang)}</span>
           </div>
-          <button type="button" onClick={onClose} aria-label="Fermer"><X size={18} /></button>
+          <button type="button" onClick={onClose} aria-label={t('item_config_close')}><X size={18} /></button>
         </header>
 
         <div className="item-config-product">
           <span>{(optionLink?.entry?.thumbnailUrl || selectedVariant?.imageUrl || catalogEntry.thumbnailUrl) ? <img src={optionLink?.entry?.thumbnailUrl || selectedVariant?.imageUrl || catalogEntry.thumbnailUrl} alt="" /> : <Box size={34} />}</span>
           <div>
-            <strong>{catalogEntry.label}</strong>
-            <small>Réf. {assetReference(selectedVariant?.entry || catalogEntry, salonLabel) || selectedVariant?.assetType || catalogEntry.type || 'Stand-ING'}</small>
+            <strong>{localizeItemLabel(catalogEntry, lang)}</strong>
+            <small>{t('item_config_ref')} {assetReference(selectedVariant?.entry || catalogEntry, salonLabel) || selectedVariant?.assetType || catalogEntry.type || 'Stand-ING'}</small>
           </div>
         </div>
 
-        <ConfigChoiceGrid title="Variante" choices={variants} value={format} onChange={setFormat} />
+        <ConfigChoiceGrid title={t('item_config_variant_title')} choices={variants} value={format} onChange={setFormat} />
 
         {hasVisualOptions && isPartitionHeadItem(item) && (
           <PartitionHeadOptionsPanel
@@ -3008,7 +3036,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
               const linkedOption = selectedVariant?.optionLinks?.find((link) => link.optionId === option.id);
               const linkedPrice = linkedOption ? assetUnitPrice(linkedOption.entry, salonLabel) : null;
               const displayPrice = linkedOption
-                ? (linkedPrice != null ? `${linkedPrice.toLocaleString('fr-FR')} €` : 'Inclus')
+                ? (linkedPrice != null ? `${linkedPrice.toLocaleString('fr-FR')} €` : t('item_config_included'))
                 : `+ ${Number(option.price || 0).toLocaleString('fr-FR')} €`;
               return (
                 <ToggleOption
@@ -3026,7 +3054,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
 
         {mode === 'add' && (
           <div className="item-config-quantity">
-            <span>Quantité</span>
+            <span>{t('item_config_quantity')}</span>
             <button type="button" onClick={() => setQuantity((value) => Math.max(1, value - 1))}>−</button>
             <strong>{quantity}</strong>
             <button type="button" onClick={() => setQuantity((value) => value + 1)}>+</button>
@@ -3035,11 +3063,11 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
 
         <footer>
           <div>
-            <span>Total cet article</span>
+            <span>{t('item_config_total')}</span>
             <strong>{total.toLocaleString('fr-FR')} €</strong>
             {quantity > 1 && <small>{quantity} × {(basePrice + extras).toLocaleString('fr-FR')} €</small>}
           </div>
-          <button type="button" disabled={uploadState?.uploading} onClick={submit}>{uploadState?.uploading ? 'Upload...' : (mode === 'add' ? '+ Ajouter au stand' : 'Enregistrer')}</button>
+          <button type="button" disabled={uploadState?.uploading} onClick={submit}>{uploadState?.uploading ? t('item_config_uploading') : (mode === 'add' ? t('item_config_add_btn') : t('item_config_save_btn'))}</button>
         </footer>
       </section>
     </div>
@@ -3328,6 +3356,7 @@ function ValidationStepPanel({
   isAdminViewer,
   onConfirm,
 }) {
+  const t = useT();
   const lines = pricing?.lines || [];
   const baseItems = pricing?.baseUsage || pricing?.baseItems || [];
   const includedCounts = pricing?.includedCounts || new Map();
@@ -3336,30 +3365,30 @@ function ValidationStepPanel({
 
   return (
     <>
-      <PanelHead title="Validation" step={4} />
+      <PanelHead title={t('panel_validation_title')} step={4} />
 
       <section className="validation-summary-card">
-        <h2>Récapitulatif HT</h2>
+        <h2>{t('validation_summary_title')}</h2>
         <div className="validation-total-line">
-          <span>Total options et mobilier</span>
+          <span>{t('validation_total_label')}</span>
           <strong>{(pricing?.total || 0).toLocaleString('fr-FR')} € HT</strong>
         </div>
-        <p>La scène de base est incluse à 0 €. Seuls les ajouts hors pack ou au-delà des quantités incluses sont facturés.</p>
+        <p>{t('validation_total_note')}</p>
       </section>
 
       <section className="validation-section">
-        <h3>Options choisies</h3>
-        <div className="validation-option-row"><span>Moquette</span><strong>{carpetColor.name} ({carpetColor.code})</strong></div>
-        <div className="validation-option-row"><span>Empreinte moquette</span><strong>{carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : 'Retirée'}</strong></div>
-        <div className="validation-option-row"><span>Coton cloison</span><strong>{wallFabricColor.name} ({wallFabricColor.code})</strong></div>
-        <div className="validation-option-row"><span>Plancher technique</span><strong>{technicalFloor ? `${technicalFloor.label} · ${technicalTrimLabel(technicalFloorTrimType)} · rampe obligatoire` : 'Non sélectionné'}</strong></div>
-        <div className="validation-option-row"><span>Spots LED</span><strong>{ledRailsEnabled ? `${ledSpotCount} spots conserves` : 'Retires'}</strong></div>
-        <div className="validation-option-row"><span>Réserve</span><strong>{reserveOptionType === '__none__' ? 'Retirée' : (reserveOption?.label || reserveRule?.includedLabel || 'Non incluse')}</strong></div>
-        <div className="validation-option-row"><span>Têtes de cloison</span><strong>{partitionHeadSummary(partitionHeadRule, partitionHeadSides)}</strong></div>
+        <h3>{t('validation_options_title')}</h3>
+        <div className="validation-option-row"><span>{t('validation_carpet')}</span><strong>{carpetColor.name} ({carpetColor.code})</strong></div>
+        <div className="validation-option-row"><span>{t('validation_footprint')}</span><strong>{carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : t('validation_footprint_removed')}</strong></div>
+        <div className="validation-option-row"><span>{t('validation_wall')}</span><strong>{wallFabricColor.name} ({wallFabricColor.code})</strong></div>
+        <div className="validation-option-row"><span>{t('validation_floor')}</span><strong>{technicalFloor ? `${technicalFloor.label} · ${technicalTrimLabel(technicalFloorTrimType)} · rampe obligatoire` : t('validation_floor_none')}</strong></div>
+        <div className="validation-option-row"><span>{t('validation_led')}</span><strong>{ledRailsEnabled ? t('validation_led_kept', { count: ledSpotCount }) : t('validation_led_removed')}</strong></div>
+        <div className="validation-option-row"><span>{t('validation_reserve')}</span><strong>{reserveOptionType === '__none__' ? t('validation_reserve_removed') : (reserveOption?.label || reserveRule?.includedLabel || t('validation_reserve_none'))}</strong></div>
+        <div className="validation-option-row"><span>{t('validation_partition_heads')}</span><strong>{partitionHeadSummary(partitionHeadRule, partitionHeadSides)}</strong></div>
       </section>
 
       <section className="validation-section">
-        <h3>Objets inclus dans le pack</h3>
+        <h3>{t('validation_base_items_title')}</h3>
         {baseItems.length ? (
           baseItems.map((bu) => {
             const typeItems = items.filter((i) => i.type === bu.type).slice(0, bu.used ?? bu.quantity);
@@ -3382,12 +3411,12 @@ function ValidationStepPanel({
             );
           })
         ) : (
-          <p className="validation-muted">Aucun quota mobilier configuré sur ce pack.</p>
+          <p className="validation-muted">{t('validation_no_base_items')}</p>
         )}
       </section>
 
       <section className="validation-section">
-        <h3>Suppléments facturés AMCO</h3>
+        <h3>{t('validation_supplements_title')}</h3>
         {lines.length ? (
           lines.map((line) => {
             const includedCount = includedCounts.get(line.type) || 0;
@@ -3411,7 +3440,7 @@ function ValidationStepPanel({
             );
           })
         ) : (
-          <p className="validation-muted">Aucun supplément : la configuration reste à 0 € HT.</p>
+          <p className="validation-muted">{t('validation_no_supplements')}</p>
         )}
       </section>
 
@@ -3419,10 +3448,10 @@ function ValidationStepPanel({
       {confirmState.error && <div className="validation-message error">{confirmState.error}</div>}
 
       {confirmed && (
-        <div className="validation-message success"><Check size={16} /> Scène confirmée côté admin. Vous pouvez encore la modifier.</div>
+        <div className="validation-message success"><Check size={16} /> {t('validation_confirmed_note')}</div>
       )}
       <button className="validation-confirm-button" type="button" disabled={confirmState.loading} onClick={onConfirm}>
-        {confirmState.loading ? 'Confirmation...' : confirmed ? 'Mettre à jour la scène confirmée' : 'Confirmer la scène'}
+        {confirmState.loading ? t('validation_confirm_loading') : confirmed ? t('validation_confirm_update') : t('validation_confirm_btn')}
       </button>
     </>
   );
@@ -3446,21 +3475,24 @@ function basePackItemLabel(label = 'Objet', quantity = 1) {
 }
 
 function PanelHead({ title, step }) {
+  const t = useT();
   return (
     <div className="config-panel-head">
       <h1>{title}</h1>
-      <span>Etape {step} / 4</span>
+      <span>{t('panel_step', { step })}</span>
     </div>
   );
 }
 
 function RulesSummary({ ledSpotCount, ledRailsEnabled, reserveRule, partitionHeadRule }) {
+  const t = useT();
+  const headCount = partitionHeadRule?.includedCount || 0;
   return (
     <div className="rules-card">
-      <strong>Regles SMCL appliquees automatiquement</strong>
-      <span>{reserveRule?.includedType ? '✓' : '−'} {reserveRule?.includedLabel || 'Pas de réserve incluse'}</span>
-      <span>✓ {partitionHeadRule?.includedCount || 0} tete{(partitionHeadRule?.includedCount || 0) > 1 ? 's' : ''} de cloison incluse{(partitionHeadRule?.includedCount || 0) > 1 ? 's' : ''}</span>
-      <span>{ledRailsEnabled ? '✓' : '−'} {ledSpotCount} spots LED (1/3m2)</span>
+      <strong>{t('rules_title')}</strong>
+      <span>{reserveRule?.includedType ? '✓' : '−'} {reserveRule?.includedLabel || t('rules_no_reserve')}</span>
+      <span>✓ {headCount} {t('rules_head', { count: headCount, s: headCount > 1 ? 's' : '' })}</span>
+      <span>{ledRailsEnabled ? '✓' : '−'} {t('rules_led', { count: ledSpotCount })}</span>
     </div>
   );
 }
@@ -3523,11 +3555,12 @@ function OptionAccordion({ title, icon, open, onToggle, children }) {
 }
 
 function LedRailOptionCard({ enabled, spotCount, disabled = false, onChange }) {
+  const t = useT();
   return (
     <div className="led-option-card">
       <div>
-        <strong>Spots LED automatiques</strong>
-        <span>{spotCount} spots calcules automatiquement, soit 1 spot tous les 3m2.</span>
+        <strong>{t('led_title')}</strong>
+        <span>{t('led_count', { count: spotCount })}</span>
       </div>
       <div className="led-option-actions">
         <button
@@ -3536,7 +3569,7 @@ function LedRailOptionCard({ enabled, spotCount, disabled = false, onChange }) {
           disabled={disabled}
           onClick={() => onChange(true)}
         >
-          Les laisser
+          {t('led_keep')}
         </button>
         <button
           type="button"
@@ -3544,15 +3577,16 @@ function LedRailOptionCard({ enabled, spotCount, disabled = false, onChange }) {
           disabled={disabled}
           onClick={() => onChange(false)}
         >
-          Tous les retirer
+          {t('led_remove')}
         </button>
       </div>
-      <small>Ils sont places en haut des murs et restent inclus dans la scene de base.</small>
+      <small>{t('led_note')}</small>
     </div>
   );
 }
 
 function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled = false, onFloorType, onTrimType }) {
+  const t = useT();
   const selectedFloor = technicalFloorOptions.find((option) => option.id === floorType) || null;
   const openEdges = openTechnicalFloorEdges(layout);
   const estimated = selectedFloor ? Math.round(Number(area || 0) * selectedFloor.price) : 0;
@@ -3560,15 +3594,15 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
   return (
     <div className="technical-floor-card">
       <div className="technical-floor-info">
-        <span><b>!</b> Le plancher technique retire automatiquement l'empreinte moquette.</span>
+        <span><b>!</b> {t('floor_warning')}</span>
       </div>
 
-      <strong className="technical-floor-title">Choisissez une hauteur</strong>
+      <strong className="technical-floor-title">{t('floor_choose_height')}</strong>
       <div className="technical-floor-choices">
         <button type="button" className={!floorType ? 'active' : ''} disabled={disabled} onClick={() => onFloorType('')}>
           <span className="reserve-choice-radio" aria-hidden="true">{!floorType ? <span /> : null}</span>
-          <span><strong>Aucun plancher</strong><small>Sol moquette standard conservé</small></span>
-          <em>Inclus</em>
+          <span><strong>{t('floor_none')}</strong><small>{t('floor_none_detail')}</small></span>
+          <em>{t('floor_included')}</em>
         </button>
         {technicalFloorOptions.map((option) => {
           const active = floorType === option.id;
@@ -3587,10 +3621,10 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
           <div className="technical-floor-detail">
             <strong>{selectedFloor.reference}</strong>
             <span>{formatNumber(area)} m² × {selectedFloor.price} € HT/m² = {estimated.toLocaleString('fr-FR')} € HT</span>
-            <small>Cornières uniquement sur : {openEdges.map(technicalFloorEdgeLabel).join(', ')}</small>
+            <small>{t('floor_open_edges')} {openEdges.map(technicalFloorEdgeLabel).join(', ')}</small>
           </div>
           <div className="technical-floor-actions">
-            <span>Type de cornière</span>
+            <span>{t('floor_trim_type')}</span>
             {technicalTrimOptions.map((option) => (
               <button key={option.id} type="button" className={trimType === option.id ? 'active' : ''} disabled={disabled} onClick={() => onTrimType(option.id)}>
                 {option.label}
@@ -3599,8 +3633,8 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
           </div>
           <div className="technical-floor-ramp-required">
             <span>
-              <strong>Rampe obligatoire</strong>
-              <small>{selectedFloor.rampLabel} · elle est intégrée au plancher et peut être déplacée horizontalement dans la vue 3D.</small>
+              <strong>{t('floor_ramp_title')}</strong>
+              <small>{selectedFloor.rampLabel} · {t('floor_ramp_detail')}</small>
             </span>
           </div>
         </>
@@ -3610,6 +3644,7 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
 }
 
 function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonLabel = '', disabled = false, onChange }) {
+  const t = useT();
   const [formulaOpen, setFormulaOpen] = useState(false);
   const rows = reserveChoiceRows(rule, catalog, salonLabel);
   const includedRow = rows.find((row) => row.included) || null;
@@ -3620,8 +3655,8 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
       <div className="reserve-choice-panel">
         <FormulaIncludedBox open={formulaOpen} onToggle={() => setFormulaOpen((current) => !current)} includedRow={null} />
         <div className="reserve-empty-card">
-          <strong>Aucune réserve configurée</strong>
-          <span>Cette surface ne déclenche pas de réserve automatique ni d'option complémentaire.</span>
+          <strong>{t('reserve_empty_title')}</strong>
+          <span>{t('reserve_empty_detail')}</span>
         </div>
       </div>
     );
@@ -3630,7 +3665,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
   return (
     <div className="reserve-choice-panel">
       <FormulaIncludedBox open={formulaOpen} onToggle={() => setFormulaOpen((current) => !current)} includedRow={includedRow} />
-      <strong className="reserve-choice-title">Choisissez une taille</strong>
+      <strong className="reserve-choice-title">{t('reserve_choose_size')}</strong>
       <div className="reserve-choice-list">
         {rows.map((row) => {
           const selected = !noneSelected && (row.included ? !selectedOptionType : selectedOptionType === row.type);
@@ -3648,7 +3683,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
                 <small>{row.description}</small>
               </span>
               <span className={row.included ? 'reserve-choice-price included' : 'reserve-choice-price'}>
-                {row.included ? 'Inclus' : `+ ${row.price.toLocaleString('fr-FR')} € HT`}
+                {row.included ? t('reserve_included') : `+ ${row.price.toLocaleString('fr-FR')} € HT`}
               </span>
             </button>
           );
@@ -3660,28 +3695,29 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
         disabled={disabled || (!rule?.includedType && !selectedOptionType)}
         onClick={() => onChange(noneSelected ? '' : '__none__')}
       >
-        <X size={15} /> Supprimer la réserve
+        <X size={15} /> {t('reserve_remove')}
       </button>
     </div>
   );
 }
 
 function FormulaIncludedBox({ open, onToggle, includedRow }) {
+  const t = useT();
   return (
     <div className={open ? 'formula-included-box open' : 'formula-included-box'}>
       <button type="button" onClick={onToggle}>
-        <span><b>!</b> Votre formule inclus :</span>
+        <span><b>!</b> {t('formula_title')}</span>
         {open ? <Minus size={16} /> : <Plus size={16} />}
       </button>
       {open && (
         <div>
           {includedRow ? (
             <>
-              <p>Une réserve {includedRow.areaLabel} est incluse dans votre formule.</p>
-              <p>Une réserve permet de stocker votre matériel, vos sacs et documents à l'abri des regards.</p>
+              <p>{t('formula_reserve_included', { area: includedRow.areaLabel })}</p>
+              <p>{t('formula_reserve_detail')}</p>
             </>
           ) : (
-            <p>Aucune réserve n'est incluse automatiquement pour cette surface.</p>
+            <p>{t('formula_reserve_none')}</p>
           )}
         </div>
       )}
@@ -3758,10 +3794,11 @@ function reserveSizeDescription(area = 0, label = '') {
 }
 
 function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onImage }) {
+  const t = useT();
   const [formulaOpen, setFormulaOpen] = useState(true);
   const rows = [
-    { side: 'left', label: 'Tête de cloison gauche', visualLabel: 'Visuel haut de cloison gauche', type: rule?.leftType, price: rule?.leftPrice },
-    { side: 'right', label: 'Tête de cloison droite', visualLabel: 'Visuel haut de cloison droite', type: rule?.rightType, price: rule?.rightPrice },
+    { side: 'left', label: t('partition_left'), visualLabel: t('partition_left'), type: rule?.leftType, price: rule?.leftPrice },
+    { side: 'right', label: t('partition_right'), visualLabel: t('partition_right'), type: rule?.rightType, price: rule?.rightPrice },
   ];
   const selectedRows = rows.filter((row) => Boolean(sides?.[row.side]));
   const selectedCount = selectedRows.length;
@@ -3789,8 +3826,8 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
             >
               <span className="reserve-choice-radio" aria-hidden="true">{selected ? <span /> : null}</span>
               <span>
-                <strong>{row.side === 'left' ? 'Gauche' : 'Droite'}</strong>
-                <small>{row.type ? (billable ? `+ ${price.toLocaleString('fr-FR')} € HT` : 'Inclus') : 'Non configurée'}</small>
+                <strong>{row.label}</strong>
+                <small>{row.type ? (billable ? `+ ${price.toLocaleString('fr-FR')} € HT` : t('color_included')) : t('partition_not_configured')}</small>
               </span>
             </button>
           );
@@ -3807,7 +3844,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
           onImage={(file) => onImage?.(row.side, file)}
         />
       )) : (
-        <div className="partition-head-empty">Sélectionnez une tête de cloison pour ajouter un visuel.</div>
+        <div className="partition-head-empty">{t('partition_select_visual')}</div>
       )}
       {uploadState?.error && <small className="partition-head-upload-error">{uploadState.error}</small>}
 
@@ -3820,23 +3857,24 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
           onChange('right', false);
         }}
       >
-        <X size={15} /> Supprimer les têtes de cloison
+        <X size={15} /> {t('partition_remove')}
       </button>
     </div>
   );
 }
 
 function PartitionHeadFormulaBox({ open, onToggle }) {
+  const t = useT();
   return (
     <div className={open ? 'formula-included-box partition-head-formula open' : 'formula-included-box partition-head-formula'}>
       <button type="button" onClick={onToggle}>
-        <span><b>!</b> Votre formule inclus :</span>
+        <span><b>!</b> {t('formula_title')}</span>
         {open ? <Minus size={16} /> : <Plus size={16} />}
       </button>
       {open && (
         <div>
-          <p>Cliquer directement sur le(s) visuel(s) puis sur le crayon pour ajouter votre logo ou visuel au format de 800 × 500 mm ht.</p>
-          <p>Pour modifier votre nom, N° ou drapeau, cliquer sur « mes informations » en haut à droite.</p>
+          <p>{t('partition_formula_detail1')}</p>
+          <p>{t('partition_formula_detail2')}</p>
         </div>
       )}
     </div>
@@ -3844,17 +3882,18 @@ function PartitionHeadFormulaBox({ open, onToggle }) {
 }
 
 function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabled = false, onImage }) {
+  const t = useT();
   const hasImage = Boolean(visual.headMainImageUrl);
   return (
     <div className="partition-head-upload-block">
       <div className="partition-head-upload-title">
         <strong>{row.visualLabel}</strong>
-        <span>800 × 500 mm</span>
+        <span>{t('partition_size')}</span>
       </div>
       <label className={hasImage ? 'partition-head-dropzone has-image' : 'partition-head-dropzone'}>
         {hasImage ? <img src={visual.headMainImageUrl} alt={row.visualLabel} /> : <FileImage size={24} />}
-        <strong>{uploading ? 'Upload...' : 'Glissez votre visuel'}</strong>
-        <span>Parcourir</span>
+        <strong>{uploading ? t('partition_uploading') : t('partition_upload_drag')}</strong>
+        <span>{t('partition_browse')}</span>
         <input
           type="file"
           accept="image/png,image/jpeg,image/webp"
@@ -3963,20 +4002,21 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
 }
 
 function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, disabled = false, onToggle, onImage }) {
+  const t = useT();
   const activeCount = surfaces.filter((surface) => covers?.[surface.id]?.enabled).length;
 
   return (
     <div className="wall-cover-card">
       <div className="wall-cover-head">
         <div>
-          <strong>Bâche sur cloisons</strong>
-          <span>245 € / ml</span>
+          <strong>{t('wall_cover_title')}</strong>
+          <span>{t('wall_cover_price')}</span>
         </div>
-        <em>{activeCount} / {surfaces.length} actives</em>
+        <em>{activeCount} / {surfaces.length} {t('wall_cover_active')}</em>
       </div>
 
       {!surfaces.length && (
-        <div className="wall-cover-empty">Aucune cloison disponible sur cette implantation.</div>
+        <div className="wall-cover-empty">{t('wall_cover_empty')}</div>
       )}
 
       {surfaces.map((surface) => {
@@ -3990,7 +4030,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, dis
               type="button"
               className={`wall-cover-toggle ${enabled ? 'active' : ''}`}
               disabled={disabled}
-              aria-label={`${enabled ? 'Retirer' : 'Activer'} ${surface.label}`}
+              aria-label={t(enabled ? 'wall_cover_toggle_remove' : 'wall_cover_toggle_add', { label: surface.label })}
               onClick={() => onToggle?.(surface.id, !enabled)}
             >
               <span />
@@ -3998,10 +4038,10 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, dis
             <div>
               <strong>{surface.label}</strong>
               <span>{formatNumber(surface.visibleWidth || surface.width)} m × {formatNumber(surface.height)} m</span>
-              <small>Format simulateur conseillé : {spec.pixelText}</small>
+              <small>{t('wall_cover_spec')} {spec.pixelText}</small>
             </div>
             <label className={`wall-cover-upload ${hasImage ? 'ready' : 'missing'}`}>
-              {uploadState.uploading === surface.id ? 'Upload...' : hasImage ? 'VISUEL' : 'Visuel à fournir'}
+              {uploadState.uploading === surface.id ? t('img_uploading') : hasImage ? t('wall_cover_ready') : t('wall_cover_missing')}
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
@@ -4022,6 +4062,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, dis
 }
 
 function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, configOptions = [], selectedOptions = {}, thick = false, onSelect, onOptionToggle, onThickChange }) {
+  const t = useT();
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
   const includedColors = displayColors.filter((color) => color.included);
@@ -4040,7 +4081,7 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
       {defaultColor && (
         <div className="carpet-locked-notice">
           <strong>!</strong>
-          <span>La couleur de la moquette standard est {defaultColor.name?.toLowerCase() || 'gris clair'}.</span>
+          <span>{t('carpet_locked', { color: defaultColor.name?.toLowerCase() || 'gris clair' })}</span>
           <em>—</em>
         </div>
       )}
@@ -4050,7 +4091,7 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
           <h4>{includedGroupLabel}</h4>
           <strong>{selectedDisplayColor.name} ({selectedDisplayColor.code})</strong>
         </div>
-        <small>{includedColors.length || 1} coloris disponible{includedColors.length > 1 ? 's' : ''} — Inclus</small>
+        <small>{t('carpet_included_count', { count: includedColors.length || 1, s: (includedColors.length || 1) > 1 ? 's' : '' })}</small>
         <div className="carpet-swatch-row">
           {(includedColors.length ? includedColors : [defaultColor]).filter(Boolean).map((color) => (
             <button
@@ -4065,17 +4106,17 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
               <span>{color.name}</span>
             </button>
           ))}
-          <b>Inclus</b>
+          <b>{t('color_included')}</b>
         </div>
         {dirtyCarpetColorCodes.includes(selectedDisplayColor.code) && (
           <div className="carpet-locked-notice footprint-warning">
             <strong>!</strong>
-            <span>Couleur de moquette sensible aux salissures et traces d'usage</span>
+            <span>{t('carpet_dirty_warning')}</span>
           </div>
         )}
       </section>
 
-      {!!optionalGroups.length && <div className="carpet-choice-separator"><span />ou<span /></div>}
+      {!!optionalGroups.length && <div className="carpet-choice-separator"><span />{t('carpet_or')}<span /></div>}
 
       {optionalGroups.map((group) => {
         const minPrice = Math.min(...group.colors.map((color) => Number(color.price || 0)).filter((price) => price > 0));
@@ -4085,17 +4126,17 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
           <section key={group.id} className={`carpet-choice-section premium ${selectedInGroup ? 'active' : ''}`}>
             <div className="carpet-choice-head">
               <h4>{colorGroupTitle(group.label, 'Moquette épaisse Salsa')}</h4>
-              <span>PREMIUM</span>
+              <span>{t('carpet_premium')}</span>
             </div>
             <p>{carpetGroupDescription(group.label)}</p>
             <div className="carpet-premium-facts">
-              <span>✦ Aspect velours</span>
-              <span>◐ Plus dense</span>
+              <span>{t('carpet_velvet')}</span>
+              <span>{t('carpet_dense')}</span>
               <span>◆ {group.colors.length} coloris</span>
             </div>
             <div className="carpet-premium-price">
-              <span>À partir de <strong>{formatNumber(price)} € /m²</strong></span>
-              <em>Pour {formatNumber(area)} m² · +{formatNumber(Math.round(price * Number(area || 0)))} €</em>
+              <span>{t('carpet_starting', { price: formatNumber(price) })}</span>
+              <em>{t('carpet_for_area', { area: formatNumber(area), extra: formatNumber(Math.round(price * Number(area || 0))) })}</em>
             </div>
             <div className="carpet-swatch-row premium">
               {group.colors.map((color) => (
@@ -4119,8 +4160,8 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
       <div className="carpet-config-options">
         <ToggleOption
           active={thick}
-          label="Moquette épaisse"
-          detail="Épaisseur 8mm, aspect velours"
+          label={t('carpet_thick_label')}
+          detail={t('carpet_thick_detail')}
           price={`+ 30 €/m² (+${Math.round(30 * Number(area || 0)).toLocaleString('fr-FR')} €)`}
           onChange={(v) => onThickChange?.(v)}
         />
@@ -4140,6 +4181,7 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
 }
 
 function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColorId = '', area = 1, disabled = false, disabledReason = '', thick = false, onEnabledChange, onSelect, onThickChange }) {
+  const t = useT();
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
   const groups = colorGroupsFromOptions(displayColors);
@@ -4156,8 +4198,8 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
     <div className={`carpet-choice-card footprint-choice-card ${!enabled ? 'disabled' : ''}`}>
       {!enabled && (
         <div className="footprint-disabled-note">
-          <span>{disabledReason || 'Empreinte retirée de la scène.'}</span>
-          <button type="button" disabled={disabled} onClick={() => onEnabledChange(true)}>La remettre</button>
+          <span>{disabledReason || t('footprint_disabled')}</span>
+          <button type="button" disabled={disabled} onClick={() => onEnabledChange(true)}>{t('footprint_restore')}</button>
         </div>
       )}
 
@@ -4173,7 +4215,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
               <h4>{colorGroupTitle(group.label, 'Moquette Rewind')}</h4>
               <strong>{referenceColor?.name} ({referenceColor?.code})</strong>
             </div>
-            <small>{includedColors.length || 1} coloris disponible{includedColors.length > 1 ? 's' : ''} — Inclus</small>
+            <small>{t('carpet_included_count', { count: includedColors.length || 1, s: (includedColors.length || 1) > 1 ? 's' : '' })}</small>
             <div className="carpet-swatch-row">
               {(includedColors.length ? includedColors : [referenceColor]).filter(Boolean).map((color) => (
                 <button
@@ -4194,10 +4236,10 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
                 {dirtyCarpetColorCodes.includes(selectedDisplayColor.code) && (
                   <div className="carpet-locked-notice footprint-warning">
                     <strong>!</strong>
-                    <span>Couleur de moquette sensible aux salissures et traces d'usage</span>
+                    <span>{t('carpet_dirty_warning')}</span>
                   </div>
                 )}
-                <small>En option {formatNumber(minPrice)} €</small>
+                <small>{t('carpet_option_from', { price: formatNumber(minPrice) })}</small>
                 <div className="carpet-swatch-row premium">
                   {paidColors.map((color) => (
                     <button
@@ -4219,7 +4261,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
         );
       })}
 
-      {!!visiblePremiumGroups.length && <div className="carpet-choice-separator"><span />ou<span /></div>}
+      {!!visiblePremiumGroups.length && <div className="carpet-choice-separator"><span />{t('carpet_or')}<span /></div>}
 
       {visiblePremiumGroups.map((group) => {
         const price = minColorPrice(group.colors);
@@ -4228,17 +4270,17 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
           <section key={group.id} className={`carpet-choice-section premium ${selectedInGroup ? 'active' : ''}`}>
             <div className="carpet-choice-head">
               <h4>{colorGroupTitle(group.label, 'Moquette épaisse Salsa')}</h4>
-              <span>PREMIUM</span>
+              <span>{t('carpet_premium')}</span>
             </div>
             <p>{carpetGroupDescription(group.label)}</p>
             <div className="carpet-premium-facts">
-              <span>✦ Aspect velours</span>
-              <span>◐ Plus dense</span>
+              <span>{t('carpet_velvet')}</span>
+              <span>{t('carpet_dense')}</span>
               <span>◆ {group.colors.length} coloris</span>
             </div>
             <div className="carpet-premium-price">
-              <span>À partir de <strong>{formatNumber(price)} €</strong></span>
-              <em>{Number(area || 0) > 1 ? `Pour ${formatNumber(area)} m² · +${formatNumber(Math.round(price * Number(area || 0)))} €` : ''}</em>
+              <span>{t('carpet_starting', { price: formatNumber(price) })}</span>
+              <em>{Number(area || 0) > 1 ? t('carpet_for_area', { area: formatNumber(area), extra: formatNumber(Math.round(price * Number(area || 0))) }) : ''}</em>
             </div>
             <div className="carpet-swatch-row premium">
               {group.colors.map((color) => (
@@ -4262,8 +4304,8 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
       <div className="carpet-config-options">
         <ToggleOption
           active={thick}
-          label="Moquette épaisse"
-          detail="Épaisseur 8mm, aspect velours"
+          label={t('carpet_thick_label')}
+          detail={t('carpet_thick_detail')}
           price={`+ 30 €/m² (+${Math.round(30 * Number(area || 0)).toLocaleString('fr-FR')} €)`}
           onChange={(v) => onThickChange?.(v)}
         />
@@ -4271,7 +4313,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
 
       {enabled && (
         <button className="footprint-remove-button" type="button" disabled={disabled} onClick={() => onEnabledChange(false)}>
-          Retirer l'empreinte moquette
+          {t('footprint_remove')}
         </button>
       )}
     </div>
@@ -6558,6 +6600,17 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           <span>Nom</span>
           <input value={draft.label || ''} onChange={(event) => setDraft({ ...draft, label: event.target.value })} />
         </label>
+
+        {!isColorGroup && (
+        <label className="asset-group-field">
+          <span>Nom EN (traduction)</span>
+          <input
+            value={draft.dimensions?.labelEn || ''}
+            placeholder={draft.label || ''}
+            onChange={(event) => setDraft({ ...draft, dimensions: { ...(draft.dimensions || {}), labelEn: event.target.value } })}
+          />
+        </label>
+        )}
 
         {!isGroupAsset && !isColorGroup && (
           <label className="asset-group-field">
@@ -9067,13 +9120,14 @@ function textureCacheUrlVariants(...urls) {
 }
 
 function SceneTextureLoaderOverlay({ loaded = 0, total = 0 }) {
+  const t = useT();
   const progress = total ? Math.round((loaded / total) * 100) : 100;
   return (
     <div className="scene-texture-loader" aria-live="polite">
       <div className="scene-texture-loader-card">
         <Sparkles size={20} />
-        <strong>Chargement de la scène 3D</strong>
-        <span>Préparation des modèles et textures… {progress}%</span>
+        <strong>{t('scene_texture_loading')}</strong>
+        <span>{t('scene_texture_progress', { progress })}</span>
         <div className="scene-texture-loader-bar"><i style={{ width: `${progress}%` }} /></div>
       </div>
     </div>
