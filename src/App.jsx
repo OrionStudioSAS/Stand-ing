@@ -895,7 +895,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       document.fonts.load('200 125px Oswald'),
       document.fonts.load('300 54px Oswald'),
       document.fonts.load('400 92px Oswald'),
-      document.fonts.load('700 36px Oswald'),
+      document.fonts.load('500 92px Oswald'),
+      document.fonts.load('700 92px Oswald'),
     ]).then(() => {
       if (!cancelled) setFontRevision((current) => current + 1);
     }).catch(() => {});
@@ -12157,17 +12158,17 @@ function smclCanvasFont(weight = 400, size = 80) {
 
 function drawSmclLeftHeadInfo(ctx, { company, aisleNumber, standNumber }) {
   const labelX = 245;
-  fitCanvasText(ctx, company, 238, 48, 690, 92, 400);
-  fitCanvasText(ctx, aisleNumber ? `ALLÉE ${aisleNumber}` : 'ALLÉE —', labelX, 192, 235, 125, 200);
-  fitCanvasText(ctx, standNumber || '—', labelX, 365, 245, 54, 300);
+  fitCanvasText(ctx, company, 238, 48, 690, 92, 700);
+  fitCanvasText(ctx, aisleNumber ? `ALLÉE ${aisleNumber}` : 'ALLÉE —', labelX, 205, 360, 92, 500);
+  fitCanvasText(ctx, standNumber || '—', labelX, 365, 360, 92, 500);
   drawSmclSalonMark(ctx, labelX, 620, 0.86);
   drawSmclPartnerMarks(ctx, labelX, 760, 0.9);
 }
 
 function drawSmclRightHeadInfo(ctx, { company, aisleNumber, standNumber }) {
-  fitCanvasText(ctx, company, 290, 48, 700, 92, 400);
-  fitCanvasText(ctx, aisleNumber ? `ALLÉE ${aisleNumber}` : 'ALLÉE —', 765, 196, 235, 125, 200);
-  fitCanvasText(ctx, standNumber || '—', 765, 365, 250, 54, 300);
+  fitCanvasText(ctx, company, 290, 48, 700, 92, 700);
+  fitCanvasText(ctx, aisleNumber ? `ALLÉE ${aisleNumber}` : 'ALLÉE —', 765, 205, 360, 92, 500);
+  fitCanvasText(ctx, standNumber || '—', 765, 365, 360, 92, 500);
   drawSmclSalonMark(ctx, 770, 620, 0.86);
   drawSmclPartnerMarks(ctx, 770, 760, 0.9);
 }
