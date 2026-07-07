@@ -10221,8 +10221,8 @@ function applyWallPlacementRule(item, width, depth, layout) {
     'back-center': (range.min + range.max) / 2,
     'front-left': wall === 'left' ? range.max : range.min,
     'front-right': wall === 'right' ? range.max : range.max,
-    'outer-left': range.min,
-    'outer-right': wall === 'right' ? range.min : range.max,
+    'outer-left': wall === 'left' ? range.max : range.min,
+    'outer-right': wall === 'right' ? range.max : range.max,
   };
   const axis = snapWallAxis(axisByRule[rule.id] ?? range.min);
 
