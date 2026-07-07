@@ -2829,7 +2829,7 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
       </div>
       <div className="marketplace-card-body">
         <strong>{label}</strong>
-        <em>{price ? t('market_from_price', { price: price.toLocaleString('fr-FR') }) : t('market_included')}</em>
+        {price ? <em>{t('market_from_price', { price: price.toLocaleString('fr-FR') })}</em> : null}
         <small>{marketplaceItemSubtitle(entry, category.label)}</small>
         {billableCount > 0 ? (
           <div className="marketplace-card-counter">
