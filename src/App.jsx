@@ -61,6 +61,7 @@ const carpetFootprintOverflow = 0.2;
 const collisionPadding = 0.04;
 const partitionHeadEdgeInset = 0.02;
 const partitionHeadBackInset = 0.04;
+const partitionHeadWallGap = 0.02;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
@@ -10682,9 +10683,12 @@ function wallItemCenterY(item) {
 function wallMountedNormalOffset(item, objectSurface = false) {
   if (isPosterItem(item)) return (objectSurface ? wallThickness / 2 : wallThickness) + 0.006;
   if (item?.type === 'screen') return wallThickness + screenDepth / 2;
+  if (isPartitionHeadItem(item)) {
+    const bounds = itemGroupBounds(item);
+    return wallThickness + partitionHeadWallGap - Number(bounds.minZ || 0);
+  }
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
-  const extraOffset = isPartitionHeadItem(item) ? 0.012 : 0;
-  return wallThickness + Math.max(0.02, depth / 2) + extraOffset;
+  return wallThickness + Math.max(0.02, depth / 2);
 }
 
 function posterObjectSurfaceRegion(item, surface) {
