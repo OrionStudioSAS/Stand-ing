@@ -74,7 +74,7 @@ const partitionHeadEdgeInset = 0.02;
 const partitionHeadBackInset = 0.04;
 const partitionHeadWallGap = 0.02;
 const partitionHeadWallCoverInset = 0.13;
-const partitionHeadInteriorOffset = 0.13;
+const partitionHeadWallAxisInset = 0.13;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
@@ -10359,7 +10359,8 @@ function applyWallPlacementRule(item, width, depth, layout) {
     'outer-left': wall === 'left' ? range.max : range.min,
     'outer-right': wall === 'right' ? range.max : range.max,
   };
-  const axis = snapWallAxis(axisByRule[rule.id] ?? range.min);
+  const rawAxis = axisByRule[rule.id] ?? range.min;
+  const axis = smclPartitionHeadWallAxis(item, wall, rawAxis, range);
 
   return {
     ...item,
@@ -10372,6 +10373,19 @@ function applyWallPlacementRule(item, width, depth, layout) {
     wallSide: null,
     wallSurface: null,
   };
+}
+
+function smclPartitionHeadWallAxis(item, wall, rawAxis, range) {
+  if (!isSmclPartitionHeadItem(item)) return snapWallAxis(rawAxis);
+  const axis = Number(rawAxis || 0);
+  const middle = (Number(range.min || 0) + Number(range.max || 0)) / 2;
+  if (wall === 'back') {
+    const side = item?.dimensions?.smclHeadSide || item?.options?.partitionHeadSide || smclPartitionHeadSide(item);
+    const direction = side === 'right' ? -1 : 1;
+    return clamp(Number((axis + direction * partitionHeadWallAxisInset).toFixed(2)), range.min, range.max);
+  }
+  const direction = axis >= middle ? -1 : 1;
+  return clamp(Number((axis + direction * partitionHeadWallAxisInset).toFixed(2)), range.min, range.max);
 }
 
 function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true) {
@@ -10819,8 +10833,7 @@ function wallMountedNormalOffset(item, objectSurface = false) {
   if (item?.type === 'screen') return wallThickness + screenDepth / 2;
   if (isPartitionHeadItem(item)) {
     const bounds = itemGroupBounds(item);
-    const interiorOffset = isSmclPartitionHeadItem(item) ? partitionHeadInteriorOffset : 0;
-    return wallThickness + partitionHeadWallGap + interiorOffset - Number(bounds.minZ || 0);
+    return wallThickness + partitionHeadWallGap - Number(bounds.minZ || 0);
   }
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
   return wallThickness + Math.max(0.02, depth / 2);
