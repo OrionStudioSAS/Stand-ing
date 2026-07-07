@@ -765,6 +765,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [items, setItems] = useState(() => (initialScene.items || []).map((item) => constrainItem(item, initialWidth, initialDepth, initialLayout)));
   const [selectedId, setSelectedId] = useState(() => initialScene.items?.[0]?.id || null);
   const [draggingId, setDraggingId] = useState(null);
+  const [orbitControlsActive, setOrbitControlsActive] = useState(false);
   const [technicalFloorRampDragging, setTechnicalFloorRampDragging] = useState(false);
   const [language, setLanguage] = useState(initialOptions.language || 'fr');
   const [headerPanel, setHeaderPanel] = useState(null);
@@ -1517,6 +1518,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       <section className="configurator-stage">
         <Canvas
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
+          dpr={[1, 1.5]}
           className={sceneCanvasClassName}
           shadows
           onPointerUp={() => {
@@ -1544,6 +1546,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 draggingId={draggingId}
                 setDraggingId={setDraggingId}
                 interactive={!readOnly}
+                hoverEnabled={!orbitControlsActive}
                 canEditLockedItems={isAdminViewer}
                 onDragMove={moveDraggedItem}
                 viewAngle={viewAngle}
@@ -1572,6 +1575,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             maxDistance={11}
             enablePan
             enabled={!draggingId && !technicalFloorRampDragging}
+            onStart={() => setOrbitControlsActive(true)}
+            onEnd={() => setOrbitControlsActive(false)}
           />
         </Canvas>
 
@@ -5263,6 +5268,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [items, setItems] = useState(() => initialScene.items.map((item) => constrainItem(item, initialWidth, initialDepth, initialLayout)));
   const [selectedId, setSelectedId] = useState(initialScene.items[0]?.id || null);
   const [draggingId, setDraggingId] = useState(null);
+  const [orbitControlsActive, setOrbitControlsActive] = useState(false);
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true }));
   const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
@@ -5365,6 +5371,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       <section className="preset-3d-stage">
         <Canvas
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
+          dpr={[1, 1.5]}
           className={!presetAssetsReady ? 'scene-canvas-loading' : ''}
           shadows
           onPointerUp={() => setDraggingId(null)}
@@ -5385,6 +5392,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
               setSelectedId={setSelectedId}
               draggingId={draggingId}
               setDraggingId={setDraggingId}
+              hoverEnabled={!orbitControlsActive}
               canEditLockedItems
               onDragMove={moveDraggedItem}
               viewAngle={35}
@@ -5396,7 +5404,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
             )}
             <ContactShadows opacity={0.12} scale={12} blur={2.8} far={5} position={[0, -0.01, 0]} />
           </Suspense>
-          <OrbitControls makeDefault target={[0, 0.7, 0]} minPolarAngle={Math.PI / 5.2} maxPolarAngle={Math.PI / 2.25} minDistance={4} maxDistance={11} enablePan enabled={!draggingId} />
+          <OrbitControls makeDefault target={[0, 0.7, 0]} minPolarAngle={Math.PI / 5.2} maxPolarAngle={Math.PI / 2.25} minDistance={4} maxDistance={11} enablePan enabled={!draggingId} onStart={() => setOrbitControlsActive(true)} onEnd={() => setOrbitControlsActive(false)} />
         </Canvas>
 
         {!presetAssetsReady && <SceneTextureLoaderOverlay loaded={presetLoadProgress.loaded} total={presetLoadProgress.total} />}
@@ -10806,7 +10814,7 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
   };
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, canEditLockedItems = false, visualContext = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
   const cameraPivot = useMemo(() => {
@@ -10826,7 +10834,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   };
 
   const setItemHover = (itemId, hovered) => {
-    if (!interactive || draggingId) return;
+    if (!interactive || !hoverEnabled || draggingId) return;
     setHoveredId((current) => (hovered ? itemId : (current === itemId ? null : current)));
   };
 
@@ -10855,7 +10863,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
           hovered={item.id === hoveredId}
           dragging={item.id === draggingId}
           onSelect={() => interactive && setSelectedId(item.id)}
-          onHover={(hovered) => setItemHover(item.id, hovered)}
+          onHover={hoverEnabled ? ((hovered) => setItemHover(item.id, hovered)) : null}
           onDragStart={(event) => {
             event.stopPropagation();
             if (!interactive) return;
@@ -11434,8 +11442,8 @@ function SceneItem({ item, items = [], selected, hovered, dragging, width, depth
       position={[item.x, floorItemBaseY(item), item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
-      onPointerOver={(event) => { event.stopPropagation(); onHover(true); }}
-      onPointerOut={(event) => { event.stopPropagation(); onHover(false); }}
+      onPointerOver={onHover ? ((event) => { event.stopPropagation(); onHover(true); }) : undefined}
+      onPointerOut={onHover ? ((event) => { event.stopPropagation(); onHover(false); }) : undefined}
       onPointerDown={onDragStart}
       onPointerUp={onDragEnd}
       onPointerMove={(event) => {
@@ -11454,8 +11462,8 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, onSele
       position={[item.x, floorItemBaseY(item), item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
-      onPointerOver={(event) => { event.stopPropagation(); onHover(true); }}
-      onPointerOut={(event) => { event.stopPropagation(); onHover(false); }}
+      onPointerOver={onHover ? ((event) => { event.stopPropagation(); onHover(true); }) : undefined}
+      onPointerOut={onHover ? ((event) => { event.stopPropagation(); onHover(false); }) : undefined}
       onPointerDown={onDragStart}
       onPointerUp={onDragEnd}
       onPointerMove={(event) => {
@@ -11590,14 +11598,12 @@ function GlbModel({ item, selected, hovered, visualContext }) {
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item, { flipY: false }) : null
   ), [item.type, item.label, item.modelUrl, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
   const model = useMemo(() => prepareLoadedModel(gltf.scene, item, {
-    selected,
-    hovered,
     isGlb: true,
     customImageTexture,
     counterColorTexture,
     mainImageTexture,
     exhibitorTexture,
-  }), [gltf, item, selected, hovered, customImageTexture, counterColorTexture, mainImageTexture, exhibitorTexture]);
+  }), [gltf, item, customImageTexture, counterColorTexture, mainImageTexture, exhibitorTexture]);
   return <primitive object={model} dispose={null} />;
 }
 
@@ -11655,9 +11661,7 @@ function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, cust
     customImageTexture,
     counterColorTexture,
     exhibitorTexture,
-    selected,
-    hovered,
-  }), [obj, item, mainImageTexture, customImageTexture, counterColorTexture, exhibitorTexture, selected, hovered]);
+  }), [obj, item, mainImageTexture, customImageTexture, counterColorTexture, exhibitorTexture]);
 
   return <primitive object={model} dispose={null} />;
 }
@@ -11779,7 +11783,6 @@ function prepareLoadedModel(source, item = null, textureOptions = {}) {
       child.receiveShadow = true;
       child.material = cloneMeshMaterial(child.material);
       child.material = applyItemOptionMaterials(child.material, item, textureOptions, child.name);
-      child.material = applyVisualStateMaterial(child.material, textureOptions);
     }
   });
   return centerModel(clone, item);
@@ -12580,8 +12583,8 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
       position={offset}
       rotation={[0, rotation, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
-      onPointerOver={(event) => { event.stopPropagation(); onHover(true); }}
-      onPointerOut={(event) => { event.stopPropagation(); onHover(false); }}
+      onPointerOver={onHover ? ((event) => { event.stopPropagation(); onHover(true); }) : undefined}
+      onPointerOut={onHover ? ((event) => { event.stopPropagation(); onHover(false); }) : undefined}
       onPointerDown={onDragStart}
       onPointerUp={onDragEnd}
       onPointerMove={(event) => {
