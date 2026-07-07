@@ -842,6 +842,37 @@ export async function uploadObjectAssetThumbnail(asset, file) {
   };
 }
 
+export async function uploadObjectAssetBatPicto(asset, file) {
+  if (!supabase) throw new Error('Supabase non configure.');
+  if (!asset?.type) throw new Error('Objet introuvable.');
+  if (!file || !isProfileImageFile(file)) throw new Error('Selectionne une image JPG, PNG ou WebP.');
+
+  const bucket = supabase.storage.from('object-assets');
+  const extension = file.name.toLowerCase().match(/\.([a-z0-9]{2,5})$/)?.[1] || 'jpg';
+  const path = `${asset.type}/bat-picto-${Date.now().toString(36)}.${extension}`;
+  const { error } = await bucket.upload(path, file, {
+    cacheControl: '31536000',
+    contentType: guessContentType(file),
+    upsert: true,
+  });
+  if (error) throw error;
+  const { data } = bucket.getPublicUrl(path);
+  const previousPath = asset.dimensions?.batPictoPath;
+  if (previousPath && previousPath !== path) {
+    bucket.remove([previousPath]).then(({ error: rmError }) => {
+      if (rmError) console.warn('Ancien picto BAT non supprime', rmError);
+    });
+  }
+  return {
+    ...asset,
+    dimensions: {
+      ...(asset.dimensions || {}),
+      batPictoUrl: data.publicUrl,
+      batPictoPath: path,
+    },
+  };
+}
+
 export async function uploadColorGroupFolder(files) {
   if (!supabase) throw new Error('Supabase non configure.');
   const fileList = Array.from(files || []).filter((file) => isProfileImageFile(file));

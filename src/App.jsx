@@ -39,7 +39,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import './styles.css';
 
@@ -1774,6 +1774,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onCounterOptions={updateItemOptions}
             onCounterVariant={updateIncludedCounterVariant}
             onSelectCounter={setSelectedId}
+            isAdminViewer={isAdminViewer}
           />
         )}
       </aside>
@@ -2611,6 +2612,7 @@ function OptionsStepPanel({
   onCounterOptions,
   onCounterVariant,
   onSelectCounter,
+  isAdminViewer = false,
 }) {
   return (
     <>
@@ -2668,6 +2670,7 @@ function OptionsStepPanel({
           onImage={onWallCoverImage}
         />
       </OptionAccordion>
+      {isAdminViewer && (
       <OptionAccordion title="Plancher technique" icon={<Ruler size={16} />} open={openOptions.plancher} onToggle={() => toggleOption('plancher')}>
         <TechnicalFloorOptionCard
           floorType={technicalFloorType}
@@ -2679,6 +2682,7 @@ function OptionsStepPanel({
           onTrimType={onTechnicalFloorTrimType}
         />
       </OptionAccordion>
+      )}
       <OptionAccordion title="Spots LED" icon={<Sparkles size={16} />} open={openOptions.led} onToggle={() => toggleOption('led')}>
         <LedRailOptionCard
           enabled={ledRailsEnabled}
@@ -6171,6 +6175,8 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const [draft, setDraft] = useState(asset);
   const [thumbnailUploading, setThumbnailUploading] = useState(false);
   const [thumbnailError, setThumbnailError] = useState('');
+  const [batPictoUploading, setBatPictoUploading] = useState(false);
+  const [batPictoError, setBatPictoError] = useState('');
   const [groupRows, setGroupRows] = useState(() => assetToGroupRows(asset));
   const [selectedGroupRowUid, setSelectedGroupRowUid] = useState(null);
   const salons = getSalonRows(scenes).map((salon) => salon.title);
@@ -6199,6 +6205,8 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
     setDraft(asset);
     setThumbnailUploading(false);
     setThumbnailError('');
+    setBatPictoUploading(false);
+    setBatPictoError('');
     setGroupRows(assetToGroupRows(asset));
     setVariantAssetTypes(asset.dimensions?.variantAssetTypes || []);
     setVariantOptionLinks(asset.dimensions?.variantOptionLinks || []);
@@ -6479,6 +6487,21 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
     }
   };
 
+  const changeBatPicto = async (file) => {
+    if (!file) return;
+    setBatPictoUploading(true);
+    setBatPictoError('');
+    try {
+      const updated = await uploadObjectAssetBatPicto(draft, file);
+      const saved = await onSave(updated);
+      setDraft(saved);
+    } catch (error) {
+      setBatPictoError(error.message || "Upload du picto impossible.");
+    } finally {
+      setBatPictoUploading(false);
+    }
+  };
+
   return (
     <div className="asset-drawer-layer">
       <aside className="asset-drawer">
@@ -6509,6 +6532,27 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             }}
           />
         </label>
+
+        {!isColorGroup && !isVariantGroup && (
+        <label className="asset-thumbnail-edit">
+          <FileImage size={18} />
+          <span>
+            <strong>{batPictoUploading ? "Picto en cours d'envoi..." : "Picto plan BAT"}</strong>
+            <small>{draft.dimensions?.batPictoUrl ? "Remplacer le picto affiché sur le plan technique BAT." : "Ajouter un picto pour le plan technique BAT (remplace la vue 3D)."}</small>
+            {draft.dimensions?.batPictoUrl && !batPictoUploading && <em className="bat-picto-ok">Picto importé ✓</em>}
+            {batPictoError && <em>{batPictoError}</em>}
+          </span>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            disabled={batPictoUploading}
+            onChange={(event) => {
+              changeBatPicto(event.target.files?.[0] || null);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        )}
 
         <label className="asset-group-field">
           <span>Nom</span>
