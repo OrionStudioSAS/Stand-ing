@@ -12050,7 +12050,7 @@ function normalizeMaterialName(name = '') {
 
 function createPartitionHeadInfoTexture(visualContext = {}, item = {}, options = {}) {
   if (typeof document === 'undefined') return null;
-  if (isSmclPartitionHeadItem(item)) return createSmclPartitionHeadInfoTexture(visualContext, options);
+  if (isSmclPartitionHeadItem(item)) return createSmclPartitionHeadInfoTexture(visualContext, item, options);
 
   const canvas = document.createElement('canvas');
   // Same pixel format as the original _10.jpg so the SketchUp UVs keep lining up.
@@ -12082,7 +12082,7 @@ function createPartitionHeadInfoTexture(visualContext = {}, item = {}, options =
   return texture;
 }
 
-function createSmclPartitionHeadInfoTexture(visualContext = {}, options = {}) {
+function createSmclPartitionHeadInfoTexture(visualContext = {}, item = {}, options = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = 1181;
   canvas.height = 827;
@@ -12091,22 +12091,83 @@ function createSmclPartitionHeadInfoTexture(visualContext = {}, options = {}) {
   const aisleNumber = String(visualContext?.aisleNumber || '').replace(/^All[ée]e?\s*/i, '').trim().toUpperCase();
   const standNumber = String(visualContext?.standNumber || '—').replace(/^Stand\s+/i, '').trim().toUpperCase();
   const sectorColor = smclSectorColor(visualContext?.sector);
+  const side = smclPartitionHeadSide(item);
+  const isRight = side === 'right';
 
   ctx.fillStyle = sectorColor;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#ffffff';
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
-  fitCanvasText(ctx, company, 238, 47, 670, 95);
-  fitCanvasText(ctx, aisleNumber ? `ALLÉE ${aisleNumber}` : 'ALLÉE —', 245, 202, 430, 130);
-  fitCanvasText(ctx, standNumber || '—', 245, 365, 420, 70);
-  ctx.font = '900 42px Arial, sans-serif';
-  ctx.fillText('salon', 285, 630);
-  ctx.fillText('des maires', 285, 672);
-  ctx.font = '700 22px Arial, sans-serif';
-  ctx.fillText('et des collectivités locales', 285, 720);
+
+  if (isRight) {
+    drawSmclRightHeadInfo(ctx, { company, aisleNumber, standNumber });
+  } else {
+    drawSmclLeftHeadInfo(ctx, { company, aisleNumber, standNumber });
+  }
 
   return prepareDynamicTexture(new CanvasTexture(canvas), options);
+}
+
+function smclCanvasFont(weight = 400, size = 80) {
+  return `${weight} ${size}px Oswald, "Arial Narrow", "Helvetica Neue Condensed", Impact, Arial, sans-serif`;
+}
+
+function drawSmclLeftHeadInfo(ctx, { company, aisleNumber, standNumber }) {
+  const labelX = 245;
+  fitCanvasText(ctx, company, 238, 48, 690, 92, 400);
+  fitCanvasText(ctx, aisleNumber ? `ALLÉE ${aisleNumber}` : 'ALLÉE —', labelX, 192, 235, 125, 200);
+  fitCanvasText(ctx, standNumber || '—', labelX, 365, 245, 54, 300);
+  drawSmclSalonMark(ctx, labelX, 620, 0.86);
+  drawSmclPartnerMarks(ctx, labelX, 760, 0.9);
+}
+
+function drawSmclRightHeadInfo(ctx, { company, aisleNumber, standNumber }) {
+  fitCanvasText(ctx, company, 290, 48, 700, 92, 400);
+  fitCanvasText(ctx, aisleNumber ? `ALLÉE ${aisleNumber}` : 'ALLÉE —', 765, 196, 235, 125, 200);
+  fitCanvasText(ctx, standNumber || '—', 765, 365, 250, 54, 300);
+  drawSmclSalonMark(ctx, 770, 620, 0.86);
+  drawSmclPartnerMarks(ctx, 770, 760, 0.9);
+}
+
+function drawSmclSalonMark(ctx, x, y, scale = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, 42, 64);
+  ctx.fillStyle = '#397084';
+  ctx.fillRect(9, 0, 15, 28);
+  ctx.fillStyle = '#c34e3d';
+  ctx.beginPath();
+  ctx.moveTo(9, 51);
+  ctx.lineTo(24, 37);
+  ctx.lineTo(24, 61);
+  ctx.lineTo(9, 61);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = smclCanvasFont(700, 36);
+  ctx.fillText('salon', 52, -3);
+  ctx.font = smclCanvasFont(700, 36);
+  ctx.fillText('des maires', 52, 25);
+  ctx.font = smclCanvasFont(300, 17);
+  ctx.fillText('et des collectivités locales', 52, 54);
+  ctx.restore();
+}
+
+function drawSmclPartnerMarks(ctx, x, y, scale = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = smclCanvasFont(400, 20);
+  ctx.fillText('/// infoprodigital', 0, 0);
+  ctx.font = smclCanvasFont(700, 20);
+  ctx.fillText('✹amf', 178, 0);
+  ctx.font = smclCanvasFont(300, 8);
+  ctx.fillText('ASSOCIATION DES MAIRES', 180, 21);
+  ctx.restore();
 }
 
 function smclSectorColor(sector = '') {
@@ -12167,10 +12228,10 @@ function drawLanguageFlag(ctx, language, x, y, width, height) {
   ctx.restore();
 }
 
-function fitCanvasText(ctx, text, x, y, maxWidth, baseSize) {
+function fitCanvasText(ctx, text, x, y, maxWidth, baseSize, weight = 900) {
   let size = baseSize;
   do {
-    ctx.font = `900 ${size}px "Arial Narrow", Impact, Arial, sans-serif`;
+    ctx.font = smclCanvasFont(weight, size);
     size -= 2;
   } while (ctx.measureText(text).width > maxWidth && size > 24);
   ctx.fillText(text, x, y);
