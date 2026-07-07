@@ -1245,6 +1245,7 @@ select {
 
 .header-popover-layer {
   display: flex;
+  align-items: flex-start;
   justify-content: flex-end;
   padding: 10px 62px 0 0;
 }
