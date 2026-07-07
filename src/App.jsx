@@ -73,7 +73,7 @@ const collisionPadding = 0.04;
 const partitionHeadEdgeInset = 0.02;
 const partitionHeadBackInset = 0.04;
 const partitionHeadWallGap = 0.02;
-const partitionHeadWallCoverInset = 0.13;
+const partitionHeadWallCoverWidth = 0.6;
 const partitionHeadWallAxisInset = 0;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
@@ -10921,17 +10921,21 @@ function wallMountedBlocker(item, wall, width, depth, margin = 0.1) {
 }
 
 function wallCoverPartitionHeadBlocker(item, wall, width, depth, margin = 0.1) {
-  // For wall-cover sizing, SMCL partition heads should only reserve the
-  // thickness/return at the edge of the wall, not the full oversized sign.
   if (margin !== 0 || !isSmclPartitionHeadItem(item)) return null;
+  const coverWidth = Number(smclPartitionHeadPlacementBounds(item)?.width || partitionHeadWallCoverWidth);
+  const halfWidth = coverWidth / 2;
   const itemWall = item.wall || 'back';
   const side = smclPartitionHeadSide(item);
-  if (wall === 'back') {
-    if (itemWall === 'left' || side === 'left') return { min: -width / 2, max: -width / 2 + partitionHeadWallCoverInset };
-    if (itemWall === 'right' || side === 'right') return { min: width / 2 - partitionHeadWallCoverInset, max: width / 2 };
+  if (itemWall === wall) {
+    const axis = Number(item.x || 0);
+    return { min: axis - halfWidth, max: axis + halfWidth };
   }
-  if (wall === 'left' && (itemWall === 'left' || side === 'left')) return { min: depth / 2 - partitionHeadWallCoverInset, max: depth / 2 };
-  if (wall === 'right' && (itemWall === 'right' || side === 'right')) return { min: depth / 2 - partitionHeadWallCoverInset, max: depth / 2 };
+  if (wall === 'back') {
+    if (itemWall === 'left' || side === 'left') return { min: -width / 2, max: -width / 2 + coverWidth };
+    if (itemWall === 'right' || side === 'right') return { min: width / 2 - coverWidth, max: width / 2 };
+  }
+  if (wall === 'left' && (itemWall === 'left' || side === 'left')) return { min: depth / 2 - coverWidth, max: depth / 2 };
+  if (wall === 'right' && (itemWall === 'right' || side === 'right')) return { min: depth / 2 - coverWidth, max: depth / 2 };
   return null;
 }
 
