@@ -10191,6 +10191,7 @@ function applyPlacementRule(item, width, depth, layout) {
 
 
 function placementRuleSideClearance(item = {}) {
+  if (isSmclPartitionHeadItem(item)) return 0;
   return wallThickness + (isPartitionHeadItem(item) ? partitionHeadEdgeInset : 0);
 }
 
@@ -10260,6 +10261,9 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
   }
 
   const positionedItem = applyPlacementRule(item, width, depth, layout);
+  if (isSmclPartitionHeadItem(positionedItem) && itemPlacementLocked(positionedItem)) {
+    return { ...positionedItem, y: floorItemBaseY(positionedItem) };
+  }
   const bounds = itemPlacementBounds(positionedItem);
   const placement = closestPlacementInRegions(positionedItem, placementRegions(width, depth, layout, bounds, carpetFootprintEnabled && !isCeilingMountedItem(positionedItem)));
 
