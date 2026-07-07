@@ -10572,9 +10572,9 @@ function smclPartitionHeadPlacementBounds(item = {}) {
   const savedBounds = item?.dimensions?.placementBounds;
   if (savedBounds?.source === 'legacy-smcl-head') return null;
   const side = item?.dimensions?.smclHeadSide || smclPartitionHeadSide(item);
-  const common = { minZ: -0.055, maxZ: -0.014, depth: 0.041, width: 0.6, height: 2.4, source: 'smcl-head-fallback' };
-  if (side === 'right') return { minX: -0.262075, maxX: 0.337925, ...common, centerX: 0.037925, centerZ: -0.0345 };
-  return { minX: -0.33793, maxX: 0.26207, ...common, centerX: -0.03793, centerZ: -0.0345 };
+  const common = { minX: -0.3, maxX: 0.3, minZ: -0.0205, maxZ: 0.0205, depth: 0.041, width: 0.6, height: 2.4, centerX: 0, centerZ: 0, source: 'smcl-head-fallback' };
+  if (side === 'right') return common;
+  return common;
 }
 
 function itemDefaultSize(item) {
