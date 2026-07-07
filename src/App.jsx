@@ -73,6 +73,7 @@ const collisionPadding = 0.04;
 const partitionHeadEdgeInset = 0.02;
 const partitionHeadBackInset = 0.04;
 const partitionHeadWallGap = 0.02;
+const partitionHeadWallCoverInset = 0.13;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
@@ -990,8 +991,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     [autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, ledRailOverrides],
   );
   const wallCoverSurfaces = useMemo(
-    () => wallCoverSurfaceOptions(layout, width, depth, [...manualHydratedItems, ...automaticReserveItems]),
-    [layout, width, depth, manualHydratedItems, automaticReserveItems],
+    () => wallCoverSurfaceOptions(layout, width, depth, [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems]),
+    [layout, width, depth, manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems],
   );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems]);
   const includedCounterItems = useMemo(() => sceneItems.filter((item) => isWoodReceptionDeskItem(item) && isIncludedSceneItem(item)), [sceneItems]);
@@ -10896,10 +10897,27 @@ function groupChildrenWallBlockers(group, wall, width, depth, margin) {
 
 function wallMountedBlocker(item, wall, width, depth, margin = 0.1) {
   if (!itemCollisionEnabled(item)) return null;
+  const coverBlocker = wallCoverPartitionHeadBlocker(item, wall, width, depth, margin);
+  if (coverBlocker) return coverBlocker;
   if ((item.wall || 'back') !== wall) return null;
   const axis = Number(item.x || 0);
   const itemWidth = wallItemMetrics(item, [], width, depth).width;
   return { min: axis - itemWidth / 2 - margin, max: axis + itemWidth / 2 + margin };
+}
+
+function wallCoverPartitionHeadBlocker(item, wall, width, depth, margin = 0.1) {
+  // For wall-cover sizing, SMCL partition heads should only reserve the
+  // thickness/return at the edge of the wall, not the full oversized sign.
+  if (margin !== 0 || !isSmclPartitionHeadItem(item)) return null;
+  const itemWall = item.wall || 'back';
+  const side = smclPartitionHeadSide(item);
+  if (wall === 'back') {
+    if (itemWall === 'left' || side === 'left') return { min: -width / 2, max: -width / 2 + partitionHeadWallCoverInset };
+    if (itemWall === 'right' || side === 'right') return { min: width / 2 - partitionHeadWallCoverInset, max: width / 2 };
+  }
+  if (wall === 'left' && (itemWall === 'left' || side === 'left')) return { min: depth / 2 - partitionHeadWallCoverInset, max: depth / 2 };
+  if (wall === 'right' && (itemWall === 'right' || side === 'right')) return { min: depth / 2 - partitionHeadWallCoverInset, max: depth / 2 };
+  return null;
 }
 
 function floorWallBlocker(item, wall, width, depth, margin = 0.1) {
