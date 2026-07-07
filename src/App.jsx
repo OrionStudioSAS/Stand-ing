@@ -74,6 +74,7 @@ const partitionHeadEdgeInset = 0.02;
 const partitionHeadBackInset = 0.04;
 const partitionHeadWallGap = 0.02;
 const partitionHeadWallCoverInset = 0.13;
+const partitionHeadInteriorOffset = 0.13;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
@@ -10818,7 +10819,8 @@ function wallMountedNormalOffset(item, objectSurface = false) {
   if (item?.type === 'screen') return wallThickness + screenDepth / 2;
   if (isPartitionHeadItem(item)) {
     const bounds = itemGroupBounds(item);
-    return wallThickness + partitionHeadWallGap - Number(bounds.minZ || 0);
+    const interiorOffset = isSmclPartitionHeadItem(item) ? partitionHeadInteriorOffset : 0;
+    return wallThickness + partitionHeadWallGap + interiorOffset - Number(bounds.minZ || 0);
   }
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
   return wallThickness + Math.max(0.02, depth / 2);
