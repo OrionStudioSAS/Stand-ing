@@ -769,6 +769,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [orbitControlsActive, setOrbitControlsActive] = useState(false);
   const [technicalFloorRampDragging, setTechnicalFloorRampDragging] = useState(false);
   const [language, setLanguage] = useState(initialOptions.language || 'fr');
+  const [fontRevision, setFontRevision] = useState(0);
   const [headerPanel, setHeaderPanel] = useState(null);
   const introStorageKey = useMemo(() => `standing-config-intro:${initialScene.id || initialScene.share_token || initialScene.project_name || 'scene'}`, [initialScene.id, initialScene.share_token, initialScene.project_name]);
   const [activeStep, setActiveStepValue] = useState(() => {
@@ -878,13 +879,28 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
   const readOnly = false;
   const sceneVisualContext = useMemo(() => ({
+    fontRevision,
     language,
     company: sceneExhibitorCompanyName(initialScene, clientInfo, contactDetails),
     standNumber: sceneStandNumber(initialScene, contactDetails, standLabel),
     aisleNumber: sceneAisleNumber(initialScene, contactDetails),
     hall: sceneHallLabel(initialScene, contactDetails),
     sector: sceneSectorLabel(initialScene),
-  }), [language, initialScene, clientInfo, contactDetails, standLabel]);
+  }), [fontRevision, language, initialScene, clientInfo, contactDetails, standLabel]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (typeof document === 'undefined' || !document.fonts?.load) return undefined;
+    Promise.all([
+      document.fonts.load('200 125px Oswald'),
+      document.fonts.load('300 54px Oswald'),
+      document.fonts.load('400 92px Oswald'),
+      document.fonts.load('700 36px Oswald'),
+    ]).then(() => {
+      if (!cancelled) setFontRevision((current) => current + 1);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     setItems((current) => current.map((item) => constrainItem(item, width, depth, layout, effectiveCarpetFootprintEnabled)));
@@ -11600,7 +11616,7 @@ function GlbModel({ item, selected, hovered, visualContext }) {
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item) });
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item, { flipY: false }) : null
-  ), [item.type, item.label, item.modelUrl, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
+  ), [item.type, item.label, item.modelUrl, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
   const model = useMemo(() => prepareLoadedModel(gltf.scene, item, {
     isGlb: true,
     customImageTexture,
@@ -11638,7 +11654,7 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '');
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item) : null
-  ), [item.type, item.label, item.modelUrl, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
+  ), [item.type, item.label, item.modelUrl, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
   const materials = useMtlMaterials(materialUrl, item);
   const mtlTexturesReady = useMtlTexturePreload(materials, item, materialUrl);
 
@@ -11923,7 +11939,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   }
   const smclExhibitorTexture = smclExhibitorTextureForMaterial(textureOptions.exhibitorTexture, materialName, material, item);
   if (smclExhibitorTexture) {
-    return materialWithTexture(material, smclExhibitorTexture);
+    return materialWithTexture(material, smclExhibitorTexture, { luminous: true });
   }
   if (textureOptions.exhibitorTexture && !isSmclPartitionHeadItem(item) && shouldUseExhibitorHeadTexture(materialName, meshName, item, material)) {
     return materialWithTexture(material, textureOptions.exhibitorTexture);
@@ -11994,11 +12010,8 @@ function smclExhibitorTextureForMaterial(exhibitorTexture, materialName = '', ma
 
 function smclInfoLayoutSideForMaterial(materialName = '', material = null, item = {}) {
   if (!isSmclPartitionHeadItem(item)) return null;
-  const itemSide = smclPartitionHeadSide(item);
-  const mirroredSide = itemSide === 'right' ? 'left' : 'right';
-  const normalSide = itemSide === 'right' ? 'right' : 'left';
-  if (materialName === '_' || materialMapMatchesFile(material, '_.jpg')) return mirroredSide;
-  if (materialName === '_51' || materialMapMatchesFile(material, '_51.jpg')) return normalSide;
+  if (materialName === '_' || materialMapMatchesFile(material, '_.jpg')) return 'left';
+  if (materialName === '_51' || materialMapMatchesFile(material, '_51.jpg')) return 'right';
   return null;
 }
 
@@ -12029,11 +12042,19 @@ function materialMapFileName(material = null) {
   return safeDecodeUri(String(source || '').replaceAll('\\', '/').split('/').pop() || '');
 }
 
-function materialWithTexture(material, texture) {
+function materialWithTexture(material, texture, options = {}) {
   const next = material.clone?.() || material;
   next.map = texture;
   next.transparent = false;
   if (next.color?.set) next.color.set('#ffffff');
+  if (options.luminous) {
+    if (next.emissive?.set) next.emissive.set('#ffffff');
+    if ('emissiveMap' in next) next.emissiveMap = texture;
+    if ('emissiveIntensity' in next) next.emissiveIntensity = 0.42;
+    if ('toneMapped' in next) next.toneMapped = false;
+    if ('roughness' in next) next.roughness = 0.9;
+    if ('metalness' in next) next.metalness = 0;
+  }
   next.needsUpdate = true;
   return next;
 }
