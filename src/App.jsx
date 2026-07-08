@@ -80,6 +80,17 @@ const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
 const turntableRotationSpeed = 0.7;
+const furnitureInsuranceRows = [
+  { min: 0, max: 75, price: 15.61 },
+  { min: 76, max: 220, price: 31.22 },
+  { min: 221, max: 500, price: 60.21 },
+  { min: 501, max: 1000, price: 84.74 },
+  { min: 1001, max: 2200, price: 169.49 },
+  { min: 2201, max: 3800, price: 313.33 },
+  { min: 3801, max: 5300, price: 441.56 },
+  { min: 5301, max: 7000, price: 564.22 },
+  { min: 7001, max: Infinity, price: 1200 },
+];
 const dirtyCarpetColorCodes = ['0219', '0400', '0939'];
 const technicalFloorOptions = [
   { id: 'floor4', label: 'Plancher technique 4 cm', height: 0.04, price: 49, reference: 'SMCL02PLA01A', detail: 'Hauteur 4 cm + cornières 4 × 4 cm', rampLabel: 'Rampe PMR 4 cm' },
@@ -1128,6 +1139,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             baseUsage: scenePricing.baseUsage,
             baseItemsConfigured: scenePricing.baseItemsConfigured,
             itemsTotal: scenePricing.itemsTotal,
+            insuranceLine: scenePricing.insuranceLine,
             total: scenePricing.total,
             lines: scenePricing.lines,
         },
@@ -3430,6 +3442,29 @@ function isBillableCounterColorOption(item = {}, entry = {}) {
   return isIncludedSceneItem(item) && isWoodReceptionDeskItem({ ...entry, ...item });
 }
 
+function roundCurrency(value = 0) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function furnitureInsuranceLine(amount = 0) {
+  const safeAmount = Math.max(0, Number(amount || 0));
+  if (safeAmount <= 0) return null;
+  const row = furnitureInsuranceRows.find((entry) => safeAmount >= entry.min && safeAmount <= entry.max) || furnitureInsuranceRows[furnitureInsuranceRows.length - 1];
+  const rangeLabel = row.max === Infinity
+    ? '+ 7001 €'
+    : `${row.min.toLocaleString('fr-FR')} → ${row.max.toLocaleString('fr-FR')} €`;
+  return {
+    type: 'mandatory-furniture-insurance',
+    label: `Assurance mobilier obligatoire — tranche ${rangeLabel}`,
+    quantity: 1,
+    unitPrice: row.price,
+    total: roundCurrency(row.price),
+    reference: 'ASSURANCE-MOBILIER',
+    mandatory: true,
+    insuranceBase: safeAmount,
+  };
+}
+
 function marketplaceStartingPrice(entry, catalog = [], salonLabel = '') {
   if (isVariantGroupEntry(entry)) {
     const prices = normalizeVariantGroupOptions(entry.dimensions?.variantAssets, salonLabel)
@@ -3561,6 +3596,12 @@ function ValidationStepPanel({
           <span>{t('validation_total_label')}</span>
           <strong>{(pricing?.total || 0).toLocaleString('fr-FR')} € HT</strong>
         </div>
+        {pricing?.insuranceLine && (
+          <div className="validation-insurance-note">
+            <strong>Assurance mobilier obligatoire incluse</strong>
+            <span>{pricing.insuranceLine.total.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € HT — calculée sur {pricing.insuranceLine.insuranceBase.toLocaleString('fr-FR')} € HT de lots/options mobilier.</span>
+          </div>
+        )}
         <p>{t('validation_total_note')}</p>
       </section>
 
@@ -7971,7 +8012,7 @@ function scenePurchaseOrder(scene = {}, assets = []) {
   const sourceLines = savedLines.length ? savedLines : fallbackPricing.lines;
   const lines = normalizePurchaseOrderLines(sourceLines, catalogEntries);
   const total = lines.reduce((sum, line) => sum + line.total, 0);
-  return { lines, total };
+  return { lines, total: roundCurrency(total) };
 }
 
 function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
@@ -7979,8 +8020,8 @@ function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
     .map((line) => {
       const entry = findCatalogEntry(catalogEntries, line.type);
       const quantity = Math.max(0, Number(line.quantity || line.qty || 0));
-      const total = Math.max(0, Math.round(Number(line.total ?? line.price ?? 0)));
-      const unitPrice = Math.max(0, Math.round(Number(line.unitPrice ?? line.unit_price ?? (quantity ? total / quantity : 0))));
+      const total = Math.max(0, roundCurrency(line.total ?? line.price ?? 0));
+      const unitPrice = Math.max(0, roundCurrency(line.unitPrice ?? line.unit_price ?? (quantity ? total / quantity : 0)));
       return {
         type: line.type || entry?.type || '',
         reference: line.reference || assetReference(entry, '') || '',
@@ -8052,7 +8093,7 @@ function setPdfField(form, name, value) {
 
 
 function moneyPdf(value) {
-  return toPdfWinAnsi(Number(value || 0).toLocaleString('fr-FR'));
+  return toPdfWinAnsi(Number(value || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 }
 
 function toPdfWinAnsi(text = '') {
@@ -9076,6 +9117,12 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     });
   }
 
+  const insuranceLine = furnitureInsuranceLine(itemsTotal);
+  if (insuranceLine) {
+    itemsTotal += insuranceLine.total;
+    lines.push(insuranceLine);
+  }
+
   return {
     basePrice,
     baseItems,
@@ -9084,8 +9131,9 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     billableCounts,
     includedCounts,
     itemsTotal,
+    insuranceLine,
     lines,
-    total: Math.round(basePrice + itemsTotal),
+    total: roundCurrency(basePrice + itemsTotal),
   };
 }
 
