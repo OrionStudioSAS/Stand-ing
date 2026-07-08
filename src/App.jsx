@@ -1,6 +1,6 @@
 import React, { Suspense, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Canvas, useLoader } from '@react-three/fiber';
+import { Canvas, useFrame, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
 import { Box3, BufferGeometry, Cache, CanvasTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -79,6 +79,7 @@ const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
+const turntableRotationSpeed = 0.7;
 const dirtyCarpetColorCodes = ['0219', '0400', '0939'];
 const technicalFloorOptions = [
   { id: 'floor4', label: 'Plancher technique 4 cm', height: 0.04, price: 49, reference: 'SMCL02PLA01A', detail: 'Hauteur 4 cm + cornières 4 × 4 cm', rampLabel: 'Rampe PMR 4 cm' },
@@ -9620,6 +9621,35 @@ function itemRotationLocked(item) {
   return Boolean(item?.rotationLocked || item?.dimensions?.rotationLocked);
 }
 
+function itemTurntableActive(item = {}) {
+  const options = item.options || {};
+  const enabledOptionIds = Object.entries(options.extraOptions || {})
+    .filter(([, active]) => Boolean(active))
+    .map(([id]) => id);
+  const optionTexts = [
+    ...enabledOptionIds,
+    ...(options.optionReferences || []).map((option) => `${option?.id || ''} ${option?.label || ''} ${option?.reference || ''}`),
+  ];
+  return optionTexts.some((text) => normalizeTextValue(text).includes('tournette'));
+}
+
+function useTurntableRotation(baseRotationY = 0, enabled = false) {
+  const ref = useRef(null);
+  const angleRef = useRef(0);
+
+  useFrame((_, delta) => {
+    if (!ref.current) return;
+    if (enabled) {
+      angleRef.current += delta * turntableRotationSpeed;
+    } else {
+      angleRef.current = 0;
+    }
+    ref.current.rotation.y = baseRotationY + angleRef.current;
+  });
+
+  return ref;
+}
+
 function isCeilingMountedItem(item = {}, entry = null) {
   return Boolean(item?.ceilingMounted || item?.dimensions?.ceilingMounted || entry?.dimensions?.ceilingMounted);
 }
@@ -11958,10 +11988,13 @@ function Baseboard({ position, size }) {
 
 function SceneItem({ item, items = [], selected, hovered, dragging, width, depth, onSelect, onHover, onDragStart, onDragEnd, onDragMove, visualContext }) {
   const rotationY = (item.rotation * Math.PI) / 180;
+  const spinning = itemTurntableActive(item);
+  const rotationRef = useTurntableRotation(rotationY, spinning);
   if (isWallItem(item)) return <WallMountedItem item={item} items={items} width={width} depth={depth} selected={selected} hovered={hovered} dragging={dragging} onSelect={onSelect} onHover={onHover} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} visualContext={visualContext} />;
   if (item.isGroup) return <GroupedSceneItem item={item} selected={selected} hovered={hovered} dragging={dragging} rotationY={rotationY} onSelect={onSelect} onHover={onHover} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} visualContext={visualContext} />;
   return (
     <group
+      ref={rotationRef}
       position={[item.x, floorItemBaseY(item), item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
@@ -11980,8 +12013,11 @@ function SceneItem({ item, items = [], selected, hovered, dragging, width, depth
 
 function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, onSelect, onHover, onDragStart, onDragEnd, onDragMove, visualContext }) {
   const groupBounds = itemGroupBounds(item);
+  const spinning = itemTurntableActive(item);
+  const rotationRef = useTurntableRotation(rotationY, spinning);
   return (
     <group
+      ref={rotationRef}
       position={[item.x, floorItemBaseY(item), item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
