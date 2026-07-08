@@ -3197,7 +3197,6 @@ function ConfigChoiceGrid({ title, choices, value, onChange }) {
           <button key={choice.id} type="button" className={value === choice.id ? 'active' : ''} onClick={() => onChange(choice.id)}>
             {choice.imageUrl && <img src={choice.imageUrl} alt="" />}
             <strong>{choice.label}</strong>
-            {choice.detail && <small>{choice.detail}</small>}
             <em>{choice.price ? `${choice.price.toLocaleString('fr-FR')} €` : 'Inclus'}</em>
             {value === choice.id && <span><Check size={12} /></span>}
           </button>
