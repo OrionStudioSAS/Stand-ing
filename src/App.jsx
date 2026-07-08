@@ -3020,12 +3020,8 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
   const selectedVariant = variants.find((variant) => variant.id === format) || variants[0];
   const optionLink = resolveVariantOptionLink(selectedVariant, selectedExtras);
   const resolvedEntry = optionLink?.entry || selectedVariant?.entry || catalogEntry;
-  const optionLinkCoveredIds = new Set(optionLink?.optionIds || (optionLink?.optionId ? [optionLink.optionId] : []));
-  const basePrice = optionLink
-    ? assetUnitPrice(optionLink.entry, salonLabel)
-    : (selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel));
+  const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
   const extras = extraOptions
-    .filter((option) => !optionLinkCoveredIds.has(option.id))
     .reduce((sum, option) => sum + (selectedExtras[option.id] ? Number(option.price || 0) : 0), 0);
   const selectedOptionReferences = extraOptions
     .filter((option) => Boolean(selectedExtras[option.id]))
@@ -3147,11 +3143,8 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
         {extraOptions.length > 0 && (
           <div className="item-config-options">
             {extraOptions.map((option) => {
-              const linkedOption = selectedVariant?.optionLinks?.find((link) => optionLinkIds(link).length === 1 && optionLinkIds(link).includes(option.id));
-              const linkedPrice = linkedOption ? assetUnitPrice(linkedOption.entry, salonLabel) : null;
-              const displayPrice = linkedOption
-                ? (linkedPrice != null ? `${linkedPrice.toLocaleString('fr-FR')} €` : t('item_config_included'))
-                : `+ ${Number(option.price || 0).toLocaleString('fr-FR')} €`;
+              const optionPrice = Number(option.price || 0);
+              const displayPrice = optionPrice > 0 ? `+ ${optionPrice.toLocaleString('fr-FR')} €` : t('item_config_included');
               return (
                 <ToggleOption
                   key={option.id}
