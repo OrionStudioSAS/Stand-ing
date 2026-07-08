@@ -1247,7 +1247,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     setItemOptionState({ uploading: true, error: '' });
     try {
       const imageUrl = await uploadSceneItemOptionImage(initialScene, targetItem, file);
-      updateItemOptions(targetItem, { [urlKey]: imageUrl, [nameKey]: file.name });
+      if (optionKeys.textureSlot) {
+        updateItemOptions(targetItem, textureSlotPatch(targetItem, optionKeys.textureSlot, { imageUrl, imageName: file.name }));
+      } else {
+        updateItemOptions(targetItem, { [urlKey]: imageUrl, [nameKey]: file.name });
+      }
       setItemOptionState({ uploading: false, error: '' });
     } catch (error) {
       setItemOptionState({ uploading: false, error: error.message || 'Upload impossible.' });
@@ -2207,6 +2211,61 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
   );
 }
 
+function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetImage, onColorChange, onResetColor, embedded = false }) {
+  const slots = normalizeTextureSlots(item?.dimensions?.textureSlots);
+  const values = item?.options?.textureSlotValues || {};
+  if (!slots.length) return null;
+  return (
+    <aside className={embedded ? 'item-visual-config' : 'item-options-panel'}>
+      <div className="item-options-heading">
+        <FileImage size={17} />
+        <div>
+          <strong>Personnalisation des textures</strong>
+          <span>Images en cover ou couleur unie sur les matériaux configurés dans l'admin.</span>
+        </div>
+      </div>
+      {slots.map((slot) => {
+        const value = values[slot.id] || {};
+        if (slot.kind === 'color') {
+          return (
+            <label key={slot.id} className="item-color-upload generic-texture-slot">
+              <span>{slot.label}</span>
+              <small>Matériau : {slot.targetName}</small>
+              <input
+                type="color"
+                value={value.color || '#ffffff'}
+                onChange={(event) => onColorChange?.(slot, event.target.value)}
+              />
+              {value.color && <button type="button" className="item-image-reset" onClick={() => onResetColor?.(slot)}>Réinitialiser</button>}
+            </label>
+          );
+        }
+        return (
+          <div key={slot.id} className="generic-texture-slot">
+            {value.imageUrl && <div className="poster-image-preview"><img src={value.imageUrl} alt="" /></div>}
+            <label className="item-image-upload">
+              <span>{slot.label}</span>
+              <small>{value.imageName || `Texture originale ${slot.targetName}`}</small>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                disabled={uploadState?.uploading}
+                onChange={(event) => {
+                  onImageChange?.(slot, event.target.files?.[0]);
+                  event.target.value = '';
+                }}
+              />
+            </label>
+            {value.imageUrl && <button type="button" className="item-image-reset" onClick={() => onResetImage?.(slot)}>Réinitialiser</button>}
+          </div>
+        );
+      })}
+      {uploadState?.uploading && <p className="item-options-status">Import de l'image...</p>}
+      {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
+    </aside>
+  );
+}
+
 function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel = '', uploadState = {}, disabled = false, onImage, onOptions, onVariant, onSelect }) {
   const t = useT();
   const [selectedCounterId, setSelectedCounterId] = useState(items[0]?.id || '');
@@ -2947,6 +3006,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
   const initialOptions = item?.options || {};
   const variants = itemConfigVariants(catalogEntry, salonLabel);
   const extraOptions = itemConfigExtraOptions(catalogEntry);
+  const textureSlots = normalizeTextureSlots(item?.dimensions?.textureSlots);
   const defaultVariant = variants.find((variant) => variant.isDefault) || variants[0];
   const [format, setFormat] = useState(initialOptions.variantId || initialOptions.format || defaultVariant?.id || 'standard');
   const [selectedExtras, setSelectedExtras] = useState(() => {
@@ -2971,6 +3031,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
     isPartitionHeadItem(item)
     || isPosterItem(item)
     || (isWoodReceptionDeskItem(item) && !isIncludedSceneItem(item))
+    || textureSlots.length > 0
   );
 
   const toggleExtra = (id, checked) => {
@@ -3056,6 +3117,18 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
             onResetColor={() => onUpdateItemOptions?.(item, { binary2Color: '', binary2ColorImage: '', binary2ColorId: '', binary2ColorName: '', binary2ColorReference: '', binary2ColorPrice: 0 })}
             embedded
             optionsFree
+          />
+        )}
+
+        {hasVisualOptions && textureSlots.length > 0 && (
+          <TextureSlotsOptionsPanel
+            item={item}
+            uploadState={uploadState}
+            onImageChange={(slot, file) => onImageChange?.(item, file, { textureSlot: slot })}
+            onResetImage={(slot) => onUpdateItemOptions?.(item, textureSlotPatch(item, slot, { imageUrl: '', imageName: '' }))}
+            onColorChange={(slot, color) => onUpdateItemOptions?.(item, textureSlotPatch(item, slot, { color }))}
+            onResetColor={(slot) => onUpdateItemOptions?.(item, textureSlotPatch(item, slot, { color: '' }))}
+            embedded
           />
         )}
 
@@ -3204,6 +3277,34 @@ function normalizeAssetConfigOptions(options = []) {
       choices: option.type === 'select' ? (option.choices || []) : undefined,
     }))
     .filter((option) => option.label.trim());
+}
+
+function normalizeTextureSlots(slots = []) {
+  return (Array.isArray(slots) ? slots : [])
+    .map((slot, index) => {
+      const label = slot.label || slot.name || `Texture ${index + 1}`;
+      const targetName = slot.targetName || slot.materialName || slot.textureName || '';
+      return {
+        id: slot.id || `texture-slot-${index}`,
+        label,
+        targetName,
+        kind: slot.kind === 'color' ? 'color' : 'image',
+      };
+    })
+    .filter((slot) => slot.label || slot.targetName);
+}
+
+function textureSlotPatch(item = {}, slot = {}, patch = {}) {
+  const currentValues = item.options?.textureSlotValues || {};
+  return {
+    textureSlotValues: {
+      ...currentValues,
+      [slot.id]: {
+        ...(currentValues[slot.id] || {}),
+        ...patch,
+      },
+    },
+  };
 }
 
 function normalizeVariantGroupOptions(variantAssets = [], salonLabel = '', variantOptionLinks = []) {
@@ -6275,6 +6376,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const draftDeleteLocked = Boolean(draft.dimensions?.deleteLocked);
   const draftRotationLocked = Boolean(draft.dimensions?.rotationLocked);
   const draftConfigOptions = normalizeAssetConfigOptions(draft.dimensions?.configOptions);
+  const draftTextureSlots = normalizeTextureSlots(draft.dimensions?.textureSlots);
   const [variantAssetTypes, setVariantAssetTypes] = useState(() => draft.dimensions?.variantAssetTypes || []);
   const [variantOptionLinks, setVariantOptionLinks] = useState(() => draft.dimensions?.variantOptionLinks || []);
 
@@ -6421,6 +6523,22 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
       return { ...row, choices: (row.choices || []).filter((_, ci) => ci !== choiceIndex) };
     });
     updateAssetList('configOptions', nextRows);
+  };
+
+  const updateTextureSlotRow = (index, patch) => {
+    const nextRows = draftTextureSlots.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row));
+    updateAssetList('textureSlots', nextRows);
+  };
+
+  const addTextureSlotRow = () => {
+    updateAssetList('textureSlots', [
+      ...draftTextureSlots,
+      { id: `texture-slot-${Date.now()}`, label: 'Image personnalisable', targetName: '', kind: 'image' },
+    ]);
+  };
+
+  const removeTextureSlotRow = (index) => {
+    updateAssetList('textureSlots', draftTextureSlots.filter((_, rowIndex) => rowIndex !== index));
   };
 
   const updateTelevisionOption = (checked) => {
@@ -6876,6 +6994,23 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
         </section>
         )}
 
+        {!isGroupAsset && !isVariantGroup && !isColorGroup && (
+          <section className="asset-variants-settings asset-texture-slots-settings">
+            <div className="asset-variants-head">
+              <div>
+                <h3>Textures personnalisables</h3>
+                <small>Ajoute les images ou couleurs que l'exposant pourra remplacer. Le rendu image est toujours en cover.</small>
+              </div>
+              <button type="button" onClick={addTextureSlotRow}><Plus size={14} /> Texture</button>
+            </div>
+            <AssetTextureSlotRows
+              rows={draftTextureSlots}
+              onChange={updateTextureSlotRow}
+              onRemove={removeTextureSlotRow}
+            />
+          </section>
+        )}
+
         {isVariantGroup && (
           <section className="asset-variants-settings">
             <div className="asset-variants-head">
@@ -7138,6 +7273,36 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], links = []
           </article>
         );
       })}
+    </div>
+  );
+}
+
+function AssetTextureSlotRows({ rows, onChange, onRemove }) {
+  if (!rows.length) return <p className="asset-variants-empty">Aucune texture personnalisable configurée.</p>;
+  return (
+    <div className="asset-variant-list">
+      {rows.map((row, index) => (
+        <article key={row.id || index} className="asset-variant-row option-row texture-slot-row">
+          <div className="option-row-fields">
+            <label>
+              <span>Nom affiché</span>
+              <input value={row.label || ''} onChange={(event) => onChange(index, { label: event.target.value })} placeholder="Ex : Image face avant" />
+            </label>
+            <label>
+              <span>Nom du matériau / texture</span>
+              <input value={row.targetName || ''} onChange={(event) => onChange(index, { targetName: event.target.value })} placeholder="Ex : _1" />
+            </label>
+            <label>
+              <span>Type</span>
+              <select value={row.kind || 'image'} onChange={(event) => onChange(index, { kind: event.target.value })}>
+                <option value="image">Image</option>
+                <option value="color">Couleur</option>
+              </select>
+            </label>
+            <button type="button" onClick={() => onRemove(index)} aria-label="Supprimer cette texture"><Trash2 size={14} /></button>
+          </div>
+        </article>
+      ))}
     </div>
   );
 }
@@ -9010,6 +9175,9 @@ function collectSceneTextureUrls(items = [], extraUrls = []) {
     if (item.options?.headMainImageUrl) urls.add(item.options.headMainImageUrl);
     if (item.options?.posterImageUrl) urls.add(item.options.posterImageUrl);
     if (item.options?.binary3ImageUrl) urls.add(item.options.binary3ImageUrl);
+    Object.values(item.options?.textureSlotValues || {}).forEach((value) => {
+      if (value?.imageUrl) urls.add(value.imageUrl);
+    });
 
     const referenceUrl = item.modelUrl || item.materialUrl || item.dimensions?.materialUrl || '';
     const storagePaths = Array.isArray(item.dimensions?.storagePaths) ? item.dimensions.storagePaths : [];
@@ -11804,6 +11972,7 @@ function GlbModel({ item, selected, hovered, visualContext }) {
   const gltf = useGlbModel(item.modelUrl);
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item) });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '', { flipY: false });
+  const textureSlotImages = useTextureSlotImages(item);
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item) });
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item, { flipY: false }) : null
@@ -11812,9 +11981,11 @@ function GlbModel({ item, selected, hovered, visualContext }) {
     isGlb: true,
     customImageTexture,
     counterColorTexture,
+    textureSlotImages,
+    textureSlotFlipY: false,
     mainImageTexture,
     exhibitorTexture,
-  }), [gltf, item, customImageTexture, counterColorTexture, mainImageTexture, exhibitorTexture]);
+  }), [gltf, item, customImageTexture, counterColorTexture, textureSlotImages, mainImageTexture, exhibitorTexture]);
   return <primitive object={model} dispose={null} />;
 }
 
@@ -11843,6 +12014,7 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: partitionHeadMainImageCoverSize(item) });
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item) });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '');
+  const textureSlotImages = useTextureSlotImages(item);
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item) : null
   ), [item.type, item.label, item.modelUrl, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
@@ -11858,6 +12030,7 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
       mainImageTexture={mainImageTexture}
       customImageTexture={customImageTexture}
       counterColorTexture={counterColorTexture}
+      textureSlotImages={textureSlotImages}
       exhibitorTexture={exhibitorTexture}
       selected={selected}
       hovered={hovered}
@@ -11865,14 +12038,16 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   );
 }
 
-function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, customImageTexture, counterColorTexture, exhibitorTexture, selected, hovered }) {
+function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, customImageTexture, counterColorTexture, textureSlotImages, exhibitorTexture, selected, hovered }) {
   const obj = useObjModel(item.modelUrl, materials);
   const model = useMemo(() => prepareLoadedModel(obj, item, {
     mainImageTexture,
     customImageTexture,
     counterColorTexture,
+    textureSlotImages,
+    textureSlotFlipY: true,
     exhibitorTexture,
-  }), [obj, item, mainImageTexture, customImageTexture, counterColorTexture, exhibitorTexture]);
+  }), [obj, item, mainImageTexture, customImageTexture, counterColorTexture, textureSlotImages, exhibitorTexture]);
 
   return <primitive object={model} dispose={null} />;
 }
@@ -12057,6 +12232,34 @@ function useExternalTexture(url, options = {}) {
   return texture;
 }
 
+function useTextureSlotImages(item = {}) {
+  const slots = normalizeTextureSlots(item?.dimensions?.textureSlots);
+  const values = item?.options?.textureSlotValues || {};
+  const imageEntries = slots
+    .filter((slot) => slot.kind === 'image' && values?.[slot.id]?.imageUrl)
+    .map((slot) => ({ slot, url: values[slot.id].imageUrl }));
+  const key = imageEntries.map((entry) => `${entry.slot.id}:${entry.url}`).join('|');
+  const [images, setImages] = useState({});
+
+  useEffect(() => {
+    if (!imageEntries.length) {
+      setImages({});
+      return undefined;
+    }
+    let disposed = false;
+    Promise.all(imageEntries.map(async ({ slot, url }) => {
+      const { ok, image } = await loadDecodedImage(url);
+      return ok && image ? [slot.id, image] : null;
+    })).then((entries) => {
+      if (disposed) return;
+      setImages(Object.fromEntries(entries.filter(Boolean)));
+    });
+    return () => { disposed = true; };
+  }, [key]);
+
+  return images;
+}
+
 function prepareDynamicTexture(texture, options = {}) {
   texture.flipY = options.flipY ?? true;
   texture.wrapS = RepeatWrapping;
@@ -12112,6 +12315,9 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   if (!material) return material;
 
   const materialName = normalizeMaterialName(material.name);
+  const textureSlotMaterial = applyTextureSlotMaterial(material, item, textureOptions, materialName);
+  if (textureSlotMaterial !== material) return textureSlotMaterial;
+
   if (isWoodReceptionDeskItem(item)) {
     if (textureOptions.customImageTexture && isWoodReceptionDeskImageMaterial(materialName, material, item)) {
       return materialWithTexture(material, textureOptions.customImageTexture);
@@ -12136,6 +12342,43 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
     return materialWithTexture(material, textureOptions.exhibitorTexture);
   }
   return material;
+}
+
+function applyTextureSlotMaterial(material, item = {}, textureOptions = {}, materialName = '') {
+  const slots = normalizeTextureSlots(item?.dimensions?.textureSlots);
+  if (!slots.length) return material;
+  const values = item?.options?.textureSlotValues || {};
+  for (const slot of slots) {
+    if (!materialMatchesTextureSlot(materialName, material, slot.targetName)) continue;
+    const value = values[slot.id] || {};
+    if (slot.kind === 'color' && value.color) return materialWithColor(material, value.color);
+    const image = textureOptions.textureSlotImages?.[slot.id];
+    if (slot.kind === 'image' && image) {
+      const [targetWidth, targetHeight] = materialTextureCanvasSize(material);
+      const texture = createCoverImageTexture(image, targetWidth, targetHeight, { flipY: textureOptions.textureSlotFlipY ?? true });
+      if (texture) return materialWithTexture(material, texture);
+    }
+  }
+  return material;
+}
+
+function materialMatchesTextureSlot(materialName = '', material = null, targetName = '') {
+  const target = normalizeMaterialName(targetName);
+  if (!target) return false;
+  if (materialName === target) return true;
+  if (/^_[a-z0-9]+$/i.test(target)) return new RegExp(`^${escapeRegExp(target)}(\\.\\d+)?$`).test(materialName);
+  return materialName.includes(target) || materialMapMatchesFile(material, targetName);
+}
+
+function escapeRegExp(value = '') {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function materialTextureCanvasSize(material = null) {
+  const data = material?.map?.image || material?.map?.source?.data;
+  const width = Number(data?.naturalWidth || data?.videoWidth || data?.width || 1024);
+  const height = Number(data?.naturalHeight || data?.videoHeight || data?.height || 1024);
+  return [Math.max(1, Math.round(width)), Math.max(1, Math.round(height))];
 }
 
 function isWoodReceptionDeskItem(item = {}) {
