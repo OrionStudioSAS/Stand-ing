@@ -3450,7 +3450,7 @@ function marketplaceStartingPrice(entry, catalog = [], salonLabel = '') {
 function variantGroupMemberTypes(catalog = []) {
   return new Set(catalog
     .filter(isVariantGroupEntry)
-    .flatMap((entry) => entry.dimensions?.variantAssetTypes || [])
+    .flatMap(variantManagedAssetTypes)
     .filter(Boolean));
 }
 
@@ -3488,7 +3488,7 @@ function marketplaceCategories(entries) {
 }
 
 function marketplaceItemSubtitle(entry, categoryLabel) {
-  if (isVariantGroupEntry(entry)) return `${entry.dimensions?.variantAssetTypes?.length || 0} variantes disponibles`;
+  if (isVariantGroupEntry(entry)) return `${variantPrimaryAssetTypes(entry).length || 0} variantes disponibles`;
   if (entry.dimensions?.isTelevision) return '32 / 43 / 55 / 65 pouces';
   if (entry.dimensions?.category) return entry.dimensions.category;
   return categoryLabel;
@@ -6408,7 +6408,7 @@ function AssetPreview({ asset }) {
   }
   const url = asset.thumbnail_url;
   if (url) return <img className="asset-thumb" src={url} alt="" />;
-  if (asset.dimensions?.isVariantGroup) return <span className="asset-group-preview"><Layers size={34} />{asset.dimensions?.variantAssetTypes?.length || 0} variantes</span>;
+  if (asset.dimensions?.isVariantGroup) return <span className="asset-group-preview"><Layers size={34} />{variantPrimaryAssetTypes(asset).length || 0} variantes</span>;
   if (asset.dimensions?.isGroup) return <span className="asset-group-preview"><Layers size={34} />{asset.dimensions?.children?.length || 0} objets</span>;
   if (asset.model_url?.toLowerCase().endsWith('.obj')) return <span className="asset-obj-preview" />;
   return <span className="asset-glb-preview">{assetFormat(asset)}</span>;
@@ -6442,7 +6442,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const draftRotationLocked = Boolean(draft.dimensions?.rotationLocked);
   const draftConfigOptions = normalizeAssetConfigOptions(draft.dimensions?.configOptions);
   const draftTextureSlots = normalizeTextureSlots(draft.dimensions?.textureSlots);
-  const [variantAssetTypes, setVariantAssetTypes] = useState(() => draft.dimensions?.variantAssetTypes || []);
+  const [variantAssetTypes, setVariantAssetTypes] = useState(() => variantPrimaryAssetTypes(draft));
   const [variantOptionLinks, setVariantOptionLinks] = useState(() => draft.dimensions?.variantOptionLinks || []);
 
   useEffect(() => {
@@ -6452,7 +6452,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
     setBatPictoUploading(false);
     setBatPictoError('');
     setGroupRows(assetToGroupRows(asset));
-    setVariantAssetTypes(asset.dimensions?.variantAssetTypes || []);
+    setVariantAssetTypes(variantPrimaryAssetTypes(asset));
     setVariantOptionLinks(asset.dimensions?.variantOptionLinks || []);
     setSelectedGroupRowUid(null);
   }, [asset]);
@@ -6692,12 +6692,11 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
     }
 
     if (isVariantGroup) {
-      const cleanTypes = variantAssetTypes.filter(Boolean);
+      const cleanTypes = uniqueTextValues(variantAssetTypes);
       const selectChoiceTypes = draftConfigOptions
         .filter((o) => o.type === 'select')
         .flatMap((o) => (o.choices || []).map((c) => c.assetType).filter(Boolean));
       const linkedTypes = variantOptionLinks.map((link) => link.linkedType).filter(Boolean);
-      const allTypes = [...new Set([...cleanTypes, ...selectChoiceTypes, ...linkedTypes])];
       onSave({
         ...draft,
         label: draft.label?.trim() || 'Groupe de variantes',
@@ -6705,7 +6704,8 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
           ...(draft.dimensions || {}),
           isVariantGroup: true,
           category: draft.dimensions?.category || 'Mobilier',
-          variantAssetTypes: allTypes,
+          variantAssetTypes: cleanTypes,
+          variantDependencyAssetTypes: uniqueTextValues([...selectChoiceTypes, ...linkedTypes].filter((type) => !cleanTypes.includes(type))),
           configOptions: draftConfigOptions,
           variantOptionLinks,
           format: 'Groupe de variantes',
@@ -7520,12 +7520,11 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
 
   const saveGroup = async () => {
     setSaving(true);
-    const cleanRows = [...new Set(rows.filter(Boolean))];
+    const cleanRows = uniqueTextValues(rows);
     const selectChoiceTypes = configOptions
       .filter((o) => o.type === 'select')
       .flatMap((o) => (o.choices || []).map((c) => c.assetType).filter(Boolean));
     const linkedTypes = variantOptionLinks.map((link) => link.linkedType).filter(Boolean);
-    const allTypes = [...new Set([...cleanRows, ...selectChoiceTypes, ...linkedTypes])];
     await onCreate({
       type: `variant-group-${slugForType(name)}-${Date.now().toString(36)}`,
       label: name.trim() || 'Groupe de variantes',
@@ -7535,7 +7534,8 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
       dimensions: {
         isVariantGroup: true,
         category,
-        variantAssetTypes: allTypes,
+        variantAssetTypes: cleanRows,
+        variantDependencyAssetTypes: uniqueTextValues([...selectChoiceTypes, ...linkedTypes].filter((type) => !cleanRows.includes(type))),
         configOptions,
         variantOptionLinks,
         salons: assignedSalons,
@@ -8190,7 +8190,7 @@ function assetFormat(asset) {
 
 function assetSizeLabel(asset) {
   if (asset.dimensions?.isColorGroup) return `${normalizeColorGroupOptions(asset).length} couleurs`;
-  if (asset.dimensions?.isVariantGroup) return `${asset.dimensions?.variantAssetTypes?.length || 0} variantes`;
+  if (asset.dimensions?.isVariantGroup) return `${variantPrimaryAssetTypes(asset).length || 0} variantes`;
   if (asset.dimensions?.isGroup) return `${asset.dimensions?.children?.length || 0} objets`;
   if (asset.dimensions?.sizeMb) return `${asset.dimensions.sizeMb} Mo`;
   if (asset.dimensions?.fileSizeMb) return `${asset.dimensions.fileSizeMb} Mo`;
@@ -8205,6 +8205,31 @@ function assetDimensionsLabel(asset) {
 
 function isVariantGroupEntry(assetOrEntry = {}) {
   return Boolean(assetOrEntry?.dimensions?.isVariantGroup);
+}
+
+function variantOptionLinkedAssetTypes(assetOrEntry = {}) {
+  return uniqueTextValues((assetOrEntry?.dimensions?.variantOptionLinks || []).map((link) => link?.linkedType));
+}
+
+function variantSelectChoiceAssetTypes(assetOrEntry = {}) {
+  return uniqueTextValues((assetOrEntry?.dimensions?.configOptions || [])
+    .filter((option) => option?.type === 'select')
+    .flatMap((option) => (option.choices || []).map((choice) => choice?.assetType)));
+}
+
+function variantPrimaryAssetTypes(assetOrEntry = {}) {
+  const linkedTypes = new Set(variantOptionLinkedAssetTypes(assetOrEntry));
+  return uniqueTextValues(assetOrEntry?.dimensions?.variantAssetTypes || [])
+    .filter((type) => !linkedTypes.has(type));
+}
+
+function variantManagedAssetTypes(assetOrEntry = {}) {
+  return uniqueTextValues([
+    ...variantPrimaryAssetTypes(assetOrEntry),
+    ...variantSelectChoiceAssetTypes(assetOrEntry),
+    ...variantOptionLinkedAssetTypes(assetOrEntry),
+    ...(assetOrEntry?.dimensions?.variantDependencyAssetTypes || []),
+  ]);
 }
 
 function groupSourceAssets(assets = []) {
@@ -8439,7 +8464,7 @@ function sameSalonLabel(a = '', b = '') {
 function assetToCatalogEntry(asset, allAssets = []) {
   if (asset.dimensions?.isColorGroup) return null;
   if (asset.dimensions?.isVariantGroup) {
-    const variantAssets = (asset.dimensions?.variantAssetTypes || [])
+    const variantAssets = variantPrimaryAssetTypes(asset)
       .map((type) => allAssets.find((candidate) => candidate.type === type))
       .filter(Boolean)
       .map((candidate) => assetToCatalogEntry(candidate, allAssets))
@@ -12007,7 +12032,7 @@ function CeilingItemStrip({ item, selected, hovered, dragging }) {
 function SceneItemContent({ item, selected, hovered, dragging, visualContext }) {
   const bounds = itemGroupBounds(item);
   const centerY = isCenterAnchoredWallModel(item) ? 0 : null;
-  if (isCeilingMountedItem(item)) {
+  if (isCeilingMountedItem(item) && !item.modelUrl) {
     return <CeilingItemStrip item={item} selected={selected} hovered={hovered} dragging={dragging} />;
   }
   return (
