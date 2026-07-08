@@ -3020,11 +3020,12 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
   const selectedVariant = variants.find((variant) => variant.id === format) || variants[0];
   const optionLink = resolveVariantOptionLink(selectedVariant, selectedExtras);
   const resolvedEntry = optionLink?.entry || selectedVariant?.entry || catalogEntry;
+  const optionLinkCoveredIds = new Set(optionLink?.optionIds || (optionLink?.optionId ? [optionLink.optionId] : []));
   const basePrice = optionLink
     ? assetUnitPrice(optionLink.entry, salonLabel)
     : (selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel));
   const extras = extraOptions
-    .filter((option) => !selectedVariant?.optionLinks?.some((link) => link.optionId === option.id))
+    .filter((option) => !optionLinkCoveredIds.has(option.id))
     .reduce((sum, option) => sum + (selectedExtras[option.id] ? Number(option.price || 0) : 0), 0);
   const total = (basePrice + extras) * (mode === 'add' ? quantity : 1);
   const hasVisualOptions = mode === 'edit' && item && (
@@ -3135,7 +3136,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
         {extraOptions.length > 0 && (
           <div className="item-config-options">
             {extraOptions.map((option) => {
-              const linkedOption = selectedVariant?.optionLinks?.find((link) => link.optionId === option.id);
+              const linkedOption = selectedVariant?.optionLinks?.find((link) => optionLinkIds(link).length === 1 && optionLinkIds(link).includes(option.id));
               const linkedPrice = linkedOption ? assetUnitPrice(linkedOption.entry, salonLabel) : null;
               const displayPrice = linkedOption
                 ? (linkedPrice != null ? `${linkedPrice.toLocaleString('fr-FR')} €` : t('item_config_included'))
@@ -3229,7 +3230,7 @@ function normalizeSelectOptionVariants(selectOption, variantOptionLinks = [], sa
     .map((choice, index) => {
       const optionLinks = variantOptionLinks
         .filter((link) => link.selectOptionId === selectOption.id && link.choiceId === choice.id && link.linkedEntry)
-        .map((link) => ({ optionId: link.toggleOptionId, entry: link.linkedEntry }));
+        .map((link) => ({ optionId: legacyOptionLinkId(link), optionIds: optionLinkIds(link), entry: link.linkedEntry }));
       return {
         id: choice.id,
         assetType: choice.assetType,
@@ -3257,7 +3258,27 @@ function entryNeedsConfigurator(entry = {}) {
 
 function resolveVariantOptionLink(variant, selectedExtras = {}) {
   if (!variant?.optionLinks?.length) return null;
-  return variant.optionLinks.find((link) => Boolean(selectedExtras[link.optionId])) || null;
+  return variant.optionLinks
+    .filter((link) => optionLinkIds(link).length > 0)
+    .filter((link) => optionLinkIds(link).every((id) => Boolean(selectedExtras[id])))
+    .sort((a, b) => optionLinkIds(b).length - optionLinkIds(a).length)[0] || null;
+}
+
+function optionLinkIds(link = {}) {
+  const ids = Array.isArray(link.optionIds)
+    ? link.optionIds
+    : Array.isArray(link.toggleOptionIds)
+      ? link.toggleOptionIds
+      : [link.optionId || link.toggleOptionId].filter(Boolean);
+  return [...new Set(ids.filter(Boolean).map(String))];
+}
+
+function legacyOptionLinkId(link = {}) {
+  return link.optionId || link.toggleOptionId || optionLinkKey(optionLinkIds(link));
+}
+
+function optionLinkKey(ids = []) {
+  return optionLinkIds({ optionIds: ids }).sort().join('+');
 }
 
 function genericItemVariants(entry, salonLabel) {
@@ -3314,7 +3335,7 @@ function normalizeVariantGroupOptions(variantAssets = [], salonLabel = '', varia
     .map((entry, index) => {
       const optionLinks = variantOptionLinks
         .filter((link) => link.variantType === entry.type && link.linkedEntry)
-        .map((link) => ({ optionId: link.optionId, entry: link.linkedEntry }));
+        .map((link) => ({ optionId: legacyOptionLinkId(link), optionIds: optionLinkIds(link), entry: link.linkedEntry }));
       return {
         id: entry.type,
         assetType: entry.type,
@@ -6393,11 +6414,13 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   }, [asset]);
 
   const setVariantOptionLink = (selectOptionId, choiceId, toggleOptionId, linkedType) => {
+    const toggleOptionIds = Array.isArray(toggleOptionId) ? toggleOptionId.map(String).filter(Boolean) : [toggleOptionId].filter(Boolean).map(String);
+    const toggleKey = optionLinkKey(toggleOptionIds);
     setVariantOptionLinks((current) => {
       const filtered = current.filter(
-        (link) => !(link.selectOptionId === selectOptionId && link.choiceId === choiceId && link.toggleOptionId === toggleOptionId),
+        (link) => !(link.selectOptionId === selectOptionId && link.choiceId === choiceId && optionLinkKey(optionLinkIds(link)) === toggleKey),
       );
-      return linkedType ? [...filtered, { selectOptionId, choiceId, toggleOptionId, linkedType }] : filtered;
+      return linkedType ? [...filtered, { selectOptionId, choiceId, toggleOptionId: toggleKey, toggleOptionIds, linkedType }] : filtered;
     });
   };
 
@@ -6629,7 +6652,8 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
       const selectChoiceTypes = draftConfigOptions
         .filter((o) => o.type === 'select')
         .flatMap((o) => (o.choices || []).map((c) => c.assetType).filter(Boolean));
-      const allTypes = [...new Set([...cleanTypes, ...selectChoiceTypes])];
+      const linkedTypes = variantOptionLinks.map((link) => link.linkedType).filter(Boolean);
+      const allTypes = [...new Set([...cleanTypes, ...selectChoiceTypes, ...linkedTypes])];
       onSave({
         ...draft,
         label: draft.label?.trim() || 'Groupe de variantes',
@@ -7039,7 +7063,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
             <AssetConfigOptionRows
               rows={draftConfigOptions}
               emptyLabel="Aucune option configurée."
-              sourceAssets={variantSourceAssetsList.filter((a) => variantAssetTypes.includes(a.type))}
+              sourceAssets={variantSourceAssetsList}
               links={variantOptionLinks}
               onChange={updateConfigOptionRow}
               onRemove={removeConfigOptionRow}
@@ -7172,6 +7196,8 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
 function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], links = [], onChange, onRemove, onAddChoice, onUpdateChoice, onRemoveChoice, onSetLink }) {
   if (!rows.length) return <p className="asset-variants-empty">{emptyLabel}</p>;
   const selectOption = rows.find((r) => r.type === 'select');
+  const toggleRows = rows.filter((r) => (r.type || 'toggle') !== 'select');
+  const comboRows = optionCombinationRows(toggleRows);
   return (
     <div className="asset-variant-list">
       {rows.map((row, index) => {
@@ -7251,7 +7277,7 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], links = []
                 <span className="option-variant-links-label">Objet placé selon la sélection</span>
                 {(selectOption.choices || []).map((choice) => {
                   const currentLink = links.find(
-                    (link) => link.selectOptionId === selectOption.id && link.choiceId === choice.id && link.toggleOptionId === row.id,
+                    (link) => link.selectOptionId === selectOption.id && link.choiceId === choice.id && optionLinkKey(optionLinkIds(link)) === optionLinkKey([row.id]),
                   );
                   return (
                     <label key={choice.id} className="option-variant-link-row">
@@ -7270,11 +7296,60 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], links = []
                 })}
               </div>
             )}
+
+            {isSelect && comboRows.length > 0 && (
+              <div className="option-variant-links option-combo-links">
+                <span className="option-variant-links-label">Objet placé si plusieurs options sont cochées</span>
+                {(row.choices || []).map((choice) => (
+                  <div key={choice.id} className="option-combo-choice-block">
+                    <strong>{choice.label || choice.id}</strong>
+                    {comboRows.map((combo) => {
+                      const comboKey = optionLinkKey(combo.ids);
+                      const currentLink = links.find((link) => (
+                        link.selectOptionId === row.id
+                        && link.choiceId === choice.id
+                        && optionLinkKey(optionLinkIds(link)) === comboKey
+                      ));
+                      return (
+                        <label key={`${choice.id}-${comboKey}`} className="option-variant-link-row">
+                          <span>{combo.label}</span>
+                          <select
+                            value={currentLink?.linkedType || ''}
+                            onChange={(event) => onSetLink?.(row.id, choice.id, combo.ids, event.target.value)}
+                          >
+                            <option value="">— Aucun —</option>
+                            {sourceAssets.map((source) => (
+                              <option key={source.type} value={source.type}>{source.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
           </article>
         );
       })}
     </div>
   );
+}
+
+function optionCombinationRows(toggleRows = []) {
+  if (toggleRows.length < 2) return [];
+  const rows = [];
+  for (let start = 0; start < toggleRows.length; start += 1) {
+    for (let end = start + 1; end < toggleRows.length; end += 1) {
+      const ids = [toggleRows[start].id, toggleRows[end].id].filter(Boolean);
+      if (ids.length === 2) rows.push({ ids, label: `${toggleRows[start].label || ids[0]} + ${toggleRows[end].label || ids[1]}` });
+    }
+  }
+  if (toggleRows.length > 2) {
+    const allIds = toggleRows.map((row) => row.id).filter(Boolean);
+    rows.push({ ids: allIds, label: toggleRows.map((row) => row.label || row.id).join(' + ') });
+  }
+  return rows;
 }
 
 function AssetTextureSlotRows({ rows, onChange, onRemove }) {
@@ -7363,11 +7438,13 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
   };
 
   const setVariantOptionLink = (selectOptionId, choiceId, toggleOptionId, linkedType) => {
+    const toggleOptionIds = Array.isArray(toggleOptionId) ? toggleOptionId.map(String).filter(Boolean) : [toggleOptionId].filter(Boolean).map(String);
+    const toggleKey = optionLinkKey(toggleOptionIds);
     setVariantOptionLinks((current) => {
       const filtered = current.filter(
-        (link) => !(link.selectOptionId === selectOptionId && link.choiceId === choiceId && link.toggleOptionId === toggleOptionId),
+        (link) => !(link.selectOptionId === selectOptionId && link.choiceId === choiceId && optionLinkKey(optionLinkIds(link)) === toggleKey),
       );
-      return linkedType ? [...filtered, { selectOptionId, choiceId, toggleOptionId, linkedType }] : filtered;
+      return linkedType ? [...filtered, { selectOptionId, choiceId, toggleOptionId: toggleKey, toggleOptionIds, linkedType }] : filtered;
     });
   };
 
@@ -7399,7 +7476,8 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
     const selectChoiceTypes = configOptions
       .filter((o) => o.type === 'select')
       .flatMap((o) => (o.choices || []).map((c) => c.assetType).filter(Boolean));
-    const allTypes = [...new Set([...cleanRows, ...selectChoiceTypes])];
+    const linkedTypes = variantOptionLinks.map((link) => link.linkedType).filter(Boolean);
+    const allTypes = [...new Set([...cleanRows, ...selectChoiceTypes, ...linkedTypes])];
     await onCreate({
       type: `variant-group-${slugForType(name)}-${Date.now().toString(36)}`,
       label: name.trim() || 'Groupe de variantes',
@@ -7472,7 +7550,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
           <AssetConfigOptionRows
             rows={configOptions}
             emptyLabel="Aucune option configurée."
-            sourceAssets={sourceAssets.filter((a) => rows.filter(Boolean).includes(a.type))}
+            sourceAssets={sourceAssets}
             links={variantOptionLinks}
             onChange={updateConfigOptionRow}
             onRemove={(index) => setConfigOptions((current) => current.filter((_, itemIndex) => itemIndex !== index))}
