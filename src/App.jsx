@@ -3027,6 +3027,14 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
   const extras = extraOptions
     .filter((option) => !optionLinkCoveredIds.has(option.id))
     .reduce((sum, option) => sum + (selectedExtras[option.id] ? Number(option.price || 0) : 0), 0);
+  const selectedOptionReferences = extraOptions
+    .filter((option) => Boolean(selectedExtras[option.id]))
+    .map((option) => ({
+      id: option.id,
+      label: option.label,
+      reference: option.reference || '',
+    }))
+    .filter((option) => option.label || option.reference);
   const total = (basePrice + extras) * (mode === 'add' ? quantity : 1);
   const hasVisualOptions = mode === 'edit' && item && (
     isPartitionHeadItem(item)
@@ -3052,9 +3060,12 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
         variantLabel: selectedVariant?.label,
         variantDetail: selectedVariant?.detail,
         variantReference: selectedVariant?.reference,
+        baseObjectReference: selectedVariant?.reference,
+        resolvedObjectReference: assetReference(resolvedEntry, salonLabel),
         variantImageUrl: selectedVariant?.imageUrl,
         variantAssetType: resolvedEntry?.type || selectedVariant?.assetType,
         extraOptions: selectedExtras,
+        optionReferences: selectedOptionReferences,
         technician: Boolean(selectedExtras.technician),
         fileCheck: Boolean(selectedExtras.fileCheck),
         unitPrice: basePrice + extras,
@@ -3146,7 +3157,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
                   key={option.id}
                   active={Boolean(selectedExtras[option.id])}
                   label={option.label}
-                  detail={option.detail}
+                  detail={[option.detail, option.reference ? `Réf. ${option.reference}` : ''].filter(Boolean).join(' · ')}
                   price={displayPrice}
                   onChange={(checked) => toggleExtra(option.id, checked)}
                 />
@@ -3292,6 +3303,7 @@ function normalizeAssetConfigOptions(options = []) {
       id: String(option.id || slugForType(option.label || `option-${index + 1}`)),
       label: option.label || `Option ${index + 1}`,
       detail: option.detail || '',
+      reference: option.reference || option.ref || '',
       price: Number(option.price || 0),
       defaultChecked: Boolean(option.defaultChecked),
       type: option.type || 'toggle',
@@ -3371,6 +3383,31 @@ function cartItemPrice(item, entry, salonLabel) {
 
 function cartItemBasePrice(item, entry, salonLabel) {
   return Number(item.options?.unitPrice ?? assetUnitPrice(entry, salonLabel) ?? 0);
+}
+
+function uniqueTextValues(values = []) {
+  const seen = new Set();
+  return values
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .filter((value) => {
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function itemOptionReferenceTokens(item = {}) {
+  return uniqueTextValues((item.options?.optionReferences || []).map((option) => option?.reference));
+}
+
+function itemReferenceWithOptions(item = {}, entry = {}, salonLabel = '') {
+  const baseReference = item.options?.baseObjectReference
+    || item.options?.variantReference
+    || item.options?.resolvedObjectReference
+    || assetReference(entry, salonLabel);
+  return uniqueTextValues([baseReference, ...itemOptionReferenceTokens(item)]).join(' + ');
 }
 
 function counterColorSurfaceM2(item = {}, entry = {}) {
@@ -3477,8 +3514,15 @@ function itemOptionLines(item) {
     const colorPrice = Number(opts.binary2ColorPrice || 0);
     result.push(`Couleur : ${opts.binary2ColorName || opts.binary2Color}${colorPrice > 0 ? ` (+${colorPrice.toLocaleString('fr-FR')} € HT/m²)` : ''}`);
   }
-  if (opts.technician) result.push('Technicien inclus');
-  if (opts.fileCheck) result.push('Vérification fichier');
+  const optionRefs = Array.isArray(opts.optionReferences) ? opts.optionReferences : [];
+  optionRefs.forEach((option) => {
+    const label = option?.label || 'Option';
+    const reference = option?.reference ? ` — réf. ${option.reference}` : '';
+    result.push(`${label}${reference}`);
+  });
+  const optionIds = new Set(optionRefs.map((option) => option?.id).filter(Boolean));
+  if (opts.technician && !optionIds.has('technician')) result.push('Technicien inclus');
+  if (opts.fileCheck && !optionIds.has('fileCheck')) result.push('Vérification fichier');
   return result;
 }
 
@@ -6514,7 +6558,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
   const addConfigOptionRow = () => {
     updateAssetList('configOptions', [
       ...draftConfigOptions,
-      { id: `option-${Date.now()}`, label: 'Nouvelle option', detail: '', price: 0, defaultChecked: false },
+      { id: `option-${Date.now()}`, label: 'Nouvelle option', detail: '', reference: '', price: 0, defaultChecked: false },
     ]);
   };
 
@@ -7231,6 +7275,10 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], links = []
                     <input value={row.detail || ''} onChange={(event) => onChange(index, { detail: event.target.value })} placeholder="Texte secondaire" />
                   </label>
                   <label>
+                    <span>Référence option</span>
+                    <input value={row.reference || ''} onChange={(event) => onChange(index, { reference: event.target.value })} placeholder="Ex : SMCL02OPT01" />
+                  </label>
+                  <label>
                     <span>Supplément HT</span>
                     <input type="number" min="0" step="1" value={row.price ?? 0} onChange={(event) => onChange(index, { price: event.target.value })} />
                   </label>
@@ -7433,7 +7481,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
   const addConfigOptionRow = () => {
     setConfigOptions((current) => [
       ...current,
-      { id: `option-${Date.now()}`, label: 'Nouvelle option', detail: '', price: 0, defaultChecked: false },
+      { id: `option-${Date.now()}`, label: 'Nouvelle option', detail: '', reference: '', price: 0, defaultChecked: false },
     ]);
   };
 
@@ -8919,7 +8967,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       quantity: billableCount,
       unitPrice,
       total: lineTotal,
-      reference: assetReference(entry, salonLabel),
+      reference: uniqueTextValues(billableItems.map((item) => itemReferenceWithOptions(item, entry, salonLabel))).join(' / ') || assetReference(entry, salonLabel),
     });
   });
 
