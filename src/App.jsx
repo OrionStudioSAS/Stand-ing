@@ -9127,6 +9127,7 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
     materialPath: entryDimensions.materialPath || itemDimensions.materialPath,
     storagePaths: entryDimensions.storagePaths || itemDimensions.storagePaths,
     folderName: entryDimensions.folderName || itemDimensions.folderName,
+    textureSlots: entryDimensions.textureSlots || itemDimensions.textureSlots,
     size: entryDimensions.size || itemDimensions.size,
     dimensions: entryDimensions.dimensions || itemDimensions.dimensions,
     modelSize: entryDimensions.modelSize || itemDimensions.modelSize,
