@@ -4245,6 +4245,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, dis
       <div className="wall-cover-head">
         <div>
           <strong>{t('wall_cover_title')}</strong>
+          <small>{t('wall_cover_ref')}</small>
           <span>{t('wall_cover_price')}</span>
         </div>
         <em>{activeCount} / {surfaces.length} {t('wall_cover_active')}</em>

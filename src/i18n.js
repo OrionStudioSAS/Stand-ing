@@ -65,6 +65,7 @@ export const translations = {
 
     // WallCoverOptionCard
     wall_cover_title: 'Bâche sur cloisons',
+    wall_cover_ref: 'SMCL14BAC01A',
     wall_cover_price: '245 € / ml',
     wall_cover_active: 'actives',
     wall_cover_empty: 'Aucune cloison disponible sur cette implantation.',
@@ -409,6 +410,7 @@ export const translations = {
 
     // WallCoverOptionCard
     wall_cover_title: 'Banner on partitions',
+    wall_cover_ref: 'SMCL14BAC01A',
     wall_cover_price: '245 € / lm',
     wall_cover_active: 'active',
     wall_cover_empty: 'No partition available for this layout.',
