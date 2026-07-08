@@ -820,6 +820,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [technicalFloorRampX, setTechnicalFloorRampX] = useState(Number(initialOptions.technicalFloorRampX || 0));
   const [ledRailsEnabled, setLedRailsEnabled] = useState(initialOptions.ledRailsEnabled !== false);
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
+  const [reserveItemOverrides, setReserveItemOverrides] = useState(initialOptions.reserveItemOverrides || {});
   const [reserveOptionType, setReserveOptionType] = useState(initialOptions.reserveOptionType || (initialOptions.reserveUpgradeEnabled ? '__legacy__' : ''));
   const [partitionHeadChoice, setPartitionHeadChoice] = useState({
     left: hasOwn(initialOptions, 'partitionHeadLeftEnabled') ? Boolean(initialOptions.partitionHeadLeftEnabled) : null,
@@ -970,8 +971,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const activePartitionHeadRuleConfig = useMemo(() => activePartitionHeadRule(partitionHeadRules, area, layout), [partitionHeadRules, area, layout]);
   const effectivePartitionHeadSides = useMemo(() => partitionHeadEnabledSides(activePartitionHeadRuleConfig, partitionHeadChoice), [activePartitionHeadRuleConfig, partitionHeadChoice]);
   const automaticReserveItems = useMemo(
-    () => makeAutomaticReserveItems(activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, salonLabel),
-    [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, salonLabel],
+    () => makeAutomaticReserveItems(activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, salonLabel)
+      .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, effectiveCarpetFootprintEnabled)),
+    [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, salonLabel, reserveItemOverrides, effectiveCarpetFootprintEnabled],
   );
   const automaticPartitionHeadItems = useMemo(
     () => makeAutomaticPartitionHeadItems(activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, salonLabel)
@@ -1097,6 +1099,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       ledSpotCount,
       ledRailOverrides,
       reserveOptionType: effectiveReserveOptionType,
+      reserveItemOverrides,
       partitionHeadLeftEnabled: effectivePartitionHeadSides.left,
       partitionHeadRightEnabled: effectivePartitionHeadSides.right,
       partitionHeadVisuals,
@@ -1149,7 +1152,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, saveState, readOnly]);
 
   useEffect(() => {
     listObjectBank()
@@ -1194,6 +1197,19 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       setLedRailOverrides((current) => ({
         ...current,
         [id]: pickLedRailOverride(constrained),
+      }));
+      return;
+    }
+    const autoReserveItem = sceneItems.find((item) => item.id === id && isAutomaticReserveItem(item));
+    if (autoReserveItem) {
+      const editableItem = releasePlacementRuleForManualEdit(autoReserveItem, patch);
+      const blockers = [...manualHydratedItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems].filter((item) => item.id !== id);
+      const updated = updateSceneItemWithCollision([editableItem, ...blockers], id, patch, width, depth, layout, effectiveCarpetFootprintEnabled);
+      const constrained = updated.find((item) => item.id === id);
+      if (!constrained || constrained === editableItem) return;
+      setReserveItemOverrides((current) => ({
+        ...current,
+        [id]: pickReserveItemOverride(constrained),
       }));
       return;
     }
@@ -8450,7 +8466,7 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
     autoReserve: true,
     included: !billable,
     priceMode: billable ? 'billable' : 'included',
-    movementLocked: true,
+    movementLocked: Boolean(base.movementLocked || entry?.movementLocked || entry?.dimensions?.movementLocked),
     deleteLocked: true,
     rotationLocked: true,
     options: {
@@ -9568,6 +9584,28 @@ function makeAutomaticSpotItems(rule, catalogEntries, width, depth, layout, cont
 
 function isAutomaticReserveItem(item = {}) {
   return Boolean(item?.autoReserve || item?.dimensions?.autoReserve);
+}
+
+function applyReserveItemOverride(item, overrides = {}, width, depth, layout, carpetFootprintEnabled = true) {
+  const override = overrides?.[item.id];
+  if (!override) return item;
+  return constrainItem({
+    ...item,
+    ...override,
+    autoReserve: true,
+    included: item.included !== false,
+    priceMode: item.priceMode || 'included',
+  }, width, depth, layout, carpetFootprintEnabled);
+}
+
+function pickReserveItemOverride(item) {
+  return {
+    x: Number(item.x || 0),
+    z: Number(item.z || 0),
+    rotation: Number(item.rotation || 0),
+    placementRule: item.placementRule || null,
+    lockedPlacement: Boolean(item.lockedPlacement),
+  };
 }
 
 function applyLedRailOverride(item, overrides = {}, width, depth, layout) {
