@@ -2063,7 +2063,7 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
       <div className="item-dynamic-preview">
         <span className="preview-flag">{languageFlag(visualContext?.language)}</span>
         <strong>{visualContext?.company || t('partition_head_company')}</strong>
-        <span>{isSmclPartitionHeadItem(item) ? `Allée ${visualContext?.aisleNumber || '—'} · ${visualContext?.standNumber || '—'}` : (visualContext?.standNumber || 'A-14')}</span>
+        <span>{isSmclPartitionHeadItem(item) ? (() => { const a = String(visualContext?.aisleNumber || '').replace(/^All[ée]e?\s*/i, '').trim().toUpperCase(); const s = String(visualContext?.standNumber || '').replace(/^Stand\s+/i, '').trim().toUpperCase(); return (a || s) ? `${a}${s}` : '—'; })() : (visualContext?.standNumber || 'A-14')}</span>
       </div>
 
       <label className="item-image-upload">
@@ -12797,7 +12797,8 @@ function createSmclPartitionHeadInfoTexture(visualContext = {}, item = {}, optio
   const ctx = canvas.getContext('2d');
   const company = String(visualContext?.company || 'NOM EXPOSANT').trim().toUpperCase();
   const aisleNumber = String(visualContext?.aisleNumber || '').replace(/^All[ée]e?\s*/i, '').trim().toUpperCase();
-  const standNumber = String(visualContext?.standNumber || '—').replace(/^Stand\s+/i, '').trim().toUpperCase();
+  const standNumber = String(visualContext?.standNumber || '').replace(/^Stand\s+/i, '').trim().toUpperCase();
+  const hall = String(visualContext?.hall || '').trim().toUpperCase();
   const sectorColor = smclSectorColor(visualContext?.sector);
   const isRight = (options.layoutSide || smclPartitionHeadSide(item)) === 'right';
 
@@ -12808,9 +12809,9 @@ function createSmclPartitionHeadInfoTexture(visualContext = {}, item = {}, optio
   ctx.textAlign = 'left';
 
   if (isRight) {
-    drawSmclRightHeadInfo(ctx, { company, aisleNumber, standNumber });
+    drawSmclRightHeadInfo(ctx, { company, aisleNumber, standNumber, hall });
   } else {
-    drawSmclLeftHeadInfo(ctx, { company, aisleNumber, standNumber });
+    drawSmclLeftHeadInfo(ctx, { company, aisleNumber, standNumber, hall });
   }
 
   return prepareDynamicTexture(new CanvasTexture(canvas), options);
@@ -12820,19 +12821,21 @@ function smclCanvasFont(weight = 400, size = 80) {
   return `${weight} ${size}px Oswald, "Arial Narrow", "Helvetica Neue Condensed", Impact, Arial, sans-serif`;
 }
 
-function drawSmclLeftHeadInfo(ctx, { company, aisleNumber, standNumber }) {
+function drawSmclLeftHeadInfo(ctx, { company, aisleNumber, standNumber, hall }) {
   const labelX = 245;
+  const standCode = (aisleNumber || standNumber) ? `${aisleNumber}${standNumber}` : '—';
   fitCanvasText(ctx, company, 238, 48, 690, 92, 700);
-  fitCanvasText(ctx, aisleNumber ? `ALLÉE ${aisleNumber}` : 'ALLÉE —', labelX, 205, 360, 92, 500);
-  fitCanvasText(ctx, standNumber || '—', labelX, 365, 360, 92, 500);
+  fitCanvasText(ctx, standCode, labelX, 205, 360, 92, 500);
+  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', labelX, 375, 360, 68, 500);
   drawSmclSalonMark(ctx, labelX, 620, 0.86);
   drawSmclPartnerMarks(ctx, labelX, 760, 0.9);
 }
 
-function drawSmclRightHeadInfo(ctx, { company, aisleNumber, standNumber }) {
+function drawSmclRightHeadInfo(ctx, { company, aisleNumber, standNumber, hall }) {
+  const standCode = (aisleNumber || standNumber) ? `${aisleNumber}${standNumber}` : '—';
   fitCanvasText(ctx, company, 290, 48, 700, 92, 700);
-  fitCanvasText(ctx, aisleNumber ? `ALLÉE ${aisleNumber}` : 'ALLÉE —', 765, 205, 360, 92, 500);
-  fitCanvasText(ctx, standNumber || '—', 765, 365, 360, 92, 500);
+  fitCanvasText(ctx, standCode, 765, 205, 360, 92, 500);
+  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', 765, 375, 360, 68, 500);
   drawSmclSalonMark(ctx, 770, 620, 0.86);
   drawSmclPartnerMarks(ctx, 770, 760, 0.9);
 }
