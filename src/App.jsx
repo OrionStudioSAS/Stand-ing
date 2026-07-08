@@ -10904,7 +10904,7 @@ function placeWallItemInFreeSpot(item, items, width, depth, layout) {
 }
 
 function collidesWithScene(candidate, items, ignoreId = null, width = 0, depth = 0) {
-  if (!isWallItem(candidate) && collidesWithReserveProtectedArea(candidate, items, ignoreId)) return true;
+  if (!isWallItem(candidate) && !isCeilingMountedItem(candidate) && collidesWithReserveProtectedArea(candidate, items, ignoreId)) return true;
   if (!itemCollisionEnabled(candidate)) return false;
   if (isWallItem(candidate)) return collidesWithWallItems(candidate, items, ignoreId, width, depth);
   const candidateBox = itemCollisionBox(candidate);
@@ -10912,6 +10912,7 @@ function collidesWithScene(candidate, items, ignoreId = null, width = 0, depth =
 
   return (items || []).some((item) => {
     if (!item || item.id === ignoreId || isWallItem(item) || !itemCollisionEnabled(item)) return false;
+    if (isCeilingMountedItem(candidate) !== isCeilingMountedItem(item)) return false;
     const itemBox = itemCollisionBox(item);
     return itemBox ? boxesOverlap(candidateBox, itemBox) : false;
   });
@@ -10979,6 +10980,7 @@ function wallBoxesOverlap(a, b) {
 }
 
 function floorItemWallCollisionBox(item, wall, width, depth) {
+  if (isCeilingMountedItem(item)) return null;
   const blocker = isReserveSceneItem(item)
     ? reserveWallBlocker(item, wall, width, depth, collisionPadding)
     : floorWallBlocker(item, wall, width, depth);
