@@ -1009,9 +1009,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     [ledRailsEnabled, ledRailEntries, autoSpotsRule, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
   const automaticSpotItems = useMemo(
-    () => makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems)
-      .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout)),
-    [autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, ledRailOverrides],
+    () => (ledRailsEnabled && autoSpotsRule?.type
+      ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems)
+        .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout))
+      : []),
+    [ledRailsEnabled, autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, ledRailOverrides],
   );
   const manualVisibleItems = useMemo(() => manualHydratedItems.filter((item) => !isHiddenIncludedCounterItem(item)), [manualHydratedItems]);
   const wallCoverSurfaces = useMemo(
