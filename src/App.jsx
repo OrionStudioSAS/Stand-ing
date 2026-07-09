@@ -1360,7 +1360,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       if (entry?.type && entry.type !== item.type) {
         replaceItemWithEntry(item, entry, options);
       } else {
-        updateItem(item.id, { options });
+        setItems((current) => syncSharedGlobalGroupOptions(
+          current.map((sceneItem) => (sceneItem.id === item.id ? constrainItem({ ...sceneItem, options }, width, depth, layout, effectiveCarpetFootprintEnabled) : sceneItem)),
+          options,
+          availableCatalog,
+          salonLabel,
+        ));
       }
       setItemConfigModal(null);
       return;
@@ -1398,7 +1403,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         ? placeItemInFreeSpot(candidate, blockers, width, depth, layout, effectiveCarpetFootprintEnabled)
         : candidate;
       if (!placed) return current;
-      return [...others, placed];
+      return syncSharedGlobalGroupOptions([...others, placed], options, availableCatalog, salonLabel);
     });
   };
 
@@ -1432,7 +1437,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         lastPlacedId = placed.id;
         next = [...next, placed];
       }
-      return next;
+      return syncSharedGlobalGroupOptions(next, options, availableCatalog, salonLabel);
     });
     window.setTimeout(() => {
       if (lastPlacedId) setSelectedId(lastPlacedId);
@@ -3089,7 +3094,8 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
   const [selectedExtras, setSelectedExtras] = useState(() => {
     const previous = initialOptions.extraOptions || {};
     return extraOptions.reduce((acc, option) => {
-      acc[option.id] = previous[option.id] ?? initialOptions[option.id] ?? Boolean(option.defaultChecked);
+      const sharedValue = sharedGlobalExtraValue(option, catalogEntry, item, items, initialOptions);
+      acc[option.id] = sharedValue ?? previous[option.id] ?? initialOptions[option.id] ?? Boolean(option.defaultChecked);
       return acc;
     }, {});
   });
@@ -3106,9 +3112,18 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
       id: option.id,
       label: option.label,
       reference: option.reference || '',
+      price: Number(option.price || 0),
+      global: isSharedGlobalGroupOption(option),
     }))
     .filter((option) => option.label || option.reference);
-  const total = (basePrice + extras) * (mode === 'add' ? quantity : 1);
+  const nonGlobalExtras = extraOptions
+    .reduce((sum, option) => sum + (selectedExtras[option.id] && !isSharedGlobalGroupOption(option) ? Number(option.price || 0) : 0), 0);
+  const globalExtras = extraOptions
+    .reduce((sum, option) => sum + (selectedExtras[option.id] && isSharedGlobalGroupOption(option) ? Number(option.price || 0) : 0), 0);
+  const globalExtraOptions = extraOptions
+    .filter(isSharedGlobalGroupOption)
+    .reduce((acc, option) => ({ ...acc, [option.id]: Boolean(selectedExtras[option.id]) }), {});
+  const total = ((basePrice + nonGlobalExtras) * (mode === 'add' ? quantity : 1)) + globalExtras;
   const hasVisualOptions = mode === 'edit' && item && (
     isPartitionHeadItem(item)
     || isPosterItem(item)
@@ -3138,9 +3153,12 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
         variantImageUrl: selectedVariant?.imageUrl,
         variantAssetType: resolvedEntry?.type || selectedVariant?.assetType,
         extraOptions: selectedExtras,
+        globalExtraOptions,
         optionReferences: selectedOptionReferences,
         technician: Boolean(selectedExtras.technician),
         fileCheck: Boolean(selectedExtras.fileCheck),
+        baseUnitPrice: basePrice,
+        billableUnitPrice: basePrice + nonGlobalExtras,
         unitPrice: basePrice + extras,
       },
     });
@@ -3331,6 +3349,70 @@ function itemConfigExtraOptions(entry) {
   return normalizeAssetConfigOptions(options);
 }
 
+
+function isSharedGlobalGroupOption(option = {}) {
+  const text = normalizeTextValue(`${option.id || ''} ${option.label || ''} ${option.reference || ''}`);
+  return text.includes('permanence') && text.includes('technicien');
+}
+
+function sharedGlobalExtraValue(option = {}, catalogEntry = {}, item = null, items = [], initialOptions = {}) {
+  if (!isSharedGlobalGroupOption(option)) return null;
+  const groupType = initialOptions.variantGroupType || item?.options?.variantGroupType || (isVariantGroupEntry(catalogEntry) ? catalogEntry.type : '');
+  if (!groupType) return null;
+  const siblings = (items || []).filter((candidate) => candidate?.options?.variantGroupType === groupType);
+  if (!siblings.length) return null;
+  return siblings.some((candidate) => Boolean(candidate.options?.extraOptions?.[option.id] || candidate.options?.globalExtraOptions?.[option.id]));
+}
+
+function syncSharedGlobalGroupOptions(items = [], sourceOptions = {}, catalogEntries = [], salonLabel = '') {
+  const groupType = sourceOptions.variantGroupType;
+  const globalStates = sourceOptions.globalExtraOptions || {};
+  const globalOptionIds = Object.keys(globalStates).filter(Boolean);
+  if (!groupType || !globalOptionIds.length) return items;
+
+  const sourceRefs = Array.isArray(sourceOptions.optionReferences) ? sourceOptions.optionReferences : [];
+  const groupEntry = findCatalogEntry(catalogEntries, groupType);
+  const groupOptions = normalizeAssetConfigOptions(groupEntry?.dimensions?.configOptions || []);
+
+  return items.map((item) => {
+    if (item?.options?.variantGroupType !== groupType) return item;
+    const optionReferences = Array.isArray(item.options?.optionReferences) ? item.options.optionReferences : [];
+    const nextReferences = optionReferences.filter((ref) => !globalOptionIds.includes(String(ref?.id || '')));
+    globalOptionIds.forEach((id) => {
+      if (!globalStates[id]) return;
+      const sourceRef = sourceRefs.find((ref) => String(ref?.id || '') === id);
+      const optionDef = groupOptions.find((option) => option.id === id);
+      nextReferences.push({
+        id,
+        label: sourceRef?.label || optionDef?.label || id,
+        reference: sourceRef?.reference || optionDef?.reference || '',
+        price: Number(sourceRef?.price ?? optionDef?.price ?? 0),
+        global: true,
+      });
+    });
+    const baseEntry = findCatalogEntry(catalogEntries, item.type) || item;
+    const currentBillablePrice = Number.isFinite(Number(item.options?.billableUnitPrice))
+      ? Number(item.options.billableUnitPrice)
+      : Math.max(0, Number(item.options?.unitPrice ?? assetUnitPrice(baseEntry, salonLabel) ?? 0) - globalSharedOptionTotal(item, catalogEntries));
+    return {
+      ...item,
+      options: {
+        ...(item.options || {}),
+        billableUnitPrice: currentBillablePrice,
+        extraOptions: {
+          ...(item.options?.extraOptions || {}),
+          ...globalStates,
+        },
+        globalExtraOptions: {
+          ...(item.options?.globalExtraOptions || {}),
+          ...globalStates,
+        },
+        optionReferences: nextReferences,
+      },
+    };
+  });
+}
+
 function entryNeedsConfigurator(entry = {}) {
   if (isVariantGroupEntry(entry)) return true;
   return itemConfigExtraOptions(entry).length > 0;
@@ -3443,16 +3525,61 @@ function itemCartLabel(item) {
 }
 
 function cartItemPrice(item, entry, salonLabel) {
-  const basePrice = cartItemBasePrice(item, entry, salonLabel);
+  const basePrice = cartItemBasePrice(item, entry, salonLabel, []);
   const colorSupplement = isBillableCounterColorOption(item, entry)
     ? Number(item.options?.binary2ColorPrice || 0)
     : 0;
   return basePrice + colorSupplement;
 }
 
-function cartItemBasePrice(item, entry, salonLabel) {
-  return Number(item.options?.unitPrice ?? assetUnitPrice(entry, salonLabel) ?? 0);
+function cartItemBasePrice(item, entry, salonLabel, catalogEntries = []) {
+  if (Number.isFinite(Number(item.options?.billableUnitPrice))) return Number(item.options.billableUnitPrice);
+  const rawPrice = Number(item.options?.unitPrice ?? assetUnitPrice(entry, salonLabel) ?? 0);
+  return Math.max(0, rawPrice - globalSharedOptionTotal(item, catalogEntries));
 }
+function globalSharedOptionTotal(item = {}, catalogEntries = []) {
+  return selectedGlobalSharedOptionsForItem(item, catalogEntries).reduce((sum, option) => sum + Number(option.price || 0), 0);
+}
+
+function selectedGlobalSharedOptionsForItem(item = {}, catalogEntries = []) {
+  const refs = Array.isArray(item.options?.optionReferences) ? item.options.optionReferences : [];
+  const groupEntry = item.options?.variantGroupType ? findCatalogEntry(catalogEntries, item.options.variantGroupType) : null;
+  const groupOptions = normalizeAssetConfigOptions(groupEntry?.dimensions?.configOptions || []);
+  return refs
+    .map((ref) => {
+      const optionDef = groupOptions.find((option) => option.id === ref?.id) || ref;
+      if (!isSharedGlobalGroupOption({ ...optionDef, ...ref })) return null;
+      return {
+        id: ref.id || optionDef.id,
+        label: ref.label || optionDef.label || 'Option globale',
+        reference: ref.reference || optionDef.reference || '',
+        price: Number(ref.price ?? optionDef.price ?? 0),
+        groupType: item.options?.variantGroupType || '',
+        groupLabel: item.options?.variantGroupLabel || groupEntry?.label || '',
+      };
+    })
+    .filter(Boolean);
+}
+
+function globalSharedOptionLines(items = [], catalogEntries = []) {
+  const lines = new Map();
+  (items || []).forEach((item) => {
+    selectedGlobalSharedOptionsForItem(item, catalogEntries).forEach((option) => {
+      const key = `${option.groupType || 'group'}:${option.id || option.label}`;
+      if (lines.has(key)) return;
+      lines.set(key, {
+        type: `global-option-${key}`,
+        label: `${option.label}${option.groupLabel ? ` — ${option.groupLabel}` : ''}`,
+        quantity: 1,
+        unitPrice: Number(option.price || 0),
+        total: Number(option.price || 0),
+        reference: option.reference || '',
+      });
+    });
+  });
+  return [...lines.values()].filter((line) => line.total > 0);
+}
+
 
 function uniqueTextValues(values = []) {
   const seen = new Set();
@@ -9209,7 +9336,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     const entry = findCatalogEntry(catalog, type);
     const typeItems = items.filter((item) => item.type === type);
     const billableItems = typeItems.slice(includedCount);
-    const itemPrices = billableItems.map((item) => cartItemBasePrice(item, entry, salonLabel));
+    const itemPrices = billableItems.map((item) => cartItemBasePrice(item, entry, salonLabel, catalog));
     const lineTotal = itemPrices.reduce((sum, price) => sum + price, 0);
     const unitPrice = billableCount ? Math.round(lineTotal / billableCount) : assetUnitPrice(entry, salonLabel);
     billableCounts.set(type, billableCount);
@@ -9236,6 +9363,11 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       itemsTotal += colorLine.total;
       lines.push(colorLine);
     }
+  });
+
+  globalSharedOptionLines(items, catalog).forEach((line) => {
+    itemsTotal += line.total;
+    lines.push(line);
   });
 
   colorSelections
