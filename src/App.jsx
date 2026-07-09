@@ -10189,14 +10189,14 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
       rotation: reserveSurface.orientation === 'x'
         ? (outsideSide >= 0 ? 0 : Math.PI)
         : (outsideSide >= 0 ? Math.PI / 2 : -Math.PI / 2),
-      visibleWidth: Math.max(0.5, Number(reserveSurface.length || 1)),
+      visibleWidth: normalizeWallCoverDeductionLength(Math.max(0.5, Number(reserveSurface.length || 1))),
     },
   ];
 }
 
 function wallCoverRealDisplayWidth(surface, items, width, depth, layout = 'back') {
   if (!surface) return 0;
-  if (surface.kind === 'reserve') return Math.max(0, Number(surface.length || surface.width || 0));
+  if (surface.kind === 'reserve') return normalizeWallCoverDeductionLength(Math.max(0, Number(surface.length || surface.width || 0)));
 
   const wall = surface.wall || surface.id;
   const range = wallAxisLimits(wall, width, depth);
@@ -10211,7 +10211,7 @@ function wallCoverRealDisplayWidth(surface, items, width, depth, layout = 'back'
     const partitionBlocker = wallCoverPartitionHeadBlocker(item, wall, width, depth, 0);
     if (partitionBlocker) deductions.push(partitionBlocker);
     if (isReserveSceneItem(item)) {
-      const reserveBlocker = reserveWallBlocker(item, wall, width, depth, 0);
+      const reserveBlocker = wallCoverReserveDisplayBlocker(item, wall, width, depth);
       if (reserveBlocker) deductions.push(reserveBlocker);
     }
   });
@@ -10226,6 +10226,33 @@ function summedIntervalLength(intervals = [], range = { min: 0, max: 0 }) {
     const max = clamp(Number(interval.max || 0), range.min, range.max);
     return max > min ? sum + (max - min) : sum;
   }, 0);
+}
+
+function wallCoverReserveDisplayBlocker(item, wall, width, depth) {
+  const blocker = reserveWallBlocker(item, wall, width, depth, 0);
+  if (!blocker) return null;
+  const limits = wallAxisLimits(wall, width, depth);
+  const rawMin = clamp(Number(blocker.min || 0), limits.min, limits.max);
+  const rawMax = clamp(Number(blocker.max || 0), limits.min, limits.max);
+  const length = normalizeWallCoverDeductionLength(rawMax - rawMin);
+  if (length <= 0) return null;
+
+  if (Math.abs(rawMin - limits.min) <= 0.12) return { min: limits.min, max: Math.min(limits.max, limits.min + length) };
+  if (Math.abs(rawMax - limits.max) <= 0.12) return { min: Math.max(limits.min, limits.max - length), max: limits.max };
+
+  const center = (rawMin + rawMax) / 2;
+  return {
+    min: Math.max(limits.min, center - length / 2),
+    max: Math.min(limits.max, center + length / 2),
+  };
+}
+
+function normalizeWallCoverDeductionLength(value = 0) {
+  const length = Number(value || 0);
+  if (!Number.isFinite(length) || length <= 0) return 0;
+  const nearestMeter = Math.round(length);
+  if (nearestMeter > 0 && Math.abs(length - nearestMeter) <= 0.12) return nearestMeter;
+  return Math.round(length * 10) / 10;
 }
 
 function wallCoverSegmentsForSurface(surface, items = [], width = 0, depth = 0) {
