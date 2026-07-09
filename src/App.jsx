@@ -10163,7 +10163,7 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
     };
   }).map((surface) => ({
     ...surface,
-    visibleWidth: wallCoverVisibleWidth(surface, items, width, depth),
+    visibleWidth: wallCoverRealDisplayWidth(surface, items, width, depth, layout),
   }));
 
   const reserveSurface = objectWallSurfaces(items)
@@ -10194,8 +10194,38 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
   ];
 }
 
-function wallCoverVisibleWidth(surface, items, width, depth) {
-  return wallCoverSegmentsForSurface(surface, items, width, depth).reduce((sum, segment) => sum + Number(segment.width || 0), 0);
+function wallCoverRealDisplayWidth(surface, items, width, depth, layout = 'back') {
+  if (!surface) return 0;
+  if (surface.kind === 'reserve') return Math.max(0, Number(surface.length || surface.width || 0));
+
+  const wall = surface.wall || surface.id;
+  const range = wallAxisLimits(wall, width, depth);
+  const deductions = [];
+
+  if (wall === 'back') {
+    if (layout === 'left' || layout === 'u') deductions.push({ min: range.min, max: range.min + wallThickness });
+    if (layout === 'right' || layout === 'u') deductions.push({ min: range.max - wallThickness, max: range.max });
+  }
+
+  (items || []).forEach((item) => {
+    const partitionBlocker = wallCoverPartitionHeadBlocker(item, wall, width, depth, 0);
+    if (partitionBlocker) deductions.push(partitionBlocker);
+    if (isReserveSceneItem(item)) {
+      const reserveBlocker = reserveWallBlocker(item, wall, width, depth, 0);
+      if (reserveBlocker) deductions.push(reserveBlocker);
+    }
+  });
+
+  const blockedLength = summedIntervalLength(deductions, range);
+  return roundM2(Math.max(0, (range.max - range.min) - blockedLength));
+}
+
+function summedIntervalLength(intervals = [], range = { min: 0, max: 0 }) {
+  return intervals.reduce((sum, interval) => {
+    const min = clamp(Number(interval.min || 0), range.min, range.max);
+    const max = clamp(Number(interval.max || 0), range.min, range.max);
+    return max > min ? sum + (max - min) : sum;
+  }, 0);
 }
 
 function wallCoverSegmentsForSurface(surface, items = [], width = 0, depth = 0) {
