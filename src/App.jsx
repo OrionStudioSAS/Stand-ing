@@ -77,6 +77,7 @@ const partitionHeadBackInset = 0.04;
 const partitionHeadWallGap = 0.02;
 const partitionHeadWallCoverWidth = 0.6;
 const minWallCoverDisplayWidth = 0.7;
+const wallCoverSurfaceOffset = 0.008;
 const partitionHeadWallAxisInset = 0;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
@@ -10142,7 +10143,7 @@ function wallCoverSurfaceOptions(layout, width, depth, items = [], options = {})
 
   if (!reserveSurfaces.length) return wallSurfaces;
 
-  const reserveFaceOffset = wallThickness / 2 + 0.004;
+  const reserveFaceOffset = wallThickness / 2 + wallCoverSurfaceOffset;
   const maxReserveLength = Math.max(...reserveSurfaces.map((surface) => Number(surface.length || 0)));
   const displayableReserveSurfaces = reserveSurfaces.filter((surface) => Number(surface.length || 0) >= maxReserveLength - 0.15);
   const mappedReserveSurfaces = displayableReserveSurfaces.map((reserveSurface, index) => {
@@ -10319,7 +10320,7 @@ function wallCoverSegmentsForSurface(surface, items = [], width = 0, depth = 0) 
 function wallCoverSegmentFromInterval(surface, interval, width, depth, index = 0) {
   const segmentWidth = Math.max(0.01, interval.max - interval.min);
   const center = (interval.min + interval.max) / 2;
-  const offset = 0.0015;
+  const offset = wallCoverSurfaceOffset;
   if (surface.wall === 'left') {
     return {
       ...surface,
@@ -11881,8 +11882,14 @@ function wallCoverPartitionHeadBlocker(item, wall, width, depth, margin = 0.1) {
     if (itemWall === 'left' || side === 'left') return { min: -width / 2, max: -width / 2 + coverWidth };
     if (itemWall === 'right' || side === 'right') return { min: width / 2 - coverWidth, max: width / 2 };
   }
-  if (wall === 'left' && (itemWall === 'left' || side === 'left')) return { min: depth / 2 - coverWidth, max: depth / 2 };
-  if (wall === 'right' && (itemWall === 'right' || side === 'right')) return { min: depth / 2 - coverWidth, max: depth / 2 };
+  if (wall === 'left' && (itemWall === 'left' || side === 'left')) {
+    const limits = wallAxisLimits(wall, width, depth);
+    return { min: limits.max - coverWidth, max: limits.max };
+  }
+  if (wall === 'right' && (itemWall === 'right' || side === 'right')) {
+    const limits = wallAxisLimits(wall, width, depth);
+    return { min: limits.max - coverWidth, max: limits.max };
+  }
   return null;
 }
 
@@ -12580,7 +12587,7 @@ function WallCoverSurface({ surface }) {
     <group position={position} rotation={[0, surface.rotation, 0]}>
       <mesh renderOrder={2} raycast={() => null}>
         <planeGeometry args={[surface.width, coverHeight]} />
-        <meshBasicMaterial color="#ffffff" map={texture || null} side={DoubleSide} toneMapped={false} depthWrite={false} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
+        <meshBasicMaterial color="#ffffff" map={texture || null} side={DoubleSide} toneMapped={false} depthWrite={false} polygonOffset polygonOffsetFactor={-4} polygonOffsetUnits={-4} />
       </mesh>
     </group>
   );
