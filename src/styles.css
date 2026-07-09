@@ -957,7 +957,7 @@ select {
 
 @media (max-width: 760px) {
   .camera-mode-toolbar {
-    bottom: 98px;
+    bottom: 50px;
   }
 
   .camera-mode-toolbar button {
@@ -1897,7 +1897,7 @@ select {
 .camera-mode-toolbar {
   position: absolute;
   left: 50%;
-  bottom: 108px;
+  bottom: 50px;
   z-index: 18;
   display: inline-flex;
   gap: 6px;
