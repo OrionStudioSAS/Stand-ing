@@ -8473,7 +8473,7 @@ function carpetFootprintAreaM2() {
 
 function sceneWallFabricArea(width = 0, depth = 0, layout = 'u') {
   const backArea = Number(width || 0) * fixedWallHeight;
-  const sideDepth = Math.max(0, Number(depth || 0) - wallThickness);
+  const sideDepth = sideWallLength(depth);
   const sideCount = (layout === 'left' || layout === 'right') ? 1 : layout === 'u' ? 2 : 0;
   return roundM2(backArea + (sideDepth * fixedWallHeight * sideCount));
 }
@@ -10107,9 +10107,25 @@ function availableWalls(layout) {
   ];
 }
 
+function sideWallLength(depth) {
+  return Math.max(0.01, Number(depth || 0));
+}
+
+function sideWallStartZ(depth) {
+  return -Number(depth || 0) / 2 + wallThickness;
+}
+
+function sideWallEndZ(depth) {
+  return sideWallStartZ(depth) + sideWallLength(depth);
+}
+
+function sideWallCenterZ(depth) {
+  return sideWallStartZ(depth) + sideWallLength(depth) / 2;
+}
+
 function wallCoverSurfaceOptions(layout, width, depth, items = []) {
-  const sideDepth = Math.max(0.01, Number(depth || 0) - wallThickness);
-  const sideZ = -Number(depth || 0) / 2 + wallThickness + sideDepth / 2;
+  const sideDepth = sideWallLength(depth);
+  const sideZ = sideWallCenterZ(depth);
   const wallSurfaces = availableWalls(layout).map((wall) => {
     if (wall.id === 'left') {
       return {
@@ -10513,7 +10529,7 @@ function ledSpotsPerRail(entry = {}) {
 }
 
 function wallLength(wall, width, depth) {
-  return wall === 'back' ? Number(width || 0) : Number(depth || 0);
+  return wall === 'back' ? Number(width || 0) : sideWallLength(depth);
 }
 
 function wallLabel(wall) {
@@ -10827,7 +10843,7 @@ function wallItemAxisRange(item, wall, width, depth) {
 
 function wallAxisLimits(wall, width, depth) {
   if (wall === 'back') return { min: -width / 2, max: width / 2 };
-  return { min: -depth / 2 + wallThickness, max: depth / 2 };
+  return { min: sideWallStartZ(depth), max: sideWallEndZ(depth) };
 }
 
 function wallItemAxisBounds(item, wall = 'back') {
@@ -11692,9 +11708,9 @@ function posterSurfaceRegion(item, items, width, depth) {
   }
 
   const wall = item.wall || 'back';
-  const wallLength = wall === 'back' ? width : depth;
-  const min = -wallLength / 2 + 0.5;
-  const max = wallLength / 2 - 0.5;
+  const limits = wallAxisLimits(wall, width, depth);
+  const min = limits.min + 0.5;
+  const max = limits.max - 0.5;
   const center = max >= min ? clamp(Number(item.x || 0), min, max) : 0;
   return {
     min: center - 0.5,
@@ -12286,8 +12302,8 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
   );
   const wallDragPlanes = () => {
     if (!draggingItem || !isWallItem(draggingItem)) return null;
-    const sideDepth = Math.max(0.01, depth - wallThickness);
-    const sideZ = -depth / 2 + wallThickness + sideDepth / 2;
+    const sideDepth = sideWallLength(depth);
+    const sideZ = sideWallCenterZ(depth);
     return (
       <>
         {dragPlane('wall-back', [0, fixedWallHeight / 2, -depth / 2 + wallThickness], [width + wallSwitchZone * 2, fixedWallHeight], [0, 0, 0])}
@@ -12308,8 +12324,8 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
 
 
 function Walls({ width, depth, height, layout, items = [], wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, onDeselect }) {
-  const sideDepth = Math.max(0.01, depth - wallThickness);
-  const sideZ = -depth / 2 + wallThickness + sideDepth / 2;
+  const sideDepth = sideWallLength(depth);
+  const sideZ = sideWallCenterZ(depth);
   return (
     <group onPointerDown={() => onDeselect?.()}>
       <Wall position={[0, height / 2, -depth / 2 + wallThickness / 2]} size={[width, height, wallThickness]} />

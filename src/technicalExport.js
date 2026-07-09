@@ -135,8 +135,9 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
   drawDimension(ctx, planX, planY - 66, planX + planW, planY - 66, mm(width), 'horizontal', technicalColors.blue);
   const hasSideWall = layout === 'left' || layout === 'right' || layout === 'u';
   const sideDimensionStartY = hasSideWall ? planY + wallThickness : planY;
+  const sideDimensionEndY = hasSideWall ? sideDimensionStartY + sideWallLength(depth) * scale : planY + planH;
   const sideDimensionLabel = hasSideWall ? mm(sideWallLength(depth)) : mm(depth);
-  drawDimension(ctx, planX - 64, sideDimensionStartY, planX - 64, planY + planH, sideDimensionLabel, 'vertical', technicalColors.blue);
+  drawDimension(ctx, planX - 64, sideDimensionStartY, planX - 64, sideDimensionEndY, sideDimensionLabel, 'vertical', technicalColors.blue);
 
   items.forEach((item, index) => {
     const entry = catalog.find((candidate) => candidate.type === item.type);
@@ -437,7 +438,7 @@ function screenAxisOffset(item, wall, width, depth) {
 }
 
 function sideWallLength(depth) {
-  return Math.max(0, depth - wallThicknessMeters);
+  return Math.max(0, Number(depth || 0));
 }
 
 function splitWallPanels(lengthMeters) {
