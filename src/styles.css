@@ -7876,6 +7876,22 @@ img.asset-thumb {
   background: #ffffff;
 }
 
+.counter-scene-toggle {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #9eb9e1;
+  border-radius: 10px;
+  color: #1f4378;
+  background: #eef5ff;
+  font-weight: 950;
+}
+
+.counter-scene-toggle.danger {
+  border-color: #ff4a4a;
+  color: #e53935;
+  background: #fff;
+}
+
 .counter-selector > span {
   color: #fff;
 }

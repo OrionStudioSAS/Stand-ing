@@ -1011,23 +1011,25 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout)),
     [autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, ledRailOverrides],
   );
+  const manualVisibleItems = useMemo(() => manualHydratedItems.filter((item) => !isHiddenIncludedCounterItem(item)), [manualHydratedItems]);
   const wallCoverSurfaces = useMemo(
-    () => wallCoverSurfaceOptions(layout, width, depth, [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems]),
-    [layout, width, depth, manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems],
+    () => wallCoverSurfaceOptions(layout, width, depth, [...manualVisibleItems, ...automaticReserveItems, ...automaticPartitionHeadItems]),
+    [layout, width, depth, manualVisibleItems, automaticReserveItems, automaticPartitionHeadItems],
   );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems]);
+  const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item)), [sceneItems]);
   const includedCounterItems = useMemo(() => sceneItems.filter((item) => isWoodReceptionDeskItem(item) && isIncludedSceneItem(item)), [sceneItems]);
-  const cartItems = useMemo(() => sceneItems.filter(shopCartItemVisible), [sceneItems]);
+  const cartItems = useMemo(() => visibleSceneItems.filter(shopCartItemVisible), [visibleSceneItems]);
   const showCartBar = !readOnly && (activeStep === 2 || activeStep === 3);
   const wallCoverImageUrls = useMemo(() => Object.values(wallCovers || {}).map((cover) => cover?.imageUrl).filter(Boolean), [wallCovers]);
-  const sceneTextureLoad = useSceneTexturePreload(sceneItems, [
+  const sceneTextureLoad = useSceneTexturePreload(visibleSceneItems, [
     selectedCarpetColor.image,
     effectiveCarpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
     selectedWallFabricColor.image,
     selectedReserveWallFabricColor.image,
     ...wallCoverImageUrls,
   ]);
-  const sceneSuspendLoad = useSceneSuspendPreload(objectBankLoaded ? sceneItems : []);
+  const sceneSuspendLoad = useSceneSuspendPreload(objectBankLoaded ? visibleSceneItems : []);
   const sceneAssetsReady = objectBankLoaded && sceneTextureLoad.ready && sceneSuspendLoad.ready;
   const shouldRenderScene = sceneAssetsReady || sceneHasRendered;
   const sceneLoadProgress = combineLoadStates(
@@ -1038,7 +1040,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     (draggingId || technicalFloorRampDragging) ? 'dragging-canvas' : '',
     !sceneHasRendered && !sceneAssetsReady ? 'scene-canvas-loading' : '',
   ].filter(Boolean).join(' ');
-  const selected = sceneItems.find((item) => item.id === selectedId);
+  const selected = visibleSceneItems.find((item) => item.id === selectedId);
 
   useEffect(() => {
     setSceneHasRendered(false);
@@ -1056,7 +1058,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const scenePricing = useMemo(() => calculateScenePricing({
     area,
     catalog: availableCatalog,
-    items: sceneItems,
+    items: visibleSceneItems,
     salonLabel,
     scene: initialScene,
     width,
@@ -1070,7 +1072,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     ],
     wallCovers,
     wallCoverSurfaces,
-  }), [area, availableCatalog, sceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, carpetThick, footprintThick]);
+  }), [area, availableCatalog, visibleSceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, carpetThick, footprintThick]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
@@ -1233,9 +1235,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       return;
     }
     setItems((current) => {
+      const visibleCurrent = current.filter((item) => item.id === id || !isHiddenIncludedCounterItem(item));
       const blockers = [...automaticReserveItems, ...automaticPartitionHeadItems].filter((item) => item.id !== id);
-      const updated = updateSceneItemWithCollision([...current, ...blockers], id, patch, width, depth, layout, effectiveCarpetFootprintEnabled);
-      return updated.filter((item) => !isAutomaticReserveItem(item));
+      const updated = updateSceneItemWithCollision([...visibleCurrent, ...blockers], id, patch, width, depth, layout, effectiveCarpetFootprintEnabled);
+      const updatedItem = updated.find((item) => item.id === id);
+      if (!updatedItem) return current;
+      return current.map((item) => (item.id === id ? updatedItem : item));
     });
   };
 
@@ -1397,12 +1402,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const moveDraggedItem = (point) => {
     if (readOnly || !draggingId) return;
-    const dragged = sceneItems.find((item) => item.id === draggingId);
+    const dragged = visibleSceneItems.find((item) => item.id === draggingId);
     if (!dragged) return;
     if (!isAdminViewer && itemMovementLocked(dragged)) return;
 
     if (isWallItem(dragged)) {
-      updateItem(draggingId, wallDragPatch(point, dragged, sceneItems, width, depth, layout));
+      updateItem(draggingId, wallDragPatch(point, dragged, visibleSceneItems, width, depth, layout));
       return;
     }
 
@@ -1624,7 +1629,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 depth={depth}
                 height={height}
                 layout={layout}
-                items={sceneItems}
+                items={visibleSceneItems}
                 selectedId={selectedId}
                 setSelectedId={setSelectedId}
                 draggingId={draggingId}
@@ -1748,7 +1753,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       <aside className="config-panel">
         {activeStep === 3 ? (
           <FurnitureStepPanel
-            items={sceneItems}
+            items={visibleSceneItems}
             catalog={placeableCatalog}
             pricing={scenePricing}
             salonLabel={salonLabel}
@@ -1843,6 +1848,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onPartitionHeadResetImage={resetPartitionHeadVisual}
             onCounterImage={(item, file, optionKeys) => uploadItemImage(item, file, optionKeys)}
             onCounterOptions={updateItemOptions}
+            onCounterVisibility={(item, visible) => {
+              updateItemOptions(item, { counterHidden: !visible });
+              if (!visible && selectedId === item?.id) setSelectedId(null);
+            }}
             onCounterVariant={updateIncludedCounterVariant}
             onSelectCounter={setSelectedId}
             isAdminViewer={isAdminViewer}
@@ -1853,7 +1862,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
       {itemConfigModal && (() => {
         const modalItem = itemConfigModal.item
-          ? sceneItems.find((item) => item.id === itemConfigModal.item.id) || itemConfigModal.item
+          ? visibleSceneItems.find((item) => item.id === itemConfigModal.item.id) || itemConfigModal.item
           : undefined;
         return (
           <ItemConfiguratorModal
@@ -1862,7 +1871,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             item={modalItem}
             salonLabel={salonLabel}
             visualContext={sceneVisualContext}
-            items={sceneItems}
+            items={visibleSceneItems}
             width={width}
             depth={depth}
             uploadState={itemOptionState}
@@ -2076,7 +2085,7 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
       <div className="item-dynamic-preview">
         <span className="preview-flag">{languageFlag(visualContext?.language)}</span>
         <strong>{visualContext?.company || t('partition_head_company')}</strong>
-        <span>{isSmclPartitionHeadItem(item) ? (() => { const a = String(visualContext?.aisleNumber || '').replace(/^All[ée]e?\s*/i, '').trim().toUpperCase(); const s = String(visualContext?.standNumber || '').replace(/^Stand\s+/i, '').trim().toUpperCase(); return (a || s) ? `${a}${s}` : '—'; })() : (visualContext?.standNumber || 'A-14')}</span>
+        <span>{isSmclPartitionHeadItem(item) ? smclStandCode(normalizeSmclAisleCode(visualContext?.aisleNumber), normalizeSmclStandNumber(visualContext?.standNumber)) : (visualContext?.standNumber || 'A-14')}</span>
       </div>
 
       <label className="item-image-upload">
@@ -2292,7 +2301,7 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
   );
 }
 
-function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel = '', uploadState = {}, disabled = false, onImage, onOptions, onVariant, onSelect }) {
+function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel = '', uploadState = {}, disabled = false, onImage, onOptions, onVisibility, onVariant, onSelect }) {
   const t = useT();
   const [selectedCounterId, setSelectedCounterId] = useState(items[0]?.id || '');
 
@@ -2314,6 +2323,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   const selectedColorId = selectedItem?.options?.binary2ColorId || counterWoodFinish(colors).id;
   const selectedFinish = counterFinishOptions(colors).find((finish) => finish.id === selectedColorId) || counterWoodFinish(colors);
   const imageName = selectedItem?.options?.binary3ImageName || t('counter_no_logo');
+  const selectedVisible = !isHiddenIncludedCounterItem(selectedItem);
   const logoInputRef = useRef(null);
 
   const selectCounter = (id) => {
@@ -2365,6 +2375,17 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
         <span><b>!</b> {t('counter_formula_title')}</span>
         <p>{t('counter_formula_detail')}</p>
       </div>
+
+      {selectedItem && (
+        <button
+          type="button"
+          className={selectedVisible ? 'counter-scene-toggle danger' : 'counter-scene-toggle'}
+          disabled={disabled}
+          onClick={() => onVisibility?.(selectedItem, !selectedVisible)}
+        >
+          {selectedVisible ? 'Retirer la banque d’accueil de la scène' : 'Remettre la banque d’accueil sur la scène'}
+        </button>
+      )}
 
       {items.length > 1 && (
         <div className="counter-selector">
@@ -2742,6 +2763,7 @@ function OptionsStepPanel({
   onPartitionHeadResetImage,
   onCounterImage,
   onCounterOptions,
+  onCounterVisibility,
   onCounterVariant,
   onSelectCounter,
   isAdminViewer = false,
@@ -2858,6 +2880,7 @@ function OptionsStepPanel({
           disabled={readOnly}
           onImage={onCounterImage}
           onOptions={onCounterOptions}
+          onVisibility={onCounterVisibility}
           onVariant={onCounterVariant}
           onSelect={onSelectCounter}
         />
@@ -9718,11 +9741,15 @@ function itemMovementLocked(item) {
 }
 
 function itemDeletionLocked(item) {
-  return Boolean(item?.deleteLocked || item?.dimensions?.deleteLocked);
+  return Boolean(item?.deleteLocked || item?.dimensions?.deleteLocked || (isIncludedSceneItem(item) && isWoodReceptionDeskItem(item)));
 }
 
 function itemRotationLocked(item) {
   return Boolean(item?.rotationLocked || item?.dimensions?.rotationLocked);
+}
+
+function isHiddenIncludedCounterItem(item = {}) {
+  return Boolean(isIncludedSceneItem(item) && isWoodReceptionDeskItem(item) && item?.options?.counterHidden);
 }
 
 function itemTurntableActive(item = {}) {
@@ -12851,9 +12878,9 @@ function createSmclPartitionHeadInfoTexture(visualContext = {}, item = {}, optio
   canvas.height = 827;
   const ctx = canvas.getContext('2d');
   const company = String(visualContext?.company || 'NOM EXPOSANT').trim().toUpperCase();
-  const aisleNumber = String(visualContext?.aisleNumber || '').replace(/^All[ée]e?\s*/i, '').trim().toUpperCase();
-  const standNumber = String(visualContext?.standNumber || '').replace(/^Stand\s+/i, '').trim().toUpperCase();
-  const hall = String(visualContext?.hall || '').trim().toUpperCase();
+  const aisleNumber = normalizeSmclAisleCode(visualContext?.aisleNumber);
+  const standNumber = normalizeSmclStandNumber(visualContext?.standNumber);
+  const hall = normalizeSmclHallNumber(visualContext?.hall);
   const sectorColor = smclSectorColor(visualContext?.sector);
   const isRight = (options.layoutSide || smclPartitionHeadSide(item)) === 'right';
 
@@ -12878,21 +12905,54 @@ function smclCanvasFont(weight = 400, size = 80) {
 
 function drawSmclLeftHeadInfo(ctx, { company, aisleNumber, standNumber, hall }) {
   const labelX = 245;
-  const standCode = (aisleNumber || standNumber) ? `${aisleNumber}${standNumber}` : '—';
+  const standCode = smclStandCode(aisleNumber, standNumber);
   fitCanvasText(ctx, company, 238, 48, 690, 92, 700);
   fitCanvasText(ctx, standCode, labelX, 205, 360, 92, 500);
-  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', labelX, 375, 360, 68, 500);
+  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', labelX, 375, 360, 54, 500);
   drawSmclSalonMark(ctx, labelX, 620, 0.86);
   drawSmclPartnerMarks(ctx, labelX, 760, 0.9);
 }
 
 function drawSmclRightHeadInfo(ctx, { company, aisleNumber, standNumber, hall }) {
-  const standCode = (aisleNumber || standNumber) ? `${aisleNumber}${standNumber}` : '—';
+  const standCode = smclStandCode(aisleNumber, standNumber);
   fitCanvasText(ctx, company, 290, 48, 700, 92, 700);
   fitCanvasText(ctx, standCode, 765, 205, 360, 92, 500);
-  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', 765, 375, 360, 68, 500);
+  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', 765, 375, 360, 54, 500);
   drawSmclSalonMark(ctx, 770, 620, 0.86);
   drawSmclPartnerMarks(ctx, 770, 760, 0.9);
+}
+
+function normalizeSmclAisleCode(value = '') {
+  return String(value || '')
+    .replace(/^All[ée]e?\s*/i, '')
+    .replace(/^Aisle\s*/i, '')
+    .replace(/[^a-z0-9]/gi, '')
+    .trim()
+    .toUpperCase();
+}
+
+function normalizeSmclStandNumber(value = '') {
+  return String(value || '')
+    .replace(/^Stand\s*/i, '')
+    .replace(/^N[°ºo.]?\s*/i, '')
+    .replace(/^Num[ée]ro\s*/i, '')
+    .replace(/[^a-z0-9-]/gi, '')
+    .trim()
+    .toUpperCase();
+}
+
+function normalizeSmclHallNumber(value = '') {
+  return String(value || '')
+    .replace(/^Pavillon\s*/i, '')
+    .replace(/^Hall\s*/i, '')
+    .trim()
+    .toUpperCase();
+}
+
+function smclStandCode(aisleNumber = '', standNumber = '') {
+  if (!aisleNumber && !standNumber) return '—';
+  if (aisleNumber && standNumber && standNumber.startsWith(aisleNumber)) return standNumber;
+  return `${aisleNumber}${standNumber}` || '—';
 }
 
 function drawSmclSalonMark(ctx, x, y, scale = 1) {
