@@ -81,6 +81,7 @@ const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
+const wallTopSnapInset = 0.015;
 const turntableRotationSpeed = 0.7;
 const furnitureInsuranceRows = [
   { min: 0, max: 75, price: 15.61 },
@@ -6841,7 +6842,18 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
         ...(draft.dimensions || {}),
         ceilingMounted: checked,
         ceilingBottomY: checked ? ceilingObjectBottomY : draft.dimensions?.ceilingBottomY,
-        ...(checked ? { mountType: 'floor', isTelevision: false, isLedSpotOption: false } : {}),
+        ...(checked ? { mountType: 'floor', isTelevision: false, isLedSpotOption: false, wallTopSnap: false } : {}),
+      },
+    });
+  };
+
+  const updateWallTopSnapOption = (checked) => {
+    setDraft({
+      ...draft,
+      dimensions: {
+        ...(draft.dimensions || {}),
+        wallTopSnap: checked,
+        ...(checked ? { mountType: 'wall', ceilingMounted: false, isTelevision: false, isLedSpotOption: false } : {}),
       },
     });
   };
@@ -7201,7 +7213,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
             <input
               type="checkbox"
               checked={draftWallTopSnap}
-              onChange={(event) => updateAssetBehavior({ wallTopSnap: event.target.checked })}
+              onChange={(event) => updateWallTopSnapOption(event.target.checked)}
             />
             <span>
               <strong>Accrocher en haut du mur</strong>
@@ -9932,8 +9944,8 @@ function isWallTopSnapItem(item = {}, entry = null) {
 
 function floorItemBaseY(item = {}, entry = null) {
   if (isWallTopSnapItem(item, entry)) {
-    const h = Number(item?.dimensions?.height ?? entry?.dimensions?.height ?? 0);
-    return (Number.isFinite(h) && h > 0) ? fixedWallHeight - h : 0;
+    const h = wallTopSnapItemHeight(item, entry);
+    return h > 0 ? Math.max(0, fixedWallHeight - wallTopSnapInset - h) : 0;
   }
   if (!isCeilingMountedItem(item, entry)) return 0;
   const y = Number(item?.dimensions?.ceilingBottomY ?? entry?.dimensions?.ceilingBottomY ?? ceilingObjectBottomY);
@@ -10428,12 +10440,13 @@ function isTelevisionItem(item = {}) {
 }
 
 function isCenterAnchoredWallModel(item = {}) {
-  return isTelevisionItem(item);
+  return isTelevisionItem(item) || isWallTopSnapItem(item);
 }
 
 function assetPlacementMode(assetOrEntry = {}) {
   const mountType = assetOrEntry?.dimensions?.mountType || assetOrEntry?.mountType;
   if (isTelevisionItem(assetOrEntry)) return 'wall';
+  if (isWallTopSnapItem(assetOrEntry)) return 'wall';
   if (isCeilingMountedItem(assetOrEntry)) return 'floor';
   if (isLedRailEntry(assetOrEntry)) return 'wall';
   return mountType === 'wall' ? 'wall' : 'floor';
@@ -11205,11 +11218,16 @@ function collidesWithWallItems(candidate, items, ignoreId = null, width = 0, dep
 
   return (items || []).some((item) => {
     if (!item || item.id === ignoreId || !itemCollisionEnabled(item)) return false;
+    if (shouldIgnoreWallCollision(candidate, item)) return false;
     const itemBox = isWallItem(item)
       ? wallItemCollisionBox(item, items, width, depth)
       : floorItemWallCollisionBox(item, candidateBox.wall, width, depth);
     return itemBox ? wallBoxesOverlap(candidateBox, itemBox) : false;
   });
+}
+
+function shouldIgnoreWallCollision(a = {}, b = {}) {
+  return (isWallTopSnapItem(a) || isWallTopSnapItem(b)) && (isLedRailEntry(a) || isLedRailEntry(b));
 }
 
 function collidesWithReserveProtectedArea(candidate, items = [], ignoreId = null) {
@@ -11487,11 +11505,23 @@ function wallItemCenterY(item) {
   if (isLedRailEntry(item)) return ledRailCenterY(item);
   if (isPartitionHeadItem(item)) return 0;
   if (isWallTopSnapItem(item)) {
-    const h = Number(item?.dimensions?.height ?? 0);
-    return (Number.isFinite(h) && h > 0) ? fixedWallHeight - h / 2 : fixedWallHeight / 2;
+    const h = wallTopSnapItemHeight(item);
+    return h > 0 ? Math.max(h / 2, fixedWallHeight - wallTopSnapInset - h / 2) : fixedWallHeight / 2;
   }
   const y = Number(item?.dimensions?.wallY);
   return Number.isFinite(y) && y >= 0 ? y : 0;
+}
+
+function wallTopSnapItemHeight(item = {}, entry = null) {
+  const merged = entry ? {
+    ...entry,
+    ...item,
+    dimensions: { ...(entry.dimensions || {}), ...(item.dimensions || {}) },
+    modelSize: item.modelSize || entry.modelSize,
+  } : item;
+  const size = itemDefaultSize(merged);
+  const height = Number(size?.[1] || 0);
+  return Number.isFinite(height) && height > 0 ? height : 0;
 }
 
 function wallMountedNormalOffset(item, objectSurface = false) {
