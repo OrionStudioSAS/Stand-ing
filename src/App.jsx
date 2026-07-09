@@ -1838,6 +1838,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             wallCovers={wallCovers}
             wallCoverSurfaces={wallCoverSurfaces}
             wallCoverState={wallCoverState}
+            wallCoverIncludedMl={scenePricing.wallCoverIncludedMl || 0}
             defaultColorOptions={effectiveDefaultColorOptions}
             technicalFloorType={technicalFloorType}
             technicalFloorTrimType={technicalFloorTrimType}
@@ -2745,6 +2746,7 @@ function OptionsStepPanel({
   wallCovers = {},
   wallCoverSurfaces = [],
   wallCoverState = {},
+  wallCoverIncludedMl = 0,
   defaultColorOptions = {},
   technicalFloorType,
   technicalFloorTrimType,
@@ -2842,6 +2844,7 @@ function OptionsStepPanel({
           surfaces={wallCoverSurfaces}
           covers={wallCovers}
           uploadState={wallCoverState}
+          includedMl={wallCoverIncludedMl}
           disabled={readOnly}
           onToggle={onWallCoverToggle}
           onImage={onWallCoverImage}
@@ -4320,9 +4323,10 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
   );
 }
 
-function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, disabled = false, onToggle, onImage }) {
+function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, includedMl = 0, disabled = false, onToggle, onImage }) {
   const t = useT();
   const activeCount = surfaces.filter((surface) => covers?.[surface.id]?.enabled).length;
+  const includedLabel = Number(includedMl || 0) > 0 ? `${formatNumber(includedMl)} ml inclus dans votre formule` : '';
 
   return (
     <div className="wall-cover-card">
@@ -4331,6 +4335,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, dis
           <strong>{t('wall_cover_title')}</strong>
           <small>{t('wall_cover_ref')}</small>
           <span>{t('wall_cover_price')}</span>
+          {includedLabel && <small>{includedLabel}</small>}
         </div>
         <em>{activeCount} / {surfaces.length} {t('wall_cover_active')}</em>
       </div>
@@ -9207,16 +9212,22 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
   if (activeWallCovers.length) {
     const unitPrice = 245;
     const quantity = activeWallCovers.reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0);
-    const lineTotal = Math.round(quantity * unitPrice);
-    itemsTotal += lineTotal;
-    lines.push({
-      type: 'wall-cover',
-      label: `Bâche sur cloisons (${formatNumber(quantity)} ml)`,
-      quantity,
-      unitPrice,
-      total: lineTotal,
-      reference: 'BACHE-CLOISON',
-    });
+    const includedQuantity = Math.min(quantity, wallCoverIncludedLinearMeters(scene));
+    const billableQuantity = Math.max(0, quantity - includedQuantity);
+    if (billableQuantity > 0) {
+      const lineTotal = Math.round(billableQuantity * unitPrice);
+      itemsTotal += lineTotal;
+      lines.push({
+        type: 'wall-cover',
+        label: `Bâche sur cloisons (${formatNumber(billableQuantity)} ml facturés${includedQuantity > 0 ? `, ${formatNumber(includedQuantity)} ml inclus` : ''})`,
+        quantity: billableQuantity,
+        unitPrice,
+        total: lineTotal,
+        reference: 'BACHE-CLOISON',
+        includedQuantity,
+        totalQuantity: quantity,
+      });
+    }
   }
 
   const insuranceLine = furnitureInsuranceLine(itemsTotal);
@@ -9235,8 +9246,34 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     itemsTotal,
     insuranceLine,
     lines,
+    wallCoverIncludedMl: wallCoverIncludedLinearMeters(scene),
     total: roundCurrency(basePrice + itemsTotal),
   };
+}
+
+function wallCoverIncludedLinearMeters(scene = {}) {
+  const boardId = String(scene.source_payload?.board_id || scene.source_payload?.boardId || scene.monday_board_id || '');
+  const key = normalizeTextValue([
+    scene.offer,
+    scene.offer_name,
+    scene.pack,
+    scene.pack_name,
+    scene.event_name,
+    scene.salon,
+    scene.salon_name,
+    scene.source_payload?.offer,
+    scene.source_payload?.pack,
+    scene.source_payload?.includedPack,
+    scene.source_payload?.options?.includedPack,
+    scene.source_payload?.salon,
+    scene.source_payload?.event_name,
+    scene.options?.includedPack,
+  ].filter(Boolean).join(' '));
+  const isSmcl = key.includes('smcl') || ['18395911999', '18395912050'].includes(boardId);
+  if (!isSmcl) return 0;
+  if (key.includes('prestige') || boardId === '18395912050') return 4;
+  if (key.includes('confort') || boardId === '18395911999') return 2;
+  return 0;
 }
 
 function isIncludedColorSelection(selection = {}) {
