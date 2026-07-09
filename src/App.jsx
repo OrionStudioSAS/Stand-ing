@@ -6640,6 +6640,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
   const draftIsTelevision = Boolean(draft.dimensions?.isTelevision);
   const draftIsLedSpotOption = Boolean(draft.dimensions?.isLedSpotOption);
   const draftCeilingMounted = Boolean(draft.dimensions?.ceilingMounted);
+  const draftWallTopSnap = Boolean(draft.dimensions?.wallTopSnap);
   const draftMovementLocked = Boolean(draft.dimensions?.movementLocked);
   const draftDeleteLocked = Boolean(draft.dimensions?.deleteLocked);
   const draftRotationLocked = Boolean(draft.dimensions?.rotationLocked);
@@ -7194,6 +7195,17 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
             <span>
               <strong>Objet au plafond</strong>
               <small>Place le bas de l'objet à 3,00 m de hauteur, avec déplacement libre en X/Z.</small>
+            </span>
+          </label>
+          <label className="asset-toggle-row">
+            <input
+              type="checkbox"
+              checked={draftWallTopSnap}
+              onChange={(event) => updateAssetBehavior({ wallTopSnap: event.target.checked })}
+            />
+            <span>
+              <strong>Accrocher en haut du mur</strong>
+              <small>Le haut de l'objet arrive en haut du mur (2,50 m). Nécessite que la hauteur de l'objet soit renseignée.</small>
             </span>
           </label>
           <label>
@@ -9914,7 +9926,15 @@ function isCeilingMountedItem(item = {}, entry = null) {
   return Boolean(item?.ceilingMounted || item?.dimensions?.ceilingMounted || entry?.dimensions?.ceilingMounted);
 }
 
+function isWallTopSnapItem(item = {}, entry = null) {
+  return Boolean(item?.wallTopSnap || item?.dimensions?.wallTopSnap || entry?.dimensions?.wallTopSnap);
+}
+
 function floorItemBaseY(item = {}, entry = null) {
+  if (isWallTopSnapItem(item, entry)) {
+    const h = Number(item?.dimensions?.height ?? entry?.dimensions?.height ?? 0);
+    return (Number.isFinite(h) && h > 0) ? fixedWallHeight - h : 0;
+  }
   if (!isCeilingMountedItem(item, entry)) return 0;
   const y = Number(item?.dimensions?.ceilingBottomY ?? entry?.dimensions?.ceilingBottomY ?? ceilingObjectBottomY);
   return Number.isFinite(y) ? y : ceilingObjectBottomY;
