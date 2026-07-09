@@ -72,6 +72,10 @@ export const translations = {
     wall_cover_spec: 'Format simulateur conseillé :',
     wall_cover_missing: 'Visuel à fournir',
     wall_cover_ready: 'VISUEL',
+    wall_cover_external_notice: 'Si vous activez une ou plusieurs bâches, notre équipe vous contactera pour récupérer les fichiers HD adaptés à l’impression.',
+    wall_cover_generic_visual: 'Image générique affichée sur la scène',
+    wall_cover_selected: 'Sélectionnée',
+    wall_cover_not_selected: 'Option',
     wall_cover_toggle_add: 'Activer {label}',
     wall_cover_toggle_remove: 'Retirer {label}',
 
@@ -417,6 +421,10 @@ export const translations = {
     wall_cover_spec: 'Recommended simulator format:',
     wall_cover_missing: 'Visual required',
     wall_cover_ready: 'VISUAL',
+    wall_cover_external_notice: 'If you enable one or more banners, our team will contact you to collect print-ready HD files.',
+    wall_cover_generic_visual: 'Generic image displayed in the scene',
+    wall_cover_selected: 'Selected',
+    wall_cover_not_selected: 'Option',
     wall_cover_toggle_add: 'Enable {label}',
     wall_cover_toggle_remove: 'Remove {label}',
 

@@ -851,7 +851,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
   const [itemOptionState, setItemOptionState] = useState({ uploading: false, error: '' });
-  const [wallCoverState, setWallCoverState] = useState({ uploading: '', error: '' });
   const [wallCovers, setWallCovers] = useState(initialOptions.wallCovers || {});
   const [itemConfigModal, setItemConfigModal] = useState(null);
   const [basePackOpen, setBasePackOpen] = useState(false);
@@ -1025,13 +1024,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const includedCounterItems = useMemo(() => sceneItems.filter((item) => isWoodReceptionDeskItem(item) && isIncludedSceneItem(item)), [sceneItems]);
   const cartItems = useMemo(() => visibleSceneItems.filter(shopCartItemVisible), [visibleSceneItems]);
   const showCartBar = !readOnly && (activeStep === 2 || activeStep === 3);
-  const wallCoverImageUrls = useMemo(() => Object.values(wallCovers || {}).map((cover) => cover?.imageUrl).filter(Boolean), [wallCovers]);
   const sceneTextureLoad = useSceneTexturePreload(visibleSceneItems, [
     selectedCarpetColor.image,
     effectiveCarpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
     selectedWallFabricColor.image,
     selectedReserveWallFabricColor.image,
-    ...wallCoverImageUrls,
   ]);
   const sceneSuspendLoad = useSceneSuspendPreload(objectBankLoaded ? visibleSceneItems : []);
   const sceneAssetsReady = objectBankLoaded && sceneTextureLoad.ready && sceneSuspendLoad.ready;
@@ -1292,23 +1289,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       ...current,
       [surfaceId]: { ...(current?.[surfaceId] || {}), enabled },
     }));
-  };
-
-  const uploadWallCoverImage = async (surfaceId, file) => {
-    if (!surfaceId || !file || readOnly) return;
-    setWallCoverState({ uploading: surfaceId, error: '' });
-    try {
-      const uploadedUrl = await uploadSceneItemOptionImage(initialScene, { id: `wall-cover-${surfaceId}`, type: 'wall-cover' }, file);
-      const imageUrl = cacheBustedUrl(uploadedUrl);
-      await preloadImage(imageUrl);
-      setWallCovers((current) => ({
-        ...current,
-        [surfaceId]: { ...(current?.[surfaceId] || {}), enabled: true, imageUrl, imageName: file.name },
-      }));
-      setWallCoverState({ uploading: '', error: '' });
-    } catch (error) {
-      setWallCoverState({ uploading: '', error: error.message || 'Upload impossible.' });
-    }
   };
 
 
@@ -1846,7 +1826,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             wallFabricColors={wallFabricPalette}
             wallCovers={wallCovers}
             wallCoverSurfaces={wallCoverSurfaces}
-            wallCoverState={wallCoverState}
             wallCoverIncludedMl={scenePricing.wallCoverIncludedMl || 0}
             defaultColorOptions={effectiveDefaultColorOptions}
             technicalFloorType={technicalFloorType}
@@ -1877,7 +1856,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onCarpetFootprintEnabled={(enabled) => !readOnly && !selectedTechnicalFloor && setCarpetFootprintEnabled(enabled)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
             onWallCoverToggle={toggleWallCover}
-            onWallCoverImage={uploadWallCoverImage}
             onTechnicalFloorType={(type) => !readOnly && handleTechnicalFloorType(type)}
             onTechnicalFloorTrimType={(type) => !readOnly && setTechnicalFloorTrimType(type)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
@@ -2754,7 +2732,6 @@ function OptionsStepPanel({
   wallFabricColors = [],
   wallCovers = {},
   wallCoverSurfaces = [],
-  wallCoverState = {},
   wallCoverIncludedMl = 0,
   defaultColorOptions = {},
   technicalFloorType,
@@ -2785,7 +2762,6 @@ function OptionsStepPanel({
   onCarpetFootprintEnabled,
   onWallColor,
   onWallCoverToggle,
-  onWallCoverImage,
   onTechnicalFloorType,
   onTechnicalFloorTrimType,
   onLedRailsEnabled,
@@ -2852,11 +2828,9 @@ function OptionsStepPanel({
         <WallCoverOptionCard
           surfaces={wallCoverSurfaces}
           covers={wallCovers}
-          uploadState={wallCoverState}
           includedMl={wallCoverIncludedMl}
           disabled={readOnly}
           onToggle={onWallCoverToggle}
-          onImage={onWallCoverImage}
         />
       </OptionAccordion>
       {isAdminViewer && (
@@ -4454,7 +4428,7 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
   );
 }
 
-function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, includedMl = 0, disabled = false, onToggle, onImage }) {
+function WallCoverOptionCard({ surfaces = [], covers = {}, includedMl = 0, disabled = false, onToggle }) {
   const t = useT();
   const activeCount = surfaces.filter((surface) => covers?.[surface.id]?.enabled).length;
   const includedLabel = Number(includedMl || 0) > 0 ? `${formatNumber(includedMl)} ml inclus dans votre formule` : '';
@@ -4475,13 +4449,13 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, inc
         <div className="wall-cover-empty">{t('wall_cover_empty')}</div>
       )}
 
+      <div className="wall-cover-notice">{t('wall_cover_external_notice')}</div>
+
       {surfaces.map((surface) => {
         const cover = covers?.[surface.id] || {};
         const enabled = Boolean(cover.enabled);
-        const hasImage = Boolean(cover.imageUrl);
-        const spec = recommendedSimulatorImageSpec(surface.visibleWidth || surface.width, surface.height, 2048);
         return (
-          <div key={surface.id} className={`wall-cover-row ${enabled ? 'active' : ''} ${enabled && !hasImage ? 'needs-image' : ''}`}>
+          <div key={surface.id} className={`wall-cover-row ${enabled ? 'active' : ''}`}>
             <button
               type="button"
               className={`wall-cover-toggle ${enabled ? 'active' : ''}`}
@@ -4494,25 +4468,14 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, uploadState = {}, inc
             <div>
               <strong>{surface.label}</strong>
               <span>{formatNumber(surface.visibleWidth || surface.width)} m × {formatNumber(surface.height)} m</span>
-              <small>{t('wall_cover_spec')} {spec.pixelText}</small>
+              <small>{t('wall_cover_generic_visual')}</small>
             </div>
-            <label className={`wall-cover-upload ${hasImage ? 'ready' : 'missing'}`}>
-              {uploadState.uploading === surface.id ? t('img_uploading') : hasImage ? t('wall_cover_ready') : t('wall_cover_missing')}
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                disabled={disabled || uploadState.uploading === surface.id}
-                onChange={(event) => {
-                  onImage?.(surface.id, event.target.files?.[0]);
-                  event.target.value = '';
-                }}
-              />
-            </label>
+            <span className={`wall-cover-status ${enabled ? 'active' : ''}`}>
+              {enabled ? t('wall_cover_selected') : t('wall_cover_not_selected')}
+            </span>
           </div>
         );
       })}
-
-      {uploadState.error && <p className="wall-cover-error">{uploadState.error}</p>}
     </div>
   );
 }
@@ -12322,6 +12285,68 @@ function drawMirroredTile(ctx, image, x, y, width, height, sourceX, sourceY, fli
   ctx.restore();
 }
 
+function useGenericWallCoverTexture(width = 1, height = 1) {
+  const texture = useMemo(() => createGenericWallCoverTexture(width, height), [width, height]);
+  useEffect(() => () => texture?.dispose?.(), [texture]);
+  return texture;
+}
+
+function createGenericWallCoverTexture(width = 1, height = 1) {
+  if (typeof document === 'undefined') return null;
+  const ratio = Math.max(0.2, Math.min(6, Number(width || 1) / Math.max(0.1, Number(height || 1))));
+  const canvas = document.createElement('canvas');
+  canvas.width = 1400;
+  canvas.height = Math.max(360, Math.min(1400, Math.round(canvas.width / ratio)));
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  gradient.addColorStop(0, '#153d72');
+  gradient.addColorStop(0.46, '#2d7fbb');
+  gradient.addColorStop(1, '#f2b34c');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = '#ffffff';
+  for (let x = -canvas.height; x < canvas.width; x += 92) {
+    ctx.beginPath();
+    ctx.moveTo(x, canvas.height);
+    ctx.lineTo(x + canvas.height * 0.7, 0);
+    ctx.lineTo(x + canvas.height * 0.7 + 44, 0);
+    ctx.lineTo(x + 44, canvas.height);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 0.16;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 3;
+  const step = Math.max(80, canvas.width / 10);
+  for (let x = 0; x <= canvas.width; x += step) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvas.height);
+    ctx.stroke();
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  ctx.fillRect(canvas.width * 0.08, canvas.height * 0.33, canvas.width * 0.84, canvas.height * 0.34);
+  ctx.fillStyle = '#173761';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `900 ${Math.max(44, Math.round(canvas.height * 0.095))}px Arial, sans-serif`;
+  ctx.fillText('VISUEL GENERIQUE', canvas.width / 2, canvas.height * 0.47);
+  ctx.font = `700 ${Math.max(24, Math.round(canvas.height * 0.045))}px Arial, sans-serif`;
+  ctx.fillText('Fichiers HD recuperes par Stand-ING', canvas.width / 2, canvas.height * 0.57);
+
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  texture.minFilter = LinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 
 function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, sceneOffset, draggingId, draggingItem = null, onDragMove, onClearHover, onDeselect }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
@@ -12463,30 +12488,23 @@ function WallCoverSurfaces({ width, depth, layout, items = [], covers = {} }) {
         const cover = covers?.[surface.id];
         if (!cover?.enabled) return [];
         return wallCoverSegmentsForSurface(surface, items, width, depth).map((segment) => (
-          <WallCoverSurface key={segment.id} surface={segment} imageUrl={cover.imageUrl} />
+          <WallCoverSurface key={segment.id} surface={segment} />
         ));
       })}
     </group>
   );
 }
 
-function WallCoverSurface({ surface, imageUrl }) {
+function WallCoverSurface({ surface }) {
   const coverHeight = Math.max(0.1, Number(surface.height || fixedWallHeight) - baseboardHeight);
-  const coverSurface = { ...surface, height: coverHeight };
-  const texture = useExternalTexture(imageUrl || '', { coverSize: posterCoverTextureSize(coverSurface, 2048) });
+  const texture = useGenericWallCoverTexture(surface.width, coverHeight);
   const position = [surface.position[0], baseboardHeight + coverHeight / 2, surface.position[2]];
-  if (imageUrl && !texture) return null;
   return (
     <group position={position} rotation={[0, surface.rotation, 0]}>
       <mesh renderOrder={2} raycast={() => null}>
         <planeGeometry args={[surface.width, coverHeight]} />
-        <meshBasicMaterial color={texture ? '#ffffff' : '#eef2f6'} map={texture || null} side={DoubleSide} toneMapped={false} depthWrite={false} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
+        <meshBasicMaterial color="#ffffff" map={texture || null} side={DoubleSide} toneMapped={false} depthWrite={false} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
       </mesh>
-      {!texture && (
-        <Text position={[0, 0, 0.006]} fontSize={Math.min(0.18, surface.width / 10)} color="#1f4378" anchorX="center" anchorY="middle">
-          VISUEL À FOURNIR
-        </Text>
-      )}
     </group>
   );
 }

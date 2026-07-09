@@ -7324,10 +7324,6 @@ img.asset-thumb {
   background: #eef4fb;
 }
 
-.wall-cover-row.needs-image {
-  border-color: #f29916;
-  background: #fff8ea;
-}
 
 .wall-cover-toggle {
   display: grid;
@@ -7374,32 +7370,23 @@ img.asset-thumb {
   font-weight: 800;
 }
 
-.wall-cover-upload {
-  position: relative;
-  overflow: hidden;
-  border-radius: 6px;
-  padding: 10px 12px;
-  color: #fff;
-  background: #1f4378;
-  font-size: 0.68rem;
+
+.wall-cover-status {
+  border-radius: 999px;
+  padding: 7px 9px;
+  color: #1f4378;
+  background: #e7eef9;
+  font-size: 0.66rem;
   font-weight: 950;
   white-space: nowrap;
-  cursor: pointer;
 }
 
-.wall-cover-upload.missing {
-  background: #ee8a22;
+.wall-cover-status.active {
+  color: #0f6c36;
+  background: #dff4e7;
 }
 
-.wall-cover-upload input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.wall-cover-empty,
-.wall-cover-error {
+.wall-cover-empty {
   border-radius: 8px;
   padding: 10px 12px;
   color: #7f8794;
@@ -7408,9 +7395,14 @@ img.asset-thumb {
   font-weight: 850;
 }
 
-.wall-cover-error {
-  color: #b54935;
-  background: #fff1ef;
+.wall-cover-notice {
+  border: 1px solid #f2b24c;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #a56105;
+  background: #fff7e6;
+  font-size: 0.74rem;
+  font-weight: 850;
 }
 
 .reserve-choice-panel {
