@@ -2,7 +2,7 @@ import React, { Suspense, createContext, useContext, useEffect, useMemo, useRef,
 import { createRoot } from 'react-dom/client';
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, BufferGeometry, Cache, CanvasTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, Vector3 } from 'three';
+import { Box3, BufferGeometry, Cache, CanvasTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MOUSE, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -22,6 +22,7 @@ import {
   LogOut,
   Mail,
   Minus,
+  Move3D,
   Orbit,
   Paperclip,
   Plus,
@@ -91,6 +92,10 @@ const furnitureInsuranceRows = [
   { min: 5301, max: 7000, price: 564.22 },
   { min: 7001, max: Infinity, price: 1200 },
 ];
+const cameraOrbitMouseButtons = { LEFT: MOUSE.ROTATE, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.PAN };
+const cameraPanMouseButtons = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.PAN };
+const cameraOrbitTouches = { ONE: TOUCH.ROTATE, TWO: TOUCH.DOLLY_ROTATE };
+const cameraPanTouches = { ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_PAN };
 const dirtyCarpetColorCodes = ['0219', '0400', '0939'];
 const technicalFloorOptions = [
   { id: 'floor4', label: 'Plancher technique 4 cm', height: 0.04, price: 49, reference: 'SMCL02PLA01A', detail: 'Hauteur 4 cm + cornières 4 × 4 cm', rampLabel: 'Rampe PMR 4 cm' },
@@ -792,6 +797,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [selectedId, setSelectedId] = useState(() => initialScene.items?.[0]?.id || null);
   const [draggingId, setDraggingId] = useState(null);
   const [orbitControlsActive, setOrbitControlsActive] = useState(false);
+  const [cameraControlMode, setCameraControlMode] = useState('orbit');
   const [technicalFloorRampDragging, setTechnicalFloorRampDragging] = useState(false);
   const [language, setLanguage] = useState(() => {
     if (initialOptions.language) return initialOptions.language;
@@ -1647,11 +1653,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           <OrbitControls
             makeDefault
             target={[0, 0.7, 0]}
-            minPolarAngle={Math.PI / 5.2}
-            maxPolarAngle={Math.PI / 2.25}
+            minPolarAngle={0.01}
+            maxPolarAngle={Math.PI / 2.05}
             minDistance={4}
             maxDistance={11}
-            enablePan
+            enableRotate={cameraControlMode === 'orbit'}
+            enablePan={cameraControlMode === 'pan'}
+            mouseButtons={cameraControlMode === 'pan' ? cameraPanMouseButtons : cameraOrbitMouseButtons}
+            touches={cameraControlMode === 'pan' ? cameraPanTouches : cameraOrbitTouches}
             enabled={!draggingId && !technicalFloorRampDragging}
             onStart={() => setOrbitControlsActive(true)}
             onEnd={() => setOrbitControlsActive(false)}
@@ -1659,6 +1668,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         </Canvas>
 
         {!sceneHasRendered && !sceneAssetsReady && <SceneTextureLoaderOverlay loaded={sceneLoadProgress.loaded} total={sceneLoadProgress.total} />}
+
+        {activeStep > 1 && !headerPanel && (
+          <CameraModeToolbar mode={cameraControlMode} onChange={setCameraControlMode} />
+        )}
 
         {readOnly && !headerPanel && (
           <div className="readonly-badge">
@@ -3713,6 +3726,31 @@ function PanelHead({ title, step }) {
   );
 }
 
+function CameraModeToolbar({ mode = 'orbit', onChange }) {
+  return (
+    <div className="camera-mode-toolbar" aria-label="Mode de navigation camera">
+      <button
+        type="button"
+        className={mode === 'orbit' ? 'active' : ''}
+        onClick={() => onChange?.('orbit')}
+        title="Incliner et tourner la vue"
+      >
+        <Orbit size={16} />
+        <span>Incliner</span>
+      </button>
+      <button
+        type="button"
+        className={mode === 'pan' ? 'active' : ''}
+        onClick={() => onChange?.('pan')}
+        title="Déplacer la vue"
+      >
+        <Move3D size={16} />
+        <span>Déplacer</span>
+      </button>
+    </div>
+  );
+}
+
 function RulesSummary({ ledSpotCount, ledRailsEnabled, reserveRule, partitionHeadRule }) {
   const t = useT();
   const headCount = partitionHeadRule?.includedCount || 0;
@@ -5569,6 +5607,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [selectedId, setSelectedId] = useState(initialScene.items[0]?.id || null);
   const [draggingId, setDraggingId] = useState(null);
   const [orbitControlsActive, setOrbitControlsActive] = useState(false);
+  const [cameraControlMode, setCameraControlMode] = useState('orbit');
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true }));
   const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
@@ -5704,10 +5743,26 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
             )}
             <ContactShadows opacity={0.12} scale={12} blur={2.8} far={5} position={[0, -0.01, 0]} />
           </Suspense>
-          <OrbitControls makeDefault target={[0, 0.7, 0]} minPolarAngle={Math.PI / 5.2} maxPolarAngle={Math.PI / 2.25} minDistance={4} maxDistance={11} enablePan enabled={!draggingId} onStart={() => setOrbitControlsActive(true)} onEnd={() => setOrbitControlsActive(false)} />
+          <OrbitControls
+            makeDefault
+            target={[0, 0.7, 0]}
+            minPolarAngle={0.01}
+            maxPolarAngle={Math.PI / 2.05}
+            minDistance={4}
+            maxDistance={11}
+            enableRotate={cameraControlMode === 'orbit'}
+            enablePan={cameraControlMode === 'pan'}
+            mouseButtons={cameraControlMode === 'pan' ? cameraPanMouseButtons : cameraOrbitMouseButtons}
+            touches={cameraControlMode === 'pan' ? cameraPanTouches : cameraOrbitTouches}
+            enabled={!draggingId}
+            onStart={() => setOrbitControlsActive(true)}
+            onEnd={() => setOrbitControlsActive(false)}
+          />
         </Canvas>
 
         {!presetAssetsReady && <SceneTextureLoaderOverlay loaded={presetLoadProgress.loaded} total={presetLoadProgress.total} />}
+
+        <CameraModeToolbar mode={cameraControlMode} onChange={setCameraControlMode} />
 
         {selected && (
           <div className="view-toolbar preset-toolbar selection-mode">

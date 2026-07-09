@@ -956,6 +956,20 @@ select {
 }
 
 @media (max-width: 760px) {
+  .camera-mode-toolbar {
+    bottom: 98px;
+  }
+
+  .camera-mode-toolbar button {
+    justify-content: center;
+    width: 38px;
+    padding: 0;
+  }
+
+  .camera-mode-toolbar button span {
+    display: none;
+  }
+
   .app-shell {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 58vh) minmax(0, 42vh);
@@ -1878,6 +1892,54 @@ select {
   font-size: 0.75rem;
   font-weight: 900;
   text-align: center;
+}
+
+.camera-mode-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 108px;
+  z-index: 18;
+  display: inline-flex;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(31, 67, 120, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14px 34px rgba(24, 36, 56, 0.16);
+  backdrop-filter: blur(10px);
+  transform: translateX(-50%);
+}
+
+.configurator-shell:not(.has-cart-bar) .camera-mode-toolbar {
+  bottom: 24px;
+}
+
+.preset-3d-stage .camera-mode-toolbar {
+  bottom: 18px;
+}
+
+.intro-step .camera-mode-toolbar {
+  display: none;
+}
+
+.camera-mode-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  color: #617086;
+  background: transparent;
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.camera-mode-toolbar button.active {
+  color: #fff;
+  background: #1f4378;
+  box-shadow: 0 8px 18px rgba(31, 67, 120, 0.22);
 }
 
 .item-options-panel {
