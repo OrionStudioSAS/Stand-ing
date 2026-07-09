@@ -76,6 +76,7 @@ const partitionHeadEdgeInset = 0.02;
 const partitionHeadBackInset = 0.04;
 const partitionHeadWallGap = 0.02;
 const partitionHeadWallCoverWidth = 0.6;
+const minWallCoverDisplayWidth = 0.7;
 const partitionHeadWallAxisInset = 0;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
@@ -1016,7 +1017,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   );
   const manualVisibleItems = useMemo(() => manualHydratedItems.filter((item) => !isHiddenIncludedCounterItem(item)), [manualHydratedItems]);
   const wallCoverSurfaces = useMemo(
-    () => wallCoverSurfaceOptions(layout, width, depth, [...manualVisibleItems, ...automaticReserveItems, ...automaticPartitionHeadItems]),
+    () => wallCoverSurfaceOptions(layout, width, depth, [...manualVisibleItems, ...automaticReserveItems, ...automaticPartitionHeadItems], { splitForCovers: true }),
     [layout, width, depth, manualVisibleItems, automaticReserveItems, automaticPartitionHeadItems],
   );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems]);
@@ -1283,12 +1284,18 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }
   };
 
-  const toggleWallCover = (surfaceId, enabled) => {
+  const toggleWallCover = (surfaceId, enabled, sourceWall = '') => {
     if (readOnly) return;
-    setWallCovers((current) => ({
-      ...current,
-      [surfaceId]: { ...(current?.[surfaceId] || {}), enabled },
-    }));
+    setWallCovers((current) => {
+      const next = {
+        ...current,
+        [surfaceId]: { ...(current?.[surfaceId] || {}), enabled },
+      };
+      if (!enabled && sourceWall && sourceWall !== surfaceId && current?.[sourceWall]?.enabled) {
+        next[sourceWall] = { ...(current?.[sourceWall] || {}), enabled: false };
+      }
+      return next;
+    });
   };
 
 
@@ -4430,7 +4437,7 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
 
 function WallCoverOptionCard({ surfaces = [], covers = {}, includedMl = 0, disabled = false, onToggle }) {
   const t = useT();
-  const activeCount = surfaces.filter((surface) => covers?.[surface.id]?.enabled).length;
+  const activeCount = surfaces.filter((surface) => wallCoverEnabledForSurface(covers, surface)).length;
   const includedLabel = Number(includedMl || 0) > 0 ? `${formatNumber(includedMl)} ml inclus dans votre formule` : '';
 
   return (
@@ -4452,8 +4459,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, includedMl = 0, disab
       <div className="wall-cover-notice">{t('wall_cover_external_notice')}</div>
 
       {surfaces.map((surface) => {
-        const cover = covers?.[surface.id] || {};
-        const enabled = Boolean(cover.enabled);
+        const enabled = wallCoverEnabledForSurface(covers, surface);
         return (
           <div key={surface.id} className={`wall-cover-row ${enabled ? 'active' : ''}`}>
             <button
@@ -4461,7 +4467,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, includedMl = 0, disab
               className={`wall-cover-toggle ${enabled ? 'active' : ''}`}
               disabled={disabled}
               aria-label={t(enabled ? 'wall_cover_toggle_remove' : 'wall_cover_toggle_add', { label: surface.label })}
-              onClick={() => onToggle?.(surface.id, !enabled)}
+              onClick={() => onToggle?.(surface.id, !enabled, surface.sourceWall)}
             >
               <span />
             </button>
@@ -9392,7 +9398,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     });
   }
 
-  const activeWallCovers = wallCoverSurfaces.filter((surface) => wallCovers?.[surface.id]?.enabled);
+  const activeWallCovers = wallCoverSurfaces.filter((surface) => wallCoverEnabledForSurface(wallCovers, surface));
   if (activeWallCovers.length) {
     const unitPrice = 245;
     const quantity = activeWallCovers.reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0);
@@ -10086,7 +10092,8 @@ function sideWallCenterZ(depth) {
   return sideWallStartZ(depth) + sideWallLength(depth) / 2;
 }
 
-function wallCoverSurfaceOptions(layout, width, depth, items = []) {
+function wallCoverSurfaceOptions(layout, width, depth, items = [], options = {}) {
+  const splitForCovers = Boolean(options.splitForCovers);
   const sideDepth = sideWallLength(depth);
   const sideZ = sideWallCenterZ(depth);
   const wallSurfaces = availableWalls(layout).map((wall) => {
@@ -10124,27 +10131,30 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
       position: [0, fixedWallHeight / 2, -Number(depth || 0) / 2 + wallThickness + 0.0015],
       rotation: 0,
     };
-  }).map((surface) => ({
-    ...surface,
-    visibleWidth: wallCoverRealDisplayWidth(surface, items, width, depth, layout),
-  }));
+  }).flatMap((surface) => (splitForCovers
+    ? wallCoverDisplaySegments(surface, items, width, depth, layout)
+    : [{ ...surface, visibleWidth: wallCoverRealDisplayWidth(surface, items, width, depth, layout) }]
+  ));
 
-  const reserveSurface = objectWallSurfaces(items)
+  const reserveSurfaces = objectWallSurfaces(items)
     .filter((surface) => String(surface.id || '').includes('reserve') || surface.protectedBounds)
-    .sort((a, b) => Number(b.length || 0) - Number(a.length || 0))[0];
+    .sort((a, b) => Number(b.length || 0) - Number(a.length || 0));
 
-  if (!reserveSurface) return wallSurfaces;
+  if (!reserveSurfaces.length) return wallSurfaces;
 
-  const outsideSide = protectedObjectWallSideContains(reserveSurface, reserveSurface.centerAxis, 1) ? -1 : 1;
   const reserveFaceOffset = wallThickness / 2 + 0.004;
-  return [
-    ...wallSurfaces,
-    {
-      id: 'reserve',
-      label: 'Cloison réserve',
+  const maxReserveLength = Math.max(...reserveSurfaces.map((surface) => Number(surface.length || 0)));
+  const displayableReserveSurfaces = reserveSurfaces.filter((surface) => Number(surface.length || 0) >= maxReserveLength - 0.15);
+  const mappedReserveSurfaces = displayableReserveSurfaces.map((reserveSurface, index) => {
+    const outsideSide = protectedObjectWallSideContains(reserveSurface, reserveSurface.centerAxis, 1) ? -1 : 1;
+    const displayWidth = normalizeWallCoverDeductionLength(Math.max(0.5, Number(reserveSurface.length || 1)));
+    return {
+      id: displayableReserveSurfaces.length === 1 ? 'reserve' : `reserve-${index + 1}`,
+      sourceWall: 'reserve',
+      label: displayableReserveSurfaces.length === 1 ? 'Cloison réserve' : `Cloison réserve ${index + 1}`,
       kind: 'reserve',
       wall: 'reserve',
-      width: Math.max(0.5, Number(reserveSurface.length || 1)),
+      width: displayWidth,
       height: fixedWallHeight,
       position: reserveSurface.orientation === 'x'
         ? [reserveSurface.centerAxis, fixedWallHeight / 2, reserveSurface.normalAxis + outsideSide * reserveFaceOffset]
@@ -10152,9 +10162,96 @@ function wallCoverSurfaceOptions(layout, width, depth, items = []) {
       rotation: reserveSurface.orientation === 'x'
         ? (outsideSide >= 0 ? 0 : Math.PI)
         : (outsideSide >= 0 ? Math.PI / 2 : -Math.PI / 2),
-      visibleWidth: normalizeWallCoverDeductionLength(Math.max(0.5, Number(reserveSurface.length || 1))),
-    },
-  ];
+      visibleWidth: displayWidth,
+    };
+  }).filter((surface) => Number(surface.visibleWidth || surface.width || 0) >= minWallCoverDisplayWidth);
+
+  return [...wallSurfaces, ...mappedReserveSurfaces];
+}
+
+function wallCoverDisplaySegments(surface, items, width, depth, layout = 'back') {
+  const segments = wallCoverDisplayIntervals(surface, items, width, depth, layout)
+    .map((interval, index) => wallCoverSegmentFromInterval(surface, interval, width, depth, index))
+    .filter((segment) => Number(segment.width || 0) >= minWallCoverDisplayWidth);
+  if (!segments.length) return [];
+  if (segments.length === 1) {
+    const segment = segments[0];
+    return [{
+      ...segment,
+      id: surface.id,
+      sourceWall: surface.id,
+      label: surface.label,
+      wallCoverSegment: true,
+      visibleWidth: roundM2(Number(segment.width || 0)),
+    }];
+  }
+  return segments.map((segment, index) => ({
+    ...segment,
+    id: wallCoverSegmentId(surface, segment, index, depth),
+    sourceWall: surface.id,
+    label: wallCoverSegmentLabel(surface, segment, index, depth),
+    wallCoverSegment: true,
+    visibleWidth: roundM2(Number(segment.width || 0)),
+  }));
+}
+
+function wallCoverDisplayIntervals(surface, items, width, depth, layout = 'back') {
+  if (!surface || surface.kind === 'reserve') return [];
+  const wall = surface.wall || surface.id;
+  const range = wallAxisLimits(wall, width, depth);
+  const blockers = wallCoverDisplayBlockers(wall, items, width, depth, layout)
+    .map((blocker) => ({ min: clamp(blocker.min, range.min, range.max), max: clamp(blocker.max, range.min, range.max) }))
+    .filter((blocker) => blocker.max > blocker.min);
+  return freeWallIntervals(range, blockers).filter((interval) => interval.max - interval.min >= minWallCoverDisplayWidth);
+}
+
+function wallCoverDisplayBlockers(wall, items, width, depth, layout = 'back') {
+  const range = wallAxisLimits(wall, width, depth);
+  const blockers = [];
+  if (wall === 'back') {
+    if (layout === 'left' || layout === 'u') blockers.push({ min: range.min, max: range.min + wallThickness });
+    if (layout === 'right' || layout === 'u') blockers.push({ min: range.max - wallThickness, max: range.max });
+  }
+  (items || []).forEach((item) => {
+    const partitionBlocker = wallCoverPartitionHeadBlocker(item, wall, width, depth, 0);
+    if (partitionBlocker) blockers.push(partitionBlocker);
+    if (isReserveSceneItem(item)) {
+      const reserveBlocker = wallCoverReserveDisplayBlocker(item, wall, width, depth);
+      if (reserveBlocker) blockers.push(reserveBlocker);
+    }
+  });
+  return blockers;
+}
+
+function wallCoverSegmentId(surface, segment, index, depth) {
+  const suffix = wallCoverSegmentSuffix(surface, segment, index, depth);
+  return `${surface.id}-${suffix}`;
+}
+
+function wallCoverSegmentLabel(surface, segment, index, depth) {
+  const suffix = wallCoverSegmentSuffix(surface, segment, index, depth);
+  if (surface.wall === 'back') return `Cloison arrière ${suffix === 'left' ? 'gauche' : suffix === 'right' ? 'droite' : index + 1}`;
+  if (surface.wall === 'left') return `Cloison gauche ${suffix === 'back' ? 'arrière' : suffix === 'front' ? 'avant' : index + 1}`;
+  if (surface.wall === 'right') return `Cloison droite ${suffix === 'back' ? 'arrière' : suffix === 'front' ? 'avant' : index + 1}`;
+  return `${surface.label} ${index + 1}`;
+}
+
+function wallCoverSegmentSuffix(surface, segment, index, depth = 0) {
+  if (surface.wall === 'back') {
+    const x = Number(segment.position?.[0] || 0);
+    if (x < -0.05) return 'left';
+    if (x > 0.05) return 'right';
+  }
+  if (surface.wall === 'left' || surface.wall === 'right') {
+    const z = Number(segment.position?.[2] || 0);
+    const middle = sideWallCenterZ(depth);
+    return z < middle ? 'back' : 'front';
+  }
+  return String(index + 1);
+}
+
+function wallCoverEnabledForSurface(covers = {}, surface = {}) {
+  return Boolean(covers?.[surface.id]?.enabled || (surface.sourceWall && covers?.[surface.sourceWall]?.enabled));
 }
 
 function wallCoverRealDisplayWidth(surface, items, width, depth, layout = 'back') {
@@ -10163,23 +10260,7 @@ function wallCoverRealDisplayWidth(surface, items, width, depth, layout = 'back'
 
   const wall = surface.wall || surface.id;
   const range = wallAxisLimits(wall, width, depth);
-  const deductions = [];
-
-  if (wall === 'back') {
-    if (layout === 'left' || layout === 'u') deductions.push({ min: range.min, max: range.min + wallThickness });
-    if (layout === 'right' || layout === 'u') deductions.push({ min: range.max - wallThickness, max: range.max });
-  }
-
-  (items || []).forEach((item) => {
-    const partitionBlocker = wallCoverPartitionHeadBlocker(item, wall, width, depth, 0);
-    if (partitionBlocker) deductions.push(partitionBlocker);
-    if (isReserveSceneItem(item)) {
-      const reserveBlocker = wallCoverReserveDisplayBlocker(item, wall, width, depth);
-      if (reserveBlocker) deductions.push(reserveBlocker);
-    }
-  });
-
-  const blockedLength = summedIntervalLength(deductions, range);
+  const blockedLength = summedIntervalLength(wallCoverDisplayBlockers(wall, items, width, depth, layout), range);
   return roundM2(Math.max(0, (range.max - range.min) - blockedLength));
 }
 
@@ -12481,16 +12562,12 @@ function WallFabricSurface({ surface, color }) {
 }
 
 function WallCoverSurfaces({ width, depth, layout, items = [], covers = {} }) {
-  const surfaces = wallCoverSurfaceOptions(layout, width, depth, items);
+  const surfaces = wallCoverSurfaceOptions(layout, width, depth, items, { splitForCovers: true });
   return (
     <group>
-      {surfaces.flatMap((surface) => {
-        const cover = covers?.[surface.id];
-        if (!cover?.enabled) return [];
-        return wallCoverSegmentsForSurface(surface, items, width, depth).map((segment) => (
-          <WallCoverSurface key={segment.id} surface={segment} />
-        ));
-      })}
+      {surfaces.filter((surface) => wallCoverEnabledForSurface(covers, surface)).map((surface) => (
+        <WallCoverSurface key={surface.id} surface={surface} />
+      ))}
     </group>
   );
 }
