@@ -1466,9 +1466,38 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }
   };
 
+  const restoreIncludedCounter = () => {
+    if (readOnly || includedCounterItems.length) return;
+    const variants = counterVariantOptions(availableCatalog, salonLabel);
+    const variant = variants[0];
+    const entry = variant?.entry || availableCatalog.find((catalogEntry) => isWoodReceptionDeskItem(catalogEntry));
+    if (!entry) return;
+    const item = {
+      ...makeItem(entry.type, width, depth, layout, entry),
+      label: entry.label || 'Banque d’accueil',
+      included: true,
+      priceMode: 'included',
+      deleteLocked: true,
+      options: {
+        variantId: variant?.id || entry.type,
+        variantLabel: variant?.label || entry.label || '',
+        variantReference: variant?.reference || assetReference(entry, salonLabel),
+        variantAssetType: variant?.assetType || entry.type,
+        variantUpgradePrice: 0,
+        variantBasePrice: Number(variant?.price || 0),
+        unitPrice: 0,
+      },
+    };
+    setItems((current) => {
+      const placed = placeItemInFreeSpot(item, [...current, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth, layout, effectiveCarpetFootprintEnabled) || constrainItem(item, width, depth, layout, effectiveCarpetFootprintEnabled);
+      setSelectedId(placed.id);
+      return [...current, placed];
+    });
+  };
+
   const deleteSelectedItem = () => {
     if (readOnly || !selected) return;
-    if (!isAdminViewer && itemDeletionLocked(selected)) return;
+    if (!canDeleteSceneItem(selected, isAdminViewer)) return;
     if (isAutomaticLedRailItem(selected)) {
       setLedRailsEnabled(false);
       setSelectedId(null);
@@ -1727,10 +1756,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           <div className="view-toolbar selection-mode" aria-label="Actions objet selectionne">
             <button type="button" disabled={!isAdminViewer && itemRotationLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
             <button type="button" disabled={isAutomaticReserveItem(selected)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Settings2 size={16} /></button>
-            <button type="button" disabled={!isAdminViewer && itemDeletionLocked(selected)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={16} /></button>
+            <button type="button" disabled={!canDeleteSceneItem(selected, isAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={16} /></button>
             {!isAdminViewer && itemMovementLocked(selected) && <span className="toolbar-lock-note">{tRaw(language, 'toolbar_locked_move')}</span>}
             {!isAdminViewer && itemRotationLocked(selected) && <span className="toolbar-lock-note">{tRaw(language, 'toolbar_locked_rotation')}</span>}
-            {!isAdminViewer && itemDeletionLocked(selected) && <span className="toolbar-lock-note">{tRaw(language, 'toolbar_locked_delete')}</span>}
+            {!canDeleteSceneItem(selected, isAdminViewer) && <span className="toolbar-lock-note">{tRaw(language, 'toolbar_locked_delete')}</span>}
             {rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
               <label className="toolbar-rotation-slider">
                 <span>{selected.rotation || 0}°</span>
@@ -1852,6 +1881,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
               updateItemOptions(item, { counterHidden: !visible });
               if (!visible && selectedId === item?.id) setSelectedId(null);
             }}
+            onCounterRestore={restoreIncludedCounter}
             onCounterVariant={updateIncludedCounterVariant}
             onSelectCounter={setSelectedId}
             isAdminViewer={isAdminViewer}
@@ -2301,7 +2331,7 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
   );
 }
 
-function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel = '', uploadState = {}, disabled = false, onImage, onOptions, onVisibility, onVariant, onSelect }) {
+function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel = '', uploadState = {}, disabled = false, onImage, onOptions, onVisibility, onRestore, onVariant, onSelect }) {
   const t = useT();
   const [selectedCounterId, setSelectedCounterId] = useState(items[0]?.id || '');
 
@@ -2364,6 +2394,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
         <div className="counter-empty-card">
           <strong>{t('counter_empty_title')}</strong>
           <span>{t('counter_empty_detail')}</span>
+          <button type="button" className="counter-scene-toggle" disabled={disabled} onClick={() => onRestore?.()}>Remettre la banque d’accueil</button>
         </div>
       </div>
     );
@@ -2754,6 +2785,7 @@ function OptionsStepPanel({
   onCounterImage,
   onCounterOptions,
   onCounterVisibility,
+  onCounterRestore,
   onCounterVariant,
   onSelectCounter,
   isAdminViewer = false,
@@ -2871,6 +2903,7 @@ function OptionsStepPanel({
           onImage={onCounterImage}
           onOptions={onCounterOptions}
           onVisibility={onCounterVisibility}
+          onRestore={onCounterRestore}
           onVariant={onCounterVariant}
           onSelect={onSelectCounter}
         />
@@ -9728,6 +9761,12 @@ function itemPlacementLocked(item) {
 
 function itemMovementLocked(item) {
   return Boolean(item?.movementLocked || item?.dimensions?.movementLocked);
+}
+
+function canDeleteSceneItem(item = {}, isAdminViewer = false) {
+  if (isIncludedSceneItem(item) && isWoodReceptionDeskItem(item)) return false;
+  if (isAdminViewer) return true;
+  return !itemDeletionLocked(item);
 }
 
 function itemDeletionLocked(item) {
