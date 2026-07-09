@@ -11486,6 +11486,10 @@ function wallItemCenterY(item) {
   if (isPosterItem(item)) return screenCenterHeight;
   if (isLedRailEntry(item)) return ledRailCenterY(item);
   if (isPartitionHeadItem(item)) return 0;
+  if (isWallTopSnapItem(item)) {
+    const h = Number(item?.dimensions?.height ?? 0);
+    return (Number.isFinite(h) && h > 0) ? fixedWallHeight - h / 2 : fixedWallHeight / 2;
+  }
   const y = Number(item?.dimensions?.wallY);
   return Number.isFinite(y) && y >= 0 ? y : 0;
 }
