@@ -10,6 +10,7 @@ import { PDFDocument, StandardFonts } from 'pdf-lib';
 import {
   Box,
   Check,
+  Copy,
   ChevronDown,
   ChevronUp,
   FileImage,
@@ -4787,6 +4788,16 @@ function AdminDashboard({ user, adminProfile }) {
     setSelectedAsset(null);
   };
 
+  const duplicateAsset = async (asset) => {
+    if (!asset) return;
+    const duplicate = duplicateObjectBankAsset(asset, assets);
+    const saved = await saveObjectBankItem(duplicate);
+    setAssets((current) => [saved, ...current.filter((item) => item.type !== saved.type)]);
+    setSelectedAsset(saved);
+    setAssetUploadState({ loading: false, message: `Copie créée : ${saved.label}`, error: '' });
+    return saved;
+  };
+
   const uploadAssetFolder = async (files) => {
     if (!files?.length) return;
     setAssetUploadState({ loading: true, message: '', error: '' });
@@ -4900,6 +4911,7 @@ function AdminDashboard({ user, adminProfile }) {
               onCloseAsset={() => setSelectedAsset(null)}
               onSaveAsset={saveAsset}
               onDeleteAsset={deleteAsset}
+              onDuplicateAsset={duplicateAsset}
               onUploadAssetFolder={uploadAssetFolder}
               onUploadColorGroup={uploadColorGroup}
             />
@@ -6391,7 +6403,7 @@ function clientStatusSummary(client) {
   return 'À configurer';
 }
 
-function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onUploadAssetFolder, onUploadColorGroup }) {
+function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onDuplicateAsset, onUploadAssetFolder, onUploadColorGroup }) {
   const [groupCreatorOpen, setGroupCreatorOpen] = useState(false);
   const [variantGroupCreatorOpen, setVariantGroupCreatorOpen] = useState(false);
   const [assetSearch, setAssetSearch] = useState(search || '');
@@ -6507,6 +6519,7 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
           onClose={onCloseAsset}
           onSave={onSaveAsset}
           onDelete={() => onDeleteAsset(selectedAsset)}
+          onDuplicate={() => onDuplicateAsset(selectedAsset)}
         />
       )}
       {groupCreatorOpen && (
@@ -6537,6 +6550,55 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
   );
 }
 
+function duplicateObjectBankAsset(asset = {}, existingAssets = []) {
+  const duplicatedAt = Date.now().toString(36);
+  const dimensions = JSON.parse(JSON.stringify(asset.dimensions || {}));
+  const prefix = dimensions.isColorGroup
+    ? 'color-group'
+    : dimensions.isVariantGroup
+      ? 'variant-group'
+      : dimensions.isGroup
+        ? 'group'
+        : 'asset';
+  const baseLabel = `${asset.label || 'Asset'} (copie)`;
+  const baseSlug = slugForType(baseLabel || asset.type || prefix);
+  let type = `${prefix}-${baseSlug}-${duplicatedAt}`;
+  let suffix = 2;
+  const existingTypes = new Set((existingAssets || []).map((item) => item.type));
+  while (existingTypes.has(type)) {
+    type = `${prefix}-${baseSlug}-${duplicatedAt}-${suffix}`;
+    suffix += 1;
+  }
+
+  return {
+    ...asset,
+    type,
+    label: uniqueAssetCopyLabel(baseLabel, existingAssets),
+    created_at: undefined,
+    updated_at: undefined,
+    dimensions: {
+      ...dimensions,
+      duplicatedFrom: asset.type || null,
+      duplicatedAt: new Date().toISOString(),
+      addedBy: 'Admin Stand-ING',
+      ...(dimensions.storageBucket ? { storageSharedFrom: asset.type || dimensions.storageRoot || null } : {}),
+      // The copy reuses model/texture public URLs. Do not keep mutable file paths
+      // for single-file replacement slots, otherwise changing a duplicate could
+      // remove the original's thumbnail or BAT pictogram.
+      thumbnailPath: null,
+      batPictoPath: null,
+    },
+  };
+}
+
+function uniqueAssetCopyLabel(label, existingAssets = []) {
+  const labels = new Set((existingAssets || []).map((asset) => String(asset.label || '').trim()).filter(Boolean));
+  if (!labels.has(label)) return label;
+  let index = 2;
+  while (labels.has(`${label} ${index}`)) index += 1;
+  return `${label} ${index}`;
+}
+
 function AssetPreview({ asset }) {
   if (asset.dimensions?.isColorGroup) {
     const colors = normalizeColorGroupOptions(asset);
@@ -6555,7 +6617,7 @@ function AssetPreview({ asset }) {
   return <span className="asset-glb-preview">{assetFormat(asset)}</span>;
 }
 
-function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
+function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDuplicate }) {
   const [draft, setDraft] = useState(asset);
   const [thumbnailUploading, setThumbnailUploading] = useState(false);
   const [thumbnailError, setThumbnailError] = useState('');
@@ -7371,6 +7433,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete }) {
 
         <footer>
           <button type="button" className="asset-delete" onClick={onDelete}>Supprimer définitivement</button>
+          <button type="button" className="asset-duplicate" onClick={onDuplicate}><Copy size={14} /> Dupliquer</button>
           <button type="button" className="asset-save" onClick={saveDraft}>Enregistrer les modifications</button>
         </footer>
       </aside>

@@ -5927,6 +5927,7 @@ img.asset-thumb {
 }
 
 .asset-delete,
+.asset-duplicate,
 .asset-save {
   min-height: 36px;
   border: 0;
@@ -5938,6 +5939,15 @@ img.asset-thumb {
 .asset-delete {
   color: #db352b;
   background: #ffdeda;
+}
+
+.asset-duplicate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: #1f4378;
+  background: #e8eef8;
 }
 
 .asset-save {

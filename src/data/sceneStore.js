@@ -709,6 +709,9 @@ export async function deleteObjectBankItem(asset) {
 async function deleteObjectAssetFiles(asset) {
   const bucketName = asset?.dimensions?.storageBucket;
   if (!bucketName) return;
+  if (asset?.dimensions?.storageSharedFrom) return;
+  const rootPath = asset.dimensions?.storageRoot || asset.type;
+  if (rootPath && await storageRootIsShared(asset.type, rootPath)) return;
 
   const bucket = supabase.storage.from(bucketName);
   const paths = new Set([
@@ -717,13 +720,21 @@ async function deleteObjectAssetFiles(asset) {
     ...(Array.isArray(asset.dimensions?.storagePaths) ? asset.dimensions.storagePaths : []),
   ].filter(Boolean));
 
-  const rootPath = asset.dimensions?.storageRoot || asset.type;
   const listedPaths = await listStorageObjectPaths(bucket, rootPath);
   listedPaths.forEach((path) => paths.add(path));
 
   if (!paths.size) return;
   const { error } = await bucket.remove([...paths]);
   if (error) throw error;
+}
+
+async function storageRootIsShared(type, rootPath) {
+  if (!rootPath) return false;
+  const { data, error } = await supabase
+    .from('object_bank')
+    .select('type, dimensions');
+  if (error || !data?.length) return false;
+  return data.some((item) => item.type !== type && item.dimensions?.storageRoot === rootPath);
 }
 
 async function listStorageObjectPaths(bucket, path) {
