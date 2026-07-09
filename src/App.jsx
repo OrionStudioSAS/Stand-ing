@@ -2482,16 +2482,6 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
         </div>
       </section>
 
-      <section className="counter-info-card">
-        <strong>{t('counter_why_title')}</strong>
-        <ul>
-          <li>{t('counter_why_1')}</li>
-          <li>{t('counter_why_2')}</li>
-          <li>{t('counter_why_3')}</li>
-          <li>{t('counter_why_4')}</li>
-        </ul>
-      </section>
-
       {uploadState?.uploading && <p className="counter-status">{t('counter_uploading')}</p>}
       {uploadState?.error && <p className="counter-error">{uploadState.error}</p>}
     </div>
@@ -3417,7 +3407,7 @@ function itemCartLabel(item) {
 function cartItemPrice(item, entry, salonLabel) {
   const basePrice = cartItemBasePrice(item, entry, salonLabel);
   const colorSupplement = isBillableCounterColorOption(item, entry)
-    ? Number(item.options?.binary2ColorPrice || 0) * counterColorSurfaceM2(item, entry)
+    ? Number(item.options?.binary2ColorPrice || 0)
     : 0;
   return basePrice + colorSupplement;
 }
