@@ -10171,11 +10171,11 @@ function wallCoverSurfaceOptions(layout, width, depth, items = [], options = {})
 }
 
 function wallCoverDisplaySegments(surface, items, width, depth, layout = 'back') {
-  const segments = wallCoverDisplayIntervals(surface, items, width, depth, layout)
-    .map((interval, index) => wallCoverSegmentFromInterval(surface, interval, width, depth, index))
-    .filter((segment) => Number(segment.width || 0) >= minWallCoverDisplayWidth);
+  const rawSegments = wallCoverDisplayIntervals(surface, items, width, depth, layout)
+    .map((interval, index) => wallCoverSegmentFromInterval(surface, interval, width, depth, index));
+  const segments = rawSegments.filter((segment) => Number(segment.width || 0) >= minWallCoverDisplayWidth);
   if (!segments.length) return [];
-  if (segments.length === 1) {
+  if (rawSegments.length === 1 && segments.length === 1) {
     const segment = segments[0];
     return [{
       ...segment,
