@@ -11874,6 +11874,18 @@ function wallCoverPartitionHeadBlocker(item, wall, width, depth, margin = 0.1) {
   if (itemWall !== wall) return null;
 
   const coverWidth = Number(smclPartitionHeadPlacementBounds(item)?.width || partitionHeadWallCoverWidth);
+  const range = wallAxisLimits(wall, width, depth);
+  const side = smclPartitionHeadSide(item);
+
+  if (wall === 'back') {
+    if (side === 'left') return { min: range.min, max: Math.min(range.max, range.min + coverWidth) };
+    if (side === 'right') return { min: Math.max(range.min, range.max - coverWidth), max: range.max };
+  }
+
+  if (wall === 'left' || wall === 'right') {
+    return { min: Math.max(range.min, range.max - coverWidth), max: range.max };
+  }
+
   const halfWidth = coverWidth / 2;
   const axis = Number(item.x || 0);
   return { min: axis - halfWidth, max: axis + halfWidth };
