@@ -10175,7 +10175,10 @@ function wallCoverDisplaySegments(surface, items, width, depth, layout = 'back')
     .map((interval, index) => wallCoverSegmentFromInterval(surface, interval, width, depth, index));
   const segments = rawSegments.filter((segment) => Number(segment.width || 0) >= minWallCoverDisplayWidth);
   if (!segments.length) return [];
-  if (rawSegments.length === 1 && segments.length === 1) {
+  const singleSegmentUsesBaseWall = rawSegments.length === 1
+    && segments.length === 1
+    && Math.abs(Number(segments[0].width || 0) - wallCoverBaseAvailableWidth(surface, width, depth, layout)) <= 0.03;
+  if (singleSegmentUsesBaseWall) {
     const segment = segments[0];
     return [{
       ...segment,
@@ -10194,6 +10197,17 @@ function wallCoverDisplaySegments(surface, items, width, depth, layout = 'back')
     wallCoverSegment: true,
     visibleWidth: roundM2(Number(segment.width || 0)),
   }));
+}
+
+function wallCoverBaseAvailableWidth(surface, width, depth, layout = 'back') {
+  const wall = surface?.wall || surface?.id;
+  const range = wallAxisLimits(wall, width, depth);
+  let availableWidth = Math.max(0, range.max - range.min);
+  if (wall === 'back') {
+    if (layout === 'left' || layout === 'u') availableWidth -= wallThickness;
+    if (layout === 'right' || layout === 'u') availableWidth -= wallThickness;
+  }
+  return Math.max(0, availableWidth);
 }
 
 function wallCoverDisplayIntervals(surface, items, width, depth, layout = 'back') {
