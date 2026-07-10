@@ -11870,27 +11870,13 @@ function wallMountedBlocker(item, wall, width, depth, margin = 0.1) {
 
 function wallCoverPartitionHeadBlocker(item, wall, width, depth, margin = 0.1) {
   if (margin !== 0 || !isSmclPartitionHeadItem(item)) return null;
+  const itemWall = item.wall || 'back';
+  if (itemWall !== wall) return null;
+
   const coverWidth = Number(smclPartitionHeadPlacementBounds(item)?.width || partitionHeadWallCoverWidth);
   const halfWidth = coverWidth / 2;
-  const itemWall = item.wall || 'back';
-  const side = smclPartitionHeadSide(item);
-  if (itemWall === wall) {
-    const axis = Number(item.x || 0);
-    return { min: axis - halfWidth, max: axis + halfWidth };
-  }
-  if (wall === 'back') {
-    if (itemWall === 'left' || side === 'left') return { min: -width / 2, max: -width / 2 + coverWidth };
-    if (itemWall === 'right' || side === 'right') return { min: width / 2 - coverWidth, max: width / 2 };
-  }
-  if (wall === 'left' && (itemWall === 'left' || side === 'left')) {
-    const limits = wallAxisLimits(wall, width, depth);
-    return { min: limits.max - coverWidth, max: limits.max };
-  }
-  if (wall === 'right' && (itemWall === 'right' || side === 'right')) {
-    const limits = wallAxisLimits(wall, width, depth);
-    return { min: limits.max - coverWidth, max: limits.max };
-  }
-  return null;
+  const axis = Number(item.x || 0);
+  return { min: axis - halfWidth, max: axis + halfWidth };
 }
 
 function floorWallBlocker(item, wall, width, depth, margin = 0.1) {
