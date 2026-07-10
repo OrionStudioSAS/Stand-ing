@@ -10296,7 +10296,7 @@ function normalizeWallCoverDeductionLength(value = 0) {
   const length = Number(value || 0);
   if (!Number.isFinite(length) || length <= 0) return 0;
   const nearestMeter = Math.round(length);
-  if (nearestMeter > 0 && Math.abs(length - nearestMeter) <= 0.12) return nearestMeter;
+  if (nearestMeter > 0 && Math.abs(length - nearestMeter) <= 0.15) return nearestMeter;
   return Math.round(length * 10) / 10;
 }
 
