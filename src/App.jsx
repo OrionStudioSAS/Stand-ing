@@ -1686,7 +1686,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             target={[0, 0.7, 0]}
             minPolarAngle={0.01}
             maxPolarAngle={Math.PI / 2.05}
-            minDistance={4}
+            minDistance={2.5}
             maxDistance={11}
             enableRotate={cameraControlMode === 'orbit'}
             enablePan={cameraControlMode === 'pan'}
@@ -5911,7 +5911,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
             target={[0, 0.7, 0]}
             minPolarAngle={0.01}
             maxPolarAngle={Math.PI / 2.05}
-            minDistance={4}
+            minDistance={2.5}
             maxDistance={11}
             enableRotate={cameraControlMode === 'orbit'}
             enablePan={cameraControlMode === 'pan'}
