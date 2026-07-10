@@ -50,26 +50,46 @@ Deno.serve(async (req) => {
   const warnings: string[] = [];
 
   for (const source of sources ?? []) {
-    if (String(source.board_id) === "18395911999") {
-      warnings.push(...await mondayMissingColumnWarnings(mondayToken, source.board_id, ["Contrainte", "Emplacement contrainte"]));
+    const { columns: mondayColumns, warning: columnWarning } = await fetchMondayBoardColumnsSafe(mondayToken, source.board_id);
+    if (columnWarning) warnings.push(columnWarning);
+    if (String(source.board_id) === "18395911999" && mondayColumns.length) {
+      warnings.push(...mondayMissingColumnWarningsFromColumns(source.board_id, mondayColumns, ["Contrainte", "Emplacement contrainte"]));
     }
-    const context = await ensureSourceContext(supabase, source);
-    const items = await fetchMondayItems(mondayToken, source.board_id, source.group_id);
+    const resolvedSource = withResolvedConstraintColumns(source, mondayColumns);
+    const context = await ensureSourceContext(supabase, resolvedSource);
+    const items = await fetchMondayItems(mondayToken, resolvedSource.board_id, resolvedSource.group_id);
 
     for (const item of items) {
-      const createValue = readColumn(item, source.create_column_id);
-      const triggerValues = source.create_trigger_values ?? ["OK", "OUI"];
+      const createValue = readColumn(item, resolvedSource.create_column_id);
+      const triggerValues = resolvedSource.create_trigger_values ?? ["OK", "OUI"];
       if (!triggerValues.some((value: string) => normalizeText(createValue) === normalizeText(value))) continue;
 
       const { data: existingScene, error: existingSceneError } = await supabase
         .from("scenes")
-        .select("id")
+        .select("id, source_payload, width_m, depth_m")
         .eq("monday_item_id", item.id)
         .maybeSingle();
       if (existingSceneError) throw existingSceneError;
-      if (existingScene) continue;
+      if (existingScene) {
+        const existingWidth = Number(existingScene.width_m) || Number(readMappingValue(item, resolvedSource.mapping?.width_m)) || 4;
+        const existingDepth = Number(existingScene.depth_m) || Number(readMappingValue(item, resolvedSource.mapping?.depth_m)) || 3;
+        const constraint = mondayConstraintForItem(item, resolvedSource, existingWidth, existingDepth);
+        if (constraint) {
+          const { error: updateConstraintError } = await supabase
+            .from("scenes")
+            .update({
+              source_payload: {
+                ...(existingScene.source_payload || {}),
+                constraint,
+              },
+            })
+            .eq("id", existingScene.id);
+          if (updateConstraintError) throw updateConstraintError;
+        }
+        continue;
+      }
 
-      const userProfile = mapMondayItemToUserProfile(item, source);
+      const userProfile = mapMondayItemToUserProfile(item, resolvedSource);
       const { data: savedProfile, error: profileError } = await supabase
         .from("user_profiles")
         .upsert(userProfile, { onConflict: "profile_key" })
@@ -77,7 +97,7 @@ Deno.serve(async (req) => {
         .single();
       if (profileError) throw profileError;
 
-      const client = mapMondayItemToClient(item, source, savedProfile?.id);
+      const client = mapMondayItemToClient(item, resolvedSource, savedProfile?.id);
       const { data: savedClient, error: clientError } = await supabase
         .from("clients")
         .upsert(client, { onConflict: "client_key" })
@@ -104,7 +124,7 @@ Deno.serve(async (req) => {
         if (membershipError) throw membershipError;
       }
 
-      const sceneDraft = mapMondayItemToScene(item, source, savedClient?.id, savedProfile?.id, context);
+      const sceneDraft = mapMondayItemToScene(item, resolvedSource, savedClient?.id, savedProfile?.id, context);
       const preset = await findActivePreset(supabase, context.offerId, context.salonId, sceneDraft.layout);
       const baseItems = await fetchOfferBaseItems(supabase, context.offerId);
       const defaultOptions = presetDefaultOptions(preset);
@@ -145,13 +165,13 @@ Deno.serve(async (req) => {
         ? `${publicAppUrl.replace(/\/$/, "")}?scene=${savedScene.share_token}`
         : "";
 
-      if (source.status_column_id && source.status_column_id !== source.create_column_id) {
-        await updateMondayColumnValue(mondayToken, source.board_id, item.id, source.status_column_id, {
-          label: source.created_status_label ?? "ENVOYE PAR MAIL",
+      if (resolvedSource.status_column_id && resolvedSource.status_column_id !== resolvedSource.create_column_id) {
+        await updateMondayColumnValue(mondayToken, resolvedSource.board_id, item.id, resolvedSource.status_column_id, {
+          label: resolvedSource.created_status_label ?? "ENVOYE PAR MAIL",
         });
       }
-      if (source.link_column_id && source.link_column_id !== source.create_column_id && shareUrl) {
-        await updateMondayColumnValue(mondayToken, source.board_id, item.id, source.link_column_id, {
+      if (resolvedSource.link_column_id && resolvedSource.link_column_id !== resolvedSource.create_column_id && shareUrl) {
+        await updateMondayColumnValue(mondayToken, resolvedSource.board_id, item.id, resolvedSource.link_column_id, {
           url: shareUrl,
           text: "Configurer mon stand",
         });
@@ -167,20 +187,48 @@ Deno.serve(async (req) => {
   return json({ processed, created: processed, clients, exhibitors, base_items_applied: baseItemsApplied, warnings });
 });
 
-async function mondayMissingColumnWarnings(token: string, boardId: string, requiredTitles: string[]) {
+function withResolvedConstraintColumns(source: any, columns: Array<{ id: string; title: string }>) {
+  const mapping = source.mapping ?? {};
+  const constraintColumnId = mapping.constraint || mapping.contrainte || findMondayColumnId(columns, ["Contrainte"]);
+  const constraintLocationColumnId = mapping.constraint_location
+    || mapping.emplacement_contrainte
+    || findMondayColumnId(columns, ["Emplacement contrainte", "Empacement contrainte"]);
+
+  return {
+    ...source,
+    mapping: {
+      ...mapping,
+      ...(constraintColumnId ? { constraint: constraintColumnId } : {}),
+      ...(constraintLocationColumnId ? { constraint_location: constraintLocationColumnId } : {}),
+    },
+  };
+}
+
+function mondayMissingColumnWarningsFromColumns(boardId: string, columns: Array<{ id: string; title: string }>, requiredTitles: string[]) {
+  const normalizedTitles = columns.map((column) => normalizeColumnLookup(column.title || column.id));
+  return requiredTitles
+    .filter((title) => !normalizedTitles.includes(normalizeColumnLookup(title)))
+    .map((title) => `Colonne Monday manquante sur le board ${boardId}: ${title}`);
+}
+
+function findMondayColumnId(columns: Array<{ id: string; title: string }>, titles: string[]) {
+  const normalizedTitles = titles.map(normalizeColumnLookup);
+  return columns.find((column) => normalizedTitles.includes(normalizeColumnLookup(column.title || column.id)))?.id || "";
+}
+
+async function fetchMondayBoardColumnsSafe(token: string, boardId: string) {
   try {
-    const titles = await fetchMondayBoardColumnTitles(token, boardId);
-    const normalizedTitles = titles.map(normalizeColumnLookup);
-    return requiredTitles
-      .filter((title) => !normalizedTitles.includes(normalizeColumnLookup(title)))
-      .map((title) => `Colonne Monday manquante sur le board ${boardId}: ${title}`);
+    return { columns: await fetchMondayBoardColumns(token, boardId), warning: "" };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return [`Impossible de vérifier les colonnes Monday du board ${boardId}: ${message}`];
+    return {
+      columns: [],
+      warning: `Impossible de récupérer les IDs de colonnes Monday du board ${boardId}: ${message}`,
+    };
   }
 }
 
-async function fetchMondayBoardColumnTitles(token: string, boardId: string) {
+async function fetchMondayBoardColumns(token: string, boardId: string) {
   const query = `
     query ($boardId: [ID!]) {
       boards(ids: $boardId) {
@@ -196,7 +244,9 @@ async function fetchMondayBoardColumnTitles(token: string, boardId: string) {
   });
   const payload = await response.json();
   if (payload.errors?.length) throw new Error(payload.errors.map((entry: any) => entry.message).join(", "));
-  return (payload.data?.boards?.[0]?.columns || []).map((column: any) => column.title || column.id).filter(Boolean);
+  return (payload.data?.boards?.[0]?.columns || [])
+    .map((column: any) => ({ id: String(column.id || ""), title: String(column.title || "") }))
+    .filter((column: any) => column.id);
 }
 
 async function ensureSourceContext(supabase: any, source: any) {
@@ -319,19 +369,13 @@ function mapMondayItemToClient(item: any, source: any, userProfileId?: string) {
 
 function mapMondayItemToScene(item: any, source: any, clientId: string | undefined, userProfileId: string | undefined, context: any) {
   const mapping = source.mapping ?? {};
-  const width = Number(readMappingValue(item, mapping.width_m)) || 4;
-  const depth = Number(readMappingValue(item, mapping.depth_m)) || 3;
+  const { width, depth } = mondaySceneDimensions(item, source);
   const layout = normalizeLayout(readMappingValue(item, mapping.layout));
   const clientName = readMappingValue(item, mapping.client_name) || item.name;
   const standNumber = readMappingValue(item, mapping.stand_number) || readColumn(item, "n_");
   const aisleNumber = readMappingValue(item, mapping.aisle_number || mapping.allee) || readColumnAny(item, ["text5", "allée", "allee"]);
   const sector = readMappingValue(item, mapping.sector || mapping.secteur) || readColumnAny(item, ["dup__of_secteur1", "secteur"]);
-  const constraint = parseSceneConstraint(
-    readMappingValue(item, mapping.constraint || mapping.contrainte) || readColumnAny(item, ["contrainte"]),
-    readMappingValue(item, mapping.constraint_location || mapping.emplacement_contrainte) || readColumnAny(item, ["emplacement contrainte", "emplacement_contrainte"]),
-    width,
-    depth,
-  );
+  const constraint = mondayConstraintForItem(item, source, width, depth);
 
   return {
     monday_item_id: item.id,
@@ -356,6 +400,24 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
     layout,
     source_payload: { ...item, stand_number: standNumber, aisle_number: aisleNumber, sector, constraint },
   };
+}
+
+function mondaySceneDimensions(item: any, source: any) {
+  const mapping = source.mapping ?? {};
+  return {
+    width: Number(readMappingValue(item, mapping.width_m)) || 4,
+    depth: Number(readMappingValue(item, mapping.depth_m)) || 3,
+  };
+}
+
+function mondayConstraintForItem(item: any, source: any, width = 0, depth = 0) {
+  const mapping = source.mapping ?? {};
+  return parseSceneConstraint(
+    readMappingValue(item, mapping.constraint || mapping.contrainte) || readColumnAny(item, ["contrainte"]),
+    readMappingValue(item, mapping.constraint_location || mapping.emplacement_contrainte) || readColumnAny(item, ["emplacement contrainte", "emplacement_contrainte", "empacement contrainte"]),
+    width,
+    depth,
+  );
 }
 
 function parseSceneConstraint(sizeValue = "", locationValue = "", width = 0, depth = 0) {
