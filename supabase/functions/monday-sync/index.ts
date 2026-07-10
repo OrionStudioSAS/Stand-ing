@@ -47,8 +47,12 @@ Deno.serve(async (req) => {
   let clients = 0;
   let exhibitors = 0;
   let baseItemsApplied = 0;
+  const warnings: string[] = [];
 
   for (const source of sources ?? []) {
+    if (String(source.board_id) === "18395911999") {
+      warnings.push(...await mondayMissingColumnWarnings(mondayToken, source.board_id, ["Contrainte", "Emplacement contrainte"]));
+    }
     const context = await ensureSourceContext(supabase, source);
     const items = await fetchMondayItems(mondayToken, source.board_id, source.group_id);
 
@@ -160,8 +164,40 @@ Deno.serve(async (req) => {
   }
 
   await supabase.from("monday_sync_runs").insert({ status: "success", processed_count: processed });
-  return json({ processed, created: processed, clients, exhibitors, base_items_applied: baseItemsApplied });
+  return json({ processed, created: processed, clients, exhibitors, base_items_applied: baseItemsApplied, warnings });
 });
+
+async function mondayMissingColumnWarnings(token: string, boardId: string, requiredTitles: string[]) {
+  try {
+    const titles = await fetchMondayBoardColumnTitles(token, boardId);
+    const normalizedTitles = titles.map(normalizeColumnLookup);
+    return requiredTitles
+      .filter((title) => !normalizedTitles.includes(normalizeColumnLookup(title)))
+      .map((title) => `Colonne Monday manquante sur le board ${boardId}: ${title}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return [`Impossible de vérifier les colonnes Monday du board ${boardId}: ${message}`];
+  }
+}
+
+async function fetchMondayBoardColumnTitles(token: string, boardId: string) {
+  const query = `
+    query ($boardId: [ID!]) {
+      boards(ids: $boardId) {
+        columns { id title }
+      }
+    }
+  `;
+
+  const response = await fetch(mondayApiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: token },
+    body: JSON.stringify({ query, variables: { boardId } }),
+  });
+  const payload = await response.json();
+  if (payload.errors?.length) throw new Error(payload.errors.map((entry: any) => entry.message).join(", "));
+  return (payload.data?.boards?.[0]?.columns || []).map((column: any) => column.title || column.id).filter(Boolean);
+}
 
 async function ensureSourceContext(supabase: any, source: any) {
   if (source.salon_id) {
@@ -290,6 +326,12 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
   const standNumber = readMappingValue(item, mapping.stand_number) || readColumn(item, "n_");
   const aisleNumber = readMappingValue(item, mapping.aisle_number || mapping.allee) || readColumnAny(item, ["text5", "allée", "allee"]);
   const sector = readMappingValue(item, mapping.sector || mapping.secteur) || readColumnAny(item, ["dup__of_secteur1", "secteur"]);
+  const constraint = parseSceneConstraint(
+    readMappingValue(item, mapping.constraint || mapping.contrainte) || readColumnAny(item, ["contrainte"]),
+    readMappingValue(item, mapping.constraint_location || mapping.emplacement_contrainte) || readColumnAny(item, ["emplacement contrainte", "emplacement_contrainte"]),
+    width,
+    depth,
+  );
 
   return {
     monday_item_id: item.id,
@@ -312,8 +354,40 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
     depth_m: depth,
     height_m: 2.5,
     layout,
-    source_payload: { ...item, stand_number: standNumber, aisle_number: aisleNumber, sector },
+    source_payload: { ...item, stand_number: standNumber, aisle_number: aisleNumber, sector, constraint },
   };
+}
+
+function parseSceneConstraint(sizeValue = "", locationValue = "", width = 0, depth = 0) {
+  const sizeParts = parseNumberParts(sizeValue);
+  const locationParts = parseNumberParts(locationValue);
+  if (sizeParts.length < 2 || locationParts.length < 2) return null;
+
+  const sizeX = sizeParts[0] / 100;
+  const sizeZ = sizeParts[1] / 100;
+  const fromLeft = locationParts[0];
+  const fromBack = locationParts[1];
+  if (![sizeX, sizeZ, fromLeft, fromBack].every((value) => Number.isFinite(value) && value >= 0)) return null;
+
+  return {
+    rawSize: String(sizeValue || "").trim(),
+    rawLocation: String(locationValue || "").trim(),
+    width: Math.max(0.01, sizeX),
+    depth: Math.max(0.01, sizeZ),
+    height: 5,
+    fromLeft,
+    fromBack,
+    x: clampNumber(-Number(width || 0) / 2 + fromLeft, -Number(width || 0) / 2, Number(width || 0) / 2),
+    z: clampNumber(-Number(depth || 0) / 2 + fromBack, -Number(depth || 0) / 2, Number(depth || 0) / 2),
+  };
+}
+
+function parseNumberParts(value = "") {
+  return String(value || "")
+    .replace(/,/g, ".")
+    .match(/\d+(?:\.\d+)?/g)
+    ?.map((part) => Number(part))
+    .filter((part) => Number.isFinite(part)) || [];
 }
 
 async function findActivePreset(supabase: any, offerId?: string, salonId?: string, layout = "u") {

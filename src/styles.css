@@ -917,6 +917,7 @@ select {
   padding: 10px 12px;
   border-radius: 8px;
   font-weight: 900;
+  white-space: pre-line;
 }
 
 .sync-result.success {

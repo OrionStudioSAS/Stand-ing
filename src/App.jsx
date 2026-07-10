@@ -927,6 +927,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     hall: sceneHallLabel(initialScene, contactDetails),
     sector: sceneSectorLabel(initialScene),
   }), [fontRevision, language, initialScene, clientInfo, contactDetails, standLabel]);
+  const sceneConstraint = useMemo(() => sceneConstraintFromPayload(initialScene.source_payload, width, depth), [initialScene.source_payload, width, depth]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1677,6 +1678,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 onTechnicalFloorRampX={setTechnicalFloorRampX}
                 onTechnicalFloorRampDragChange={setTechnicalFloorRampDragging}
                 visualContext={sceneVisualContext}
+                sceneConstraint={sceneConstraint}
               />
             )}
             <ContactShadows opacity={0.12} scale={12} blur={2.8} far={5} position={[0, -0.01, 0]} />
@@ -4848,11 +4850,14 @@ function AdminDashboard({ user, adminProfile }) {
       await refreshClients();
       await refreshSalons();
       const createdCount = result?.created ?? result?.processed ?? 0;
+      const warnings = Array.isArray(result?.warnings) && result.warnings.length
+        ? `\n${result.warnings.join('\n')}`
+        : '';
       setSyncState({
         loading: false,
-        message: createdCount
+        message: (createdCount
           ? `${createdCount} nouvelle(s) scène(s) créée(s), ${result?.clients ?? 0} exposant(s) traité(s) depuis Monday.`
-          : 'Aucune nouvelle scène à créer depuis Monday.',
+          : 'Aucune nouvelle scène à créer depuis Monday.') + warnings,
         error: '',
       });
     } catch (error) {
@@ -10817,6 +10822,64 @@ function sceneSectorLabel(scene = {}) {
     || '';
 }
 
+function sceneConstraintFromPayload(sourcePayload = {}, width = 0, depth = 0) {
+  const saved = sourcePayload?.constraint;
+  if (saved && Number(saved.width) > 0 && Number(saved.depth) > 0) {
+    const fromLeft = Number(saved.fromLeft);
+    const fromBack = Number(saved.fromBack);
+    return {
+      rawSize: saved.rawSize || `${Math.round(Number(saved.width || 0) * 100)}x${Math.round(Number(saved.depth || 0) * 100)}`,
+      rawLocation: saved.rawLocation || `${fromLeft || 0} - ${fromBack || 0}`,
+      width: Number(saved.width),
+      depth: Number(saved.depth),
+      height: Number(saved.height || 5),
+      fromLeft,
+      fromBack,
+      x: Number.isFinite(Number(saved.x)) ? Number(saved.x) : -Number(width || 0) / 2 + fromLeft,
+      z: Number.isFinite(Number(saved.z)) ? Number(saved.z) : -Number(depth || 0) / 2 + fromBack,
+    };
+  }
+
+  return parseSceneConstraintValues(
+    mondayColumnTextAny(sourcePayload, ['contrainte']),
+    mondayColumnTextAny(sourcePayload, ['emplacement contrainte', 'emplacement_contrainte']),
+    width,
+    depth,
+  );
+}
+
+function parseSceneConstraintValues(sizeValue = '', locationValue = '', width = 0, depth = 0) {
+  const sizeParts = parseNumberParts(sizeValue);
+  const locationParts = parseNumberParts(locationValue);
+  if (sizeParts.length < 2 || locationParts.length < 2) return null;
+
+  const sizeX = sizeParts[0] / 100;
+  const sizeZ = sizeParts[1] / 100;
+  const fromLeft = locationParts[0];
+  const fromBack = locationParts[1];
+  if (![sizeX, sizeZ, fromLeft, fromBack].every((value) => Number.isFinite(value) && value >= 0)) return null;
+
+  return {
+    rawSize: String(sizeValue || '').trim(),
+    rawLocation: String(locationValue || '').trim(),
+    width: Math.max(0.01, sizeX),
+    depth: Math.max(0.01, sizeZ),
+    height: 5,
+    fromLeft,
+    fromBack,
+    x: clamp(-Number(width || 0) / 2 + fromLeft, -Number(width || 0) / 2, Number(width || 0) / 2),
+    z: clamp(-Number(depth || 0) / 2 + fromBack, -Number(depth || 0) / 2, Number(depth || 0) / 2),
+  };
+}
+
+function parseNumberParts(value = '') {
+  return String(value || '')
+    .replace(/,/g, '.')
+    .match(/\d+(?:\.\d+)?/g)
+    ?.map((part) => Number(part))
+    .filter((part) => Number.isFinite(part)) || [];
+}
+
 function mondayColumnText(sourcePayload = {}, columnId = '') {
   if (!columnId || !Array.isArray(sourcePayload?.column_values)) return '';
   return sourcePayload.column_values.find((column) => column.id === columnId)?.text || '';
@@ -11953,7 +12016,7 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
   };
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
   const cameraPivot = useMemo(() => {
@@ -11991,6 +12054,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
         {width}m x {depth}m
       </Text>
+      {sceneConstraint && <SceneConstraintColumn constraint={sceneConstraint} />}
       {items.map((item) => (
         <Suspense key={item.id} fallback={null}>
           <SceneItem
@@ -12024,6 +12088,31 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
         </Suspense>
       ))}
       <WallCoverSurfaces width={width} depth={depth} layout={layout} items={items} covers={wallCovers} />
+    </group>
+  );
+}
+
+function SceneConstraintColumn({ constraint }) {
+  const columnWidth = Math.max(0.01, Number(constraint?.width || 0.3));
+  const columnDepth = Math.max(0.01, Number(constraint?.depth || 0.3));
+  const columnHeight = Math.max(0.1, Number(constraint?.height || 5));
+  const x = Number(constraint?.x || 0);
+  const z = Number(constraint?.z || 0);
+  const label = `Poteau ${Math.round(columnWidth * 100)}x${Math.round(columnDepth * 100)} cm`;
+
+  return (
+    <group position={[x, columnHeight / 2, z]}>
+      <mesh castShadow receiveShadow>
+        <boxGeometry args={[columnWidth, columnHeight, columnDepth]} />
+        <meshStandardMaterial color="#8f98a3" roughness={0.72} metalness={0.02} />
+      </mesh>
+      <mesh position={[0, 0.002 - columnHeight / 2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[columnWidth + 0.16, columnDepth + 0.16]} />
+        <meshBasicMaterial color="#f97316" transparent opacity={0.18} depthWrite={false} />
+      </mesh>
+      <Text position={[0, Math.min(columnHeight, fixedWallHeight) + 0.15 - columnHeight / 2, 0]} rotation={[0, 0, 0]} fontSize={0.12} color="#344054" anchorX="center" anchorY="middle">
+        {label}
+      </Text>
     </group>
   );
 }
