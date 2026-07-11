@@ -1278,7 +1278,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       if (optionKeys.textureSlot) {
         updateItemOptions(targetItem, textureSlotPatch(targetItem, optionKeys.textureSlot, { imageUrl, imageName: file.name }));
       } else {
-        updateItemOptions(targetItem, { [urlKey]: imageUrl, [nameKey]: file.name });
+        updateItemOptions(targetItem, { [urlKey]: imageUrl, [nameKey]: file.name, ...(optionKeys.extraPatch || {}) });
       }
       setItemOptionState({ uploading: false, error: '' });
     } catch (error) {
@@ -1310,7 +1310,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       await preloadImage(imageUrl);
       setPartitionHeadVisuals((current) => ({
         ...current,
-        [side]: { ...(current?.[side] || {}), headMainImageUrl: imageUrl, headMainImageName: file.name },
+        [side]: { ...(current?.[side] || {}), headMainImageUrl: imageUrl, headMainImageName: file.name, visualPending: false },
       }));
       setItemOptionState({ uploading: '', error: '' });
     } catch (error) {
@@ -1323,6 +1323,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     setPartitionHeadVisuals((current) => ({
       ...current,
       [side]: { ...(current?.[side] || {}), headMainImageUrl: '', headMainImageName: '' },
+    }));
+  };
+
+  const updatePartitionHeadVisualOptions = (side, patch) => {
+    if (!side || readOnly) return;
+    setPartitionHeadVisuals((current) => ({
+      ...current,
+      [side]: { ...(current?.[side] || {}), ...(patch || {}) },
     }));
   };
   const openAddItemConfigurator = (entry) => {
@@ -1873,6 +1881,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onPartitionHeadSide={(side, enabled) => !readOnly && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
             onPartitionHeadImage={uploadPartitionHeadVisual}
             onPartitionHeadResetImage={resetPartitionHeadVisual}
+            onPartitionHeadVisualOptions={updatePartitionHeadVisualOptions}
             onCounterImage={(item, file, optionKeys) => uploadItemImage(item, file, optionKeys)}
             onCounterOptions={updateItemOptions}
             onCounterVisibility={(item, visible) => {
@@ -2351,6 +2360,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   const selectedColorId = selectedItem?.options?.binary2ColorId || counterWoodFinish(colors).id;
   const selectedFinish = counterFinishOptions(colors).find((finish) => finish.id === selectedColorId) || counterWoodFinish(colors);
   const imageName = selectedItem?.options?.binary3ImageName || t('counter_no_logo');
+  const logoPending = Boolean(selectedItem?.options?.binary3VisualPending);
   const selectedVisible = !isHiddenIncludedCounterItem(selectedItem);
   const logoInputRef = useRef(null);
 
@@ -2364,7 +2374,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   };
   const uploadSelectedImage = (file) => {
     if (!selectedItem || !file) return;
-    onImage?.(selectedItem, file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName' });
+    onImage?.(selectedItem, file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName', extraPatch: { binary3VisualPending: false } });
   };
   const selectVariant = (variant) => {
     if (!selectedItem || !variant?.entry) return;
@@ -2492,6 +2502,16 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
               event.target.value = '';
             }}
           />
+        </label>
+
+        <label className="visual-pending-checkbox">
+          <input
+            type="checkbox"
+            disabled={disabled}
+            checked={logoPending}
+            onChange={(event) => updateSelected({ binary3VisualPending: event.target.checked })}
+          />
+          <span>{t('visual_pending_label')}</span>
         </label>
 
         <div className="counter-logo-actions">
@@ -2779,6 +2799,7 @@ function OptionsStepPanel({
   onPartitionHeadSide,
   onPartitionHeadImage,
   onPartitionHeadResetImage,
+  onPartitionHeadVisualOptions,
   onCounterImage,
   onCounterOptions,
   onCounterVisibility,
@@ -2886,6 +2907,7 @@ function OptionsStepPanel({
           onChange={onPartitionHeadSide}
           onImage={onPartitionHeadImage}
           onResetImage={onPartitionHeadResetImage}
+          onVisualOptions={onPartitionHeadVisualOptions}
         />
       </OptionAccordion>
       <OptionAccordion title={t('option_counter')} icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
@@ -4224,7 +4246,7 @@ function reserveSizeDescription(area = 0, label = '') {
   return label || 'Réserve complémentaire';
 }
 
-function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onImage, onResetImage }) {
+function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onImage, onResetImage, onVisualOptions }) {
   const t = useT();
   const [formulaOpen, setFormulaOpen] = useState(true);
   const rows = [
@@ -4274,6 +4296,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
           disabled={disabled}
           onImage={(file) => onImage?.(row.side, file)}
           onReset={() => onResetImage?.(row.side)}
+          onPending={(checked) => onVisualOptions?.(row.side, { visualPending: checked })}
         />
       )) : (
         <div className="partition-head-empty">{t('partition_select_visual')}</div>
@@ -4313,9 +4336,10 @@ function PartitionHeadFormulaBox({ open, onToggle }) {
   );
 }
 
-function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabled = false, onImage, onReset }) {
+function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabled = false, onImage, onReset, onPending }) {
   const t = useT();
   const hasImage = Boolean(visual.headMainImageUrl);
+  const pending = Boolean(visual.visualPending);
   return (
     <div className="partition-head-upload-block">
       <div className="partition-head-upload-title">
@@ -4335,6 +4359,15 @@ function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabl
             event.target.value = '';
           }}
         />
+      </label>
+      <label className="visual-pending-checkbox dark">
+        <input
+          type="checkbox"
+          disabled={disabled}
+          checked={pending}
+          onChange={(event) => onPending?.(event.target.checked)}
+        />
+        <span>{t('visual_pending_label')}</span>
       </label>
       {visual.headMainImageName && <small className="partition-head-file-name">{visual.headMainImageName}</small>}
       {hasImage && onReset && (

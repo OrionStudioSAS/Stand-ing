@@ -137,6 +137,7 @@ export const translations = {
     partition_browse: 'Parcourir',
     partition_uploading: 'Upload...',
     partition_size: '800 × 500 mm',
+    visual_pending_label: 'Je veux un visuel, mais je ne l’ai pas encore',
 
     // PartitionHeadOptionsPanel (inline edit)
     partition_head_title: 'Tête de cloison',
@@ -486,6 +487,7 @@ export const translations = {
     partition_browse: 'Browse',
     partition_uploading: 'Uploading...',
     partition_size: '800 × 500 mm',
+    visual_pending_label: 'I want a visual, but I do not have it yet',
 
     // PartitionHeadOptionsPanel (inline edit)
     partition_head_title: 'Partition head',

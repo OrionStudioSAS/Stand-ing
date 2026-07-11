@@ -7783,6 +7783,31 @@ img.asset-thumb {
   font-weight: 800;
 }
 
+.visual-pending-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #1f4378;
+  background: #f8fbff;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.visual-pending-checkbox.dark {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.visual-pending-checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: #1f4378;
+}
+
 .partition-head-upload-error {
   display: block;
   border-radius: 7px;
