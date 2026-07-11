@@ -4853,11 +4853,14 @@ function AdminDashboard({ user, adminProfile }) {
       const warnings = Array.isArray(result?.warnings) && result.warnings.length
         ? `\n${result.warnings.join('\n')}`
         : '';
+      const constraintMessage = Number(result?.constraints_updated || 0) > 0
+        ? `\n${result.constraints_updated} contrainte(s) mise(s) à jour.`
+        : '';
       setSyncState({
         loading: false,
         message: (createdCount
           ? `${createdCount} nouvelle(s) scène(s) créée(s), ${result?.clients ?? 0} exposant(s) traité(s) depuis Monday.`
-          : 'Aucune nouvelle scène à créer depuis Monday.') + warnings,
+          : 'Aucune nouvelle scène à créer depuis Monday.') + constraintMessage + warnings,
         error: '',
       });
     } catch (error) {
@@ -10841,11 +10844,30 @@ function sceneConstraintFromPayload(sourcePayload = {}, width = 0, depth = 0) {
   }
 
   return parseSceneConstraintValues(
-    mondayColumnTextAny(sourcePayload, ['contrainte']),
-    mondayColumnTextAny(sourcePayload, ['emplacement contrainte', 'emplacement_contrainte']),
+    mondayConstraintSizeText(sourcePayload),
+    mondayConstraintLocationText(sourcePayload),
     width,
     depth,
   );
+}
+
+function mondayConstraintSizeText(sourcePayload = {}) {
+  return mondayColumnTextByNormalizedPredicate(sourcePayload, (value) => value === 'contrainte')
+    || mondayColumnTextByNormalizedPredicate(sourcePayload, (value) => value.includes('contrainte') && !value.includes('emplacement') && !value.includes('empacement'))
+    || mondayColumnTextAny(sourcePayload, ['contrainte']);
+}
+
+function mondayConstraintLocationText(sourcePayload = {}) {
+  return mondayColumnTextByNormalizedPredicate(sourcePayload, (value) => value.includes('contrainte') && (value.includes('emplacement') || value.includes('empacement')))
+    || mondayColumnTextAny(sourcePayload, ['emplacement contrainte', 'emplacement_contrainte', 'empacement contrainte', 'empacement_contrainte']);
+}
+
+function mondayColumnTextByNormalizedPredicate(sourcePayload = {}, predicate = () => false) {
+  if (!Array.isArray(sourcePayload?.column_values)) return '';
+  return sourcePayload.column_values.find((column) => {
+    const candidates = [column.id, column.title, column.column?.title];
+    return candidates.some((candidate) => predicate(normalizeLookupText(candidate)));
+  })?.text || '';
 }
 
 function parseSceneConstraintValues(sizeValue = '', locationValue = '', width = 0, depth = 0) {

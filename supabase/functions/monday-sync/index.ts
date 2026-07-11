@@ -47,23 +47,20 @@ Deno.serve(async (req) => {
   let clients = 0;
   let exhibitors = 0;
   let baseItemsApplied = 0;
+  let constraintsUpdated = 0;
   const warnings: string[] = [];
 
   for (const source of sources ?? []) {
     const { columns: mondayColumns, warning: columnWarning } = await fetchMondayBoardColumnsSafe(mondayToken, source.board_id);
     if (columnWarning) warnings.push(columnWarning);
     if (String(source.board_id) === "18395911999" && mondayColumns.length) {
-      warnings.push(...mondayMissingColumnWarningsFromColumns(source.board_id, mondayColumns, ["Contrainte", "Emplacement contrainte"]));
+      warnings.push(...mondayConstraintColumnMessages(source.board_id, mondayColumns));
     }
     const resolvedSource = withResolvedConstraintColumns(source, mondayColumns);
     const context = await ensureSourceContext(supabase, resolvedSource);
     const items = await fetchMondayItems(mondayToken, resolvedSource.board_id, resolvedSource.group_id);
 
     for (const item of items) {
-      const createValue = readColumn(item, resolvedSource.create_column_id);
-      const triggerValues = resolvedSource.create_trigger_values ?? ["OK", "OUI"];
-      if (!triggerValues.some((value: string) => normalizeText(createValue) === normalizeText(value))) continue;
-
       const { data: existingScene, error: existingSceneError } = await supabase
         .from("scenes")
         .select("id, source_payload, width_m, depth_m")
@@ -74,7 +71,7 @@ Deno.serve(async (req) => {
         const existingWidth = Number(existingScene.width_m) || Number(readMappingValue(item, resolvedSource.mapping?.width_m)) || 4;
         const existingDepth = Number(existingScene.depth_m) || Number(readMappingValue(item, resolvedSource.mapping?.depth_m)) || 3;
         const constraint = mondayConstraintForItem(item, resolvedSource, existingWidth, existingDepth);
-        if (constraint) {
+        if (constraintColumnsConfigured(resolvedSource) || constraint) {
           const { error: updateConstraintError } = await supabase
             .from("scenes")
             .update({
@@ -85,9 +82,14 @@ Deno.serve(async (req) => {
             })
             .eq("id", existingScene.id);
           if (updateConstraintError) throw updateConstraintError;
+          constraintsUpdated += 1;
         }
         continue;
       }
+
+      const createValue = readColumn(item, resolvedSource.create_column_id);
+      const triggerValues = resolvedSource.create_trigger_values ?? ["OK", "OUI"];
+      if (!triggerValues.some((value: string) => normalizeText(createValue) === normalizeText(value))) continue;
 
       const userProfile = mapMondayItemToUserProfile(item, resolvedSource);
       const { data: savedProfile, error: profileError } = await supabase
@@ -184,15 +186,15 @@ Deno.serve(async (req) => {
   }
 
   await supabase.from("monday_sync_runs").insert({ status: "success", processed_count: processed });
-  return json({ processed, created: processed, clients, exhibitors, base_items_applied: baseItemsApplied, warnings });
+  return json({ processed, created: processed, clients, exhibitors, base_items_applied: baseItemsApplied, constraints_updated: constraintsUpdated, warnings });
 });
 
 function withResolvedConstraintColumns(source: any, columns: Array<{ id: string; title: string }>) {
   const mapping = source.mapping ?? {};
-  const constraintColumnId = mapping.constraint || mapping.contrainte || findMondayColumnId(columns, ["Contrainte"]);
+  const constraintColumnId = mapping.constraint || mapping.contrainte || findConstraintSizeColumnId(columns);
   const constraintLocationColumnId = mapping.constraint_location
     || mapping.emplacement_contrainte
-    || findMondayColumnId(columns, ["Emplacement contrainte", "Empacement contrainte"]);
+    || findConstraintLocationColumnId(columns);
 
   return {
     ...source,
@@ -204,16 +206,43 @@ function withResolvedConstraintColumns(source: any, columns: Array<{ id: string;
   };
 }
 
-function mondayMissingColumnWarningsFromColumns(boardId: string, columns: Array<{ id: string; title: string }>, requiredTitles: string[]) {
-  const normalizedTitles = columns.map((column) => normalizeColumnLookup(column.title || column.id));
-  return requiredTitles
-    .filter((title) => !normalizedTitles.includes(normalizeColumnLookup(title)))
-    .map((title) => `Colonne Monday manquante sur le board ${boardId}: ${title}`);
+function mondayConstraintColumnMessages(boardId: string, columns: Array<{ id: string; title: string }>) {
+  const messages: string[] = [];
+  const sizeColumnId = findConstraintSizeColumnId(columns);
+  const locationColumnId = findConstraintLocationColumnId(columns);
+
+  if (sizeColumnId) messages.push(`ID colonne Contrainte détecté sur le board ${boardId}: ${sizeColumnId}`);
+  if (locationColumnId) messages.push(`ID colonne Emplacement contrainte détecté sur le board ${boardId}: ${locationColumnId}`);
+
+  if (!sizeColumnId || !locationColumnId) {
+    messages.push(`Colonnes disponibles sur le board ${boardId}: ${formatMondayColumnList(columns)}`);
+  }
+
+  if (!sizeColumnId) messages.push(`Colonne Monday manquante sur le board ${boardId}: Contrainte`);
+  if (!locationColumnId) messages.push(`Colonne Monday manquante sur le board ${boardId}: Emplacement contrainte`);
+  return messages;
 }
 
-function findMondayColumnId(columns: Array<{ id: string; title: string }>, titles: string[]) {
-  const normalizedTitles = titles.map(normalizeColumnLookup);
-  return columns.find((column) => normalizedTitles.includes(normalizeColumnLookup(column.title || column.id)))?.id || "";
+function formatMondayColumnList(columns: Array<{ id: string; title: string }>) {
+  return columns.map((column) => `${column.title || '(sans titre)'} [${column.id}]`).join(' | ');
+}
+
+function findConstraintSizeColumnId(columns: Array<{ id: string; title: string }>) {
+  return findMondayColumnId(columns, (value) => value === "contrainte")
+    || findMondayColumnId(columns, (value) => value.includes("contrainte") && !value.includes("emplacement") && !value.includes("empacement"));
+}
+
+function findConstraintLocationColumnId(columns: Array<{ id: string; title: string }>) {
+  return findMondayColumnId(columns, (value) => value.includes("contrainte") && (value.includes("emplacement") || value.includes("empacement")));
+}
+
+function findMondayColumnId(columns: Array<{ id: string; title: string }>, predicate: (value: string) => boolean) {
+  return columns.find((column) => [column.title, column.id].some((candidate) => predicate(normalizeColumnLookup(candidate))))?.id || "";
+}
+
+function constraintColumnsConfigured(source: any) {
+  const mapping = source.mapping ?? {};
+  return Boolean((mapping.constraint || mapping.contrainte) && (mapping.constraint_location || mapping.emplacement_contrainte));
 }
 
 async function fetchMondayBoardColumnsSafe(token: string, boardId: string) {
