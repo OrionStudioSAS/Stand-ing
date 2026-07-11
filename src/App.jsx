@@ -12120,7 +12120,6 @@ function SceneConstraintColumn({ constraint }) {
   const columnHeight = Math.max(0.1, Number(constraint?.height || 5));
   const x = Number(constraint?.x || 0);
   const z = Number(constraint?.z || 0);
-  const label = `Poteau ${Math.round(columnWidth * 100)}x${Math.round(columnDepth * 100)} cm`;
 
   return (
     <group position={[x, columnHeight / 2, z]}>
@@ -12132,9 +12131,6 @@ function SceneConstraintColumn({ constraint }) {
         <planeGeometry args={[columnWidth + 0.16, columnDepth + 0.16]} />
         <meshBasicMaterial color="#f97316" transparent opacity={0.18} depthWrite={false} />
       </mesh>
-      <Text position={[0, Math.min(columnHeight, fixedWallHeight) + 0.15 - columnHeight / 2, 0]} rotation={[0, 0, 0]} fontSize={0.12} color="#344054" anchorX="center" anchorY="middle">
-        {label}
-      </Text>
     </group>
   );
 }
