@@ -83,6 +83,7 @@ const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
+const ceilingObjectEdgeInset = 0.5;
 const wallTopSnapInset = 0.015;
 const turntableRotationSpeed = 0.7;
 const furnitureInsuranceRows = [
@@ -1072,7 +1073,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     colorSelections: [
       { usage: 'Moquette', color: selectedCarpetColor, defaultColorId: effectiveDefaultColorOptions.carpetColorId, quantityM2: area, configOptions: [...carpetGroupConfigOptionsList, { id: '__carpet-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { ...carpetConfigOptions, '__carpet-thick__': carpetThick } },
       effectiveCarpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor, defaultColorId: effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId, quantityM2: carpetFootprintAreaM2(), configOptions: [{ id: '__footprint-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { '__footprint-thick__': footprintThick } } : null,
-      { usage: 'Coton cloison', color: selectedWallFabricColor, defaultColorId: effectiveDefaultColorOptions.wallFabricColorId, quantityM2: sceneWallFabricArea(width, depth, layout) },
+      { usage: 'Coton cloison', color: selectedWallFabricColor, defaultColorId: effectiveDefaultColorOptions.wallFabricColorId, quantityM2: Math.max(0, sceneWallFabricArea(width, depth, layout) - activeWallCoverFabricArea(wallCoverSurfaces, wallCovers)) },
     ],
     wallCovers,
     wallCoverSurfaces,
@@ -8491,6 +8492,14 @@ function sceneWallFabricArea(width = 0, depth = 0, layout = 'u') {
   return roundM2(backArea + (sideDepth * fixedWallHeight * sideCount));
 }
 
+function activeWallCoverFabricArea(surfaces = [], covers = {}) {
+  const fabricHeight = Math.max(0, fixedWallHeight - baseboardHeight);
+  const area = (surfaces || [])
+    .filter((surface) => surface.kind !== 'reserve' && wallCoverEnabledForSurface(covers, surface))
+    .reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0) * fabricHeight, 0);
+  return roundM2(area);
+}
+
 function roundM2(value = 0) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
@@ -11033,6 +11042,24 @@ function placementRegions(width, depth, layout, itemBounds, carpetFootprintEnabl
     .filter(Boolean);
 }
 
+function insetRect(rect, inset = 0) {
+  const safeInset = Math.max(0, Number(inset || 0));
+  return {
+    minX: Number(rect.minX || 0) + safeInset,
+    maxX: Number(rect.maxX || 0) - safeInset,
+    minZ: Number(rect.minZ || 0) + safeInset,
+    maxZ: Number(rect.maxZ || 0) - safeInset,
+  };
+}
+
+function ceilingPlacementRegions(width, depth, layout, itemBounds) {
+  const base = standFloorBounds(width, depth, layout);
+  const safeRegion = itemAllowedRegion(insetRect(base, ceilingObjectEdgeInset), itemBounds);
+  if (safeRegion) return [safeRegion];
+  const fallback = itemAllowedRegion(base, itemBounds);
+  return fallback ? [fallback] : [];
+}
+
 function itemAllowedRegion(rect, itemBounds) {
   const region = {
     minX: rect.minX - itemBounds.minX,
@@ -11481,21 +11508,17 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
     return { ...positionedItem, y: floorItemBaseY(positionedItem) };
   }
   const bounds = itemPlacementBounds(positionedItem);
-  const placement = closestPlacementInRegions(positionedItem, placementRegions(width, depth, layout, bounds, carpetFootprintEnabled && !isCeilingMountedItem(positionedItem)));
-
   if (isCeilingMountedItem(positionedItem)) {
-    const sb = standFloorBounds(width, depth, layout);
-    const xMin = sb.minX - bounds.minX;
-    const xMax = sb.maxX - bounds.maxX;
-    const zMin = sb.minZ - bounds.minZ;
-    const zMax = sb.maxZ - bounds.maxZ;
+    const placement = closestPlacementInRegions(positionedItem, ceilingPlacementRegions(width, depth, layout, bounds));
     return {
       ...positionedItem,
-      x: clamp(placement.x, Math.min(xMin, xMax), Math.max(xMin, xMax)),
+      x: placement.x,
       y: floorItemBaseY(positionedItem),
-      z: clamp(placement.z, Math.min(zMin, zMax), Math.max(zMin, zMax)),
+      z: placement.z,
     };
   }
+
+  const placement = closestPlacementInRegions(positionedItem, placementRegions(width, depth, layout, bounds, carpetFootprintEnabled));
 
   return {
     ...positionedItem,
@@ -11532,7 +11555,9 @@ function placeItemInFreeSpot(item, items, width, depth, layout, carpetFootprintE
   if (!collidesWithScene(firstCandidate, items, firstCandidate.id, width, depth)) return firstCandidate;
 
   const bounds = itemPlacementBounds(firstCandidate);
-  const regions = placementRegions(width, depth, layout, bounds, carpetFootprintEnabled && !isCeilingMountedItem(firstCandidate));
+  const regions = isCeilingMountedItem(firstCandidate)
+    ? ceilingPlacementRegions(width, depth, layout, bounds)
+    : placementRegions(width, depth, layout, bounds, carpetFootprintEnabled);
   const candidates = [];
 
   for (const region of regions) {
@@ -12658,7 +12683,7 @@ function Walls({ width, depth, height, layout, items = [], wallFabricColor, rese
       {(layout === 'left' || layout === 'u') && <WallBaseboards wall="left" width={width} depth={depth} items={items} />}
       {(layout === 'right' || layout === 'u') && <Wall position={[width / 2 - wallThickness / 2, height / 2, sideZ]} size={[wallThickness, height, sideDepth]} />}
       {(layout === 'right' || layout === 'u') && <WallBaseboards wall="right" width={width} depth={depth} items={items} />}
-      <WallFabricSurfaces width={width} depth={depth} layout={layout} items={items} color={wallFabricColor} reserveColor={reserveWallFabricColor} />
+      <WallFabricSurfaces width={width} depth={depth} layout={layout} items={items} color={wallFabricColor} reserveColor={reserveWallFabricColor} covers={wallCovers} />
     </group>
   );
 }
@@ -12697,8 +12722,8 @@ function wallBaseboardSegments(wall, width, depth, items = []) {
   return freeWallIntervals(limits, blockers).filter((segment) => segment.max - segment.min > 0.05);
 }
 
-function WallFabricSurfaces({ width, depth, layout, items = [], color, reserveColor = null }) {
-  const surfaces = wallCoverSurfaceOptions(layout, width, depth, items);
+function WallFabricSurfaces({ width, depth, layout, items = [], color, reserveColor = null, covers = {} }) {
+  const surfaces = wallFabricRenderSurfaces(layout, width, depth, items, covers);
   return (
     <group>
       {surfaces.map((surface) => (
@@ -12706,6 +12731,72 @@ function WallFabricSurfaces({ width, depth, layout, items = [], color, reserveCo
       ))}
     </group>
   );
+}
+
+function wallFabricRenderSurfaces(layout, width, depth, items = [], covers = {}) {
+  const baseSurfaces = wallCoverSurfaceOptions(layout, width, depth, items);
+  const activeCoverSurfaces = wallCoverSurfaceOptions(layout, width, depth, items, { splitForCovers: true })
+    .filter((surface) => wallCoverEnabledForSurface(covers, surface));
+
+  return baseSurfaces.flatMap((surface) => {
+    if (surface.kind === 'reserve') {
+      return wallCoverEnabledForSurface(covers, surface) ? [] : [surface];
+    }
+
+    const coverIntervals = activeCoverSurfaces
+      .filter((cover) => (cover.sourceWall || cover.id) === surface.id)
+      .map(wallSurfaceAxisInterval)
+      .filter(Boolean);
+
+    if (!coverIntervals.length) return [surface];
+
+    const surfaceRange = wallSurfaceAxisInterval(surface);
+    if (!surfaceRange) return [surface];
+
+    return freeWallIntervals(surfaceRange, coverIntervals)
+      .filter((interval) => interval.max - interval.min > 0.01)
+      .map((interval, index) => wallSurfaceSegmentFromInterval(surface, interval, width, depth, index));
+  });
+}
+
+function wallSurfaceAxisInterval(surface = {}) {
+  const center = surface.wall === 'left' || surface.wall === 'right'
+    ? Number(surface.position?.[2] || 0)
+    : Number(surface.position?.[0] || 0);
+  const half = Number(surface.width || 0) / 2;
+  if (!Number.isFinite(center) || !Number.isFinite(half) || half <= 0) return null;
+  return { min: center - half, max: center + half };
+}
+
+function wallSurfaceSegmentFromInterval(surface, interval, width, depth, index = 0) {
+  const segmentWidth = Math.max(0.01, interval.max - interval.min);
+  const center = (interval.min + interval.max) / 2;
+  const offset = 0.0015;
+  if (surface.wall === 'left') {
+    return {
+      ...surface,
+      id: `${surface.id}-fabric-${index}`,
+      width: segmentWidth,
+      position: [-Number(width || 0) / 2 + wallThickness + offset, fixedWallHeight / 2, center],
+      rotation: Math.PI / 2,
+    };
+  }
+  if (surface.wall === 'right') {
+    return {
+      ...surface,
+      id: `${surface.id}-fabric-${index}`,
+      width: segmentWidth,
+      position: [Number(width || 0) / 2 - wallThickness - offset, fixedWallHeight / 2, center],
+      rotation: -Math.PI / 2,
+    };
+  }
+  return {
+    ...surface,
+    id: `${surface.id}-fabric-${index}`,
+    width: segmentWidth,
+    position: [center, fixedWallHeight / 2, -Number(depth || 0) / 2 + wallThickness + offset],
+    rotation: 0,
+  };
 }
 
 function WallFabricSurface({ surface, color }) {
