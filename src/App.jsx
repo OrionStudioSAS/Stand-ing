@@ -1207,6 +1207,23 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     setOpenOptions((current) => ({ ...current, [key]: !current[key] }));
   };
 
+  const openOnlyStepOption = (key) => {
+    if (!key) return;
+    setOpenOptions((current) => Object.keys(current).reduce((next, optionKey) => ({
+      ...next,
+      [optionKey]: optionKey === key,
+    }), {}));
+  };
+
+  const openStepOptionForItem = (item) => {
+    const optionKey = step2OptionKeyForItem(item);
+    if (!optionKey) return false;
+    setActiveStep(2);
+    openOnlyStepOption(optionKey);
+    setHeaderPanel(null);
+    return true;
+  };
+
   const handleTechnicalFloorType = (type) => {
     setTechnicalFloorType(type);
     if (type) {
@@ -1351,6 +1368,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const openSelectedItemConfigurator = () => {
     if (!selected || readOnly) return;
+    if (openStepOptionForItem(selected)) return;
     const entry = itemConfiguratorEntry(selected);
     if (!itemEditNeedsConfigurator(selected, entry, salonLabel)) return;
     setItemConfigModal({ mode: 'edit', item: selected, entry });
@@ -1767,7 +1785,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         {selected && !readOnly && (
           <div className={`view-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
             <button type="button" disabled={isWallItem(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
-            <button type="button" disabled={isAutomaticReserveItem(selected) || !itemEditNeedsConfigurator(selected, itemConfiguratorEntry(selected), salonLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Settings2 size={16} /></button>
+            <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), salonLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Settings2 size={16} /></button>
             <button type="button" disabled={!canDeleteSceneItem(selected, isAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={16} /></button>
             {rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
               <label className="toolbar-rotation-slider">
@@ -3446,6 +3464,20 @@ function itemEditNeedsConfigurator(item = {}, entry = {}, salonLabel = '') {
     || isPosterItem(item)
     || (isWoodReceptionDeskItem(item) && !isIncludedSceneItem(item))
     || textureSlots.length > 0;
+}
+
+function step2OptionKeyForItem(item = {}) {
+  if (!item) return '';
+  if (isPartitionHeadItem(item) || isAutomaticPartitionHeadItem(item)) return 'tete';
+  if (isReserveSceneItem(item) || isAutomaticReserveItem(item)) return 'reserve';
+  if (isWoodReceptionDeskItem(item) && isIncludedSceneItem(item)) return 'comptoir';
+  if (isLedRailEntry(item) || isAutomaticLedRailItem(item) || isAutomaticSpotItem(item)) return 'led';
+  return '';
+}
+
+function itemToolbarSettingsAvailable(item = {}, entry = {}, salonLabel = '') {
+  if (!item) return false;
+  return Boolean(step2OptionKeyForItem(item) || itemEditNeedsConfigurator(item, entry, salonLabel));
 }
 
 function resolveVariantOptionLink(variant, selectedExtras = {}) {
