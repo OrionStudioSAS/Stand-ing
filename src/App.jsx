@@ -4294,9 +4294,9 @@ function reserveSizeName(area = 0, label = '') {
 }
 
 function reserveSizeDescription(area = 0, label = '') {
-  if (area && area <= 1.25) return '1m × 1m · 1 personne';
-  if (area && area <= 2.5) return '1m × 2m · idéale petits salons';
-  if (area) return '2m × 2m · bagages + sacs équipe';
+  if (area && area <= 1.25) return '1m × 1m';
+  if (area && area <= 2.5) return '1m × 2m';
+  if (area) return '2m × 2m';
   return label || 'Réserve complémentaire';
 }
 
