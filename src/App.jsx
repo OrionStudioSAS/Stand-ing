@@ -41,7 +41,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
@@ -1190,7 +1190,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     if (confirmState.loading) return;
     setConfirmState({ loading: true, message: '', error: '' });
     try {
-      await saveScene(currentScenePayload('configured', 'configured'));
+      const confirmedScene = currentScenePayload('configured', 'configured');
+      await saveScene(confirmedScene);
+      await syncSceneConfigToMonday(confirmedScene);
       setSaveState('configured');
       setDraggingId(null);
       setActiveStep(4);
