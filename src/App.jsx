@@ -1351,7 +1351,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const openSelectedItemConfigurator = () => {
     if (!selected || readOnly) return;
-    setItemConfigModal({ mode: 'edit', item: selected, entry: itemConfiguratorEntry(selected) });
+    const entry = itemConfiguratorEntry(selected);
+    if (!itemEditNeedsConfigurator(selected, entry, salonLabel)) return;
+    setItemConfigModal({ mode: 'edit', item: selected, entry });
   };
 
   const closeItemConfigurator = () => setItemConfigModal(null);
@@ -1765,7 +1767,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         {selected && !readOnly && (
           <div className={`view-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
             <button type="button" disabled={isWallItem(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
-            <button type="button" disabled={isAutomaticReserveItem(selected)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Settings2 size={16} /></button>
+            <button type="button" disabled={isAutomaticReserveItem(selected) || !itemEditNeedsConfigurator(selected, itemConfiguratorEntry(selected), salonLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Settings2 size={16} /></button>
             <button type="button" disabled={!canDeleteSceneItem(selected, isAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={16} /></button>
             {rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
               <label className="toolbar-rotation-slider">
@@ -1798,7 +1800,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onAdd={openAddItemConfigurator}
             onRemove={removeOptionalItem}
             onSelectItem={setSelectedId}
-            onConfigureItem={(item) => setItemConfigModal({ mode: 'edit', item, entry: itemConfiguratorEntry(item) })}
+            onConfigureItem={(item) => {
+            const entry = itemConfiguratorEntry(item);
+            if (itemEditNeedsConfigurator(item, entry, salonLabel)) setItemConfigModal({ mode: 'edit', item, entry });
+          }}
             onNext={() => setActiveStep(4)}
           />
         ) : activeStep === 4 ? (
@@ -1933,7 +1938,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           nextDetail={activeStep === 2 ? tRaw(language, 'cart_next_furniture') : tRaw(language, 'cart_next_detail')}
           onAdd={() => setActiveStep(3)}
           onSelectItem={setSelectedId}
-          onConfigureItem={(item) => setItemConfigModal({ mode: 'edit', item, entry: itemConfiguratorEntry(item) })}
+          onConfigureItem={(item) => {
+            const entry = itemConfiguratorEntry(item);
+            if (itemEditNeedsConfigurator(item, entry, salonLabel)) setItemConfigModal({ mode: 'edit', item, entry });
+          }}
           onRemove={removeOptionalItem}
           onNext={() => setActiveStep(activeStep === 2 ? 3 : 4)}
         />
@@ -3096,7 +3104,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
   const initialOptions = item?.options || {};
   const variants = itemConfigVariants(catalogEntry, salonLabel);
   const extraOptions = itemConfigExtraOptions(catalogEntry);
-  const textureSlots = normalizeTextureSlots(item?.dimensions?.textureSlots);
+  const textureSlots = normalizeTextureSlots(item?.dimensions?.textureSlots || catalogEntry?.dimensions?.textureSlots);
   const defaultVariant = variants.find((variant) => variant.isDefault) || variants[0];
   const [format, setFormat] = useState(initialOptions.variantId || initialOptions.format || defaultVariant?.id || 'standard');
   const [selectedExtras, setSelectedExtras] = useState(() => {
@@ -3191,7 +3199,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
           </div>
         </div>
 
-        <ConfigChoiceGrid title={t('item_config_variant_title')} choices={variants} value={format} onChange={setFormat} />
+        {variants.length > 1 && <ConfigChoiceGrid title={t('item_config_variant_title')} choices={variants} value={format} onChange={setFormat} />}
 
         {hasVisualOptions && isPartitionHeadItem(item) && (
           <PartitionHeadOptionsPanel
@@ -3422,8 +3430,22 @@ function syncSharedGlobalGroupOptions(items = [], sourceOptions = {}, catalogEnt
 }
 
 function entryNeedsConfigurator(entry = {}) {
-  if (isVariantGroupEntry(entry)) return true;
+  if (itemConfigVariants(entry, '').length > 1) return true;
   return itemConfigExtraOptions(entry).length > 0;
+}
+
+function itemEditNeedsConfigurator(item = {}, entry = {}, salonLabel = '') {
+  if (!item) return false;
+  const catalogEntry = entry || item;
+  const variants = itemConfigVariants(catalogEntry, salonLabel);
+  const extraOptions = itemConfigExtraOptions(catalogEntry);
+  const textureSlots = normalizeTextureSlots(item?.dimensions?.textureSlots || catalogEntry?.dimensions?.textureSlots);
+  return variants.length > 1
+    || extraOptions.length > 0
+    || isPartitionHeadItem(item)
+    || isPosterItem(item)
+    || (isWoodReceptionDeskItem(item) && !isIncludedSceneItem(item))
+    || textureSlots.length > 0;
 }
 
 function resolveVariantOptionLink(variant, selectedExtras = {}) {
