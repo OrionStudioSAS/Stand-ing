@@ -336,9 +336,9 @@ export const translations = {
     carpet_for_area: 'Pour {area} m² · +{extra} €',
 
     // Reserve descriptions
-    reserve_desc_small: '1m × 1m · 1 personne',
-    reserve_desc_standard: '1m × 2m · idéale petits salons',
-    reserve_desc_large: '2m × 2m · bagages + sacs équipe',
+    reserve_desc_small: '',
+    reserve_desc_standard: '',
+    reserve_desc_large: '',
 
     // Furniture categories
     cat_all: 'TOUS',
