@@ -8487,12 +8487,17 @@ function toPdfWinAnsi(text = '') {
   return String(text)
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[œ]/gi, 'oe')
+    .replace(/[æ]/gi, 'ae')
     .replace(/[–—]/g, '-')
+    .replace(/[→]/g, '->')
+    .replace(/[×✕]/g, 'x')
     .replace(/[\u00a0\u202f]/g, ' ')
     .replace(/[']/g, "'")
     .replace(/[“”]/g, '"')
     .replace(/[²]/g, '2')
-    .replace(/€/g, 'EUR');
+    .replace(/€/g, 'EUR')
+    .replace(/[^\x20-\x7E]/g, '');
 }
 
 function truncatePdfText(text = '', max = 40) {
