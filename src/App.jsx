@@ -13087,6 +13087,17 @@ function Model3D({ item, selected, hovered, dragging, visualContext }) {
   return <ObjModel item={item} selected={selected} hovered={hovered} dragging={dragging} />;
 }
 
+function MissingModelFallback({ item, selected, hovered, dragging }) {
+  const [width, height, depth] = itemDefaultSize(item);
+  const color = selected ? '#f59e0b' : '#cfd6df';
+  return (
+    <mesh position={[0, Math.max(0.05, height) / 2, 0]}>
+      <boxGeometry args={[Math.max(0.12, width), Math.max(0.12, height), Math.max(0.12, depth)]} />
+      <meshStandardMaterial color={activeColor(selected, dragging, color)} roughness={0.82} metalness={0.02} transparent={hovered && !selected} opacity={hovered && !selected ? 0.55 : 1} />
+    </mesh>
+  );
+}
+
 function GlbModel({ item, selected, hovered, visualContext }) {
   const gltf = useGlbModel(item.modelUrl);
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item) });
@@ -13096,7 +13107,7 @@ function GlbModel({ item, selected, hovered, visualContext }) {
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item, { flipY: false }) : null
   ), [item.type, item.label, item.modelUrl, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
-  const model = useMemo(() => prepareLoadedModel(gltf.scene, item, {
+  const model = useMemo(() => (gltf?.scene ? prepareLoadedModel(gltf.scene, item, {
     isGlb: true,
     customImageTexture,
     counterColorTexture,
@@ -13104,27 +13115,27 @@ function GlbModel({ item, selected, hovered, visualContext }) {
     textureSlotFlipY: false,
     mainImageTexture,
     exhibitorTexture,
-  }), [gltf, item, customImageTexture, counterColorTexture, textureSlotImages, mainImageTexture, exhibitorTexture]);
-  return <primitive object={model} dispose={null} />;
+  }) : null), [gltf, item, customImageTexture, counterColorTexture, textureSlotImages, mainImageTexture, exhibitorTexture]);
+  return model ? <primitive object={model} dispose={null} /> : <MissingModelFallback item={item} selected={selected} hovered={hovered} />;
 }
 
 function useGlbModel(modelUrl) {
   const entry = _ensureGlbCacheEntry(modelUrl);
-  if (entry.error) throw entry.error;
+  if (entry.error) return null;
   if (!entry.result) throw entry.promise;
   return entry.result;
 }
 
 function useMtlMaterials(materialUrl, item) {
   const entry = _ensureMtlCacheEntry(materialUrl, item);
-  if (entry.error) throw entry.error;
+  if (entry.error) return null;
   if (!entry.result) throw entry.promise;
   return entry.result;
 }
 
 function useObjModel(modelUrl, materials) {
   const entry = _ensureObjCacheEntry(modelUrl, materials);
-  if (entry.error) throw entry.error;
+  if (entry.error) return null;
   if (!entry.result) throw entry.promise;
   return entry.result;
 }
@@ -13159,16 +13170,16 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
 
 function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, customImageTexture, counterColorTexture, textureSlotImages, exhibitorTexture, selected, hovered }) {
   const obj = useObjModel(item.modelUrl, materials);
-  const model = useMemo(() => prepareLoadedModel(obj, item, {
+  const model = useMemo(() => (obj ? prepareLoadedModel(obj, item, {
     mainImageTexture,
     customImageTexture,
     counterColorTexture,
     textureSlotImages,
     textureSlotFlipY: true,
     exhibitorTexture,
-  }), [obj, item, mainImageTexture, customImageTexture, counterColorTexture, textureSlotImages, exhibitorTexture]);
+  }) : null), [obj, item, mainImageTexture, customImageTexture, counterColorTexture, textureSlotImages, exhibitorTexture]);
 
-  return <primitive object={model} dispose={null} />;
+  return model ? <primitive object={model} dispose={null} /> : <MissingModelFallback item={item} selected={selected} hovered={hovered} />;
 }
 
 function useMtlTexturePreload(materials, item, materialUrl) {
@@ -13255,8 +13266,9 @@ function modelMaterialUrl(item) {
 }
 
 function ObjModel({ item, selected, hovered, dragging }) {
-  const obj = useLoader(OBJLoader, item.modelUrl);
+  const obj = useObjModel(item.modelUrl, null);
   const model = useMemo(() => {
+    if (!obj) return null;
     const clone = obj.clone(true);
     const material = new MeshStandardMaterial({
       color: activeColor(selected, dragging, defaultModelColor(item)),
@@ -13277,7 +13289,7 @@ function ObjModel({ item, selected, hovered, dragging }) {
     return centerModel(clone, item);
   }, [obj, item, selected, hovered, dragging]);
 
-  return <primitive object={model} dispose={null} />;
+  return model ? <primitive object={model} dispose={null} /> : <MissingModelFallback item={item} selected={selected} hovered={hovered} dragging={dragging} />;
 }
 
 function prepareLoadedModel(source, item = null, textureOptions = {}) {
