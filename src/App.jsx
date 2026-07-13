@@ -8401,7 +8401,7 @@ async function fillPurchaseOrderTemplate(order = {}) {
   for (let index = 0; index < 15; index += 1) {
     const rowNumber = index + 1;
     const line = rows[index];
-    setPdfField(form, `ACC${rowNumber}a`, line ? truncatePdfText(line.reference || line.label, 62) : '');
+    setPdfField(form, `ACC${rowNumber}a`, line ? truncatePdfText(line.label || line.reference, 62) : '');
     setPdfField(form, `Quant${rowNumber}a`, line ? String(line.quantity) : '');
     setPdfField(form, `PU${rowNumber}a`, line ? moneyPdf(line.unitPrice) : '');
     setPdfField(form, `PT${rowNumber}a`, line ? moneyPdf(line.total) : '');
