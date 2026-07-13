@@ -7813,26 +7813,36 @@ img.asset-thumb {
 .visual-pending-checkbox {
   display: flex;
   align-items: center;
-  gap: 9px;
+  justify-content: center;
+  gap: 12px;
   border: 1px solid #dbe4f0;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 12px 14px;
+  min-height: 48px;
   color: #1f4378;
   background: #f8fbff;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 900;
+  line-height: 1.2;
+  text-align: center;
 }
 
 .visual-pending-checkbox.dark {
-  border-color: rgba(255, 255, 255, 0.18);
-  color: #fff;
-  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(185, 210, 245, 0.45);
+  color: #f8fbff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .visual-pending-checkbox input {
-  width: 16px;
-  height: 16px;
-  accent-color: #1f4378;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #ffffff;
+}
+
+.visual-pending-checkbox.dark input {
+  accent-color: #f8fbff;
 }
 
 .partition-head-upload-error {

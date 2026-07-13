@@ -10183,6 +10183,19 @@ function sideWallLength(depth) {
   return Math.max(0.01, Number(depth || 0));
 }
 
+function layoutHasSideWalls(layout) {
+  return layout === 'left' || layout === 'right' || layout === 'u';
+}
+
+function sceneFloorDepth(layout, depth) {
+  const nominalDepth = Number(depth || 0);
+  return Math.max(0.01, nominalDepth + (layoutHasSideWalls(layout) ? wallThickness : 0));
+}
+
+function sceneFloorCenterZ(layout) {
+  return layoutHasSideWalls(layout) ? wallThickness / 2 : 0;
+}
+
 function sideWallStartZ(depth) {
   return -Number(depth || 0) / 2 + wallThickness;
 }
@@ -12247,7 +12260,9 @@ function SceneConstraintColumn({ constraint }) {
 
 function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
-  const carpetTexture = useRepeatedTexture(colorTextureUrl(carpetColor), width, depth);
+  const floorDepth = sceneFloorDepth(layout, depth);
+  const floorCenterZ = sceneFloorCenterZ(layout);
+  const carpetTexture = useRepeatedTexture(colorTextureUrl(carpetColor), width, floorDepth);
   const footprintTexture = useRepeatedTexture(colorTextureUrl(carpetFootprintColor || carpetColor), footprint.width, footprint.depth);
   const carpetHex = colorHex(carpetColor, '#bebebe');
   const footprintHex = colorHex(carpetFootprintColor || carpetColor, carpetHex);
@@ -12257,18 +12272,20 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
   const resolvedRampX = rampDimensions ? clamp(Number(technicalFloorRampX || 0), -rampLimit, rampLimit) : 0;
   const openEdges = technicalFloor ? openTechnicalFloorEdges(layout) : [];
   const slabSegments = technicalFloor && rampDimensions
-    ? technicalFloorSlabSegments(width, depth, rampDimensions, resolvedRampX, openEdges, technicalFloorTrimType === 'sloped' ? slabHeight : 0.04)
-    : [{ id: 'full', width, depth, centerX: 0, centerZ: 0 }];
+    ? technicalFloorSlabSegments(width, floorDepth, rampDimensions, resolvedRampX, openEdges, technicalFloorTrimType === 'sloped' ? slabHeight : 0.04)
+    : [{ id: 'full', width, depth: floorDepth, centerX: 0, centerZ: 0 }];
 
   return (
     <group>
-      {slabSegments.map((segment) => (
-        <mesh key={segment.id} receiveShadow position={[segment.centerX, -slabHeight / 2, segment.centerZ]}>
-          <boxGeometry args={[segment.width, slabHeight, segment.depth]} />
-          <meshStandardMaterial color={carpetTexture ? '#ffffff' : carpetHex} map={carpetTexture || null} roughness={0.88} />
-        </mesh>
-      ))}
-      {technicalFloor && <TechnicalFloorAccessories width={width} depth={depth} layout={layout} height={slabHeight} trimType={technicalFloorTrimType} rampX={technicalFloorRampX} onRampXChange={onTechnicalFloorRampX} onRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={sceneOffset} />}
+      <group position={[0, 0, floorCenterZ]}>
+        {slabSegments.map((segment) => (
+          <mesh key={segment.id} receiveShadow position={[segment.centerX, -slabHeight / 2, segment.centerZ]}>
+            <boxGeometry args={[segment.width, slabHeight, segment.depth]} />
+            <meshStandardMaterial color={carpetTexture ? '#ffffff' : carpetHex} map={carpetTexture || null} roughness={0.88} />
+          </mesh>
+        ))}
+        {technicalFloor && <TechnicalFloorAccessories width={width} depth={floorDepth} layout={layout} height={slabHeight} trimType={technicalFloorTrimType} rampX={technicalFloorRampX} onRampXChange={onTechnicalFloorRampX} onRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={[sceneOffset[0], sceneOffset[1], sceneOffset[2] - floorCenterZ]} />}
+      </group>
       {carpetFootprintEnabled && (
         <>
           <mesh receiveShadow position={[footprint.centerX, 0.012, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -12667,6 +12684,8 @@ function createGenericWallCoverTexture(width = 1, height = 1) {
 
 function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, sceneOffset, draggingId, draggingItem = null, onDragMove, onClearHover, onDeselect }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
+  const floorDepth = sceneFloorDepth(layout, depth);
+  const floorCenterZ = sceneFloorCenterZ(layout);
   const emitDragPoint = (event) => {
     onDragMove({
       x: event.point.x - sceneOffset[0],
@@ -12714,7 +12733,7 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
 
   return (
     <group>
-      {dragPlane('stand', [0, 0.015, 0], [width, depth])}
+      {dragPlane('stand', [0, 0.015, floorCenterZ], [width, floorDepth])}
       {carpetFootprintEnabled && dragPlane('footprint', [footprint.centerX, 0.016, footprint.centerZ], [footprint.width, footprint.depth])}
       {wallDragPlanes()}
     </group>
