@@ -336,9 +336,9 @@ export const translations = {
     carpet_for_area: 'Pour {area} m² · +{extra} €',
 
     // Reserve descriptions
-    reserve_desc_small: '',
-    reserve_desc_standard: '',
-    reserve_desc_large: '',
+    reserve_desc_small: '1m × 1m',
+    reserve_desc_standard: '1m × 2m',
+    reserve_desc_large: '2m × 2m',
 
     // Furniture categories
     cat_all: 'TOUS',
