@@ -1763,13 +1763,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         )}
 
         {selected && !readOnly && (
-          <div className="view-toolbar selection-mode" aria-label="Actions objet selectionne">
-            <button type="button" disabled={!isAdminViewer && itemRotationLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
+          <div className={`view-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
+            <button type="button" disabled={isWallItem(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
             <button type="button" disabled={isAutomaticReserveItem(selected)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Settings2 size={16} /></button>
             <button type="button" disabled={!canDeleteSceneItem(selected, isAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={16} /></button>
-            {!isAdminViewer && itemMovementLocked(selected) && <span className="toolbar-lock-note">{tRaw(language, 'toolbar_locked_move')}</span>}
-            {!isAdminViewer && itemRotationLocked(selected) && <span className="toolbar-lock-note">{tRaw(language, 'toolbar_locked_rotation')}</span>}
-            {!canDeleteSceneItem(selected, isAdminViewer) && <span className="toolbar-lock-note">{tRaw(language, 'toolbar_locked_delete')}</span>}
             {rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
               <label className="toolbar-rotation-slider">
                 <span>{selected.rotation || 0}°</span>
@@ -5972,10 +5969,9 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
         <CameraModeToolbar mode={cameraControlMode} onChange={setCameraControlMode} />
 
         {selected && (
-          <div className="view-toolbar preset-toolbar selection-mode">
-            <button type="button" disabled={itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
+          <div className={`view-toolbar preset-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) ? 'rotation-open' : ''}`}>
+            <button type="button" disabled={isWallItem(selected) || itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
             <button type="button" onClick={() => { setItems((current) => current.filter((item) => item.id !== selected.id)); setSelectedId(null); }} title="Supprimer"><Trash2 size={16} /></button>
-            {itemPlacementLocked(selected) && <span className="toolbar-lock-note">Placement verrouillé</span>}
             {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (
               <label className="toolbar-rotation-slider">
                 <span>{selected.rotation || 0}°</span>
