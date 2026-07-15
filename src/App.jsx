@@ -3188,13 +3188,15 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
                     </span>
                   </button>
                   <div className="cart-item-controls">
-                    <button type="button" disabled={readOnly || !decrementItem} onClick={() => decrementItem && onDecrementItem?.(decrementItem.id)} aria-label="-1">
-                      <Minus size={13} />
-                    </button>
-                    <span>{group.items.length}</span>
-                    <button type="button" disabled={readOnly} onClick={() => onIncrementItem?.(item)} aria-label="+1">
-                      <Plus size={13} />
-                    </button>
+                    <div className="cart-quantity-controls">
+                      <button type="button" disabled={readOnly || !decrementItem} onClick={() => decrementItem && onDecrementItem?.(decrementItem.id)} aria-label="-1">
+                        <Minus size={13} />
+                      </button>
+                      <span>{group.items.length}</span>
+                      <button type="button" disabled={readOnly} onClick={() => onIncrementItem?.(item)} aria-label="+1">
+                        <Plus size={13} />
+                      </button>
+                    </div>
                     <button type="button" className="danger" disabled={readOnly || !removableItems.length} onClick={() => onDeleteItems?.(removableItems.map((groupItem) => groupItem.id))} aria-label="Supprimer">
                       <Trash2 size={13} />
                     </button>
