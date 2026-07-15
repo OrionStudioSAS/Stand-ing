@@ -1986,10 +1986,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           onDecrementItem={removeSceneItemById}
           onDeleteItems={removeSceneItemsById}
           canRemoveItem={(item) => canDeleteSceneItem(item, isAdminViewer)}
-          onConfigureItem={(item) => {
-            const entry = itemConfiguratorEntry(item);
-            if (itemEditNeedsConfigurator(item, entry, salonLabel)) setItemConfigModal({ mode: 'edit', item, entry });
-          }}
           onPrevious={() => setActiveStep((step) => Math.max(1, step - 1))}
           onNext={() => setActiveStep(activeStep === 2 ? 3 : 4)}
         />
@@ -3110,7 +3106,7 @@ function groupCartItems(items = []) {
   return [...groups.values()];
 }
 
-function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel, nextDetail, onSelectItem, onConfigureItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onPrevious, onNext }) {
+function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel, nextDetail, onSelectItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onPrevious, onNext }) {
   const t = useT();
   const itemRefs = useRef(new Map());
   const [cartOpen, setCartOpen] = useState(false);
@@ -3190,7 +3186,6 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
                       )}
                       <b>{groupTotal.toLocaleString('fr-FR')} € HT</b>
                     </span>
-                    <span className="cart-item-settings" onClick={(event) => { event.stopPropagation(); onConfigureItem(item); }}>•••</span>
                   </button>
                   <div className="cart-item-controls">
                     <button type="button" disabled={readOnly || !decrementItem} onClick={() => decrementItem && onDecrementItem?.(decrementItem.id)} aria-label="-1">

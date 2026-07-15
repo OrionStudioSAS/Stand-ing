@@ -6889,7 +6889,7 @@ img.asset-thumb {
 
 .cart-item-main {
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) 24px;
+  grid-template-columns: 46px minmax(0, 1fr);
   align-items: start;
   gap: 8px;
   width: 100%;
@@ -6962,23 +6962,6 @@ img.asset-thumb {
   position: absolute;
   left: 0;
   color: #1f4378;
-}
-
-.cart-item-settings {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  align-self: start;
-  color: #8792a1;
-  font-style: normal;
-  font-weight: 950;
-}
-
-.cart-item-settings:hover {
-  color: #1f4378;
-  background: #eef4ff;
 }
 
 .cart-item-controls {
