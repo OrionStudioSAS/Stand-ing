@@ -1483,6 +1483,32 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     });
   };
 
+  const duplicateCartItem = (item) => {
+    if (readOnly || !item) return;
+    const entry = findCatalogEntry(availableCatalog, item.type) || item;
+    addItem(entry, { ...(item.options || {}) }, 1);
+  };
+
+  const removeSceneItemById = (itemId) => {
+    if (readOnly || !itemId) return;
+    setItems((current) => {
+      const target = current.find((item) => item.id === itemId);
+      if (!target || !canDeleteSceneItem(target, isAdminViewer)) return current;
+      if (selectedId === target.id) setSelectedId(null);
+      return current.filter((item) => item.id !== itemId);
+    });
+  };
+
+  const removeSceneItemsById = (itemIds = []) => {
+    if (readOnly || !itemIds.length) return;
+    const ids = new Set(itemIds);
+    setItems((current) => {
+      const removedSelected = current.some((item) => ids.has(item.id) && item.id === selectedId && canDeleteSceneItem(item, isAdminViewer));
+      if (removedSelected) setSelectedId(null);
+      return current.filter((item) => !ids.has(item.id) || !canDeleteSceneItem(item, isAdminViewer));
+    });
+  };
+
   const chooseLayout = (nextLayout) => {
     if (readOnly) return;
     setLayout(nextLayout);
@@ -1956,11 +1982,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           nextLabel={tRaw(language, 'cart_next')}
           nextDetail={activeStep === 2 ? tRaw(language, 'cart_next_furniture') : tRaw(language, 'cart_next_detail')}
           onSelectItem={setSelectedId}
+          onIncrementItem={duplicateCartItem}
+          onDecrementItem={removeSceneItemById}
+          onDeleteItems={removeSceneItemsById}
+          canRemoveItem={(item) => canDeleteSceneItem(item, isAdminViewer)}
           onConfigureItem={(item) => {
             const entry = itemConfiguratorEntry(item);
             if (itemEditNeedsConfigurator(item, entry, salonLabel)) setItemConfigModal({ mode: 'edit', item, entry });
           }}
-          onRemove={removeOptionalItem}
           onPrevious={() => setActiveStep((step) => Math.max(1, step - 1))}
           onNext={() => setActiveStep(activeStep === 2 ? 3 : 4)}
         />
@@ -3056,17 +3085,43 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
   );
 }
 
-function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel, nextDetail, onSelectItem, onConfigureItem, onRemove, onPrevious, onNext }) {
+function stableCartValue(value) {
+  if (Array.isArray(value)) return `[${value.map(stableCartValue).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${key}:${stableCartValue(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+function cartGroupKey(item = {}) {
+  const options = { ...(item.options || {}) };
+  ['id', 'x', 'y', 'z', 'wall', 'rotation'].forEach((key) => delete options[key]);
+  return `${item.type || 'item'}:${stableCartValue(options)}`;
+}
+
+function groupCartItems(items = []) {
+  const groups = new Map();
+  items.forEach((item) => {
+    const key = cartGroupKey(item);
+    const group = groups.get(key) || { key, items: [] };
+    group.items.push(item);
+    groups.set(key, group);
+  });
+  return [...groups.values()];
+}
+
+function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel, nextDetail, onSelectItem, onConfigureItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onPrevious, onNext }) {
   const t = useT();
-  const lang = useContext(LanguageContext);
   const itemRefs = useRef(new Map());
   const [cartOpen, setCartOpen] = useState(false);
+  const cartGroups = useMemo(() => groupCartItems(items), [items]);
 
   useEffect(() => {
     if (!selectedId) return;
-    const selectedNode = itemRefs.current.get(selectedId);
+    const selectedGroup = cartGroups.find((group) => group.items.some((item) => item.id === selectedId));
+    const selectedNode = selectedGroup ? itemRefs.current.get(selectedGroup.key) : null;
     selectedNode?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
-  }, [selectedId, items.length]);
+  }, [selectedId, cartGroups]);
 
   return (
     <div className="furniture-cart-bar">
@@ -3106,28 +3161,50 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
           </header>
           <div className="cart-item-strip">
             {items.length === 0 && <p className="cart-empty-state">Aucun objet AMCO ajouté pour le moment.</p>}
-            {items.map((item) => {
+            {cartGroups.map((group) => {
+              const item = group.items[0];
               const entry = findCatalogEntry(catalog, item.type) || item;
-              const selected = item.id === selectedId;
+              const selected = group.items.some((groupItem) => groupItem.id === selectedId);
+              const removableItems = group.items.filter((groupItem) => canRemoveItem?.(groupItem) ?? true);
+              const decrementItem = [...removableItems].pop();
+              const optionLines = itemOptionLines(item).filter((line) => line !== item.options?.variantLabel);
+              const groupTotal = group.items.reduce((sum, groupItem) => sum + cartItemPrice(groupItem, entry, salonLabel), 0);
               return (
-                <button
-                  key={item.id}
+                <article
+                  key={group.key}
                   ref={(node) => {
-                    if (node) itemRefs.current.set(item.id, node);
-                    else itemRefs.current.delete(item.id);
+                    if (node) itemRefs.current.set(group.key, node);
+                    else itemRefs.current.delete(group.key);
                   }}
-                  type="button"
                   className={`cart-item-card ${selected ? 'active' : ''}`}
-                  onClick={() => onSelectItem(item.id)}
                 >
-                  <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
-                  <span>
-                    <strong>{itemCartLabel(item)}</strong>
-                    <small>{item.options?.variantLabel || t('cart_quantity')}</small>
-                    <em>{cartItemPrice(item, entry, salonLabel).toLocaleString('fr-FR')} €</em>
-                  </span>
-                  <span className="cart-item-settings" onClick={(event) => { event.stopPropagation(); onConfigureItem(item); }}>•••</span>
-                </button>
+                  <button type="button" className="cart-item-main" onClick={() => onSelectItem(selected ? selectedId : item.id)}>
+                    <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
+                    <span className="cart-item-copy">
+                      <strong>{itemCartLabel(item)}</strong>
+                      <small>Quantité : {group.items.length}</small>
+                      {optionLines.length > 0 && (
+                        <span className="cart-item-options">
+                          {optionLines.map((line, index) => <em key={`${line}-${index}`}>{line}</em>)}
+                        </span>
+                      )}
+                      <b>{groupTotal.toLocaleString('fr-FR')} € HT</b>
+                    </span>
+                    <span className="cart-item-settings" onClick={(event) => { event.stopPropagation(); onConfigureItem(item); }}>•••</span>
+                  </button>
+                  <div className="cart-item-controls">
+                    <button type="button" disabled={readOnly || !decrementItem} onClick={() => decrementItem && onDecrementItem?.(decrementItem.id)} aria-label="-1">
+                      <Minus size={13} />
+                    </button>
+                    <span>{group.items.length}</span>
+                    <button type="button" disabled={readOnly} onClick={() => onIncrementItem?.(item)} aria-label="+1">
+                      <Plus size={13} />
+                    </button>
+                    <button type="button" className="danger" disabled={readOnly || !removableItems.length} onClick={() => onDeleteItems?.(removableItems.map((groupItem) => groupItem.id))} aria-label="Supprimer">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </article>
               );
             })}
           </div>
