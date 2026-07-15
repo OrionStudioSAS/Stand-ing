@@ -6776,7 +6776,7 @@ img.asset-thumb {
   position: absolute;
   right: 16px;
   bottom: 72px;
-  width: min(720px, calc(100vw - 32px));
+  width: min(420px, calc(100vw - 32px));
   max-height: min(420px, calc(100vh - 150px));
   display: grid;
   gap: 12px;
@@ -6785,6 +6785,7 @@ img.asset-thumb {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 22px 60px rgba(17, 28, 45, 0.22);
+  overflow: hidden;
 }
 
 .cart-popover::after {
@@ -6826,31 +6827,13 @@ img.asset-thumb {
   font-size: 0.68rem;
 }
 
-.cart-add-card {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 36px;
-  border: 1px dashed #1f63b7;
-  border-radius: 10px;
-  padding: 0 12px;
-  color: #1f4378;
-  background: #f7fbff;
-  font-size: 0.78rem;
-  font-weight: 950;
-}
-
-.cart-add-card:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .cart-item-strip {
-  display: flex;
+  display: grid;
   gap: 10px;
-  overflow-x: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   min-width: 0;
+  max-height: min(320px, calc(100vh - 245px));
   padding: 1px 2px 5px;
 }
 
@@ -6870,10 +6853,11 @@ img.asset-thumb {
 .cart-item-card {
   position: relative;
   display: grid;
-  grid-template-columns: 46px 116px 20px;
+  grid-template-columns: 46px minmax(0, 1fr) 20px;
   align-items: center;
   gap: 8px;
-  flex: 0 0 158px;
+  width: 100%;
+  flex: none;
   min-height: 70px;
   border: 1px solid #e0e6ee;
   border-radius: 9px;

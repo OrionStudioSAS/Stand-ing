@@ -1711,7 +1711,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 onTechnicalFloorRampDragChange={setTechnicalFloorRampDragging}
                 visualContext={sceneVisualContext}
                 sceneConstraint={sceneConstraint}
-                selectedToolbar={selected && !readOnly ? (
+                selectedToolbar={selected && !readOnly && !itemConfigModal ? (
                   <div className={`view-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
                     <button type="button" disabled={isWallItem(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
                     <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), salonLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Settings2 size={15} /></button>
@@ -1955,7 +1955,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           readOnly={readOnly}
           nextLabel={tRaw(language, 'cart_next')}
           nextDetail={activeStep === 2 ? tRaw(language, 'cart_next_furniture') : tRaw(language, 'cart_next_detail')}
-          onAdd={() => setActiveStep(3)}
           onSelectItem={setSelectedId}
           onConfigureItem={(item) => {
             const entry = itemConfiguratorEntry(item);
@@ -3057,7 +3056,7 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
   );
 }
 
-function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel, nextDetail, onAdd, onSelectItem, onConfigureItem, onRemove, onPrevious, onNext }) {
+function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel, nextDetail, onSelectItem, onConfigureItem, onRemove, onPrevious, onNext }) {
   const t = useT();
   const lang = useContext(LanguageContext);
   const itemRefs = useRef(new Map());
@@ -3066,7 +3065,7 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
   useEffect(() => {
     if (!selectedId) return;
     const selectedNode = itemRefs.current.get(selectedId);
-    selectedNode?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    selectedNode?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
   }, [selectedId, items.length]);
 
   return (
@@ -3104,9 +3103,6 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
               <strong>{t('cart_my_stand')}</strong>
               <small>{t('cart_articles', { count: items.length, s: items.length > 1 ? 's' : '' })}</small>
             </div>
-            <button type="button" className="cart-add-card" onClick={() => { setCartOpen(false); onAdd?.(); }} disabled={readOnly}>
-              <Plus size={16} /> {t('cart_add')}
-            </button>
           </header>
           <div className="cart-item-strip">
             {items.length === 0 && <p className="cart-empty-state">Aucun objet AMCO ajouté pour le moment.</p>}
@@ -12286,7 +12282,7 @@ function SceneItemToolbarAnchor({ item, items = [], width = 0, depth = 0, childr
       position={position}
       center={false}
       transform={false}
-      zIndexRange={[80, 0]}
+      zIndexRange={[12, 0]}
       style={{ pointerEvents: 'auto' }}
     >
       <div
