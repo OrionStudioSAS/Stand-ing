@@ -264,6 +264,46 @@ export async function saveScene(scene) {
   return scene;
 }
 
+export async function setSceneExhibitorReadOnly(scene, locked) {
+  const sourcePayload = {
+    ...(scene.source_payload || {}),
+    exhibitor_view_only: Boolean(locked),
+    exhibitor_view_only_updated_at: new Date().toISOString(),
+  };
+
+  if (!supabase) {
+    const updated = { ...scene, source_payload: sourcePayload };
+    const scenes = readLocalScenes();
+    writeLocalScenes(scenes.map((item) => (item.id === scene.id ? updated : item)));
+    return updated;
+  }
+
+  const { data, error } = await supabase
+    .from('scenes')
+    .update({ source_payload: sourcePayload, updated_at: new Date().toISOString() })
+    .eq('id', scene.id)
+    .select('*, scene_items(*), scene_files(*), stand_presets(base_config)')
+    .single();
+
+  if (error) throw error;
+  return dbSceneToScene(data);
+}
+
+export async function sendSceneCompletionEmail(scene) {
+  if (!supabase) return { sent: false, local: true };
+
+  const { data, error } = await supabase.functions.invoke('scene-completion-email', {
+    body: {
+      sceneId: scene?.id,
+      shareToken: scene?.share_token,
+    },
+  });
+
+  const functionError = await getFunctionError(error, data);
+  if (functionError) throw functionError;
+  return data;
+}
+
 export async function uploadSceneItemOptionImage(scene, item, file) {
   if (!file) throw new Error('Image introuvable.');
   if (!supabase) return fileToDataUrl(file);

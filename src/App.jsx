@@ -42,7 +42,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, setSceneExhibitorReadOnly, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
@@ -919,7 +919,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const effectiveCarpetFootprintEnabled = carpetFootprintEnabled && !selectedTechnicalFloor;
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
-  const readOnly = false;
+  const readOnly = !isAdminViewer && Boolean(initialScene.source_payload?.exhibitor_view_only);
   const sceneVisualContext = useMemo(() => ({
     fontRevision,
     language,
@@ -1199,6 +1199,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       const confirmedScene = currentScenePayload('configured', 'configured');
       await saveScene(confirmedScene);
       await syncSceneConfigToMonday(confirmedScene);
+      sendSceneCompletionEmail(confirmedScene).catch((error) => console.warn('Completion email failed', error));
       setSaveState('configured');
       setDraggingId(null);
       setActiveStep(4);
@@ -3154,6 +3155,9 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
               <strong>{t('cart_my_stand')}</strong>
               <small>{t('cart_articles', { count: items.length, s: items.length > 1 ? 's' : '' })}</small>
             </div>
+            <button type="button" className="cart-popover-close" onClick={() => setCartOpen(false)} aria-label="Fermer le panier">
+              <X size={16} />
+            </button>
           </header>
           <div className="cart-item-strip">
             {items.length === 0 && <p className="cart-empty-state">Aucun objet AMCO ajouté pour le moment.</p>}
@@ -4033,7 +4037,7 @@ function ValidationStepPanel({
       {confirmed && (
         <div className="validation-message success"><Check size={16} /> {t('validation_confirmed_note')}</div>
       )}
-      <button className="validation-confirm-button" type="button" disabled={confirmState.loading} onClick={onConfirm}>
+      <button className="validation-confirm-button" type="button" disabled={confirmState.loading || readOnly} onClick={onConfirm}>
         {confirmState.loading ? t('validation_confirm_loading') : confirmed ? t('validation_confirm_update') : t('validation_confirm_btn')}
       </button>
     </>
@@ -5213,7 +5217,16 @@ function AdminDashboard({ user, adminProfile }) {
             />
           )}
           {tab === 'monday' && <AdminMondayView syncState={syncState} runMondaySync={runMondaySync} />}
-          {tab === 'bat' && <AdminBatView scenes={scenes} assets={assets} />}
+          {tab === 'bat' && (
+            <AdminBatView
+              scenes={scenes}
+              assets={assets}
+              onToggleViewOnly={async (scene, locked) => {
+                const updated = await setSceneExhibitorReadOnly(scene, locked);
+                setScenes((current) => current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)));
+              }}
+            />
+          )}
           {tab === 'users' && <AdminPlaceholder tab={tab} />}
         </div>
       </section>
@@ -8413,18 +8426,27 @@ function AdminMondayView({ syncState, runMondaySync }) {
   );
 }
 
-function AdminBatView({ scenes, assets = [] }) {
+function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
   const rows = scenes.slice(0, 18);
   return (
     <section className="admin-table modern bat-table">
       {rows.length ? rows.map((scene) => {
         const order = scenePurchaseOrder(scene, assets);
+        const lockedForExhibitor = Boolean(scene.source_payload?.exhibitor_view_only);
         return (
           <article key={scene.id} className="stand-row bat-row">
             <div><strong>{scene.client_name || 'Exposant sans nom'}</strong><span>{scene.project_name || sceneStandNumber(scene, {}, 'Stand')}</span></div>
             <div><span>Salon</span><strong>{normalizeSalonTitle(scene.event_name || scene.salon) || 'A definir'}</strong></div>
             <div><span>Lots AMCO</span><strong>{order.lines.length ? `${order.total.toLocaleString('fr-FR')} € HT` : 'Aucun lot payant'}</strong></div>
             <div><span>Exposant</span><strong>{clientStatusLabel(scene.client_status)}</strong></div>
+            <label className="bat-view-only-toggle">
+              <input
+                type="checkbox"
+                checked={lockedForExhibitor}
+                onChange={(event) => onToggleViewOnly?.(scene, event.target.checked)}
+              />
+              <span>Vue seule exposant</span>
+            </label>
             <div className="stand-actions">
               <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a>
               <button type="button" onClick={() => downloadSceneTechnicalPlan(scene, assets)}>Télécharger BAT</button>
