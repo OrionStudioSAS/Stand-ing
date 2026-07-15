@@ -31,6 +31,7 @@ import {
   Ruler,
   Search,
   Settings2,
+  ShoppingCart,
   Sparkles,
   Trash2,
   Upload,
@@ -1615,10 +1616,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             </button>
           ))}
         </nav>
-        <div className="top-estimate">
-          <strong>{estimatedTotal.toLocaleString('fr-FR')} € HT</strong>
-          <span>{tRaw(language, 'total_ht_estimated')}</span>
-        </div>
         <button className={`round-tool ${headerPanel === 'question' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('question')} aria-label={tRaw(language, 'aria_questions')}>
           <HelpCircle size={18} />
         </button>
@@ -1965,6 +1962,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             if (itemEditNeedsConfigurator(item, entry, salonLabel)) setItemConfigModal({ mode: 'edit', item, entry });
           }}
           onRemove={removeOptionalItem}
+          onPrevious={() => setActiveStep((step) => Math.max(1, step - 1))}
           onNext={() => setActiveStep(activeStep === 2 ? 3 : 4)}
         />
       )}
@@ -3059,10 +3057,11 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
   );
 }
 
-function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel, nextDetail, onAdd, onSelectItem, onConfigureItem, onRemove, onNext }) {
+function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel, nextDetail, onAdd, onSelectItem, onConfigureItem, onRemove, onPrevious, onNext }) {
   const t = useT();
   const lang = useContext(LanguageContext);
   const itemRefs = useRef(new Map());
+  const [cartOpen, setCartOpen] = useState(false);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -3072,44 +3071,72 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
 
   return (
     <div className="furniture-cart-bar">
-      <div className="cart-total-card">
-        <ClockIcon />
-        <span>{t('cart_my_stand')}</span>
-        <small>{t('cart_articles', { count: items.length, s: items.length > 1 ? 's' : '' })}</small>
-        <strong>{total.toLocaleString('fr-FR')} €</strong>
+      <div className="cart-step-actions">
+        <button type="button" className="cart-step-button secondary" onClick={onPrevious}>
+          {t('back')}
+        </button>
+        <button type="button" className="cart-step-button primary" onClick={onNext}>
+          {nextLabel}
+          <span>{nextDetail}</span>
+        </button>
       </div>
-      <button type="button" className="cart-add-card" onClick={onAdd} disabled={readOnly}>
-        <span><Plus size={18} /></span>
-        <strong>{t('cart_add')}</strong>
-        <small>{t('cart_add_detail')}</small>
-      </button>
-      <div className="cart-item-strip">
-        {items.map((item) => {
-          const entry = findCatalogEntry(catalog, item.type) || item;
-          const selected = item.id === selectedId;
-          return (
-            <button
-              key={item.id}
-              ref={(node) => {
-                if (node) itemRefs.current.set(item.id, node);
-                else itemRefs.current.delete(item.id);
-              }}
-              type="button"
-              className={`cart-item-card ${selected ? 'active' : ''}`}
-              onClick={() => onSelectItem(item.id)}
-            >
-              <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
-              <span>
-                <strong>{itemCartLabel(item)}</strong>
-                <small>{item.options?.variantLabel || t('cart_quantity')}</small>
-                <em>{cartItemPrice(item, entry, salonLabel).toLocaleString('fr-FR')} €</em>
-              </span>
-              <span className="cart-item-settings" onClick={(event) => { event.stopPropagation(); onConfigureItem(item); }}>•••</span>
+
+      <div className="cart-right-actions">
+        <div className="cart-total-inline">
+          <span>{t('total_ht_estimated')}</span>
+          <strong>{total.toLocaleString('fr-FR')} € HT</strong>
+        </div>
+        <button
+          type="button"
+          className={`cart-toggle-button ${cartOpen ? 'active' : ''}`}
+          onClick={() => setCartOpen((open) => !open)}
+          aria-expanded={cartOpen}
+        >
+          <ShoppingCart size={18} />
+          <span>{items.length}</span>
+        </button>
+      </div>
+
+      {cartOpen && (
+        <div className="cart-popover">
+          <header>
+            <div>
+              <strong>{t('cart_my_stand')}</strong>
+              <small>{t('cart_articles', { count: items.length, s: items.length > 1 ? 's' : '' })}</small>
+            </div>
+            <button type="button" className="cart-add-card" onClick={() => { setCartOpen(false); onAdd?.(); }} disabled={readOnly}>
+              <Plus size={16} /> {t('cart_add')}
             </button>
-          );
-        })}
-      </div>
-      <button type="button" className="cart-next-button" onClick={onNext}>{nextLabel}<br /><span>{nextDetail}</span></button>
+          </header>
+          <div className="cart-item-strip">
+            {items.length === 0 && <p className="cart-empty-state">Aucun objet AMCO ajouté pour le moment.</p>}
+            {items.map((item) => {
+              const entry = findCatalogEntry(catalog, item.type) || item;
+              const selected = item.id === selectedId;
+              return (
+                <button
+                  key={item.id}
+                  ref={(node) => {
+                    if (node) itemRefs.current.set(item.id, node);
+                    else itemRefs.current.delete(item.id);
+                  }}
+                  type="button"
+                  className={`cart-item-card ${selected ? 'active' : ''}`}
+                  onClick={() => onSelectItem(item.id)}
+                >
+                  <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
+                  <span>
+                    <strong>{itemCartLabel(item)}</strong>
+                    <small>{item.options?.variantLabel || t('cart_quantity')}</small>
+                    <em>{cartItemPrice(item, entry, salonLabel).toLocaleString('fr-FR')} €</em>
+                  </span>
+                  <span className="cart-item-settings" onClick={(event) => { event.stopPropagation(); onConfigureItem(item); }}>•••</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
