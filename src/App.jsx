@@ -11084,14 +11084,17 @@ function mondayColumnTextByNormalizedPredicate(sourcePayload = {}, predicate = (
 }
 
 function parseSceneConstraintValues(sizeValue = '', locationValue = '', width = 0, depth = 0) {
-  const sizeParts = parseNumberParts(sizeValue);
-  const locationParts = parseNumberParts(locationValue);
+  const combined = parseCombinedConstraintValue(sizeValue);
+  const sizeParts = combined?.sizeParts || parseNumberParts(sizeValue);
+  const locationParts = combined?.locationParts || parseNumberParts(locationValue);
   if (sizeParts.length < 2 || locationParts.length < 2) return null;
 
-  const sizeX = sizeParts[0] / 100;
-  const sizeZ = sizeParts[1] / 100;
-  const fromLeft = locationParts[0];
-  const fromBack = locationParts[1];
+  const sizeDivisor = combined?.sizeUnit === 'mm' ? 1000 : sizeParts.some((value) => value > 100) ? 1000 : 100;
+  const locationDivisor = combined?.locationUnit === 'mm' ? 1000 : locationParts.some((value) => value > 50) ? 1000 : 1;
+  const sizeX = sizeParts[0] / sizeDivisor;
+  const sizeZ = sizeParts[1] / sizeDivisor;
+  const fromLeft = locationParts[0] / locationDivisor;
+  const fromBack = locationParts[1] / locationDivisor;
   if (![sizeX, sizeZ, fromLeft, fromBack].every((value) => Number.isFinite(value) && value >= 0)) return null;
 
   return {
@@ -11104,6 +11107,21 @@ function parseSceneConstraintValues(sizeValue = '', locationValue = '', width = 
     fromBack,
     x: clamp(-Number(width || 0) / 2 + fromLeft, -Number(width || 0) / 2, Number(width || 0) / 2),
     z: clamp(-Number(depth || 0) / 2 + fromBack, -Number(depth || 0) / 2, Number(depth || 0) / 2),
+  };
+}
+
+function parseCombinedConstraintValue(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const match = raw.match(/([0-9]+(?:[.,][0-9]+)?)\s*[x×]\s*([0-9]+(?:[.,][0-9]+)?)(?:[^\d]+|\s*)\(?\s*([0-9]+(?:[.,][0-9]+)?)\s*[-–—;x×]\s*([0-9]+(?:[.,][0-9]+)?)\s*\)?/i);
+  if (!match) return null;
+  const values = match.slice(1, 5).map((part) => Number(String(part).replace(',', '.')));
+  if (!values.every((part) => Number.isFinite(part))) return null;
+  return {
+    sizeParts: values.slice(0, 2),
+    locationParts: values.slice(2, 4),
+    sizeUnit: values.slice(0, 2).some((part) => part > 100) ? 'mm' : 'cm',
+    locationUnit: values.slice(2, 4).some((part) => part > 50) ? 'mm' : 'm',
   };
 }
 

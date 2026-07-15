@@ -6862,7 +6862,7 @@ img.asset-thumb {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
+  align-items: stretch;
   gap: 9px;
   width: 100%;
   flex: none;
@@ -6874,7 +6874,9 @@ img.asset-thumb {
 }
 
 .cart-item-card.active {
-  border: 2px solid #1f4378;
+  border-color: #1f4378;
+  outline: 2px solid #1f4378;
+  outline-offset: 2px;
   background: #f8fbff;
 }
 
@@ -6967,9 +6969,11 @@ img.asset-thumb {
 }
 
 .cart-item-controls {
-  display: grid;
+  display: flex;
   align-items: center;
+  align-self: end;
   justify-items: end;
+  justify-content: flex-end;
   gap: 8px;
   min-width: 0;
 }

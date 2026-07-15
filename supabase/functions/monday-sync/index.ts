@@ -209,17 +209,14 @@ function withResolvedConstraintColumns(source: any, columns: Array<{ id: string;
 function mondayConstraintColumnMessages(boardId: string, columns: Array<{ id: string; title: string }>) {
   const messages: string[] = [];
   const sizeColumnId = findConstraintSizeColumnId(columns);
-  const locationColumnId = findConstraintLocationColumnId(columns);
 
   if (sizeColumnId) messages.push(`ID colonne Contrainte détecté sur le board ${boardId}: ${sizeColumnId}`);
-  if (locationColumnId) messages.push(`ID colonne Emplacement contrainte détecté sur le board ${boardId}: ${locationColumnId}`);
 
-  if (!sizeColumnId || !locationColumnId) {
+  if (!sizeColumnId) {
     messages.push(`Colonnes disponibles sur le board ${boardId}: ${formatMondayColumnList(columns)}`);
   }
 
   if (!sizeColumnId) messages.push(`Colonne Monday manquante sur le board ${boardId}: Contrainte`);
-  if (!locationColumnId) messages.push(`Colonne Monday manquante sur le board ${boardId}: Emplacement contrainte`);
   return messages;
 }
 
@@ -242,7 +239,7 @@ function findMondayColumnId(columns: Array<{ id: string; title: string }>, predi
 
 function constraintColumnsConfigured(source: any) {
   const mapping = source.mapping ?? {};
-  return Boolean((mapping.constraint || mapping.contrainte) && (mapping.constraint_location || mapping.emplacement_contrainte));
+  return Boolean(mapping.constraint || mapping.contrainte);
 }
 
 async function fetchMondayBoardColumnsSafe(token: string, boardId: string) {
@@ -450,14 +447,17 @@ function mondayConstraintForItem(item: any, source: any, width = 0, depth = 0) {
 }
 
 function parseSceneConstraint(sizeValue = "", locationValue = "", width = 0, depth = 0) {
-  const sizeParts = parseNumberParts(sizeValue);
-  const locationParts = parseNumberParts(locationValue);
+  const combined = parseCombinedConstraintValue(sizeValue);
+  const sizeParts = combined?.sizeParts || parseNumberParts(sizeValue);
+  const locationParts = combined?.locationParts || parseNumberParts(locationValue);
   if (sizeParts.length < 2 || locationParts.length < 2) return null;
 
-  const sizeX = sizeParts[0] / 100;
-  const sizeZ = sizeParts[1] / 100;
-  const fromLeft = locationParts[0];
-  const fromBack = locationParts[1];
+  const sizeDivisor = combined?.sizeUnit === "mm" ? 1000 : sizeParts.some((value) => value > 100) ? 1000 : 100;
+  const locationDivisor = combined?.locationUnit === "mm" ? 1000 : locationParts.some((value) => value > 50) ? 1000 : 1;
+  const sizeX = sizeParts[0] / sizeDivisor;
+  const sizeZ = sizeParts[1] / sizeDivisor;
+  const fromLeft = locationParts[0] / locationDivisor;
+  const fromBack = locationParts[1] / locationDivisor;
   if (![sizeX, sizeZ, fromLeft, fromBack].every((value) => Number.isFinite(value) && value >= 0)) return null;
 
   return {
@@ -470,6 +470,21 @@ function parseSceneConstraint(sizeValue = "", locationValue = "", width = 0, dep
     fromBack,
     x: clampNumber(-Number(width || 0) / 2 + fromLeft, -Number(width || 0) / 2, Number(width || 0) / 2),
     z: clampNumber(-Number(depth || 0) / 2 + fromBack, -Number(depth || 0) / 2, Number(depth || 0) / 2),
+  };
+}
+
+function parseCombinedConstraintValue(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const match = raw.match(/([0-9]+(?:[.,][0-9]+)?)\s*[x×]\s*([0-9]+(?:[.,][0-9]+)?)(?:[^\d]+|\s*)\(?\s*([0-9]+(?:[.,][0-9]+)?)\s*[-–—;x×]\s*([0-9]+(?:[.,][0-9]+)?)\s*\)?/i);
+  if (!match) return null;
+  const values = match.slice(1, 5).map((part) => Number(String(part).replace(",", ".")));
+  if (!values.every((part) => Number.isFinite(part))) return null;
+  return {
+    sizeParts: values.slice(0, 2),
+    locationParts: values.slice(2, 4),
+    sizeUnit: values.slice(0, 2).some((part) => part > 100) ? "mm" : "cm",
+    locationUnit: values.slice(2, 4).some((part) => part > 50) ? "mm" : "m",
   };
 }
 
