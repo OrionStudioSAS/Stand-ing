@@ -1714,6 +1714,27 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 onTechnicalFloorRampDragChange={setTechnicalFloorRampDragging}
                 visualContext={sceneVisualContext}
                 sceneConstraint={sceneConstraint}
+                selectedToolbar={selected && !readOnly ? (
+                  <div className={`view-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
+                    <button type="button" disabled={isWallItem(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
+                    <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), salonLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Settings2 size={15} /></button>
+                    <button type="button" disabled={!canDeleteSceneItem(selected, isAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={15} /></button>
+                    {rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
+                      <label className="toolbar-rotation-slider">
+                        <span>{selected.rotation || 0}°</span>
+                        <input
+                          type="range"
+                          min="-180"
+                          max="180"
+                          step="5"
+                          value={selected.rotation || 0}
+                          onInput={(event) => updateItem(selected.id, { rotation: Number(event.currentTarget.value) })}
+                          onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })}
+                        />
+                      </label>
+                    )}
+                  </div>
+                ) : null}
               />
             )}
             <ContactShadows opacity={0.12} scale={12} blur={2.8} far={5} position={[0, -0.01, 0]} />
@@ -1786,27 +1807,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           </div>
         )}
 
-        {selected && !readOnly && (
-          <div className={`view-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
-            <button type="button" disabled={isWallItem(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
-            <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), salonLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Settings2 size={16} /></button>
-            <button type="button" disabled={!canDeleteSceneItem(selected, isAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={16} /></button>
-            {rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
-              <label className="toolbar-rotation-slider">
-                <span>{selected.rotation || 0}°</span>
-                <input
-                  type="range"
-                  min="-180"
-                  max="180"
-                  step="5"
-                  value={selected.rotation || 0}
-                  onInput={(event) => updateItem(selected.id, { rotation: Number(event.currentTarget.value) })}
-                  onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })}
-                />
-              </label>
-            )}
-          </div>
-        )}
       </section>
 
       {activeStep > 1 && (
@@ -6001,6 +6001,18 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
               carpetFootprintColor={selectedCarpetFootprintColor}
               wallFabricColor={selectedWallFabricColor}
               reserveWallFabricColor={selectedReserveWallFabricColor}
+              selectedToolbar={selected ? (
+                <div className={`view-toolbar preset-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) ? 'rotation-open' : ''}`}>
+                  <button type="button" disabled={isWallItem(selected) || itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
+                  <button type="button" onClick={() => { setItems((current) => current.filter((item) => item.id !== selected.id)); setSelectedId(null); }} title="Supprimer"><Trash2 size={15} /></button>
+                  {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (
+                    <label className="toolbar-rotation-slider">
+                      <span>{selected.rotation || 0}°</span>
+                      <input type="range" min="-180" max="180" step="5" value={selected.rotation || 0} onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })} />
+                    </label>
+                  )}
+                </div>
+              ) : null}
             />
             )}
             <ContactShadows opacity={0.12} scale={12} blur={2.8} far={5} position={[0, -0.01, 0]} />
@@ -6026,18 +6038,6 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
 
         <CameraModeToolbar mode={cameraControlMode} onChange={setCameraControlMode} />
 
-        {selected && (
-          <div className={`view-toolbar preset-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) ? 'rotation-open' : ''}`}>
-            <button type="button" disabled={isWallItem(selected) || itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={16} /></button>
-            <button type="button" onClick={() => { setItems((current) => current.filter((item) => item.id !== selected.id)); setSelectedId(null); }} title="Supprimer"><Trash2 size={16} /></button>
-            {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (
-              <label className="toolbar-rotation-slider">
-                <span>{selected.rotation || 0}°</span>
-                <input type="range" min="-180" max="180" step="5" value={selected.rotation || 0} onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })} />
-              </label>
-            )}
-          </div>
-        )}
       </section>
 
       <aside className="preset-side-panel">
@@ -12170,9 +12170,10 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
   };
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, selectedToolbar = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
+  const selectedItem = useMemo(() => items.find((item) => item.id === selectedId) || null, [items, selectedId]);
   const cameraPivot = useMemo(() => {
     const radians = (viewAngle * Math.PI) / 180;
     return [Math.sin(radians) * 0.75, 0, Math.cos(radians) * 0.25];
@@ -12242,8 +12243,53 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
         </Suspense>
       ))}
       <WallCoverSurfaces width={width} depth={depth} layout={layout} items={items} covers={wallCovers} />
+      {selectedToolbar && selectedItem && !draggingId && (
+        <SceneItemToolbarAnchor item={selectedItem} items={items} width={width} depth={depth}>
+          {selectedToolbar}
+        </SceneItemToolbarAnchor>
+      )}
     </group>
   );
+}
+
+function SceneItemToolbarAnchor({ item, items = [], width = 0, depth = 0, children }) {
+  const position = sceneItemToolbarPosition(item, items, width, depth);
+  return (
+    <Html
+      position={position}
+      center={false}
+      transform={false}
+      zIndexRange={[80, 0]}
+      style={{ pointerEvents: 'auto' }}
+    >
+      <div
+        className="object-toolbar-anchor"
+        onPointerDown={(event) => event.stopPropagation()}
+        onPointerMove={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {children}
+      </div>
+    </Html>
+  );
+}
+
+function sceneItemToolbarPosition(item = {}, items = [], width = 0, depth = 0) {
+  const bounds = itemGroupBounds(item);
+  const toolbarGap = 0.18;
+  if (isWallItem(item)) {
+    const [x, y, z] = screenWorldPosition(item, width, depth, items);
+    const centerY = y + Math.max(0.18, Number(bounds.height || 0.7) * 0.32);
+    if (item.wall === 'left') return [x, centerY, z + Number(bounds.width || 0.7) / 2 + toolbarGap];
+    if (item.wall === 'right') return [x, centerY, z + Number(bounds.width || 0.7) / 2 + toolbarGap];
+    return [x + Number(bounds.width || 0.7) / 2 + toolbarGap, centerY, z];
+  }
+  return [
+    Number(item.x || 0) + Number(bounds.maxX || Number(bounds.width || 0.7) / 2) + toolbarGap,
+    floorItemBaseY(item) + Math.max(0.75, Number(bounds.height || 0.7) * 0.78),
+    Number(item.z || 0) + Number(bounds.centerZ || 0),
+  ];
 }
 
 function SceneConstraintColumn({ constraint }) {
