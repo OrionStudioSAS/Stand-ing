@@ -1199,12 +1199,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       const confirmedScene = currentScenePayload('configured', 'configured');
       await saveScene(confirmedScene);
       await syncSceneConfigToMonday(confirmedScene);
-      let emailMessage = 'Un email de confirmation vient de vous être envoyé.';
+      let emailMessage = 'Un email de confirmation vient d’être envoyé à l’adresse de contact de la scène.';
       try {
         const emailResult = await sendSceneCompletionEmail(confirmedScene);
         if (emailResult?.sent === false) {
           emailMessage = 'La scène est confirmée, mais l’email de confirmation n’a pas pu être envoyé automatiquement.';
           console.warn('Completion email not sent', emailResult);
+        } else if (emailResult?.to) {
+          emailMessage = `Un email de confirmation vient d’être envoyé à ${emailResult.to}.`;
         }
       } catch (error) {
         emailMessage = 'La scène est confirmée, mais l’email de confirmation n’a pas pu être envoyé automatiquement.';
@@ -4045,7 +4047,7 @@ function ValidationStepPanel({
       {confirmState.error && <div className="validation-message error">{confirmState.error}</div>}
 
       {confirmed && (
-        <div className="validation-message success"><Check size={16} /> {t('validation_confirmed_note')}</div>
+        <div className="validation-message success"><Check size={16} /> {isAdminViewer ? t('validation_confirmed_admin_note') : t('validation_confirmed_client_note')}</div>
       )}
       <button className="validation-confirm-button" type="button" disabled={confirmState.loading || readOnly} onClick={onConfirm}>
         {confirmState.loading ? t('validation_confirm_loading') : confirmed ? t('validation_confirm_update') : t('validation_confirm_btn')}
