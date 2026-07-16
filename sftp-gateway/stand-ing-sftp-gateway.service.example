@@ -1,0 +1,16 @@
+[Unit]
+Description=Stand-ING SFTP Gateway
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/stand-ing/sftp-gateway
+EnvironmentFile=/opt/stand-ing/sftp-gateway/.env
+ExecStart=/usr/bin/node /opt/stand-ing/sftp-gateway/src/server.js
+Restart=always
+RestartSec=5
+User=standing
+Group=standing
+
+[Install]
+WantedBy=multi-user.target

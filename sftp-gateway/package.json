@@ -1,0 +1,22 @@
+{
+  "name": "stand-ing-sftp-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Secure upload gateway from Stand-ING configurator to the production SFTP server.",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "helmet": "^7.2.0",
+    "multer": "^2.2.0",
+    "ssh2-sftp-client": "^11.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
