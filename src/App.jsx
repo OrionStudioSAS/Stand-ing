@@ -1199,11 +1199,21 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       const confirmedScene = currentScenePayload('configured', 'configured');
       await saveScene(confirmedScene);
       await syncSceneConfigToMonday(confirmedScene);
-      sendSceneCompletionEmail(confirmedScene).catch((error) => console.warn('Completion email failed', error));
+      let emailMessage = 'Un email de confirmation vient de vous être envoyé.';
+      try {
+        const emailResult = await sendSceneCompletionEmail(confirmedScene);
+        if (emailResult?.sent === false) {
+          emailMessage = 'La scène est confirmée, mais l’email de confirmation n’a pas pu être envoyé automatiquement.';
+          console.warn('Completion email not sent', emailResult);
+        }
+      } catch (error) {
+        emailMessage = 'La scène est confirmée, mais l’email de confirmation n’a pas pu être envoyé automatiquement.';
+        console.warn('Completion email failed', error);
+      }
       setSaveState('configured');
       setDraggingId(null);
       setActiveStep(4);
-      setConfirmState({ loading: false, message: 'Votre scène est confirmée. Vous pouvez encore la modifier si besoin.', error: '' });
+      setConfirmState({ loading: false, message: `Votre scène est confirmée. ${emailMessage}`, error: '' });
     } catch (error) {
       setConfirmState({ loading: false, message: '', error: error.message || 'Confirmation impossible.' });
     }
