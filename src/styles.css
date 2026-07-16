@@ -7654,6 +7654,37 @@ img.asset-thumb {
   background: #dff4e7;
 }
 
+.wall-cover-actions {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+
+.wall-cover-preview-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 74px;
+  border: 1px solid #b7c9e8;
+  border-radius: 999px;
+  padding: 6px 8px;
+  color: #1f4378;
+  background: #fff;
+  font-size: 0.66rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.wall-cover-preview-button input {
+  display: none;
+}
+
+.wall-cover-preview-button:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .wall-cover-empty {
   border-radius: 8px;
   padding: 10px 12px;

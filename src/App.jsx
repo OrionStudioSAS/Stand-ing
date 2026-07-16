@@ -856,6 +856,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
   const [itemOptionState, setItemOptionState] = useState({ uploading: false, error: '' });
   const [wallCovers, setWallCovers] = useState(initialOptions.wallCovers || {});
+  const [wallCoverPreviews, setWallCoverPreviews] = useState({});
+  const wallCoverPreviewUrls = useRef(new Set());
   const [itemConfigModal, setItemConfigModal] = useState(null);
   const [basePackOpen, setBasePackOpen] = useState(false);
   const [sceneHasRendered, setSceneHasRendered] = useState(false);
@@ -1185,6 +1187,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     return () => window.clearTimeout(timer);
   }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, saveState, readOnly]);
 
+  useEffect(() => () => {
+    wallCoverPreviewUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    wallCoverPreviewUrls.current.clear();
+  }, []);
+
   useEffect(() => {
     listObjectBank()
       .then((assets) => setObjectBank(assets || []))
@@ -1336,6 +1343,27 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       }
       return next;
     });
+  };
+
+  const setWallCoverPreview = (surfaceId, file) => {
+    if (readOnly || !surfaceId || !file) return;
+    const previewUrl = URL.createObjectURL(file);
+    wallCoverPreviewUrls.current.add(previewUrl);
+    setWallCoverPreviews((current) => {
+      const previousUrl = current?.[surfaceId]?.url;
+      if (previousUrl) {
+        URL.revokeObjectURL(previousUrl);
+        wallCoverPreviewUrls.current.delete(previousUrl);
+      }
+      return {
+        ...current,
+        [surfaceId]: { url: previewUrl, name: file.name },
+      };
+    });
+    setWallCovers((current) => ({
+      ...current,
+      [surfaceId]: { ...(current?.[surfaceId] || {}), enabled: true },
+    }));
   };
 
 
@@ -1718,8 +1746,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           }}
         >
           <color attach="background" args={['#eef0f4']} />
-          <ambientLight intensity={1.05} />
-          <directionalLight position={[3, 7, 4]} intensity={1.1} castShadow shadow-mapSize={[2048, 2048]} />
+          <ambientLight intensity={1.18} />
+          <directionalLight position={[3, 7, 4]} intensity={0.95} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
             {shouldRenderScene && (
               <StandScene
@@ -1743,6 +1771,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 wallFabricColor={selectedWallFabricColor}
                 reserveWallFabricColor={selectedReserveWallFabricColor}
                 wallCovers={wallCovers}
+                wallCoverPreviews={wallCoverPreviews}
                 technicalFloor={selectedTechnicalFloor}
                 technicalFloorTrimType={technicalFloorTrimType}
                 technicalFloorRampX={technicalFloorRampX}
@@ -1906,6 +1935,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             selectedWallFabricColor={selectedWallFabricColor}
             wallFabricColors={wallFabricPalette}
             wallCovers={wallCovers}
+            wallCoverPreviews={wallCoverPreviews}
             wallCoverSurfaces={wallCoverSurfaces}
             wallCoverIncludedMl={scenePricing.wallCoverIncludedMl || 0}
             defaultColorOptions={effectiveDefaultColorOptions}
@@ -1937,6 +1967,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onCarpetFootprintEnabled={(enabled) => !readOnly && !selectedTechnicalFloor && setCarpetFootprintEnabled(enabled)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
             onWallCoverToggle={toggleWallCover}
+            onWallCoverPreview={setWallCoverPreview}
             onTechnicalFloorType={(type) => !readOnly && handleTechnicalFloorType(type)}
             onTechnicalFloorTrimType={(type) => !readOnly && setTechnicalFloorTrimType(type)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
@@ -2826,6 +2857,7 @@ function OptionsStepPanel({
   selectedWallFabricColor,
   wallFabricColors = [],
   wallCovers = {},
+  wallCoverPreviews = {},
   wallCoverSurfaces = [],
   wallCoverIncludedMl = 0,
   defaultColorOptions = {},
@@ -2857,6 +2889,7 @@ function OptionsStepPanel({
   onCarpetFootprintEnabled,
   onWallColor,
   onWallCoverToggle,
+  onWallCoverPreview,
   onTechnicalFloorType,
   onTechnicalFloorTrimType,
   onLedRailsEnabled,
@@ -2924,9 +2957,11 @@ function OptionsStepPanel({
         <WallCoverOptionCard
           surfaces={wallCoverSurfaces}
           covers={wallCovers}
+          previews={wallCoverPreviews}
           includedMl={wallCoverIncludedMl}
           disabled={readOnly}
           onToggle={onWallCoverToggle}
+          onPreview={onWallCoverPreview}
         />
       </OptionAccordion>
       {isAdminViewer && (
@@ -4642,7 +4677,7 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
   );
 }
 
-function WallCoverOptionCard({ surfaces = [], covers = {}, includedMl = 0, disabled = false, onToggle }) {
+function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, onToggle, onPreview }) {
   const t = useT();
   const activeCount = surfaces.filter((surface) => wallCoverEnabledForSurface(covers, surface)).length;
   const includedLabel = Number(includedMl || 0) > 0 ? `${formatNumber(includedMl)} ml inclus dans votre formule` : '';
@@ -4667,6 +4702,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, includedMl = 0, disab
 
       {surfaces.map((surface) => {
         const enabled = wallCoverEnabledForSurface(covers, surface);
+        const preview = wallCoverPreviewForSurface(previews, surface);
         return (
           <div key={surface.id} className={`wall-cover-row ${enabled ? 'active' : ''}`}>
             <button
@@ -4681,11 +4717,27 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, includedMl = 0, disab
             <div>
               <strong>{surface.label}</strong>
               <span>{formatNumber(surface.visibleWidth || surface.width)} m × {formatNumber(surface.height)} m</span>
-              <small>{t('wall_cover_generic_visual')}</small>
+              <small>{preview?.name || t('wall_cover_generic_visual')}</small>
             </div>
-            <span className={`wall-cover-status ${enabled ? 'active' : ''}`}>
-              {enabled ? t('wall_cover_selected') : t('wall_cover_not_selected')}
-            </span>
+            <div className="wall-cover-actions">
+              <span className={`wall-cover-status ${enabled ? 'active' : ''}`}>
+                {enabled ? t('wall_cover_selected') : t('wall_cover_not_selected')}
+              </span>
+              <label className="wall-cover-preview-button">
+                <Upload size={13} />
+                <span>{t('wall_cover_preview_upload')}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={disabled}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) onPreview?.(surface.id, file);
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+            </div>
           </div>
         );
       })}
@@ -6101,8 +6153,8 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           onPointerLeave={() => setDraggingId(null)}
         >
           <color attach="background" args={['#eef0f4']} />
-          <ambientLight intensity={1.05} />
-          <directionalLight position={[3, 7, 4]} intensity={1.1} castShadow shadow-mapSize={[2048, 2048]} />
+          <ambientLight intensity={1.18} />
+          <directionalLight position={[3, 7, 4]} intensity={0.95} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
             {presetAssetsReady && (
             <StandScene
@@ -12319,7 +12371,7 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
   };
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, selectedToolbar = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, selectedToolbar = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedId) || null, [items, selectedId]);
@@ -12391,7 +12443,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
           />
         </Suspense>
       ))}
-      <WallCoverSurfaces width={width} depth={depth} layout={layout} items={items} covers={wallCovers} />
+      <WallCoverSurfaces width={width} depth={depth} layout={layout} items={items} covers={wallCovers} previews={wallCoverPreviews} />
       {selectedToolbar && selectedItem && !draggingId && (
         <SceneItemToolbarAnchor item={selectedItem} items={items} width={width} depth={depth}>
           {selectedToolbar}
@@ -13072,6 +13124,10 @@ function wallSurfaceSegmentFromInterval(surface, interval, width, depth, index =
   };
 }
 
+function wallCoverPreviewForSurface(previews = {}, surface = {}) {
+  return previews?.[surface.id] || (surface.sourceWall ? previews?.[surface.sourceWall] : null) || null;
+}
+
 function WallFabricSurface({ surface, color }) {
   const fabricHeight = Math.max(0.1, fixedWallHeight - baseboardHeight);
   const texture = useRepeatedTexture(colorTextureUrl(color), surface.width, fabricHeight, 1.8);
@@ -13080,26 +13136,28 @@ function WallFabricSurface({ surface, color }) {
     <group position={position} rotation={[0, surface.rotation, 0]}>
       <mesh renderOrder={1} raycast={() => null}>
         <boxGeometry args={[surface.width, fabricHeight, 0.001]} />
-        <meshStandardMaterial color={texture ? '#ffffff' : colorHex(color, '#f8f7f3')} map={texture || null} roughness={1} metalness={0} />
+        <meshStandardMaterial color={texture ? '#ffffff' : colorHex(color, '#fffdf8')} map={texture || null} roughness={0.82} metalness={0} />
       </mesh>
     </group>
   );
 }
 
-function WallCoverSurfaces({ width, depth, layout, items = [], covers = {} }) {
+function WallCoverSurfaces({ width, depth, layout, items = [], covers = {}, previews = {} }) {
   const surfaces = wallCoverSurfaceOptions(layout, width, depth, items, { splitForCovers: true });
   return (
     <group>
       {surfaces.filter((surface) => wallCoverEnabledForSurface(covers, surface)).map((surface) => (
-        <WallCoverSurface key={surface.id} surface={surface} />
+        <WallCoverSurface key={surface.id} surface={surface} preview={wallCoverPreviewForSurface(previews, surface)} />
       ))}
     </group>
   );
 }
 
-function WallCoverSurface({ surface }) {
+function WallCoverSurface({ surface, preview = null }) {
   const coverHeight = Math.max(0.1, Number(surface.height || fixedWallHeight) - baseboardHeight);
-  const texture = useGenericWallCoverTexture(surface.width, coverHeight);
+  const genericTexture = useGenericWallCoverTexture(surface.width, coverHeight);
+  const previewTexture = useExternalTexture(preview?.url || '', { coverSize: [surface.width, coverHeight] });
+  const texture = previewTexture || genericTexture;
   const position = [surface.position[0], baseboardHeight + coverHeight / 2, surface.position[2]];
   return (
     <group position={position} rotation={[0, surface.rotation, 0]}>
@@ -13115,7 +13173,7 @@ function Wall({ position, size }) {
   return (
     <mesh castShadow receiveShadow position={position}>
       <boxGeometry args={size} />
-      <meshStandardMaterial color="#f4f2ed" roughness={0.96} metalness={0} />
+      <meshStandardMaterial color="#fffefa" roughness={0.78} metalness={0} />
     </mesh>
   );
 }
@@ -13124,7 +13182,7 @@ function Baseboard({ position, size }) {
   return (
     <mesh castShadow receiveShadow position={position}>
       <boxGeometry args={size} />
-      <meshStandardMaterial color="#f4efe4" roughness={0.52} />
+      <meshStandardMaterial color="#fff9ee" roughness={0.48} />
     </mesh>
   );
 }
