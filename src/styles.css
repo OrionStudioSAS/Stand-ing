@@ -7240,9 +7240,9 @@ img.asset-thumb {
 
 .config-toggle-option {
   display: grid;
-  grid-template-columns: 30px 1fr auto;
+  grid-template-columns: 30px 1fr;
   align-items: center;
-  gap: 10px;
+  gap: 8px 10px;
   min-height: 50px;
   border: 1px solid #dfe4ec;
   border-radius: 7px;
@@ -7284,12 +7284,16 @@ img.asset-thumb {
 }
 
 .config-toggle-option em {
+  grid-column: 2;
+  justify-self: start;
   border-radius: 5px;
-  padding: 7px 10px;
+  padding: 6px 10px;
   color: #fff;
   background: #1f4378;
   font-style: normal;
+  font-size: 0.76rem;
   font-weight: 950;
+  line-height: 1;
 }
 
 .item-config-quantity {

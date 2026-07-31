@@ -4861,7 +4861,7 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
         <ToggleOption
           active={thick}
           label={t('carpet_thick_label')}
-          detail={footprintEnabled ? t('carpet_thick_detail_with_footprint') : t('carpet_thick_detail')}
+          detail={footprintEnabled ? t('carpet_thick_detail_with_footprint', { carpet: formatNumber(Math.round(30 * Number(area || 0))), footprint: formatNumber(Math.round(30 * Number(footprintArea || 0))) }) : t('carpet_thick_detail')}
           price={thickCarpetPriceFromCarpetTab(area, footprintArea, t)}
           onChange={(v) => onThickChange?.(v)}
         />
@@ -5005,7 +5005,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
         <ToggleOption
           active={thick}
           label={t('carpet_thick_label')}
-          detail={t('footprint_thick_detail_with_carpet')}
+          detail={t('footprint_thick_detail_with_carpet', { carpet: formatNumber(Math.round(30 * Number(carpetArea || 0))) })}
           price={thickCarpetPriceFromFootprintTab(carpetArea, area, t)}
           onChange={(v) => onThickChange?.(v)}
         />
