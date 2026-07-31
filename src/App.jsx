@@ -4990,7 +4990,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
           active={thick}
           label={t('carpet_thick_label')}
           detail={t('carpet_thick_detail')}
-          price={`+ 30 €/m² (+${Math.round(30 * Number(area || 0)).toLocaleString('fr-FR')} €)`}
+          price="+ 30 €"
           onChange={(v) => onThickChange?.(v)}
         />
       </div>
