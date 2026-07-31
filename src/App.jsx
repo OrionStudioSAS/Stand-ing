@@ -13198,7 +13198,8 @@ function WallCoverSurfaces({ width, depth, layout, items = [], covers = {}, prev
 function WallCoverSurface({ surface, preview = null }) {
   const coverHeight = Math.max(0.1, Number(surface.height || fixedWallHeight) - baseboardHeight);
   const genericTexture = useGenericWallCoverTexture(surface.width, coverHeight);
-  const previewTexture = useExternalTexture(preview?.url || '', { coverSize: [surface.width, coverHeight], flipY: false });
+  const previewCoverSize = posterCoverTextureSize({ width: surface.width, height: coverHeight }, 2200);
+  const previewTexture = useExternalTexture(preview?.url || '', { coverSize: previewCoverSize, flipY: false });
   const texture = previewTexture || genericTexture;
   const position = [surface.position[0], baseboardHeight + coverHeight / 2, surface.position[2]];
   return (
