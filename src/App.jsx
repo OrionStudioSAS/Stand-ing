@@ -54,7 +54,19 @@ function useT() {
 }
 function localizeItemLabel(entry = {}, lang = 'fr') {
   if (lang === 'en' && entry?.dimensions?.labelEn) return entry.dimensions.labelEn;
-  return entry?.label || '';
+  const label = entry?.label || '';
+  if (normalizeMarketCategory(entry) === 'electricity') return sentenceCaseProductLabel(label);
+  return label;
+}
+
+function sentenceCaseProductLabel(label = '') {
+  const value = String(label || '').trim();
+  if (!value) return '';
+  const letters = value.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ]/g, '');
+  const mostlyUppercase = letters && letters === letters.toUpperCase();
+  if (!mostlyUppercase) return value;
+  const lowered = value.toLocaleLowerCase('fr-FR');
+  return lowered.charAt(0).toLocaleUpperCase('fr-FR') + lowered.slice(1);
 }
 
 const floorPlane = new Plane(new Vector3(0, 1, 0), 0);
@@ -3967,10 +3979,31 @@ function marketplaceCategories(entries) {
 }
 
 function marketplaceItemSubtitle(entry, categoryLabel) {
+  if (isPatereEntry(entry)) return patereVariantSubtitle(entry);
   if (isVariantGroupEntry(entry)) return `${variantPrimaryAssetTypes(entry).length || 0} variantes disponibles`;
   if (entry.dimensions?.isTelevision) return '32 / 43 / 55 / 65 pouces';
   if (entry.dimensions?.category) return entry.dimensions.category;
   return categoryLabel;
+}
+
+function isPatereEntry(entry = {}) {
+  return normalizeTextValue(`${entry?.label || ''} ${entry?.type || ''}`).includes('patere');
+}
+
+function patereVariantSubtitle(entry = {}) {
+  const variantLabels = Array.isArray(entry.dimensions?.variantAssets)
+    ? entry.dimensions.variantAssets.map((variant) => variant?.label || variant?.type || '').filter(Boolean)
+    : [];
+  const sourceText = [...variantLabels, entry.label].filter(Boolean).join(' ') || entry.type || '';
+  const sizes = uniqueTextValues([...sourceText.matchAll(/(\d+(?:[,.]\d+)?)\s*(cm|mm|m)?/gi)]
+    .map((match) => {
+      const value = match[1]?.replace(',', '.');
+      const unit = match[2] || (Number(value) <= 3 ? 'm' : 'mm');
+      return `${String(value).replace('.', ',')} ${unit}`;
+    }));
+  if (sizes.length > 1) return `Longueurs : ${sizes.slice(0, 4).join(' / ')}`;
+  if (sizes.length === 1) return `Longueur : ${sizes[0]}`;
+  return 'Patère — dimensions à choisir';
 }
 
 function shopCartItemVisible(item) {
