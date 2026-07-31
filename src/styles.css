@@ -7703,17 +7703,26 @@ img.asset-thumb {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-width: 118px;
+  gap: 7px;
+  min-width: 134px;
   border: 1px solid #1f4378;
   border-radius: 999px;
-  padding: 8px 11px;
+  padding: 8px 13px;
   color: #fff;
   background: #1f4378;
   box-shadow: 0 8px 18px rgba(31, 67, 120, 0.24);
   font-size: 0.7rem;
   font-weight: 950;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
   cursor: pointer;
+}
+
+.wall-cover-preview-button svg,
+.wall-cover-preview-button span {
+  flex: 0 0 auto;
+  color: #fff !important;
 }
 
 .wall-cover-preview-button.has-preview {
