@@ -4735,9 +4735,9 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
               <span className={`wall-cover-status ${enabled ? 'active' : ''}`}>
                 {enabled ? t('wall_cover_selected') : t('wall_cover_not_selected')}
               </span>
-              <label className="wall-cover-preview-button">
-                <Upload size={13} />
-                <span>{t('wall_cover_preview_upload')}</span>
+              <label className={preview ? 'wall-cover-preview-button has-preview' : 'wall-cover-preview-button'}>
+                <Upload size={14} />
+                <span>{t(preview ? 'wall_cover_preview_replace' : 'wall_cover_preview_upload')}</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -13198,7 +13198,7 @@ function WallCoverSurfaces({ width, depth, layout, items = [], covers = {}, prev
 function WallCoverSurface({ surface, preview = null }) {
   const coverHeight = Math.max(0.1, Number(surface.height || fixedWallHeight) - baseboardHeight);
   const genericTexture = useGenericWallCoverTexture(surface.width, coverHeight);
-  const previewTexture = useExternalTexture(preview?.url || '', { coverSize: [surface.width, coverHeight] });
+  const previewTexture = useExternalTexture(preview?.url || '', { coverSize: [surface.width, coverHeight], flipY: false });
   const texture = previewTexture || genericTexture;
   const position = [surface.position[0], baseboardHeight + coverHeight / 2, surface.position[2]];
   return (
