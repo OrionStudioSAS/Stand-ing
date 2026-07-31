@@ -3867,6 +3867,11 @@ function roundCurrency(value = 0) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
+function isFurnitureInsuranceEligible(entry = {}) {
+  if (!entry?.type && !entry?.label) return false;
+  return normalizeMarketCategory(entry) === 'furniture';
+}
+
 function furnitureInsuranceLine(amount = 0) {
   const safeAmount = Math.max(0, Number(amount || 0));
   if (safeAmount <= 0) return null;
@@ -9623,6 +9628,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
   const billableCounts = new Map();
   const lines = [];
   let itemsTotal = 0;
+  let furnitureInsuranceBase = 0;
 
   totalCounts.forEach((totalCount, type) => {
     const includedCount = includedCounts.get(type) || 0;
@@ -9639,6 +9645,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     const unitPrice = billableCount ? Math.round(lineTotal / billableCount) : assetUnitPrice(entry, salonLabel);
     billableCounts.set(type, billableCount);
     itemsTotal += lineTotal;
+    if (isFurnitureInsuranceEligible(entry)) furnitureInsuranceBase += lineTotal;
     lines.push({
       type,
       label: entry?.label || type,
@@ -9654,11 +9661,13 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     const sizeLine = counterVariantUpgradeOptionLine(item, entry, salonLabel, index);
     if (sizeLine) {
       itemsTotal += sizeLine.total;
+      if (isFurnitureInsuranceEligible(entry)) furnitureInsuranceBase += sizeLine.total;
       lines.push(sizeLine);
     }
     const colorLine = counterColorOptionLine(item, entry, salonLabel, index);
     if (colorLine) {
       itemsTotal += colorLine.total;
+      if (isFurnitureInsuranceEligible(entry)) furnitureInsuranceBase += colorLine.total;
       lines.push(colorLine);
     }
   });
@@ -9747,7 +9756,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     }
   }
 
-  const insuranceLine = furnitureInsuranceLine(itemsTotal);
+  const insuranceLine = furnitureInsuranceLine(furnitureInsuranceBase);
   if (insuranceLine) {
     itemsTotal += insuranceLine.total;
     lines.push(insuranceLine);
@@ -9762,6 +9771,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     includedCounts,
     itemsTotal,
     insuranceLine,
+    furnitureInsuranceBase,
     lines,
     wallCoverIncludedMl: wallCoverIncludedLinearMeters(scene),
     total: roundCurrency(basePrice + itemsTotal),
