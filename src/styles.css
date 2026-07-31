@@ -2779,6 +2779,10 @@ select {
   background: #fff;
 }
 
+.led-option-card .reserve-remove-button {
+  width: 100%;
+}
+
 .technical-floor-card {
   display: grid;
   gap: 12px;
@@ -7568,6 +7572,20 @@ img.asset-thumb {
   color: #1f4378;
   font-size: 0.76rem;
   font-weight: 950;
+}
+
+.wall-cover-included-badge {
+  display: inline-flex;
+  justify-content: center;
+  width: fit-content;
+  margin-top: 6px;
+  border: 1px solid #f2b24c;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #a56105 !important;
+  background: #fff7e6;
+  font-size: 0.72rem !important;
+  font-weight: 950 !important;
 }
 
 .wall-cover-head em {

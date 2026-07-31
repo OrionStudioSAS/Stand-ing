@@ -95,8 +95,9 @@ export const translations = {
     led_title: 'Spots LED automatiques',
     led_count: '{count} spots calcules automatiquement, soit 1 spot tous les 3m2.',
     led_keep: 'Les laisser',
-    led_remove: 'Tous les retirer',
-    led_note: 'Ils sont places en haut des murs et restent inclus dans la scene de base.',
+    led_remove: 'Supprimer les Spot LED',
+    led_restore: 'Remettre les Spot LED',
+    led_note: 'Ils sont places en haut des murs.',
 
     // CarpetColorOptionCard
     carpet_locked: 'La couleur de la moquette standard est {color}.',
@@ -451,8 +452,9 @@ export const translations = {
     led_title: 'Automatic LED spots',
     led_count: '{count} spots calculated automatically, 1 spot every 3m².',
     led_keep: 'Keep them',
-    led_remove: 'Remove all',
-    led_note: 'They are placed at the top of the walls and are included in the base scene.',
+    led_remove: 'Remove LED spots',
+    led_restore: 'Restore LED spots',
+    led_note: 'They are placed at the top of the walls.',
 
     // CarpetColorOptionCard
     carpet_locked: 'The standard carpet colour is {color}.',

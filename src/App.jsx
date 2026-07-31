@@ -4236,26 +4236,16 @@ function LedRailOptionCard({ enabled, spotCount, disabled = false, onChange }) {
       <div>
         <strong>{t('led_title')}</strong>
         <span>{t('led_count', { count: spotCount })}</span>
+        <small>{t('led_note')}</small>
       </div>
-      <div className="led-option-actions">
-        <button
-          type="button"
-          className={enabled ? 'active' : ''}
-          disabled={disabled}
-          onClick={() => onChange(true)}
-        >
-          {t('led_keep')}
-        </button>
-        <button
-          type="button"
-          className={!enabled ? 'active danger' : ''}
-          disabled={disabled}
-          onClick={() => onChange(false)}
-        >
-          {t('led_remove')}
-        </button>
-      </div>
-      <small>{t('led_note')}</small>
+      <button
+        type="button"
+        className={enabled ? 'reserve-remove-button' : 'reserve-remove-button active'}
+        disabled={disabled}
+        onClick={() => onChange(!enabled)}
+      >
+        {enabled ? <><X size={15} /> {t('led_remove')}</> : <><Plus size={15} /> {t('led_restore')}</>}
+      </button>
     </div>
   );
 }
@@ -4464,6 +4454,7 @@ function reserveSizeName(area = 0, label = '') {
 function reserveSizeDescription(area = 0, label = '') {
   if (area && area <= 1.25) return '1m × 1m';
   if (area && area <= 2.5) return '1m × 2m';
+  if (area && area <= 3.25) return '3m × 1m';
   if (area) return '2m × 2m';
   return label || 'Réserve complémentaire';
 }
@@ -4490,7 +4481,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
           const freeSlots = Math.max(0, Number(rule?.includedCount || 0));
           const billableSides = partitionHeadBillableSides(rule, sides);
           const billable = selected ? billableSides.has(row.side) : currentSelectedCount >= freeSlots;
-          const price = billable ? firstPriceValue(row.price, assetUnitPrice(entry, salonLabel), 0) : 0;
+          const price = billable ? firstPriceValue(assetUnitPrice(entry, salonLabel), row.price, 0) : 0;
           return (
             <button
               key={row.side}
@@ -4705,7 +4696,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
           <strong>{t('wall_cover_title')}</strong>
           <small>{t('wall_cover_ref')}</small>
           <span>{t('wall_cover_price')}</span>
-          {includedLabel && <small>{includedLabel}</small>}
+          {includedLabel && <small className="wall-cover-included-badge">{includedLabel}</small>}
         </div>
         <em>{activeCount} / {surfaces.length} {t('wall_cover_active')}</em>
       </div>
@@ -9553,7 +9544,7 @@ function makeAutomaticPartitionHeadItems(rule, sides = {}, catalogEntries = [], 
     if (!entry) return null;
     const billable = billableSides.has(side);
     const price = side === 'left' ? rule.leftPrice : rule.rightPrice;
-    const unitPrice = billable ? firstPriceValue(price, assetUnitPrice(entry, salonLabel), 0) : 0;
+    const unitPrice = billable ? firstPriceValue(assetUnitPrice(entry, salonLabel), price, 0) : 0;
     const base = makeItem(type, width, depth, layout, entry);
     return constrainItem({
       ...base,
