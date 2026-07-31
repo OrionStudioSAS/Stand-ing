@@ -857,7 +857,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
   const [itemOptionState, setItemOptionState] = useState({ uploading: false, error: '' });
   const [wallCovers, setWallCovers] = useState(initialOptions.wallCovers || {});
-  const [wallCoverPreviews, setWallCoverPreviews] = useState({});
+  const [wallCoverPreviews, setWallCoverPreviews] = useState(() => wallCoverPreviewsFromCovers(initialOptions.wallCovers));
   const wallCoverPreviewUrls = useRef(new Set());
   const [itemConfigModal, setItemConfigModal] = useState(null);
   const [basePackOpen, setBasePackOpen] = useState(false);
@@ -1346,25 +1346,50 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     });
   };
 
-  const setWallCoverPreview = (surfaceId, file) => {
+  const setWallCoverPreview = async (surfaceId, file) => {
     if (readOnly || !surfaceId || !file) return;
-    const previewUrl = URL.createObjectURL(file);
-    wallCoverPreviewUrls.current.add(previewUrl);
-    setWallCoverPreviews((current) => {
-      const previousUrl = current?.[surfaceId]?.url;
-      if (previousUrl) {
-        URL.revokeObjectURL(previousUrl);
-        wallCoverPreviewUrls.current.delete(previousUrl);
-      }
-      return {
-        ...current,
-        [surfaceId]: { url: previewUrl, name: file.name },
-      };
-    });
+    const localPreviewUrl = URL.createObjectURL(file);
+    wallCoverPreviewUrls.current.add(localPreviewUrl);
+    setWallCoverPreviews((current) => ({
+      ...current,
+      [surfaceId]: { url: localPreviewUrl, name: file.name, uploading: true },
+    }));
     setWallCovers((current) => ({
       ...current,
       [surfaceId]: { ...(current?.[surfaceId] || {}), enabled: true },
     }));
+
+    try {
+      const uploadedUrl = await uploadSceneItemOptionImage(initialScene, { id: `wall-cover-${surfaceId}`, type: 'wall-cover' }, file);
+      const imageUrl = cacheBustedUrl(uploadedUrl);
+      await preloadImage(imageUrl);
+      setWallCoverPreviews((current) => {
+        const previousUrl = current?.[surfaceId]?.url;
+        if (previousUrl && wallCoverPreviewUrls.current.has(previousUrl)) {
+          URL.revokeObjectURL(previousUrl);
+          wallCoverPreviewUrls.current.delete(previousUrl);
+        }
+        return {
+          ...current,
+          [surfaceId]: { url: imageUrl, name: file.name },
+        };
+      });
+      setWallCovers((current) => ({
+        ...current,
+        [surfaceId]: {
+          ...(current?.[surfaceId] || {}),
+          enabled: true,
+          previewUrl: imageUrl,
+          previewName: file.name,
+        },
+      }));
+    } catch (error) {
+      console.error('Wall cover preview upload failed', error);
+      setWallCoverPreviews((current) => ({
+        ...current,
+        [surfaceId]: { url: localPreviewUrl, name: file.name, uploadError: true },
+      }));
+    }
   };
 
 
@@ -13166,6 +13191,15 @@ function wallSurfaceSegmentFromInterval(surface, interval, width, depth, index =
   };
 }
 
+function wallCoverPreviewsFromCovers(covers = {}) {
+  return Object.entries(covers || {}).reduce((acc, [surfaceId, cover]) => {
+    if (cover?.previewUrl) {
+      acc[surfaceId] = { url: cover.previewUrl, name: cover.previewName || 'Aperçu bâche' };
+    }
+    return acc;
+  }, {});
+}
+
 function wallCoverPreviewForSurface(previews = {}, surface = {}) {
   return previews?.[surface.id] || (surface.sourceWall ? previews?.[surface.sourceWall] : null) || null;
 }
@@ -13199,7 +13233,7 @@ function WallCoverSurface({ surface, preview = null }) {
   const coverHeight = Math.max(0.1, Number(surface.height || fixedWallHeight) - baseboardHeight);
   const genericTexture = useGenericWallCoverTexture(surface.width, coverHeight);
   const previewCoverSize = posterCoverTextureSize({ width: surface.width, height: coverHeight }, 2200);
-  const previewTexture = useExternalTexture(preview?.url || '', { coverSize: previewCoverSize, flipY: false });
+  const previewTexture = useExternalTexture(preview?.url || '', { coverSize: previewCoverSize, flipY: true });
   const texture = previewTexture || genericTexture;
   const position = [surface.position[0], baseboardHeight + coverHeight / 2, surface.position[2]];
   return (
