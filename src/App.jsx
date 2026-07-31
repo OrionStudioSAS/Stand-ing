@@ -837,6 +837,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [carpetConfigOptions, setCarpetConfigOptions] = useState(initialOptions.carpetConfigOptions || {});
   const [carpetThick, setCarpetThick] = useState(Boolean(initialOptions.carpetThick));
   const [footprintThick, setFootprintThick] = useState(Boolean(initialOptions.footprintThick));
+  const thickCarpetEnabled = carpetThick || footprintThick;
   const [carpetFootprintEnabled, setCarpetFootprintEnabled] = useState(initialOptions.carpetFootprintEnabled !== false);
   const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || initialOptions.defaultColorOptions?.wallFabricColorId || '');
   const [technicalFloorType, setTechnicalFloorType] = useState(initialOptions.technicalFloorType || '');
@@ -1074,13 +1075,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     layout,
     technicalFloor: selectedTechnicalFloor ? { ...selectedTechnicalFloor, area } : null,
     colorSelections: [
-      { usage: 'Moquette', color: selectedCarpetColor, defaultColorId: effectiveDefaultColorOptions.carpetColorId, quantityM2: area, configOptions: [...carpetGroupConfigOptionsList, { id: '__carpet-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { ...carpetConfigOptions, '__carpet-thick__': carpetThick } },
-      effectiveCarpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor, defaultColorId: effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId, quantityM2: carpetFootprintAreaM2(), configOptions: [{ id: '__footprint-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { '__footprint-thick__': footprintThick } } : null,
+      { usage: 'Moquette', color: selectedCarpetColor, defaultColorId: effectiveDefaultColorOptions.carpetColorId, quantityM2: area, configOptions: [...carpetGroupConfigOptionsList, { id: '__carpet-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { ...carpetConfigOptions, '__carpet-thick__': thickCarpetEnabled } },
+      effectiveCarpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor, defaultColorId: effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId, quantityM2: carpetFootprintAreaM2(), configOptions: [{ id: '__footprint-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { '__footprint-thick__': thickCarpetEnabled } } : null,
       { usage: 'Coton cloison', color: selectedWallFabricColor, defaultColorId: effectiveDefaultColorOptions.wallFabricColorId, quantityM2: Math.max(0, sceneWallFabricArea(width, depth, layout) - activeWallCoverFabricArea(wallCoverSurfaces, wallCovers)) },
     ],
     wallCovers,
     wallCoverSurfaces,
-  }), [area, availableCatalog, visibleSceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, carpetThick, footprintThick]);
+  }), [area, availableCatalog, visibleSceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, thickCarpetEnabled]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
@@ -1101,8 +1102,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       carpetFootprintColorReference: selectedCarpetFootprintColor.reference || '',
       carpetFootprintEnabled: effectiveCarpetFootprintEnabled,
       carpetConfigOptions: Object.keys(carpetConfigOptions).length ? carpetConfigOptions : undefined,
-      carpetThick: carpetThick || undefined,
-      footprintThick: footprintThick || undefined,
+      carpetThick: thickCarpetEnabled || undefined,
+      footprintThick: thickCarpetEnabled || undefined,
       defaultColorOptions: effectiveDefaultColorOptions,
       wallFabricColorId: selectedWallFabricColor.id,
       wallFabricColorName: selectedWallFabricColor.name,
@@ -1957,12 +1958,22 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             readOnly={readOnly}
             carpetGroupConfigOptions={carpetGroupConfigOptionsList}
             carpetConfigOptions={carpetConfigOptions}
-            carpetThick={carpetThick}
-            footprintThick={footprintThick}
+            carpetThick={thickCarpetEnabled}
+            footprintThick={thickCarpetEnabled}
+            carpetArea={area}
+            footprintArea={effectiveCarpetFootprintEnabled ? carpetFootprintAreaM2() : 0}
             onCarpetColor={(colorId) => !readOnly && setSelectedCarpetId(colorId)}
             onCarpetConfigOption={(optionId, checked) => !readOnly && setCarpetConfigOptions((current) => ({ ...current, [optionId]: checked }))}
-            onCarpetThick={(v) => !readOnly && setCarpetThick(v)}
-            onFootprintThick={(v) => !readOnly && setFootprintThick(v)}
+            onCarpetThick={(v) => {
+              if (readOnly) return;
+              setCarpetThick(v);
+              setFootprintThick(v);
+            }}
+            onFootprintThick={(v) => {
+              if (readOnly) return;
+              setCarpetThick(v);
+              setFootprintThick(v);
+            }}
             onCarpetFootprintColor={(colorId) => !readOnly && setSelectedCarpetFootprintId(colorId)}
             onCarpetFootprintEnabled={(enabled) => !readOnly && !selectedTechnicalFloor && setCarpetFootprintEnabled(enabled)}
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
@@ -2881,6 +2892,8 @@ function OptionsStepPanel({
   carpetConfigOptions = {},
   carpetThick = false,
   footprintThick = false,
+  carpetArea = 0,
+  footprintArea = 0,
   onCarpetColor,
   onCarpetConfigOption,
   onCarpetThick,
@@ -2923,6 +2936,8 @@ function OptionsStepPanel({
           configOptions={carpetGroupConfigOptions}
           selectedOptions={carpetConfigOptions}
           thick={carpetThick}
+          footprintEnabled={carpetFootprintEnabled}
+          footprintArea={footprintArea}
           onSelect={onCarpetColor}
           onOptionToggle={onCarpetConfigOption}
           onThickChange={onCarpetThick}
@@ -2938,6 +2953,7 @@ function OptionsStepPanel({
           disabled={readOnly || Boolean(technicalFloorType)}
           disabledReason={technicalFloorType ? t('floor_warning') : ''}
           thick={footprintThick}
+          carpetArea={carpetArea}
           onEnabledChange={onCarpetFootprintEnabled}
           onSelect={onCarpetFootprintColor}
           onThickChange={onFootprintThick}
@@ -4745,7 +4761,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
   );
 }
 
-function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, configOptions = [], selectedOptions = {}, thick = false, onSelect, onOptionToggle, onThickChange }) {
+function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, configOptions = [], selectedOptions = {}, thick = false, footprintEnabled = false, footprintArea = 0, onSelect, onOptionToggle, onThickChange }) {
   const t = useT();
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
@@ -4845,8 +4861,8 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
         <ToggleOption
           active={thick}
           label={t('carpet_thick_label')}
-          detail={t('carpet_thick_detail')}
-          price={`+ 30 €/m² (+${Math.round(30 * Number(area || 0)).toLocaleString('fr-FR')} €)`}
+          detail={footprintEnabled ? t('carpet_thick_detail_with_footprint') : t('carpet_thick_detail')}
+          price={thickCarpetPriceFromCarpetTab(area, footprintArea, t)}
           onChange={(v) => onThickChange?.(v)}
         />
         {configOptions.map((option) => (
@@ -4864,7 +4880,7 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
   );
 }
 
-function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColorId = '', area = 1, disabled = false, disabledReason = '', thick = false, onEnabledChange, onSelect, onThickChange }) {
+function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColorId = '', area = 1, disabled = false, disabledReason = '', thick = false, carpetArea = 0, onEnabledChange, onSelect, onThickChange }) {
   const t = useT();
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
@@ -4989,8 +5005,8 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
         <ToggleOption
           active={thick}
           label={t('carpet_thick_label')}
-          detail={t('carpet_thick_detail')}
-          price="+ 30 €"
+          detail={t('footprint_thick_detail_with_carpet')}
+          price={thickCarpetPriceFromFootprintTab(carpetArea, area, t)}
           onChange={(v) => onThickChange?.(v)}
         />
       </div>
@@ -5002,6 +5018,31 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
       )}
     </div>
   );
+}
+
+function thickCarpetPriceFromCarpetTab(carpetArea = 0, footprintArea = 0, t = (_key) => '') {
+  const carpetTotal = Math.round(30 * Number(carpetArea || 0));
+  const footprintTotal = Math.round(30 * Number(footprintArea || 0));
+  const total = carpetTotal + footprintTotal;
+  if (footprintTotal > 0) {
+    return t('carpet_thick_price_with_footprint', {
+      carpet: formatNumber(carpetTotal),
+      footprint: formatNumber(footprintTotal),
+      total: formatNumber(total),
+    });
+  }
+  return `+ 30 €/m² (+${formatNumber(carpetTotal)} €)`;
+}
+
+function thickCarpetPriceFromFootprintTab(carpetArea = 0, footprintArea = 1, t = (_key) => '') {
+  const carpetTotal = Math.round(30 * Number(carpetArea || 0));
+  const footprintTotal = Math.round(30 * Number(footprintArea || 0));
+  const total = carpetTotal + footprintTotal;
+  return t('footprint_thick_price_with_carpet', {
+    carpet: formatNumber(carpetTotal),
+    footprint: formatNumber(footprintTotal),
+    total: formatNumber(total),
+  });
 }
 
 function colorOptionLabel(color = {}, fallback = 'En option') {
