@@ -844,6 +844,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     });
   };
   const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, plancher: false, led: false, reserve: false, tete: false, comptoir: false });
+  const [optionScrollTarget, setOptionScrollTarget] = useState('');
   const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || initialOptions.defaultColorOptions?.carpetColorId || '');
   const [selectedCarpetFootprintId, setSelectedCarpetFootprintId] = useState(initialOptions.carpetFootprintColorId || initialOptions.defaultColorOptions?.carpetFootprintColorId || initialOptions.carpetColorId || initialOptions.defaultColorOptions?.carpetColorId || '');
   const [carpetConfigOptions, setCarpetConfigOptions] = useState(initialOptions.carpetConfigOptions || {});
@@ -1245,19 +1246,20 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     setOpenOptions((current) => ({ ...current, [key]: !current[key] }));
   };
 
-  const openOnlyStepOption = (key) => {
+  const openOnlyStepOption = (key, shouldScroll = false) => {
     if (!key) return;
     setOpenOptions((current) => Object.keys(current).reduce((next, optionKey) => ({
       ...next,
       [optionKey]: optionKey === key,
     }), {}));
+    if (shouldScroll) setOptionScrollTarget(key);
   };
 
   const openStepOptionForItem = (item) => {
     const optionKey = step2OptionKeyForItem(item);
     if (!optionKey) return false;
     setActiveStep(2);
-    openOnlyStepOption(optionKey);
+    openOnlyStepOption(optionKey, true);
     setHeaderPanel(null);
     return true;
   };
@@ -1965,6 +1967,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             standLabel={initialScene.project_name || 'Stand A-14'}
             openOptions={openOptions}
             toggleOption={toggleOption}
+            optionScrollTarget={optionScrollTarget}
+            onOptionScrollHandled={() => setOptionScrollTarget('')}
             selectedCarpetColor={selectedCarpetColor}
             selectedCarpetFootprintColor={selectedCarpetFootprintColor}
             carpetColors={carpetPalette}
@@ -2897,6 +2901,8 @@ function OptionsStepPanel({
   standLabel,
   openOptions,
   toggleOption,
+  optionScrollTarget = '',
+  onOptionScrollHandled,
   selectedCarpetColor,
   selectedCarpetFootprintColor,
   carpetColors = [],
@@ -2957,13 +2963,18 @@ function OptionsStepPanel({
   isAdminViewer = false,
 }) {
   const t = useT();
+  const accordionScrollProps = (optionKey) => ({
+    optionKey,
+    scrollTarget: optionScrollTarget,
+    onScrollTargetHandled: onOptionScrollHandled,
+  });
   return (
     <>
       <PanelHead title={t('panel_options_title')} step={activeStep} />
       <RulesSummary ledSpotCount={ledSpotCount} ledRailsEnabled={ledRailsEnabled} reserveRule={reserveRule} partitionHeadRule={partitionHeadRule} />
 
       <section className="panel-section-title">{t('section_options')}</section>
-      <OptionAccordion title={t('option_carpet')} icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_carpet')} icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
           colors={carpetColors}
           selectedColor={selectedCarpetColor}
@@ -2980,7 +2991,7 @@ function OptionsStepPanel({
           onThickChange={onCarpetThick}
         />
       </OptionAccordion>
-      <OptionAccordion title={t('option_footprint')} icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')}>
+      <OptionAccordion {...accordionScrollProps('empreinte')} title={t('option_footprint')} icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')}>
         <FootprintColorOptionCard
           enabled={carpetFootprintEnabled}
           colors={footprintColors}
@@ -2996,7 +3007,7 @@ function OptionsStepPanel({
           onThickChange={onFootprintThick}
         />
       </OptionAccordion>
-      <OptionAccordion title={t('option_wall')} icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
         <ColorOptionCard
           title={t('color_title')}
           colors={wallFabricColors}
@@ -3018,7 +3029,7 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       {isAdminViewer && (
-      <OptionAccordion title={t('option_floor')} icon={<Ruler size={16} />} open={openOptions.plancher} onToggle={() => toggleOption('plancher')}>
+      <OptionAccordion {...accordionScrollProps('plancher')} title={t('option_floor')} icon={<Ruler size={16} />} open={openOptions.plancher} onToggle={() => toggleOption('plancher')}>
         <TechnicalFloorOptionCard
           floorType={technicalFloorType}
           trimType={technicalFloorTrimType}
@@ -3030,7 +3041,7 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       )}
-      <OptionAccordion title={t('option_led')} icon={<Sparkles size={16} />} open={openOptions.led} onToggle={() => toggleOption('led')}>
+      <OptionAccordion {...accordionScrollProps('led')} title={t('option_led')} icon={<Sparkles size={16} />} open={openOptions.led} onToggle={() => toggleOption('led')}>
         <LedRailOptionCard
           enabled={ledRailsEnabled}
           spotCount={ledSpotCount}
@@ -3038,7 +3049,7 @@ function OptionsStepPanel({
           onChange={onLedRailsEnabled}
         />
       </OptionAccordion>
-      <OptionAccordion title={t('option_reserve')} icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
+      <OptionAccordion {...accordionScrollProps('reserve')} title={t('option_reserve')} icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
         <ReserveOptionCard
           rule={reserveRule}
           selectedOptionType={reserveOptionType}
@@ -3048,7 +3059,7 @@ function OptionsStepPanel({
           onChange={onReserveOption}
         />
       </OptionAccordion>
-      <OptionAccordion title={t('option_partition_head')} icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
+      <OptionAccordion {...accordionScrollProps('tete')} title={t('option_partition_head')} icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
         <PartitionHeadOptionCard
           rule={partitionHeadRule}
           sides={partitionHeadSides}
@@ -3063,7 +3074,7 @@ function OptionsStepPanel({
           onVisualOptions={onPartitionHeadVisualOptions}
         />
       </OptionAccordion>
-      <OptionAccordion title={t('option_counter')} icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
+      <OptionAccordion {...accordionScrollProps('comptoir')} title={t('option_counter')} icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
         <CounterOptionCard
           items={counterItems}
           colors={counterColors}
@@ -4280,9 +4291,20 @@ function FurnitureCatalogRow({ entry, count, salonLabel, readOnly = false, onAdd
   );
 }
 
-function OptionAccordion({ title, icon, open, onToggle, children }) {
+function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, title, icon, open, onToggle, children }) {
+  const accordionRef = useRef(null);
+
+  useEffect(() => {
+    if (!open || !optionKey || scrollTarget !== optionKey) return undefined;
+    const timer = window.setTimeout(() => {
+      accordionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      onScrollTargetHandled?.();
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [open, optionKey, scrollTarget, onScrollTargetHandled]);
+
   return (
-    <section className={`option-accordion ${open ? 'open' : ''}`}>
+    <section ref={accordionRef} className={`option-accordion ${open ? 'open' : ''}`}>
       <button type="button" onClick={onToggle}>
         <span>{icon}{title}</span>
         <ChevronUp size={18} />
