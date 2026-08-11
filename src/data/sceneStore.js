@@ -289,13 +289,14 @@ export async function setSceneExhibitorReadOnly(scene, locked) {
   return dbSceneToScene(data);
 }
 
-export async function sendSceneCompletionEmail(scene) {
+export async function sendSceneCompletionEmail(scene, options = {}) {
   if (!supabase) return { sent: false, local: true };
 
   const { data, error } = await supabase.functions.invoke('scene-completion-email', {
     body: {
       sceneId: scene?.id,
       shareToken: scene?.share_token,
+      purchaseOrder: options.purchaseOrder || null,
     },
   });
 

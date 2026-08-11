@@ -1223,7 +1223,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       await syncSceneConfigToMonday(confirmedScene);
       let emailMessage = 'Un email de confirmation vient d’être envoyé à l’adresse de contact de la scène.';
       try {
-        const emailResult = await sendSceneCompletionEmail(confirmedScene);
+        const purchaseOrder = await scenePurchaseOrderEmailAttachment(confirmedScene, objectBank);
+        const emailResult = await sendSceneCompletionEmail(confirmedScene, { purchaseOrder });
         if (emailResult?.sent === false) {
           emailMessage = 'La scène est confirmée, mais l’email de confirmation n’a pas pu être envoyé automatiquement.';
           console.warn('Completion email not sent', emailResult);
@@ -8747,6 +8748,17 @@ async function downloadScenePurchaseOrder(scene = {}, assets = []) {
   downloadBlob(blob, fileName);
 }
 
+async function scenePurchaseOrderEmailAttachment(scene = {}, assets = []) {
+  const order = scenePurchaseOrder(scene, assets);
+  const fileName = `bon-de-commande-${slugForType(scene.client_name || scene.project_name || scene.id || 'stand')}.pdf`;
+  const blob = await fillPurchaseOrderTemplate(order);
+  return {
+    filename: fileName,
+    contentBase64: await blobToBase64(blob),
+    contentType: 'application/pdf',
+  };
+}
+
 async function fillPurchaseOrderTemplate(order = {}) {
   const rows = order.lines?.length ? order.lines : [];
   const response = await fetch('/templates/bon-commande-template.pdf');
@@ -8820,6 +8832,15 @@ function downloadBlob(blob, filename) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || '').split(',').pop() || '');
+    reader.onerror = () => reject(reader.error || new Error('Conversion du PDF impossible.'));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function AdminPlaceholder({ tab }) {

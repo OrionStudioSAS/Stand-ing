@@ -22,6 +22,7 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const sceneId = clean(body.sceneId);
   const shareToken = clean(body.shareToken);
+  const purchaseOrder = normalizePurchaseOrderAttachment(body.purchaseOrder);
   if (!sceneId && !shareToken) return json({ error: "Missing scene identifier" }, 400);
 
   let query = supabase.from("scenes").select("id, share_token, client_name, client_email, project_name, event_name, salon, source_payload").limit(1);
@@ -55,8 +56,9 @@ Deno.serve(async (req) => {
     from: fromEmail,
     to: [toEmail],
     subject: `Configuration ${standName} confirmée`,
-    html: completionEmailHtml({ clientName, standName, eventName, sceneUrl }),
-    text: `Bonjour ${clientName},\n\nVotre configuration ${standName} pour ${eventName} a bien été confirmée.\nVous pouvez la consulter ici : ${sceneUrl}\n\nL'équipe Stand-ING`,
+    html: completionEmailHtml({ clientName, standName, eventName, sceneUrl, hasPurchaseOrder: Boolean(purchaseOrder) }),
+    text: `Bonjour ${clientName},\n\nVotre configuration ${standName} pour ${eventName} a bien été confirmée.\nVous pouvez la consulter ici : ${sceneUrl}${purchaseOrder ? "\n\nVotre bon de commande est joint à cet email." : ""}\n\nL'équipe Stand-ING`,
+    ...(purchaseOrder ? { attachments: [purchaseOrder] } : {}),
   };
 
   const response = await fetch("https://api.resend.com/emails", {
@@ -82,16 +84,27 @@ Deno.serve(async (req) => {
   return json({ sent: true, to: maskEmail(toEmail), provider_id: result?.id || null });
 });
 
-function completionEmailHtml({ clientName, standName, eventName, sceneUrl }: { clientName: string; standName: string; eventName: string; sceneUrl: string }) {
+function completionEmailHtml({ clientName, standName, eventName, sceneUrl, hasPurchaseOrder }: { clientName: string; standName: string; eventName: string; sceneUrl: string; hasPurchaseOrder: boolean }) {
   return `
   <div style="font-family:Arial,sans-serif;color:#172033;line-height:1.5">
     <h2 style="color:#1f4378;margin:0 0 12px">Votre configuration Stand-ING est confirmée</h2>
     <p>Bonjour ${escapeHtml(clientName)},</p>
     <p>Votre configuration <strong>${escapeHtml(standName)}</strong> pour <strong>${escapeHtml(eventName)}</strong> a bien été confirmée.</p>
+    ${hasPurchaseOrder ? "<p>Votre bon de commande est joint à cet email.</p>" : ""}
     <p>Vous pouvez consulter votre scène à tout moment depuis le lien ci-dessous :</p>
     <p><a href="${sceneUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">Voir ma configuration</a></p>
     <p style="color:#687386;font-size:13px">L'équipe Stand-ING reviendra vers vous pour les prochaines étapes si nécessaire.</p>
   </div>`;
+}
+
+function normalizePurchaseOrderAttachment(value: any) {
+  const content = clean(value?.contentBase64);
+  if (!content || !/^[A-Za-z0-9+/=\s]+$/.test(content)) return null;
+  const filename = clean(value?.filename).replace(/[^\w.\-]+/g, "-") || "bon-de-commande.pdf";
+  return {
+    filename: filename.toLowerCase().endsWith(".pdf") ? filename : `${filename}.pdf`,
+    content: content.replace(/\s+/g, ""),
+  };
 }
 
 function clean(value: unknown) {
