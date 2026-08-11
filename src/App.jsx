@@ -96,6 +96,7 @@ const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
+const ceilingObjectTopY = 5.25;
 const ceilingObjectEdgeInset = 0.5;
 const wallTopSnapInset = 0.015;
 const turntableRotationSpeed = 0.7;
@@ -7330,6 +7331,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
         ...(draft.dimensions || {}),
         ceilingMounted: checked,
         ceilingBottomY: checked ? ceilingObjectBottomY : draft.dimensions?.ceilingBottomY,
+        ceilingTopY: checked ? ceilingObjectTopY : draft.dimensions?.ceilingTopY,
         ...(checked ? { mountType: 'floor', isTelevision: false, isLedSpotOption: false, wallTopSnap: false } : {}),
       },
     });
@@ -7694,7 +7696,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
             />
             <span>
               <strong>Objet au plafond</strong>
-              <small>Place le bas de l'objet à 3,00 m de hauteur, avec déplacement libre en X/Z.</small>
+              <small>Place le haut de l'objet à 5,25 m de hauteur, avec déplacement libre en X/Z.</small>
             </span>
           </label>
           <label className="asset-toggle-row">
@@ -10468,6 +10470,12 @@ function floorItemBaseY(item = {}, entry = null) {
     return h > 0 ? Math.max(0, fixedWallHeight - wallTopSnapInset - h) : 0;
   }
   if (!isCeilingMountedItem(item, entry)) return 0;
+  const topY = Number(item?.dimensions?.ceilingTopY ?? entry?.dimensions?.ceilingTopY ?? ceilingObjectTopY);
+  const size = item?.isGroup ? itemGroupSize(item) : { height: itemDefaultSize({ ...(entry || {}), ...(item || {}), dimensions: { ...(entry?.dimensions || {}), ...(item?.dimensions || {}) } })?.[1] };
+  const height = Number(size?.height || itemDefaultSize(item)?.[1] || 0);
+  if (Number.isFinite(topY) && Number.isFinite(height) && height > 0) {
+    return Math.max(0, topY - height);
+  }
   const y = Number(item?.dimensions?.ceilingBottomY ?? entry?.dimensions?.ceilingBottomY ?? ceilingObjectBottomY);
   return Number.isFinite(y) ? y : ceilingObjectBottomY;
 }
