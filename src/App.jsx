@@ -9697,13 +9697,14 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
   const baseUsage = baseItemsConfigured
     ? baseItems.map((item) => {
       const quantity = Number(item.quantity || 0);
-      const used = Math.min(totalCounts.get(item.type) || 0, quantity);
+      const rawUsed = countBasePackUsageForType(items, item.type);
+      const used = Math.min(rawUsed, quantity);
       return {
         ...item,
         quantity,
         used,
         remaining: Math.max(0, quantity - used),
-        billable: Math.max(0, (totalCounts.get(item.type) || 0) - quantity),
+        billable: Math.max(0, rawUsed - quantity),
       };
     })
     : [];
@@ -9975,6 +9976,19 @@ function countSceneItems(sceneItems) {
     counts.set(item.type, (counts.get(item.type) || 0) + 1);
     return counts;
   }, new Map());
+}
+
+function countBasePackUsageForType(sceneItems = [], baseType = '') {
+  if (!baseType) return 0;
+  return sceneItems.reduce((count, item) => {
+    const aliases = [
+      item.type,
+      item.options?.includedBaseType,
+      item.options?.variantAssetType,
+      item.options?.variantGroupType,
+    ].filter(Boolean);
+    return count + (aliases.includes(baseType) ? 1 : 0);
+  }, 0);
 }
 
 function useSceneTexturePreload(items = [], extraUrls = []) {
