@@ -2972,9 +2972,6 @@ function OptionsStepPanel({
   return (
     <>
       <PanelHead title={t('panel_options_title')} step={activeStep} />
-      <RulesSummary ledSpotCount={ledSpotCount} ledRailsEnabled={ledRailsEnabled} reserveRule={reserveRule} partitionHeadRule={partitionHeadRule} />
-
-      <section className="panel-section-title">{t('section_options')}</section>
       <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_carpet')} icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
           colors={carpetColors}
