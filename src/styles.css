@@ -5301,7 +5301,8 @@ img.asset-thumb {
   font-weight: 900;
 }
 
-.asset-behavior-settings select {
+.asset-behavior-settings select,
+.asset-behavior-settings input[type="number"] {
   width: 100%;
   min-height: 36px;
   border: 1px solid #d8dde6;
