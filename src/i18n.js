@@ -5,7 +5,7 @@ export const translations = {
 
     // Stepper / Header
     step_home: 'Accueil',
-    step_options: 'Options',
+    step_options: 'Configuration',
     step_furniture: 'Mobilier',
     step_validation: 'Validation',
     step_counter: 'Étape {step} / 4',
@@ -35,7 +35,7 @@ export const translations = {
     base_pack: 'Pack de base',
 
     // Panel heads
-    panel_options_title: 'Options de configuration',
+    panel_options_title: 'Personnalisez votre stand.',
     panel_furniture_title: 'Bibliothèque accessoires',
     panel_validation_title: 'Validation',
     panel_step: 'Etape {step} / 4',
@@ -73,13 +73,18 @@ export const translations = {
     wall_cover_missing: 'Visuel à fournir',
     wall_cover_ready: 'VISUEL',
     wall_cover_external_notice: 'Si vous activez une ou plusieurs bâches, notre équipe vous contactera pour récupérer les fichiers HD adaptés à l’impression.',
-    wall_cover_generic_visual: 'Image générique affichée sur la scène',
-    wall_cover_preview_upload: 'Importer aperçu',
-    wall_cover_preview_replace: 'Remplacer aperçu',
+    wall_cover_generic_visual: 'Aperçu importé',
+    wall_cover_preview_upload: 'Importer un aperçu',
+    wall_cover_preview_replace: 'Remplacer l’aperçu',
     wall_cover_selected: 'Sélectionnée',
-    wall_cover_not_selected: 'Option',
+    wall_cover_not_selected: '',
     wall_cover_toggle_add: 'Activer {label}',
     wall_cover_toggle_remove: 'Retirer {label}',
+    wall_cover_pending_visual: 'Je veux un visuel, mais je ne l’ai pas encore',
+    wall_cover_remove_preview: 'Retirer l’aperçu',
+    footprint_included_colors: 'Coloris inclus',
+    wall_color_included_singular: 'Couleur incluse',
+    wall_color_included_plural: 'Couleurs incluses',
 
     // TechnicalFloorOptionCard
     floor_warning: 'Le plancher technique retire automatiquement l\'empreinte moquette.',
@@ -101,7 +106,7 @@ export const translations = {
     led_note: 'Ils sont places en haut des murs.',
 
     // CarpetColorOptionCard
-    carpet_locked: 'La couleur de la moquette standard est {color}.',
+    carpet_locked: 'La couleur de la moquette standard est gris clair et ne peut être changée.',
     carpet_thick_label: 'Moquette épaisse',
     carpet_thick_detail: 'Épaisseur 8mm, aspect velours',
     carpet_thick_detail_with_footprint: 'Épaisseur 8mm, aspect velours. Applique aussi l’empreinte : +30 €/m² moquette ({carpet} €) + empreinte ({footprint} €).',
@@ -363,7 +368,7 @@ export const translations = {
 
     // Stepper / Header
     step_home: 'Home',
-    step_options: 'Options',
+    step_options: 'Configuration',
     step_furniture: 'Furniture',
     step_validation: 'Review',
     step_counter: 'Step {step} / 4',
@@ -393,7 +398,7 @@ export const translations = {
     base_pack: 'Base pack',
 
     // Panel heads
-    panel_options_title: 'Configuration options',
+    panel_options_title: 'Personalize your stand.',
     panel_furniture_title: 'Accessories library',
     panel_validation_title: 'Review',
     panel_step: 'Step {step} / 4',
@@ -431,13 +436,18 @@ export const translations = {
     wall_cover_missing: 'Visual required',
     wall_cover_ready: 'VISUAL',
     wall_cover_external_notice: 'If you enable one or more banners, our team will contact you to collect print-ready HD files.',
-    wall_cover_generic_visual: 'Generic image displayed in the scene',
-    wall_cover_preview_upload: 'Upload preview',
+    wall_cover_generic_visual: 'Imported preview',
+    wall_cover_preview_upload: 'Upload a preview',
     wall_cover_preview_replace: 'Replace preview',
     wall_cover_selected: 'Selected',
-    wall_cover_not_selected: 'Option',
+    wall_cover_not_selected: '',
     wall_cover_toggle_add: 'Enable {label}',
     wall_cover_toggle_remove: 'Remove {label}',
+    wall_cover_pending_visual: 'I want a visual, but I don’t have it yet',
+    wall_cover_remove_preview: 'Remove preview',
+    footprint_included_colors: 'Included colours',
+    wall_color_included_singular: 'Included colour',
+    wall_color_included_plural: 'Included colours',
 
     // TechnicalFloorOptionCard
     floor_warning: 'The technical floor automatically removes the carpet footprint.',

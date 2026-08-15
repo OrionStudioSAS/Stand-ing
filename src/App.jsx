@@ -26,6 +26,7 @@ import {
   Move3D,
   Orbit,
   Paperclip,
+  Pencil,
   Plus,
   RotateCcw,
   Ruler,
@@ -96,7 +97,6 @@ const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
 const ceilingObjectBottomY = 3;
-const ceilingObjectTopY = 5.25;
 const ceilingObjectEdgeInset = 0.5;
 const wallTopSnapInset = 0.015;
 const turntableRotationSpeed = 0.7;
@@ -1292,7 +1292,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   };
 
   const toggleOption = (key) => {
-    setOpenOptions((current) => ({ ...current, [key]: !current[key] }));
+    setOpenOptions((current) => Object.keys(current).reduce((next, optionKey) => ({
+      ...next,
+      [optionKey]: optionKey === key ? !current[key] : false,
+    }), {}));
   };
 
   const openOnlyStepOptions = (keys, shouldScroll = false) => {
@@ -1496,6 +1499,34 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         [surfaceId]: { url: localPreviewUrl, name: file.name, uploadError: true },
       }));
     }
+  };
+
+  const resetWallCoverPreview = (surfaceId) => {
+    if (readOnly || !surfaceId) return;
+    setWallCoverPreviews((current) => {
+      const previousUrl = current?.[surfaceId]?.url;
+      if (previousUrl && wallCoverPreviewUrls.current.has(previousUrl)) {
+        URL.revokeObjectURL(previousUrl);
+        wallCoverPreviewUrls.current.delete(previousUrl);
+      }
+      const next = { ...(current || {}) };
+      delete next[surfaceId];
+      return next;
+    });
+    setWallCovers((current) => {
+      const nextCover = { ...(current?.[surfaceId] || {}) };
+      delete nextCover.previewUrl;
+      delete nextCover.previewName;
+      return { ...(current || {}), [surfaceId]: nextCover };
+    });
+  };
+
+  const setWallCoverPending = (surfaceId, visualPending) => {
+    if (readOnly || !surfaceId) return;
+    setWallCovers((current) => ({
+      ...(current || {}),
+      [surfaceId]: { ...(current?.[surfaceId] || {}), visualPending },
+    }));
   };
 
 
@@ -1920,7 +1951,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 selectedToolbar={selected && !readOnly && !itemConfigModal ? (
                   <div className={`view-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
                     <button type="button" disabled={isWallItem(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
-                    <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), salonLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Settings2 size={15} /></button>
+                    <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), salonLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Pencil size={15} /></button>
                     <button type="button" disabled={!canDeleteSceneItem(selected, isAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={15} /></button>
                     {rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
                       <label className="toolbar-rotation-slider">
@@ -1975,7 +2006,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           <div className="base-pack-scene-note">
             <button type="button" onClick={() => setBasePackOpen((open) => !open)} aria-expanded={basePackOpen}>
               <strong>{tRaw(language, 'base_pack')}</strong>
-              <span>{scenePricing.baseUsage.length} quota{scenePricing.baseUsage.length > 1 ? 's' : ''}</span>
               {basePackOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
             </button>
             {basePackOpen && (
@@ -2120,6 +2150,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             wallCoverPreviews={wallCoverPreviews}
             wallCoverSurfaces={wallCoverSurfaces}
             wallCoverIncludedMl={scenePricing.wallCoverIncludedMl || 0}
+            wallFabricArea={Math.max(0, sceneWallFabricArea(width, depth, layout) - activeWallCoverFabricArea(wallCoverSurfaces, wallCovers))}
             defaultColorOptions={effectiveDefaultColorOptions}
             technicalFloorType={technicalFloorType}
             technicalFloorTrimType={technicalFloorTrimType}
@@ -2160,6 +2191,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onWallColor={(colorId) => !readOnly && setSelectedWallFabricId(colorId)}
             onWallCoverToggle={toggleWallCover}
             onWallCoverPreview={setWallCoverPreview}
+            onWallCoverPreviewReset={resetWallCoverPreview}
+            onWallCoverPending={setWallCoverPending}
             onTechnicalFloorType={(type) => !readOnly && handleTechnicalFloorType(type)}
             onTechnicalFloorTrimType={(type) => !readOnly && setTechnicalFloorTrimType(type)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
@@ -2577,21 +2610,13 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
   const values = item?.options?.textureSlotValues || {};
   if (!slots.length) return null;
   return (
-    <aside className={embedded ? 'item-visual-config' : 'item-options-panel'}>
-      <div className="item-options-heading">
-        <FileImage size={17} />
-        <div>
-          <strong>Personnalisation des textures</strong>
-          <span>Images en cover ou couleur unie sur les matériaux configurés dans l'admin.</span>
-        </div>
-      </div>
+    <aside className={embedded ? 'item-visual-config texture-slots-compact' : 'item-options-panel texture-slots-compact'}>
       {slots.map((slot) => {
         const value = values[slot.id] || {};
         if (slot.kind === 'color') {
           return (
             <label key={slot.id} className="item-color-upload generic-texture-slot">
-              <span>{slot.label}</span>
-              <small>Matériau : {slot.targetName}</small>
+              <span>{slot.label || 'Couleur'}</span>
               <input
                 type="color"
                 value={value.color || '#ffffff'}
@@ -2602,11 +2627,11 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
           );
         }
         return (
-          <div key={slot.id} className="generic-texture-slot">
+          <div key={slot.id} className="generic-texture-slot compact-image-slot">
             {value.imageUrl && <div className="poster-image-preview"><img src={value.imageUrl} alt="" /></div>}
-            <label className="item-image-upload">
-              <span>{slot.label}</span>
-              <small>{value.imageName || `Texture originale ${slot.targetName}`}</small>
+            <label className={value.imageUrl ? 'wall-cover-preview-button has-preview' : 'wall-cover-preview-button'}>
+              <Upload size={15} />
+              <span>Importer une image</span>
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
@@ -3055,6 +3080,7 @@ function OptionsStepPanel({
   wallCoverPreviews = {},
   wallCoverSurfaces = [],
   wallCoverIncludedMl = 0,
+  wallFabricArea = 0,
   defaultColorOptions = {},
   technicalFloorType,
   technicalFloorTrimType,
@@ -3087,6 +3113,8 @@ function OptionsStepPanel({
   onWallColor,
   onWallCoverToggle,
   onWallCoverPreview,
+  onWallCoverPreviewReset,
+  onWallCoverPending,
   onTechnicalFloorType,
   onTechnicalFloorTrimType,
   onLedRailsEnabled,
@@ -3116,14 +3144,7 @@ function OptionsStepPanel({
   });
   return (
     <>
-      {!contextMeta && (
-        <>
-          <PanelHead title={t('panel_options_title')} step={activeStep} />
-          <RulesSummary ledSpotCount={ledSpotCount} ledRailsEnabled={ledRailsEnabled} reserveRule={reserveRule} partitionHeadRule={partitionHeadRule} />
-
-          <section className="panel-section-title">{t('section_options')}</section>
-        </>
-      )}
+      {!contextMeta && <PanelHead title={t('panel_options_title')} step={activeStep} />}
       {optionIsVisible('moquette') && (
       <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_carpet')} icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
@@ -3169,8 +3190,9 @@ function OptionsStepPanel({
           colors={wallFabricColors}
           selectedColor={selectedWallFabricColor}
           defaultColorId={defaultColorOptions.wallFabricColorId}
-          includedLabel={t('color_included')}
+          includedLabel={t((wallFabricColors.filter((color) => colorWithDefaultIncluded(color, defaultColorOptions.wallFabricColorId).included).length || 1) > 1 ? 'wall_color_included_plural' : 'wall_color_included_singular')}
           optionLabel={t('color_options_paid')}
+          area={wallFabricArea}
           disabled={readOnly}
           onSelect={onWallColor}
         />
@@ -3184,6 +3206,8 @@ function OptionsStepPanel({
           disabled={readOnly}
           onToggle={onWallCoverToggle}
           onPreview={onWallCoverPreview}
+          onPreviewReset={onWallCoverPreviewReset}
+          onPending={onWallCoverPending}
         />
         )}
       </OptionAccordion>
@@ -3597,7 +3621,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
           <span>{(optionLink?.entry?.thumbnailUrl || selectedVariant?.imageUrl || catalogEntry.thumbnailUrl) ? <img src={optionLink?.entry?.thumbnailUrl || selectedVariant?.imageUrl || catalogEntry.thumbnailUrl} alt="" /> : <Box size={34} />}</span>
           <div>
             <strong>{localizeItemLabel(catalogEntry, lang)}</strong>
-            <small>{t('item_config_ref')} {assetReference(selectedVariant?.entry || catalogEntry, salonLabel) || selectedVariant?.assetType || catalogEntry.type || 'Stand-ING'}</small>
+            {!isVariantGroup && <small>{t('item_config_ref')} {assetReference(selectedVariant?.entry || catalogEntry, salonLabel) || selectedVariant?.assetType || catalogEntry.type || 'Stand-ING'}</small>}
           </div>
         </div>
 
@@ -3663,7 +3687,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
                   key={option.id}
                   active={Boolean(selectedExtras[option.id])}
                   label={option.label}
-                  detail={[option.detail, option.reference ? `Réf. ${option.reference}` : ''].filter(Boolean).join(' · ')}
+                  detail={option.detail}
                   price={displayPrice}
                   onChange={(checked) => toggleExtra(option.id, checked)}
                 />
@@ -5061,12 +5085,13 @@ function ToggleOptionCard({ enabled, enabledLabel, disabledLabel, disabled = fal
   );
 }
 
-function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', includedLabel = 'Inclus', optionLabel, disabled = false, onSelect }) {
+function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', includedLabel = 'Inclus', optionLabel, area = 0, disabled = false, onSelect }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
   const includedColors = displayColors.filter((color) => color.included);
   const optionalColors = displayColors.filter((color) => !color.included);
+  const optionPriceLabel = (color) => colorOptionLabel(color, optionLabel, area);
   const selectColor = (colorId) => {
     if (disabled) return;
     onSelect(colorId);
@@ -5084,13 +5109,13 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
           <span className="selected-swatch" style={{ '--swatch-color': selectedDisplayColor.hex, '--swatch-image': `url("${selectedDisplayColor.image}")` }} />
           <span>
             <strong>{selectedDisplayColor.name}</strong>
-            <small>{selectedDisplayColor.code} · {selectedDisplayColor.included ? includedLabel : colorOptionLabel(selectedDisplayColor, optionLabel)}</small>
+            <small>{selectedDisplayColor.code} · {selectedDisplayColor.included ? includedLabel : optionPriceLabel(selectedDisplayColor)}</small>
           </span>
           <ChevronDown size={18} />
         </button>
         {dropdownOpen && (
           <div className="color-dropdown-menu">
-            <small>{includedColors.length} couleur{includedColors.length > 1 ? 's' : ''} — {includedLabel}</small>
+            <small>{includedLabel}</small>
             <div className="color-swatch-row included">
               {includedColors.map((color) => (
                 <button
@@ -5119,7 +5144,7 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
                   onClick={() => selectColor(color.id)}
                 >
                   <span>{color.name}</span>
-                  <em>{colorOptionLabel(color, optionLabel)}</em>
+                  <em>{optionPriceLabel(color)}</em>
                 </button>
               ))}
             </div>
@@ -5130,9 +5155,8 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
   );
 }
 
-function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, onToggle, onPreview }) {
+function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, onToggle, onPreview, onPreviewReset, onPending }) {
   const t = useT();
-  const activeCount = surfaces.filter((surface) => wallCoverEnabledForSurface(covers, surface)).length;
   const includedLabel = Number(includedMl || 0) > 0 ? `${formatNumber(includedMl)} ml inclus dans votre formule` : '';
 
   return (
@@ -5140,45 +5164,44 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
       <div className="wall-cover-head">
         <div>
           <strong>{t('wall_cover_title')}</strong>
-          <small>{t('wall_cover_ref')}</small>
           <span>{t('wall_cover_price')}</span>
-          {includedLabel && <small className="wall-cover-included-badge">{includedLabel}</small>}
         </div>
-        <em>{activeCount} / {surfaces.length} {t('wall_cover_active')}</em>
+      </div>
+
+      <div className="wall-cover-info-box">
+        {includedLabel && <strong><b>!</b>{includedLabel}</strong>}
+        <span>{t('wall_cover_external_notice')}</span>
       </div>
 
       {!surfaces.length && (
         <div className="wall-cover-empty">{t('wall_cover_empty')}</div>
       )}
 
-      <div className="wall-cover-notice">{t('wall_cover_external_notice')}</div>
-
       {surfaces.map((surface) => {
         const enabled = wallCoverEnabledForSurface(covers, surface);
         const preview = wallCoverPreviewForSurface(previews, surface);
+        const pending = Boolean(covers?.[surface.id]?.visualPending || (surface.sourceWall && covers?.[surface.sourceWall]?.visualPending));
         return (
           <div key={surface.id} className={`wall-cover-row ${enabled ? 'active' : ''}`}>
-            <button
-              type="button"
-              className={`wall-cover-toggle ${enabled ? 'active' : ''}`}
-              disabled={disabled}
-              aria-label={t(enabled ? 'wall_cover_toggle_remove' : 'wall_cover_toggle_add', { label: surface.label })}
-              onClick={() => onToggle?.(surface.id, !enabled, surface.sourceWall)}
-            >
-              <span />
-            </button>
-            <div>
-              <strong>{surface.label}</strong>
-              <span>{formatNumber(surface.visibleWidth || surface.width)} m × {formatNumber(surface.height)} m</span>
-              <small>{preview?.name || t('wall_cover_generic_visual')}</small>
+            <div className="wall-cover-row-main">
+              <button
+                type="button"
+                className={`wall-cover-toggle ${enabled ? 'active' : ''}`}
+                disabled={disabled}
+                aria-label={t(enabled ? 'wall_cover_toggle_remove' : 'wall_cover_toggle_add', { label: surface.label })}
+                onClick={() => onToggle?.(surface.id, !enabled, surface.sourceWall)}
+              >
+                <span />
+              </button>
+              <div>
+                <strong>{surface.label}</strong>
+                <span>{formatNumber(surface.visibleWidth || surface.width)} m × {formatNumber(surface.height)} m</span>
+                {preview?.name && <small>{preview.name}</small>}
+              </div>
             </div>
             <div className="wall-cover-actions">
-              <span className={`wall-cover-status ${enabled ? 'active' : ''}`}>
-                {enabled ? t('wall_cover_selected') : t('wall_cover_not_selected')}
-              </span>
-              <label className={preview ? 'wall-cover-preview-button has-preview' : 'wall-cover-preview-button'}>
-                <Upload size={14} />
-                <span>{t(preview ? 'wall_cover_preview_replace' : 'wall_cover_preview_upload')}</span>
+              <label className={preview ? 'wall-cover-preview-button has-preview' : 'wall-cover-preview-button'} title={t(preview ? 'wall_cover_preview_replace' : 'wall_cover_preview_upload')}>
+                <Upload size={15} />
                 <input
                   type="file"
                   accept="image/*"
@@ -5190,7 +5213,21 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
                   }}
                 />
               </label>
+              {preview && (
+                <button type="button" className="wall-cover-remove-preview" disabled={disabled} onClick={() => onPreviewReset?.(surface.id)} title={t('wall_cover_remove_preview')}>
+                  <X size={14} />
+                </button>
+              )}
             </div>
+            <label className="visual-pending-checkbox wall-cover-pending">
+              <input
+                type="checkbox"
+                disabled={disabled}
+                checked={pending}
+                onChange={(event) => onPending?.(surface.id, event.target.checked)}
+              />
+              <span>{t('wall_cover_pending_visual')}</span>
+            </label>
           </div>
         );
       })}
@@ -5245,12 +5282,6 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
           ))}
           <b>{t('color_included')}</b>
         </div>
-        {dirtyCarpetColorCodes.includes(selectedDisplayColor.code) && (
-          <div className="carpet-locked-notice footprint-warning">
-            <strong>!</strong>
-            <span>{t('carpet_dirty_warning')}</span>
-          </div>
-        )}
       </section>
 
       {!!optionalGroups.length && <div className="carpet-choice-separator"><span />{t('carpet_or')}<span /></div>}
@@ -5352,7 +5383,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
               <h4>{colorGroupTitle(group.label, 'Moquette Rewind')}</h4>
               <strong>{referenceColor?.name} ({referenceColor?.code})</strong>
             </div>
-            <small>{t('carpet_included_count', { count: includedColors.length || 1, s: (includedColors.length || 1) > 1 ? 's' : '' })}</small>
+            <small>{t('footprint_included_colors')}</small>
             <div className="carpet-swatch-row">
               {(includedColors.length ? includedColors : [referenceColor]).filter(Boolean).map((color) => (
                 <button
@@ -5482,11 +5513,14 @@ function thickCarpetPriceFromFootprintTab(carpetArea = 0, footprintArea = 1, t =
   });
 }
 
-function colorOptionLabel(color = {}, fallback = 'En option') {
+function colorOptionLabel(color = {}, fallback = 'En option', area = 0) {
   const price = Number(color.price || 0);
-  const reference = color.reference || color.groupLabel || '';
-  const priceText = price > 0 ? `+${price.toLocaleString('fr-FR')} € HT/m²` : fallback;
-  return reference ? `${priceText} · ${reference}` : priceText;
+  const quantity = Math.max(0, Number(area || 0));
+  const total = price > 0 && quantity > 0 ? Math.round(price * quantity) : 0;
+  if (price <= 0) return fallback;
+  return quantity > 0
+    ? `+${price.toLocaleString('fr-FR')} € HT/m² · ${formatNumber(quantity)} m² = +${formatNumber(total)} € HT`
+    : `+${price.toLocaleString('fr-FR')} € HT/m²`;
 }
 
 function colorGroupsFromOptions(colors = []) {
@@ -7690,11 +7724,15 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
       dimensions: {
         ...(draft.dimensions || {}),
         ceilingMounted: checked,
-        ceilingBottomY: checked ? ceilingObjectBottomY : draft.dimensions?.ceilingBottomY,
-        ceilingTopY: checked ? ceilingObjectTopY : draft.dimensions?.ceilingTopY,
+        ceilingBottomY: checked ? Number(draft.dimensions?.ceilingBottomY ?? ceilingObjectBottomY) : draft.dimensions?.ceilingBottomY,
         ...(checked ? { mountType: 'floor', isTelevision: false, isLedSpotOption: false, wallTopSnap: false } : {}),
       },
     });
+  };
+
+  const updateCeilingBottomDistance = (value) => {
+    const distance = Number(value);
+    updateAssetBehavior({ ceilingBottomY: Number.isFinite(distance) ? Math.max(0, distance) : ceilingObjectBottomY });
   };
 
   const updateWallTopSnapOption = (checked) => {
@@ -8056,9 +8094,21 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
             />
             <span>
               <strong>Objet au plafond</strong>
-              <small>Place le haut de l'objet à 5,25 m de hauteur, avec déplacement libre en X/Z.</small>
+              <small>Place l'objet à une distance réglable entre le sol et le bas de l'enseigne, avec déplacement libre en X/Z.</small>
             </span>
           </label>
+          {draftCeilingMounted && (
+            <label>
+              <span>Distance sol → bas de l'objet (m)</span>
+              <input
+                type="number"
+                min="0"
+                step="0.05"
+                value={draft.dimensions?.ceilingBottomY ?? ceilingObjectBottomY}
+                onChange={(event) => updateCeilingBottomDistance(event.target.value)}
+              />
+            </label>
+          )}
           <label className="asset-toggle-row">
             <input
               type="checkbox"
@@ -10864,14 +10914,8 @@ function floorItemBaseY(item = {}, entry = null) {
     return h > 0 ? Math.max(0, fixedWallHeight - wallTopSnapInset - h) : 0;
   }
   if (!isCeilingMountedItem(item, entry)) return 0;
-  const topY = Number(item?.dimensions?.ceilingTopY ?? entry?.dimensions?.ceilingTopY ?? ceilingObjectTopY);
-  const size = item?.isGroup ? itemGroupSize(item) : { height: itemDefaultSize({ ...(entry || {}), ...(item || {}), dimensions: { ...(entry?.dimensions || {}), ...(item?.dimensions || {}) } })?.[1] };
-  const height = Number(size?.height || itemDefaultSize(item)?.[1] || 0);
-  if (Number.isFinite(topY) && Number.isFinite(height) && height > 0) {
-    return Math.max(0, topY - height);
-  }
   const y = Number(item?.dimensions?.ceilingBottomY ?? entry?.dimensions?.ceilingBottomY ?? ceilingObjectBottomY);
-  return Number.isFinite(y) ? y : ceilingObjectBottomY;
+  return Number.isFinite(y) ? Math.max(0, y) : ceilingObjectBottomY;
 }
 
 function placementRuleLabel(id, withDescription = false) {
