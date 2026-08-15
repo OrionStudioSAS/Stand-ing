@@ -1,6 +1,6 @@
 import React, { Suspense, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Canvas, useFrame, useLoader } from '@react-three/fiber';
+import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
 import { Box3, BufferGeometry, Cache, CanvasTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MOUSE, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -874,6 +874,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [wallCoverPreviews, setWallCoverPreviews] = useState(() => wallCoverPreviewsFromCovers(initialOptions.wallCovers));
   const wallCoverPreviewUrls = useRef(new Set());
   const [itemConfigModal, setItemConfigModal] = useState(null);
+  const [contextPanel, setContextPanel] = useState(null);
+  const [summaryDrawerOpen, setSummaryDrawerOpen] = useState(false);
+  const [activeHotspotId, setActiveHotspotId] = useState('');
   const [basePackOpen, setBasePackOpen] = useState(false);
   const [sceneHasRendered, setSceneHasRendered] = useState(false);
   const [clientInfo, setClientInfo] = useState({
@@ -1065,6 +1068,50 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   ].filter(Boolean).join(' ');
   const selected = visibleSceneItems.find((item) => item.id === selectedId);
 
+  const sceneHotspots = useMemo(() => {
+    if (activeStep === 2) {
+      return buildStep2Hotspots({
+        width,
+        depth,
+        height,
+        layout,
+        items: visibleSceneItems,
+        carpetFootprintEnabled: effectiveCarpetFootprintEnabled,
+        wallCoverSurfaces,
+        automaticReserveItems,
+        automaticPartitionHeadItems,
+        automaticLedItems,
+        automaticSpotItems,
+        includedCounterItems,
+      });
+    }
+    if (activeStep === 3) {
+      return cartItems.map((item) => ({
+        id: `item-${item.id}`,
+        step: 3,
+        itemId: item.id,
+        label: localizeItemLabel(item, language) || item.label || 'Objet',
+        position: sceneItemHotspotPosition(item, visibleSceneItems, width, depth),
+      }));
+    }
+    return [];
+  }, [activeStep, width, depth, height, layout, visibleSceneItems, effectiveCarpetFootprintEnabled, wallCoverSurfaces, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems, includedCounterItems, cartItems, language]);
+  const contextFocusTarget = useMemo(() => {
+    if (!contextPanel) return null;
+    const hotspotTarget = sceneHotspots.find((hotspot) => hotspot.id === activeHotspotId)?.position;
+    if (hotspotTarget) return hotspotTarget;
+    if (selected) return sceneItemHotspotPosition(selected, visibleSceneItems, width, depth);
+    return [0, 0.7, 0];
+  }, [contextPanel, sceneHotspots, activeHotspotId, selected, visibleSceneItems, width, depth]);
+
+  useEffect(() => {
+    if (activeStep === 1 || activeStep === 4) {
+      setContextPanel(null);
+      setSummaryDrawerOpen(false);
+      setActiveHotspotId('');
+    }
+  }, [activeStep]);
+
   useEffect(() => {
     setSceneHasRendered(false);
   }, [initialScene?.id]);
@@ -1248,22 +1295,65 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     setOpenOptions((current) => ({ ...current, [key]: !current[key] }));
   };
 
-  const openOnlyStepOption = (key, shouldScroll = false) => {
-    if (!key) return;
+  const openOnlyStepOptions = (keys, shouldScroll = false) => {
+    const optionKeys = Array.isArray(keys) ? keys.filter(Boolean) : [keys].filter(Boolean);
+    if (!optionKeys.length) return;
     setOpenOptions((current) => Object.keys(current).reduce((next, optionKey) => ({
       ...next,
-      [optionKey]: optionKey === key,
+      [optionKey]: optionKeys.includes(optionKey),
     }), {}));
-    if (shouldScroll) setOptionScrollTarget(key);
+    if (shouldScroll) setOptionScrollTarget(optionKeys[0]);
+  };
+
+  const openOnlyStepOption = (key, shouldScroll = false) => openOnlyStepOptions(key, shouldScroll);
+
+  const openContextPanelForStep2 = (optionKey, shouldScroll = false) => {
+    const meta = step2HotspotMeta(optionKey);
+    setActiveStep(2);
+    openOnlyStepOptions(meta.optionKeys, shouldScroll);
+    setHeaderPanel(null);
+    setItemConfigModal(null);
+    setContextPanel({ step: 2, optionKey, title: meta.title, subtitle: meta.subtitle });
   };
 
   const openStepOptionForItem = (item) => {
     const optionKey = step2OptionKeyForItem(item);
     if (!optionKey) return false;
-    setActiveStep(2);
-    openOnlyStepOption(optionKey, true);
-    setHeaderPanel(null);
+    openContextPanelForStep2(optionKey, true);
     return true;
+  };
+
+  const handleSceneHotspotClick = (hotspot) => {
+    if (!hotspot) return;
+    setHeaderPanel(null);
+    setActiveHotspotId(hotspot.id);
+    if (hotspot.itemId) setSelectedId(hotspot.itemId);
+    else setSelectedId(null);
+  };
+
+  const handleSceneHotspotConfigure = (hotspot) => {
+    if (!hotspot) return;
+    handleSceneHotspotClick(hotspot);
+    if (hotspot.step === 2) {
+      openContextPanelForStep2(hotspot.optionKey || 'moquette', false);
+      return;
+    }
+    if (hotspot.step === 3 && hotspot.itemId) {
+      const item = visibleSceneItems.find((sceneItem) => sceneItem.id === hotspot.itemId);
+      if (!item) return;
+      const entry = itemConfiguratorEntry(item);
+      if (itemEditNeedsConfigurator(item, entry, salonLabel)) setItemConfigModal({ mode: 'edit', item, entry });
+    }
+  };
+
+  const handleClearHotspot = () => setActiveHotspotId('');
+
+  const handleOpenFurnitureLibrary = () => {
+    if (readOnly) return;
+    setActiveStep(3);
+    setHeaderPanel(null);
+    setItemConfigModal(null);
+    setContextPanel({ step: 3, mode: 'add', title: 'Ajouter un objet', subtitle: 'Bibliotheque accessoires' });
   };
 
   const handleTechnicalFloorType = (type) => {
@@ -1702,7 +1792,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   return (
     <LanguageContext.Provider value={language}>
-    <main className={`configurator-shell ${activeStep === 1 ? 'intro-step' : ''} ${showCartBar ? 'has-cart-bar' : ''} ${readOnly ? 'readonly-mode' : ''}`}>
+    <main className={`configurator-shell new-design-shell ${activeStep === 1 ? 'intro-step' : ''} ${activeStep === 4 ? 'validation-layout' : ''} ${showCartBar ? 'has-cart-bar' : ''} ${readOnly ? 'readonly-mode' : ''} ${contextPanel ? 'has-context-panel' : ''}`}>
       <header className="configurator-topbar">
         <a className="config-logo" href="/">
           <img src="/images/logo.png" alt="Stand-ING" />
@@ -1790,6 +1880,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           <color attach="background" args={['#eef0f4']} />
           <ambientLight intensity={1.18} />
           <directionalLight position={[3, 7, 4]} intensity={0.95} castShadow shadow-mapSize={[2048, 2048]} />
+          <CameraFocusController target={contextFocusTarget} />
           <Suspense fallback={<Html center>Chargement</Html>}>
             {shouldRenderScene && (
               <StandScene
@@ -1821,6 +1912,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 onTechnicalFloorRampDragChange={setTechnicalFloorRampDragging}
                 visualContext={sceneVisualContext}
                 sceneConstraint={sceneConstraint}
+                hotspots={sceneHotspots}
+                activeHotspotId={activeHotspotId}
+                onHotspotSelect={handleSceneHotspotClick}
+                onHotspotConfigure={handleSceneHotspotConfigure}
+                onClearHotspot={handleClearHotspot}
                 selectedToolbar={selected && !readOnly && !itemConfigModal ? (
                   <div className={`view-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
                     <button type="button" disabled={isWallItem(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
@@ -1916,8 +2012,50 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
       </section>
 
+      {activeStep > 1 && activeStep < 4 && (
+        <>
+          <SceneSummaryRail
+            activeStep={activeStep}
+            open={summaryDrawerOpen}
+            onToggle={() => setSummaryDrawerOpen((open) => !open)}
+          />
+          {summaryDrawerOpen && (
+            <SceneSummaryDrawer
+              activeStep={activeStep}
+              pricing={scenePricing}
+              items={cartItems}
+              catalog={availableCatalog}
+              salonLabel={salonLabel}
+              carpetColor={selectedCarpetColor}
+              footprintColor={selectedCarpetFootprintColor}
+              footprintEnabled={effectiveCarpetFootprintEnabled}
+              wallColor={selectedWallFabricColor}
+              technicalFloor={selectedTechnicalFloor}
+              ledRailsEnabled={ledRailsEnabled}
+              ledSpotCount={ledSpotCount}
+              onClose={() => setSummaryDrawerOpen(false)}
+            />
+          )}
+        </>
+      )}
+
+      {activeStep === 3 && !readOnly && !contextPanel && (
+        <button type="button" className="scene-add-object-button" onClick={handleOpenFurnitureLibrary}>
+          <Plus size={18} /> Ajouter un objet
+        </button>
+      )}
+
       {activeStep > 1 && (
-      <aside className="config-panel">
+      <aside className={`config-panel ${activeStep < 4 ? 'context-config-panel' : ''} ${contextPanel || activeStep === 4 ? 'open' : ''}`}>
+        {activeStep < 4 && contextPanel && (
+          <header className="context-panel-head">
+            <div>
+              <strong>{contextPanel.title || (activeStep === 3 ? 'Mobilier' : 'Configuration')}</strong>
+              {contextPanel.subtitle && <span>{contextPanel.subtitle}</span>}
+            </div>
+            <button type="button" onClick={() => setContextPanel(null)} aria-label="Fermer"><X size={18} /></button>
+          </header>
+        )}
         {activeStep === 3 ? (
           <FurnitureStepPanel
             items={visibleSceneItems}
@@ -2040,6 +2178,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onCounterVariant={updateIncludedCounterVariant}
             onSelectCounter={setSelectedId}
             isAdminViewer={isAdminViewer}
+            contextOptionKey={contextPanel?.step === 2 ? contextPanel.optionKey : ''}
           />
         )}
       </aside>
@@ -2963,8 +3102,13 @@ function OptionsStepPanel({
   onCounterVariant,
   onSelectCounter,
   isAdminViewer = false,
+  contextOptionKey = '',
 }) {
   const t = useT();
+  const contextMeta = contextOptionKey ? step2HotspotMeta(contextOptionKey) : null;
+  const optionIsVisible = (optionKey) => !contextMeta || contextMeta.optionKeys.includes(optionKey);
+  const showWallColorConfig = !contextOptionKey || contextOptionKey === 'coton';
+  const showWallCoverConfig = !contextOptionKey || contextOptionKey === 'baches';
   const accordionScrollProps = (optionKey) => ({
     optionKey,
     scrollTarget: optionScrollTarget,
@@ -2972,10 +3116,15 @@ function OptionsStepPanel({
   });
   return (
     <>
-      <PanelHead title={t('panel_options_title')} step={activeStep} />
-      <RulesSummary ledSpotCount={ledSpotCount} ledRailsEnabled={ledRailsEnabled} reserveRule={reserveRule} partitionHeadRule={partitionHeadRule} />
+      {!contextMeta && (
+        <>
+          <PanelHead title={t('panel_options_title')} step={activeStep} />
+          <RulesSummary ledSpotCount={ledSpotCount} ledRailsEnabled={ledRailsEnabled} reserveRule={reserveRule} partitionHeadRule={partitionHeadRule} />
 
-      <section className="panel-section-title">{t('section_options')}</section>
+          <section className="panel-section-title">{t('section_options')}</section>
+        </>
+      )}
+      {optionIsVisible('moquette') && (
       <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_carpet')} icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
           colors={carpetColors}
@@ -2993,6 +3142,8 @@ function OptionsStepPanel({
           onThickChange={onCarpetThick}
         />
       </OptionAccordion>
+      )}
+      {optionIsVisible('empreinte') && (
       <OptionAccordion {...accordionScrollProps('empreinte')} title={t('option_footprint')} icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')}>
         <FootprintColorOptionCard
           enabled={carpetFootprintEnabled}
@@ -3009,7 +3160,10 @@ function OptionsStepPanel({
           onThickChange={onFootprintThick}
         />
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+      )}
+      {optionIsVisible('coton') && (
+      <OptionAccordion {...accordionScrollProps('coton')} title={contextOptionKey === 'baches' ? t('wall_cover_title') : t('option_wall')} icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+        {showWallColorConfig && (
         <ColorOptionCard
           title={t('color_title')}
           colors={wallFabricColors}
@@ -3020,6 +3174,8 @@ function OptionsStepPanel({
           disabled={readOnly}
           onSelect={onWallColor}
         />
+        )}
+        {showWallCoverConfig && (
         <WallCoverOptionCard
           surfaces={wallCoverSurfaces}
           covers={wallCovers}
@@ -3029,8 +3185,10 @@ function OptionsStepPanel({
           onToggle={onWallCoverToggle}
           onPreview={onWallCoverPreview}
         />
+        )}
       </OptionAccordion>
-      {isAdminViewer && (
+      )}
+      {isAdminViewer && optionIsVisible('plancher') && (
       <OptionAccordion {...accordionScrollProps('plancher')} title={t('option_floor')} icon={<Ruler size={16} />} open={openOptions.plancher} onToggle={() => toggleOption('plancher')}>
         <TechnicalFloorOptionCard
           floorType={technicalFloorType}
@@ -3043,6 +3201,7 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       )}
+      {optionIsVisible('led') && (
       <OptionAccordion {...accordionScrollProps('led')} title={t('option_led')} icon={<Sparkles size={16} />} open={openOptions.led} onToggle={() => toggleOption('led')}>
         <LedRailOptionCard
           enabled={ledRailsEnabled}
@@ -3051,6 +3210,8 @@ function OptionsStepPanel({
           onChange={onLedRailsEnabled}
         />
       </OptionAccordion>
+      )}
+      {optionIsVisible('reserve') && (
       <OptionAccordion {...accordionScrollProps('reserve')} title={t('option_reserve')} icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
         <ReserveOptionCard
           rule={reserveRule}
@@ -3061,6 +3222,8 @@ function OptionsStepPanel({
           onChange={onReserveOption}
         />
       </OptionAccordion>
+      )}
+      {optionIsVisible('tete') && (
       <OptionAccordion {...accordionScrollProps('tete')} title={t('option_partition_head')} icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
         <PartitionHeadOptionCard
           rule={partitionHeadRule}
@@ -3076,6 +3239,8 @@ function OptionsStepPanel({
           onVisualOptions={onPartitionHeadVisualOptions}
         />
       </OptionAccordion>
+      )}
+      {optionIsVisible('comptoir') && (
       <OptionAccordion {...accordionScrollProps('comptoir')} title={t('option_counter')} icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
         <CounterOptionCard
           items={counterItems}
@@ -3092,6 +3257,7 @@ function OptionsStepPanel({
           onSelect={onSelectCounter}
         />
       </OptionAccordion>
+      )}
 
     </>
   );
@@ -4232,6 +4398,199 @@ function CameraModeToolbar({ mode = 'orbit', onChange }) {
         <span>Déplacer</span>
       </button>
     </div>
+  );
+}
+
+function CameraFocusController({ target }) {
+  const { camera, controls } = useThree();
+  const animation = useRef({ key: '', progress: 1 });
+  const targetKey = Array.isArray(target) ? target.map((value) => Number(value || 0).toFixed(2)).join(':') : '';
+
+  useEffect(() => {
+    animation.current = { key: targetKey, progress: targetKey ? 0 : 1 };
+  }, [targetKey]);
+
+  useFrame((_, delta) => {
+    if (!targetKey || !Array.isArray(target) || animation.current.progress >= 1) return;
+    const focus = new Vector3(Number(target[0] || 0), Math.max(0.45, Number(target[1] || 0.7)), Number(target[2] || 0));
+    const desiredPosition = new Vector3(focus.x + 3.2, focus.y + 2.35, focus.z + 3.65);
+    const ease = Math.min(1, delta * 3.8);
+    camera.position.lerp(desiredPosition, ease);
+    camera.lookAt(focus);
+    if (controls?.target) {
+      controls.target.lerp(focus, ease);
+      controls.update?.();
+    }
+    animation.current.progress += delta * 1.7;
+  });
+
+  return null;
+}
+
+function SceneSummaryRail({ activeStep, open = false, onToggle }) {
+  return (
+    <button type="button" className={`scene-summary-rail ${open ? 'open' : ''}`} onClick={onToggle}>
+      <span>Afficher</span>
+      <strong>{activeStep === 3 ? 'Panier' : 'Configuration'}</strong>
+    </button>
+  );
+}
+
+function SceneSummaryDrawer({
+  activeStep,
+  pricing,
+  items = [],
+  catalog = [],
+  salonLabel = '',
+  carpetColor,
+  footprintColor,
+  footprintEnabled,
+  wallColor,
+  technicalFloor,
+  ledRailsEnabled,
+  ledSpotCount = 0,
+  onClose,
+}) {
+  const title = activeStep === 3 ? 'Objets poses' : 'Recap configuration';
+  return (
+    <aside className="scene-summary-drawer">
+      <header>
+        <div>
+          <strong>{title}</strong>
+          <span>{Number(pricing?.total || 0).toLocaleString('fr-FR')} € HT</span>
+        </div>
+        <button type="button" onClick={onClose} aria-label="Fermer"><X size={17} /></button>
+      </header>
+      {activeStep === 2 ? (
+        <div className="scene-summary-list">
+          <p><span>Sol</span><strong>{carpetColor?.name || 'Moquette'}</strong></p>
+          {footprintEnabled && <p><span>Empreinte</span><strong>{footprintColor?.name || 'Incluse'}</strong></p>}
+          <p><span>Coton cloison</span><strong>{wallColor?.name || 'Standard'}</strong></p>
+          <p><span>Spots LED</span><strong>{ledRailsEnabled ? `${ledSpotCount} spot${ledSpotCount > 1 ? 's' : ''}` : 'Retires'}</strong></p>
+          {technicalFloor && <p><span>Plancher</span><strong>{technicalFloor.label}</strong></p>}
+        </div>
+      ) : (
+        <div className="scene-summary-list">
+          {items.length ? items.map((item) => {
+            const entry = item?.type ? findCatalogEntry(catalog, item.type) : null;
+            return (
+              <p key={item.id}>
+                <span>{localizeItemLabel(entry || item)}</span>
+                <strong>{Number(cartItemPrice(item, entry || item, salonLabel) || 0).toLocaleString('fr-FR')} € HT</strong>
+              </p>
+            );
+          }) : <em>Aucun objet ajoute pour le moment.</em>}
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function step2HotspotMeta(optionKey = '') {
+  const metas = {
+    sol: { title: 'Moquette', subtitle: 'Couleur et type de sol', optionKeys: ['moquette'] },
+    moquette: { title: 'Moquette', subtitle: 'Couleur et type de sol', optionKeys: ['moquette'] },
+    empreinte: { title: 'Empreinte moquette', subtitle: 'Dalle 1000 x 1000 mm', optionKeys: ['empreinte'] },
+    plancher: { title: 'Plancher technique', subtitle: 'Hauteur, cornieres et rampe', optionKeys: ['plancher'] },
+    coton: { title: 'Coton cloison', subtitle: 'Couleur des cloisons', optionKeys: ['coton'] },
+    baches: { title: 'Bache sur cloison', subtitle: 'Selection des faces disponibles', optionKeys: ['coton'] },
+    reserve: { title: 'Reserve', subtitle: 'Taille et options incluses', optionKeys: ['reserve'] },
+    tete: { title: 'Tete de cloison', subtitle: 'Faces et visuels', optionKeys: ['tete'] },
+    comptoir: { title: "Banque d'accueil", subtitle: 'Taille, couleur et logo', optionKeys: ['comptoir'] },
+    led: { title: 'Spots LED', subtitle: 'Rails et eclairage inclus', optionKeys: ['led'] },
+  };
+  return metas[optionKey] || metas.sol;
+}
+
+function buildStep2Hotspots({
+  width,
+  depth,
+  height,
+  layout,
+  items = [],
+  carpetFootprintEnabled = true,
+  wallCoverSurfaces = [],
+  automaticReserveItems = [],
+  automaticPartitionHeadItems = [],
+  automaticLedItems = [],
+  automaticSpotItems = [],
+  includedCounterItems = [],
+}) {
+  const hotspots = [
+    {
+      id: 'step2-sol',
+      step: 2,
+      optionKey: 'moquette',
+      label: 'Moquette',
+      position: [0, 0.1, Math.max(-depth / 2 + 0.45, depth / 2 - 0.55)],
+    },
+    {
+      id: 'step2-coton',
+      step: 2,
+      optionKey: 'coton',
+      label: 'Coton Cloison',
+      position: [Math.min(width / 2 - 0.8, width * 0.18), height * 0.58, -depth / 2 + 0.1],
+    },
+  ];
+  if (carpetFootprintEnabled) {
+    const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
+    hotspots.push({
+      id: 'step2-empreinte',
+      step: 2,
+      optionKey: 'empreinte',
+      label: 'Empreinte moquette',
+      position: [footprint.centerX, 0.12, footprint.centerZ],
+    });
+  }
+  wallCoverSurfaces.forEach((surface) => {
+    const [x = 0, y = fixedWallHeight / 2, z = 0] = surface.position || [];
+    hotspots.push({
+      id: `step2-bache-${surface.id}`,
+      step: 2,
+      optionKey: 'baches',
+      label: `Bache ${String(surface.label || 'cloison').replace(/^Cloison\\s+/i, '')}`,
+      position: [x, Math.max(0.55, y), z],
+    });
+  });
+  const reserveItem = automaticReserveItems[0] || items.find((item) => isReserveSceneItem(item) || isAutomaticReserveItem(item));
+  if (reserveItem) {
+    hotspots.push({ id: 'step2-reserve', step: 2, optionKey: 'reserve', label: 'Reserve', position: sceneItemHotspotPosition(reserveItem, items, width, depth) });
+  }
+  const partitionItem = automaticPartitionHeadItems[0] || items.find((item) => isPartitionHeadItem(item) || isAutomaticPartitionHeadItem(item));
+  if (partitionItem) {
+    hotspots.push({ id: 'step2-tete', step: 2, optionKey: 'tete', label: 'Tete de cloison', position: sceneItemHotspotPosition(partitionItem, items, width, depth) });
+  }
+  const ledItem = automaticLedItems[0] || automaticSpotItems[0] || items.find((item) => isLedRailEntry(item) || isAutomaticLedRailItem(item) || isAutomaticSpotItem(item));
+  if (ledItem) {
+    hotspots.push({ id: 'step2-led', step: 2, optionKey: 'led', label: 'Spots LED', position: sceneItemHotspotPosition(ledItem, items, width, depth) });
+  }
+  const counterItem = includedCounterItems[0] || items.find((item) => isWoodReceptionDeskItem(item) && isIncludedSceneItem(item));
+  if (counterItem) {
+    hotspots.push({ id: 'step2-comptoir', step: 2, optionKey: 'comptoir', label: "Banque d'accueil", position: sceneItemHotspotPosition(counterItem, items, width, depth) });
+  }
+  return hotspots;
+}
+
+function SceneHotspotAnchor({ hotspot, active = false, onSelect, onConfigure }) {
+  return (
+    <Html position={hotspot.position} center={false} transform={false} zIndexRange={[11, 0]} style={{ pointerEvents: 'auto' }}>
+      <div
+        className={`scene-hotspot-wrap ${active ? 'active' : ''}`}
+        onPointerDown={(event) => event.stopPropagation()}
+        onPointerMove={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelect?.(hotspot);
+          onConfigure?.(hotspot);
+        }}
+      >
+        <button type="button" className="scene-hotspot" title={`Configurer ${hotspot.label}`} aria-label={`Configurer ${hotspot.label}`}>
+          <span aria-hidden="true" />
+          <strong>{hotspot.label}</strong>
+        </button>
+      </div>
+    </Html>
   );
 }
 
@@ -12536,7 +12895,7 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
   };
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, selectedToolbar = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, hotspots = [], activeHotspotId = '', onHotspotSelect, onHotspotConfigure, onClearHotspot, selectedToolbar = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedId) || null, [items, selectedId]);
@@ -12565,6 +12924,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
     if (!interactive || draggingId) return;
     setHoveredId(null);
     setSelectedId(null);
+    onClearHotspot?.();
   };
 
   return (
@@ -12586,7 +12946,11 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
           selected={item.id === selectedId}
           hovered={item.id === hoveredId}
           dragging={item.id === draggingId}
-          onSelect={() => interactive && setSelectedId(item.id)}
+          onSelect={() => {
+            if (!interactive) return;
+            onClearHotspot?.();
+            setSelectedId(item.id);
+          }}
           onHover={hoverEnabled ? ((hovered) => setItemHover(item.id, hovered)) : null}
           onDragStart={(event) => {
             event.stopPropagation();
@@ -12609,6 +12973,15 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
         </Suspense>
       ))}
       <WallCoverSurfaces width={width} depth={depth} layout={layout} items={items} covers={wallCovers} previews={wallCoverPreviews} />
+      {hotspots.map((hotspot) => (
+        <SceneHotspotAnchor
+          key={hotspot.id}
+          hotspot={hotspot}
+          active={hotspot.id === activeHotspotId}
+          onSelect={onHotspotSelect}
+          onConfigure={onHotspotConfigure}
+        />
+      ))}
       {selectedToolbar && selectedItem && !draggingId && (
         <SceneItemToolbarAnchor item={selectedItem} items={items} width={width} depth={depth}>
           {selectedToolbar}
@@ -12639,6 +13012,11 @@ function SceneItemToolbarAnchor({ item, items = [], width = 0, depth = 0, childr
       </div>
     </Html>
   );
+}
+
+function sceneItemHotspotPosition(item = {}, items = [], width = 0, depth = 0) {
+  const [x, y, z] = sceneItemToolbarPosition(item, items, width, depth);
+  return [x, Math.max(0.16, y - 0.1), z];
 }
 
 function sceneItemToolbarPosition(item = {}, items = [], width = 0, depth = 0) {
