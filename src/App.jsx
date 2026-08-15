@@ -92,6 +92,7 @@ const partitionHeadWallGap = 0.02;
 const partitionHeadWallCoverWidth = 0.6;
 const minWallCoverDisplayWidth = 0.7;
 const wallCoverSurfaceOffset = 0.008;
+const reserveWallCoverEdgeInset = 0.02;
 const partitionHeadWallAxisInset = 0;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
@@ -10668,14 +10669,16 @@ function wallCoverSurfaceOptions(layout, width, depth, items = [], options = {})
   const displayableReserveSurfaces = reserveSurfaces.filter((surface) => Number(surface.length || 0) >= maxReserveLength - 0.15);
   const mappedReserveSurfaces = displayableReserveSurfaces.map((reserveSurface, index) => {
     const outsideSide = protectedObjectWallSideContains(reserveSurface, reserveSurface.centerAxis, 1) ? -1 : 1;
-    const displayWidth = normalizeWallCoverDeductionLength(Math.max(0.5, Number(reserveSurface.length || 1)));
+    const rawLength = Math.max(0.5, Number(reserveSurface.length || 1));
+    const displayWidth = normalizeWallCoverDeductionLength(rawLength);
+    const renderWidth = Math.max(0.1, Math.min(displayWidth, rawLength) - reserveWallCoverEdgeInset * 2);
     return {
       id: displayableReserveSurfaces.length === 1 ? 'reserve' : `reserve-${index + 1}`,
       sourceWall: 'reserve',
       label: displayableReserveSurfaces.length === 1 ? 'Cloison réserve' : `Cloison réserve ${index + 1}`,
       kind: 'reserve',
       wall: 'reserve',
-      width: displayWidth,
+      width: renderWidth,
       height: fixedWallHeight,
       position: reserveSurface.orientation === 'x'
         ? [reserveSurface.centerAxis, fixedWallHeight / 2, reserveSurface.normalAxis + outsideSide * reserveFaceOffset]
