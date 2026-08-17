@@ -251,11 +251,29 @@ function cacheBustedUrl(url = '') {
   }
 }
 
+function createSceneItemId(type = 'item') {
+  const randomId = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${type}-${randomId}`;
+}
+
+function ensureUniqueSceneItemIds(items = []) {
+  const seen = new Set();
+  return items.map((item) => {
+    if (!item?.id || seen.has(item.id)) {
+      const nextItem = { ...item, id: createSceneItemId(item?.type || 'item') };
+      seen.add(nextItem.id);
+      return nextItem;
+    }
+    seen.add(item.id);
+    return item;
+  });
+}
+
 function makeItem(type, width, depth, layout, catalogEntry = null) {
   const entry = catalogEntry || catalog.find((item) => item.type === type);
   const placementRule = effectivePlacementRule(entry);
   const base = {
-    id: `${type}-${Date.now()}-${Math.round(Math.random() * 1000)}`,
+    id: createSceneItemId(type),
     type,
     label: entry?.label,
     rotation: 0,
@@ -813,7 +831,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [depth, setDepth] = useState(initialDepth);
   const height = fixedWallHeight;
   const [layout, setLayout] = useState(initialLayout);
-  const [items, setItems] = useState(() => (initialScene.items || []).map((item) => constrainItem(item, initialWidth, initialDepth, initialLayout)));
+  const [items, setItems] = useState(() => ensureUniqueSceneItemIds(initialScene.items || []).map((item) => constrainItem(item, initialWidth, initialDepth, initialLayout)));
   const [selectedId, setSelectedId] = useState(() => initialScene.items?.[0]?.id || null);
   const [draggingId, setDraggingId] = useState(null);
   const [orbitControlsActive, setOrbitControlsActive] = useState(false);
@@ -1208,6 +1226,27 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     return () => window.clearTimeout(timer);
   }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, saveState, readOnly]);
 
+  const persistWallCoversNow = (nextWallCovers) => {
+    if (readOnly) return;
+    const alreadyConfigured = saveState === 'configured';
+    const status = alreadyConfigured ? 'configured' : 'created';
+    const clientStatus = alreadyConfigured ? 'configured' : 'draft';
+    const payload = currentScenePayload(status, clientStatus);
+    const options = { ...(payload.options || {}), wallCovers: nextWallCovers };
+    saveScene({
+      ...payload,
+      options,
+      source_payload: {
+        ...(payload.source_payload || {}),
+        options: { ...((payload.source_payload || {}).options || {}), wallCovers: nextWallCovers },
+      },
+    })
+      .then(() => {
+        if (!alreadyConfigured) setSaveState('draft');
+      })
+      .catch((error) => console.error('Wall cover save failed', error));
+  };
+
   useEffect(() => () => {
     wallCoverPreviewUrls.current.forEach((url) => URL.revokeObjectURL(url));
     wallCoverPreviewUrls.current.clear();
@@ -1412,6 +1451,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           [surfaceId]: { url: imageUrl, name: file.name },
         };
       });
+      const nextCover = {
+        ...(wallCovers?.[surfaceId] || {}),
+        enabled: true,
+        previewUrl: imageUrl,
+        previewName: file.name,
+      };
+      const nextWallCovers = { ...(wallCovers || {}), [surfaceId]: nextCover };
       setWallCovers((current) => ({
         ...current,
         [surfaceId]: {
@@ -1421,6 +1467,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           previewName: file.name,
         },
       }));
+      persistWallCoversNow(nextWallCovers);
     } catch (error) {
       console.error('Wall cover preview upload failed', error);
       setWallCoverPreviews((current) => ({

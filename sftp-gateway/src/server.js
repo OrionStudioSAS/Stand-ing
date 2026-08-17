@@ -222,6 +222,10 @@ async function loadSceneForUpload(body = {}, auth = {}) {
 
 function assertCanUploadToScene(auth, scene) {
   if (auth.admin) return;
+  // The scene was loaded with the user's Supabase session, so RLS already
+  // decided whether this exhibitor/admin can access it. Avoid a second
+  // email-only check because some scenes are reached by token/admin flows.
+  if (auth.mode === 'supabase-user' && auth.db && scene?.id) return;
   const userEmail = String(auth.user?.email || '').trim().toLowerCase();
   const sceneEmail = String(scene.client_email || '').trim().toLowerCase();
   if (userEmail && sceneEmail && userEmail === sceneEmail) return;
