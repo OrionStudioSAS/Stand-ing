@@ -1392,7 +1392,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }));
 
     try {
-      const uploadedUrl = await uploadSceneItemOptionImage(initialScene, { id: `wall-cover-${surfaceId}`, type: 'wall-cover' }, file);
+      const surface = wallCoverSurfaces.find((candidate) => candidate.id === surfaceId) || {};
+      const uploadedUrl = await uploadSceneItemOptionImage(initialScene, {
+        id: `wall-cover-${surfaceId}`,
+        type: 'wall-cover',
+        label: surface.label || `Bâche cloison ${surfaceId}`,
+        visualLabel: surface.label || '',
+      }, file);
       const imageUrl = cacheBustedUrl(uploadedUrl);
       await preloadImage(imageUrl);
       setWallCoverPreviews((current) => {
@@ -8834,10 +8840,41 @@ function scenePurchaseOrder(scene = {}, assets = []) {
     salonLabel: normalizeSalonTitle(scene.event_name || scene.salon),
     scene,
   });
-  const sourceLines = savedLines.length ? savedLines : fallbackPricing.lines;
+  const sourceLines = savedLines.length
+    ? enrichPurchaseOrderLinesWithFallback(savedLines, fallbackPricing.lines)
+    : fallbackPricing.lines;
   const lines = normalizePurchaseOrderLines(sourceLines, catalogEntries);
   const total = lines.reduce((sum, line) => sum + line.total, 0);
   return { lines, total: roundCurrency(total) };
+}
+
+function enrichPurchaseOrderLinesWithFallback(lines = [], fallbackLines = []) {
+  const usedFallbackIndexes = new Set();
+  return (lines || []).map((line) => {
+    const fallbackIndex = (fallbackLines || []).findIndex((candidate, index) => {
+      if (usedFallbackIndexes.has(index)) return false;
+      if (line.optionForItemId && candidate.optionForItemId) return line.optionForItemId === candidate.optionForItemId;
+      if (line.type && candidate.type && line.type === candidate.type) return true;
+      return false;
+    });
+    const fallback = fallbackIndex >= 0 ? fallbackLines[fallbackIndex] : null;
+    if (fallbackIndex >= 0) usedFallbackIndexes.add(fallbackIndex);
+    return {
+      ...line,
+      optionLines: uniqueTextValues([
+        ...(Array.isArray(line.optionLines) ? line.optionLines : []),
+        ...(Array.isArray(fallback?.optionLines) ? fallback.optionLines : []),
+      ]),
+      label: purchaseOrderLabelLooksGeneric(line.label, line.type) && fallback?.label ? fallback.label : line.label,
+    };
+  });
+}
+
+function purchaseOrderLabelLooksGeneric(label = '', type = '') {
+  const normalized = normalizeTextValue(label || '');
+  if (!normalized) return true;
+  if (type && normalized === normalizeTextValue(type)) return true;
+  return !/[—-]|couleur|option|taille|m\b|\d/.test(normalized);
 }
 
 function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
@@ -8848,12 +8885,11 @@ function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
       const total = Math.max(0, roundCurrency(line.total ?? line.price ?? 0));
       const unitPrice = Math.max(0, roundCurrency(line.unitPrice ?? line.unit_price ?? (quantity ? total / quantity : 0)));
       const optionLines = uniqueTextValues(Array.isArray(line.optionLines) ? line.optionLines : []);
-      const baseLabel = line.label || entry?.label || line.type || 'Lot AMCO';
-      const optionSuffix = optionLines.length ? ` — ${optionLines.join(' · ')}` : '';
+      const baseLabel = purchaseOrderBaseLabel(line.label || entry?.label || line.type || 'Lot AMCO');
       return {
         type: line.type || entry?.type || '',
         reference: line.reference || assetReference(entry, '') || '',
-        label: `${baseLabel}${optionSuffix}`,
+        label: purchaseOrderDisplayLabel(baseLabel, optionLines),
         optionLines,
         quantity,
         unitPrice,
@@ -8861,6 +8897,34 @@ function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
       };
     })
     .filter((line) => line.quantity > 0 && line.total > 0);
+}
+
+function purchaseOrderBaseLabel(label = '') {
+  return String(label || 'Lot AMCO')
+    .replace(/\s+[—-]\s+option\s+/i, ' - ')
+    .replace(/^Option\s+finition\s+banque\s+d'accueil\s+[—-]\s+/i, "Banque d'accueil - ")
+    .replace(/[—]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function purchaseOrderDisplayLabel(baseLabel = '', optionLines = []) {
+  const cleanBase = purchaseOrderBaseLabel(baseLabel);
+  const options = uniqueTextValues((optionLines || [])
+    .map(purchaseOrderOptionLabel)
+    .filter((option) => option && !normalizeTextValue(cleanBase).includes(normalizeTextValue(option))));
+  return [cleanBase, ...options].join(' - ');
+}
+
+function purchaseOrderOptionLabel(option = '') {
+  return String(option || '')
+    .replace(/\s+[—-]\s+réf\..*$/i, '')
+    .replace(/^Couleur\s*:\s*/i, '')
+    .replace(/^Option\s+/i, '')
+    .replace(/\s*\(\+\s*[^)]*\)\s*$/i, '')
+    .replace(/[—]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function downloadSceneTechnicalPlan(scene = {}, assets = []) {

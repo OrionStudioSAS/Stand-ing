@@ -314,16 +314,23 @@ export async function uploadSceneItemOptionImage(scene, item, file) {
   const safeSceneId = slugifyAsset(scene?.id || scene?.share_token || 'scene');
   const safeItemId = slugifyAsset(item?.id || item?.type || 'item');
   const safeName = slugifyAsset(file.name.replace(/\.[^.]+$/, ''));
-  const storagePath = `scene-options/${safeSceneId}/${safeItemId}/${Date.now().toString(36)}-${safeName}.${extension}`;
+  const previewFile = await makeScenePreviewImage(file);
+  const previewExtension = previewFile.name.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() || 'jpg';
+  const storagePath = `scene-options/${safeSceneId}/${safeItemId}/${Date.now().toString(36)}-${safeName}-preview.${previewExtension}`;
   const bucket = supabase.storage.from('object-assets');
-  const { error } = await bucket.upload(storagePath, file, {
+  const { error } = await bucket.upload(storagePath, previewFile, {
     cacheControl: '3600',
-    contentType: file.type || `image/${extension}`,
+    contentType: previewFile.type || `image/${previewExtension}`,
     upsert: true,
   });
   if (error) throw error;
 
   const { data } = bucket.getPublicUrl(storagePath);
+  await uploadSceneProductionFile(scene, item, file, {
+    previewUrl: data.publicUrl,
+    previewStoragePath: storagePath,
+    originalExtension: extension,
+  });
   return data.publicUrl;
 }
 
@@ -334,6 +341,111 @@ function fileToDataUrl(file) {
     reader.onerror = () => reject(reader.error || new Error('Lecture du fichier impossible.'));
     reader.readAsDataURL(file);
   });
+}
+
+async function makeScenePreviewImage(file) {
+  if (!file?.type?.startsWith('image/')) return file;
+  try {
+    const bitmap = await imageBitmapFromFile(file);
+    const maxEdge = 1800;
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap.image || bitmap, 0, 0, width, height);
+    bitmap.close?.();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.76));
+    if (!blob) return file;
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'preview';
+    return new File([blob], `${baseName}-preview.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+  } catch (error) {
+    console.warn('Preview compression failed, using original image for preview.', error);
+    return file;
+  }
+}
+
+async function imageBitmapFromFile(file) {
+  if (typeof createImageBitmap === 'function') return createImageBitmap(file);
+  const dataUrl = await fileToDataUrl(file);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+        image: img,
+        close() {},
+      });
+    };
+    img.onerror = () => reject(new Error('Lecture de l’image impossible.'));
+    img.src = dataUrl;
+  });
+}
+
+async function uploadSceneProductionFile(scene, item, file, preview = {}) {
+  const gatewayUrl = import.meta.env.VITE_SFTP_GATEWAY_URL;
+  if (!gatewayUrl || !supabase || !file) return null;
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+  if (!accessToken) return null;
+
+  const formData = new FormData();
+  formData.append('file', file);
+  Object.entries(sceneProductionUploadMetadata(scene, item, file, preview)).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) formData.append(key, String(value));
+  });
+
+  const response = await fetch(`${gatewayUrl.replace(/\/+$/g, '')}/uploads/production-file`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: formData,
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || 'Envoi du fichier HD impossible.');
+  }
+  return payload;
+}
+
+function sceneProductionUploadMetadata(scene = {}, item = {}, file = {}, preview = {}) {
+  const source = scene.source_payload || {};
+  const contact = source.contactDetails || {};
+  return {
+    sceneId: scene.id || '',
+    sceneToken: scene.share_token || '',
+    salon: scene.salon || scene.event_name || source.salon || source.event_name || '',
+    offer: scene.offer || source.offer || source.pack || source.includedPack || source.options?.includedPack || '',
+    company: scene.client_name || source.name || source.item?.name || source.client_name || source.company_name || contact.company || '',
+    hall: contact.hall || source.hall || readMondayColumnAny(source, ['hall', 'pavillon']) || '',
+    aisle: source.aisle_number || source.allee || contact.allee || readMondayColumnAny(source, ['text5', 'allée', 'allee']) || '',
+    standNumber: source.stand_number || readMondayColumnAny(source, ['n_', 'n°', 'numero', 'numéro']) || '',
+    itemId: item.id || '',
+    itemType: item.type || '',
+    itemLabel: item.label || item.visualLabel || item.type || '',
+    surfaceKey: item.id || item.type || 'visual',
+    surfaceLabel: item.label || item.visualLabel || item.type || 'Visuel',
+    previewUrl: preview.previewUrl || '',
+    previewStoragePath: preview.previewStoragePath || '',
+    originalFilename: file.name || '',
+    originalMimeType: file.type || '',
+    originalSize: file.size || 0,
+  };
+}
+
+function readMondayColumnAny(payload = {}, names = []) {
+  for (const name of names) {
+    const direct = payload?.[name];
+    if (direct && typeof direct !== 'object') return direct;
+  }
+  const columns = Array.isArray(payload?.column_values) ? payload.column_values : [];
+  const normalizedNames = names.map((name) => normalizeKey(name));
+  const match = columns.find((column) => normalizedNames.includes(normalizeKey(column.id)) || normalizedNames.includes(normalizeKey(column.title)));
+  return match?.text || match?.value || '';
 }
 
 export async function syncMondayScenes() {
