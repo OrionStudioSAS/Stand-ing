@@ -4104,6 +4104,10 @@ function roundCurrency(value = 0) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
+function roundLinearMeters(value = 0) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
 function isFurnitureInsuranceEligible(entry = {}) {
   if (!entry?.type && !entry?.label) return false;
   return normalizeMarketCategory(entry) === 'furniture';
@@ -4357,7 +4361,7 @@ function ValidationStepPanel({
             return (
               <details key={line.type} className="validation-supplement-details" open={!optionLines.length}>
                 <summary>
-                  <span>{line.label}{line.quantity > 1 ? ` × ${line.quantity}` : ''}</span>
+                  <span>{line.label}{validationLineQuantitySuffix(line)}</span>
                   <strong>{line.total.toLocaleString('fr-FR')} € HT</strong>
                   {removable && !readOnly && (
                     <button type="button" aria-label="Retirer" onClick={(event) => { event.preventDefault(); onRemoveItem?.(removable.id); }}>
@@ -4419,6 +4423,12 @@ function ValidationOptionLine({ label, value, tone = 'green' }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function validationLineQuantitySuffix(line = {}) {
+  if (line.type === 'wall-cover') return '';
+  const quantity = Number(line.quantity || 0);
+  return quantity > 1 ? ` × ${formatNumber(quantity)}` : '';
 }
 
 function validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals = {}, wallCovers = {}, wallCoverSurfaces = [] }) {
@@ -10288,9 +10298,9 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
   const activeWallCovers = wallCoverSurfaces.filter((surface) => wallCoverEnabledForSurface(wallCovers, surface));
   if (activeWallCovers.length) {
     const unitPrice = 245;
-    const quantity = activeWallCovers.reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0);
-    const includedQuantity = Math.min(quantity, wallCoverIncludedLinearMeters(scene));
-    const billableQuantity = Math.max(0, quantity - includedQuantity);
+    const quantity = roundLinearMeters(activeWallCovers.reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0));
+    const includedQuantity = roundLinearMeters(Math.min(quantity, wallCoverIncludedLinearMeters(scene)));
+    const billableQuantity = roundLinearMeters(Math.max(0, quantity - includedQuantity));
     if (billableQuantity > 0) {
       const lineTotal = Math.round(billableQuantity * unitPrice);
       itemsTotal += lineTotal;
