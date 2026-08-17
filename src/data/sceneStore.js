@@ -326,11 +326,16 @@ export async function uploadSceneItemOptionImage(scene, item, file) {
   if (error) throw error;
 
   const { data } = bucket.getPublicUrl(storagePath);
-  await uploadSceneProductionFile(scene, item, file, {
-    previewUrl: data.publicUrl,
-    previewStoragePath: storagePath,
-    originalExtension: extension,
-  });
+  try {
+    await uploadSceneProductionFile(scene, item, file, {
+      previewUrl: data.publicUrl,
+      previewStoragePath: storagePath,
+      originalExtension: extension,
+    });
+  } catch (error) {
+    // L'aperçu doit rester disponible même si le SFTP HD n'est pas encore prêt.
+    console.warn('Production SFTP upload failed; preview was still saved.', error);
+  }
   return data.publicUrl;
 }
 

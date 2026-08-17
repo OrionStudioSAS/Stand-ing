@@ -11,6 +11,7 @@ import express from 'express';
 import helmet from 'helmet';
 import multer from 'multer';
 import SftpClient from 'ssh2-sftp-client';
+import WebSocket from 'ws';
 
 const PORT = Number(process.env.PORT || 8787);
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 800);
@@ -23,8 +24,12 @@ const ALLOWED_ORIGINS = (process.env.PUBLIC_ALLOWED_ORIGINS || '')
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseClientOptions = {
+  auth: { persistSession: false },
+  realtime: { transport: WebSocket },
+};
 const supabaseAdmin = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
-  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, supabaseClientOptions)
   : null;
 
 const SFTP_CONFIG = {
@@ -179,7 +184,7 @@ async function authenticateUploadRequest(req) {
   if (!bearer) throw httpError(401, 'Unauthorized.');
 
   const supabaseUserClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: false },
+    ...supabaseClientOptions,
     global: { headers: { Authorization: `Bearer ${bearer}` } },
   });
   const { data, error } = await supabaseUserClient.auth.getUser(bearer);
