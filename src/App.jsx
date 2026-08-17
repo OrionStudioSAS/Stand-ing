@@ -22,6 +22,7 @@ import {
   LayoutDashboard,
   LogOut,
   Mail,
+  MessageSquare,
   Minus,
   Move3D,
   Orbit,
@@ -888,6 +889,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
+  const [specialRequest, setSpecialRequest] = useState(() => initialScene.source_payload?.specialRequest?.text || initialOptions.specialRequest?.text || '');
+  const [specialRequestTags, setSpecialRequestTags] = useState(() => initialScene.source_payload?.specialRequest?.tags || initialOptions.specialRequest?.tags || []);
   const [itemOptionState, setItemOptionState] = useState({ uploading: false, error: '' });
   const [wallCovers, setWallCovers] = useState(initialOptions.wallCovers || {});
   const [wallCoverPreviews, setWallCoverPreviews] = useState(() => wallCoverPreviewsFromCovers(initialOptions.wallCovers));
@@ -1174,6 +1177,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       partitionHeadLeftEnabled: effectivePartitionHeadSides.left,
       partitionHeadRightEnabled: effectivePartitionHeadSides.right,
       partitionHeadVisuals,
+      specialRequest: {
+        text: String(specialRequest || '').trim(),
+        tags: specialRequestTags,
+        status: String(specialRequest || '').trim() ? (initialScene.source_payload?.specialRequest?.status || 'pending') : '',
+        updatedAt: String(specialRequest || '').trim() ? new Date().toISOString() : '',
+      },
     };
 
     return {
@@ -1191,6 +1200,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       source_payload: {
         ...(initialScene.source_payload || {}),
         contactDetails: nextContactDetails,
+        specialRequest: options.specialRequest,
         options,
           pricing: {
             basePrice: scenePricing.basePrice,
@@ -1224,7 +1234,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, specialRequest, specialRequestTags, saveState, readOnly]);
 
   const persistWallCoversNow = (nextWallCovers) => {
     if (readOnly) return;
@@ -1263,8 +1273,34 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     if (confirmState.loading) return;
     setConfirmState({ loading: true, message: '', error: '' });
     try {
-      const confirmedScene = currentScenePayload('configured', 'configured');
+      const requestText = String(specialRequest || '').trim();
+      const hasSpecialRequest = Boolean(requestText);
+      const confirmedScene = currentScenePayload(hasSpecialRequest ? 'special_request' : 'configured', hasSpecialRequest ? 'special_request' : 'configured');
       await saveScene(confirmedScene);
+
+      if (hasSpecialRequest) {
+        let emailMessage = 'Un email de prise en compte vient d’être envoyé à l’adresse de contact de la scène.';
+        try {
+          const emailResult = await sendSceneCompletionEmail(confirmedScene, {
+            mode: 'special_request_received',
+            specialRequest: requestText,
+          });
+          if (emailResult?.sent === false) {
+            emailMessage = 'La demande est enregistrée, mais l’email de prise en compte n’a pas pu être envoyé automatiquement.';
+          } else if (emailResult?.to) {
+            emailMessage = `Un email de prise en compte vient d’être envoyé à ${emailResult.to}.`;
+          }
+        } catch (error) {
+          emailMessage = 'La demande est enregistrée, mais l’email de prise en compte n’a pas pu être envoyé automatiquement.';
+          console.warn('Special request email failed', error);
+        }
+        setSaveState('special_request');
+        setDraggingId(null);
+        setActiveStep(4);
+        setConfirmState({ loading: false, message: `Votre configuration est sauvegardée. ${emailMessage}`, error: '' });
+        return;
+      }
+
       await syncSceneConfigToMonday(confirmedScene);
       let emailMessage = 'Un email de confirmation vient d’être envoyé à l’adresse de contact de la scène.';
       try {
@@ -2048,13 +2084,20 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             reserveOptionType={effectiveReserveOptionType}
             partitionHeadRule={activePartitionHeadRuleConfig}
             partitionHeadSides={effectivePartitionHeadSides}
+            wallCovers={wallCovers}
+            wallCoverSurfaces={wallCoverSurfaces}
+            partitionHeadVisuals={partitionHeadVisuals}
             pricing={scenePricing}
-            items={cartItems}
+            items={visibleSceneItems}
             catalog={availableCatalog}
             saveState={saveState}
             confirmState={confirmState}
             readOnly={readOnly}
             isAdminViewer={isAdminViewer}
+            specialRequest={specialRequest}
+            specialRequestTags={specialRequestTags}
+            onSpecialRequest={setSpecialRequest}
+            onSpecialRequestTags={setSpecialRequestTags}
             onConfirm={validateConfiguration}
             onRemoveItem={removeSceneItemById}
           />
@@ -4213,6 +4256,9 @@ function ValidationStepPanel({
   reserveOptionType,
   partitionHeadRule,
   partitionHeadSides,
+  wallCovers = {},
+  wallCoverSurfaces = [],
+  partitionHeadVisuals = {},
   pricing,
   items = [],
   catalog = [],
@@ -4220,6 +4266,10 @@ function ValidationStepPanel({
   confirmState,
   readOnly,
   isAdminViewer,
+  specialRequest = '',
+  specialRequestTags = [],
+  onSpecialRequest,
+  onSpecialRequestTags,
   onConfirm,
   onRemoveItem,
 }) {
@@ -4228,104 +4278,161 @@ function ValidationStepPanel({
   const baseItems = pricing?.baseUsage || pricing?.baseItems || [];
   const includedCounts = pricing?.includedCounts || new Map();
   const confirmed = saveState === 'configured';
+  const specialRequestText = String(specialRequest || '');
+  const hasSpecialRequest = Boolean(specialRequestText.trim());
   const reserveOption = reserveOptionType ? normalizeComplementaryOptions(reserveRule?.options).find((option) => option.type === reserveOptionType) : null;
+  const activeCovers = wallCoverSurfaces.filter((surface) => wallCoverEnabledForSurface(wallCovers, surface));
+  const pendingVisuals = validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals, wallCovers, wallCoverSurfaces });
+  const completeCount = pendingVisuals.length + (hasSpecialRequest ? 1 : 0);
+  const requestTagOptions = ['Visuel à transmettre', 'Position à vérifier', 'Demande technique', 'Autre'];
+  const toggleTag = (tag) => {
+    const current = new Set(specialRequestTags || []);
+    if (current.has(tag)) current.delete(tag);
+    else current.add(tag);
+    onSpecialRequestTags?.([...current]);
+  };
 
   return (
     <>
-      <PanelHead title={t('panel_validation_title')} step={4} />
+      <PanelHead title="Validation" step={4} />
 
-      <section className="validation-summary-card">
-        <h2>{t('validation_summary_title')}</h2>
-        <div className="validation-total-line">
-          <span>{t('validation_total_label')}</span>
-          <strong>{(pricing?.total || 0).toLocaleString('fr-FR')} € HT</strong>
-        </div>
-        {pricing?.insuranceLine && (
-          <div className="validation-insurance-note">
-            <strong>Assurance mobilier obligatoire incluse</strong>
-            <span>{pricing.insuranceLine.total.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € HT calculée sur {pricing.insuranceLine.insuranceBase.toLocaleString('fr-FR')} € HT de mobilier.</span>
+      <section className={`validation-state-card ${completeCount ? 'warning' : 'success'}`}>
+        <strong>État de la configuration</strong>
+        <h2>{completeCount ? `${completeCount} élément${completeCount > 1 ? 's' : ''} à compléter` : 'Configuration prête'}</h2>
+        <p>{completeCount ? 'Vous pouvez tout de même envoyer votre configuration. Notre équipe reviendra vers vous.' : 'Votre configuration est prête à être envoyée à Stand-ING.'}</p>
+      </section>
+
+      <section className="validation-summary-card flat">
+        <span>Total options et mobilier</span>
+        <strong>{(pricing?.total || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € HT</strong>
+      </section>
+
+      <section className="validation-section clean">
+        <h3>{t('validation_options_title')}</h3>
+        <ValidationOptionLine label={t('validation_carpet')} value={`${carpetColor.name} (${carpetColor.code})`} />
+        <ValidationOptionLine label={t('validation_footprint')} value={carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : t('validation_footprint_removed')} />
+        <ValidationOptionLine label="Cloison" value={`${wallFabricColor.name} (${wallFabricColor.code})`} />
+        <ValidationOptionLine label={t('validation_floor')} value={technicalFloor ? `${technicalFloor.label}${technicalFloorTrimType === 'angled' ? ' · cornières inclinées' : ''}` : t('validation_floor_none')} />
+        <ValidationOptionLine label={t('validation_led')} value={ledRailsEnabled ? t('validation_led_kept', { count: ledSpotCount }) : t('validation_led_removed')} />
+        <ValidationOptionLine label={t('validation_reserve')} value={reserveOptionType === '__none__' ? t('validation_reserve_removed') : (reserveOption?.label || reserveRule?.includedLabel || t('validation_reserve_none'))} />
+        <ValidationOptionLine label={t('validation_partition_heads')} value={partitionHeadSummary(partitionHeadRule, partitionHeadSides)} tone="amber" />
+        {pendingVisuals.length > 0 && (
+          <div className="validation-warning-note">
+            {pendingVisuals.map((item) => <span key={item}>{item}</span>)}
+          </div>
+        )}
+        {activeCovers.length > 0 && (
+          <div className="validation-warning-note muted">
+            <strong>Bâches sur cloison</strong>
+            <span>{activeCovers.length} zone{activeCovers.length > 1 ? 's' : ''} sélectionnée{activeCovers.length > 1 ? 's' : ''}. Notre équipe vous contactera pour récupérer les fichiers HD adaptés à l’impression.</span>
           </div>
         )}
       </section>
 
-      <section className="validation-section">
-        <h3>{t('validation_options_title')}</h3>
-        <div className="validation-option-row"><span>{t('validation_carpet')}</span><strong>{carpetColor.name} ({carpetColor.code})</strong></div>
-        <div className="validation-option-row"><span>{t('validation_footprint')}</span><strong>{carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : t('validation_footprint_removed')}</strong></div>
-        <div className="validation-option-row"><span>{t('validation_wall')}</span><strong>{wallFabricColor.name} ({wallFabricColor.code})</strong></div>
-        <div className="validation-option-row"><span>{t('validation_led')}</span><strong>{ledRailsEnabled ? t('validation_led_kept', { count: ledSpotCount }) : t('validation_led_removed')}</strong></div>
-        <div className="validation-option-row"><span>{t('validation_reserve')}</span><strong>{reserveOptionType === '__none__' ? t('validation_reserve_removed') : (reserveOption?.label || reserveRule?.includedLabel || t('validation_reserve_none'))}</strong></div>
-        <div className="validation-option-row"><span>{t('validation_partition_heads')}</span><strong>{partitionHeadSummary(partitionHeadRule, partitionHeadSides)}</strong></div>
-      </section>
-
-      <section className="validation-section">
+      <section className="validation-section clean">
         <h3>{t('validation_base_items_title')}</h3>
         {baseItems.length ? (
-          baseItems.map((bu) => {
-            const typeItems = items.filter((i) => i.type === bu.type).slice(0, bu.used ?? bu.quantity);
-            return (
-              <div key={bu.type}>
-                <div className="validation-option-row">
-                  <span>{basePackItemLabel(bu.label, bu.quantity)}</span>
-                  <strong>{bu.used ?? 0}/{bu.quantity}</strong>
-                </div>
-                {typeItems.map((item) => {
-                  const optLines = itemOptionLines(item);
-                  if (!optLines.length) return null;
-                  return (
-                    <div key={item.id} className="validation-item-options">
-                      {optLines.map((line, i) => <span key={i}>{line}</span>)}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })
+          baseItems.map((bu) => (
+            <div key={bu.type} className="validation-pack-row">
+              <span>{basePackItemLabel(bu.label, bu.quantity)}</span>
+              <strong>{bu.used ?? 0}/{bu.quantity}</strong>
+            </div>
+          ))
         ) : (
-          <p className="validation-muted">{t('validation_no_base_items')}</p>
+          <p className="validation-muted">Aucun objet inclus configuré sur ce pack.</p>
         )}
       </section>
 
-      <section className="validation-section">
+      <section className="validation-section clean">
         <h3>{t('validation_supplements_title')}</h3>
         {lines.length ? (
           lines.map((line) => {
             const includedCount = includedCounts.get(line.type) || 0;
             const billableItems = items.filter((i) => i.type === line.type).slice(includedCount);
+            const optionLines = uniqueTextValues([
+              ...(Array.isArray(line.optionLines) ? line.optionLines : []),
+              ...billableItems.flatMap((item) => itemOptionLines(item)),
+            ]);
+            const removable = billableItems.find((item) => canDeleteSceneItem(item, isAdminViewer));
             return (
-              <div key={line.type}>
-                <div className="validation-price-row">
-                  <span>{line.label} × {line.quantity}</span>
+              <details key={line.type} className="validation-supplement-details" open={!optionLines.length}>
+                <summary>
+                  <span>{line.label}{line.quantity > 1 ? ` × ${line.quantity}` : ''}</span>
                   <strong>{line.total.toLocaleString('fr-FR')} € HT</strong>
-                </div>
-                {billableItems.map((item) => {
-                  const optLines = itemOptionLines(item);
-                  return (
-                    <div key={item.id} className="validation-item-options removable">
-                      <div>{optLines.length ? optLines.map((opt, i) => <span key={i}>{opt}</span>) : <span>{itemCartLabel(item)}</span>}</div>
-                      <button type="button" disabled={readOnly} onClick={() => onRemoveItem?.(item.id)}><Trash2 size={13} /> Retirer</button>
-                    </div>
-                  );
-                })}
-              </div>
+                  {removable && !readOnly && (
+                    <button type="button" aria-label="Retirer" onClick={(event) => { event.preventDefault(); onRemoveItem?.(removable.id); }}>
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </summary>
+                {optionLines.length > 0 && (
+                  <div className="validation-supplement-options">
+                    {optionLines.map((option) => <span key={option}>{option}</span>)}
+                  </div>
+                )}
+              </details>
             );
           })
         ) : (
-          <p className="validation-muted">{t('validation_no_supplements')}</p>
+          <p className="validation-muted">Aucun supplément facturé.</p>
+        )}
+        {pricing?.insuranceLine && (
+          <div className="validation-insurance-row">
+            <span><HelpCircle size={14} /> Assurance mobilier obligatoire incluse</span>
+            <strong>{pricing.insuranceLine.total.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € HT</strong>
+          </div>
+        )}
+      </section>
+
+      <section className="validation-section clean special-request-box">
+        <h3>Une demande particulière ?</h3>
+        <p>Indiquez toute information utile à notre équipe.</p>
+        <div className="special-request-tags">
+          {requestTagOptions.map((tag) => (
+            <button key={tag} type="button" className={specialRequestTags?.includes(tag) ? 'active' : ''} onClick={() => toggleTag(tag)} disabled={readOnly}>{tag}</button>
+          ))}
+        </div>
+        <textarea value={specialRequestText} onChange={(event) => onSpecialRequest?.(event.target.value)} disabled={readOnly} placeholder="Ajouter une remarque ou une demande particulière..." rows={5} />
+        {hasSpecialRequest && (
+          <div className="validation-warning-note">
+            <strong>Demande détectée</strong>
+            <span>Votre bon de commande ne sera pas envoyé automatiquement. Stand-ING reviendra vers vous après traitement.</span>
+          </div>
         )}
       </section>
 
       {confirmState.message && <div className="validation-message success">{confirmState.message}</div>}
       {confirmState.error && <div className="validation-message error">{confirmState.error}</div>}
 
-      {confirmed && (
-        <div className="validation-message success"><Check size={16} /> {isAdminViewer ? t('validation_confirmed_admin_note') : t('validation_confirmed_client_note')}</div>
-      )}
-      <button className="validation-confirm-button" type="button" disabled={confirmState.loading || readOnly} onClick={onConfirm}>
-        {confirmState.loading ? t('validation_confirm_loading') : confirmed ? t('validation_confirm_update') : t('validation_confirm_btn')}
+      {confirmed && <div className="validation-message success"><Check size={16} /> {isAdminViewer ? t('validation_confirmed_admin_note') : t('validation_confirmed_client_note')}</div>}
+      <button className="validation-confirm-button dark" type="button" disabled={confirmState.loading || readOnly} onClick={onConfirm}>
+        {confirmState.loading ? t('validation_confirm_loading') : hasSpecialRequest ? 'Envoyer ma demande →' : 'Envoyer ma configuration →'}
       </button>
     </>
   );
+}
+
+function ValidationOptionLine({ label, value, tone = 'green' }) {
+  return (
+    <div className={`validation-option-row modern ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals = {}, wallCovers = {}, wallCoverSurfaces = [] }) {
+  const rows = [];
+  const headSides = partitionHeadSelectedSides(partitionHeadRule, partitionHeadSides);
+  headSides.forEach((side) => {
+    const visual = partitionHeadVisuals?.[side] || {};
+    if (visual.visualPending || (!visual.headMainImageUrl && !visual.headMainImageName)) rows.push(`Visuel haut de cloison ${side === 'left' ? 'gauche' : 'droite'} manquant`);
+  });
+  wallCoverSurfaces.forEach((surface) => {
+    const cover = wallCovers?.[surface.id] || (surface.sourceWall ? wallCovers?.[surface.sourceWall] : null) || {};
+    if (cover.enabled && cover.visualPending) rows.push(`Visuel bâche ${surface.label || surface.id} à transmettre`);
+  });
+  return uniqueTextValues(rows);
 }
 
 function basePackUsageText(item) {
@@ -5326,7 +5433,7 @@ function carpetGroupDescription(label = '') {
 }
 
 const adminTabStorageKey = 'standing-admin-active-tab';
-const adminTabs = ['dashboard', 'salons', 'clients', 'bat', 'objects', 'presets', 'users', 'monday'];
+const adminTabs = ['dashboard', 'salons', 'clients', 'bat', 'requests', 'objects', 'presets', 'users', 'monday'];
 
 function initialAdminTab() {
   try {
@@ -5504,6 +5611,7 @@ function AdminDashboard({ user, adminProfile }) {
           <button className={tab === 'salons' ? 'active' : ''} onClick={() => setTab('salons')}><Orbit size={16} />Salons</button>
           <button className={tab === 'clients' ? 'active' : ''} onClick={() => setTab('clients')}><Users size={16} />Exposants</button>
           <button className={tab === 'bat' ? 'active' : ''} onClick={() => setTab('bat')}><FileCheck2 size={16} />BAT</button>
+          <button className={tab === 'requests' ? 'active' : ''} onClick={() => setTab('requests')}><MessageSquare size={16} />Demandes</button>
           <button className={tab === 'objects' ? 'active' : ''} onClick={() => setTab('objects')}><Box size={16} />Assets 3D</button>
           <button className={tab === 'presets' ? 'active' : ''} onClick={() => setTab('presets')}><Settings2 size={16} />Packs</button>
           <button className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}><UserPlus size={16} />Utilisateurs</button>
@@ -5578,6 +5686,28 @@ function AdminDashboard({ user, adminProfile }) {
               }}
             />
           )}
+          {tab === 'requests' && (
+            <AdminSpecialRequestsView
+              scenes={scenes}
+              assets={assets}
+              onResolve={async (scene) => {
+                const updatedSource = {
+                  ...(scene.source_payload || {}),
+                  specialRequest: {
+                    ...sceneSpecialRequest(scene),
+                    status: 'resolved',
+                    resolvedAt: new Date().toISOString(),
+                  },
+                };
+                const updatedScene = { ...scene, status: 'configured', client_status: 'configured', source_payload: updatedSource };
+                await saveScene(updatedScene);
+                await syncSceneConfigToMonday(updatedScene);
+                const purchaseOrder = await scenePurchaseOrderEmailAttachment(updatedScene, assets);
+                await sendSceneCompletionEmail(updatedScene, { purchaseOrder, mode: 'special_request_completed' });
+                setScenes((current) => current.map((item) => (item.id === scene.id ? updatedScene : item)));
+              }}
+            />
+          )}
           {tab === 'users' && <AdminPlaceholder tab={tab} />}
         </div>
       </section>
@@ -5591,6 +5721,7 @@ function adminTitle(tab) {
     salons: 'Salons',
     clients: 'Exposants',
     bat: 'BAT',
+    requests: 'Demandes spécifiques',
     objects: 'Assets 3D',
     presets: 'Packs',
     users: 'Utilisateurs',
@@ -5604,6 +5735,7 @@ function adminSubtitle(tab) {
   if (tab === 'salons') return 'Gestion des salons et de leurs configurations';
   if (tab === 'presets') return 'Gestion des packs disponibles par salon';
   if (tab === 'clients') return 'Exposants synchronisés et configurations associées';
+  if (tab === 'requests') return 'Demandes exposants à traiter avant validation finale';
   if (tab === 'monday') return 'Synchronisation des tableaux salon';
   return 'Vue en cours de préparation';
 }
@@ -8825,6 +8957,63 @@ function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
       }) : <div className="admin-empty-row">Aucune scène à afficher.</div>}
     </section>
   );
+}
+
+
+function AdminSpecialRequestsView({ scenes, assets = [], onResolve }) {
+  const [actionState, setActionState] = useState({ sceneId: '', message: '', error: '' });
+  const rows = scenes.filter(sceneHasPendingSpecialRequest);
+  const resolve = async (scene) => {
+    setActionState({ sceneId: scene.id, message: '', error: '' });
+    try {
+      await onResolve?.(scene);
+      setActionState({ sceneId: '', message: `Demande traitée pour ${scene.client_name || scene.project_name || 'la scène'}.`, error: '' });
+    } catch (error) {
+      setActionState({ sceneId: '', message: '', error: error.message || 'Envoi impossible.' });
+    }
+  };
+
+  return (
+    <section className="admin-table modern special-requests-table">
+      {actionState.message && <div className="sync-result success">{actionState.message}</div>}
+      {actionState.error && <div className="sync-result error">{actionState.error}</div>}
+      {rows.length ? rows.map((scene) => {
+        const request = sceneSpecialRequest(scene);
+        const order = scenePurchaseOrder(scene, assets);
+        return (
+          <article key={scene.id} className="stand-row special-request-row">
+            <div><strong>{scene.client_name || 'Exposant sans nom'}</strong><span>{scene.project_name || sceneStandNumber(scene, {}, 'Stand')}</span></div>
+            <div><span>Salon</span><strong>{normalizeSalonTitle(scene.event_name || scene.salon) || 'À définir'}</strong></div>
+            <div className="special-request-copy"><span>Demande</span><p>{request.text}</p>{request.tags?.length ? <small>{request.tags.join(' · ')}</small> : null}</div>
+            <div><span>Estimation</span><strong>{order.total ? `${order.total.toLocaleString('fr-FR')} € HT` : 'Aucun lot payant'}</strong></div>
+            <div className="stand-actions">
+              <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Modifier la scène</a>
+              <button type="button" disabled={actionState.sceneId === scene.id} onClick={() => resolve(scene)}>
+                {actionState.sceneId === scene.id ? 'Envoi...' : 'Modifications réalisées + BDC'}
+              </button>
+            </div>
+          </article>
+        );
+      }) : <div className="admin-empty-row">Aucune demande spécifique en attente.</div>}
+    </section>
+  );
+}
+
+function sceneSpecialRequest(scene = {}) {
+  const request = scene.source_payload?.specialRequest || scene.source_payload?.options?.specialRequest || scene.options?.specialRequest || {};
+  if (typeof request === 'string') return { text: request, tags: [], status: 'pending' };
+  return {
+    text: String(request.text || '').trim(),
+    tags: Array.isArray(request.tags) ? request.tags : [],
+    status: request.status || '',
+    updatedAt: request.updatedAt || request.createdAt || '',
+    resolvedAt: request.resolvedAt || '',
+  };
+}
+
+function sceneHasPendingSpecialRequest(scene = {}) {
+  const request = sceneSpecialRequest(scene);
+  return Boolean(request.text) && request.status !== 'resolved';
 }
 
 function sceneAdminCatalog(assets = [], scene = {}) {
