@@ -3558,7 +3558,6 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
             onImageChange={(file) => handleDraftImage(file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName' })}
             onResetImage={() => updateDraftVisualOptions({ binary3ImageUrl: '', binary3ImageName: '' })}
             onColorChange={(finish) => updateDraftVisualOptions(counterFinishPatch(finish))}
-            onResetColor={() => updateDraftVisualOptions({ binary2Color: '', binary2ColorImage: '', binary2ColorId: '', binary2ColorName: '', binary2ColorReference: '', binary2ColorPrice: 0 })}
             embedded
             optionsFree
           />
