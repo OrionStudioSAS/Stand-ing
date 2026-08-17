@@ -2886,7 +2886,7 @@ function counterVariantUpgradeOptionLine(item = {}, entry = {}, salonLabel = '',
   if (!isIncludedSceneItem(item) || !isWoodReceptionDeskItem({ ...entry, ...item }) || upgradePrice <= 0) return null;
   return {
     type: `counter-size-${item.id || entry?.type || index}`,
-    label: `Option taille banque d'accueil — ${item.options?.variantLabel || entry?.label || item.label || item.type}`,
+    label: `${item.options?.variantGroupLabel || "Banque d'accueil"} — option ${item.options?.variantLabel || 'taille supérieure'}`,
     quantity: 1,
     unitPrice: upgradePrice,
     total: upgradePrice,
@@ -4129,6 +4129,8 @@ function itemOptionLines(item) {
   if (opts.binary2ColorName || opts.binary2Color) {
     const colorPrice = Number(opts.binary2ColorPrice || 0);
     result.push(`Couleur : ${opts.binary2ColorName || opts.binary2Color}${colorPrice > 0 ? ` (+${colorPrice.toLocaleString('fr-FR')} € HT/m²)` : ''}`);
+  } else if (isWoodReceptionDeskItem(item)) {
+    result.push('Couleur : Bois');
   }
   const optionRefs = Array.isArray(opts.optionReferences) ? opts.optionReferences : [];
   optionRefs.forEach((option) => {
