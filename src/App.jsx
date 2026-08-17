@@ -1224,7 +1224,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       await syncSceneConfigToMonday(confirmedScene);
       let emailMessage = 'Un email de confirmation vient d’être envoyé à l’adresse de contact de la scène.';
       try {
-        const purchaseOrder = await scenePurchaseOrderEmailAttachment(confirmedScene, objectBank);
+        const purchaseOrderScene = {
+          ...confirmedScene,
+          source_payload: {
+            ...(confirmedScene.source_payload || {}),
+            pricing: { ...(confirmedScene.source_payload?.pricing || {}), lines: scenePricing.lines || [], total: scenePricing.total || 0 },
+          },
+        };
+        const purchaseOrder = await scenePurchaseOrderEmailAttachment(purchaseOrderScene, objectBank);
         const emailResult = await sendSceneCompletionEmail(confirmedScene, { purchaseOrder });
         if (emailResult?.sent === false) {
           emailMessage = 'La scène est confirmée, mais l’email de confirmation n’a pas pu être envoyé automatiquement.';
@@ -1991,6 +1998,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             readOnly={readOnly}
             isAdminViewer={isAdminViewer}
             onConfirm={validateConfiguration}
+            onRemoveItem={removeSceneItemById}
           />
         ) : (
           <OptionsStepPanel
@@ -2578,7 +2586,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
         <div className="counter-empty-card">
           <strong>{t('counter_empty_title')}</strong>
           <span>{t('counter_empty_detail')}</span>
-          <button type="button" className="counter-scene-toggle" disabled={disabled} onClick={() => onRestore?.()}>Remettre la banque d’accueil</button>
+          <button type="button" className="reserve-remove-button counter-scene-toggle restore" disabled={disabled} onClick={() => onRestore?.()}>Remettre la banque d’accueil</button>
         </div>
       </div>
     );
@@ -2594,7 +2602,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
       {selectedItem && (
         <button
           type="button"
-          className={selectedVisible ? 'counter-scene-toggle danger' : 'counter-scene-toggle'}
+          className={selectedVisible ? 'reserve-remove-button counter-scene-toggle danger' : 'reserve-remove-button counter-scene-toggle restore'}
           disabled={disabled}
           onClick={() => onVisibility?.(selectedItem, !selectedVisible)}
         >
@@ -2656,7 +2664,6 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
             <strong>{t('counter_logo_title')}</strong>
             <span>{selectedItem?.options?.binary3ImageUrl ? t('counter_logo_custom') : t('counter_logo_default')}</span>
           </div>
-          {selectedItem?.options?.binary3ImageUrl && <em>{t('counter_logo_ok')}</em>}
         </header>
         <small className="counter-logo-spec">
           {(() => { const [w, h] = woodReceptionDeskImageCoverSize(selectedItem); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
@@ -2728,7 +2735,7 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
         <strong>{t('counter_finish_title')}</strong>
         <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedCode) ? ` (${shortFinishCode(selectedCode)})` : ''}</span>
       </div>
-      <small>{t('carpet_included_count', { count: includedFinishes.length || 1, s: (includedFinishes.length || 1) > 1 ? 's' : '' })}</small>
+      <small>{t('footprint_included_colors')}</small>
       <div className="counter-finish-swatches included">
         {(includedFinishes.length ? includedFinishes : [counterWoodFinish()]).map((finish) => (
           <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
@@ -3351,6 +3358,10 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
               );
             })}
           </div>
+
+          <button type="button" className="cart-validate-button" onClick={() => { setCartOpen(false); onNext?.(); }}>
+            Valider le panier
+          </button>
         </div>
       )}
     </div>
@@ -3367,6 +3378,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
   const catalogEntry = entry || item || {};
   const isVariantGroup = isVariantGroupEntry(catalogEntry);
   const initialOptions = item?.options || {};
+  const [draftVisualOptions, setDraftVisualOptions] = useState(initialOptions);
   const variants = itemConfigVariants(catalogEntry, salonLabel);
   const extraOptions = itemConfigExtraOptions(catalogEntry);
   const textureSlots = normalizeTextureSlots(item?.dimensions?.textureSlots || catalogEntry?.dimensions?.textureSlots);
@@ -3384,6 +3396,14 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
   const selectedVariant = variants.find((variant) => variant.id === format) || variants[0];
   const optionLink = resolveVariantOptionLink(selectedVariant, selectedExtras);
   const resolvedEntry = optionLink?.entry || selectedVariant?.entry || catalogEntry;
+  const visualOptions = { ...initialOptions, ...draftVisualOptions };
+  const visualItem = {
+    ...(item || resolvedEntry || catalogEntry),
+    type: item?.type || resolvedEntry?.type || catalogEntry.type,
+    label: item?.label || resolvedEntry?.label || catalogEntry.label,
+    dimensions: item?.dimensions || resolvedEntry?.dimensions || catalogEntry.dimensions,
+    options: visualOptions,
+  };
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
   const extras = extraOptions
     .reduce((sum, option) => sum + (selectedExtras[option.id] ? Number(option.price || 0) : 0), 0);
@@ -3405,15 +3425,37 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
     .filter(isSharedGlobalGroupOption)
     .reduce((acc, option) => ({ ...acc, [option.id]: Boolean(selectedExtras[option.id]) }), {});
   const total = ((basePrice + nonGlobalExtras) * (mode === 'add' ? quantity : 1)) + globalExtras;
-  const hasVisualOptions = mode === 'edit' && item && (
-    isPartitionHeadItem(item)
-    || isPosterItem(item)
-    || (isWoodReceptionDeskItem(item) && !isIncludedSceneItem(item))
+  const canConfigureCounterVisual = isWoodReceptionDeskItem(visualItem) || isWoodReceptionDeskItem(resolvedEntry);
+  const hasVisualOptions = Boolean(item || mode === 'add') && (
+    (item && isPartitionHeadItem(item))
+    || (item && isPosterItem(item))
+    || canConfigureCounterVisual
     || textureSlots.length > 0
   );
 
   const toggleExtra = (id, checked) => {
     setSelectedExtras((current) => ({ ...current, [id]: checked }));
+  };
+
+  const updateDraftVisualOptions = (patch) => {
+    if (item) onUpdateItemOptions?.(item, patch);
+    setDraftVisualOptions((current) => ({ ...current, ...patch }));
+  };
+
+  const handleDraftImage = async (file, keys = {}) => {
+    if (!file) return;
+    const urlKey = keys.urlKey || 'binary3ImageUrl';
+    const nameKey = keys.nameKey || 'binary3ImageName';
+    if (item) {
+      onImageChange?.(item, file, keys);
+      return;
+    }
+    const imageUrl = await fileToDataUrlLocal(file);
+    if (keys.textureSlot) {
+      updateDraftVisualOptions(textureSlotPatch(visualItem, keys.textureSlot, { imageUrl, imageName: file.name }));
+      return;
+    }
+    updateDraftVisualOptions({ [urlKey]: imageUrl, [nameKey]: file.name, ...(keys.extraPatch || {}) });
   };
 
   const submit = () => {
@@ -3422,7 +3464,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
       item,
       quantity,
       options: {
-        ...initialOptions,
+        ...visualOptions,
         ...(isVariantGroup ? { variantGroupType: catalogEntry.type, variantGroupLabel: catalogEntry.label } : {}),
         format,
         variantId: selectedVariant?.id || format,
@@ -3451,7 +3493,6 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
         <header>
           <div>
             <h2>{t(mode === 'add' ? 'item_config_add' : 'item_config_edit', { name: itemConfigTitle(catalogEntry) })}</h2>
-            <span>{t('item_config_breadcrumb')} {marketCategoryMeta(normalizeMarketCategory(catalogEntry)).label} › {localizeItemLabel(catalogEntry, lang)}</span>
           </div>
           <button type="button" onClick={onClose} aria-label={t('item_config_close')}><X size={18} /></button>
         </header>
@@ -3459,8 +3500,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
         <div className="item-config-product">
           <span>{(optionLink?.entry?.thumbnailUrl || selectedVariant?.imageUrl || catalogEntry.thumbnailUrl) ? <img src={optionLink?.entry?.thumbnailUrl || selectedVariant?.imageUrl || catalogEntry.thumbnailUrl} alt="" /> : <Box size={34} />}</span>
           <div>
-            <strong>{localizeItemLabel(catalogEntry, lang)}</strong>
-            {!isVariantGroup && <small>{t('item_config_ref')} {assetReference(selectedVariant?.entry || catalogEntry, salonLabel) || selectedVariant?.assetType || catalogEntry.type || 'Stand-ING'}</small>}
+            <strong>{localizeItemLabel(resolvedEntry || catalogEntry, lang)}</strong>
           </div>
         </div>
 
@@ -3490,15 +3530,15 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
           />
         )}
 
-        {hasVisualOptions && isWoodReceptionDeskItem(item) && (
+        {hasVisualOptions && canConfigureCounterVisual && (
           <WoodReceptionDeskOptionsPanel
-            item={item}
+            item={visualItem}
             colors={counterColors}
             uploadState={uploadState}
-            onImageChange={(file) => onImageChange?.(item, file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName' })}
-            onResetImage={() => onUpdateItemOptions?.(item, { binary3ImageUrl: '', binary3ImageName: '' })}
-            onColorChange={(color) => onUpdateItemOptions?.(item, { binary2Color: color.hex, binary2ColorImage: color.image || '', binary2ColorId: color.id, binary2ColorName: color.name, binary2ColorReference: '', binary2ColorPrice: 0 })}
-            onResetColor={() => onUpdateItemOptions?.(item, { binary2Color: '', binary2ColorImage: '', binary2ColorId: '', binary2ColorName: '', binary2ColorReference: '', binary2ColorPrice: 0 })}
+            onImageChange={(file) => handleDraftImage(file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName' })}
+            onResetImage={() => updateDraftVisualOptions({ binary3ImageUrl: '', binary3ImageName: '' })}
+            onColorChange={(color) => updateDraftVisualOptions({ binary2Color: color.hex, binary2ColorImage: color.image || '', binary2ColorId: color.id, binary2ColorName: color.name, binary2ColorReference: '', binary2ColorPrice: 0 })}
+            onResetColor={() => updateDraftVisualOptions({ binary2Color: '', binary2ColorImage: '', binary2ColorId: '', binary2ColorName: '', binary2ColorReference: '', binary2ColorPrice: 0 })}
             embedded
             optionsFree
           />
@@ -3506,12 +3546,12 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
 
         {hasVisualOptions && textureSlots.length > 0 && (
           <TextureSlotsOptionsPanel
-            item={item}
+            item={visualItem}
             uploadState={uploadState}
-            onImageChange={(slot, file) => onImageChange?.(item, file, { textureSlot: slot })}
-            onResetImage={(slot) => onUpdateItemOptions?.(item, textureSlotPatch(item, slot, { imageUrl: '', imageName: '' }))}
-            onColorChange={(slot, color) => onUpdateItemOptions?.(item, textureSlotPatch(item, slot, { color }))}
-            onResetColor={(slot) => onUpdateItemOptions?.(item, textureSlotPatch(item, slot, { color: '' }))}
+            onImageChange={(slot, file) => (item ? onImageChange?.(item, file, { textureSlot: slot }) : handleDraftImage(file, { urlKey: 'unused', nameKey: 'unused', textureSlot: slot }))}
+            onResetImage={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { imageUrl: '', imageName: '' }))}
+            onColorChange={(slot, color) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { color }))}
+            onResetColor={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { color: '' }))}
             embedded
           />
         )}
@@ -3696,6 +3736,8 @@ function syncSharedGlobalGroupOptions(items = [], sourceOptions = {}, catalogEnt
 
 function entryNeedsConfigurator(entry = {}) {
   if (itemConfigVariants(entry, '').length > 1) return true;
+  if (isWoodReceptionDeskItem(entry)) return true;
+  if (normalizeTextureSlots(entry?.dimensions?.textureSlots).length > 0) return true;
   return itemConfigExtraOptions(entry).length > 0;
 }
 
@@ -4104,6 +4146,7 @@ function ValidationStepPanel({
   readOnly,
   isAdminViewer,
   onConfirm,
+  onRemoveItem,
 }) {
   const t = useT();
   const lines = pricing?.lines || [];
@@ -4184,10 +4227,10 @@ function ValidationStepPanel({
                 </div>
                 {billableItems.map((item) => {
                   const optLines = itemOptionLines(item);
-                  if (!optLines.length) return null;
                   return (
-                    <div key={item.id} className="validation-item-options">
-                      {optLines.map((opt, i) => <span key={i}>{opt}</span>)}
+                    <div key={item.id} className="validation-item-options removable">
+                      <div>{optLines.length ? optLines.map((opt, i) => <span key={i}>{opt}</span>) : <span>{itemCartLabel(item)}</span>}</div>
+                      <button type="button" disabled={readOnly} onClick={() => onRemoveItem?.(item.id)}><Trash2 size={13} /> Retirer</button>
                     </div>
                   );
                 })}
@@ -4804,6 +4847,12 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
 function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, onToggle, onPreview, onPreviewReset, onPending }) {
   const t = useT();
   const includedLabel = Number(includedMl || 0) > 0 ? `${formatNumber(includedMl)} ml inclus dans votre formule` : '';
+  const activeMl = surfaces
+    .filter((surface) => wallCoverEnabledForSurface(covers, surface))
+    .reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0);
+  const includedUsed = Math.min(activeMl, Number(includedMl || 0));
+  const billableMl = Math.max(0, activeMl - includedUsed);
+  const wallCoverTotal = Math.round(billableMl * 245);
 
   return (
     <div className="wall-cover-card">
@@ -4818,6 +4867,13 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
         {includedLabel && <strong><b>!</b>{includedLabel}</strong>}
         <span>{t('wall_cover_external_notice')}</span>
       </div>
+
+      {activeMl > 0 && (
+        <div className="wall-cover-price-summary">
+          <span>{formatNumber(activeMl)} ml sélectionnés · {formatNumber(includedUsed)} ml inclus</span>
+          <strong>{billableMl > 0 ? `+ ${wallCoverTotal.toLocaleString('fr-FR')} € HT` : 'Inclus'}</strong>
+        </div>
+      )}
 
       {!surfaces.length && (
         <div className="wall-cover-empty">{t('wall_cover_empty')}</div>
@@ -5126,7 +5182,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
       </div>
 
       {enabled && (
-        <button className="footprint-remove-button" type="button" disabled={disabled} onClick={() => onEnabledChange(false)}>
+        <button className="reserve-remove-button footprint-remove-button" type="button" disabled={disabled} onClick={() => onEnabledChange(false)}>
           {t('footprint_remove')}
         </button>
       )}
@@ -8887,6 +8943,15 @@ function downloadBlob(blob, filename) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function fileToDataUrlLocal(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Lecture du fichier impossible.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function blobToBase64(blob) {

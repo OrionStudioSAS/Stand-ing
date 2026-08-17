@@ -103,7 +103,7 @@ export const translations = {
     led_keep: 'Les laisser',
     led_remove: 'Supprimer les Spot LED',
     led_restore: 'Remettre les Spot LED',
-    led_note: 'Ils sont places en haut des murs.',
+    led_note: 'Placés en haut des murs.',
 
     // CarpetColorOptionCard
     carpet_locked: 'La couleur de la moquette standard est gris clair et ne peut être changée.',
@@ -167,7 +167,7 @@ export const translations = {
     counter_logo_title: 'Logo de votre entreprise',
     counter_logo_custom: 'Visuel personnalisé',
     counter_logo_default: 'Image frontale du comptoir',
-    counter_logo_ok: 'Conforme',
+    counter_logo_ok: '',
     counter_logo_spec: 'Format conseillé :',
     counter_logo_add: 'Importer une image JPG, PNG ou WebP',
     counter_logo_replace_hint: 'Cliquer pour remplacer',
@@ -203,8 +203,8 @@ export const translations = {
     cart_next_furniture: 'Mobilier →',
 
     // ItemConfiguratorModal
-    item_config_add: 'Configurer {name}',
-    item_config_edit: 'Paramétrer {name}',
+    item_config_add: '{name}',
+    item_config_edit: '{name}',
     item_config_breadcrumb: 'Bibliothèque ›',
     item_config_ref: 'Réf.',
     item_config_variant_title: 'Variante',
@@ -566,8 +566,8 @@ export const translations = {
     cart_next_furniture: 'Furniture →',
 
     // ItemConfiguratorModal
-    item_config_add: 'Configure {name}',
-    item_config_edit: 'Edit {name}',
+    item_config_add: '{name}',
+    item_config_edit: '{name}',
     item_config_breadcrumb: 'Library ›',
     item_config_ref: 'Ref.',
     item_config_variant_title: 'Variant',

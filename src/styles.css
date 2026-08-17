@@ -8958,3 +8958,95 @@ img.asset-thumb {
   overflow: hidden;
   clip: rect(0 0 0 0);
 }
+
+
+.wall-cover-price-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: #1f4378;
+  background: #eaf1fb;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.wall-cover-price-summary strong {
+  color: #1f4378;
+  white-space: nowrap;
+}
+
+.cart-validate-button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 12px;
+  color: #fff;
+  background: #1f4378;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.validation-item-options.removable {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.validation-item-options.removable > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.validation-item-options.removable button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid #ef4444;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #ef4444;
+  background: #fff;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.item-config-product {
+  grid-template-columns: 128px minmax(0, 1fr);
+  padding: 2px 10px 4px;
+}
+
+.item-config-product > span {
+  width: 128px;
+  height: 96px;
+}
+
+.config-choice-section strong {
+  font-size: 0.82rem;
+  line-height: 1.15;
+}
+
+.config-choice-section button img {
+  width: 58px;
+  height: 42px;
+  object-fit: contain;
+}
+
+.counter-scene-toggle.reserve-remove-button {
+  width: 100%;
+}
+
+.counter-scene-toggle.restore {
+  border-color: #9eb9e1;
+  color: #1f4378;
+  background: #eef5ff;
+}
+
+.footprint-remove-button.reserve-remove-button {
+  justify-self: stretch;
+  margin-top: 2px;
+}
