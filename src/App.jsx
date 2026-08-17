@@ -1037,6 +1037,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       : []),
     [ledRailsEnabled, autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, ledRailOverrides],
   );
+  const actualLedSpotCount = useMemo(() => (
+    ledRailsEnabled
+      ? [...automaticLedItems, ...automaticSpotItems].reduce((count, item) => count + ledSpotsPerRail(findCatalogEntry(availableCatalog, item.type) || item), 0)
+      : 0
+  ), [ledRailsEnabled, automaticLedItems, automaticSpotItems, availableCatalog]);
   const manualVisibleItems = useMemo(() => manualHydratedItems.filter((item) => !isHiddenIncludedCounterItem(item)), [manualHydratedItems]);
   const wallCoverSurfaces = useMemo(
     () => wallCoverSurfaceOptions(layout, width, depth, [...manualVisibleItems, ...automaticReserveItems, ...automaticPartitionHeadItems], { splitForCovers: true }),
@@ -1985,7 +1990,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             technicalFloor={selectedTechnicalFloor}
             technicalFloorTrimType={technicalFloorTrimType}
             ledRailsEnabled={ledRailsEnabled}
-            ledSpotCount={ledSpotCount}
+            ledSpotCount={actualLedSpotCount}
             reserveRule={activeReserveRuleConfig}
             reserveOptionType={effectiveReserveOptionType}
             partitionHeadRule={activePartitionHeadRuleConfig}
@@ -2400,11 +2405,16 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
   );
 }
 
-function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onResetColor, embedded = false, optionsFree = false }) {
+function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, embedded = false, optionsFree = false }) {
   const t = useT();
   const imageName = item.options?.binary3ImageName || 'Texture originale Binary_3.jpeg';
-  const selectedColor = item.options?.binary2Color || '#ffffff';
-  const selectedColorId = item.options?.binary2ColorId || '';
+  const finishes = counterFinishOptions(colors);
+  const woodFinish = counterWoodFinish(colors);
+  const selectedColorId = item.options?.binary2ColorId || woodFinish.id;
+  const selectedFinish = finishes.find((finish) => finish.id === selectedColorId) || woodFinish;
+  const includedFinishes = optionsFree ? finishes : finishes.filter((finish) => finish.included || finish.mode === 'wood');
+  const optionalFinishes = optionsFree ? [] : finishes.filter((finish) => !includedFinishes.some((included) => included.id === finish.id));
+  const optionPrice = optionalFinishes.find((finish) => Number(finish.price || 0) > 0)?.price || 0;
   return (
     <aside className={embedded ? 'item-visual-config' : 'item-options-panel'}>
       <div className="item-options-heading">
@@ -2438,36 +2448,31 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
         />
       </label>
 
-      {colors.length ? (
-        <div className="item-counter-color-palette">
-          <span>Couleur du matériau Laminate_D02_120cm_6</span>
-          <div>
-            {colors.map((color) => (
-              <button
-                key={color.id}
-                type="button"
-                className={selectedColorId === color.id || (!selectedColorId && selectedColor === color.hex) ? 'active' : ''}
-                style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
-                title={`${color.name} (${color.code})`}
-                onClick={() => onColorChange?.(color)}
-              >
-                <i />
-                <strong>{color.name}</strong>
-                <small>{color.reference || color.code}{!optionsFree && Number(color.price || 0) > 0 ? ` · +${Number(color.price).toLocaleString('fr-FR')} € HT/m²` : ` ${t('wood_desk_color_included')}`}</small>
-              </button>
-            ))}
-          </div>
+      <section className="counter-color-card counter-finish-card item-counter-finish-card">
+        <div className="counter-finish-head">
+          <strong>{t('counter_finish_title')}</strong>
+          <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : ''}</span>
         </div>
-      ) : (
-        <div className="item-color-upload unavailable">
-          <span>Couleur du matériau Laminate_D02_120cm_6</span>
-          <strong>{t('wood_desk_no_color')}</strong>
+        <small>{t('footprint_included_colors')}</small>
+        <div className="counter-finish-swatches included">
+          {(includedFinishes.length ? includedFinishes : [woodFinish]).map((finish) => (
+            <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
+          ))}
         </div>
-      )}
+        {optionalFinishes.length > 0 && (
+          <>
+            <small>{t('carpet_option_from', { price: Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '' })}</small>
+            <div className="counter-finish-swatches optional">
+              {optionalFinishes.map((finish) => (
+                <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(finish)} />
+              ))}
+            </div>
+          </>
+        )}
+      </section>
 
       <div className="item-option-actions">
         {item.options?.binary3ImageUrl && <button className="item-image-reset" type="button" onClick={onResetImage}>{t('wood_desk_reset_image')}</button>}
-        {item.options?.binary2Color && <button className="item-image-reset" type="button" onClick={onResetColor}>{t('wood_desk_reset_color')}</button>}
       </div>
       {uploadState?.uploading && <p className="item-options-status">{t('img_uploading')}</p>}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
@@ -2804,6 +2809,20 @@ function counterSizeLabel(variant = {}) {
   if (raw >= 1.85) return '2 mètres';
   if (raw >= 1.25) return '1 mètre 50';
   return '1 mètre';
+}
+
+function variantOptionLabel(variant = {}, groupEntry = {}) {
+  if (!variant) return '';
+  if (isCounterVariantGroup(groupEntry)) {
+    const labelText = `${variant.label || ''} ${variant.assetType || ''} ${variant.detail || ''}`;
+    const explicit = labelText.match(/(\d+(?:[,.]\d+)?)\s*m(?:etre|ètre|etres|ètres)?\b/i);
+    if (explicit) return `${explicit[1].replace('.', ',')}m`;
+    const size = itemDefaultSize(variant.entry || {});
+    const width = Number(size?.[0] || 0);
+    if (width > 0) return `${formatNumber(width)}m`;
+    return counterSizeLabel(variant);
+  }
+  return variant.label || '';
 }
 
 function counterWhiteFinish() {
@@ -3468,7 +3487,8 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
         ...(isVariantGroup ? { variantGroupType: catalogEntry.type, variantGroupLabel: catalogEntry.label } : {}),
         format,
         variantId: selectedVariant?.id || format,
-        variantLabel: selectedVariant?.label,
+        variantLabel: variantOptionLabel(selectedVariant, catalogEntry),
+        variantAssetLabel: selectedVariant?.label,
         variantDetail: selectedVariant?.detail,
         variantReference: selectedVariant?.reference,
         baseObjectReference: selectedVariant?.reference,
@@ -3537,7 +3557,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
             uploadState={uploadState}
             onImageChange={(file) => handleDraftImage(file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName' })}
             onResetImage={() => updateDraftVisualOptions({ binary3ImageUrl: '', binary3ImageName: '' })}
-            onColorChange={(color) => updateDraftVisualOptions({ binary2Color: color.hex, binary2ColorImage: color.image || '', binary2ColorId: color.id, binary2ColorName: color.name, binary2ColorReference: '', binary2ColorPrice: 0 })}
+            onColorChange={(finish) => updateDraftVisualOptions(counterFinishPatch(finish))}
             onResetColor={() => updateDraftVisualOptions({ binary2Color: '', binary2ColorImage: '', binary2ColorId: '', binary2ColorName: '', binary2ColorReference: '', binary2ColorPrice: 0 })}
             embedded
             optionsFree
@@ -3872,7 +3892,8 @@ function itemConfigTitle(entry = {}) {
 }
 
 function itemCartLabel(item) {
-  return item.options?.variantLabel ? `${item.label || item.type} ${item.options.variantLabel}` : (item.label || item.type);
+  if (item?.options?.variantGroupLabel) return item.options.variantGroupLabel;
+  return item?.label || item?.type || 'Objet';
 }
 
 function cartItemPrice(item, entry, salonLabel) {
@@ -4178,7 +4199,6 @@ function ValidationStepPanel({
         <div className="validation-option-row"><span>{t('validation_carpet')}</span><strong>{carpetColor.name} ({carpetColor.code})</strong></div>
         <div className="validation-option-row"><span>{t('validation_footprint')}</span><strong>{carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : t('validation_footprint_removed')}</strong></div>
         <div className="validation-option-row"><span>{t('validation_wall')}</span><strong>{wallFabricColor.name} ({wallFabricColor.code})</strong></div>
-        <div className="validation-option-row"><span>{t('validation_floor')}</span><strong>{technicalFloor ? `${technicalFloor.label} · ${technicalTrimLabel(technicalFloorTrimType)} · rampe obligatoire` : t('validation_floor_none')}</strong></div>
         <div className="validation-option-row"><span>{t('validation_led')}</span><strong>{ledRailsEnabled ? t('validation_led_kept', { count: ledSpotCount }) : t('validation_led_removed')}</strong></div>
         <div className="validation-option-row"><span>{t('validation_reserve')}</span><strong>{reserveOptionType === '__none__' ? t('validation_reserve_removed') : (reserveOption?.label || reserveRule?.includedLabel || t('validation_reserve_none'))}</strong></div>
         <div className="validation-option-row"><span>{t('validation_partition_heads')}</span><strong>{partitionHeadSummary(partitionHeadRule, partitionHeadSides)}</strong></div>
@@ -9871,7 +9891,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     if (isFurnitureInsuranceEligible(entry)) furnitureInsuranceBase += lineTotal;
     lines.push({
       type,
-      label: entry?.label || type,
+      label: pricingLineLabelForItems(billableItems, entry, type),
       quantity: billableCount,
       unitPrice,
       total: lineTotal,
@@ -9999,6 +10019,11 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     wallCoverIncludedMl: wallCoverIncludedLinearMeters(scene),
     total: roundCurrency(basePrice + itemsTotal),
   };
+}
+
+function pricingLineLabelForItems(items = [], entry = {}, fallbackType = '') {
+  const groupLabel = items.find((item) => item?.options?.variantGroupLabel)?.options?.variantGroupLabel;
+  return groupLabel || entry?.label || fallbackType || 'Lot AMCO';
 }
 
 function wallCoverIncludedLinearMeters(scene = {}) {

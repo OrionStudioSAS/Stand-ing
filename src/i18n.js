@@ -217,8 +217,8 @@ export const translations = {
     item_config_close: 'Fermer',
 
     // ValidationPanel
-    validation_summary_title: 'Récapitulatif HT',
-    validation_total_label: 'Total options et mobilier',
+    validation_summary_title: 'Total options et mobilier',
+    validation_total_label: 'Total HT',
     validation_total_note: 'La scène de base est incluse à 0 €. Seuls les ajouts hors pack ou au-delà des quantités incluses sont facturés.',
     validation_options_title: 'Options choisies',
     validation_carpet: 'Moquette',
@@ -228,7 +228,7 @@ export const translations = {
     validation_floor: 'Plancher technique',
     validation_floor_none: 'Non sélectionné',
     validation_led: 'Spots LED',
-    validation_led_kept: '{count} spots conserves',
+    validation_led_kept: '{count} spots',
     validation_led_removed: 'Retires',
     validation_reserve: 'Réserve',
     validation_reserve_removed: 'Retirée',
@@ -580,8 +580,8 @@ export const translations = {
     item_config_close: 'Close',
 
     // ValidationPanel
-    validation_summary_title: 'Summary excl. VAT',
-    validation_total_label: 'Total options and furniture',
+    validation_summary_title: 'Options and furniture total',
+    validation_total_label: 'Total excl. VAT',
     validation_total_note: 'The base scene is included at €0. Only add-ons outside the package or beyond included quantities are charged.',
     validation_options_title: 'Selected options',
     validation_carpet: 'Carpet',
@@ -591,7 +591,7 @@ export const translations = {
     validation_floor: 'Technical floor',
     validation_floor_none: 'Not selected',
     validation_led: 'LED spots',
-    validation_led_kept: '{count} spots kept',
+    validation_led_kept: '{count} spots',
     validation_led_removed: 'Removed',
     validation_reserve: 'Storage',
     validation_reserve_removed: 'Removed',
