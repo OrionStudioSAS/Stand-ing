@@ -8847,10 +8847,14 @@ function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
       const quantity = Math.max(0, Number(line.quantity || line.qty || 0));
       const total = Math.max(0, roundCurrency(line.total ?? line.price ?? 0));
       const unitPrice = Math.max(0, roundCurrency(line.unitPrice ?? line.unit_price ?? (quantity ? total / quantity : 0)));
+      const optionLines = uniqueTextValues(Array.isArray(line.optionLines) ? line.optionLines : []);
+      const baseLabel = line.label || entry?.label || line.type || 'Lot AMCO';
+      const optionSuffix = optionLines.length ? ` — ${optionLines.join(' · ')}` : '';
       return {
         type: line.type || entry?.type || '',
         reference: line.reference || assetReference(entry, '') || '',
-        label: line.label || entry?.label || line.type || 'Lot AMCO',
+        label: `${baseLabel}${optionSuffix}`,
+        optionLines,
         quantity,
         unitPrice,
         total: total || unitPrice * quantity,
@@ -8929,7 +8933,7 @@ function setPdfField(form, name, value) {
 
 
 function moneyPdf(value) {
-  return toPdfWinAnsi(Number(value || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  return toPdfWinAnsi(`${Number(value || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`);
 }
 
 function toPdfWinAnsi(text = '') {
@@ -8945,8 +8949,7 @@ function toPdfWinAnsi(text = '') {
     .replace(/[']/g, "'")
     .replace(/[“”]/g, '"')
     .replace(/[²]/g, '2')
-    .replace(/€/g, 'EUR')
-    .replace(/[^\x20-\x7E]/g, '');
+    .replace(/[^\x20-\x7E€]/g, '');
 }
 
 function truncatePdfText(text = '', max = 40) {
@@ -9188,18 +9191,21 @@ function buildGroupChildren(rows, sourceAssets) {
     .map((row, index) => {
       const source = sourceAssets.find((asset) => asset.type === row.type);
       if (!source) return null;
+      const sourceEntry = assetToCatalogEntry(source, sourceAssets) || source;
+      const isWallMounted = assetPlacementMode(sourceEntry) === 'wall';
       return {
         id: `${source.type}-child-${index + 1}`,
         type: source.type,
         label: row.label || source.label,
         x: Number(row.x || 0),
-        y: 0,
+        y: isWallMounted ? defaultWallItemCenterY(sourceEntry, source.type) : 0,
         z: Number(row.z || 0),
         rotation: Number(row.rotation || 0),
         modelUrl: source.model_url,
         modelSize: assetModelSize(source),
         materialUrl: source.dimensions?.materialUrl || null,
-        dimensions: { ...(source.dimensions || {}), ...(row.depthLocked6cm ? { depthLocked6cm: true } : { depthLocked6cm: undefined }) },
+        isWallItem: isWallMounted,
+        dimensions: { ...(source.dimensions || {}), ...(sourceEntry.dimensions || {}), ...(row.depthLocked6cm ? { depthLocked6cm: true } : { depthLocked6cm: undefined }) },
         color: source.dimensions?.color || source.color,
         lockedInGroup: true,
       };
@@ -9893,6 +9899,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     lines.push({
       type,
       label: pricingLineLabelForItems(billableItems, entry, type),
+      optionLines: uniqueTextValues(billableItems.flatMap((item) => itemOptionLines(item))),
       quantity: billableCount,
       unitPrice,
       total: lineTotal,
@@ -13547,13 +13554,20 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, onSele
       }}
     >
       {item.children?.map((child) => (
-        <group key={child.id} position={[child.x || 0, child.y || 0, child.z || 0]} rotation={[0, ((child.rotation || 0) * Math.PI) / 180, 0]}>
+        <group key={child.id} position={[child.x || 0, groupChildRenderY(child), child.z || 0]} rotation={[0, ((child.rotation || 0) * Math.PI) / 180, 0]}>
           <SceneItemContent item={child} selected={false} hovered={hovered} dragging={dragging} visualContext={visualContext} />
         </group>
       ))}
       {selected && <SelectionFrame bounds={groupBounds} />}
     </group>
   );
+}
+
+function groupChildRenderY(child = {}) {
+  const y = Number(child.y || 0);
+  if (y > 0) return y;
+  if (assetPlacementMode(child) === 'wall' || isTelevisionItem(child)) return wallItemCenterY(child);
+  return y;
 }
 
 function CeilingItemStrip({ item, selected, hovered, dragging }) {
