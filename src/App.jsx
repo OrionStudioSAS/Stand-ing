@@ -4168,10 +4168,9 @@ function ValidationStepPanel({
         {pricing?.insuranceLine && (
           <div className="validation-insurance-note">
             <strong>Assurance mobilier obligatoire incluse</strong>
-            <span>{pricing.insuranceLine.total.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € HT — calculée sur {pricing.insuranceLine.insuranceBase.toLocaleString('fr-FR')} € HT de lots/options mobilier.</span>
+            <span>{pricing.insuranceLine.total.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € HT calculée sur {pricing.insuranceLine.insuranceBase.toLocaleString('fr-FR')} € HT de mobilier.</span>
           </div>
         )}
-        <p>{t('validation_total_note')}</p>
       </section>
 
       <section className="validation-section">

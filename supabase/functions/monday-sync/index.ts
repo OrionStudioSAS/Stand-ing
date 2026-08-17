@@ -167,11 +167,6 @@ Deno.serve(async (req) => {
         ? `${publicAppUrl.replace(/\/$/, "")}?scene=${savedScene.share_token}`
         : "";
 
-      if (resolvedSource.status_column_id && resolvedSource.status_column_id !== resolvedSource.create_column_id) {
-        await updateMondayColumnValue(mondayToken, resolvedSource.board_id, item.id, resolvedSource.status_column_id, {
-          label: resolvedSource.created_status_label ?? "ENVOYE PAR MAIL",
-        });
-      }
       if (resolvedSource.link_column_id && resolvedSource.link_column_id !== resolvedSource.create_column_id && shareUrl) {
         await updateMondayColumnValue(mondayToken, resolvedSource.board_id, item.id, resolvedSource.link_column_id, {
           url: shareUrl,

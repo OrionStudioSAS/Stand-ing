@@ -6,6 +6,7 @@ import { catalog, layouts } from '../config/catalog.js';
 
 const storageKey = 'standing-scenes-v1';
 const fixedWallHeight = 2.5;
+const legacyDemoObjectTypes = new Set(['chair', 'table', 'screen', 'counter']);
 
 function normalizeSceneItem(item) {
   const catalogItem = catalog.find((entry) => entry.type === item.type);
@@ -540,8 +541,8 @@ export async function saveMondayBoardForPack(salon, packName, boardId) {
       group_id: null,
       create_column_id: 'statut05',
       create_trigger_values: ['OUI', 'OK'],
-      status_column_id: 'statut464',
-      created_status_label: 'ENVOYE PAR MAIL',
+      status_column_id: '',
+      created_status_label: '',
       link_column_id: 'lien_scene',
       mapping: defaultMondayMappingForPack(),
       salon_id: salon.id,
@@ -713,7 +714,9 @@ export async function listObjectBank() {
 
   if (error) throw error;
   const byType = new Map(catalog.map((item) => [item.type, catalogToObjectBankItem(item)]));
-  const mergedItems = (data || []).map((item) => ({
+  const mergedItems = (data || [])
+    .filter((item) => !legacyDemoObjectTypes.has(item.type))
+    .map((item) => ({
     ...(byType.get(item.type) || {}),
     ...item,
     model_url: byType.get(item.type)?.model_url || item.model_url,

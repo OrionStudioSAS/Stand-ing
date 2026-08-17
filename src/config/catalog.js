@@ -1,14 +1,10 @@
-import { Armchair, Box, Monitor, Square, Table2 } from 'lucide-react';
+import { Armchair, Box, Square } from 'lucide-react';
 
 export function modelUrl(fileName) {
   return `/models/${encodeURIComponent(fileName)}`;
 }
 
 export const catalog = [
-  { type: 'chair', label: 'Chaise', icon: Armchair, color: '#c85f3f' },
-  { type: 'table', label: 'Table', icon: Table2, color: '#1d8f83' },
-  { type: 'screen', label: 'Ecran', icon: Monitor, color: '#22364d' },
-  { type: 'counter', label: 'Comptoir', icon: Box, color: '#d5b767' },
   {
     type: 'obj-cloison',
     label: 'Cloison 1x2.5m',
