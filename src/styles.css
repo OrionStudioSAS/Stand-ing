@@ -4765,6 +4765,85 @@ select {
   font-size: 0.72rem;
 }
 
+.admin-clients-table article.client-expanded-row {
+  display: block;
+  min-height: 0;
+  padding: 0;
+}
+
+.client-expanded-row details {
+  display: block;
+}
+
+.client-expanded-row summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.client-expanded-row summary::-webkit-details-marker {
+  display: none;
+}
+
+.client-main-row {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr 1.2fr 0.55fr 0.9fr 1.25fr 0.7fr;
+  align-items: center;
+  gap: 16px;
+  min-height: 52px;
+  padding: 0 16px;
+}
+
+.client-scenes-summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #1f4378;
+  background: #e8eef8;
+  font-weight: 900;
+}
+
+.client-expanded-row details[open] .client-scenes-summary svg {
+  transform: rotate(180deg);
+}
+
+.client-scenes-list {
+  display: grid;
+  gap: 8px;
+  padding: 10px 16px 16px;
+  background: #f7f9fc;
+  border-top: 1px solid #e5e9f0;
+}
+
+.client-scene-card {
+  display: grid;
+  grid-template-columns: 1.5fr 0.7fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  border: 1px solid #e1e7ef;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.client-scene-card .client-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.client-scene-card .client-row-actions a,
+.client-scene-card .client-row-actions button {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 0.76rem;
+}
+
 .client-status-badge {
   display: inline-flex;
   border-radius: 999px;
@@ -4843,6 +4922,15 @@ select {
 
   .admin-clients-table header {
     display: none;
+  }
+
+  .client-main-row,
+  .client-scene-card {
+    grid-template-columns: 1fr;
+  }
+
+  .client-scene-card .client-row-actions {
+    justify-content: flex-start;
   }
 }
 

@@ -44,7 +44,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, setSceneExhibitorReadOnly, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
@@ -5443,7 +5443,7 @@ function carpetGroupDescription(label = '') {
 }
 
 const adminTabStorageKey = 'standing-admin-active-tab';
-const adminTabs = ['dashboard', 'salons', 'clients', 'bat', 'requests', 'objects', 'presets', 'users', 'monday'];
+const adminTabs = ['dashboard', 'salons', 'clients', 'requests', 'objects', 'presets', 'users', 'monday'];
 
 function initialAdminTab() {
   try {
@@ -5620,7 +5620,6 @@ function AdminDashboard({ user, adminProfile }) {
           <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}><LayoutDashboard size={16} />Dashboard</button>
           <button className={tab === 'salons' ? 'active' : ''} onClick={() => setTab('salons')}><Orbit size={16} />Salons</button>
           <button className={tab === 'clients' ? 'active' : ''} onClick={() => setTab('clients')}><Users size={16} />Exposants</button>
-          <button className={tab === 'bat' ? 'active' : ''} onClick={() => setTab('bat')}><FileCheck2 size={16} />BAT</button>
           <button className={tab === 'requests' ? 'active' : ''} onClick={() => setTab('requests')}><MessageSquare size={16} />Demandes</button>
           <button className={tab === 'objects' ? 'active' : ''} onClick={() => setTab('objects')}><Box size={16} />Assets 3D</button>
           <button className={tab === 'presets' ? 'active' : ''} onClick={() => setTab('presets')}><Settings2 size={16} />Packs</button>
@@ -5666,7 +5665,7 @@ function AdminDashboard({ user, adminProfile }) {
               onSalonChanged={refreshSalons}
             />
           )}
-          {tab === 'clients' && <AdminClientsView clients={clients} filters={filters} updateFilter={updateFilter} />}
+          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} updateFilter={updateFilter} />}
           {tab === 'objects' && (
             <AdminObjectsView
               assets={assets}
@@ -5686,16 +5685,6 @@ function AdminDashboard({ user, adminProfile }) {
             />
           )}
           {tab === 'monday' && <AdminMondayView syncState={syncState} runMondaySync={runMondaySync} />}
-          {tab === 'bat' && (
-            <AdminBatView
-              scenes={scenes}
-              assets={assets}
-              onToggleViewOnly={async (scene, locked) => {
-                const updated = await setSceneExhibitorReadOnly(scene, locked);
-                setScenes((current) => current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)));
-              }}
-            />
-          )}
           {tab === 'requests' && (
             <AdminSpecialRequestsView
               scenes={scenes}
@@ -5730,7 +5719,6 @@ function adminTitle(tab) {
     dashboard: 'Dashboard',
     salons: 'Salons',
     clients: 'Exposants',
-    bat: 'BAT',
     requests: 'Demandes spécifiques',
     objects: 'Assets 3D',
     presets: 'Packs',
@@ -7109,7 +7097,15 @@ function presetMetaLabel(preset, presets = []) {
   return `${area ? `${area} m²` : 'Surface à définir'} · ${presetFaceCount(preset)} face${presetFaceCount(preset) > 1 ? 's' : ''} · ${modules} module${modules > 1 ? 's' : ''}`;
 }
 
-function AdminClientsView({ clients, filters, updateFilter }) {
+function AdminClientsView({ clients, scenes = [], assets = [], filters, updateFilter }) {
+  const sceneLookup = useMemo(() => {
+    const map = new Map();
+    scenes.forEach((scene) => {
+      [scene.id, scene.share_token, scene.monday_item_id].filter(Boolean).forEach((key) => map.set(String(key), scene));
+    });
+    return map;
+  }, [scenes]);
+
   return (
     <section className="admin-clients-view">
       <section className="admin-clients-search-card">
@@ -7136,25 +7132,67 @@ function AdminClientsView({ clients, filters, updateFilter }) {
           <span>Statut</span>
           <span>Actions</span>
         </header>
-        {clients.length ? clients.map((client) => (
-          <article key={client.id || client.client_key}>
-            <div>
-              <strong>{client.company_name || client.display_name || 'Exposant sans nom'}</strong>
-              <small>{client.email || client.display_name || 'Email non renseigné'}</small>
-            </div>
-            <span>{clientSalonSummary(client)}</span>
-            <span>{clientConfigSummary(client)}</span>
-            <span>{clientSurfaceSummary(client)} m²</span>
-            <span>{client.commercial_name || clientCommercialSummary(client) || '—'}</span>
-            <span><i className={`client-status-badge ${clientStatusKind(client)}`}>{clientStatusSummary(client)}</i></span>
-            <div className="client-row-actions">
-              {clientPrimaryScene(client) ? <a href={sceneShareUrl(clientPrimaryScene(client))}>Voir</a> : <button type="button" disabled>Voir</button>}
-            </div>
-          </article>
-        )) : <div className="admin-empty-row">Aucun exposant trouvé avec les filtres actuels.</div>}
+        {clients.length ? clients.map((client) => {
+          const clientScenes = clientScenesWithFullData(client, sceneLookup);
+          return (
+            <article key={client.id || client.client_key} className="client-expanded-row">
+              <details>
+                <summary className="client-main-row">
+                  <div>
+                    <strong>{client.company_name || client.display_name || 'Exposant sans nom'}</strong>
+                    <small>{client.email || client.display_name || 'Email non renseigné'}</small>
+                  </div>
+                  <span>{clientSalonSummary(client)}</span>
+                  <span>{clientConfigSummary(client)}</span>
+                  <span>{clientSurfaceSummary(client)} m²</span>
+                  <span>{client.commercial_name || clientCommercialSummary(client) || '—'}</span>
+                  <span><i className={`client-status-badge ${clientStatusKind(client)}`}>{clientStatusSummary(client)}</i></span>
+                  <span className="client-scenes-summary">Scènes ({clientScenes.length}) <ChevronDown size={14} /></span>
+                </summary>
+                <div className="client-scenes-list">
+                  {clientScenes.length ? clientScenes.map((scene) => (
+                    <div key={scene.id || scene.share_token || scene.monday_item_id} className="client-scene-card">
+                      <div>
+                        <strong>{scene.project_name || sceneStandNumber(scene, {}, 'Scène')}</strong>
+                        <small>{clientSceneMeta(scene)}</small>
+                      </div>
+                      <span><i className={`client-status-badge ${sceneStatusKind(scene)}`}>{clientStatusLabel(scene.client_status || scene.status)}</i></span>
+                      <div className="client-row-actions">
+                        <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a>
+                        <button type="button" onClick={async () => downloadSceneTechnicalPlan(await loadSceneForAdminAction(scene), assets)}>Télécharger BAT</button>
+                        <button type="button" onClick={async () => downloadScenePurchaseOrder(await loadSceneForAdminAction(scene), assets)}>Bon de commande</button>
+                      </div>
+                    </div>
+                  )) : <div className="admin-empty-row">Aucune scène associée.</div>}
+                </div>
+              </details>
+            </article>
+          );
+        }) : <div className="admin-empty-row">Aucun exposant trouvé avec les filtres actuels.</div>}
       </section>
     </section>
   );
+}
+
+function clientScenesWithFullData(client, sceneLookup = new Map()) {
+  return (client.scenes || [])
+    .map((scene) => {
+      const fullScene = [scene.id, scene.share_token, scene.monday_item_id]
+        .map((key) => (key ? sceneLookup.get(String(key)) : null))
+        .find(Boolean);
+      return fullScene ? { ...scene, ...fullScene } : scene;
+    })
+    .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
+}
+
+async function loadSceneForAdminAction(scene = {}) {
+  if (Array.isArray(scene.items) || !scene.share_token) return scene;
+  try {
+    return await getSceneByToken(scene.share_token);
+  } catch (error) {
+    console.warn('Scene details load failed for admin action', error);
+    return scene;
+  }
 }
 
 function clientPrimaryScene(client) {
@@ -7186,6 +7224,21 @@ function clientSurfaceSummary(client) {
 function clientCommercialSummary(client) {
   const commercials = [...new Set((client.scenes || []).map((scene) => scene.source_payload?.commercial_name || scene.source_payload?.commercial).filter(Boolean))];
   return commercials[0] || '';
+}
+
+function clientSceneMeta(scene = {}) {
+  const salon = normalizeSalonTitle(scene.event_name || scene.salon) || 'Salon non défini';
+  const offer = scene.offer ? ` · ${scene.offer}` : '';
+  const dimensions = sceneArea(scene) ? ` · ${sceneArea(scene)} m²` : '';
+  return `${salon}${offer}${dimensions}`;
+}
+
+function sceneStatusKind(scene = {}) {
+  const statuses = new Set([scene.status, scene.client_status]);
+  if (statuses.has('validated') || statuses.has('bat_validated')) return 'success';
+  if (statuses.has('bat_pending') || statuses.has('bat_review') || statuses.has('special_request')) return 'warning';
+  if (statuses.has('configured')) return 'purple';
+  return 'neutral';
 }
 
 function clientStatusKind(client) {
