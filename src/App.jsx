@@ -5467,6 +5467,7 @@ function AdminDashboard({ user, adminProfile }) {
   const [clients, setClients] = useState([]);
   const [adminUsers, setAdminUsers] = useState([]);
   const [salons, setSalons] = useState([]);
+  const [salonFilterChoices, setSalonFilterChoices] = useState([]);
   const [assets, setAssets] = useState([]);
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [assetCategory, setAssetCategory] = useState('Tout');
@@ -5490,6 +5491,7 @@ function AdminDashboard({ user, adminProfile }) {
 
   useEffect(() => {
     listObjectBank().then(setAssets).catch((error) => console.error('Object bank list failed', error));
+    listScenes({}).then((items) => setSalonFilterChoices(adminSceneSalonChoices(items))).catch((error) => console.error('Salon filter choices failed', error));
   }, []);
 
   const refreshScenes = () => {
@@ -5504,6 +5506,10 @@ function AdminDashboard({ user, adminProfile }) {
     return listAdminUsers().then(setAdminUsers).catch((error) => console.error('Admin users list failed', error));
   };
 
+  const refreshSalonFilterChoices = () => {
+    return listScenes({}).then((items) => setSalonFilterChoices(adminSceneSalonChoices(items))).catch((error) => console.error('Salon filter choices failed', error));
+  };
+
   const refreshSalons = () => {
     return listSalons({ search: filters.search }).then(setSalons).catch((error) => console.error('Salon list failed', error));
   };
@@ -5516,6 +5522,7 @@ function AdminDashboard({ user, adminProfile }) {
       await refreshClients();
       await refreshSalons();
       await refreshAdminUsers();
+      await refreshSalonFilterChoices();
       const createdCount = result?.created ?? result?.processed ?? 0;
       const warnings = Array.isArray(result?.warnings) && result.warnings.length
         ? `\n${result.warnings.join('\n')}`
@@ -5569,7 +5576,7 @@ function AdminDashboard({ user, adminProfile }) {
     const confirmed = window.confirm(`Supprimer définitivement ${label} ?\n\nLa ligne Monday liée sera également supprimée, ainsi que les fichiers d’aperçu stockés dans Supabase.`);
     if (!confirmed) return;
     await deleteSceneAndRemote(scene);
-    await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers()]);
+    await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers(), refreshSalonFilterChoices()]);
   };
 
   const deleteAdminUser = async (userRow) => {
@@ -5589,7 +5596,7 @@ function AdminDashboard({ user, adminProfile }) {
         await deleteClientAndScenes({ id: clientId, scenes: Array.from({ length: scenesCount }) });
       }
     }
-    await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers()]);
+    await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers(), refreshSalonFilterChoices()]);
   };
 
   const duplicateAsset = async (asset) => {
@@ -5701,7 +5708,7 @@ function AdminDashboard({ user, adminProfile }) {
               onSalonChanged={refreshSalons}
             />
           )}
-          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} updateFilter={updateFilter} onDeleteScene={deleteAdminScene} />}
+          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} salonChoices={salonFilterChoices} updateFilter={updateFilter} onDeleteScene={deleteAdminScene} />}
           {tab === 'objects' && (
             <AdminObjectsView
               assets={assets}
@@ -5743,7 +5750,7 @@ function AdminDashboard({ user, adminProfile }) {
               }}
             />
           )}
-          {tab === 'users' && <AdminUsersView users={adminUsers} clients={clients} salons={salons} onDeleteUser={deleteAdminUser} />}
+          {tab === 'users' && <AdminUsersView users={adminUsers} clients={clients} salonChoices={salonFilterChoices} onDeleteUser={deleteAdminUser} />}
         </div>
       </section>
     </main>
@@ -7134,10 +7141,10 @@ function presetMetaLabel(preset, presets = []) {
   return `${area ? `${area} m²` : 'Surface à définir'} · ${presetFaceCount(preset)} face${presetFaceCount(preset) > 1 ? 's' : ''} · ${modules} module${modules > 1 ? 's' : ''}`;
 }
 
-function AdminUsersView({ users = [], clients = [], salons = [], onDeleteUser }) {
+function AdminUsersView({ users = [], clients = [], salonChoices = [], onDeleteUser }) {
   const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
   const [userFilters, setUserFilters] = useState({ search: '', salon: '' });
-  const salonChoices = useMemo(() => adminUserSalonChoices(salons, clients, users), [salons, clients, users]);
+  const userSalonChoices = useMemo(() => adminUserSalonChoices(salonChoices, clients, users), [salonChoices, clients, users]);
   const filteredUsers = useMemo(() => filterAdminUsers(users, clients, userFilters), [users, clients, userFilters]);
 
   const runDelete = async (userRow) => {
@@ -7171,7 +7178,7 @@ function AdminUsersView({ users = [], clients = [], salons = [], onDeleteUser })
           Salon
           <select value={userFilters.salon} onChange={(event) => setUserFilters((current) => ({ ...current, salon: event.target.value }))}>
             <option value="">Tous les salons</option>
-            {salonChoices.map((salon) => <option key={salon} value={salon}>{salon}</option>)}
+            {userSalonChoices.map((salon) => <option key={salon} value={salon}>{salon}</option>)}
           </select>
         </label>
       </div>
@@ -7214,12 +7221,17 @@ function AdminUsersView({ users = [], clients = [], salons = [], onDeleteUser })
   );
 }
 
-function adminUserSalonChoices(salons = [], clients = [], users = []) {
+function adminSceneSalonChoices(scenes = []) {
   const choices = new Set();
-  salons.forEach((salon) => {
-    const label = normalizeSalonTitle(salon.name || salon.salon);
+  scenes.forEach((scene) => {
+    const label = normalizeSalonTitle(scene.event_name || scene.salon);
     if (label) choices.add(label);
   });
+  return [...choices].sort((a, b) => a.localeCompare(b, 'fr'));
+}
+
+function adminUserSalonChoices(baseChoices = [], clients = [], users = []) {
+  const choices = new Set(baseChoices.map((salon) => normalizeSalonTitle(salon)).filter(Boolean));
   clients.forEach((client) => {
     (client.scenes || []).forEach((scene) => {
       const label = normalizeSalonTitle(scene.event_name || scene.salon);
@@ -7262,7 +7274,14 @@ function adminUserSalons(userRow = {}, clients = []) {
     .flatMap((client) => (client.scenes || []).map((scene) => normalizeSalonTitle(scene.event_name || scene.salon)).filter(Boolean));
 }
 
-function AdminClientsView({ clients, scenes = [], assets = [], filters, updateFilter, onDeleteScene }) {
+function adminClientSalonChoices(baseChoices = [], currentSalon = '') {
+  const choices = new Set(baseChoices.map((salon) => normalizeSalonTitle(salon)).filter(Boolean));
+  const current = normalizeSalonTitle(currentSalon);
+  if (current) choices.add(current);
+  return [...choices].sort((a, b) => a.localeCompare(b, 'fr'));
+}
+
+function AdminClientsView({ clients, scenes = [], assets = [], filters, salonChoices = [], updateFilter, onDeleteScene }) {
   const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
   const sceneLookup = useMemo(() => {
     const map = new Map();
@@ -7294,7 +7313,13 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, updateFi
 
       <div className="admin-client-filter-line">
         <span>Filtres actifs :</span>
-        <label>Salon <input value={filters.salon} placeholder="Tous" onChange={(event) => updateFilter('salon', event.target.value)} /></label>
+        <label>
+          Salon
+          <select value={filters.salon} onChange={(event) => updateFilter('salon', event.target.value)}>
+            <option value="">Tous les salons</option>
+            {adminClientSalonChoices(salonChoices, filters.salon).map((salon) => <option key={salon} value={salon}>{salon}</option>)}
+          </select>
+        </label>
         <label>Statut <select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}><option value="">Tous</option><option value="created">Créé</option><option value="configured">Configuré</option><option value="bat_pending">BAT à valider</option><option value="validated">Validé</option></select></label>
       </div>
 
