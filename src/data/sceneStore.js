@@ -184,13 +184,12 @@ export async function listScenes(filters = {}) {
     .select('*, scene_items(*), scene_files(*), stand_presets(base_config)')
     .order('created_at', { ascending: false });
 
-  if (filters.salon) query = query.ilike('salon', `%${filters.salon}%`);
   if (filters.offer) query = query.ilike('offer', `%${filters.offer}%`);
   if (filters.status) query = query.eq('status', filters.status);
 
   const { data, error } = await query;
   if (error) throw error;
-  return filterScenes(data.map(dbSceneToScene), { search: filters.search });
+  return filterScenes(data.map(dbSceneToScene), { search: filters.search, salon: filters.salon });
 }
 
 export async function getSceneByToken(token) {
@@ -1658,7 +1657,10 @@ async function findMondaySourceForPack(salon, packName) {
 function sourceMatchesSalon(source, salon) {
   if (!source || !salon) return false;
   if (source.salon_id && source.salon_id === salon.id) return true;
-  return normalizeKey(source.salon) === normalizeKey(salonSourceLabel(salon));
+  const sourceName = normalizeKey(source.salon);
+  const fullName = normalizeKey(salonSourceLabel(salon));
+  const legacyName = normalizeKey(String(salon?.name || '').replace(/\s*20\d{2}\b/, ''));
+  return sourceName === fullName || (legacyName && sourceName === legacyName);
 }
 
 function sourceMatchesOffer(source, offer) {
@@ -1669,7 +1671,6 @@ function sourceMatchesOffer(source, offer) {
 
 function salonSourceLabel(salon) {
   return String(salon?.name || salon?.salon || 'Salon')
-    .replace(/\s*20\d{2}\b/, '')
     .split(/[—/-]/)[0]
     .trim() || 'Salon';
 }
@@ -1778,7 +1779,7 @@ function filterClients(clients, filters = {}) {
   const search = filters.search?.trim().toLowerCase();
   return clients.filter((client) => {
     const scenes = client.scenes || [];
-    if (filters.salon && !scenes.some((scene) => scene.salon?.toLowerCase().includes(filters.salon.toLowerCase()))) return false;
+    if (filters.salon && !scenes.some((scene) => [scene.salon, scene.event_name].filter(Boolean).some((value) => value.toLowerCase().includes(filters.salon.toLowerCase())))) return false;
     if (filters.status && !scenes.some((scene) => scene.status === filters.status || scene.client_status === filters.status)) return false;
     if (!search) return true;
 
@@ -1798,7 +1799,7 @@ function filterClients(clients, filters = {}) {
 function filterScenes(scenes, filters = {}) {
   const search = filters.search?.trim().toLowerCase();
   return scenes.filter((scene) => {
-    if (filters.salon && !scene.salon?.toLowerCase().includes(filters.salon.toLowerCase())) return false;
+    if (filters.salon && ![scene.salon, scene.event_name].filter(Boolean).some((value) => value.toLowerCase().includes(filters.salon.toLowerCase()))) return false;
     if (filters.offer && !scene.offer?.toLowerCase().includes(filters.offer.toLowerCase())) return false;
     if (filters.status && scene.status !== filters.status) return false;
     if (!search) return true;

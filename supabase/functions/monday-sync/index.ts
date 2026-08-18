@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
       const triggerValues = resolvedSource.create_trigger_values ?? ["OK", "OUI"];
       if (!triggerValues.some((value: string) => normalizeText(createValue) === normalizeText(value))) continue;
 
-      const userProfile = mapMondayItemToUserProfile(item, resolvedSource);
+      const userProfile = mapMondayItemToUserProfile(item, resolvedSource, context);
       const { data: savedProfile, error: profileError } = await supabase
         .from("user_profiles")
         .upsert(userProfile, { onConflict: "profile_key" })
@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
         .single();
       if (profileError) throw profileError;
 
-      const client = mapMondayItemToClient(item, resolvedSource, savedProfile?.id);
+      const client = mapMondayItemToClient(item, resolvedSource, savedProfile?.id, context);
       const { data: savedClient, error: clientError } = await supabase
         .from("clients")
         .upsert(client, { onConflict: "client_key" })
@@ -272,21 +272,28 @@ async function fetchMondayBoardColumns(token: string, boardId: string) {
 
 async function ensureSourceContext(supabase: any, source: any) {
   if (source.salon_id) {
-    return { salonId: source.salon_id, offerId: source.offer_id || null };
+    const { data: salon, error: salonError } = await supabase
+      .from("salons")
+      .select("name")
+      .eq("id", source.salon_id)
+      .maybeSingle();
+    if (salonError) throw salonError;
+    return { salonId: source.salon_id, offerId: source.offer_id || null, salonLabel: salon?.name || source.salon || "Salon" };
   }
 
-  const salonSlug = slugify(`${source.salon || "salon"}-2026`);
+  const fallbackSalonName = salonDisplayName(source.salon || "Salon");
+  const salonSlug = slugify(fallbackSalonName);
   const { data: salon, error: salonError } = await supabase
     .from("salons")
     .upsert({
       slug: salonSlug,
-      name: source.salon || "Salon",
+      name: fallbackSalonName,
       year: 2026,
       status: "draft",
       metadata: { source: "monday_sync_fallback" },
       updated_at: new Date().toISOString(),
     }, { onConflict: "slug" })
-    .select("id")
+    .select("id, name")
     .single();
   if (salonError) throw salonError;
 
@@ -305,7 +312,12 @@ async function ensureSourceContext(supabase: any, source: any) {
   if (offerError) throw offerError;
 
   await supabase.from("monday_sources").update({ salon_id: salon.id, offer_id: offer.id }).eq("id", source.id);
-  return { salonId: salon.id, offerId: offer.id };
+  return { salonId: salon.id, offerId: offer.id, salonLabel: salon.name || fallbackSalonName };
+}
+
+function salonDisplayName(value = "") {
+  const clean = String(value || "Salon").trim() || "Salon";
+  return /\b20\d{2}\b/.test(clean) ? clean : `${clean} 2026`;
 }
 
 async function fetchMondayItems(token: string, boardId: string, groupId?: string) {
@@ -334,7 +346,7 @@ async function fetchMondayItems(token: string, boardId: string, groupId?: string
   return groupId ? items.filter((item: any) => item.group?.id === groupId) : items;
 }
 
-function mapMondayItemToUserProfile(item: any, source: any) {
+function mapMondayItemToUserProfile(item: any, source: any, context: any) {
   const mapping = source.mapping ?? {};
   const clientEmail = readMappingValue(item, mapping.client_email);
   const clientName = readMappingValue(item, mapping.client_name) || item.name;
@@ -353,14 +365,14 @@ function mapMondayItemToUserProfile(item: any, source: any) {
       monday_item_id: item.id,
       monday_board_id: source.board_id,
       monday_group_id: source.group_id,
-      salon: source.salon,
+      salon: context.salonLabel || source.salon,
       offer: source.offer,
     },
     updated_at: new Date().toISOString(),
   };
 }
 
-function mapMondayItemToClient(item: any, source: any, userProfileId?: string) {
+function mapMondayItemToClient(item: any, source: any, userProfileId?: string, context?: any) {
   const mapping = source.mapping ?? {};
   const clientEmail = readMappingValue(item, mapping.client_email);
   const clientName = readMappingValue(item, mapping.client_name) || item.name;
@@ -381,7 +393,7 @@ function mapMondayItemToClient(item: any, source: any, userProfileId?: string) {
       monday_item_id: item.id,
       monday_board_id: source.board_id,
       monday_group_id: source.group_id,
-      salon: source.salon,
+      salon: context?.salonLabel || source.salon,
       offer: source.offer,
     },
     updated_at: new Date().toISOString(),
@@ -402,7 +414,7 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
     monday_item_id: item.id,
     monday_board_id: source.board_id,
     monday_group_id: source.group_id,
-    salon: source.salon,
+    salon: context.salonLabel || source.salon,
     offer: source.offer,
     salon_id: context.salonId || null,
     offer_id: context.offerId || null,
@@ -414,7 +426,7 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
     client_email: readMappingValue(item, mapping.client_email),
     client_id: clientId || null,
     project_name: item.name,
-    event_name: source.salon,
+    event_name: context.salonLabel || source.salon,
     width_m: width,
     depth_m: depth,
     height_m: 2.5,
