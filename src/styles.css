@@ -4639,6 +4639,11 @@ select {
   gap: 22px;
 }
 
+.admin-users-view {
+  display: grid;
+  gap: 18px;
+}
+
 .admin-clients-search-card {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -4724,6 +4729,13 @@ select {
   box-shadow: 0 3px 13px rgba(22, 28, 38, 0.08);
 }
 
+.admin-users-table {
+  overflow: hidden;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 3px 13px rgba(22, 28, 38, 0.08);
+}
+
 .admin-clients-table header,
 .admin-clients-table article {
   display: grid;
@@ -4731,6 +4743,17 @@ select {
   align-items: center;
   gap: 16px;
   min-height: 52px;
+  padding: 0 16px;
+  border-bottom: 1px solid #e0e2e6;
+}
+
+.admin-users-table header,
+.admin-users-table article {
+  display: grid;
+  grid-template-columns: 1.45fr 0.85fr 0.7fr 0.55fr 0.7fr;
+  align-items: center;
+  gap: 16px;
+  min-height: 56px;
   padding: 0 16px;
   border-bottom: 1px solid #e0e2e6;
 }
@@ -4743,11 +4766,28 @@ select {
   font-weight: 900;
 }
 
+.admin-users-table header {
+  min-height: 42px;
+  color: #6f7782;
+  background: #f5f6f8;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
 .admin-clients-table article:last-child {
   border-bottom: 0;
 }
 
+.admin-users-table article:last-child {
+  border-bottom: 0;
+}
+
 .admin-clients-table article {
+  color: #5e6570;
+  font-size: 0.82rem;
+}
+
+.admin-users-table article {
   color: #5e6570;
   font-size: 0.82rem;
 }
@@ -4758,7 +4798,20 @@ select {
   font-size: 0.84rem;
 }
 
+.admin-users-table article strong {
+  display: block;
+  color: #2b323d;
+  font-size: 0.84rem;
+}
+
 .admin-clients-table article small {
+  display: block;
+  margin-top: 3px;
+  color: #9ba2ad;
+  font-size: 0.72rem;
+}
+
+.admin-users-table article small {
   display: block;
   margin-top: 3px;
   color: #9ba2ad;
@@ -4949,17 +5002,21 @@ select {
   .preset-library-grid,
   .preset-editor-grid,
   .admin-clients-table header,
-  .admin-clients-table article {
+  .admin-clients-table article,
+  .admin-users-table header,
+  .admin-users-table article {
     grid-template-columns: 1fr;
   }
 
   .admin-bat-row,
-  .admin-clients-table article {
+  .admin-clients-table article,
+  .admin-users-table article {
     gap: 5px;
     padding: 12px 16px;
   }
 
-  .admin-clients-table header {
+  .admin-clients-table header,
+  .admin-users-table header {
     display: none;
   }
 

@@ -44,7 +44,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteClientAndScenes, deleteObjectBankItem, deleteSceneAndRemote, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deleteSceneAndRemote, deleteStandPreset, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
@@ -5465,6 +5465,7 @@ function rememberAdminTab(tab) {
 function AdminDashboard({ user, adminProfile }) {
   const [scenes, setScenes] = useState([]);
   const [clients, setClients] = useState([]);
+  const [adminUsers, setAdminUsers] = useState([]);
   const [salons, setSalons] = useState([]);
   const [assets, setAssets] = useState([]);
   const [selectedAsset, setSelectedAsset] = useState(null);
@@ -5484,6 +5485,7 @@ function AdminDashboard({ user, adminProfile }) {
     listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error));
     listClients(filters).then(setClients).catch((error) => console.error('Client list failed', error));
     listSalons({ search: filters.search }).then(setSalons).catch((error) => console.error('Salon list failed', error));
+    listAdminUsers().then(setAdminUsers).catch((error) => console.error('Admin users list failed', error));
   }, [filters]);
 
   useEffect(() => {
@@ -5498,6 +5500,10 @@ function AdminDashboard({ user, adminProfile }) {
     return listClients(filters).then(setClients).catch((error) => console.error('Client list failed', error));
   };
 
+  const refreshAdminUsers = () => {
+    return listAdminUsers().then(setAdminUsers).catch((error) => console.error('Admin users list failed', error));
+  };
+
   const refreshSalons = () => {
     return listSalons({ search: filters.search }).then(setSalons).catch((error) => console.error('Salon list failed', error));
   };
@@ -5509,6 +5515,7 @@ function AdminDashboard({ user, adminProfile }) {
       await refreshScenes();
       await refreshClients();
       await refreshSalons();
+      await refreshAdminUsers();
       const createdCount = result?.created ?? result?.processed ?? 0;
       const warnings = Array.isArray(result?.warnings) && result.warnings.length
         ? `\n${result.warnings.join('\n')}`
@@ -5562,17 +5569,21 @@ function AdminDashboard({ user, adminProfile }) {
     const confirmed = window.confirm(`Supprimer définitivement ${label} ?\n\nLa ligne Monday liée sera également supprimée, ainsi que les fichiers d’aperçu stockés dans Supabase.`);
     if (!confirmed) return;
     await deleteSceneAndRemote(scene);
-    await Promise.all([refreshScenes(), refreshClients(), refreshSalons()]);
+    await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers()]);
   };
 
-  const deleteAdminClient = async (client) => {
-    if (!client?.id) return;
-    const scenesCount = (client.scenes || []).length;
-    const label = client.company_name || client.display_name || 'cet exposant';
-    const confirmed = window.confirm(`Supprimer définitivement ${label} ?\n\n${scenesCount} scène(s) liée(s) seront supprimée(s), avec leurs lignes Monday et leurs fichiers d’aperçu Supabase.`);
+  const deleteAdminUser = async (userRow) => {
+    if (!userRow?.id) return;
+    const label = userRow.display_name || userRow.email || 'cet utilisateur';
+    const scenesCount = Number(userRow.scenes_count || 0);
+    const warning = userRow.kind === 'admin'
+      ? 'Ce compte admin sera supprimé de Supabase Auth.'
+      : `${scenesCount} scène(s) liée(s) seront supprimée(s), avec leurs lignes Monday et leurs fichiers d’aperçu Supabase.`;
+    const confirmed = window.confirm(`Supprimer définitivement ${label} ?\n\n${warning}`);
     if (!confirmed) return;
-    await deleteClientAndScenes(client);
-    await Promise.all([refreshScenes(), refreshClients(), refreshSalons()]);
+    if (userRow.kind === 'admin' || !userRow.client_id) await deleteAuthAdminUser(userRow);
+    else await deleteClientAndScenes({ id: userRow.client_id, scenes: Array.from({ length: scenesCount }) });
+    await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers()]);
   };
 
   const duplicateAsset = async (asset) => {
@@ -5684,7 +5695,7 @@ function AdminDashboard({ user, adminProfile }) {
               onSalonChanged={refreshSalons}
             />
           )}
-          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} updateFilter={updateFilter} onDeleteScene={deleteAdminScene} onDeleteClient={deleteAdminClient} />}
+          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} updateFilter={updateFilter} onDeleteScene={deleteAdminScene} />}
           {tab === 'objects' && (
             <AdminObjectsView
               assets={assets}
@@ -5726,7 +5737,7 @@ function AdminDashboard({ user, adminProfile }) {
               }}
             />
           )}
-          {tab === 'users' && <AdminPlaceholder tab={tab} />}
+          {tab === 'users' && <AdminUsersView users={adminUsers} onDeleteUser={deleteAdminUser} />}
         </div>
       </section>
     </main>
@@ -5753,6 +5764,7 @@ function adminSubtitle(tab) {
   if (tab === 'presets') return 'Gestion des packs disponibles par salon';
   if (tab === 'clients') return 'Exposants synchronisés et configurations associées';
   if (tab === 'requests') return 'Demandes exposants à traiter avant validation finale';
+  if (tab === 'users') return 'Comptes administrateurs et exposants';
   if (tab === 'monday') return 'Synchronisation des tableaux salon';
   return 'Vue en cours de préparation';
 }
@@ -7116,7 +7128,61 @@ function presetMetaLabel(preset, presets = []) {
   return `${area ? `${area} m²` : 'Surface à définir'} · ${presetFaceCount(preset)} face${presetFaceCount(preset) > 1 ? 's' : ''} · ${modules} module${modules > 1 ? 's' : ''}`;
 }
 
-function AdminClientsView({ clients, scenes = [], assets = [], filters, updateFilter, onDeleteScene, onDeleteClient }) {
+function AdminUsersView({ users = [], onDeleteUser }) {
+  const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
+
+  const runDelete = async (userRow) => {
+    if (!userRow?.id) return;
+    setDeleteState({ loadingId: userRow.id, error: '' });
+    try {
+      await onDeleteUser?.(userRow);
+      setDeleteState({ loadingId: '', error: '' });
+    } catch (error) {
+      setDeleteState({ loadingId: '', error: error.message || 'Suppression impossible.' });
+    }
+  };
+
+  return (
+    <section className="admin-users-view">
+      {deleteState.error && <div className="sync-result error">{deleteState.error}</div>}
+      <section className="admin-users-table">
+        <header>
+          <span>Utilisateur</span>
+          <span>Date de création</span>
+          <span>Rôle</span>
+          <span>Scènes</span>
+          <span>Actions</span>
+        </header>
+        {users.length ? users.map((userRow) => {
+          const scenesCount = Number(userRow.scenes_count || 0);
+          return (
+            <article key={userRow.id}>
+              <div>
+                <strong>{userRow.display_name || userRow.email || 'Utilisateur'}</strong>
+                <small>{userRow.email || 'Email non renseigné'}</small>
+              </div>
+              <span>{formatDate(userRow.created_at)}</span>
+              <span><i className={`client-status-badge ${userRow.kind === 'admin' ? 'purple' : 'neutral'}`}>{userRow.role || (userRow.kind === 'admin' ? 'Admin' : 'Exposant')}</i></span>
+              <span>{scenesCount} scène{scenesCount > 1 ? 's' : ''}</span>
+              <div className="client-row-actions">
+                <button
+                  type="button"
+                  className="client-danger-button"
+                  disabled={deleteState.loadingId === userRow.id || userRow.can_delete === false}
+                  onClick={() => runDelete(userRow)}
+                >
+                  {userRow.can_delete === false ? 'Compte actuel' : deleteState.loadingId === userRow.id ? 'Suppression...' : 'Supprimer'}
+                </button>
+              </div>
+            </article>
+          );
+        }) : <div className="admin-empty-row">Aucun utilisateur à afficher.</div>}
+      </section>
+    </section>
+  );
+}
+
+function AdminClientsView({ clients, scenes = [], assets = [], filters, updateFilter, onDeleteScene }) {
   const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
   const sceneLookup = useMemo(() => {
     const map = new Map();
@@ -7183,14 +7249,6 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, updateFi
                 <div className="client-scenes-list">
                   <div className="client-scenes-actions">
                     <span>{clientScenes.length} scène{clientScenes.length > 1 ? 's' : ''} liée{clientScenes.length > 1 ? 's' : ''}</span>
-                    <button
-                      type="button"
-                      className="client-danger-button"
-                      disabled={deleteState.loadingId === `client:${client.id}`}
-                      onClick={() => runDelete(`client:${client.id}`, () => onDeleteClient?.(client))}
-                    >
-                      {deleteState.loadingId === `client:${client.id}` ? 'Suppression...' : 'Supprimer l’exposant'}
-                    </button>
                   </div>
                   {clientScenes.length ? clientScenes.map((scene) => (
                     <div key={scene.id || scene.share_token || scene.monday_item_id} className="client-scene-card">

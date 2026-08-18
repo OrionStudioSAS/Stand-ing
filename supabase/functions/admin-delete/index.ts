@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
 
     const clientIds = [...new Set(targetScenes.map((scene) => scene.client_id).filter(Boolean))];
     if (clientId) clientIds.push(clientId);
-    const deletedClients = await deleteEmptyClients(admin, [...new Set(clientIds)]);
+    const deletedClients = await deleteEmptyClients(admin, [...new Set(clientIds)], authData.user.id);
 
     return json({
       deletedScenes: targetScenes.length,
@@ -182,7 +182,7 @@ async function markUploadedFilesInactive(admin: any, sceneIds: string[]) {
   if (error) console.warn("scene_uploaded_files cleanup failed", error.message);
 }
 
-async function deleteEmptyClients(admin: any, clientIds: string[]) {
+async function deleteEmptyClients(admin: any, clientIds: string[], currentUserId: string) {
   let deleted = 0;
   for (const clientId of clientIds) {
     const { count, error: countError } = await admin
@@ -190,10 +190,46 @@ async function deleteEmptyClients(admin: any, clientIds: string[]) {
       .select("id", { count: "exact", head: true })
       .eq("client_id", clientId);
     if (countError || Number(count || 0) > 0) continue;
+
+    const { data: client } = await admin
+      .from("clients")
+      .select("id, email")
+      .eq("id", clientId)
+      .maybeSingle();
+
+    await deleteAuthUsersByEmail(admin, client?.email, currentUserId);
     const { error } = await admin.from("clients").delete().eq("id", clientId);
     if (!error) deleted += 1;
   }
   return deleted;
+}
+
+async function deleteAuthUsersByEmail(admin: any, email: string, currentUserId: string) {
+  const normalizedEmail = clean(email).toLowerCase();
+  if (!normalizedEmail) return 0;
+  const users = await listAuthUsers(admin);
+  let deleted = 0;
+  for (const user of users) {
+    if (clean(user.email).toLowerCase() !== normalizedEmail) continue;
+    if (user.id === currentUserId) continue;
+    const { data: adminRow } = await admin.from("admin_users").select("user_id").eq("user_id", user.id).maybeSingle();
+    if (adminRow) continue;
+    const { error } = await admin.auth.admin.deleteUser(user.id);
+    if (!error) deleted += 1;
+  }
+  return deleted;
+}
+
+async function listAuthUsers(admin: any) {
+  const users: any[] = [];
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) break;
+    const pageUsers = data?.users || [];
+    users.push(...pageUsers);
+    if (pageUsers.length < 1000) break;
+  }
+  return users;
 }
 
 function clean(value: unknown) {

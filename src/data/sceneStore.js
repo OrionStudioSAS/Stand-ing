@@ -304,6 +304,41 @@ export async function deleteClientAndScenes(client) {
   return data;
 }
 
+export async function listAdminUsers() {
+  if (!supabase) {
+    return groupScenesByClient(readLocalScenes()).map((client) => ({
+      id: client.id,
+      client_id: client.id,
+      auth_user_id: null,
+      display_name: client.company_name || client.display_name,
+      email: client.email,
+      role: 'Exposant',
+      kind: 'exposant',
+      created_at: client.created_at,
+      scenes_count: client.scenes?.length || 0,
+    }));
+  }
+
+  const { data, error } = await supabase.functions.invoke('admin-users', {
+    body: { action: 'list' },
+  });
+  const functionError = await getFunctionError(error, data);
+  if (functionError) throw functionError;
+  return data?.users || [];
+}
+
+export async function deleteAuthAdminUser(user) {
+  if (!user?.auth_user_id) throw new Error('Utilisateur introuvable.');
+  if (!supabase) return { deleted: true };
+
+  const { data, error } = await supabase.functions.invoke('admin-users', {
+    body: { action: 'delete', userId: user.auth_user_id },
+  });
+  const functionError = await getFunctionError(error, data);
+  if (functionError) throw functionError;
+  return data;
+}
+
 export async function setSceneExhibitorReadOnly(scene, locked) {
   const sourcePayload = {
     ...(scene.source_payload || {}),
