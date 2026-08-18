@@ -9403,7 +9403,6 @@ function AdminPlaceholder({ tab }) {
   return (
     <section className="admin-placeholder-card">
       <h2>{adminTitle(tab)}</h2>
-      <p>La maquette de ce menu sera intégrée dès que tu me l'envoies.</p>
     </section>
   );
 }
