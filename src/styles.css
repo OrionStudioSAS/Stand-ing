@@ -9471,12 +9471,29 @@ img.asset-thumb {
   box-shadow: none;
 }
 
+.admin-special-requests-view,
 .special-requests-table {
   gap: 12px;
 }
 
 .special-request-row {
-  grid-template-columns: 1.1fr 0.7fr minmax(260px, 1.8fr) 0.7fr auto;
+  grid-template-columns: 1.05fr 0.65fr minmax(260px, 1.55fr) 0.65fr 0.75fr auto;
+  border-left: 5px solid #f08420;
+}
+
+.special-request-row.pending {
+  background: #fff8ed;
+  border-left-color: #f08420;
+}
+
+.special-request-row.overdue {
+  background: #fff1f1;
+  border-left-color: #d83933;
+}
+
+.special-request-row.resolved {
+  background: #eefaf2;
+  border-left-color: #198754;
 }
 
 .special-request-copy p {
@@ -9489,4 +9506,28 @@ img.asset-thumb {
 .special-request-copy small {
   color: #1f4378;
   font-weight: 800;
+}
+
+.special-request-status {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.special-request-status.pending {
+  color: #b85a00;
+  background: #ffe4bd;
+}
+
+.special-request-status.overdue {
+  color: #b42318;
+  background: #ffd8d6;
+}
+
+.special-request-status.resolved {
+  color: #126b3a;
+  background: #cfeeda;
 }

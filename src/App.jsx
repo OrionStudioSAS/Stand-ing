@@ -9238,7 +9238,19 @@ function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
 
 function AdminSpecialRequestsView({ scenes, assets = [], onResolve }) {
   const [actionState, setActionState] = useState({ sceneId: '', message: '', error: '' });
-  const rows = scenes.filter(sceneHasPendingSpecialRequest);
+  const [statusFilter, setStatusFilter] = useState('');
+  const rows = useMemo(() => {
+    return scenes
+      .filter(sceneHasSpecialRequest)
+      .map((scene) => ({ scene, status: sceneSpecialRequestStatus(scene) }))
+      .filter(({ status }) => !statusFilter || status.id === statusFilter)
+      .sort((a, b) => {
+        const order = { overdue: 0, pending: 1, resolved: 2 };
+        return (order[a.status.id] ?? 9) - (order[b.status.id] ?? 9)
+          || new Date(b.status.date || b.scene.updated_at || b.scene.created_at || 0) - new Date(a.status.date || a.scene.updated_at || a.scene.created_at || 0);
+      });
+  }, [scenes, statusFilter]);
+
   const resolve = async (scene) => {
     setActionState({ sceneId: scene.id, message: '', error: '' });
     try {
@@ -9250,27 +9262,42 @@ function AdminSpecialRequestsView({ scenes, assets = [], onResolve }) {
   };
 
   return (
-    <section className="admin-table modern special-requests-table">
+    <section className="admin-special-requests-view">
+      <div className="admin-client-filter-line">
+        <span>Filtres actifs :</span>
+        <label>
+          Statut
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="">Tous les statuts</option>
+            <option value="pending">À traiter</option>
+            <option value="overdue">En retard</option>
+            <option value="resolved">Traitées</option>
+          </select>
+        </label>
+      </div>
       {actionState.message && <div className="sync-result success">{actionState.message}</div>}
       {actionState.error && <div className="sync-result error">{actionState.error}</div>}
-      {rows.length ? rows.map((scene) => {
+      <section className="admin-table modern special-requests-table">
+      {rows.length ? rows.map(({ scene, status }) => {
         const request = sceneSpecialRequest(scene);
         const order = scenePurchaseOrder(scene, assets);
         return (
-          <article key={scene.id} className="stand-row special-request-row">
+          <article key={scene.id} className={`stand-row special-request-row ${status.id}`}>
             <div><strong>{scene.client_name || 'Exposant sans nom'}</strong><span>{scene.project_name || sceneStandNumber(scene, {}, 'Stand')}</span></div>
             <div><span>Salon</span><strong>{normalizeSalonTitle(scene.event_name || scene.salon) || 'À définir'}</strong></div>
             <div className="special-request-copy"><span>Demande</span><p>{request.text}</p>{request.tags?.length ? <small>{request.tags.join(' · ')}</small> : null}</div>
             <div><span>Estimation</span><strong>{order.total ? `${order.total.toLocaleString('fr-FR')} € HT` : 'Aucun lot payant'}</strong></div>
+            <div><span>Statut</span><strong className={`special-request-status ${status.id}`}>{status.label}</strong><small>{status.detail}</small></div>
             <div className="stand-actions">
               <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Modifier la scène</a>
-              <button type="button" disabled={actionState.sceneId === scene.id} onClick={() => resolve(scene)}>
+              <button type="button" disabled={status.id === 'resolved' || actionState.sceneId === scene.id} onClick={() => resolve(scene)}>
                 {actionState.sceneId === scene.id ? 'Envoi...' : 'Modifications réalisées + BDC'}
               </button>
             </div>
           </article>
         );
-      }) : <div className="admin-empty-row">Aucune demande spécifique en attente.</div>}
+      }) : <div className="admin-empty-row">Aucune demande spécifique avec ce filtre.</div>}
+      </section>
     </section>
   );
 }
@@ -9287,9 +9314,55 @@ function sceneSpecialRequest(scene = {}) {
   };
 }
 
-function sceneHasPendingSpecialRequest(scene = {}) {
+function sceneHasSpecialRequest(scene = {}) {
   const request = sceneSpecialRequest(scene);
-  return Boolean(request.text) && request.status !== 'resolved';
+  return Boolean(request.text);
+}
+
+function sceneSpecialRequestStatus(scene = {}) {
+  const request = sceneSpecialRequest(scene);
+  if (request.status === 'resolved') {
+    return {
+      id: 'resolved',
+      label: 'Traitée',
+      detail: request.resolvedAt ? `Résolue le ${formatDate(request.resolvedAt)}` : 'Modifications réalisées',
+      date: request.resolvedAt || request.updatedAt || scene.updated_at || scene.created_at,
+    };
+  }
+
+  const requestDate = request.updatedAt || scene.updated_at || scene.created_at;
+  const businessDays = businessDaysSince(requestDate);
+  if (businessDays >= 2) {
+    return {
+      id: 'overdue',
+      label: 'En retard',
+      detail: `${businessDays} jours ouvrés`,
+      date: requestDate,
+    };
+  }
+
+  return {
+    id: 'pending',
+    label: 'À traiter',
+    detail: requestDate ? `Depuis ${relativeTime(requestDate)}` : 'Nouvelle demande',
+    date: requestDate,
+  };
+}
+
+function businessDaysSince(value) {
+  if (!value) return 0;
+  const start = new Date(value);
+  if (Number.isNaN(start.getTime())) return 0;
+  const end = new Date();
+  let cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  let days = 0;
+  while (cursor < endDay) {
+    cursor.setDate(cursor.getDate() + 1);
+    const day = cursor.getDay();
+    if (day !== 0 && day !== 6) days += 1;
+  }
+  return days;
 }
 
 function sceneAdminCatalog(assets = [], scene = {}) {
