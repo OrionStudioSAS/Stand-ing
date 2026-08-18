@@ -56,7 +56,7 @@ async function listUsers(admin: any, currentUserId: string) {
   const [authUsers, adminUsers, clients] = await Promise.all([
     listAuthUsers(admin),
     queryAll(admin.from("admin_users").select("user_id, full_name, role_label, avatar_url, created_at")),
-    queryAll(admin.from("clients").select("id, display_name, company_name, email, created_at, updated_at, scenes(id)")),
+    queryAll(admin.from("clients").select("id, display_name, company_name, email, created_at, updated_at, scenes(id, salon, event_name)")),
   ]);
 
   const adminByUserId = new Map(adminUsers.map((row: any) => [row.user_id, row]));
@@ -71,16 +71,19 @@ async function listUsers(admin: any, currentUserId: string) {
     const email = clean(user.email).toLowerCase();
     const linkedClients = clientsByEmail.get(email) || [];
     const adminProfile = adminByUserId.get(user.id) || null;
+    const linkedSalons = unique(linkedClients.flatMap((client: any) => (client.scenes || []).map((scene: any) => clean(scene.event_name) || clean(scene.salon)).filter(Boolean)));
     return {
       id: `auth:${user.id}`,
       auth_user_id: user.id,
       client_id: linkedClients[0]?.id || null,
+      client_ids: linkedClients.map((client: any) => client.id).filter(Boolean),
       email: user.email || linkedClients[0]?.email || "",
       display_name: adminProfile?.full_name || user.user_metadata?.full_name || user.user_metadata?.name || linkedClients[0]?.display_name || linkedClients[0]?.company_name || user.email || "Utilisateur",
       role: adminProfile ? (adminProfile.role_label || "Admin") : "Exposant",
       kind: adminProfile ? "admin" : "exposant",
       created_at: user.created_at || linkedClients[0]?.created_at || null,
       scenes_count: linkedClients.reduce((sum: number, client: any) => sum + (client.scenes?.length || 0), 0),
+      salons: linkedSalons,
       can_delete: user.id !== currentUserId,
     };
   });
@@ -99,6 +102,8 @@ async function listUsers(admin: any, currentUserId: string) {
       kind: "exposant",
       created_at: client.created_at || null,
       scenes_count: client.scenes?.length || 0,
+      client_ids: [client.id].filter(Boolean),
+      salons: unique((client.scenes || []).map((scene: any) => clean(scene.event_name) || clean(scene.salon)).filter(Boolean)),
       can_delete: true,
     });
   });
@@ -126,6 +131,10 @@ async function queryAll(query: any) {
 
 function clean(value: unknown) {
   return String(value || "").trim();
+}
+
+function unique(values: string[]) {
+  return [...new Set(values.filter(Boolean))];
 }
 
 function errorMessage(error: unknown) {

@@ -4722,6 +4722,10 @@ select {
   font: inherit;
 }
 
+.admin-users-view .admin-client-filter-line select {
+  width: 180px;
+}
+
 .admin-clients-table {
   overflow: hidden;
   border-radius: 10px;

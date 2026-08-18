@@ -5581,8 +5581,14 @@ function AdminDashboard({ user, adminProfile }) {
       : `${scenesCount} scène(s) liée(s) seront supprimée(s), avec leurs lignes Monday et leurs fichiers d’aperçu Supabase.`;
     const confirmed = window.confirm(`Supprimer définitivement ${label} ?\n\n${warning}`);
     if (!confirmed) return;
-    if (userRow.kind === 'admin' || !userRow.client_id) await deleteAuthAdminUser(userRow);
-    else await deleteClientAndScenes({ id: userRow.client_id, scenes: Array.from({ length: scenesCount }) });
+    const clientIds = [...new Set([userRow.client_id, ...(userRow.client_ids || [])].filter(Boolean))];
+    if (userRow.kind === 'admin' || !clientIds.length) {
+      await deleteAuthAdminUser(userRow);
+    } else {
+      for (const clientId of clientIds) {
+        await deleteClientAndScenes({ id: clientId, scenes: Array.from({ length: scenesCount }) });
+      }
+    }
     await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers()]);
   };
 
@@ -5737,7 +5743,7 @@ function AdminDashboard({ user, adminProfile }) {
               }}
             />
           )}
-          {tab === 'users' && <AdminUsersView users={adminUsers} onDeleteUser={deleteAdminUser} />}
+          {tab === 'users' && <AdminUsersView users={adminUsers} clients={clients} salons={salons} onDeleteUser={deleteAdminUser} />}
         </div>
       </section>
     </main>
@@ -7128,8 +7134,11 @@ function presetMetaLabel(preset, presets = []) {
   return `${area ? `${area} m²` : 'Surface à définir'} · ${presetFaceCount(preset)} face${presetFaceCount(preset) > 1 ? 's' : ''} · ${modules} module${modules > 1 ? 's' : ''}`;
 }
 
-function AdminUsersView({ users = [], onDeleteUser }) {
+function AdminUsersView({ users = [], clients = [], salons = [], onDeleteUser }) {
   const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
+  const [userFilters, setUserFilters] = useState({ search: '', salon: '' });
+  const salonChoices = useMemo(() => adminUserSalonChoices(salons, clients, users), [salons, clients, users]);
+  const filteredUsers = useMemo(() => filterAdminUsers(users, clients, userFilters), [users, clients, userFilters]);
 
   const runDelete = async (userRow) => {
     if (!userRow?.id) return;
@@ -7144,6 +7153,29 @@ function AdminUsersView({ users = [], onDeleteUser }) {
 
   return (
     <section className="admin-users-view">
+      <section className="admin-clients-search-card">
+        <div>
+          <Search size={16} />
+          <input
+            value={userFilters.search}
+            placeholder="Nom, email, rôle..."
+            onChange={(event) => setUserFilters((current) => ({ ...current, search: event.target.value }))}
+          />
+        </div>
+        <button type="button">Rechercher</button>
+      </section>
+
+      <div className="admin-client-filter-line">
+        <span>Filtres actifs :</span>
+        <label>
+          Salon
+          <select value={userFilters.salon} onChange={(event) => setUserFilters((current) => ({ ...current, salon: event.target.value }))}>
+            <option value="">Tous les salons</option>
+            {salonChoices.map((salon) => <option key={salon} value={salon}>{salon}</option>)}
+          </select>
+        </label>
+      </div>
+
       {deleteState.error && <div className="sync-result error">{deleteState.error}</div>}
       <section className="admin-users-table">
         <header>
@@ -7153,7 +7185,7 @@ function AdminUsersView({ users = [], onDeleteUser }) {
           <span>Scènes</span>
           <span>Actions</span>
         </header>
-        {users.length ? users.map((userRow) => {
+        {filteredUsers.length ? filteredUsers.map((userRow) => {
           const scenesCount = Number(userRow.scenes_count || 0);
           return (
             <article key={userRow.id}>
@@ -7176,10 +7208,58 @@ function AdminUsersView({ users = [], onDeleteUser }) {
               </div>
             </article>
           );
-        }) : <div className="admin-empty-row">Aucun utilisateur à afficher.</div>}
+        }) : <div className="admin-empty-row">Aucun utilisateur trouvé avec les filtres actuels.</div>}
       </section>
     </section>
   );
+}
+
+function adminUserSalonChoices(salons = [], clients = [], users = []) {
+  const choices = new Set();
+  salons.forEach((salon) => {
+    const label = normalizeSalonTitle(salon.name || salon.salon);
+    if (label) choices.add(label);
+  });
+  clients.forEach((client) => {
+    (client.scenes || []).forEach((scene) => {
+      const label = normalizeSalonTitle(scene.event_name || scene.salon);
+      if (label) choices.add(label);
+    });
+  });
+  users.forEach((userRow) => {
+    (userRow.salons || []).forEach((salon) => {
+      const label = normalizeSalonTitle(salon);
+      if (label) choices.add(label);
+    });
+  });
+  return [...choices].sort((a, b) => a.localeCompare(b, 'fr'));
+}
+
+function filterAdminUsers(users = [], clients = [], filters = {}) {
+  const search = normalizeTextValue(filters.search);
+  const salon = normalizeTextValue(filters.salon);
+  return users.filter((userRow) => {
+    const linkedSalons = adminUserSalons(userRow, clients).map(normalizeTextValue).filter(Boolean);
+    if (salon && !linkedSalons.some((label) => label === salon)) return false;
+    if (!search) return true;
+    const haystack = [
+      userRow.display_name,
+      userRow.email,
+      userRow.role,
+      userRow.kind,
+      ...linkedSalons,
+    ];
+    return haystack.filter(Boolean).some((value) => normalizeTextValue(value).includes(search));
+  });
+}
+
+function adminUserSalons(userRow = {}, clients = []) {
+  if (Array.isArray(userRow.salons) && userRow.salons.length) return userRow.salons;
+  const clientIds = new Set([userRow.client_id, ...(userRow.client_ids || [])].filter(Boolean).map(String));
+  const email = normalizeTextValue(userRow.email);
+  return clients
+    .filter((client) => clientIds.has(String(client.id)) || (email && normalizeTextValue(client.email) === email))
+    .flatMap((client) => (client.scenes || []).map((scene) => normalizeSalonTitle(scene.event_name || scene.salon)).filter(Boolean));
 }
 
 function AdminClientsView({ clients, scenes = [], assets = [], filters, updateFilter, onDeleteScene }) {

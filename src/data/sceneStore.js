@@ -316,6 +316,8 @@ export async function listAdminUsers() {
       kind: 'exposant',
       created_at: client.created_at,
       scenes_count: client.scenes?.length || 0,
+      client_ids: [client.id].filter(Boolean),
+      salons: [...new Set((client.scenes || []).map((scene) => scene.event_name || scene.salon).filter(Boolean))],
     }));
   }
 
