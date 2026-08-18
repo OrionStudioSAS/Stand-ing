@@ -2208,6 +2208,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             counterColors={counterPalette}
             onClose={closeItemConfigurator}
             onConfirm={confirmItemConfigurator}
+            onDeleteItem={removeSceneItemById}
+            canDeleteItem={(sceneItem) => canDeleteSceneItem(sceneItem, isAdminViewer)}
           />
         );
       })()}
@@ -3487,9 +3489,8 @@ function ClockIcon() {
   return <span className="cart-clock">◷</span>;
 }
 
-function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, items, width, depth, uploadState, onImageChange, onUpdateItemOptions, counterColors = [], onClose, onConfirm }) {
+function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, items, width, depth, uploadState, onImageChange, onUpdateItemOptions, counterColors = [], onClose, onConfirm, onDeleteItem, canDeleteItem }) {
   const t = useT();
-  const lang = useContext(LanguageContext);
   const catalogEntry = entry || item || {};
   const isVariantGroup = isVariantGroupEntry(catalogEntry);
   const initialOptions = item?.options || {};
@@ -3547,6 +3548,26 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
     || canConfigureCounterVisual
     || textureSlots.length > 0
   );
+  const headerImageUrl = optionLink?.entry?.thumbnailUrl || selectedVariant?.imageUrl || catalogEntry.thumbnailUrl;
+  const headerFinishCount = canConfigureCounterVisual ? counterFinishOptions(counterColors).length : 0;
+  const headerMetaParts = [
+    headerFinishCount ? `${headerFinishCount} coloris` : '',
+    variants.length > 1 ? `${variants.length} taille${variants.length > 1 ? 's' : ''}` : '',
+    extraOptions.length ? `${extraOptions.length} option${extraOptions.length > 1 ? 's' : ''}` : '',
+  ].filter(Boolean);
+  const headerMeta = headerMetaParts.length
+    ? headerMetaParts.join(' · ')
+    : marketCategoryMeta(normalizeMarketCategory(resolvedEntry || catalogEntry)).label;
+  const canDeleteCurrentItem = mode !== 'edit' || canDeleteItem?.(item) !== false;
+  const deleteFromModal = () => {
+    if (mode === 'edit' && item?.id) {
+      if (!canDeleteCurrentItem) return;
+      onDeleteItem?.(item.id);
+      onClose?.();
+      return;
+    }
+    onClose?.();
+  };
 
   const toggleExtra = (id, checked) => {
     setSelectedExtras((current) => ({ ...current, [id]: checked }));
@@ -3607,18 +3628,17 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
     <div className="item-config-overlay">
       <section className="item-config-modal">
         <header>
-          <div>
+          <div className="item-config-heading-main">
+            <span className="item-config-heading-thumb">
+              {headerImageUrl ? <img src={headerImageUrl} alt="" /> : <Box size={28} />}
+            </span>
+            <span>
             <h2>{t(mode === 'add' ? 'item_config_add' : 'item_config_edit', { name: itemConfigTitle(catalogEntry) })}</h2>
+              <small>{headerMeta}</small>
+            </span>
           </div>
           <button type="button" onClick={onClose} aria-label={t('item_config_close')}><X size={18} /></button>
         </header>
-
-        <div className="item-config-product">
-          <span>{(optionLink?.entry?.thumbnailUrl || selectedVariant?.imageUrl || catalogEntry.thumbnailUrl) ? <img src={optionLink?.entry?.thumbnailUrl || selectedVariant?.imageUrl || catalogEntry.thumbnailUrl} alt="" /> : <Box size={34} />}</span>
-          <div>
-            <strong>{localizeItemLabel(resolvedEntry || catalogEntry, lang)}</strong>
-          </div>
-        </div>
 
         {variants.length > 1 && <ConfigChoiceGrid title={t('item_config_variant_title')} choices={variants} value={format} onChange={setFormat} />}
 
@@ -3700,12 +3720,15 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
         )}
 
         <footer>
-          <div>
+          <div className="item-config-footer-total">
             <span>{t('item_config_total')}</span>
             <strong>{total.toLocaleString('fr-FR')} €</strong>
             {quantity > 1 && <small>{quantity} × {(basePrice + extras).toLocaleString('fr-FR')} €</small>}
           </div>
-          <button type="button" disabled={uploadState?.uploading} onClick={submit}>{uploadState?.uploading ? t('item_config_uploading') : (mode === 'add' ? t('item_config_add_btn') : t('item_config_save_btn'))}</button>
+          <div className="item-config-footer-actions">
+            <button type="button" className="item-config-delete" disabled={!canDeleteCurrentItem} onClick={deleteFromModal}>{t('item_config_delete')}</button>
+            <button type="button" className="item-config-apply" disabled={uploadState?.uploading} onClick={submit}>{uploadState?.uploading ? t('item_config_uploading') : t('item_config_apply')}</button>
+          </div>
         </footer>
       </section>
     </div>

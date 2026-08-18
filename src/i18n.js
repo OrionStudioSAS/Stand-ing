@@ -209,12 +209,14 @@ export const translations = {
     item_config_ref: 'Réf.',
     item_config_variant_title: 'Variante',
     item_config_quantity: 'Quantité',
-    item_config_total: 'Total cet article',
+    item_config_total: 'Sous-total',
     item_config_add_btn: '+ Ajouter au stand',
     item_config_save_btn: 'Enregistrer',
     item_config_uploading: 'Upload...',
     item_config_included: 'Inclus',
     item_config_close: 'Fermer',
+    item_config_delete: 'Supprimer',
+    item_config_apply: 'Appliquer',
 
     // ValidationPanel
     validation_summary_title: 'Total options et mobilier',
@@ -572,12 +574,14 @@ export const translations = {
     item_config_ref: 'Ref.',
     item_config_variant_title: 'Variant',
     item_config_quantity: 'Quantity',
-    item_config_total: 'Total this item',
+    item_config_total: 'Subtotal',
     item_config_add_btn: '+ Add to stand',
     item_config_save_btn: 'Save',
     item_config_uploading: 'Uploading...',
     item_config_included: 'Included',
     item_config_close: 'Close',
+    item_config_delete: 'Delete',
+    item_config_apply: 'Apply',
 
     // ValidationPanel
     validation_summary_title: 'Options and furniture total',
