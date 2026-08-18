@@ -7329,9 +7329,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
           <span>Exposant</span>
           <span>Salons</span>
           <span>Configurations</span>
-          <span>Surface</span>
           <span>Commercial</span>
-          <span>Statut</span>
           <span>Actions</span>
         </header>
         {clients.length ? clients.map((client) => {
@@ -7346,9 +7344,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
                   </div>
                   <span>{clientSalonSummary(client)}</span>
                   <span>{clientConfigSummary(client)}</span>
-                  <span>{clientSurfaceSummary(client)} m²</span>
                   <span>{client.commercial_name || clientCommercialSummary(client) || '—'}</span>
-                  <span><i className={`client-status-badge ${clientStatusKind(client)}`}>{clientStatusSummary(client)}</i></span>
                   <span className="client-scenes-summary">Scènes ({clientScenes.length}) <ChevronDown size={14} /></span>
                 </summary>
                 <div className="client-scenes-list">
@@ -7361,6 +7357,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
                         <strong>{scene.project_name || sceneStandNumber(scene, {}, 'Scène')}</strong>
                         <small>{clientSceneMeta(scene)}</small>
                       </div>
+                      <div><span>Surface</span><strong>{sceneArea(scene) ? `${sceneArea(scene)} m²` : '—'}</strong></div>
                       <span><i className={`client-status-badge ${sceneStatusKind(scene)}`}>{clientStatusLabel(scene.client_status || scene.status)}</i></span>
                       <div className="client-row-actions">
                         <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a>
@@ -7430,10 +7427,6 @@ function clientConfigSummary(client) {
   return scenes.length === 1 ? label : `${scenes.length} scènes · ${label}`;
 }
 
-function clientSurfaceSummary(client) {
-  return (client.scenes || []).reduce((sum, scene) => sum + sceneArea(scene), 0);
-}
-
 function clientCommercialSummary(client) {
   const commercials = [...new Set((client.scenes || []).map((scene) => scene.source_payload?.commercial_name || scene.source_payload?.commercial).filter(Boolean))];
   return commercials[0] || '';
@@ -7452,22 +7445,6 @@ function sceneStatusKind(scene = {}) {
   if (statuses.has('bat_pending') || statuses.has('bat_review') || statuses.has('special_request')) return 'warning';
   if (statuses.has('configured')) return 'purple';
   return 'neutral';
-}
-
-function clientStatusKind(client) {
-  const statuses = new Set((client.scenes || []).flatMap((scene) => [scene.status, scene.client_status]));
-  if (statuses.has('validated') || statuses.has('bat_validated')) return 'success';
-  if (statuses.has('bat_pending') || statuses.has('bat_review')) return 'warning';
-  if (statuses.has('configured')) return 'purple';
-  return 'neutral';
-}
-
-function clientStatusSummary(client) {
-  const kind = clientStatusKind(client);
-  if (kind === 'success') return 'BAT signé';
-  if (kind === 'warning') return 'En attente Stand-ING';
-  if (kind === 'purple') return 'Config soumise';
-  return 'À configurer';
 }
 
 function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onDuplicateAsset, onUploadAssetFolder, onUploadColorGroup }) {

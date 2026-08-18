@@ -4743,7 +4743,7 @@ select {
 .admin-clients-table header,
 .admin-clients-table article {
   display: grid;
-  grid-template-columns: 1.35fr 1fr 1.2fr 0.55fr 0.9fr 1.25fr 0.7fr;
+  grid-template-columns: 1.45fr 1fr 1.35fr 0.9fr 0.75fr;
   align-items: center;
   gap: 16px;
   min-height: 52px;
@@ -4843,7 +4843,7 @@ select {
 
 .client-main-row {
   display: grid;
-  grid-template-columns: 1.35fr 1fr 1.2fr 0.55fr 0.9fr 1.25fr 0.7fr;
+  grid-template-columns: 1.45fr 1fr 1.35fr 0.9fr 0.75fr;
   align-items: center;
   gap: 16px;
   min-height: 52px;
@@ -4897,7 +4897,7 @@ select {
 
 .client-scene-card {
   display: grid;
-  grid-template-columns: 1.5fr 0.7fr auto;
+  grid-template-columns: 1.45fr 0.5fr 0.7fr auto;
   align-items: center;
   gap: 12px;
   min-height: 54px;
@@ -4905,6 +4905,19 @@ select {
   border-radius: 10px;
   padding: 10px 12px;
   background: #fff;
+}
+
+.client-scene-card > div span {
+  display: block;
+  color: #9ba2ad;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.client-scene-card > div strong {
+  display: block;
+  color: #2b323d;
+  font-size: 0.84rem;
 }
 
 .client-scene-card .client-row-actions {
