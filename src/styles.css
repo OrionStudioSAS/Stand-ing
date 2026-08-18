@@ -4818,6 +4818,26 @@ select {
   border-top: 1px solid #e5e9f0;
 }
 
+.client-scenes-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #7a8391;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.client-scenes-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-weight: 900;
+}
+
 .client-scene-card {
   display: grid;
   grid-template-columns: 1.5fr 0.7fr auto;
@@ -4842,6 +4862,25 @@ select {
   min-height: 32px;
   padding: 0 12px;
   font-size: 0.76rem;
+}
+
+.client-row-actions .client-danger-button,
+.client-scenes-actions .client-danger-button {
+  border: 1px solid #ffd0ca;
+  color: #cf3529;
+  background: #fff1ef;
+}
+
+.client-row-actions .client-danger-button:hover,
+.client-scenes-actions .client-danger-button:hover {
+  color: #fff;
+  background: #cf3529;
+}
+
+.client-row-actions .client-danger-button:disabled,
+.client-scenes-actions .client-danger-button:disabled {
+  color: #a3a9b2;
+  background: #eef1f5;
 }
 
 .client-status-badge {

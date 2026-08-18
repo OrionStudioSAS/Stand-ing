@@ -44,7 +44,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteObjectBankItem, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteClientAndScenes, deleteObjectBankItem, deleteSceneAndRemote, deleteStandPreset, ensureSalonOffer, getSceneByToken, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
@@ -5556,6 +5556,25 @@ function AdminDashboard({ user, adminProfile }) {
     setSelectedAsset(null);
   };
 
+  const deleteAdminScene = async (scene) => {
+    if (!scene?.id) return;
+    const label = scene.project_name || scene.client_name || 'cette scène';
+    const confirmed = window.confirm(`Supprimer définitivement ${label} ?\n\nLa ligne Monday liée sera également supprimée, ainsi que les fichiers d’aperçu stockés dans Supabase.`);
+    if (!confirmed) return;
+    await deleteSceneAndRemote(scene);
+    await Promise.all([refreshScenes(), refreshClients(), refreshSalons()]);
+  };
+
+  const deleteAdminClient = async (client) => {
+    if (!client?.id) return;
+    const scenesCount = (client.scenes || []).length;
+    const label = client.company_name || client.display_name || 'cet exposant';
+    const confirmed = window.confirm(`Supprimer définitivement ${label} ?\n\n${scenesCount} scène(s) liée(s) seront supprimée(s), avec leurs lignes Monday et leurs fichiers d’aperçu Supabase.`);
+    if (!confirmed) return;
+    await deleteClientAndScenes(client);
+    await Promise.all([refreshScenes(), refreshClients(), refreshSalons()]);
+  };
+
   const duplicateAsset = async (asset) => {
     if (!asset) return;
     const duplicate = duplicateObjectBankAsset(asset, assets);
@@ -5665,7 +5684,7 @@ function AdminDashboard({ user, adminProfile }) {
               onSalonChanged={refreshSalons}
             />
           )}
-          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} updateFilter={updateFilter} />}
+          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} updateFilter={updateFilter} onDeleteScene={deleteAdminScene} onDeleteClient={deleteAdminClient} />}
           {tab === 'objects' && (
             <AdminObjectsView
               assets={assets}
@@ -7097,7 +7116,8 @@ function presetMetaLabel(preset, presets = []) {
   return `${area ? `${area} m²` : 'Surface à définir'} · ${presetFaceCount(preset)} face${presetFaceCount(preset) > 1 ? 's' : ''} · ${modules} module${modules > 1 ? 's' : ''}`;
 }
 
-function AdminClientsView({ clients, scenes = [], assets = [], filters, updateFilter }) {
+function AdminClientsView({ clients, scenes = [], assets = [], filters, updateFilter, onDeleteScene, onDeleteClient }) {
+  const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
   const sceneLookup = useMemo(() => {
     const map = new Map();
     scenes.forEach((scene) => {
@@ -7105,6 +7125,16 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, updateFi
     });
     return map;
   }, [scenes]);
+
+  const runDelete = async (id, callback) => {
+    setDeleteState({ loadingId: id, error: '' });
+    try {
+      await callback?.();
+      setDeleteState({ loadingId: '', error: '' });
+    } catch (error) {
+      setDeleteState({ loadingId: '', error: error.message || 'Suppression impossible.' });
+    }
+  };
 
   return (
     <section className="admin-clients-view">
@@ -7123,6 +7153,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, updateFi
       </div>
 
       <section className="admin-clients-table">
+        {deleteState.error && <div className="sync-result error">{deleteState.error}</div>}
         <header>
           <span>Exposant</span>
           <span>Salons</span>
@@ -7150,6 +7181,17 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, updateFi
                   <span className="client-scenes-summary">Scènes ({clientScenes.length}) <ChevronDown size={14} /></span>
                 </summary>
                 <div className="client-scenes-list">
+                  <div className="client-scenes-actions">
+                    <span>{clientScenes.length} scène{clientScenes.length > 1 ? 's' : ''} liée{clientScenes.length > 1 ? 's' : ''}</span>
+                    <button
+                      type="button"
+                      className="client-danger-button"
+                      disabled={deleteState.loadingId === `client:${client.id}`}
+                      onClick={() => runDelete(`client:${client.id}`, () => onDeleteClient?.(client))}
+                    >
+                      {deleteState.loadingId === `client:${client.id}` ? 'Suppression...' : 'Supprimer l’exposant'}
+                    </button>
+                  </div>
                   {clientScenes.length ? clientScenes.map((scene) => (
                     <div key={scene.id || scene.share_token || scene.monday_item_id} className="client-scene-card">
                       <div>
@@ -7161,6 +7203,14 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, updateFi
                         <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a>
                         <button type="button" onClick={async () => downloadSceneTechnicalPlan(await loadSceneForAdminAction(scene), assets)}>Télécharger BAT</button>
                         <button type="button" onClick={async () => downloadScenePurchaseOrder(await loadSceneForAdminAction(scene), assets)}>Bon de commande</button>
+                        <button
+                          type="button"
+                          className="client-danger-button"
+                          disabled={deleteState.loadingId === `scene:${scene.id}`}
+                          onClick={() => runDelete(`scene:${scene.id}`, () => onDeleteScene?.(scene))}
+                        >
+                          {deleteState.loadingId === `scene:${scene.id}` ? 'Suppression...' : 'Supprimer'}
+                        </button>
                       </div>
                     </div>
                   )) : <div className="admin-empty-row">Aucune scène associée.</div>}

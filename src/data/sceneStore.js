@@ -265,6 +265,45 @@ export async function saveScene(scene) {
   return scene;
 }
 
+export async function deleteSceneAndRemote(scene) {
+  if (!scene?.id) throw new Error('Scène introuvable.');
+  if (!supabase) {
+    const next = readLocalScenes().filter((item) => item.id !== scene.id);
+    writeLocalScenes(next);
+    return { deletedScenes: 1, deletedClients: 0 };
+  }
+
+  const { data, error } = await supabase.functions.invoke('admin-delete', {
+    body: { sceneId: scene.id },
+  });
+  const functionError = await getFunctionError(error, data);
+  if (functionError) throw functionError;
+  if (data?.mondayFailed?.length) {
+    console.warn('Monday delete failed for some scenes', data.mondayFailed);
+  }
+  return data;
+}
+
+export async function deleteClientAndScenes(client) {
+  if (!client?.id && !client?.client_key) throw new Error('Exposant introuvable.');
+  if (!supabase) {
+    const sceneIds = new Set((client.scenes || []).map((scene) => scene.id));
+    const next = readLocalScenes().filter((scene) => !sceneIds.has(scene.id));
+    writeLocalScenes(next);
+    return { deletedScenes: sceneIds.size, deletedClients: 1 };
+  }
+
+  const { data, error } = await supabase.functions.invoke('admin-delete', {
+    body: { clientId: client.id },
+  });
+  const functionError = await getFunctionError(error, data);
+  if (functionError) throw functionError;
+  if (data?.mondayFailed?.length) {
+    console.warn('Monday delete failed for some scenes', data.mondayFailed);
+  }
+  return data;
+}
+
 export async function setSceneExhibitorReadOnly(scene, locked) {
   const sourcePayload = {
     ...(scene.source_payload || {}),
