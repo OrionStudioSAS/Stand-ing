@@ -555,6 +555,7 @@ export async function syncSceneContactToMonday(scene, contactDetails) {
 
   const functionError = await getFunctionError(error, data);
   if (functionError) throw functionError;
+  if (data?.failed_updates?.length) throw new Error(data.failed_updates.join('\n'));
   return data;
 }
 

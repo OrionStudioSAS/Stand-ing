@@ -3,6 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const mondayApiUrl = "https://api.monday.com/v2";
 
+type MondayColumn = { id: string; title: string; type: string };
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -47,6 +49,7 @@ Deno.serve(async (req) => {
   const boardId = scene.monday_board_id || source?.board_id;
   const itemId = scene.monday_item_id;
   if (!boardId || !itemId) return json({ synced: false, reason: "Scene has no Monday link" });
+  const columns = await boardColumns(mondayToken, boardId);
 
   const updates: Array<Promise<unknown>> = [];
   const firstName = clean(contact.firstName);
@@ -60,17 +63,19 @@ Deno.serve(async (req) => {
   const city = clean(contact.city);
   const country = clean(contact.country);
 
+  const fullName = [firstName, lastName].filter(Boolean).join(" ");
+
   if (company) updates.push(changeMondayItemName(mondayToken, boardId, itemId, company));
-  pushMappedValue(updates, mondayToken, boardId, itemId, mapping.client_name, [firstName, lastName].filter(Boolean).join(" "), [firstName, lastName]);
-  pushMappedValue(updates, mondayToken, boardId, itemId, mapping.contact_name || mapping.contact, [firstName, lastName].filter(Boolean).join(" "), [firstName, lastName]);
-  pushMappedValue(updates, mondayToken, boardId, itemId, mapping.company_name, company);
-  pushMappedValue(updates, mondayToken, boardId, itemId, mapping.client_email, email);
-  pushMappedValue(updates, mondayToken, boardId, itemId, mapping.client_phone || mapping.phone, phone);
-  pushMappedValue(updates, mondayToken, boardId, itemId, mapping.role || mapping.function, role);
-  pushMappedValue(updates, mondayToken, boardId, itemId, mapping.address, address);
-  pushMappedValue(updates, mondayToken, boardId, itemId, mapping.zip || mapping.postal_code, zip);
-  pushMappedValue(updates, mondayToken, boardId, itemId, mapping.city, city);
-  pushMappedValue(updates, mondayToken, boardId, itemId, mapping.country, country);
+  pushMappedValue(updates, mondayToken, boardId, itemId, columns, mapping.client_name, fullName, [firstName, lastName]);
+  pushMappedValue(updates, mondayToken, boardId, itemId, columns, mapping.contact_name || mapping.contact, fullName, [firstName, lastName]);
+  pushMappedValue(updates, mondayToken, boardId, itemId, columns, mapping.company_name, company);
+  pushMappedValue(updates, mondayToken, boardId, itemId, columns, mapping.client_email, email, undefined, fullName || company || email);
+  pushMappedValue(updates, mondayToken, boardId, itemId, columns, mapping.client_phone || mapping.phone, phone);
+  pushMappedValue(updates, mondayToken, boardId, itemId, columns, mapping.role || mapping.function, role);
+  pushMappedValue(updates, mondayToken, boardId, itemId, columns, mapping.address, address);
+  pushMappedValue(updates, mondayToken, boardId, itemId, columns, mapping.zip || mapping.postal_code, zip);
+  pushMappedValue(updates, mondayToken, boardId, itemId, columns, mapping.city, city);
+  pushMappedValue(updates, mondayToken, boardId, itemId, columns, mapping.country, country);
 
   const results = await Promise.allSettled(updates);
   const failedUpdates = results
@@ -97,19 +102,42 @@ Deno.serve(async (req) => {
     }).eq("id", scene.exhibitor_user_id);
   }
 
-  return json({ synced: true, updates: updates.length - failedUpdates.length, failed_updates: failedUpdates });
+  return json({ synced: failedUpdates.length === 0, updates: updates.length - failedUpdates.length, failed_updates: failedUpdates }, failedUpdates.length ? 207 : 200);
 });
 
-function pushMappedValue(updates: Array<Promise<unknown>>, token: string, boardId: string, itemId: string, mappingValue: string | string[] | undefined, value: string, splitValues?: string[]) {
+function pushMappedValue(
+  updates: Array<Promise<unknown>>,
+  token: string,
+  boardId: string,
+  itemId: string,
+  columns: MondayColumn[],
+  mappingValue: string | string[] | undefined,
+  value: string,
+  splitValues?: string[],
+  displayText?: string,
+) {
   if (!mappingValue) return;
   if (Array.isArray(mappingValue)) {
     mappingValue.forEach((columnId, index) => {
       const part = splitValues?.[index] ?? value;
-      if (columnId && part) updates.push(updateMondaySimpleColumnValue(token, boardId, itemId, columnId, part));
+      if (columnId && part) updates.push(updateMondayColumnValue(token, boardId, itemId, columns, columnId, part, displayText));
     });
     return;
   }
-  if (value) updates.push(updateMondaySimpleColumnValue(token, boardId, itemId, mappingValue, value));
+  if (value) updates.push(updateMondayColumnValue(token, boardId, itemId, columns, mappingValue, value, displayText));
+}
+
+function columnById(columns: MondayColumn[], columnId: string) {
+  return columns.find((column) => column.id === columnId) || null;
+}
+
+async function updateMondayColumnValue(token: string, boardId: string, itemId: string, columns: MondayColumn[], columnId: string, value: string, displayText?: string) {
+  const column = columnById(columns, columnId);
+  if (column?.type === "email") {
+    await updateMondayJsonColumnValue(token, boardId, itemId, columnId, { email: value, text: displayText || value });
+    return;
+  }
+  await updateMondaySimpleColumnValue(token, boardId, itemId, columnId, value);
 }
 
 async function changeMondayItemName(token: string, boardId: string, itemId: string, name: string) {
@@ -130,10 +158,25 @@ async function updateMondaySimpleColumnValue(token: string, boardId: string, ite
   await mondayRequest(token, mutation, { boardId, itemId, columnId, value });
 }
 
+async function updateMondayJsonColumnValue(token: string, boardId: string, itemId: string, columnId: string, value: Record<string, unknown>) {
+  const mutation = `
+    mutation ($boardId: ID!, $itemId: ID!, $columnId: String!, $value: JSON!) {
+      change_column_value(board_id: $boardId, item_id: $itemId, column_id: $columnId, value: $value) { id }
+    }
+  `;
+  await mondayRequest(token, mutation, { boardId, itemId, columnId, value: JSON.stringify(value) });
+}
+
+async function boardColumns(token: string, boardId: string) {
+  const query = `query ($ids: [ID!]) { boards(ids: $ids) { columns { id title type } } }`;
+  const payload = await mondayRequest(token, query, { ids: [boardId] });
+  return (payload.data?.boards?.[0]?.columns || []) as MondayColumn[];
+}
+
 async function mondayRequest(token: string, query: string, variables: Record<string, unknown>) {
   const response = await fetch(mondayApiUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: token },
+    headers: { "Content-Type": "application/json", Authorization: token, "api-version": "2025-04" },
     body: JSON.stringify({ query, variables }),
   });
   const payload = await response.json();
