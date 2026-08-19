@@ -3263,9 +3263,9 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
   const categories = marketplaceCategories(entries);
   const selectedCategory = categories.find((category) => category.id === activeCategory) || categories[0];
   const filteredEntries = entries.filter((entry) => {
-    const entryCategory = furniturePanelCategory(entry);
-    const matchesCategory = activeCategory === 'all' || entryCategory === activeCategory || normalizeMarketCategory(entry) === activeCategory;
-    const searchText = [entry.label, entry.type, entry.dimensions?.category, marketplaceItemSubtitle(entry, marketCategoryMeta(normalizeMarketCategory(entry)).label)]
+    const entryCategory = normalizeMarketCategory(entry);
+    const matchesCategory = activeCategory === 'all' || entryCategory === activeCategory;
+    const searchText = [entry.label, entry.type, entry.dimensions?.category, marketplaceItemSubtitle(entry, marketCategoryMeta(entryCategory).label)]
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
@@ -4173,14 +4173,19 @@ function variantGroupMemberTypes(catalog = []) {
     .filter(Boolean));
 }
 
-function normalizeMarketCategory(entry = {}) {
-  const category = furniturePanelCategory(entry);
-  if (category === 'structure') return 'structure';
-  if (category === 'multimedia') return 'multimedia';
-  const raw = String(entry.dimensions?.category || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function configuredMarketCategory(entry = {}) {
+  const raw = normalizeTextValue(entry.dimensions?.category || '');
+  if (!raw) return '';
   if (raw.includes('electric')) return 'electricity';
   if (raw.includes('signal')) return 'signage';
-  return 'furniture';
+  if (raw.includes('multimedia')) return 'multimedia';
+  if (raw.includes('sol') || raw.includes('cloison') || raw.includes('structure')) return 'structure';
+  if (raw.includes('mobilier')) return 'furniture';
+  return '';
+}
+
+function normalizeMarketCategory(entry = {}) {
+  return configuredMarketCategory(entry) || furniturePanelCategory(entry);
 }
 
 function marketCategoryMeta(id) {
@@ -10024,17 +10029,6 @@ function sameSalonLabel(a = '', b = '') {
   return left === right || left.includes(right) || right.includes(left);
 }
 
-function inferVariantGroupCategory(asset = {}, variantAssets = []) {
-  const rawCategory = asset.dimensions?.category || '';
-  const normalizedRawCategory = normalizeTextValue(rawCategory);
-  const memberCategories = uniqueTextValues(variantAssets.map((entry) => entry?.dimensions?.category).filter(Boolean));
-  const normalizedMemberCategories = uniqueTextValues(memberCategories.map(normalizeTextValue));
-  if (normalizedMemberCategories.length === 1 && (!rawCategory || normalizedRawCategory === 'mobilier')) {
-    return memberCategories[0];
-  }
-  return rawCategory;
-}
-
 function assetToCatalogEntry(asset, allAssets = []) {
   if (asset.dimensions?.isColorGroup) return null;
   if (asset.dimensions?.isVariantGroup) {
@@ -10073,7 +10067,6 @@ function assetToCatalogEntry(asset, allAssets = []) {
       thumbnailUrl: asset.thumbnail_url,
       dimensions: {
         ...(asset.dimensions || {}),
-        category: inferVariantGroupCategory(asset, variantAssets),
         isVariantGroup: true,
         variantAssets,
         variantOptionLinks,
@@ -11156,15 +11149,12 @@ function defaultIncludedFurniture() {
 }
 
 function furniturePanelCategory(entry) {
+  const configuredCategory = configuredMarketCategory(entry);
+  if (configuredCategory) return configuredCategory;
   const text = `${entry?.type || ''} ${entry?.label || ''}`.toLowerCase();
-  const category = String(entry?.dimensions?.category || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (category.includes('electric')) return 'electricity';
   if (entry?.isGroup) return 'hidden';
   if (isLedRailEntry(entry)) return 'hidden';
-  if (category.includes('sol') || category.includes('cloison')) return 'structure';
   if (text.includes('cloison') || text.includes('porte poussant')) return 'structure';
-  if (category.includes('multimedia')) return 'multimedia';
-  if (category.includes('mobilier')) return 'furniture';
   if (isWallItemType(entry?.type) || /tv|ecran|écran|borne|led|multimedia|multimédia|caisson/.test(text)) return 'multimedia';
   return 'furniture';
 }
