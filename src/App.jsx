@@ -10024,6 +10024,17 @@ function sameSalonLabel(a = '', b = '') {
   return left === right || left.includes(right) || right.includes(left);
 }
 
+function inferVariantGroupCategory(asset = {}, variantAssets = []) {
+  const rawCategory = asset.dimensions?.category || '';
+  const normalizedRawCategory = normalizeTextValue(rawCategory);
+  const memberCategories = uniqueTextValues(variantAssets.map((entry) => entry?.dimensions?.category).filter(Boolean));
+  const normalizedMemberCategories = uniqueTextValues(memberCategories.map(normalizeTextValue));
+  if (normalizedMemberCategories.length === 1 && (!rawCategory || normalizedRawCategory === 'mobilier')) {
+    return memberCategories[0];
+  }
+  return rawCategory;
+}
+
 function assetToCatalogEntry(asset, allAssets = []) {
   if (asset.dimensions?.isColorGroup) return null;
   if (asset.dimensions?.isVariantGroup) {
@@ -10062,6 +10073,7 @@ function assetToCatalogEntry(asset, allAssets = []) {
       thumbnailUrl: asset.thumbnail_url,
       dimensions: {
         ...(asset.dimensions || {}),
+        category: inferVariantGroupCategory(asset, variantAssets),
         isVariantGroup: true,
         variantAssets,
         variantOptionLinks,
