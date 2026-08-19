@@ -190,6 +190,7 @@ export const translations = {
 
     // MarketplaceCard
     market_from_price: 'À partir de {price} €',
+    market_price: '{price} €',
     market_included: 'Inclus / sur devis',
 
     // FurnitureCartBar
@@ -555,6 +556,7 @@ export const translations = {
 
     // MarketplaceCard
     market_from_price: 'From {price} €',
+    market_price: '{price} €',
     market_included: 'Included / on quote',
 
     // FurnitureCartBar

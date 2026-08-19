@@ -3318,6 +3318,7 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
   const Icon = entry.icon || Box;
   const price = marketplaceStartingPrice(entry, catalog, salonLabel);
   const category = marketCategoryMeta(normalizeMarketCategory(entry));
+  const subtitle = marketplaceItemSubtitle(entry, category.label);
   const label = localizeItemLabel(entry, lang);
   return (
     <article className="marketplace-card">
@@ -3326,8 +3327,8 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
       </div>
       <div className="marketplace-card-body">
         <strong>{label}</strong>
-        {price ? <em>{t('market_from_price', { price: price.toLocaleString('fr-FR') })}</em> : null}
-        <small>{marketplaceItemSubtitle(entry, category.label)}</small>
+        {price ? <em>{marketplacePriceLabel(entry, price, t)}</em> : null}
+        {subtitle ? <small>{subtitle}</small> : null}
         {billableCount > 0 ? (
           <div className="marketplace-card-counter">
             <button type="button" disabled={readOnly} onClick={() => onRemoveOne?.()} aria-label={`- ${label}`}>
@@ -4206,11 +4207,18 @@ function marketplaceCategories(entries) {
 }
 
 function marketplaceItemSubtitle(entry, categoryLabel) {
-  if (isPatereEntry(entry)) return patereVariantSubtitle(entry);
+  if (isPatereEntry(entry)) return '';
   if (isVariantGroupEntry(entry)) return `${variantPrimaryAssetTypes(entry).length || 0} variantes disponibles`;
   if (entry.dimensions?.isTelevision) return '32 / 43 / 55 / 65 pouces';
   if (entry.dimensions?.category) return entry.dimensions.category;
   return categoryLabel;
+}
+
+function marketplacePriceLabel(entry, price, t) {
+  const formattedPrice = Number(price || 0).toLocaleString('fr-FR');
+  return isVariantGroupEntry(entry)
+    ? t('market_from_price', { price: formattedPrice })
+    : t('market_price', { price: formattedPrice });
 }
 
 function isPatereEntry(entry = {}) {
@@ -11138,6 +11146,7 @@ function defaultIncludedFurniture() {
 function furniturePanelCategory(entry) {
   const text = `${entry?.type || ''} ${entry?.label || ''}`.toLowerCase();
   const category = String(entry?.dimensions?.category || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (category.includes('electric')) return 'electricity';
   if (entry?.isGroup) return 'hidden';
   if (isLedRailEntry(entry)) return 'hidden';
   if (category.includes('sol') || category.includes('cloison')) return 'structure';
