@@ -384,7 +384,7 @@ export async function sendSceneCompletionEmail(scene, options = {}) {
 }
 
 export async function uploadSceneItemOptionImage(scene, item, file) {
-  if (!file) throw new Error('Image introuvable.');
+  if (!file) throw new Error('Fichier introuvable.');
   if (!supabase) return fileToDataUrl(file);
 
   const extension = file.name.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() || 'jpg';
@@ -426,10 +426,10 @@ function fileToDataUrl(file) {
 }
 
 async function makeScenePreviewImage(file) {
-  if (!file?.type?.startsWith('image/')) return file;
+  if (!isRasterImageFile(file)) return makeScenePlaceholderPreview(file);
   try {
     const bitmap = await imageBitmapFromFile(file);
-    const maxEdge = 1800;
+    const maxEdge = 1200;
     const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
@@ -439,14 +439,47 @@ async function makeScenePreviewImage(file) {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(bitmap.image || bitmap, 0, 0, width, height);
     bitmap.close?.();
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.76));
-    if (!blob) return file;
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.68));
+    if (!blob) return makeScenePlaceholderPreview(file);
     const baseName = file.name.replace(/\.[^.]+$/, '') || 'preview';
     return new File([blob], `${baseName}-preview.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
   } catch (error) {
-    console.warn('Preview compression failed, using original image for preview.', error);
-    return file;
+    console.warn('Preview compression failed, using lightweight placeholder preview.', error);
+    return makeScenePlaceholderPreview(file);
   }
+}
+
+function isRasterImageFile(file) {
+  const name = String(file?.name || '').toLowerCase();
+  const type = String(file?.type || '').toLowerCase();
+  if (/\.(pdf|psd)$/i.test(name)) return false;
+  return type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp)$/i.test(name);
+}
+
+async function makeScenePlaceholderPreview(file) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 900;
+  canvas.height = 600;
+  const ctx = canvas.getContext('2d');
+  const extension = (file?.name?.match(/\.([a-z0-9]+)$/i)?.[1] || 'fichier').toUpperCase();
+  ctx.fillStyle = '#eef3fb';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#d7e2f2';
+  ctx.fillRect(40, 40, canvas.width - 80, canvas.height - 80);
+  ctx.strokeStyle = '#3265ad';
+  ctx.setLineDash([18, 14]);
+  ctx.lineWidth = 6;
+  ctx.strokeRect(54, 54, canvas.width - 108, canvas.height - 108);
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#204a85';
+  ctx.font = '700 58px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`${extension} transmis`, canvas.width / 2, canvas.height / 2 - 20);
+  ctx.font = '400 30px Arial, sans-serif';
+  ctx.fillText('Fichier HD enregistré pour production', canvas.width / 2, canvas.height / 2 + 38);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.72));
+  const baseName = file?.name?.replace(/\.[^.]+$/, '') || 'preview';
+  return new File([blob], `${baseName}-preview.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
 }
 
 async function imageBitmapFromFile(file) {

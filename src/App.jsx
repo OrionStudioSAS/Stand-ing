@@ -49,6 +49,7 @@ import { exportTechnicalPng } from './technicalExport.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
 
+const visualUploadAccept = 'image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf,.psd,image/vnd.adobe.photoshop';
 const LanguageContext = createContext('fr');
 function useT() {
   const lang = useContext(LanguageContext);
@@ -1427,7 +1428,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     const nameKey = optionKeys.nameKey || 'headMainImageName';
     setItemOptionState({ uploading: true, error: '' });
     try {
-      const imageUrl = await uploadSceneItemOptionImage(initialScene, targetItem, file);
+      const uploadTarget = optionKeys.textureSlot
+        ? {
+            ...targetItem,
+            id: `${targetItem.id || targetItem.type || 'item'}-${optionKeys.textureSlot.id || 'texture'}`,
+            label: `${targetItem.label || targetItem.type || 'Objet'} - ${optionKeys.textureSlot.label || 'Visuel'}`,
+            visualLabel: optionKeys.textureSlot.label || 'Visuel',
+          }
+        : targetItem;
+      const imageUrl = await uploadSceneItemOptionImage(initialScene, uploadTarget, file);
       if (optionKeys.textureSlot) {
         updateItemOptions(targetItem, textureSlotPatch(targetItem, optionKeys.textureSlot, { imageUrl, imageName: file.name }));
       } else {
@@ -2195,6 +2204,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         return (
           <ItemConfiguratorModal
             mode={itemConfigModal.mode}
+            scene={initialScene}
             entry={itemConfigModal.entry}
             item={modalItem}
             salonLabel={salonLabel}
@@ -2425,7 +2435,7 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
         <small>{imageName}</small>
         <input
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept={visualUploadAccept}
           disabled={uploadState?.uploading}
           onChange={(event) => {
             onImageChange(event.target.files?.[0]);
@@ -2485,7 +2495,7 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
         <small>{imageName}</small>
         <input
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept={visualUploadAccept}
           disabled={uploadState?.uploading}
           onChange={(event) => {
             onImageChange(event.target.files?.[0]);
@@ -2537,7 +2547,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
         </small>
         <input
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept={visualUploadAccept}
           disabled={uploadState?.uploading}
           onChange={(event) => {
             onImageChange(event.target.files?.[0]);
@@ -2607,7 +2617,7 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
               <span>Importer une image</span>
               <input
                 type="file"
-                accept="image/png,image/jpeg,image/webp"
+                accept={visualUploadAccept}
                 disabled={uploadState?.uploading}
                 onChange={(event) => {
                   onImageChange?.(slot, event.target.files?.[0]);
@@ -2781,7 +2791,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
           <input
             ref={logoInputRef}
             type="file"
-            accept="image/png,image/jpeg,image/webp"
+            accept={visualUploadAccept}
             disabled={disabled || uploadState?.uploading}
             onChange={(event) => {
               uploadSelectedImage(event.target.files?.[0]);
@@ -3490,7 +3500,7 @@ function ClockIcon() {
   return <span className="cart-clock">◷</span>;
 }
 
-function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, items, width, depth, uploadState, onImageChange, onUpdateItemOptions, counterColors = [], onClose, onConfirm, onDeleteItem, canDeleteItem }) {
+function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualContext, items, width, depth, uploadState, onImageChange, onUpdateItemOptions, counterColors = [], onClose, onConfirm, onDeleteItem, canDeleteItem }) {
   const t = useT();
   const catalogEntry = entry || item || {};
   const isVariantGroup = isVariantGroupEntry(catalogEntry);
@@ -3510,6 +3520,8 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
     }, {});
   });
   const [quantity, setQuantity] = useState(1);
+  const [draftUploadState, setDraftUploadState] = useState({ uploading: false, error: '' });
+  const modalUploadState = item ? uploadState : draftUploadState;
   const selectedVariant = variants.find((variant) => variant.id === format) || variants[0];
   const optionLink = resolveVariantOptionLink(selectedVariant, selectedExtras);
   const resolvedEntry = optionLink?.entry || selectedVariant?.entry || catalogEntry;
@@ -3587,12 +3599,26 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
       onImageChange?.(item, file, keys);
       return;
     }
-    const imageUrl = await fileToDataUrlLocal(file);
-    if (keys.textureSlot) {
-      updateDraftVisualOptions(textureSlotPatch(visualItem, keys.textureSlot, { imageUrl, imageName: file.name }));
-      return;
+    const draftBaseLabel = resolvedEntry?.label || catalogEntry.label || 'Visuel objet';
+    const draftVisualLabel = keys.textureSlot?.label || draftBaseLabel;
+    const draftUploadItem = {
+      id: `draft-${resolvedEntry?.type || catalogEntry.type || 'item'}-${keys.textureSlot?.id || urlKey}`,
+      type: resolvedEntry?.type || catalogEntry.type || 'draft-item',
+      label: keys.textureSlot ? `${draftBaseLabel} - ${draftVisualLabel}` : draftBaseLabel,
+      visualLabel: draftVisualLabel,
+    };
+    setDraftUploadState({ uploading: true, error: '' });
+    try {
+      const imageUrl = await uploadSceneItemOptionImage(scene, draftUploadItem, file);
+      if (keys.textureSlot) {
+        updateDraftVisualOptions(textureSlotPatch(visualItem, keys.textureSlot, { imageUrl, imageName: file.name }));
+      } else {
+        updateDraftVisualOptions({ [urlKey]: imageUrl, [nameKey]: file.name, ...(keys.extraPatch || {}) });
+      }
+      setDraftUploadState({ uploading: false, error: '' });
+    } catch (error) {
+      setDraftUploadState({ uploading: false, error: error.message || 'Upload impossible.' });
     }
-    updateDraftVisualOptions({ [urlKey]: imageUrl, [nameKey]: file.name, ...(keys.extraPatch || {}) });
   };
 
   const submit = () => {
@@ -3647,7 +3673,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
           <PartitionHeadOptionsPanel
             item={item}
             visualContext={visualContext}
-            uploadState={uploadState}
+            uploadState={modalUploadState}
             onImageChange={(file) => onImageChange?.(item, file)}
             onResetImage={() => onUpdateItemOptions?.(item, { headMainImageUrl: '', headMainImageName: '' })}
             embedded
@@ -3660,7 +3686,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
             items={items}
             width={width}
             depth={depth}
-            uploadState={uploadState}
+            uploadState={modalUploadState}
             onImageChange={(file) => onImageChange?.(item, file, { urlKey: 'posterImageUrl', nameKey: 'posterImageName' })}
             onResetImage={() => onUpdateItemOptions?.(item, { posterImageUrl: '', posterImageName: '' })}
             embedded
@@ -3671,7 +3697,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
           <WoodReceptionDeskOptionsPanel
             item={visualItem}
             colors={counterColors}
-            uploadState={uploadState}
+            uploadState={modalUploadState}
             onImageChange={(file) => handleDraftImage(file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName' })}
             onResetImage={() => updateDraftVisualOptions({ binary3ImageUrl: '', binary3ImageName: '' })}
             onColorChange={(finish) => updateDraftVisualOptions(counterFinishPatch(finish))}
@@ -3683,7 +3709,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
         {hasVisualOptions && textureSlots.length > 0 && (
           <TextureSlotsOptionsPanel
             item={visualItem}
-            uploadState={uploadState}
+            uploadState={modalUploadState}
             onImageChange={(slot, file) => (item ? onImageChange?.(item, file, { textureSlot: slot }) : handleDraftImage(file, { urlKey: 'unused', nameKey: 'unused', textureSlot: slot }))}
             onResetImage={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { imageUrl: '', imageName: '' }))}
             onColorChange={(slot, color) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { color }))}
@@ -3728,7 +3754,7 @@ function ItemConfiguratorModal({ mode, entry, item, salonLabel, visualContext, i
           </div>
           <div className="item-config-footer-actions">
             <button type="button" className="item-config-delete" disabled={!canDeleteCurrentItem} onClick={deleteFromModal}>{t('item_config_delete')}</button>
-            <button type="button" className="item-config-apply" disabled={uploadState?.uploading} onClick={submit}>{uploadState?.uploading ? t('item_config_uploading') : t('item_config_apply')}</button>
+            <button type="button" className="item-config-apply" disabled={modalUploadState?.uploading} onClick={submit}>{modalUploadState?.uploading ? t('item_config_uploading') : t('item_config_apply')}</button>
           </div>
         </footer>
       </section>
@@ -4950,7 +4976,7 @@ function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabl
         <span>{t('partition_browse')}</span>
         <input
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept={visualUploadAccept}
           disabled={disabled || uploading}
           onChange={(event) => {
             onImage?.(event.target.files?.[0]);
@@ -5132,7 +5158,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
                 <Upload size={15} />
                 <input
                   type="file"
-                  accept="image/*"
+                  accept={visualUploadAccept}
                   disabled={disabled}
                   onChange={(event) => {
                     const file = event.target.files?.[0];
