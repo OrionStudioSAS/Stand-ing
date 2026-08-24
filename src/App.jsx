@@ -10814,10 +10814,10 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     }
   });
   const totalCounts = countSceneItems(items);
-  const baseUsage = baseItemsConfigured
+  const configuredBaseUsage = baseItemsConfigured
     ? baseItems.map((item) => {
       const quantity = Number(item.quantity || 0);
-      const rawUsed = countBasePackUsageForType(items, item.type);
+      const rawUsed = countBasePackUsageForType(items, item);
       const used = Math.min(rawUsed, quantity);
       return {
         ...item,
@@ -10828,6 +10828,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       };
     })
     : [];
+  const baseUsage = mergeBaseUsageRows(configuredBaseUsage, automaticBaseUsageRows(items, scene, catalog));
   const billableCounts = new Map();
   const lines = [];
   let itemsTotal = 0;
@@ -11104,17 +11105,83 @@ function countSceneItems(sceneItems) {
   }, new Map());
 }
 
-function countBasePackUsageForType(sceneItems = [], baseType = '') {
+function countBasePackUsageForType(sceneItems = [], baseItem = '') {
+  const baseType = typeof baseItem === 'string' ? baseItem : baseItem?.type || '';
   if (!baseType) return 0;
   return sceneItems.reduce((count, item) => {
-    const aliases = [
-      item.type,
-      item.options?.includedBaseType,
-      item.options?.variantAssetType,
-      item.options?.variantGroupType,
-    ].filter(Boolean);
-    return count + (aliases.includes(baseType) ? 1 : 0);
+    return count + (basePackItemMatches(item, baseItem) ? 1 : 0);
   }, 0);
+}
+
+function basePackItemMatches(item = {}, baseItem = '') {
+  const baseType = typeof baseItem === 'string' ? baseItem : baseItem?.type || '';
+  const baseLabel = typeof baseItem === 'string' ? '' : baseItem?.label || '';
+  const aliases = [
+    item.type,
+    item.options?.includedBaseType,
+    item.options?.variantAssetType,
+    item.options?.variantGroupType,
+  ].filter(Boolean);
+  if (aliases.includes(baseType)) return true;
+
+  const baseProbe = { type: baseType, label: baseLabel };
+  if (isWoodReceptionDeskItem(item) && isWoodReceptionDeskItem(baseProbe)) return true;
+
+  const baseKey = looseBasePackKey(baseProbe);
+  const itemKeys = aliases.map((type) => looseBasePackKey({ type, label: item.label })).filter(Boolean);
+  return Boolean(baseKey && itemKeys.some((key) => key === baseKey || key.includes(baseKey) || baseKey.includes(key)));
+}
+
+function looseBasePackKey(item = {}) {
+  return normalizedItemText(item)
+    .replace(/\b(asset|variant|group)\b/g, ' ')
+    .replace(/\bm[qrstu][a-z0-9]+\b/g, ' ')
+    .replace(/\bsigna\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\b(ht|bois|blanc)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function automaticBaseUsageRows(items = [], scene = {}, catalogEntries = []) {
+  const rows = [];
+  const area = Number(scene?.dimensions?.width || scene?.width_m || 0) * Number(scene?.dimensions?.depth || scene?.depth_m || 0);
+  const reserveRule = activeReserveRule(sceneReserveRules(scene), area);
+  if (reserveRule?.includedType) {
+    const reserveUsed = items.some((item) => isAutomaticReserveItem(item));
+    rows.push({
+      type: '__auto_reserve__',
+      label: reserveRule.includedLabel || 'Réserve',
+      quantity: 1,
+      used: reserveUsed ? 1 : 0,
+      remaining: reserveUsed ? 0 : 1,
+      billable: 0,
+      automatic: true,
+    });
+  }
+
+  const ledRows = items.filter((item) => isAutomaticLedRailItem(item) && isIncludedSceneItem(item));
+  const spotCount = ledRows.reduce((sum, item) => sum + ledSpotsPerRail(findCatalogEntry(catalogEntries, item.type) || item), 0);
+  if (spotCount > 0) {
+    rows.push({
+      type: '__auto_led_spots__',
+      label: 'Spots LED',
+      quantity: spotCount,
+      used: spotCount,
+      remaining: 0,
+      billable: 0,
+      automatic: true,
+    });
+  }
+  return rows;
+}
+
+function mergeBaseUsageRows(configuredRows = [], automaticRows = []) {
+  const rows = [...configuredRows];
+  automaticRows.forEach((autoRow) => {
+    if (!rows.some((row) => row.type === autoRow.type || basePackItemMatches(autoRow, row))) rows.push(autoRow);
+  });
+  return rows;
 }
 
 function useSceneTexturePreload(items = [], extraUrls = []) {
