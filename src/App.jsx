@@ -223,6 +223,8 @@ const placementRuleOptions = [
   { id: 'back-center', label: 'Centre arrière', description: "L'objet reste centré contre le mur du fond." },
 ];
 const assetCategoryOptions = ['Sol & Cloisons', 'Mobilier', 'Signalétique', 'Multimédia', 'Enseignes', 'Électricité'];
+const adminAssetCategoryOrder = ['Groupes', 'Groupes de variantes', 'Groupes de couleurs', ...assetCategoryOptions];
+const marketplaceCategoryOrder = ['furniture', 'multimedia', 'electricity', 'signage', 'structure', 'hidden'];
 const colorGroupUsageOptions = [
   { id: 'carpet', label: 'Moquette', detail: 'Couleurs proposées pour le sol principal.' },
   { id: 'footprint', label: 'Empreinte moquette', detail: 'Couleurs proposées pour la dalle 1000 × 1000 mm.' },
@@ -1029,7 +1031,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       .map((asset) => assetToCatalogEntry(asset, objectBank))
       .filter(Boolean);
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
-    return uniqueCatalogEntries(entries);
+    return sortCatalogEntries(uniqueCatalogEntries(entries));
   }, [objectBank, salonLabel]);
   const placeableCatalog = useMemo(
     () => availableCatalog.filter((entry) => isAdminViewer || !entry.dimensions?.adminOnly),
@@ -4278,6 +4280,45 @@ function normalizeMarketCategory(entry = {}) {
   return configuredMarketCategory(entry) || furniturePanelCategory(entry);
 }
 
+function numericDisplayOrder(value, fallback = 9999) {
+  const order = Number(value);
+  return Number.isFinite(order) ? order : fallback;
+}
+
+function assetDisplayOrder(asset = {}) {
+  return numericDisplayOrder(asset?.dimensions?.displayOrder ?? asset?.dimensions?.sortOrder ?? asset?.dimensions?.order);
+}
+
+function assetCategorySortIndex(asset = {}) {
+  const index = adminAssetCategoryOrder.indexOf(assetCategoryLabel(asset));
+  return index >= 0 ? index : adminAssetCategoryOrder.length;
+}
+
+function sortAdminAssets(assets = []) {
+  return [...assets].sort((a, b) => (
+    assetCategorySortIndex(a) - assetCategorySortIndex(b)
+    || assetDisplayOrder(a) - assetDisplayOrder(b)
+    || String(a?.label || a?.type || '').localeCompare(String(b?.label || b?.type || ''), 'fr')
+  ));
+}
+
+function catalogDisplayOrder(entry = {}) {
+  return numericDisplayOrder(entry?.dimensions?.displayOrder ?? entry?.dimensions?.sortOrder ?? entry?.dimensions?.order);
+}
+
+function catalogCategorySortIndex(entry = {}) {
+  const index = marketplaceCategoryOrder.indexOf(normalizeMarketCategory(entry));
+  return index >= 0 ? index : marketplaceCategoryOrder.length;
+}
+
+function sortCatalogEntries(entries = []) {
+  return [...entries].sort((a, b) => (
+    catalogCategorySortIndex(a) - catalogCategorySortIndex(b)
+    || catalogDisplayOrder(a) - catalogDisplayOrder(b)
+    || String(a?.label || a?.type || '').localeCompare(String(b?.label || b?.type || ''), 'fr')
+  ));
+}
+
 function marketCategoryMeta(id) {
   const meta = {
     all: { id: 'all', label: 'TOUS', icon: '○' },
@@ -5812,6 +5853,33 @@ function AdminDashboard({ user, adminProfile }) {
     }
   };
 
+  const reorderAssets = async (orderedAssets = []) => {
+    const updates = orderedAssets.map((asset, index) => ({
+      ...asset,
+      dimensions: {
+        ...(asset.dimensions || {}),
+        displayOrder: index,
+      },
+    }));
+    if (!updates.length) return;
+
+    setAssets((current) => current.map((asset) => updates.find((update) => update.type === asset.type) || asset));
+    setAssetUploadState({ loading: true, message: 'Ordre des assets en cours de sauvegarde...', error: '' });
+
+    try {
+      const savedAssets = await Promise.all(updates.map((asset) => saveObjectBankItem(asset)));
+      setAssets((current) => current.map((asset) => savedAssets.find((saved) => saved.type === asset.type) || asset));
+      setAssetUploadState({ loading: false, message: 'Ordre des assets sauvegardé.', error: '' });
+    } catch (error) {
+      listObjectBank().then(setAssets).catch((listError) => console.error('Object bank refresh failed', listError));
+      setAssetUploadState({
+        loading: false,
+        message: '',
+        error: error.message || "Impossible de sauvegarder l'ordre des assets.",
+      });
+    }
+  };
+
   return (
     <main className="admin-dashboard-shell">
       <aside className="admin-sidebar">
@@ -5883,6 +5951,7 @@ function AdminDashboard({ user, adminProfile }) {
               onSaveAsset={saveAsset}
               onDeleteAsset={deleteAsset}
               onDuplicateAsset={duplicateAsset}
+              onReorderAssets={reorderAssets}
               onUploadAssetFolder={uploadAssetFolder}
               onUploadColorGroup={uploadColorGroup}
             />
@@ -6475,7 +6544,7 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
       .map((asset) => assetToCatalogEntry(asset, assets))
       .filter(Boolean);
     const all = [...dynamicEntries, ...nativeCatalogEntries()];
-    return uniqueCatalogEntries(all).filter((entry) => isBasePackEligible(entry));
+    return sortCatalogEntries(uniqueCatalogEntries(all)).filter((entry) => isBasePackEligible(entry));
   }, [assets, salon?.name]);
   const [quantities, setQuantities] = useState(() => baseItemsToQuantityMap(offer?.metadata?.baseItems));
 
@@ -6650,7 +6719,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       .map((asset) => assetToCatalogEntry(asset, assets))
       .filter(Boolean);
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
-    return uniqueCatalogEntries(entries);
+    return sortCatalogEntries(uniqueCatalogEntries(entries));
   }, [assets, salon.name]);
   const initialScene = useMemo(() => presetToEditableScene(preset, availableCatalog), [preset, availableCatalog]);
   const initialWidth = initialScene.dimensions.width;
@@ -7607,18 +7676,30 @@ function sceneStatusKind(scene = {}) {
   return 'neutral';
 }
 
-function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onDuplicateAsset, onUploadAssetFolder, onUploadColorGroup }) {
+function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onDuplicateAsset, onReorderAssets, onUploadAssetFolder, onUploadColorGroup }) {
   const [groupCreatorOpen, setGroupCreatorOpen] = useState(false);
   const [variantGroupCreatorOpen, setVariantGroupCreatorOpen] = useState(false);
   const [assetSearch, setAssetSearch] = useState(search || '');
+  const [draggingAssetType, setDraggingAssetType] = useState('');
   const categories = ['Tout', 'Groupes', 'Groupes de variantes', 'Groupes de couleurs', ...assetCategoryOptions];
-  const filteredAssets = assets.filter((asset) => {
+  const filteredAssets = sortAdminAssets(assets.filter((asset) => {
     const assetCategory = assetCategoryLabel(asset);
     const matchesCategory = category === 'Tout' || assetCategory === category;
     const normalizedSearch = assetSearch.trim().toLowerCase();
     const matchesSearch = !normalizedSearch || [asset.label, asset.type, assetCategory].filter(Boolean).some((value) => value.toLowerCase().includes(normalizedSearch));
     return matchesCategory && matchesSearch;
-  });
+  }));
+
+  const reorderVisibleAsset = (targetType) => {
+    if (!draggingAssetType || draggingAssetType === targetType) return;
+    const from = filteredAssets.findIndex((asset) => asset.type === draggingAssetType);
+    const to = filteredAssets.findIndex((asset) => asset.type === targetType);
+    if (from < 0 || to < 0) return;
+    const next = [...filteredAssets];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    onReorderAssets?.(next);
+  };
 
   return (
     <section className="admin-assets-view">
@@ -7698,8 +7779,29 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
 
       <div className="asset-grid">
         {filteredAssets.map((asset) => (
-          <button key={asset.type} className="asset-card" type="button" onClick={() => onSelectAsset(asset)}>
+          <button
+            key={asset.type}
+            className={`asset-card ${draggingAssetType === asset.type ? 'dragging' : ''}`}
+            type="button"
+            draggable
+            onClick={() => onSelectAsset(asset)}
+            onDragStart={(event) => {
+              setDraggingAssetType(asset.type);
+              event.dataTransfer.effectAllowed = 'move';
+              event.dataTransfer.setData('text/plain', asset.type);
+            }}
+            onDragOver={(event) => {
+              if (draggingAssetType) event.preventDefault();
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              reorderVisibleAsset(asset.type);
+              setDraggingAssetType('');
+            }}
+            onDragEnd={() => setDraggingAssetType('')}
+          >
             <span className={`asset-status-dot ${assetStatus(asset)}`} />
+            <span className="asset-drag-handle" aria-hidden="true">⋮⋮</span>
             <AssetPreview asset={asset} />
             <div className="asset-card-body">
               <strong>{asset.label}</strong>
@@ -9576,7 +9678,7 @@ function sceneAdminCatalog(assets = [], scene = {}) {
     .map((asset) => assetToCatalogEntry(asset, assets))
     .filter(Boolean);
   const entries = [...dynamicEntries, ...nativeCatalogEntries()];
-  return uniqueCatalogEntries(entries);
+  return sortCatalogEntries(uniqueCatalogEntries(entries));
 }
 
 function sceneAdminItems(scene = {}, catalogEntries = []) {
