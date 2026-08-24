@@ -5706,6 +5706,9 @@ function AdminDashboard({ user, adminProfile }) {
       const warnings = Array.isArray(result?.warnings) && result.warnings.length
         ? `\n${result.warnings.join('\n')}`
         : '';
+      const syncErrors = Array.isArray(result?.errors) && result.errors.length
+        ? result.errors.join('\n')
+        : '';
       const constraintMessage = Number(result?.constraints_updated || 0) > 0
         ? `\n${result.constraints_updated} contrainte(s) mise(s) à jour.`
         : '';
@@ -5720,7 +5723,7 @@ function AdminDashboard({ user, adminProfile }) {
         message: (createdCount
           ? `${createdCount} nouvelle(s) scène(s) créée(s), ${result?.clients ?? 0} exposant(s) traité(s) depuis Monday.`
           : 'Aucune nouvelle scène à créer depuis Monday.') + constraintMessage + inviteMessage + warnings,
-        error: '',
+        error: syncErrors,
       });
     } catch (error) {
       setSyncState({

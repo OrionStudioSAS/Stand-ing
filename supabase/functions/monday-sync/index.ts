@@ -53,7 +53,9 @@ Deno.serve(async (req) => {
   let inviteEmailsSent = 0;
   let inviteEmailsSkipped = 0;
   let mondayStatusUpdated = 0;
+  let skippedMissingLayout = 0;
   const warnings: string[] = [];
+  const errors: string[] = [];
 
   for (const source of sources ?? []) {
     const { columns: mondayColumns, warning: columnWarning } = await fetchMondayBoardColumnsSafe(mondayToken, source.board_id);
@@ -108,6 +110,14 @@ Deno.serve(async (req) => {
 
       if (!shouldCreateScene) continue;
 
+      const rawLayout = readMondayLayoutValue(item, resolvedSource);
+      const parsedLayout = normalizeMondayLayoutStrict(rawLayout);
+      if (!parsedLayout) {
+        skippedMissingLayout += 1;
+        errors.push(missingLayoutSyncError(item, resolvedSource, context, rawLayout));
+        continue;
+      }
+
       const userProfile = mapMondayItemToUserProfile(item, resolvedSource, context);
       const { data: savedProfile, error: profileError } = await supabase
         .from("user_profiles")
@@ -143,7 +153,7 @@ Deno.serve(async (req) => {
         if (membershipError) throw membershipError;
       }
 
-      const sceneDraft = mapMondayItemToScene(item, resolvedSource, savedClient?.id, savedProfile?.id, context);
+      const sceneDraft = mapMondayItemToScene(item, resolvedSource, savedClient?.id, savedProfile?.id, context, parsedLayout);
       const preset = await findActivePreset(supabase, context.offerId, context.salonId, sceneDraft.layout);
       const baseItems = await fetchOfferBaseItems(supabase, context.offerId);
       const defaultOptions = presetDefaultOptions(preset);
@@ -216,6 +226,8 @@ Deno.serve(async (req) => {
     invite_emails_sent: inviteEmailsSent,
     invite_emails_skipped: inviteEmailsSkipped,
     monday_status_updated: mondayStatusUpdated,
+    skipped_missing_layout: skippedMissingLayout,
+    errors,
     warnings,
   });
 });
@@ -223,6 +235,7 @@ Deno.serve(async (req) => {
 function withResolvedMondayColumns(source: any, columns: Array<{ id: string; title: string; type?: string }>, warnings: string[] = []) {
   const mapping = source.mapping ?? {};
   const clientEmailColumnId = resolveMappedColumnId(columns, mapping.client_email, findEmailColumnId(columns));
+  const layoutColumnId = resolveMappedColumnId(columns, mapping.layout, findLayoutColumnId(columns));
   const constraintColumnId = mapping.constraint || mapping.contrainte || findConstraintSizeColumnId(columns);
   const constraintLocationColumnId = mapping.constraint_location
     || mapping.emplacement_contrainte
@@ -236,6 +249,9 @@ function withResolvedMondayColumns(source: any, columns: Array<{ id: string; tit
   if (source.status_column_id && statusColumnId && source.status_column_id !== statusColumnId) {
     warnings.push(`Colonne Étape 1 corrigée sur le board ${source.board_id}: ${source.status_column_id} → ${statusColumnId}`);
   }
+  if (mapping.layout && layoutColumnId && mapping.layout !== layoutColumnId) {
+    warnings.push(`Colonne implantation corrigée sur le board ${source.board_id}: ${mapping.layout} → ${layoutColumnId}`);
+  }
 
   return {
     ...source,
@@ -244,6 +260,7 @@ function withResolvedMondayColumns(source: any, columns: Array<{ id: string; tit
     mapping: {
       ...mapping,
       ...(clientEmailColumnId ? { client_email: clientEmailColumnId } : {}),
+      ...(layoutColumnId ? { layout: layoutColumnId } : {}),
       ...(constraintColumnId ? { constraint: constraintColumnId } : {}),
       ...(constraintLocationColumnId ? { constraint_location: constraintLocationColumnId } : {}),
     },
@@ -290,6 +307,11 @@ function findEmailColumnId(columns: Array<{ id: string; title: string; type?: st
 function findLinkColumnId(columns: Array<{ id: string; title: string; type?: string }>) {
   return columns.find((column) => column.type === "link")?.id
     || findMondayColumnId(columns, (value) => value.includes("lien") || value.includes("link") || value.includes("configurateur"));
+}
+
+function findLayoutColumnId(columns: Array<{ id: string; title: string }>) {
+  return findMondayColumnId(columns, (value) => value === "implantation" || value === "layout" || value === "disposition")
+    || findMondayColumnId(columns, (value) => value.includes("implantation"));
 }
 
 function mondayStatusLabel(columns: Array<any>, columnId = "", configuredLabel = "") {
@@ -506,10 +528,10 @@ function mapMondayItemToClient(item: any, source: any, userProfileId?: string, c
   };
 }
 
-function mapMondayItemToScene(item: any, source: any, clientId: string | undefined, userProfileId: string | undefined, context: any) {
+function mapMondayItemToScene(item: any, source: any, clientId: string | undefined, userProfileId: string | undefined, context: any, layoutOverride = "") {
   const mapping = source.mapping ?? {};
   const { width, depth } = mondaySceneDimensions(item, source);
-  const layout = normalizeLayout(readMappingValue(item, mapping.layout));
+  const layout = layoutOverride || normalizeLayout(readMondayLayoutValue(item, source));
   const clientName = readMappingValue(item, mapping.client_name) || item.name;
   const standNumber = readMappingValue(item, mapping.stand_number) || readColumn(item, "n_");
   const aisleNumber = readMappingValue(item, mapping.aisle_number || mapping.allee) || readColumnAny(item, ["text5", "allée", "allee"]);
@@ -1062,12 +1084,31 @@ function readMappingValue(item: any, mappingValue?: string | string[]) {
   return readColumn(item, mappingValue);
 }
 
-function normalizeLayout(value: string) {
+function readMondayLayoutValue(item: any, source: any) {
+  const mapping = source.mapping ?? {};
+  return readMappingValue(item, mapping.layout) || readColumnAny(item, ["implantation", "layout", "disposition"]);
+}
+
+function normalizeMondayLayoutStrict(value: string) {
   const normalized = normalizeText(value);
+  if (!normalized) return "";
+  if (normalized === "u" || normalized.includes("mur_des_2") || normalized.includes("deux_cotes")) return "u";
   if (normalized.includes("gauche")) return "left";
   if (normalized.includes("droite")) return "right";
-  if (normalized.includes("arriere")) return "back";
-  return "u";
+  if (normalized.includes("arriere") || normalized.includes("fond")) return "back";
+  return "";
+}
+
+function missingLayoutSyncError(item: any, source: any, context: any, rawLayout = "") {
+  const salon = clean(context?.salonLabel || source?.salon || "Salon");
+  const offer = clean(source?.offer || "pack");
+  const raw = clean(rawLayout);
+  const suffix = raw ? ` Valeur reçue: "${raw}".` : "";
+  return `Implantation manquante ou invalide pour "${item.name}" (${salon} / ${offer}). Valeurs attendues: ARRIERE GAUCHE, ARRIERE, ARRIERE DROITE ou U.${suffix} Ligne non créée, lien non généré.`;
+}
+
+function normalizeLayout(value: string) {
+  return normalizeMondayLayoutStrict(value) || "u";
 }
 
 function normalizeText(value: string) {
