@@ -6154,7 +6154,9 @@ function getRecentActivityRows(scenes, assets) {
 }
 
 function normalizeSalonTitle(raw) {
-  return (raw || '').replace(/\s*—\s*.+$/, '').trim();
+  const label = (raw || '').replace(/\s*—\s*.+$/, '').trim();
+  if (normalizeTextValue(label) === 'smcl') return 'SMCL 2026';
+  return label;
 }
 
 function getSalonRows(scenes) {
@@ -10165,8 +10167,10 @@ function buildGroupChildren(rows, sourceAssets) {
 }
 
 function assetSalons(asset, scenes = []) {
-  if (Array.isArray(asset.dimensions?.salons)) return asset.dimensions.salons;
-  const salons = [...new Set(scenes.map((scene) => normalizeSalonTitle(scene.event_name || scene.salon)).filter(Boolean))];
+  if (Array.isArray(asset.dimensions?.salons)) {
+    return uniqueTextValues(asset.dimensions.salons.map(normalizeSalonTitle).filter(Boolean));
+  }
+  const salons = uniqueTextValues(scenes.map((scene) => normalizeSalonTitle(scene.event_name || scene.salon)).filter(Boolean));
   return asset.is_active ? salons.slice(0, 1) : [];
 }
 
