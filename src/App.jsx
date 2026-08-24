@@ -13207,14 +13207,15 @@ function wallTopSnapItemHeight(item = {}, entry = null) {
 }
 
 function wallMountedNormalOffset(item, objectSurface = false) {
-  if (isPosterItem(item)) return (objectSurface ? wallThickness / 2 : wallThickness) + 0.006;
-  if (item?.type === 'screen') return wallThickness + screenDepth / 2;
+  const wallFaceOffset = objectSurface ? wallThickness / 2 : wallThickness;
+  if (isPosterItem(item)) return wallFaceOffset + 0.006;
+  if (item?.type === 'screen') return wallFaceOffset + screenDepth / 2;
   if (isPartitionHeadItem(item)) {
     const bounds = itemGroupBounds(item);
-    return wallThickness + partitionHeadWallGap - Number(bounds.minZ || 0);
+    return wallFaceOffset + partitionHeadWallGap - Number(bounds.minZ || 0);
   }
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
-  return wallThickness + Math.max(0.02, depth / 2);
+  return wallFaceOffset + Math.max(0.02, depth / 2);
 }
 
 function posterObjectSurfaceRegion(item, surface) {
