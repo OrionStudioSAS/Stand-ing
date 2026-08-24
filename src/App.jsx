@@ -5675,11 +5675,14 @@ function AdminDashboard({ user, adminProfile }) {
       const constraintMessage = Number(result?.constraints_updated || 0) > 0
         ? `\n${result.constraints_updated} contrainte(s) mise(s) à jour.`
         : '';
+      const inviteMessage = Number(result?.invite_emails_sent || 0) > 0
+        ? `\n${result.invite_emails_sent} email(s) configurateur envoyé(s), ${result?.monday_status_updated || 0} statut(s) Monday mis à jour.`
+        : '';
       setSyncState({
         loading: false,
         message: (createdCount
           ? `${createdCount} nouvelle(s) scène(s) créée(s), ${result?.clients ?? 0} exposant(s) traité(s) depuis Monday.`
-          : 'Aucune nouvelle scène à créer depuis Monday.') + constraintMessage + warnings,
+          : 'Aucune nouvelle scène à créer depuis Monday.') + constraintMessage + inviteMessage + warnings,
         error: '',
       });
     } catch (error) {

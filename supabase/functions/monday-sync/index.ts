@@ -19,6 +19,8 @@ Deno.serve(async (req) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const mondayToken = Deno.env.get("MONDAY_API_TOKEN");
   const publicAppUrl = Deno.env.get("PUBLIC_APP_URL") || "https://stand-ing.vercel.app/";
+  const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
+  const fromEmail = Deno.env.get("RESEND_FROM_EMAIL") || "Stand-ING <no-reply@stand-ing.com>";
 
   if (!mondayToken) {
     return json({ error: "Missing MONDAY_API_TOKEN" }, 500);
@@ -48,6 +50,9 @@ Deno.serve(async (req) => {
   let exhibitors = 0;
   let baseItemsApplied = 0;
   let constraintsUpdated = 0;
+  let inviteEmailsSent = 0;
+  let inviteEmailsSkipped = 0;
+  let mondayStatusUpdated = 0;
   const warnings: string[] = [];
 
   for (const source of sources ?? []) {
@@ -174,6 +179,39 @@ Deno.serve(async (req) => {
         });
       }
 
+      const inviteResult = await sendConfiguratorInvitationEmail({
+        resendApiKey,
+        fromEmail,
+        scene,
+        source: resolvedSource,
+        context,
+        item,
+        shareUrl,
+      });
+      if (inviteResult.sent) {
+        inviteEmailsSent += 1;
+        await supabase.from("scenes").update({
+          source_payload: {
+            ...(scene.source_payload || {}),
+            invitation_email_sent_at: new Date().toISOString(),
+            invitation_email_to: inviteResult.to,
+            invitation_email_provider_id: inviteResult.providerId || null,
+          },
+        }).eq("id", savedScene.id);
+
+        const statusColumnId = resolvedSource.status_column_id || findStatusColumnId(mondayColumns);
+        const statusLabel = mondayStatusLabel(mondayColumns, statusColumnId, resolvedSource.created_status_label);
+        if (statusColumnId && statusLabel) {
+          await updateMondayColumnValue(mondayToken, resolvedSource.board_id, item.id, statusColumnId, { label: statusLabel });
+          mondayStatusUpdated += 1;
+        } else {
+          warnings.push(`Mail envoyé pour ${item.name}, mais colonne Étape 1 introuvable sur le board ${resolvedSource.board_id}.`);
+        }
+      } else {
+        inviteEmailsSkipped += 1;
+        if (inviteResult.reason) warnings.push(`Email non envoyé pour ${item.name}: ${inviteResult.reason}`);
+      }
+
       processed += 1;
       clients += 1;
       exhibitors += 1;
@@ -181,7 +219,18 @@ Deno.serve(async (req) => {
   }
 
   await supabase.from("monday_sync_runs").insert({ status: "success", processed_count: processed });
-  return json({ processed, created: processed, clients, exhibitors, base_items_applied: baseItemsApplied, constraints_updated: constraintsUpdated, warnings });
+  return json({
+    processed,
+    created: processed,
+    clients,
+    exhibitors,
+    base_items_applied: baseItemsApplied,
+    constraints_updated: constraintsUpdated,
+    invite_emails_sent: inviteEmailsSent,
+    invite_emails_skipped: inviteEmailsSkipped,
+    monday_status_updated: mondayStatusUpdated,
+    warnings,
+  });
 });
 
 function withResolvedConstraintColumns(source: any, columns: Array<{ id: string; title: string }>) {
@@ -219,6 +268,39 @@ function formatMondayColumnList(columns: Array<{ id: string; title: string }>) {
   return columns.map((column) => `${column.title || '(sans titre)'} [${column.id}]`).join(' | ');
 }
 
+function findStatusColumnId(columns: Array<{ id: string; title: string }>) {
+  return findMondayColumnId(columns, (value) => value === "etape_1" || value === "etape1")
+    || findMondayColumnId(columns, (value) => value.includes("etape_1") || value.includes("etape1"));
+}
+
+function mondayStatusLabel(columns: Array<any>, columnId = "", configuredLabel = "") {
+  const cleanConfigured = clean(configuredLabel);
+  const column = columns.find((entry) => entry.id === columnId);
+  const labels = mondayColumnLabels(column);
+  const candidates = ["Mail envoyé", "MAIL ENVOYÉ", cleanConfigured, "ENVOYE PAR MAIL", "ENVOYÉ PAR MAIL"].filter(Boolean);
+  for (const candidate of candidates) {
+    const found = labels.find((label) => normalizeText(label) === normalizeText(candidate));
+    if (found) return found;
+  }
+  if (cleanConfigured && normalizeText(cleanConfigured) !== normalizeText("ENVOYE PAR MAIL")) return cleanConfigured;
+  return labels.find((label) => normalizeText(label).includes("mail") && normalizeText(label).includes("envoy")) || "Mail envoyé";
+}
+
+function mondayColumnLabels(column: any) {
+  if (!column?.settings_str) return [] as string[];
+  try {
+    const settings = JSON.parse(column.settings_str);
+    const labels = settings?.labels || {};
+    const positions = settings?.labels_positions_v2 || {};
+    return Object.keys(labels)
+      .sort((a, b) => Number(positions[a] ?? 999) - Number(positions[b] ?? 999))
+      .map((key) => clean(labels[key]))
+      .filter(Boolean);
+  } catch {
+    return [] as string[];
+  }
+}
+
 function findConstraintSizeColumnId(columns: Array<{ id: string; title: string }>) {
   return findMondayColumnId(columns, (value) => value === "contrainte")
     || findMondayColumnId(columns, (value) => value.includes("contrainte") && !value.includes("emplacement") && !value.includes("empacement"));
@@ -253,7 +335,7 @@ async function fetchMondayBoardColumns(token: string, boardId: string) {
   const query = `
     query ($boardId: [ID!]) {
       boards(ids: $boardId) {
-        columns { id title }
+        columns { id title type settings_str }
       }
     }
   `;
@@ -266,7 +348,12 @@ async function fetchMondayBoardColumns(token: string, boardId: string) {
   const payload = await response.json();
   if (payload.errors?.length) throw new Error(payload.errors.map((entry: any) => entry.message).join(", "));
   return (payload.data?.boards?.[0]?.columns || [])
-    .map((column: any) => ({ id: String(column.id || ""), title: String(column.title || "") }))
+    .map((column: any) => ({
+      id: String(column.id || ""),
+      title: String(column.title || ""),
+      type: String(column.type || ""),
+      settings_str: String(column.settings_str || ""),
+    }))
     .filter((column: any) => column.id);
 }
 
@@ -709,6 +796,127 @@ function anchoredAxisPosition(value: number, presetLength: number, sceneLength: 
 function clampNumber(value: number, min: number, max: number) {
   if (min > max) return value;
   return Math.min(max, Math.max(min, value));
+}
+
+async function sendConfiguratorInvitationEmail({
+  resendApiKey,
+  fromEmail,
+  scene,
+  source,
+  context,
+  item,
+  shareUrl,
+}: {
+  resendApiKey: string;
+  fromEmail: string;
+  scene: any;
+  source: any;
+  context: any;
+  item: any;
+  shareUrl: string;
+}) {
+  const toEmail = normalizeEmail(scene.client_email);
+  if (!resendApiKey) return { sent: false, reason: "RESEND_API_KEY manquant" };
+  if (!toEmail) return { sent: false, reason: "email exposant manquant" };
+  if (!shareUrl) return { sent: false, reason: "lien configurateur manquant" };
+
+  const firstName = firstNameFromMondayItem(item, source) || "client";
+  const salonName = clean(context?.salonLabel || source?.salon || scene?.salon || "votre salon");
+  const offerName = clean(source?.offer || scene?.offer || "CONFORT").toUpperCase();
+  const subject = `Votre stand sur le salon ${salonName}`;
+  const html = invitationEmailHtml({ firstName, salonName, offerName, sceneUrl: shareUrl });
+  const text = invitationEmailText({ firstName, salonName, offerName, sceneUrl: shareUrl });
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${resendApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: fromEmail,
+      to: [toEmail],
+      subject,
+      html,
+      text,
+    }),
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return { sent: false, reason: result?.message || "erreur Resend" };
+  }
+  return { sent: true, to: toEmail, providerId: result?.id || null };
+}
+
+function firstNameFromMondayItem(item: any, source: any) {
+  const mapping = source?.mapping ?? {};
+  const direct = readMappingValue(item, mapping.first_name || mapping.client_first_name || mapping.prenom || mapping["prénom"])
+    || readColumnAny(item, ["prenom", "prénom", "first_name", "texte2"]);
+  if (direct) return firstWord(direct);
+  const contact = readMappingValue(item, mapping.contact_name) || readMappingValue(item, mapping.contact);
+  if (contact) return firstWord(contact);
+  return firstWord(readMappingValue(item, mapping.client_name) || item?.name || "");
+}
+
+function firstWord(value = "") {
+  return clean(value).split(/\s+/).find(Boolean) || "";
+}
+
+function invitationEmailText({ firstName, salonName, offerName, sceneUrl }: { firstName: string; salonName: string; offerName: string; sceneUrl: string }) {
+  return `Bonjour ${firstName},
+
+Dans le cadre de votre participation au prochain Salon ${salonName}, vous avez opté pour un aménagement de stand auprès du ${salonName}.
+
+En cliquant sur le lien ci-dessous vous accéderez au configurateur qui vous permettra de personnaliser votre stand.
+Configurer mon stand - ${sceneUrl}
+
+REMARQUE : si votre stand n’est pas configurable, choisissez vos couleurs et options via le configurateur jusqu’à validation et notre service exposant reviendra vers vous dans les plus brefs délais.
+
+Merci.
+
+____________________________________________________
+
+Hello ${firstName},
+
+As part of your participation in the ${salonName}, you have opted for a booth layout in ${offerName} formula.
+
+By clicking on the link below you will access the configurator which will allow you to customize your stand.
+Configurer mon stand - ${sceneUrl}
+
+NOTE: if your stand is not configurable, choose your colors and options via the configurator until validation and our exhibitor service will get back to you as soon as possible.
+
+Thanks.`;
+}
+
+function invitationEmailHtml({ firstName, salonName, offerName, sceneUrl }: { firstName: string; salonName: string; offerName: string; sceneUrl: string }) {
+  const escapedUrl = escapeHtml(sceneUrl);
+  return `
+  <div style="font-family:Arial,sans-serif;color:#172033;line-height:1.55">
+    <p>Bonjour ${escapeHtml(firstName)},</p>
+    <p>Dans le cadre de votre participation au prochain Salon <strong>${escapeHtml(salonName)}</strong>, vous avez opté pour un aménagement de stand auprès du <strong>${escapeHtml(salonName)}</strong>.</p>
+    <p>En cliquant sur le lien ci-dessous vous accéderez au configurateur qui vous permettra de personnaliser votre stand.</p>
+    <p><a href="${escapedUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">Configurer mon stand</a></p>
+    <p><a href="${escapedUrl}" style="color:#1f4378">${escapedUrl}</a></p>
+    <p><strong>REMARQUE :</strong> si votre stand n’est pas configurable, choisissez vos couleurs et options via le configurateur jusqu’à validation et notre service exposant reviendra vers vous dans les plus brefs délais.</p>
+    <p>Merci.</p>
+    <hr style="border:none;border-top:1px solid #d7dde8;margin:24px 0" />
+    <p>Hello ${escapeHtml(firstName)},</p>
+    <p>As part of your participation in the <strong>${escapeHtml(salonName)}</strong>, you have opted for a booth layout in <strong>${escapeHtml(offerName)}</strong> formula.</p>
+    <p>By clicking on the link below you will access the configurator which will allow you to customize your stand.</p>
+    <p><a href="${escapedUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">Configurer mon stand</a></p>
+    <p><a href="${escapedUrl}" style="color:#1f4378">${escapedUrl}</a></p>
+    <p><strong>NOTE:</strong> if your stand is not configurable, choose your colors and options via the configurator until validation and our exhibitor service will get back to you as soon as possible.</p>
+    <p>Thanks.</p>
+  </div>`;
+}
+
+function escapeHtml(value: string) {
+  return clean(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function clientKey(email: string, fallback: string) {
