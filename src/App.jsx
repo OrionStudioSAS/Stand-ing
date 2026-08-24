@@ -1138,7 +1138,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     ],
     wallCovers,
     wallCoverSurfaces,
-  }), [area, availableCatalog, visibleSceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, thickCarpetEnabled]);
+    ledRailsEnabled,
+    expectedLedSpotCount: ledSpotCount,
+  }), [area, availableCatalog, visibleSceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, thickCarpetEnabled, ledRailsEnabled, ledSpotCount]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
@@ -10798,7 +10800,7 @@ function partitionHeadSummary(rule, sides = {}) {
   return labels.length ? labels.join(' + ') : 'Aucune';
 }
 
-function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelections = [], technicalFloor = null, wallCovers = {}, wallCoverSurfaces = [] }) {
+function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelections = [], technicalFloor = null, wallCovers = {}, wallCoverSurfaces = [], ledRailsEnabled = true, expectedLedSpotCount = 0 }) {
   const basePrice = 0;
   const baseItems = sceneBaseItems(scene);
   const baseItemsConfigured = sceneHasBaseItems(scene);
@@ -10828,7 +10830,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       };
     })
     : [];
-  const baseUsage = mergeBaseUsageRows(configuredBaseUsage, automaticBaseUsageRows(items, scene, catalog));
+  const baseUsage = mergeBaseUsageRows(configuredBaseUsage, automaticBaseUsageRows(items, scene, catalog, { ledRailsEnabled, expectedLedSpotCount }));
   const billableCounts = new Map();
   const lines = [];
   let itemsTotal = 0;
@@ -11143,7 +11145,7 @@ function looseBasePackKey(item = {}) {
     .trim();
 }
 
-function automaticBaseUsageRows(items = [], scene = {}, catalogEntries = []) {
+function automaticBaseUsageRows(items = [], scene = {}, catalogEntries = [], config = {}) {
   const rows = [];
   const area = Number(scene?.dimensions?.width || scene?.width_m || 0) * Number(scene?.dimensions?.depth || scene?.depth_m || 0);
   const reserveRule = activeReserveRule(sceneReserveRules(scene), area);
@@ -11162,13 +11164,15 @@ function automaticBaseUsageRows(items = [], scene = {}, catalogEntries = []) {
 
   const ledRows = items.filter((item) => isAutomaticLedRailItem(item) && isIncludedSceneItem(item));
   const spotCount = ledRows.reduce((sum, item) => sum + ledSpotsPerRail(findCatalogEntry(catalogEntries, item.type) || item), 0);
-  if (spotCount > 0) {
+  const expectedSpotCount = Math.max(spotCount, Number(config.expectedLedSpotCount || 0));
+  if (expectedSpotCount > 0) {
+    const usedSpotCount = config.ledRailsEnabled === false ? 0 : spotCount;
     rows.push({
       type: '__auto_led_spots__',
       label: 'Spots LED',
-      quantity: spotCount,
-      used: spotCount,
-      remaining: 0,
+      quantity: expectedSpotCount,
+      used: usedSpotCount,
+      remaining: Math.max(0, expectedSpotCount - usedSpotCount),
       billable: 0,
       automatic: true,
     });
