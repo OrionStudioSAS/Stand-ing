@@ -4888,7 +4888,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
         disabled={disabled || (!rule?.includedType && !selectedOptionType)}
         onClick={() => onChange(noneSelected ? '' : '__none__')}
       >
-        <X size={15} /> {t('reserve_remove')}
+        {noneSelected ? <><Plus size={15} /> {t('reserve_restore')}</> : <><X size={15} /> {t('reserve_remove')}</>}
       </button>
     </div>
   );
