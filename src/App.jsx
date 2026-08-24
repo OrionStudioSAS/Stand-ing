@@ -3362,7 +3362,6 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
   const price = marketplaceStartingPrice(entry, catalog, salonLabel);
   const category = marketCategoryMeta(normalizeMarketCategory(entry));
   const subtitle = marketplaceItemSubtitle(entry, category.label);
-  const description = marketplaceItemDescription(entry);
   const label = localizeItemLabel(entry, lang);
   return (
     <article className="marketplace-card">
@@ -3373,7 +3372,6 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
         <strong>{label}</strong>
         {price ? <em>{marketplacePriceLabel(entry, price, t)}</em> : null}
         {subtitle ? <small>{subtitle}</small> : null}
-        {description ? <p className="marketplace-card-description">{description}</p> : null}
         {billableCount > 0 ? (
           <div className="marketplace-card-counter">
             <button type="button" disabled={readOnly} onClick={() => onRemoveOne?.()} aria-label={`- ${label}`}>
@@ -3559,6 +3557,11 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const selectedVariant = variants.find((variant) => variant.id === format) || variants[0];
   const optionLink = resolveVariantOptionLink(selectedVariant, selectedExtras);
   const resolvedEntry = optionLink?.entry || selectedVariant?.entry || catalogEntry;
+  const productDescription = marketplaceItemDescription(resolvedEntry)
+    || marketplaceItemDescription(selectedVariant)
+    || marketplaceItemDescription(selectedVariant?.entry)
+    || marketplaceItemDescription(catalogEntry)
+    || marketplaceItemDescription(item);
   const textureSourceEntry = isVariantGroup
     ? (resolvedEntry || selectedVariant?.entry || {})
     : (item || resolvedEntry || catalogEntry);
@@ -3704,6 +3707,8 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
           </div>
           <button type="button" onClick={onClose} aria-label={t('item_config_close')}><X size={18} /></button>
         </header>
+
+        {productDescription && <p className="item-config-description">{productDescription}</p>}
 
         {variants.length > 1 && <ConfigChoiceGrid title={t('item_config_variant_title')} choices={variants} value={format} onChange={setFormat} />}
 
@@ -3959,6 +3964,7 @@ function syncSharedGlobalGroupOptions(items = [], sourceOptions = {}, catalogEnt
 function entryNeedsConfigurator(entry = {}) {
   if (itemConfigVariants(entry, '').length > 1) return true;
   if (isWoodReceptionDeskItem(entry)) return true;
+  if (marketplaceItemDescription(entry)) return true;
   if (normalizeTextureSlots(entry?.dimensions?.textureSlots).length > 0) return true;
   return itemConfigExtraOptions(entry).length > 0;
 }
@@ -3974,6 +3980,7 @@ function itemEditNeedsConfigurator(item = {}, entry = {}, salonLabel = '') {
     || isPartitionHeadItem(item)
     || isPosterItem(item)
     || (isWoodReceptionDeskItem(item) && !isIncludedSceneItem(item))
+    || Boolean(marketplaceItemDescription(catalogEntry) || marketplaceItemDescription(item))
     || textureSlots.length > 0;
 }
 
@@ -4309,6 +4316,8 @@ function marketplaceItemDescription(entry = {}) {
     dimensions.detail,
     dimensions.variantDetail,
     dimensions.info,
+    entry.detail,
+    entry.info,
     entry.description,
     entry.shortDescription,
   ];
