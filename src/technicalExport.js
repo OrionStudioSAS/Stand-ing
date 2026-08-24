@@ -181,7 +181,7 @@ function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale) {
   const y = maxY - tile;
   let x = planX + planW / 2 - tile / 2;
 
-  if (layout === 'left') {
+  if (layout === 'left' || layout === 'back') {
     x = planX + planW + overflow - tile;
   }
 

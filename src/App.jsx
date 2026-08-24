@@ -12542,7 +12542,7 @@ function standFloorBounds(width, depth, layout) {
 }
 
 function carpetFootprintBounds(width, depth, layout) {
-  const side = layout === 'right' ? 'left' : layout === 'left' ? 'right' : 'center';
+  const side = layout === 'right' ? 'left' : 'right';
   const maxZ = depth / 2 + carpetFootprintOverflow;
   const minZ = maxZ - carpetFootprintSizeMeters;
   let minX = -carpetFootprintSizeMeters / 2;
