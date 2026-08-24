@@ -3543,7 +3543,6 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const [draftVisualOptions, setDraftVisualOptions] = useState(initialOptions);
   const variants = itemConfigVariants(catalogEntry, salonLabel);
   const extraOptions = itemConfigExtraOptions(catalogEntry);
-  const textureSlots = normalizeTextureSlots(item?.dimensions?.textureSlots || catalogEntry?.dimensions?.textureSlots);
   const defaultVariant = variants.find((variant) => variant.isDefault) || variants[0];
   const [format, setFormat] = useState(initialOptions.variantId || initialOptions.format || defaultVariant?.id || 'standard');
   const [selectedExtras, setSelectedExtras] = useState(() => {
@@ -3560,12 +3559,16 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const selectedVariant = variants.find((variant) => variant.id === format) || variants[0];
   const optionLink = resolveVariantOptionLink(selectedVariant, selectedExtras);
   const resolvedEntry = optionLink?.entry || selectedVariant?.entry || catalogEntry;
+  const textureSourceEntry = isVariantGroup
+    ? (resolvedEntry || selectedVariant?.entry || {})
+    : (item || resolvedEntry || catalogEntry);
+  const textureSlots = normalizeTextureSlots(textureSourceEntry?.dimensions?.textureSlots);
   const visualOptions = { ...initialOptions, ...draftVisualOptions };
   const visualItem = {
     ...(item || resolvedEntry || catalogEntry),
     type: item?.type || resolvedEntry?.type || catalogEntry.type,
     label: item?.label || resolvedEntry?.label || catalogEntry.label,
-    dimensions: item?.dimensions || resolvedEntry?.dimensions || catalogEntry.dimensions,
+    dimensions: textureSourceEntry?.dimensions || item?.dimensions || resolvedEntry?.dimensions || catalogEntry.dimensions,
     options: visualOptions,
   };
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
