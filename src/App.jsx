@@ -57,9 +57,13 @@ function useT() {
 }
 function localizeItemLabel(entry = {}, lang = 'fr') {
   if (lang === 'en' && entry?.dimensions?.labelEn) return entry.dimensions.labelEn;
-  const label = entry?.label || '';
+  const label = normalizeCounterDisplayLabel(entry?.label || '');
   if (normalizeMarketCategory(entry) === 'electricity') return sentenceCaseProductLabel(label);
   return label;
+}
+
+function normalizeCounterDisplayLabel(label = '') {
+  return String(label || '').replace(/\bBanque\s+(?:d['’]accueil|accueil)/gi, 'Comptoir accueil');
 }
 
 function sentenceCaseProductLabel(label = '') {
@@ -84,7 +88,7 @@ const baseboardHeight = 0.06;
 const baseboardThickness = 0.003;
 const screenDepth = 0.06;
 const screenCenterHeight = 1.6;
-const wallItemSnap = 0.25;
+const wallItemSnap = 0.1;
 const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
 const collisionPadding = 0.04;
@@ -359,6 +363,15 @@ function resolveGroupChildren(children) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function moveArrayItem(items = [], fromIndex = 0, toIndex = 0) {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return items;
+  const next = [...items];
+  const [moved] = next.splice(fromIndex, 1);
+  if (!moved) return items;
+  next.splice(toIndex, 0, moved);
+  return next;
 }
 
 function App() {
@@ -1312,8 +1325,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             pricing: { ...(confirmedScene.source_payload?.pricing || {}), lines: scenePricing.lines || [], total: scenePricing.total || 0 },
           },
         };
-        const purchaseOrder = await scenePurchaseOrderEmailAttachment(purchaseOrderScene, objectBank);
-        const emailResult = await sendSceneCompletionEmail(confirmedScene, { purchaseOrder });
+        const directPurchaseOrder = purchaseOrderFromPricingLines(scenePricing.lines || [], availableCatalog);
+        const purchaseOrder = await scenePurchaseOrderEmailAttachment(purchaseOrderScene, objectBank, directPurchaseOrder);
+        const emailResult = await sendSceneCompletionEmail(purchaseOrderScene, { purchaseOrder });
         if (emailResult?.sent === false) {
           emailMessage = 'La scène est confirmée, mais l’email de confirmation n’a pas pu être envoyé automatiquement.';
           console.warn('Completion email not sent', emailResult);
@@ -1334,19 +1348,21 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   };
 
   const toggleOption = (key) => {
+    const resolvedKey = key === 'empreinte' ? 'moquette' : key;
     setOpenOptions((current) => Object.keys(current).reduce((next, optionKey) => ({
       ...next,
-      [optionKey]: optionKey === key ? !current[key] : false,
+      [optionKey]: optionKey === resolvedKey ? !current[resolvedKey] : false,
     }), {}));
   };
 
   const openOnlyStepOption = (key, shouldScroll = false) => {
     if (!key) return;
+    const resolvedKey = key === 'empreinte' ? 'moquette' : key;
     setOpenOptions((current) => Object.keys(current).reduce((next, optionKey) => ({
       ...next,
-      [optionKey]: optionKey === key,
+      [optionKey]: optionKey === resolvedKey,
     }), {}));
-    if (shouldScroll) setOptionScrollTarget(key);
+    if (shouldScroll) setOptionScrollTarget(resolvedKey);
   };
 
   const openStepOptionForItem = (item) => {
@@ -1759,7 +1775,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     if (!entry) return;
     const item = {
       ...makeItem(entry.type, width, depth, layout, entry),
-      label: entry.label || 'Banque d’accueil',
+      label: entry.label || 'Comptoir accueil',
       included: true,
       priceMode: 'included',
       deleteLocked: true,
@@ -2136,7 +2152,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             technicalFloorType={technicalFloorType}
             technicalFloorTrimType={technicalFloorTrimType}
             ledRailsEnabled={ledRailsEnabled}
-            ledSpotCount={ledSpotCount}
+            ledSpotCount={actualLedSpotCount}
             reserveRule={activeReserveRuleConfig}
             reserveOptionType={effectiveReserveOptionType}
             partitionHeadRule={activePartitionHeadRuleConfig}
@@ -2699,7 +2715,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
         <div className="counter-empty-card">
           <strong>{t('counter_empty_title')}</strong>
           <span>{t('counter_empty_detail')}</span>
-          <button type="button" className="reserve-remove-button counter-scene-toggle restore" disabled={disabled} onClick={() => onRestore?.()}>Remettre la banque d’accueil</button>
+          <button type="button" className="reserve-remove-button counter-scene-toggle restore" disabled={disabled} onClick={() => onRestore?.()}>Remettre le comptoir accueil</button>
         </div>
       </div>
     );
@@ -2719,7 +2735,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
           disabled={disabled}
           onClick={() => onVisibility?.(selectedItem, !selectedVisible)}
         >
-          {selectedVisible ? 'Retirer la banque d’accueil de la scène' : 'Remettre la banque d’accueil sur la scène'}
+          {selectedVisible ? 'Retirer le comptoir accueil de la scène' : 'Remettre le comptoir accueil sur la scène'}
         </button>
       )}
 
@@ -2734,7 +2750,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
                 className={item.id === selectedItem?.id ? 'active' : ''}
                 onClick={() => selectCounter(item.id)}
               >
-                {item.label || `Banque ${index + 1}`}
+                {item.label || `Comptoir ${index + 1}`}
               </button>
             ))}
           </div>
@@ -2746,7 +2762,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
           <header>
             <div>
               <strong>{t('counter_size_title')}</strong>
-              <span>{selectedVariant?.label || selectedItem?.label || t('option_counter')}</span>
+              <span>{selectedVariant ? counterSizeShortLabel(selectedVariant) : (selectedItem?.label || t('option_counter'))}</span>
             </div>
           </header>
           <div className="counter-size-grid">
@@ -2886,20 +2902,34 @@ function CounterFinishSwatch({ finish = {}, active = false, disabled = false, on
 
 function counterVariantOptions(catalog = [], salonLabel = '') {
   const group = catalog.find((entry) => isVariantGroupEntry(entry) && isCounterVariantGroup(entry));
-  if (group) return normalizeVariantGroupOptions(group.dimensions?.variantAssets, salonLabel).filter((variant) => isWoodReceptionDeskItem(variant.entry));
-  return catalog
+  if (group) {
+    return sortCounterVariants(normalizeVariantGroupOptions(group.dimensions?.variantAssets, salonLabel)
+      .filter((variant) => isWoodReceptionDeskItem(variant.entry)));
+  }
+  return sortCounterVariants(catalog
     .filter(isWoodReceptionDeskItem)
     .map((entry, index) => ({
       id: entry.type,
       assetType: entry.type,
-      label: entry.label || `Banque ${index + 1}`,
+      label: entry.label || `Comptoir ${index + 1}`,
       detail: assetDimensionsLabel({ dimensions: entry.dimensions }) || '',
       price: assetUnitPrice(entry, salonLabel),
       reference: assetReference(entry, salonLabel),
       imageUrl: entry.thumbnailUrl || '',
       isDefault: index === 0,
       entry,
-    }));
+    })));
+}
+
+function sortCounterVariants(variants = []) {
+  return [...variants].sort((a, b) => counterVariantWidth(a) - counterVariantWidth(b));
+}
+
+function counterVariantWidth(variant = {}) {
+  const size = itemDefaultSize(variant.entry || {});
+  const text = `${variant.label || ''} ${variant.assetType || ''} ${variant.detail || ''}`;
+  const explicit = String(text).match(/(\d+(?:[,.]\d+)?)\s*m(?:etre|ètre|etres|ètres)?\b/i);
+  return Number(size?.[0] || 0) || Number(explicit?.[1]?.replace(',', '.') || 0) || 999;
 }
 
 function isCounterVariantGroup(entry = {}) {
@@ -2919,17 +2949,16 @@ function counterSizeLabel(variant = {}) {
   return '1 mètre';
 }
 
+function counterSizeShortLabel(variant = {}) {
+  const label = counterSizeLabel(variant);
+  if (label.includes('50')) return '1,5 m';
+  if (label.includes('2')) return '2 m';
+  return '1 m';
+}
+
 function variantOptionLabel(variant = {}, groupEntry = {}) {
   if (!variant) return '';
-  if (isCounterVariantGroup(groupEntry)) {
-    const labelText = `${variant.label || ''} ${variant.assetType || ''} ${variant.detail || ''}`;
-    const explicit = labelText.match(/(\d+(?:[,.]\d+)?)\s*m(?:etre|ètre|etres|ètres)?\b/i);
-    if (explicit) return `${explicit[1].replace('.', ',')}m`;
-    const size = itemDefaultSize(variant.entry || {});
-    const width = Number(size?.[0] || 0);
-    if (width > 0) return `${formatNumber(width)}m`;
-    return counterSizeLabel(variant);
-  }
+  if (isCounterVariantGroup(groupEntry)) return counterSizeShortLabel(variant);
   return variant.label || '';
 }
 
@@ -2971,8 +3000,14 @@ function counterFinishOptions(colors = []) {
   const paidColors = colors
     .filter((color) => normalizeColorId(color.id) !== normalizeColorId(wood.id))
     .filter((color) => !/bois|wood/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`))
+    .filter((color) => !isHiddenCounterFinish(color))
     .map((color) => ({ ...color, mode: 'color', price: (color.isFree || color.included) ? 0 : Number(color.price || white.price) }));
   return [wood, white, ...paidColors];
+}
+
+function isHiddenCounterFinish(color = {}) {
+  const text = normalizeTextValue(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`);
+  return text.includes('chene nebrasa') || text.includes('chene nebraska') || text.includes('blanc craie');
 }
 
 function counterFinishPatch(finish = {}) {
@@ -2994,7 +3029,7 @@ function counterVariantUpgradeOptionLine(item = {}, entry = {}, salonLabel = '',
   if (!isIncludedSceneItem(item) || !isWoodReceptionDeskItem({ ...entry, ...item }) || upgradePrice <= 0) return null;
   return {
     type: `counter-size-${item.id || entry?.type || index}`,
-    label: `${item.options?.variantGroupLabel || "Banque d'accueil"} — option ${item.options?.variantLabel || 'taille supérieure'}`,
+    label: `${item.options?.variantGroupLabel || "Comptoir accueil"} — option ${item.options?.variantLabel || 'taille supérieure'}`,
     quantity: 1,
     unitPrice: upgradePrice,
     total: upgradePrice,
@@ -3136,7 +3171,7 @@ function OptionsStepPanel({
   return (
     <>
       <PanelHead title={t('panel_options_title')} step={activeStep} />
-      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_carpet')} icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
           colors={carpetColors}
           selectedColor={selectedCarpetColor}
@@ -3152,8 +3187,6 @@ function OptionsStepPanel({
           onOptionToggle={onCarpetConfigOption}
           onThickChange={onCarpetThick}
         />
-      </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('empreinte')} title={t('option_footprint')} icon={<Layers size={16} />} open={openOptions.empreinte} onToggle={() => toggleOption('empreinte')}>
         <FootprintColorOptionCard
           enabled={carpetFootprintEnabled}
           colors={footprintColors}
@@ -3275,7 +3308,7 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
   const filteredEntries = entries.filter((entry) => {
     const entryCategory = normalizeMarketCategory(entry);
     const matchesCategory = activeCategory === 'all' || entryCategory === activeCategory;
-    const searchText = [entry.label, entry.type, entry.dimensions?.category, marketplaceItemSubtitle(entry, marketCategoryMeta(entryCategory).label)]
+    const searchText = [entry.label, entry.type, entry.dimensions?.category, marketplaceItemSubtitle(entry, marketCategoryMeta(entryCategory).label), marketplaceItemDescription(entry)]
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
@@ -3329,6 +3362,7 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
   const price = marketplaceStartingPrice(entry, catalog, salonLabel);
   const category = marketCategoryMeta(normalizeMarketCategory(entry));
   const subtitle = marketplaceItemSubtitle(entry, category.label);
+  const description = marketplaceItemDescription(entry);
   const label = localizeItemLabel(entry, lang);
   return (
     <article className="marketplace-card">
@@ -3339,6 +3373,7 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
         <strong>{label}</strong>
         {price ? <em>{marketplacePriceLabel(entry, price, t)}</em> : null}
         {subtitle ? <small>{subtitle}</small> : null}
+        {description ? <p className="marketplace-card-description">{description}</p> : null}
         {billableCount > 0 ? (
           <div className="marketplace-card-counter">
             <button type="button" disabled={readOnly} onClick={() => onRemoveOne?.()} aria-label={`- ${label}`}>
@@ -3785,7 +3820,7 @@ function ToggleOption({ active, label, detail, price, onChange }) {
     <button type="button" className={`config-toggle-option ${active ? 'active' : ''}`} onClick={() => onChange(!active)}>
       <i />
       <span><strong>{label}</strong>{detail && <small>{detail}</small>}</span>
-      <em>{price}</em>
+      <em className={normalizeTextValue(price).includes('inclus') ? 'included' : ''}>{price}</em>
     </button>
   );
 }
@@ -3796,16 +3831,35 @@ function itemConfigVariants(entry, salonLabel) {
     const selectOption = configOptions.find((o) => o.type === 'select' && o.choices?.length);
     if (selectOption) {
       const variants = normalizeSelectOptionVariants(selectOption, entry?.dimensions?.variantOptionLinks || [], salonLabel);
-      if (variants.length) return variants;
+      if (variants.length) return sortItemConfigVariants(entry, variants);
     }
     const groupVariants = normalizeVariantGroupOptions(
       entry?.dimensions?.variantAssets,
       salonLabel,
       entry?.dimensions?.variantOptionLinks || [],
     );
-    if (groupVariants.length) return groupVariants;
+    if (groupVariants.length) return sortItemConfigVariants(entry, groupVariants);
   }
   return genericItemVariants(entry, salonLabel);
+}
+
+function sortItemConfigVariants(entry = {}, variants = []) {
+  if (isCounterVariantGroup(entry)) {
+    return sortCounterVariants(variants).map((variant) => ({
+      ...variant,
+      label: counterSizeShortLabel(variant),
+      detail: '',
+    }));
+  }
+  const inchValues = variants.map((variant) => variantInchSize(variant)).filter((value) => Number.isFinite(value));
+  if (inchValues.length >= 2) return [...variants].sort((a, b) => variantInchSize(a) - variantInchSize(b));
+  return variants;
+}
+
+function variantInchSize(variant = {}) {
+  const text = `${variant.label || ''} ${variant.assetType || ''} ${variant.detail || ''}`;
+  const match = String(text).match(/(\d{2})\s*(?:['”"]|pouces?|inch|lcd|tv)/i) || String(text).match(/(?:tv|lcd|ecran|écran)[^\d]*(\d{2})/i);
+  return match ? Number(match[1]) : NaN;
 }
 
 function normalizeSelectOptionVariants(selectOption, variantOptionLinks = [], salonLabel = '') {
@@ -4137,7 +4191,7 @@ function counterColorOptionLine(item = {}, entry = {}, salonLabel = '', index = 
   const colorName = item.options?.binary2ColorName || item.options?.binary2Color || 'finition';
   return {
     type: `counter-color-${item.id || entry?.type || index}`,
-    label: `Option finition banque d'accueil — ${colorName}`,
+    label: `Option finition comptoir accueil — ${colorName}`,
     quantity: 1,
     unitPrice: colorPrice,
     total: Math.round(colorPrice),
@@ -4244,6 +4298,20 @@ function marketplaceItemSubtitle(entry, categoryLabel) {
   if (entry.dimensions?.category) return entry.dimensions.category;
   return categoryLabel;
 }
+function marketplaceItemDescription(entry = {}) {
+  const dimensions = entry?.dimensions || {};
+  const candidates = [
+    dimensions.description,
+    dimensions.shortDescription,
+    dimensions.detail,
+    dimensions.variantDetail,
+    dimensions.info,
+    entry.description,
+    entry.shortDescription,
+  ];
+  return String(candidates.find((value) => String(value || '').trim()) || '').trim();
+}
+
 
 function marketplacePriceLabel(entry, price, t) {
   const formattedPrice = Number(price || 0).toLocaleString('fr-FR');
@@ -4341,6 +4409,7 @@ function ValidationStepPanel({
 }) {
   const t = useT();
   const lines = pricing?.lines || [];
+  const visibleSupplementLines = lines.filter((line) => !line.mandatory && !String(line.type || '').startsWith('technical-floor-'));
   const baseItems = pricing?.baseUsage || pricing?.baseItems || [];
   const includedCounts = pricing?.includedCounts || new Map();
   const confirmed = saveState === 'configured';
@@ -4351,6 +4420,20 @@ function ValidationStepPanel({
   const pendingVisuals = validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals, wallCovers, wallCoverSurfaces });
   const completeCount = pendingVisuals.length + (hasSpecialRequest ? 1 : 0);
   const requestTagOptions = ['Visuel à transmettre', 'Position à vérifier', 'Demande technique', 'Autre'];
+  const optionSupplementTotal = (match) => lines
+    .filter((line) => !line.mandatory)
+    .filter((line) => match(line, normalizeTextValue(line.label || '')))
+    .reduce((sum, line) => sum + Number(line.total || 0), 0);
+  const valueWithSupplement = (value, amount) => {
+    const safeAmount = Number(amount || 0);
+    return safeAmount > 0 ? `${value} · +${safeAmount.toLocaleString('fr-FR')} € HT` : value;
+  };
+  const carpetSupplement = optionSupplementTotal((line, label) => label.startsWith('moquette'));
+  const footprintSupplement = optionSupplementTotal((line, label) => label.startsWith('empreinte moquette'));
+  const wallFabricSupplement = optionSupplementTotal((line, label) => label.startsWith('coton cloison'));
+  const reserveSupplement = optionSupplementTotal((line, label) => label.includes('reserve'));
+  const partitionHeadSupplement = optionSupplementTotal((line, label) => label.includes('tete de cloison'));
+  const wallCoverSupplement = optionSupplementTotal((line) => line.type === 'wall-cover');
   const toggleTag = (tag) => {
     const current = new Set(specialRequestTags || []);
     if (current.has(tag)) current.delete(tag);
@@ -4375,13 +4458,13 @@ function ValidationStepPanel({
 
       <section className="validation-section clean">
         <h3>{t('validation_options_title')}</h3>
-        <ValidationOptionLine label={t('validation_carpet')} value={`${carpetColor.name} (${carpetColor.code})`} />
-        <ValidationOptionLine label={t('validation_footprint')} value={carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : t('validation_footprint_removed')} />
-        <ValidationOptionLine label="Cloison" value={`${wallFabricColor.name} (${wallFabricColor.code})`} />
-        <ValidationOptionLine label={t('validation_floor')} value={technicalFloor ? `${technicalFloor.label}${technicalFloorTrimType === 'angled' ? ' · cornières inclinées' : ''}` : t('validation_floor_none')} />
+        <ValidationOptionLine label={t('validation_carpet')} value={valueWithSupplement(`${carpetColor.name} (${carpetColor.code})`, carpetSupplement)} />
+        <ValidationOptionLine label={t('validation_footprint')} value={valueWithSupplement(carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : t('validation_footprint_removed'), footprintSupplement)} />
+        <ValidationOptionLine label="Cloison" value={valueWithSupplement(`${wallFabricColor.name} (${wallFabricColor.code})`, wallFabricSupplement)} />
         <ValidationOptionLine label={t('validation_led')} value={ledRailsEnabled ? t('validation_led_kept', { count: ledSpotCount }) : t('validation_led_removed')} />
-        <ValidationOptionLine label={t('validation_reserve')} value={reserveOptionType === '__none__' ? t('validation_reserve_removed') : (reserveOption?.label || reserveRule?.includedLabel || t('validation_reserve_none'))} />
-        <ValidationOptionLine label={t('validation_partition_heads')} value={partitionHeadSummary(partitionHeadRule, partitionHeadSides)} tone="amber" />
+        <ValidationOptionLine label={t('validation_reserve')} value={valueWithSupplement(reserveOptionType === '__none__' ? t('validation_reserve_removed') : (reserveOption?.label || reserveRule?.includedLabel || t('validation_reserve_none')), reserveSupplement)} />
+        <ValidationOptionLine label={t('validation_partition_heads')} value={valueWithSupplement(partitionHeadSummary(partitionHeadRule, partitionHeadSides), partitionHeadSupplement)} tone="amber" />
+        {activeCovers.length > 0 && <ValidationOptionLine label="Bâches sur cloison" value={valueWithSupplement(`${formatNumber(activeCovers.reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0))} ml sélectionnés`, wallCoverSupplement)} tone="amber" />}
         {pendingVisuals.length > 0 && (
           <div className="validation-warning-note">
             {pendingVisuals.map((item) => <span key={item}>{item}</span>)}
@@ -4411,8 +4494,8 @@ function ValidationStepPanel({
 
       <section className="validation-section clean">
         <h3>{t('validation_supplements_title')}</h3>
-        {lines.length ? (
-          lines.map((line) => {
+        {visibleSupplementLines.length ? (
+          visibleSupplementLines.map((line) => {
             const includedCount = includedCounts.get(line.type) || 0;
             const billableItems = items.filter((i) => i.type === line.type).slice(includedCount);
             const optionLines = uniqueTextValues([
@@ -4647,7 +4730,7 @@ function LedRailOptionCard({ enabled, spotCount, disabled = false, onChange }) {
       <div>
         <strong>{t('led_title')}</strong>
         <span>{t('led_count', { count: spotCount })}</span>
-        <small>{t('led_note')}</small>
+        {t('led_note') && <small>{t('led_note')}</small>}
       </div>
       <button
         type="button"
@@ -4790,7 +4873,7 @@ function FormulaIncludedBox({ open, onToggle, includedRow }) {
           {includedRow ? (
             <>
               <p>{t('formula_reserve_included', { area: includedRow.areaLabel })}</p>
-              <p>{t('formula_reserve_detail')}</p>
+              {t('formula_reserve_detail') && <p>{t('formula_reserve_detail')}</p>}
             </>
           ) : (
             <p>{t('formula_reserve_none')}</p>
@@ -7731,6 +7814,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
   const [batPictoError, setBatPictoError] = useState('');
   const [groupRows, setGroupRows] = useState(() => assetToGroupRows(asset));
   const [selectedGroupRowUid, setSelectedGroupRowUid] = useState(null);
+  const [draggingGroupRowUid, setDraggingGroupRowUid] = useState(null);
   const salons = getSalonRows(scenes).map((salon) => salon.title);
   const assignedSalons = assetSalons(draft, scenes);
   const isColorGroup = Boolean(draft.dimensions?.isColorGroup);
@@ -7995,6 +8079,15 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
   const removeGroupRow = (uid) => {
     setGroupRows((current) => current.filter((row) => row.uid !== uid));
     if (activeGroupRowUid === uid) setSelectedGroupRowUid(groupRows.find((row) => row.uid !== uid)?.uid || null);
+  };
+
+  const reorderGroupRow = (targetUid) => {
+    if (!draggingGroupRowUid || draggingGroupRowUid === targetUid) return;
+    setGroupRows((current) => moveArrayItem(
+      current,
+      current.findIndex((row) => row.uid === draggingGroupRowUid),
+      current.findIndex((row) => row.uid === targetUid),
+    ));
   };
 
   const saveDraft = () => {
@@ -8444,6 +8537,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
               sourceAssets={variantSourceAssetsList}
               onChange={(index, type) => setVariantAssetTypes((current) => current.map((item, itemIndex) => (itemIndex === index ? type : item)))}
               onRemove={(index) => setVariantAssetTypes((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+              onReorder={(fromIndex, toIndex) => setVariantAssetTypes((current) => moveArrayItem(current, fromIndex, toIndex))}
             />
 
             <div className="asset-variants-head compact">
@@ -8539,7 +8633,16 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
               {groupRows.map((row) => {
                 const selectedSource = sourceAssets.find((source) => source.type === row.type);
                 return (
-                  <article key={row.uid} className={`asset-group-row ${activeGroupRowUid === row.uid ? 'active' : ''}`} onClick={() => setSelectedGroupRowUid(row.uid)}>
+                  <article
+                    key={row.uid}
+                    className={`asset-group-row ${activeGroupRowUid === row.uid ? 'active' : ''} ${draggingGroupRowUid === row.uid ? 'dragging' : ''}`}
+                    draggable
+                    onDragStart={() => setDraggingGroupRowUid(row.uid)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => reorderGroupRow(row.uid)}
+                    onDragEnd={() => setDraggingGroupRowUid(null)}
+                    onClick={() => setSelectedGroupRowUid(row.uid)}
+                  >
                     <label>
                       <span>Objet</span>
                       <select value={row.type} onChange={(event) => updateGroupRow(row.uid, { type: event.target.value, label: '' })}>
@@ -8780,15 +8883,28 @@ function AssetTextureSlotRows({ rows, onChange, onRemove }) {
   );
 }
 
-function AssetVariantSourceRows({ rows, sourceAssets, onChange, onRemove }) {
+function AssetVariantSourceRows({ rows, sourceAssets, onChange, onRemove, onReorder }) {
+  const [draggingIndex, setDraggingIndex] = useState(null);
   if (!sourceAssets.length) return <p className="asset-variants-empty">Aucun objet disponible pour créer des variantes.</p>;
   if (!rows.length) return <p className="asset-variants-empty">Aucun objet associé : ce groupe ne s'affichera pas encore dans la boutique.</p>;
+  const dropOn = (targetIndex) => {
+    if (draggingIndex === null || draggingIndex === targetIndex) return;
+    onReorder?.(draggingIndex, targetIndex);
+  };
   return (
     <div className="asset-variant-list">
       {rows.map((type, index) => {
         const selectedSource = sourceAssets.find((asset) => asset.type === type) || sourceAssets[0];
         return (
-          <article key={`${type}-${index}`} className="asset-variant-row source-row">
+          <article
+            key={`${type}-${index}`}
+            className={`asset-variant-row source-row ${draggingIndex === index ? 'dragging' : ''}`}
+            draggable={Boolean(onReorder)}
+            onDragStart={() => setDraggingIndex(index)}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => dropOn(index)}
+            onDragEnd={() => setDraggingIndex(null)}
+          >
             <label>
               <span>Objet variante</span>
               <select value={type} onChange={(event) => onChange(index, event.target.value)}>
@@ -8934,6 +9050,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
             sourceAssets={sourceAssets}
             onChange={(index, type) => setRows((current) => current.map((item, itemIndex) => (itemIndex === index ? type : item)))}
             onRemove={(index) => setRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+            onReorder={(fromIndex, toIndex) => setRows((current) => moveArrayItem(current, fromIndex, toIndex))}
           />
         </section>
 
@@ -8994,6 +9111,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
     { uid: `group-row-${Date.now()}-2`, type: fallbackType, x: 0.4, z: 0, rotation: 0 },
   ]);
   const [selectedRowUid, setSelectedRowUid] = useState(null);
+  const [draggingRowUid, setDraggingRowUid] = useState(null);
   const activeRowUid = selectedRowUid || rows[0]?.uid || null;
   const [assignedSalons, setAssignedSalons] = useState(() => getSalonRows(scenes).map((salon) => salon.title).slice(0, 1));
   const [placementRuleId, setPlacementRuleId] = useState('free');
@@ -9005,6 +9123,15 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
   const removeRow = (uid) => {
     setRows((current) => current.filter((row) => row.uid !== uid));
     if (activeRowUid === uid) setSelectedRowUid(rows.find((row) => row.uid !== uid)?.uid || null);
+  };
+
+  const reorderRow = (targetUid) => {
+    if (!draggingRowUid || draggingRowUid === targetUid) return;
+    setRows((current) => moveArrayItem(
+      current,
+      current.findIndex((row) => row.uid === draggingRowUid),
+      current.findIndex((row) => row.uid === targetUid),
+    ));
   };
 
   const toggleSalon = (salon) => {
@@ -9076,7 +9203,16 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
           {rows.map((row, index) => {
             const selectedSource = sourceAssets.find((asset) => asset.type === row.type);
             return (
-              <article key={row.uid} className={`asset-group-row ${activeRowUid === row.uid ? 'active' : ''}`} onClick={() => setSelectedRowUid(row.uid)}>
+              <article
+                key={row.uid}
+                className={`asset-group-row ${activeRowUid === row.uid ? 'active' : ''} ${draggingRowUid === row.uid ? 'dragging' : ''}`}
+                draggable
+                onDragStart={() => setDraggingRowUid(row.uid)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => reorderRow(row.uid)}
+                onDragEnd={() => setDraggingRowUid(null)}
+                onClick={() => setSelectedRowUid(row.uid)}
+              >
                 <label>
                   <span>Objet</span>
                   <select value={row.type} onChange={(event) => updateRow(row.uid, { type: event.target.value, label: '' })}>
@@ -9501,6 +9637,15 @@ function purchaseOrderLabelLooksGeneric(label = '', type = '') {
   return !/[—-]|couleur|option|taille|m\b|\d/.test(normalized);
 }
 
+
+function purchaseOrderFromPricingLines(lines = [], catalogEntries = []) {
+  const normalizedLines = normalizePurchaseOrderLines(lines, catalogEntries);
+  return {
+    lines: normalizedLines,
+    total: roundCurrency(normalizedLines.reduce((sum, line) => sum + Number(line.total || 0), 0)),
+  };
+}
+
 function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
   return (lines || [])
     .map((line) => {
@@ -9525,8 +9670,9 @@ function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
 
 function purchaseOrderBaseLabel(label = '') {
   return String(label || 'Lot AMCO')
+    .replace(/\bBanque\s+(?:d['’]accueil|accueil)/gi, 'Comptoir accueil')
     .replace(/\s+[—-]\s+option\s+/i, ' - ')
-    .replace(/^Option\s+finition\s+banque\s+d'accueil\s+[—-]\s+/i, "Banque d'accueil - ")
+    .replace(/^Option\s+finition\s+(?:banque\s+d'accueil|comptoir\s+accueil)\s+[—-]\s+/i, "Comptoir accueil - ")
     .replace(/[—]/g, '-')
     .replace(/\s+/g, ' ')
     .trim();
@@ -9571,8 +9717,8 @@ async function downloadScenePurchaseOrder(scene = {}, assets = []) {
   downloadBlob(blob, fileName);
 }
 
-async function scenePurchaseOrderEmailAttachment(scene = {}, assets = []) {
-  const order = scenePurchaseOrder(scene, assets);
+async function scenePurchaseOrderEmailAttachment(scene = {}, assets = [], precomputedOrder = null) {
+  const order = precomputedOrder?.lines?.length ? precomputedOrder : scenePurchaseOrder(scene, assets);
   const fileName = `bon-de-commande-${slugForType(scene.client_name || scene.project_name || scene.id || 'stand')}.pdf`;
   const blob = await fillPurchaseOrderTemplate(order);
   return {
@@ -11177,11 +11323,8 @@ function defaultIncludedFurniture() {
 function furniturePanelCategory(entry) {
   const configuredCategory = configuredMarketCategory(entry);
   if (configuredCategory) return configuredCategory;
-  const text = `${entry?.type || ''} ${entry?.label || ''}`.toLowerCase();
   if (entry?.isGroup) return 'hidden';
   if (isLedRailEntry(entry)) return 'hidden';
-  if (text.includes('cloison') || text.includes('porte poussant')) return 'structure';
-  if (isWallItemType(entry?.type) || /tv|ecran|écran|borne|led|multimedia|multimédia|caisson/.test(text)) return 'multimedia';
   return 'furniture';
 }
 
@@ -11781,7 +11924,7 @@ function makeAutomaticSpotItems(rule, catalogEntries, width, depth, layout, cont
     const freeIntervals = freeWallIntervals(range, blockers);
     const positions = distributeInFreeIntervals(count, freeIntervals.length ? freeIntervals : [range]);
     return positions.map((rawAxis, index) => {
-      const axis = clamp(snapWallAxis(rawAxis), range.min, range.max);
+      const axis = clamp(snapWallAxis(rawAxis, itemBase), range.min, range.max);
       return constrainItem({ ...itemBase, id: `auto-spot-${wallId}-${index + 1}`, x: axis }, width, depth, layout);
     });
   });
@@ -11902,7 +12045,7 @@ function makeAutomaticLedRailItems(entries, width, depth, layout, spotCount) {
       };
       const range = wallItemAxisRange(itemBase, allocation.wall, width, depth);
       const rawAxis = range.min + ((index + 1) * (range.max - range.min)) / (allocation.count + 1);
-      const axis = clamp(snapWallAxis(rawAxis), range.min, range.max);
+      const axis = clamp(snapWallAxis(rawAxis, itemBase), range.min, range.max);
       return constrainItem({
         ...itemBase,
         id: `auto-led-${entry.type}-${allocation.wall}-${index + 1}`,
@@ -12254,8 +12397,17 @@ function itemCollisionEnabled(item) {
   return item?.collisionEnabled !== false && item?.dimensions?.collisionEnabled !== false;
 }
 
-function snapWallAxis(value) {
-  return Number((Math.round(Number(value || 0) / wallItemSnap) * wallItemSnap).toFixed(2));
+function snapWallAxis(value, item = null) {
+  const step = wallItemSnapForItem(item);
+  return Number((Math.round(Number(value || 0) / step) * step).toFixed(2));
+}
+
+function wallItemSnapForItem(item = null) {
+  if (!item) return wallItemSnap;
+  if (isPosterItem(item)) return 0.01;
+  if (isLedRailEntry(item)) return 0.05;
+  if (isTelevisionItem(item)) return 0.25;
+  return wallItemSnap;
 }
 
 function standFloorBounds(width, depth, layout) {
@@ -12412,7 +12564,7 @@ function wallFromDrag(point, currentWall, width, depth, layout) {
 
 function wallDragPatch(point, dragged, items, width, depth, layout) {
   const fixedY = isTelevisionItem(dragged) ? { y: screenCenterHeight } : {};
-  const objectWall = objectWallFromDrag(point, items, dragged.id);
+  const objectWall = objectWallFromDrag(point, items, dragged);
   if (objectWall) {
     return {
       wall: objectWall.surface.id,
@@ -12433,7 +12585,8 @@ function wallDragPatch(point, dragged, items, width, depth, layout) {
   };
 }
 
-function objectWallFromDrag(point, items, ignoreId = null) {
+function objectWallFromDrag(point, items, dragged = null) {
+  const ignoreId = typeof dragged === 'string' ? dragged : dragged?.id || null;
   const candidates = objectWallSurfaces(items, ignoreId)
     .map((surface) => {
       const halfLength = surface.length / 2;
@@ -12445,7 +12598,7 @@ function objectWallFromDrag(point, items, ignoreId = null) {
       const distance = Math.abs(normalValue - surface.normalAxis);
       if (distance > objectWallSnapThreshold) return null;
       const rawSide = normalValue >= surface.normalAxis ? 1 : -1;
-      const axis = snapWallAxis(clamp(axisValue, surface.centerAxis - halfLength, surface.centerAxis + halfLength));
+      const axis = snapWallAxis(clamp(axisValue, surface.centerAxis - halfLength, surface.centerAxis + halfLength), dragged);
       const side = safeObjectWallSide(surface, axis, rawSide);
       if (!side) return null;
       return {
@@ -12733,7 +12886,7 @@ function applyWallPlacementRule(item, width, depth, layout) {
 }
 
 function smclPartitionHeadWallAxis(item, wall, rawAxis, range) {
-  if (!isSmclPartitionHeadItem(item)) return snapWallAxis(rawAxis);
+  if (!isSmclPartitionHeadItem(item)) return snapWallAxis(rawAxis, item);
   const axis = Number(rawAxis || 0);
   const middle = (Number(range.min || 0) + Number(range.max || 0)) / 2;
   if (wall === 'back') {
@@ -12760,7 +12913,7 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
         const margin = Math.min(itemHalfWidth, Math.max(0, halfLength - 0.02));
         const min = surface.centerAxis - halfLength + margin;
         const max = surface.centerAxis + halfLength - margin;
-        return { ...item, x: clamp(snapWallAxis(item.x), min, max), y: wallItemCenterY(item), wallSide: side };
+        return { ...item, x: clamp(snapWallAxis(item.x, item), min, max), y: wallItemCenterY(item), wallSide: side };
       }
     }
 
@@ -12770,7 +12923,7 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
       return applyWallPlacementRule({ ...item, wall }, width, depth, layout);
     }
     const range = wallItemAxisRange(item, wall, width, depth);
-    const axis = clamp(snapWallAxis(item.x), range.min, range.max);
+    const axis = clamp(snapWallAxis(item.x, item), range.min, range.max);
     return { ...item, wall, x: axis, y: wallItemCenterY(item), z: wall === 'back' ? -depth / 2 + wallThickness : axis };
   }
 
@@ -12861,10 +13014,10 @@ function placeWallItemInFreeSpot(item, items, width, depth, layout) {
 
   orderedWalls.forEach((wall, wallIndex) => {
     const range = wallItemAxisRange(item, wall, width, depth);
-    for (let axis = range.min; axis <= range.max + 0.001; axis += wallItemSnap) {
+    for (let axis = range.min; axis <= range.max + 0.001; axis += wallItemSnapForItem(item)) {
       candidates.push({
         wall,
-        axis: snapWallAxis(axis),
+        axis: snapWallAxis(axis, item),
         distance: wallIndex * 100 + Math.abs(axis - Number(item.x || 0)),
       });
     }
@@ -13207,7 +13360,7 @@ function wallTopSnapItemHeight(item = {}, entry = null) {
 }
 
 function wallMountedNormalOffset(item, objectSurface = false) {
-  const wallFaceOffset = objectSurface ? wallThickness / 2 : wallThickness;
+  const wallFaceOffset = objectSurface ? 0 : wallThickness;
   if (isPosterItem(item)) return wallFaceOffset + 0.006;
   if (item?.type === 'screen') return wallFaceOffset + screenDepth / 2;
   if (isPartitionHeadItem(item)) {
@@ -14739,6 +14892,10 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
     }
   }
 
+  if (isElectricalWhiteItem(item)) {
+    return brightenElectricalMaterial(material);
+  }
+
   if (!isPartitionHeadItem(item)) return material;
   if (textureOptions.mainImageTexture && isPartitionHeadMainImageMaterial(materialName, material, item)) {
     return materialWithTexture(material, textureOptions.mainImageTexture);
@@ -14751,6 +14908,20 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
     return materialWithTexture(material, textureOptions.exhibitorTexture);
   }
   return material;
+}
+
+function isElectricalWhiteItem(item = {}) {
+  const text = normalizedItemText(item);
+  return text.includes('alimentation') || text.includes('multiprise');
+}
+
+function brightenElectricalMaterial(material) {
+  const cloned = materialWithColor(material, '#ffffff');
+  if ('roughness' in cloned) cloned.roughness = 0.28;
+  if ('metalness' in cloned) cloned.metalness = 0.01;
+  if ('emissiveIntensity' in cloned) cloned.emissiveIntensity = 0;
+  cloned.needsUpdate = true;
+  return cloned;
 }
 
 function applyTextureSlotMaterial(material, item = {}, textureOptions = {}, materialName = '') {
@@ -15213,15 +15384,21 @@ function isAluminiumMaterial(material = {}) {
 }
 
 function defaultModelColor(item) {
+  const text = normalizeTextValue(`${item?.type || ''} ${item?.label || ''}`);
   if (/porte[-_ ]?doc/i.test(item?.type || item?.label || '')) return '#bfc5c8';
+  if (text.includes('alimentation') || text.includes('multiprise')) return '#ffffff';
   return item?.color || '#ece7da';
 }
 
 function defaultModelMetalness(item) {
+  const text = normalizeTextValue(`${item?.type || ''} ${item?.label || ''}`);
+  if (text.includes('alimentation') || text.includes('multiprise')) return 0.01;
   return /porte[-_ ]?doc/i.test(item?.type || item?.label || '') ? 0.35 : 0.03;
 }
 
 function defaultModelRoughness(item) {
+  const text = normalizeTextValue(`${item?.type || ''} ${item?.label || ''}`);
+  if (text.includes('alimentation') || text.includes('multiprise')) return 0.32;
   return /porte[-_ ]?doc/i.test(item?.type || item?.label || '') ? 0.42 : 0.58;
 }
 

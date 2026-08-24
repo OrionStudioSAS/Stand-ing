@@ -50,12 +50,13 @@ export const translations = {
     section_options: 'Les options',
     option_carpet: 'Moquette',
     option_footprint: 'Empreinte moquette',
+    option_ground: 'Sol',
     option_wall: 'Cloison',
     option_floor: 'Plancher technique',
     option_led: 'Spots LED',
     option_reserve: 'Réserve',
     option_partition_head: 'Tête de cloison',
-    option_counter: 'Banque d\'accueil',
+    option_counter: 'Comptoir accueil',
 
     // ColorOptionCard
     color_title: 'Couleur',
@@ -99,11 +100,11 @@ export const translations = {
 
     // LedRailOptionCard
     led_title: 'Spots LED automatiques',
-    led_count: '{count} spots calcules automatiquement, soit 1 spot tous les 3m2.',
+    led_count: 'Votre formule inclut {count} spots LED. Si vous souhaitez les enlever de votre stand, cliquez ci-dessous.',
     led_keep: 'Les laisser',
     led_remove: 'Supprimer les Spot LED',
     led_restore: 'Remettre les Spot LED',
-    led_note: 'Placés en haut des murs.',
+    led_note: '',
 
     // CarpetColorOptionCard
     carpet_locked: 'La couleur de la moquette standard est gris clair et ne peut être changée.',
@@ -133,8 +134,8 @@ export const translations = {
     reserve_remove: 'Supprimer la réserve',
     reserve_included: 'Inclus',
     formula_title: 'Votre formule inclus :',
-    formula_reserve_included: 'Une réserve {area} est incluse dans votre formule.',
-    formula_reserve_detail: 'Une réserve permet de stocker votre matériel, vos sacs et documents à l\'abri des regards.',
+    formula_reserve_included: 'Votre formule inclut une réserve blanche de {area} (la couleur ne peut pas être modifiée) fermant avec une poignée à code et équipée de 2 étagères, un miroir et une patère.',
+    formula_reserve_detail: '',
     formula_reserve_none: 'Aucune réserve n\'est incluse automatiquement pour cette surface.',
 
     // PartitionHeadOptionCard
@@ -158,11 +159,11 @@ export const translations = {
     partition_head_company: 'Nom société',
 
     // CounterOptionCard
-    counter_empty_title: 'Aucune banque d\'accueil sur cette scène',
-    counter_empty_detail: 'Le paramétrage apparaîtra ici dès qu\'une banque d\'accueil sera incluse dans la configuration de base.',
+    counter_empty_title: 'Aucun comptoir accueil sur cette scène',
+    counter_empty_detail: 'Le paramétrage apparaîtra ici dès qu\'un comptoir accueil sera inclus dans la configuration de base.',
     counter_formula_title: 'Votre formule inclut :',
-    counter_formula_detail: 'Une banque d\'accueil 1m en finition bois naturel, avec l\'emplacement logo personnalisable.',
-    counter_selector_label: 'Banque à personnaliser',
+    counter_formula_detail: 'Un comptoir accueil 1 m en finition bois naturel, avec l\'emplacement logo personnalisable.',
+    counter_selector_label: 'Comptoir à personnaliser',
     counter_size_title: 'Taille',
     counter_logo_title: 'Logo de votre entreprise',
     counter_logo_custom: 'Visuel personnalisé',
@@ -331,7 +332,7 @@ export const translations = {
     img_format_spec: 'Format conseillé : {w} × {h} px · JPG ou PNG',
 
     // Wood desk
-    wood_desk_title: 'Banque accueil bois',
+    wood_desk_title: 'Comptoir accueil bois',
     wood_desk_no_color: 'Aucune couleur comptoir active pour ce salon.',
     wood_desk_reset_image: 'Revenir à l\'image d\'origine',
     wood_desk_reset_color: 'Revenir à la couleur d\'origine',
@@ -416,12 +417,13 @@ export const translations = {
     section_options: 'Options',
     option_carpet: 'Carpet',
     option_footprint: 'Carpet footprint',
+    option_ground: 'Floor',
     option_wall: 'Partition',
     option_floor: 'Technical floor',
     option_led: 'LED spots',
     option_reserve: 'Storage',
     option_partition_head: 'Partition head',
-    option_counter: 'Reception desk',
+    option_counter: 'Reception counter',
 
     // ColorOptionCard
     color_title: 'Colour',
@@ -465,11 +467,11 @@ export const translations = {
 
     // LedRailOptionCard
     led_title: 'Automatic LED spots',
-    led_count: '{count} spots calculated automatically, 1 spot every 3m².',
+    led_count: 'Your package includes {count} LED spots. To remove them from your stand, click below.',
     led_keep: 'Keep them',
     led_remove: 'Remove LED spots',
     led_restore: 'Restore LED spots',
-    led_note: 'They are placed at the top of the walls.',
+    led_note: '',
 
     // CarpetColorOptionCard
     carpet_locked: 'The standard carpet colour is {color}.',
@@ -499,8 +501,8 @@ export const translations = {
     reserve_remove: 'Remove storage',
     reserve_included: 'Included',
     formula_title: 'Your package includes:',
-    formula_reserve_included: 'A {area} storage unit is included in your package.',
-    formula_reserve_detail: 'Storage lets you keep your equipment, bags and documents out of sight.',
+    formula_reserve_included: 'Your package includes a white {area} storage unit (the color cannot be changed), closing with a coded handle and equipped with 2 shelves, a mirror and a coat hook.',
+    formula_reserve_detail: '',
     formula_reserve_none: 'No storage is included automatically for this surface area.',
 
     // PartitionHeadOptionCard
@@ -524,11 +526,11 @@ export const translations = {
     partition_head_company: 'Company name',
 
     // CounterOptionCard
-    counter_empty_title: 'No reception desk in this scene',
-    counter_empty_detail: 'Settings will appear here once a reception desk is included in the base configuration.',
+    counter_empty_title: 'No reception counter in this scene',
+    counter_empty_detail: 'Settings will appear here once a reception counter is included in the base configuration.',
     counter_formula_title: 'Your package includes:',
-    counter_formula_detail: 'A 1m reception desk in natural wood finish, with a customisable logo area.',
-    counter_selector_label: 'Desk to customise',
+    counter_formula_detail: 'A 1 m reception counter in natural wood finish, with a customisable logo area.',
+    counter_selector_label: 'Counter to customise',
     counter_size_title: 'Size',
     counter_logo_title: 'Your company logo',
     counter_logo_custom: 'Custom visual',
