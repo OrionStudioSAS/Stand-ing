@@ -2429,9 +2429,29 @@ function LanguageMenu({ language, onSelect }) {
   );
 }
 
+function VisualUploadDropzone({ imageUrl = '', alt = '', disabled = false, uploading = false, onImage, label = '', browseLabel = '' }) {
+  const t = useT();
+  const hasImage = Boolean(imageUrl);
+  return (
+    <label className={hasImage ? 'partition-head-dropzone visual-upload-dropzone has-image' : 'partition-head-dropzone visual-upload-dropzone'}>
+      {hasImage ? <img src={imageUrl} alt={alt} /> : <FileImage size={24} />}
+      <strong>{uploading ? t('partition_uploading') : (label || t('partition_upload_drag'))}</strong>
+      <span>{browseLabel || t('partition_browse')}</span>
+      <input
+        type="file"
+        accept={visualUploadAccept}
+        disabled={disabled || uploading}
+        onChange={(event) => {
+          onImage?.(event.target.files?.[0]);
+          event.target.value = '';
+        }}
+      />
+    </label>
+  );
+}
+
 function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageChange, onResetImage, embedded = false }) {
   const t = useT();
-  const imageName = item.options?.headMainImageName || `Texture originale ${partitionHeadMainImageMaterial(item)}.jpg`;
   return (
     <aside className={embedded ? 'item-visual-config' : 'item-options-panel'}>
       <div className="item-options-heading">
@@ -2448,19 +2468,12 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
         <span>{isSmclPartitionHeadItem(item) ? smclStandCode(normalizeSmclAisleCode(visualContext?.aisleNumber), normalizeSmclStandNumber(visualContext?.standNumber)) : (visualContext?.standNumber || 'A-14')}</span>
       </div>
 
-      <label className="item-image-upload">
-        <span>{t('partition_head_image')}</span>
-        <small>{imageName}</small>
-        <input
-          type="file"
-          accept={visualUploadAccept}
-          disabled={uploadState?.uploading}
-          onChange={(event) => {
-            onImageChange(event.target.files?.[0]);
-            event.target.value = '';
-          }}
-        />
-      </label>
+      <VisualUploadDropzone
+        imageUrl={item.options?.headMainImageUrl}
+        disabled={uploadState?.uploading}
+        uploading={uploadState?.uploading}
+        onImage={onImageChange}
+      />
 
       {item.options?.headMainImageUrl && (
         <button className="item-image-reset" type="button" onClick={onResetImage}>{t('img_upload_reset')}</button>
@@ -2473,7 +2486,6 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
 
 function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageChange, onResetImage, embedded = false }) {
   const t = useT();
-  const imageName = item.options?.posterImageName || t('poster_no_image');
   const printSize = posterSurfaceRegion(item, items, width, depth);
   const recommendedSpec = recommendedSimulatorImageSpec(printSize.width, printSize.height);
   const imageQuality = useSimulatorImageQualityCheck(item.options?.posterImageUrl, recommendedSpec);
@@ -2508,19 +2520,12 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
         </div>
       )}
 
-      <label className="item-image-upload">
-        <span>{t('poster_image_label')}</span>
-        <small>{imageName}</small>
-        <input
-          type="file"
-          accept={visualUploadAccept}
-          disabled={uploadState?.uploading}
-          onChange={(event) => {
-            onImageChange(event.target.files?.[0]);
-            event.target.value = '';
-          }}
-        />
-      </label>
+      <VisualUploadDropzone
+        imageUrl={item.options?.posterImageUrl}
+        disabled={uploadState?.uploading}
+        uploading={uploadState?.uploading}
+        onImage={onImageChange}
+      />
 
       {item.options?.posterImageUrl && (
         <button className="item-image-reset" type="button" onClick={onResetImage}>{t('poster_reset')}</button>
@@ -2533,7 +2538,6 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
 
 function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, embedded = false, optionsFree = false }) {
   const t = useT();
-  const imageName = item.options?.binary3ImageName || 'Texture originale Binary_3.jpeg';
   const finishes = counterFinishOptions(colors);
   const woodFinish = counterWoodFinish(colors);
   const selectedColorId = item.options?.binary2ColorId || woodFinish.id;
@@ -2551,28 +2555,15 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
         </div>
       </div>
 
-      {item.options?.binary3ImageUrl && (
-        <div className="poster-image-preview">
-          <img src={item.options.binary3ImageUrl} alt="" />
-        </div>
-      )}
-
-      <label className="item-image-upload">
-        <span>{t('wood_desk_image_label')}</span>
-        <small>{imageName}</small>
-        <small>
-          {(() => { const [w, h] = woodReceptionDeskImageCoverSize(item); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
-        </small>
-        <input
-          type="file"
-          accept={visualUploadAccept}
-          disabled={uploadState?.uploading}
-          onChange={(event) => {
-            onImageChange(event.target.files?.[0]);
-            event.target.value = '';
-          }}
-        />
-      </label>
+      <VisualUploadDropzone
+        imageUrl={item.options?.binary3ImageUrl}
+        disabled={uploadState?.uploading}
+        uploading={uploadState?.uploading}
+        onImage={onImageChange}
+      />
+      <small className="visual-upload-spec">
+        {(() => { const [w, h] = woodReceptionDeskImageCoverSize(item); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
+      </small>
 
       <section className="counter-color-card counter-finish-card item-counter-finish-card">
         <div className="counter-finish-head">
@@ -2629,20 +2620,15 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
         }
         return (
           <div key={slot.id} className="generic-texture-slot compact-image-slot">
-            {value.imageUrl && <div className="poster-image-preview"><img src={value.imageUrl} alt="" /></div>}
-            <label className={value.imageUrl ? 'wall-cover-preview-button has-preview' : 'wall-cover-preview-button'}>
-              <Upload size={15} />
-              <span>Importer une image</span>
-              <input
-                type="file"
-                accept={visualUploadAccept}
-                disabled={uploadState?.uploading}
-                onChange={(event) => {
-                  onImageChange?.(slot, event.target.files?.[0]);
-                  event.target.value = '';
-                }}
-              />
-            </label>
+            <div className="partition-head-upload-title visual-upload-title">
+              <strong>{slot.label || 'Visuel'}</strong>
+            </div>
+            <VisualUploadDropzone
+              imageUrl={value.imageUrl}
+              disabled={uploadState?.uploading}
+              uploading={uploadState?.uploading}
+              onImage={(file) => onImageChange?.(slot, file)}
+            />
             {value.imageUrl && <button type="button" className="item-image-reset" onClick={() => onResetImage?.(slot)}>Réinitialiser</button>}
           </div>
         );
@@ -2677,7 +2663,6 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   const imageName = selectedItem?.options?.binary3ImageName || t('counter_no_logo');
   const logoPending = Boolean(selectedItem?.options?.binary3VisualPending);
   const selectedVisible = !isHiddenIncludedCounterItem(selectedItem);
-  const logoInputRef = useRef(null);
 
   const selectCounter = (id) => {
     setSelectedCounterId(id);
@@ -2800,23 +2785,13 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
           {(() => { const [w, h] = woodReceptionDeskImageCoverSize(selectedItem); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
         </small>
 
-        <label className={selectedItem?.options?.binary3ImageUrl ? 'counter-image-dropzone has-image' : 'counter-image-dropzone'}>
-          {selectedItem?.options?.binary3ImageUrl ? <img src={selectedItem.options.binary3ImageUrl} alt="" /> : <FileImage size={22} />}
-          <span>
-            <strong>{imageName}</strong>
-            <small>{selectedItem?.options?.binary3ImageUrl ? t('counter_logo_replace_hint') : t('counter_logo_add')}</small>
-          </span>
-          <input
-            ref={logoInputRef}
-            type="file"
-            accept={visualUploadAccept}
-            disabled={disabled || uploadState?.uploading}
-            onChange={(event) => {
-              uploadSelectedImage(event.target.files?.[0]);
-              event.target.value = '';
-            }}
-          />
-        </label>
+        <VisualUploadDropzone
+          imageUrl={selectedItem?.options?.binary3ImageUrl}
+          alt={imageName}
+          disabled={disabled || uploadState?.uploading}
+          uploading={uploadState?.uploading}
+          onImage={uploadSelectedImage}
+        />
 
         <label className="visual-pending-checkbox">
           <input
@@ -2828,21 +2803,16 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
           <span>{t('visual_pending_label')}</span>
         </label>
 
-        <div className="counter-logo-actions">
-          <button type="button" className="counter-secondary-button" disabled={disabled || uploadState?.uploading} onClick={() => logoInputRef.current?.click()}>
-            {t('counter_replace')}
+        {selectedItem?.options?.binary3ImageUrl && (
+          <button
+            type="button"
+            className="item-image-reset"
+            disabled={disabled}
+            onClick={() => updateSelected({ binary3ImageUrl: '', binary3ImageName: '' })}
+          >
+            {t('counter_remove')}
           </button>
-          {selectedItem?.options?.binary3ImageUrl && (
-            <button
-              type="button"
-              className="counter-secondary-button danger"
-              disabled={disabled}
-              onClick={() => updateSelected({ binary3ImageUrl: '', binary3ImageName: '' })}
-            >
-              <X size={15} /> {t('counter_remove')}
-            </button>
-          )}
-        </div>
+        )}
       </section>
 
       {uploadState?.uploading && <p className="counter-status">{t('counter_uploading')}</p>}
@@ -4362,9 +4332,20 @@ function marketplaceItemDescription(entry = {}) {
     entry.description,
     entry.shortDescription,
   ];
-  return String(candidates.find((value) => String(value || '').trim()) || '').trim();
+  return String(candidates.find((value) => {
+    const text = String(value || '').trim();
+    return text && !isDimensionOnlyDescription(text);
+  }) || '').trim();
 }
 
+function isDimensionOnlyDescription(value = '') {
+  const text = String(value || '').trim();
+  if (!text || !/[0-9]/.test(text)) return false;
+  const normalized = normalizeTextValue(text)
+    .replace(/\b(mm|cm|m|metre|metres)\b/g, '')
+    .replace(/[0-9.,x×*+\\/\-\s()]/g, '');
+  return normalized.length === 0 && /[x×]/i.test(text);
+}
 
 function marketplacePriceLabel(entry, price, t) {
   const formattedPrice = Number(price || 0).toLocaleString('fr-FR');
@@ -5728,8 +5709,11 @@ function AdminDashboard({ user, adminProfile }) {
       const constraintMessage = Number(result?.constraints_updated || 0) > 0
         ? `\n${result.constraints_updated} contrainte(s) mise(s) à jour.`
         : '';
-      const inviteMessage = Number(result?.invite_emails_sent || 0) > 0
-        ? `\n${result.invite_emails_sent} email(s) configurateur envoyé(s), ${result?.monday_status_updated || 0} statut(s) Monday mis à jour.`
+      const sentInvites = Number(result?.invite_emails_sent || 0);
+      const skippedInvites = Number(result?.invite_emails_skipped || 0);
+      const updatedMondayStatuses = Number(result?.monday_status_updated || 0);
+      const inviteMessage = sentInvites || skippedInvites
+        ? `\n${sentInvites} email(s) configurateur envoyé(s), ${updatedMondayStatuses} statut(s) Monday mis à jour${skippedInvites ? `, ${skippedInvites} email(s) non envoyé(s)` : ''}.`
         : '';
       setSyncState({
         loading: false,

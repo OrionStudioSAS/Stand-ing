@@ -61,40 +61,82 @@ Deno.serve(async (req) => {
     if (String(source.board_id) === "18395911999" && mondayColumns.length) {
       warnings.push(...mondayConstraintColumnMessages(source.board_id, mondayColumns));
     }
-    const resolvedSource = withResolvedConstraintColumns(source, mondayColumns);
+    const resolvedSource = withResolvedMondayColumns(source, mondayColumns, warnings);
     const context = await ensureSourceContext(supabase, resolvedSource);
     const items = await fetchMondayItems(mondayToken, resolvedSource.board_id, resolvedSource.group_id);
 
     for (const item of items) {
       const { data: existingScene, error: existingSceneError } = await supabase
         .from("scenes")
-        .select("id, source_payload, width_m, depth_m")
+        .select("id, share_token, source_payload, width_m, depth_m, client_email, client_name, project_name, event_name, salon, offer")
         .eq("monday_item_id", item.id)
         .maybeSingle();
       if (existingSceneError) throw existingSceneError;
+
+      const createValue = readColumn(item, resolvedSource.create_column_id);
+      const triggerValues = resolvedSource.create_trigger_values ?? ["OK", "OUI"];
+      const shouldCreateScene = triggerValues.some((value: string) => normalizeText(createValue) === normalizeText(value));
+
       if (existingScene) {
         const existingWidth = Number(existingScene.width_m) || Number(readMappingValue(item, resolvedSource.mapping?.width_m)) || 4;
         const existingDepth = Number(existingScene.depth_m) || Number(readMappingValue(item, resolvedSource.mapping?.depth_m)) || 3;
         const constraint = mondayConstraintForItem(item, resolvedSource, existingWidth, existingDepth);
-        if (constraintColumnsConfigured(resolvedSource) || constraint) {
+        const mappedClientEmail = readMappingValue(item, resolvedSource.mapping?.client_email);
+        const mappedClientName = readMappingValue(item, resolvedSource.mapping?.client_name) || item.name;
+        const scenePatch: Record<string, unknown> = {
+          source_payload: {
+            ...(existingScene.source_payload || {}),
+            constraint,
+          },
+        };
+        if (!clean(existingScene.client_email) && mappedClientEmail) scenePatch.client_email = mappedClientEmail;
+        if (!clean(existingScene.client_name) && mappedClientName) scenePatch.client_name = mappedClientName;
+        const hasScenePatch = Object.keys(scenePatch).some((key) => key !== "source_payload")
+          || constraintColumnsConfigured(resolvedSource)
+          || Boolean(constraint);
+        if (hasScenePatch) {
           const { error: updateConstraintError } = await supabase
             .from("scenes")
-            .update({
-              source_payload: {
-                ...(existingScene.source_payload || {}),
-                constraint,
-              },
-            })
+            .update(scenePatch)
             .eq("id", existingScene.id);
           if (updateConstraintError) throw updateConstraintError;
-          constraintsUpdated += 1;
+          if (constraintColumnsConfigured(resolvedSource) || constraint) constraintsUpdated += 1;
+        }
+
+        const existingPayload = existingScene.source_payload || {};
+        if (shouldCreateScene && !existingPayload.invitation_email_sent_at) {
+          const invitationScene = {
+            ...existingScene,
+            client_email: clean(existingScene.client_email) || mappedClientEmail,
+            client_name: clean(existingScene.client_name) || mappedClientName,
+            source_payload: {
+              ...existingPayload,
+              ...(constraint ? { constraint } : {}),
+            },
+          };
+          const inviteResult = await sendInvitationAndUpdateMonday({
+            supabase,
+            mondayToken,
+            resendApiKey,
+            fromEmail,
+            publicAppUrl,
+            scene: invitationScene,
+            sceneId: existingScene.id,
+            shareToken: existingScene.share_token,
+            source: resolvedSource,
+            context,
+            item,
+            mondayColumns,
+            warnings,
+          });
+          inviteEmailsSent += inviteResult.sent;
+          inviteEmailsSkipped += inviteResult.skipped;
+          mondayStatusUpdated += inviteResult.statusUpdated;
         }
         continue;
       }
 
-      const createValue = readColumn(item, resolvedSource.create_column_id);
-      const triggerValues = resolvedSource.create_trigger_values ?? ["OK", "OUI"];
-      if (!triggerValues.some((value: string) => normalizeText(createValue) === normalizeText(value))) continue;
+      if (!shouldCreateScene) continue;
 
       const userProfile = mapMondayItemToUserProfile(item, resolvedSource, context);
       const { data: savedProfile, error: profileError } = await supabase
@@ -168,49 +210,24 @@ Deno.serve(async (req) => {
         baseItemsApplied += inserted;
       }
 
-      const shareUrl = publicAppUrl && savedScene?.share_token
-        ? `${publicAppUrl.replace(/\/$/, "")}?scene=${savedScene.share_token}`
-        : "";
-
-      if (resolvedSource.link_column_id && resolvedSource.link_column_id !== resolvedSource.create_column_id && shareUrl) {
-        await updateMondayColumnValue(mondayToken, resolvedSource.board_id, item.id, resolvedSource.link_column_id, {
-          url: shareUrl,
-          text: "Configurer mon stand",
-        });
-      }
-
-      const inviteResult = await sendConfiguratorInvitationEmail({
+      const inviteResult = await sendInvitationAndUpdateMonday({
+        supabase,
+        mondayToken,
         resendApiKey,
         fromEmail,
+        publicAppUrl,
         scene,
+        sceneId: savedScene.id,
+        shareToken: savedScene.share_token,
         source: resolvedSource,
         context,
         item,
-        shareUrl,
+        mondayColumns,
+        warnings,
       });
-      if (inviteResult.sent) {
-        inviteEmailsSent += 1;
-        await supabase.from("scenes").update({
-          source_payload: {
-            ...(scene.source_payload || {}),
-            invitation_email_sent_at: new Date().toISOString(),
-            invitation_email_to: inviteResult.to,
-            invitation_email_provider_id: inviteResult.providerId || null,
-          },
-        }).eq("id", savedScene.id);
-
-        const statusColumnId = resolvedSource.status_column_id || findStatusColumnId(mondayColumns);
-        const statusLabel = mondayStatusLabel(mondayColumns, statusColumnId, resolvedSource.created_status_label);
-        if (statusColumnId && statusLabel) {
-          await updateMondayColumnValue(mondayToken, resolvedSource.board_id, item.id, statusColumnId, { label: statusLabel });
-          mondayStatusUpdated += 1;
-        } else {
-          warnings.push(`Mail envoyé pour ${item.name}, mais colonne Étape 1 introuvable sur le board ${resolvedSource.board_id}.`);
-        }
-      } else {
-        inviteEmailsSkipped += 1;
-        if (inviteResult.reason) warnings.push(`Email non envoyé pour ${item.name}: ${inviteResult.reason}`);
-      }
+      inviteEmailsSent += inviteResult.sent;
+      inviteEmailsSkipped += inviteResult.skipped;
+      mondayStatusUpdated += inviteResult.statusUpdated;
 
       processed += 1;
       clients += 1;
@@ -233,21 +250,43 @@ Deno.serve(async (req) => {
   });
 });
 
-function withResolvedConstraintColumns(source: any, columns: Array<{ id: string; title: string }>) {
+function withResolvedMondayColumns(source: any, columns: Array<{ id: string; title: string; type?: string }>, warnings: string[] = []) {
   const mapping = source.mapping ?? {};
+  const clientEmailColumnId = resolveMappedColumnId(columns, mapping.client_email, findEmailColumnId(columns));
   const constraintColumnId = mapping.constraint || mapping.contrainte || findConstraintSizeColumnId(columns);
   const constraintLocationColumnId = mapping.constraint_location
     || mapping.emplacement_contrainte
     || findConstraintLocationColumnId(columns);
+  const statusColumnId = resolveMappedColumnId(columns, source.status_column_id, findStatusColumnId(columns));
+  const linkColumnId = resolveMappedColumnId(columns, source.link_column_id, findLinkColumnId(columns));
+
+  if (mapping.client_email && clientEmailColumnId && mapping.client_email !== clientEmailColumnId) {
+    warnings.push(`Colonne email corrigée sur le board ${source.board_id}: ${mapping.client_email} → ${clientEmailColumnId}`);
+  }
+  if (source.status_column_id && statusColumnId && source.status_column_id !== statusColumnId) {
+    warnings.push(`Colonne Étape 1 corrigée sur le board ${source.board_id}: ${source.status_column_id} → ${statusColumnId}`);
+  }
 
   return {
     ...source,
+    status_column_id: statusColumnId || source.status_column_id,
+    link_column_id: linkColumnId || source.link_column_id,
     mapping: {
       ...mapping,
+      ...(clientEmailColumnId ? { client_email: clientEmailColumnId } : {}),
       ...(constraintColumnId ? { constraint: constraintColumnId } : {}),
       ...(constraintLocationColumnId ? { constraint_location: constraintLocationColumnId } : {}),
     },
   };
+}
+
+function resolveMappedColumnId(columns: Array<{ id: string }>, configuredId = "", fallbackId = "") {
+  if (configuredId && columnExists(columns, configuredId)) return configuredId;
+  return fallbackId || configuredId || "";
+}
+
+function columnExists(columns: Array<{ id: string }>, columnId = "") {
+  return Boolean(columnId && columns.some((column) => column.id === columnId));
 }
 
 function mondayConstraintColumnMessages(boardId: string, columns: Array<{ id: string; title: string }>) {
@@ -271,6 +310,16 @@ function formatMondayColumnList(columns: Array<{ id: string; title: string }>) {
 function findStatusColumnId(columns: Array<{ id: string; title: string }>) {
   return findMondayColumnId(columns, (value) => value === "etape_1" || value === "etape1")
     || findMondayColumnId(columns, (value) => value.includes("etape_1") || value.includes("etape1"));
+}
+
+function findEmailColumnId(columns: Array<{ id: string; title: string; type?: string }>) {
+  return columns.find((column) => column.type === "email")?.id
+    || findMondayColumnId(columns, (value) => value === "email" || value === "e_mail" || value.includes("email"));
+}
+
+function findLinkColumnId(columns: Array<{ id: string; title: string; type?: string }>) {
+  return columns.find((column) => column.type === "link")?.id
+    || findMondayColumnId(columns, (value) => value.includes("lien") || value.includes("link") || value.includes("configurateur"));
 }
 
 function mondayStatusLabel(columns: Array<any>, columnId = "", configuredLabel = "") {
@@ -798,6 +847,81 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+async function sendInvitationAndUpdateMonday({
+  supabase,
+  mondayToken,
+  resendApiKey,
+  fromEmail,
+  publicAppUrl,
+  scene,
+  sceneId,
+  shareToken,
+  source,
+  context,
+  item,
+  mondayColumns,
+  warnings,
+}: {
+  supabase: any;
+  mondayToken: string;
+  resendApiKey: string;
+  fromEmail: string;
+  publicAppUrl: string;
+  scene: any;
+  sceneId: string;
+  shareToken: string;
+  source: any;
+  context: any;
+  item: any;
+  mondayColumns: Array<any>;
+  warnings: string[];
+}) {
+  const shareUrl = publicAppUrl && shareToken
+    ? `${publicAppUrl.replace(/\/$/, "")}?scene=${shareToken}`
+    : "";
+
+  if (source.link_column_id && source.link_column_id !== source.create_column_id && shareUrl) {
+    await updateMondayColumnValue(mondayToken, source.board_id, item.id, source.link_column_id, {
+      url: shareUrl,
+      text: "Configurer mon stand",
+    });
+  }
+
+  const inviteResult = await sendConfiguratorInvitationEmail({
+    resendApiKey,
+    fromEmail,
+    scene,
+    source,
+    context,
+    item,
+    shareUrl,
+  });
+
+  if (!inviteResult.sent) {
+    if (inviteResult.reason) warnings.push(`Email non envoyé pour ${item.name}: ${inviteResult.reason}`);
+    return { sent: 0, skipped: 1, statusUpdated: 0 };
+  }
+
+  await supabase.from("scenes").update({
+    source_payload: {
+      ...(scene.source_payload || {}),
+      invitation_email_sent_at: new Date().toISOString(),
+      invitation_email_to: inviteResult.to,
+      invitation_email_provider_id: inviteResult.providerId || null,
+    },
+  }).eq("id", sceneId);
+
+  const statusColumnId = source.status_column_id || findStatusColumnId(mondayColumns);
+  const statusLabel = mondayStatusLabel(mondayColumns, statusColumnId, source.created_status_label);
+  if (statusColumnId && statusLabel) {
+    await updateMondayColumnValue(mondayToken, source.board_id, item.id, statusColumnId, { label: statusLabel });
+    return { sent: 1, skipped: 0, statusUpdated: 1 };
+  }
+
+  warnings.push(`Mail envoyé pour ${item.name}, mais colonne Étape 1 introuvable sur le board ${source.board_id}.`);
+  return { sent: 1, skipped: 0, statusUpdated: 0 };
+}
+
 async function sendConfiguratorInvitationEmail({
   resendApiKey,
   fromEmail,
@@ -917,6 +1041,10 @@ function escapeHtml(value: string) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function clean(value: unknown) {
+  return String(value ?? "").trim();
 }
 
 function clientKey(email: string, fallback: string) {

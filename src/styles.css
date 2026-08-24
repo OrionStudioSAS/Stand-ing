@@ -8662,6 +8662,10 @@ img.asset-thumb {
   font-weight: 950;
 }
 
+.visual-upload-title strong {
+  color: #171b22;
+}
+
 .partition-head-dropzone {
   position: relative;
   display: grid;
@@ -8741,6 +8745,14 @@ img.asset-thumb {
 .partition-head-file-name {
   color: #cbd9ef;
   font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.visual-upload-spec {
+  display: block;
+  margin-top: -5px;
+  color: #8b94a2;
+  font-size: 0.72rem;
   font-weight: 800;
 }
 
