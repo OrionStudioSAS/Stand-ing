@@ -8255,6 +8255,18 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
         </label>
         )}
 
+        {!isColorGroup && (
+          <label className="asset-group-field">
+            <span>Descriptif boutique</span>
+            <textarea
+              value={draft.dimensions?.description || ''}
+              placeholder="Ex : Comptoir 1 m avec façade personnalisable, tablette bois..."
+              rows={3}
+              onChange={(event) => updateAssetBehavior({ description: event.target.value })}
+            />
+          </label>
+        )}
+
         {!isGroupAsset && !isColorGroup && (
           <label className="asset-group-field">
             <span>Catégorie</span>
