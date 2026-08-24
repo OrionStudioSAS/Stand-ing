@@ -103,36 +103,6 @@ Deno.serve(async (req) => {
           if (constraintColumnsConfigured(resolvedSource) || constraint) constraintsUpdated += 1;
         }
 
-        const existingPayload = existingScene.source_payload || {};
-        if (shouldCreateScene && !existingPayload.invitation_email_sent_at) {
-          const invitationScene = {
-            ...existingScene,
-            client_email: clean(existingScene.client_email) || mappedClientEmail,
-            client_name: clean(existingScene.client_name) || mappedClientName,
-            source_payload: {
-              ...existingPayload,
-              ...(constraint ? { constraint } : {}),
-            },
-          };
-          const inviteResult = await sendInvitationAndUpdateMonday({
-            supabase,
-            mondayToken,
-            resendApiKey,
-            fromEmail,
-            publicAppUrl,
-            scene: invitationScene,
-            sceneId: existingScene.id,
-            shareToken: existingScene.share_token,
-            source: resolvedSource,
-            context,
-            item,
-            mondayColumns,
-            warnings,
-          });
-          inviteEmailsSent += inviteResult.sent;
-          inviteEmailsSkipped += inviteResult.skipped;
-          mondayStatusUpdated += inviteResult.statusUpdated;
-        }
         continue;
       }
 
