@@ -1686,7 +1686,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       return;
     }
 
-    updateItem(draggingId, { x: point.x, z: point.z });
+    updateItem(draggingId, { x: dragCoordinate(point.x), z: dragCoordinate(point.z) });
   };
 
   const addItem = (entry, options = {}, quantity = 1) => {
@@ -6717,7 +6717,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       updateItem(draggingId, wallDragPatch(point, dragged, items, width, depth, layout));
       return;
     }
-    updateItem(draggingId, { x: point.x, z: point.z });
+    updateItem(draggingId, { x: dragCoordinate(point.x), z: dragCoordinate(point.z) });
   };
 
   const addItem = (entry) => {
@@ -10377,6 +10377,10 @@ function snapPosition(value, limit, step = 0.1) {
   return Number(clamp(snapped, -limit, limit).toFixed(2));
 }
 
+function dragCoordinate(value) {
+  return Number(Number(value || 0).toFixed(2));
+}
+
 function assetMatchesSalon(asset, salonLabel = '') {
   const salons = assetSalons(asset);
   if (!salons.length) return true;
@@ -12988,7 +12992,21 @@ function updateSceneItemWithCollision(items, id, patch, width, depth, layout, ca
   const positionKeys = ['x', 'z', 'wall', 'wallSide', 'wallSurface', 'rotation'];
   const isPositionPatch = positionKeys.some((key) => hasOwn(patch, key));
   if (isPositionPatch && collidesWithScene(candidate, items, id, width, depth)) return items;
+  if (isPositionPatch && isSameSceneTransform(currentItem, candidate)) return items;
   return items.map((item) => (item.id === id ? candidate : item));
+}
+
+function isSameSceneTransform(a = {}, b = {}) {
+  const sameNumber = (left, right) => Math.abs(Number(left || 0) - Number(right || 0)) < 0.001;
+  return sameNumber(a.x, b.x)
+    && sameNumber(a.y, b.y)
+    && sameNumber(a.z, b.z)
+    && sameNumber(a.rotation, b.rotation)
+    && String(a.wall || '') === String(b.wall || '')
+    && String(a.wallSide || '') === String(b.wallSide || '')
+    && stableCartValue(a.wallSurface || null) === stableCartValue(b.wallSurface || null)
+    && Boolean(a.lockedPlacement) === Boolean(b.lockedPlacement)
+    && stableCartValue(a.placementRule || null) === stableCartValue(b.placementRule || null);
 }
 
 function releasePlacementRuleForManualEdit(item = {}, patch = {}) {
@@ -14539,10 +14557,33 @@ function ObjHitbox({ bounds = null, size = [0.7, 0.7, 0.7], centerY = null }) {
 }
 
 function Model3D({ item, selected, hovered, dragging, visualContext }) {
-  const materialUrl = modelMaterialUrl(item);
-  if (item.modelUrl?.toLowerCase().split('?')[0].endsWith('.glb')) return <GlbModel item={item} selected={selected} hovered={hovered} visualContext={visualContext} />;
-  if (materialUrl) return <ObjModelWithMaterials item={item} materialUrl={materialUrl} selected={selected} hovered={hovered} visualContext={visualContext} />;
-  return <ObjModel item={item} selected={selected} hovered={hovered} dragging={dragging} />;
+  const modelItem = useStableModelItem(item);
+  const materialUrl = modelMaterialUrl(modelItem);
+  if (modelItem.modelUrl?.toLowerCase().split('?')[0].endsWith('.glb')) return <GlbModel item={modelItem} selected={selected} hovered={hovered} visualContext={visualContext} />;
+  if (materialUrl) return <ObjModelWithMaterials item={modelItem} materialUrl={materialUrl} selected={selected} hovered={hovered} visualContext={visualContext} />;
+  return <ObjModel item={modelItem} selected={selected} hovered={hovered} dragging={dragging} />;
+}
+
+function useStableModelItem(item = {}) {
+  const signature = sceneItemModelSignature(item);
+  return useMemo(() => item, [signature]);
+}
+
+function sceneItemModelSignature(item = {}) {
+  const childSignatures = Array.isArray(item.children)
+    ? item.children.map((child) => sceneItemModelSignature(child))
+    : [];
+  return stableCartValue({
+    type: item.type,
+    label: item.label,
+    color: item.color,
+    modelUrl: item.modelUrl,
+    materialUrl: item.materialUrl,
+    modelSize: item.modelSize,
+    dimensions: item.dimensions,
+    options: item.options,
+    children: childSignatures,
+  });
 }
 
 function MissingModelFallback({ item, selected, hovered, dragging }) {
