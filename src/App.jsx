@@ -899,6 +899,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
   const [reserveItemOverrides, setReserveItemOverrides] = useState(initialOptions.reserveItemOverrides || {});
   const [reserveOptionType, setReserveOptionType] = useState(initialOptions.reserveOptionType || (initialOptions.reserveUpgradeEnabled ? '__legacy__' : ''));
+  const [reserveOptions, setReserveOptions] = useState(() => ({
+    doorOpening: initialOptions.reserveOptions?.doorOpening || '',
+    handleOrientation: initialOptions.reserveOptions?.handleOrientation || '',
+  }));
   const [partitionHeadChoice, setPartitionHeadChoice] = useState({
     left: hasOwn(initialOptions, 'partitionHeadLeftEnabled') ? Boolean(initialOptions.partitionHeadLeftEnabled) : null,
     right: hasOwn(initialOptions, 'partitionHeadRightEnabled') ? Boolean(initialOptions.partitionHeadRightEnabled) : null,
@@ -1053,9 +1057,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const activePartitionHeadRuleConfig = useMemo(() => activePartitionHeadRule(partitionHeadRules, area, layout), [partitionHeadRules, area, layout]);
   const effectivePartitionHeadSides = useMemo(() => partitionHeadEnabledSides(activePartitionHeadRuleConfig, partitionHeadChoice), [activePartitionHeadRuleConfig, partitionHeadChoice]);
   const automaticReserveItems = useMemo(
-    () => makeAutomaticReserveItems(activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, salonLabel)
+    () => makeAutomaticReserveItems(activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, salonLabel, reserveOptions)
       .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, effectiveCarpetFootprintEnabled)),
-    [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, salonLabel, reserveItemOverrides, effectiveCarpetFootprintEnabled],
+    [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, salonLabel, reserveOptions, reserveItemOverrides, effectiveCarpetFootprintEnabled],
   );
   const automaticPartitionHeadItems = useMemo(
     () => makeAutomaticPartitionHeadItems(activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, salonLabel)
@@ -1194,6 +1198,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       ledSpotCount,
       ledRailOverrides,
       reserveOptionType: effectiveReserveOptionType,
+      reserveOptions,
       reserveItemOverrides,
       partitionHeadLeftEnabled: effectivePartitionHeadSides.left,
       partitionHeadRightEnabled: effectivePartitionHeadSides.right,
@@ -1255,7 +1260,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, specialRequest, specialRequestTags, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, specialRequest, specialRequestTags, saveState, readOnly]);
 
   const persistWallCoversNow = (nextWallCovers) => {
     if (readOnly) return;
@@ -2129,6 +2134,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             ledSpotCount={actualLedSpotCount}
             reserveRule={activeReserveRuleConfig}
             reserveOptionType={effectiveReserveOptionType}
+            reserveOptions={reserveOptions}
             partitionHeadRule={activePartitionHeadRuleConfig}
             partitionHeadSides={effectivePartitionHeadSides}
             wallCovers={wallCovers}
@@ -2177,6 +2183,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             ledSpotCount={actualLedSpotCount}
             reserveRule={activeReserveRuleConfig}
             reserveOptionType={effectiveReserveOptionType}
+            reserveOptions={reserveOptions}
             partitionHeadRule={activePartitionHeadRuleConfig}
             partitionHeadSides={effectivePartitionHeadSides}
             partitionHeadVisuals={partitionHeadVisuals}
@@ -2216,6 +2223,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onTechnicalFloorTrimType={(type) => !readOnly && setTechnicalFloorTrimType(type)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
             onReserveOption={(type) => { if (!readOnly) { if (type === '__none__') { removeReserve(); } else { setReserveOptionType(type); } } }}
+            onReserveOptions={(patch) => !readOnly && setReserveOptions((current) => ({ ...current, ...patch }))}
             onPartitionHeadSide={(side, enabled) => !readOnly && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
             onPartitionHeadImage={uploadPartitionHeadVisual}
             onPartitionHeadResetImage={resetPartitionHeadVisual}
@@ -3111,6 +3119,7 @@ function OptionsStepPanel({
   ledSpotCount,
   reserveRule,
   reserveOptionType,
+  reserveOptions = {},
   partitionHeadRule,
   partitionHeadSides,
   partitionHeadVisuals = {},
@@ -3142,6 +3151,7 @@ function OptionsStepPanel({
   onTechnicalFloorTrimType,
   onLedRailsEnabled,
   onReserveOption,
+  onReserveOptions,
   onPartitionHeadSide,
   onPartitionHeadImage,
   onPartitionHeadResetImage,
@@ -3243,10 +3253,12 @@ function OptionsStepPanel({
         <ReserveOptionCard
           rule={reserveRule}
           selectedOptionType={reserveOptionType}
+          options={reserveOptions}
           catalog={catalog}
           salonLabel={salonLabel}
           disabled={readOnly}
           onChange={onReserveOption}
+          onOptions={onReserveOptions}
         />
       </OptionAccordion>
       <OptionAccordion {...accordionScrollProps('tete')} title={t('option_partition_head')} icon={<ConfiguratorOptionIcon src="/icons/tete_de_cloison.svg" />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
@@ -4406,6 +4418,8 @@ function shopCartItemVisible(item) {
 function itemOptionLines(item) {
   const opts = item.options || {};
   const result = [];
+  if (opts.reserveDoorOpening) result.push(`Ouverture de porte : ${reserveDoorOpeningLabel(opts.reserveDoorOpening)}`);
+  if (opts.reserveHandleOrientation) result.push(`Orientation de la poignée : ${reserveHandleOrientationLabel(opts.reserveHandleOrientation)}`);
   if (opts.variantLabel) result.push(opts.variantLabel);
   if (opts.posterImageName) result.push(opts.posterImageName);
   if (opts.headMainImageName && !opts.headMainImageName.startsWith('Texture originale')) result.push(opts.headMainImageName);
@@ -4442,6 +4456,7 @@ function ValidationStepPanel({
   ledSpotCount,
   reserveRule,
   reserveOptionType,
+  reserveOptions = {},
   partitionHeadRule,
   partitionHeadSides,
   wallCovers = {},
@@ -4486,6 +4501,7 @@ function ValidationStepPanel({
   const footprintSupplement = optionSupplementTotal((line, label) => label.startsWith('empreinte moquette'));
   const wallFabricSupplement = optionSupplementTotal((line, label) => label.startsWith('coton cloison'));
   const reserveSupplement = optionSupplementTotal((line, label) => label.includes('reserve'));
+  const reserveOptionDetails = reserveOptionSummary(reserveOptions);
   const partitionHeadSupplement = optionSupplementTotal((line, label) => label.includes('tete de cloison'));
   const wallCoverSupplement = optionSupplementTotal((line) => line.type === 'wall-cover');
   const toggleTag = (tag) => {
@@ -4516,7 +4532,7 @@ function ValidationStepPanel({
         <ValidationOptionLine label={t('validation_footprint')} value={valueWithSupplement(carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : t('validation_footprint_removed'), footprintSupplement)} />
         <ValidationOptionLine label="Cloison" value={valueWithSupplement(`${wallFabricColor.name} (${wallFabricColor.code})`, wallFabricSupplement)} />
         <ValidationOptionLine label={t('validation_led')} value={ledRailsEnabled ? t('validation_led_kept', { count: ledSpotCount }) : t('validation_led_removed')} />
-        <ValidationOptionLine label={t('validation_reserve')} value={valueWithSupplement(reserveOptionType === '__none__' ? t('validation_reserve_removed') : (reserveOption?.label || reserveRule?.includedLabel || t('validation_reserve_none')), reserveSupplement)} />
+        <ValidationOptionLine label={t('validation_reserve')} value={valueWithSupplement([reserveOptionType === '__none__' ? t('validation_reserve_removed') : (reserveOption?.label || reserveRule?.includedLabel || t('validation_reserve_none')), reserveOptionDetails].filter(Boolean).join(' · '), reserveSupplement)} />
         <ValidationOptionLine label={t('validation_partition_heads')} value={valueWithSupplement(partitionHeadSummary(partitionHeadRule, partitionHeadSides), partitionHeadSupplement)} tone="amber" />
         {activeCovers.length > 0 && <ValidationOptionLine label="Bâches sur cloison" value={valueWithSupplement(`${formatNumber(activeCovers.reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0))} ml sélectionnés`, wallCoverSupplement)} tone="amber" />}
         {pendingVisuals.length > 0 && (
@@ -4867,7 +4883,7 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
   );
 }
 
-function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonLabel = '', disabled = false, onChange }) {
+function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalog = [], salonLabel = '', disabled = false, onChange, onOptions }) {
   const t = useT();
   const [formulaOpen, setFormulaOpen] = useState(false);
   const rows = reserveChoiceRows(rule, catalog, salonLabel);
@@ -4887,9 +4903,9 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
   }
 
   return (
-    <div className="reserve-choice-panel">
-      <FormulaIncludedBox open={formulaOpen} onToggle={() => setFormulaOpen((current) => !current)} includedRow={includedRow} />
-      <strong className="reserve-choice-title">{t('reserve_choose_size')}</strong>
+    <div className="reserve-choice-panel reserve-choice-panel-v2">
+      <FormulaIncludedBox open={formulaOpen} onToggle={() => setFormulaOpen((current) => !current)} includedRow={includedRow} compact />
+      <strong className="reserve-choice-title">Taille</strong>
       <div className="reserve-choice-list">
         {rows.map((row) => {
           const selected = !noneSelected && (row.included ? !selectedOptionType : selectedOptionType === row.type);
@@ -4907,12 +4923,34 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
                 <small>{row.description}</small>
               </span>
               <span className={row.included ? 'reserve-choice-price included' : 'reserve-choice-price'}>
-                {row.included ? t('reserve_included') : `+ ${row.price.toLocaleString('fr-FR')} € HT`}
+                {row.included ? t('reserve_included') : `+ ${row.price.toLocaleString('fr-FR')} €`}
               </span>
             </button>
           );
         })}
       </div>
+
+      <ReserveRadioGroup
+        title="OUVERTURE DE PORTE"
+        value={options.doorOpening}
+        options={[
+          { value: 'push', label: 'Poussante' },
+          { value: 'pull', label: 'Tirante' },
+        ]}
+        disabled={disabled || noneSelected}
+        onChange={(value) => onOptions?.({ doorOpening: value })}
+      />
+      <ReserveRadioGroup
+        title="ORIENTATION DE LA POIGNÉE"
+        value={options.handleOrientation}
+        options={[
+          { value: 'left', label: 'Gauche' },
+          { value: 'right', label: 'Droite' },
+        ]}
+        disabled={disabled || noneSelected}
+        onChange={(value) => onOptions?.({ handleOrientation: value })}
+      />
+
       <button
         type="button"
         className={noneSelected ? 'reserve-remove-button active' : 'reserve-remove-button'}
@@ -4925,10 +4963,54 @@ function ReserveOptionCard({ rule, selectedOptionType = '', catalog = [], salonL
   );
 }
 
-function FormulaIncludedBox({ open, onToggle, includedRow }) {
+function ReserveRadioGroup({ title, value = '', options = [], disabled = false, onChange }) {
+  return (
+    <div className="reserve-suboption-group">
+      <strong>{title}</strong>
+      <div>
+        {options.map((option) => {
+          const selected = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className={selected ? 'reserve-suboption active' : 'reserve-suboption'}
+              disabled={disabled}
+              onClick={() => onChange?.(selected ? '' : option.value)}
+            >
+              <span className="reserve-choice-radio" aria-hidden="true">{selected ? <span /> : null}</span>
+              <span>{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function reserveDoorOpeningLabel(value = '') {
+  if (value === 'push') return 'Poussante';
+  if (value === 'pull') return 'Tirante';
+  return '';
+}
+
+function reserveHandleOrientationLabel(value = '') {
+  if (value === 'left') return 'Gauche';
+  if (value === 'right') return 'Droite';
+  return '';
+}
+
+function reserveOptionSummary(options = {}) {
+  return [
+    reserveDoorOpeningLabel(options.doorOpening),
+    reserveHandleOrientationLabel(options.handleOrientation) ? `poignée ${reserveHandleOrientationLabel(options.handleOrientation).toLowerCase()}` : '',
+  ].filter(Boolean).join(' · ');
+}
+
+function FormulaIncludedBox({ open, onToggle, includedRow, compact = false }) {
   const t = useT();
   return (
-    <div className={open ? 'formula-included-box open' : 'formula-included-box'}>
+    <div className={`${open ? 'formula-included-box open' : 'formula-included-box'}${compact ? ' compact' : ''}`}>
       <button type="button" onClick={onToggle}>
         <span><b>!</b> {t('formula_title')}</span>
         {open ? <Minus size={16} /> : <Plus size={16} />}
@@ -9622,7 +9704,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   });
   const ledEntries = ledRailCatalogEntries(catalogEntries);
   const autoSpotsRule = options.autoSpotsRule || null;
-  const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, salonLabel);
+  const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, salonLabel, options.reserveOptions || {});
   const ledItems = options.ledRailsEnabled === false
     ? []
     : autoSpotsRule?.type
@@ -10555,7 +10637,7 @@ function isReserveCatalogEntry(entry = {}) {
   return Boolean(entry.dimensions?.isReserve || text.includes('reserve'));
 }
 
-function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = [], width, depth, layout, salonLabel) {
+function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = [], width, depth, layout, salonLabel, reserveOptions = {}) {
   if (selectedOptionType === '__none__') return [];
   if (!rule?.includedType && !selectedOptionType) return [];
   const selectedOption = normalizeComplementaryOptions(rule?.options).find((option) => option.type === selectedOptionType) || null;
@@ -10584,6 +10666,8 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
       reserveRuleId: rule.id,
       reserveUpgrade: billable,
       reserveOptionType: selectedOption?.type || '',
+      reserveDoorOpening: reserveOptions.doorOpening || '',
+      reserveHandleOrientation: reserveOptions.handleOrientation || '',
     },
   }, width, depth, layout);
 

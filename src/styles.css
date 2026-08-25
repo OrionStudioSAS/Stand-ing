@@ -10224,3 +10224,133 @@ img.asset-thumb {
   font-size: 0.72rem;
   font-weight: 800;
 }
+
+/* Réserve quick-view v2 */
+.reserve-choice-panel-v2 {
+  gap: 13px;
+  margin: 0;
+  padding: 10px 14px 14px;
+  color: #252b35;
+  background: #fff;
+}
+
+.reserve-choice-panel-v2 .reserve-choice-title {
+  color: #3b414d;
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.formula-included-box.compact {
+  border-color: #79bd91;
+  border-radius: 7px;
+  color: #17824b;
+  background: #effaf3;
+}
+
+.formula-included-box.compact > button {
+  min-height: 34px;
+  padding: 8px 12px;
+  color: #17824b;
+  font-size: 0.72rem;
+}
+
+.formula-included-box.compact b {
+  width: 16px;
+  height: 16px;
+  background: #24935a;
+  font-size: 0.65rem;
+}
+
+.formula-included-box.compact p {
+  color: #17824b;
+}
+
+.reserve-choice-panel-v2 .reserve-choice-list {
+  gap: 8px;
+}
+
+.reserve-choice-panel-v2 .reserve-choice-card {
+  min-height: 58px;
+  border-radius: 7px;
+  padding: 11px 12px;
+  box-shadow: none;
+}
+
+.reserve-choice-panel-v2 .reserve-choice-card.active {
+  background: #f4f8ff;
+  box-shadow: inset 0 0 0 1px #3467bd;
+}
+
+.reserve-choice-panel-v2 .reserve-choice-copy strong {
+  font-size: 0.8rem;
+}
+
+.reserve-choice-panel-v2 .reserve-choice-copy small {
+  font-size: 0.68rem;
+}
+
+.reserve-choice-panel-v2 .reserve-choice-price {
+  align-self: center;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #1f5db4;
+  background: #e9f2ff;
+  font-size: 0.7rem;
+  font-weight: 950;
+}
+
+.reserve-choice-panel-v2 .reserve-choice-price.included {
+  color: #198047;
+  background: #d9f3df;
+}
+
+.reserve-suboption-group {
+  display: grid;
+  gap: 8px;
+}
+
+.reserve-suboption-group > strong {
+  color: #3b414d;
+  font-size: 0.76rem;
+  font-weight: 950;
+  letter-spacing: 0.02em;
+}
+
+.reserve-suboption-group > div {
+  display: grid;
+  gap: 7px;
+}
+
+.reserve-suboption {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  border: 1px solid #dce5ef;
+  border-radius: 7px;
+  padding: 9px 12px;
+  color: #252b35;
+  background: #fff;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-align: left;
+}
+
+.reserve-suboption.active {
+  border-color: #3467bd;
+  background: #f4f8ff;
+  box-shadow: inset 0 0 0 1px #3467bd;
+}
+
+.reserve-suboption:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.reserve-choice-panel-v2 .reserve-remove-button {
+  min-height: 36px;
+  border-radius: 7px;
+  background: #fff;
+  font-size: 0.78rem;
+}
