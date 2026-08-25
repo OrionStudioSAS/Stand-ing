@@ -10031,3 +10031,196 @@ img.asset-thumb {
   color: #126b3a;
   background: #cfeeda;
 }
+
+/* Cloison quick-view v2 */
+.wall-fabric-option-card {
+  gap: 12px;
+  margin-bottom: 0;
+  padding: 14px;
+  border-radius: 9px 9px 0 0;
+}
+
+.wall-fabric-option-card > small,
+.wall-fabric-option-line small {
+  color: #8f98a5;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.wall-fabric-main-choice {
+  margin-top: 2px;
+}
+
+.wall-fabric-option-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.wall-fabric-option-line em {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: #1f5db4;
+  background: #e9f2ff;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.wall-fabric-swatches {
+  gap: 10px;
+}
+
+.wall-fabric-swatches button,
+.wall-fabric-main-choice .ground-main-swatch {
+  width: 36px;
+  height: 36px;
+}
+
+.wall-cover-card {
+  margin-top: 0;
+  padding: 0 14px 14px;
+  border-top: 1px solid #dce3ed;
+  border-radius: 0 0 9px 9px;
+}
+
+.wall-cover-head {
+  padding-top: 14px;
+}
+
+.wall-cover-head div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.wall-cover-head strong {
+  color: #416bb0;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+
+.wall-cover-head em {
+  color: #1f5db4;
+  background: #e9f2ff;
+}
+
+.wall-cover-info-box.success {
+  border-color: #6bb388;
+  color: #15804c;
+  background: #ecfff4;
+}
+
+.wall-cover-info-box.success strong {
+  color: #15804c;
+}
+
+.wall-cover-info-box.success b {
+  background: #24935a;
+}
+
+.wall-cover-info-box > strong + span {
+  margin-left: 26px;
+}
+
+.wall-cover-price-summary {
+  display: none;
+}
+
+.wall-cover-row {
+  gap: 9px;
+  padding: 11px;
+  background: #fff;
+}
+
+.wall-cover-row-main {
+  grid-template-columns: auto 1fr auto;
+  gap: 9px;
+}
+
+.wall-cover-row-main > em {
+  grid-column: 3;
+  grid-row: 1;
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #9aa2ae;
+  background: #f0f3f8;
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.wall-cover-row-main > div {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.wall-cover-toggle {
+  grid-column: 1;
+  grid-row: 1;
+  background: #e2e6ec;
+}
+
+.wall-cover-row-main strong {
+  font-size: 0.84rem;
+}
+
+.wall-cover-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: stretch;
+}
+
+.wall-cover-preview-button {
+  display: grid;
+  place-items: center;
+  min-height: 90px;
+  border: 1px dashed #416bb0;
+  border-radius: 8px;
+  padding: 12px;
+  color: #416bb0;
+  background: #f3f7fd;
+  box-shadow: none;
+}
+
+.wall-cover-preview-button svg {
+  display: none;
+}
+
+.wall-cover-preview-button span,
+.wall-cover-row .wall-cover-preview-button span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 9px 18px;
+  color: #fff !important;
+  background: #416bb0;
+  font-size: 0.76rem;
+  font-weight: 950;
+}
+
+.wall-cover-preview-button.has-preview {
+  border-color: #0f6c36;
+  background: #effaf3;
+  box-shadow: none;
+}
+
+.wall-cover-pending {
+  justify-content: flex-start;
+  min-height: 28px;
+  border: 0;
+  padding: 0;
+  color: #a1a8b3;
+  background: transparent;
+}
+
+.wall-cover-pending span {
+  color: #a1a8b3;
+  font-size: 0.72rem;
+  font-weight: 800;
+}

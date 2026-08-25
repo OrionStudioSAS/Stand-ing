@@ -67,7 +67,7 @@ export const translations = {
     color_swatch_label: '{count} couleur{s} — {label}',
 
     // WallCoverOptionCard
-    wall_cover_title: 'Bâche sur cloisons',
+    wall_cover_title: 'BÂCHE IMPRIMÉE',
     wall_cover_ref: 'SMCL14BAC01A',
     wall_cover_price: '245 € / ml',
     wall_cover_active: 'actives',
@@ -437,7 +437,7 @@ export const translations = {
     color_swatch_label: '{count} colour{s} — {label}',
 
     // WallCoverOptionCard
-    wall_cover_title: 'Banner on partitions',
+    wall_cover_title: 'PRINTED BANNER',
     wall_cover_ref: 'SMCL14BAC01A',
     wall_cover_price: '245 € / lm',
     wall_cover_active: 'active',

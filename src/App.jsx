@@ -3194,9 +3194,9 @@ function OptionsStepPanel({
           onThickChange={onFootprintThick}
         />
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} subtitle="Coton gratté · Bâche imprimée" icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
         <ColorOptionCard
-          title={t('color_title')}
+          title="COTON GRATTÉ"
           colors={wallFabricColors}
           selectedColor={selectedWallFabricColor}
           defaultColorId={defaultColorOptions.wallFabricColorId}
@@ -5175,71 +5175,53 @@ function ToggleOptionCard({ enabled, enabledLabel, disabledLabel, disabled = fal
 }
 
 function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', includedLabel = 'Inclus', optionLabel, area = 0, disabled = false, onSelect }) {
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
   const includedColors = displayColors.filter((color) => color.included);
   const optionalColors = displayColors.filter((color) => !color.included);
-  const optionPriceLabel = (color) => colorOptionLabel(color, optionLabel, area);
+  const minOptionPrice = minColorPrice(optionalColors);
+  const optionTotal = Math.round(Number(minOptionPrice || 0) * Number(area || 0));
   const selectColor = (colorId) => {
     if (disabled) return;
     onSelect(colorId);
-    setDropdownOpen(false);
   };
 
   return (
-    <div className="color-option-card">
-      <div className="color-card-head">
-        <strong>{title}</strong>
-        <span>{selectedDisplayColor.name} ({selectedDisplayColor.code})</span>
+    <div className="color-option-card wall-fabric-option-card">
+      <GroundOptionHeading title={title} />
+      <small>{`${includedColors.length || 1} couleur${(includedColors.length || 1) > 1 ? 's' : ''} disponible${(includedColors.length || 1) > 1 ? 's' : ''}`}</small>
+      <div className="ground-main-choice wall-fabric-main-choice">
+        <span
+          className="ground-main-swatch active"
+          style={{ '--swatch-color': selectedDisplayColor.hex, '--swatch-image': `url("${selectedDisplayColor.image}")` }}
+          aria-hidden="true"
+        />
+        <strong>{selectedDisplayColor.name} ({selectedDisplayColor.code})</strong>
+        {selectedDisplayColor.included && <b>{includedLabel}</b>}
       </div>
-      <div className={`color-dropdown ${dropdownOpen ? 'open' : ''}`}>
-        <button className="color-dropdown-trigger" type="button" disabled={disabled} onClick={() => setDropdownOpen((open) => !open)}>
-          <span className="selected-swatch" style={{ '--swatch-color': selectedDisplayColor.hex, '--swatch-image': `url("${selectedDisplayColor.image}")` }} />
-          <span>
-            <strong>{selectedDisplayColor.name}</strong>
-            <small>{selectedDisplayColor.code} · {selectedDisplayColor.included ? includedLabel : optionPriceLabel(selectedDisplayColor)}</small>
-          </span>
-          <ChevronDown size={18} />
-        </button>
-        {dropdownOpen && (
-          <div className="color-dropdown-menu">
-            <small>{includedLabel}</small>
-            <div className="color-swatch-row included">
-              {includedColors.map((color) => (
-                <button
-                  key={color.id}
-                  className={selectedDisplayColor.id === color.id ? 'active' : ''}
-                  type="button"
-                  style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
-                  title={`${color.name} (${color.code})`}
-                  disabled={disabled}
-                  onClick={() => selectColor(color.id)}
-                >
-                  <span>{color.name}</span>
-                </button>
-              ))}
-            </div>
-            <small>{optionLabel}</small>
-            <div className="color-swatch-row optional">
-              {optionalColors.map((color) => (
-                <button
-                  key={color.id}
-                  className={selectedDisplayColor.id === color.id ? 'active' : ''}
-                  type="button"
-                  style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
-                  title={`${color.name} (${color.code})`}
-                  disabled={disabled}
-                  onClick={() => selectColor(color.id)}
-                >
-                  <span>{color.name}</span>
-                  <em>{optionPriceLabel(color)}</em>
-                </button>
-              ))}
-            </div>
+      {!!optionalColors.length && (
+        <>
+          <div className="wall-fabric-option-line">
+            <small>{`${optionalColors.length} couleur${optionalColors.length > 1 ? 's' : ''} en option - ${formatNumber(minOptionPrice)}€/m2`}</small>
+            {optionTotal > 0 && <em>+ {optionTotal.toLocaleString('fr-FR')} €</em>}
           </div>
-        )}
-      </div>
+          <div className="carpet-swatch-row premium wall-fabric-swatches">
+            {optionalColors.map((color) => (
+              <button
+                key={color.id}
+                className={selectedDisplayColor.id === color.id ? 'active' : ''}
+                type="button"
+                style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+                title={`${color.name} (${color.code}) · ${colorOptionLabel(color, optionLabel, area)}`}
+                disabled={disabled}
+                onClick={() => selectColor(color.id)}
+              >
+                <span>{color.name}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -5252,19 +5234,25 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
     .reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0);
   const includedUsed = Math.min(activeMl, Number(includedMl || 0));
   const billableMl = Math.max(0, activeMl - includedUsed);
-  const wallCoverTotal = Math.round(billableMl * 245);
+  const wallCoverUnitPrice = 245;
+  const wallCoverTotal = Math.round(billableMl * wallCoverUnitPrice);
 
   return (
     <div className="wall-cover-card">
       <div className="wall-cover-head">
         <div>
           <strong>{t('wall_cover_title')}</strong>
-          <span>{t('wall_cover_price')}</span>
+          <em>{wallCoverTotal > 0 ? `+ ${wallCoverTotal.toLocaleString('fr-FR')} €` : '+0€'}</em>
         </div>
       </div>
 
+      {includedLabel && (
+        <div className="wall-cover-info-box success">
+          <strong><b>i</b>{includedLabel}. Au-delà, facturation de {wallCoverUnitPrice}€/m linéaire</strong>
+        </div>
+      )}
       <div className="wall-cover-info-box">
-        {includedLabel && <strong><b>!</b>{includedLabel}</strong>}
+        <strong><b>!</b>Vous n’avez pas le fichier ?</strong>
         <span>{t('wall_cover_external_notice')}</span>
       </div>
 
@@ -5295,15 +5283,17 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
               >
                 <span />
               </button>
+              <em>Option</em>
               <div>
                 <strong>{surface.label}</strong>
-                <span>{formatNumber(surface.visibleWidth || surface.width)} m × {formatNumber(surface.height)} m</span>
+                <span>{formatNumber(surface.visibleWidth || surface.width)} m × {formatNumber(surface.height)} m · Image générique affichée sur la scène</span>
                 {preview?.name && <small>{preview.name}</small>}
               </div>
             </div>
             <div className="wall-cover-actions">
               <label className={preview ? 'wall-cover-preview-button has-preview' : 'wall-cover-preview-button'} title={t(preview ? 'wall_cover_preview_replace' : 'wall_cover_preview_upload')}>
                 <Upload size={15} />
+                <span>Importer</span>
                 <input
                   type="file"
                   accept={visualUploadAccept}
