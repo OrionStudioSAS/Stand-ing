@@ -2617,12 +2617,13 @@ select {
 .ground-choice-card {
   gap: 0;
   margin-bottom: 0;
-  padding: 0 14px 0;
+  padding: 0;
   border-radius: 0;
 }
 
-.ground-choice-card .carpet-choice-section {
-  padding-inline: 0;
+.ground-choice-card .carpet-choice-section,
+.ground-choice-card .carpet-config-options {
+  padding-inline: 14px;
 }
 
 .ground-carpet-card {
