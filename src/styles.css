@@ -2718,8 +2718,9 @@ select {
 }
 
 .footprint-choice-card .config-toggle-option {
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) 88px;
   align-items: start;
+  column-gap: 14px;
   min-height: 76px;
   border-radius: 8px;
   background: #fff;
@@ -2727,6 +2728,10 @@ select {
 
 .footprint-choice-card .config-toggle-option strong {
   font-size: 0.86rem;
+}
+
+.footprint-choice-card .config-toggle-option small {
+  max-width: 205px;
 }
 
 .footprint-choice-card .config-toggle-option span {
@@ -2744,6 +2749,7 @@ select {
   grid-row: 2;
   align-self: start;
   justify-self: end;
+  white-space: nowrap;
   color: #1f5db4;
   background: #e9f2ff;
 }
