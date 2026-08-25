@@ -10354,3 +10354,87 @@ img.asset-thumb {
   background: #fff;
   font-size: 0.78rem;
 }
+
+/* Spots LED quick-view v2 */
+.led-option-card-v2 {
+  gap: 13px;
+  margin: 0;
+  padding: 10px 14px 14px;
+  border-radius: 0;
+  background: #fff;
+}
+
+.led-option-card-v2 .led-info-box {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  border: 1px solid #79bd91;
+  border-radius: 7px;
+  padding: 9px 11px;
+  color: #17824b;
+  background: #effaf3;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1.22;
+}
+
+.led-option-card-v2 .led-info-box b {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  color: #fff;
+  background: #24935a;
+  font-size: 0.65rem;
+}
+
+.led-choice-title {
+  color: #3b414d;
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.led-rail-choice-list {
+  display: grid;
+  gap: 8px;
+}
+
+.led-rail-choice {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  border: 1px solid #dce5ef;
+  border-radius: 7px;
+  padding: 9px 12px;
+  color: #252b35;
+  background: #fff;
+}
+
+.led-rail-choice.active {
+  border-color: #3467bd;
+  background: #f4f8ff;
+  box-shadow: inset 0 0 0 1px #3467bd;
+}
+
+.led-rail-choice strong {
+  color: #252b35;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.led-option-card-v2 .reserve-remove-button {
+  min-height: 36px;
+  border-radius: 7px;
+  background: #fff;
+  font-size: 0.78rem;
+}
+
+.led-option-card-v2 .led-info-box span {
+  color: #17824b;
+  font-size: 0.72rem;
+  font-weight: 900;
+}

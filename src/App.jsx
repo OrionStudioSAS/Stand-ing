@@ -1068,14 +1068,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   );
   const autoSpotsRule = useMemo(() => initialOptions.autoSpotsRule || null, [initialOptions]);
   const automaticLedItems = useMemo(
-    () => (ledRailsEnabled && !autoSpotsRule?.type
+    () => (ledRailsEnabled && !hasAutoSpotsRule(autoSpotsRule)
       ? makeAutomaticLedRailItems(ledRailEntries, width, depth, layout, ledSpotCount)
         .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout))
       : []),
     [ledRailsEnabled, ledRailEntries, autoSpotsRule, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
   const automaticSpotItems = useMemo(
-    () => (ledRailsEnabled && autoSpotsRule?.type
+    () => (ledRailsEnabled && hasAutoSpotsRule(autoSpotsRule)
       ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems)
         .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout))
       : []),
@@ -2132,6 +2132,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             technicalFloorTrimType={technicalFloorTrimType}
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={actualLedSpotCount}
+            autoSpotsRule={autoSpotsRule}
             reserveRule={activeReserveRuleConfig}
             reserveOptionType={effectiveReserveOptionType}
             reserveOptions={reserveOptions}
@@ -2181,6 +2182,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             technicalFloorTrimType={technicalFloorTrimType}
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={actualLedSpotCount}
+            autoSpotsRule={autoSpotsRule}
             reserveRule={activeReserveRuleConfig}
             reserveOptionType={effectiveReserveOptionType}
             reserveOptions={reserveOptions}
@@ -3117,6 +3119,7 @@ function OptionsStepPanel({
   technicalFloorTrimType,
   ledRailsEnabled,
   ledSpotCount,
+  autoSpotsRule = null,
   reserveRule,
   reserveOptionType,
   reserveOptions = {},
@@ -3245,6 +3248,8 @@ function OptionsStepPanel({
         <LedRailOptionCard
           enabled={ledRailsEnabled}
           spotCount={ledSpotCount}
+          rule={autoSpotsRule}
+          catalog={catalog}
           disabled={readOnly}
           onChange={onLedRailsEnabled}
         />
@@ -4454,6 +4459,7 @@ function ValidationStepPanel({
   technicalFloorTrimType,
   ledRailsEnabled,
   ledSpotCount,
+  autoSpotsRule = null,
   reserveRule,
   reserveOptionType,
   reserveOptions = {},
@@ -4804,14 +4810,23 @@ function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, 
   );
 }
 
-function LedRailOptionCard({ enabled, spotCount, disabled = false, onChange }) {
+function LedRailOptionCard({ enabled, spotCount, rule = null, catalog = [], disabled = false, onChange }) {
   const t = useT();
+  const railRows = ledRailDisplayRows(rule, catalog, spotCount);
   return (
-    <div className="led-option-card">
-      <div>
-        <strong>{t('led_title')}</strong>
+    <div className="led-option-card led-option-card-v2">
+      <div className="led-info-box">
+        <b>i</b>
         <span>{t('led_count', { count: spotCount })}</span>
-        {t('led_note') && <small>{t('led_note')}</small>}
+      </div>
+      <strong className="led-choice-title">Type de rail</strong>
+      <div className="led-rail-choice-list">
+        {railRows.map((row) => (
+          <div key={row.id} className={row.active ? 'led-rail-choice active' : 'led-rail-choice'}>
+            <span className="reserve-choice-radio" aria-hidden="true">{row.active ? <span /> : null}</span>
+            <strong>{row.label}</strong>
+          </div>
+        ))}
       </div>
       <button
         type="button"
@@ -4823,6 +4838,16 @@ function LedRailOptionCard({ enabled, spotCount, disabled = false, onChange }) {
       </button>
     </div>
   );
+}
+
+function ledRailDisplayRows(rule = null, catalog = [], spotCount = 0) {
+  const entries = hasAutoSpotsRule(rule) ? autoSpotsRuleEntries(rule, catalog) : ledRailCatalogEntries(catalog);
+  const plan = makeLedRailPlan(entries, spotCount);
+  const active = new Set(plan.map((entry) => ledSpotsPerRail(entry)));
+  return [
+    { id: '3', label: 'Rail · 3 spots lumineux', active: active.has(3) || Boolean(rule?.threeSpotType) },
+    { id: '2', label: 'Rail · 2 spots lumineux', active: active.has(2) || Boolean(rule?.twoSpotType) },
+  ];
 }
 
 function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled = false, onFloorType, onTrimType }) {
@@ -7181,53 +7206,52 @@ function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, onChange }
 
 function PresetAutoSpotsEditor({ rule, entries, width, depth, onChange }) {
   const area = Number(width || 0) * Number(depth || 0);
-  const spotsNeeded = area > 0 ? Math.max(1, Math.round(area / ledSpotAreaMeters)) : 0;
-  const spotsPerRail = Math.max(1, Number(rule?.spotsPerRail || 1));
-  const railCount = area > 0 ? Math.max(1, Math.round(spotsNeeded / spotsPerRail)) : 0;
+  const spotsNeeded = area > 0 ? ledSpotCountForArea(area) : 0;
+  const railEntries = ledRailCatalogEntries(entries);
+  const selectableRailEntries = railEntries.length ? railEntries : entries;
+  const selectedTwo = rule?.twoSpotType || (Number(rule?.spotsPerRail) === 2 ? rule?.type : '');
+  const selectedThree = rule?.threeSpotType || (Number(rule?.spotsPerRail) === 3 ? rule?.type : '');
+  const selectedEntries = autoSpotsRuleEntries({ twoSpotType: selectedTwo, threeSpotType: selectedThree }, entries);
+  const railPlan = makeLedRailPlan(selectedEntries, spotsNeeded);
+  const update = (patch) => {
+    const next = {
+      twoSpotType: selectedTwo,
+      threeSpotType: selectedThree,
+      ...(patch || {}),
+    };
+    if (!next.twoSpotType && !next.threeSpotType) { onChange(null); return; }
+    onChange(next);
+  };
 
   return (
     <section className="preset-reserve-rules">
       <h4>Spots automatiques</h4>
-      <p>Choisissez un objet de la boutique et indiquez le nombre de spots qu'il comporte. Les rails sont placés automatiquement selon la règle 1 spot pour {ledSpotAreaMeters} m².</p>
+      <p>Liez les deux objets rails. Le configurateur calcule ensuite 1 spot pour {ledSpotAreaMeters} m² et compose automatiquement avec des rails 2 ou 3 spots.</p>
       <article>
         <label>
-          Objet
-          <select
-            value={rule?.type || ''}
-            onChange={(event) => {
-              const next = event.target.value;
-              if (!next) { onChange(null); return; }
-              onChange({ ...(rule || {}), type: next });
-            }}
-          >
-            <option value="">Aucun (désactivé)</option>
-            {entries.map((entry) => (
-              <option key={entry.type} value={entry.type}>{entry.label}</option>
-            ))}
+          Rail 2 spots
+          <select value={selectedTwo || ''} onChange={(event) => update({ twoSpotType: event.target.value })}>
+            <option value="">Aucun</option>
+            {selectableRailEntries.map((entry) => <option key={entry.type} value={entry.type}>{entry.label}</option>)}
           </select>
         </label>
-        {rule?.type && (
-          <label>
-            Spots par rail
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={rule?.spotsPerRail ?? ''}
-              placeholder="1"
-              onChange={(event) => onChange({ ...(rule || {}), spotsPerRail: Number(event.target.value) || 1 })}
-            />
-          </label>
-        )}
-        {rule?.type && area > 0 && (
+        <label>
+          Rail 3 spots
+          <select value={selectedThree || ''} onChange={(event) => update({ threeSpotType: event.target.value })}>
+            <option value="">Aucun</option>
+            {selectableRailEntries.map((entry) => <option key={entry.type} value={entry.type}>{entry.label}</option>)}
+          </select>
+        </label>
+        {area > 0 && (selectedTwo || selectedThree) && (
           <div className="preset-reserve-empty">
-            Pour {width} × {depth} m ({area} m²) : {spotsNeeded} spots → {railCount} rail{railCount > 1 ? 's' : ''} de {spotsPerRail} spot{spotsPerRail > 1 ? 's' : ''}
+            Pour {width} × {depth} m ({area} m²) : {spotsNeeded} spots → {railPlan.length} rail{railPlan.length > 1 ? 's' : ''}
           </div>
         )}
       </article>
     </section>
   );
 }
+
 
 function presetToEditableScene(preset, catalogEntries = []) {
   const items = (preset.stand_preset_items || []).map((item) => normalizePresetItem(item, catalogEntries));
@@ -9707,7 +9731,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, salonLabel, options.reserveOptions || {});
   const ledItems = options.ledRailsEnabled === false
     ? []
-    : autoSpotsRule?.type
+    : hasAutoSpotsRule(autoSpotsRule)
       ? makeAutomaticSpotItems(autoSpotsRule, catalogEntries, width, depth, layout, [...automaticReserveItems, ...manualItems])
         .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout))
       : makeAutomaticLedRailItems(ledEntries, width, depth, layout, ledSpotCountForArea(area))
@@ -12051,11 +12075,14 @@ function isAutomaticSpotItem(item = {}) {
   return Boolean(item?.autoSpot || item?.dimensions?.autoSpot);
 }
 
-function autoSpotsRailCount(rule, area) {
-  if (!rule?.type || !rule?.spotsPerRail) return 0;
-  const spotsPerRail = Math.max(1, Number(rule.spotsPerRail || 1));
-  const spotsNeeded = Math.max(1, Math.round(Number(area || 0) / ledSpotAreaMeters));
-  return Math.max(1, Math.round(spotsNeeded / spotsPerRail));
+function hasAutoSpotsRule(rule = null) {
+  return Boolean(rule?.type || rule?.twoSpotType || rule?.threeSpotType);
+}
+
+function autoSpotsRuleEntries(rule = null, catalogEntries = []) {
+  if (!rule) return [];
+  const selected = [rule.twoSpotType, rule.threeSpotType, rule.type].filter(Boolean);
+  return selected.map((type) => findCatalogEntry(catalogEntries, type)).filter(Boolean);
 }
 
 function freeWallIntervals(range, blockers) {
@@ -12095,11 +12122,10 @@ function distributeInFreeIntervals(count, intervals) {
 }
 
 function makeAutomaticSpotItems(rule, catalogEntries, width, depth, layout, contextItems = []) {
-  if (!rule?.type) return [];
-  const entry = findCatalogEntry(catalogEntries, rule.type);
-  if (!entry) return [];
   const area = Number(width || 0) * Number(depth || 0);
-  const railCount = autoSpotsRailCount(rule, area);
+  const railPlan = makeLedRailPlan(autoSpotsRuleEntries(rule, catalogEntries), ledSpotCountForArea(area));
+  if (!railPlan.length) return [];
+  const railCount = railPlan.length;
   const walls = availableWalls(layout);
   const totalLength = walls.reduce((sum, wall) => sum + wallLength(wall.id, width, depth), 0);
   const allocations = walls.map((wall) => {
@@ -12113,8 +12139,23 @@ function makeAutomaticSpotItems(rule, catalogEntries, width, depth, layout, cont
     allocated += 1;
   });
   const dummyItem = { id: '__spot_placer__' };
+  let railIndex = 0;
   return allocations.flatMap(({ wall: wallId, count }) => {
-    if (!count) return [];
+    const wallEntries = railPlan.slice(railIndex, railIndex + count);
+    railIndex += count;
+    if (!wallEntries.length) return [];
+    const firstEntry = wallEntries[0];
+    const firstBase = {
+      ...makeItem(firstEntry.type, width, depth, layout, firstEntry),
+      wall: wallId,
+      y: ledRailCenterY(firstEntry),
+      dimensions: { ...(firstEntry.dimensions || {}), wallY: ledRailCenterY(firstEntry) },
+    };
+    const range = wallItemAxisRange(firstBase, wallId, width, depth);
+    const blockers = wallBlockers(dummyItem, contextItems, width, depth, wallId);
+    const freeIntervals = freeWallIntervals(range, blockers);
+    const positions = distributeInFreeIntervals(wallEntries.length, freeIntervals.length ? freeIntervals : [range]);
+    return wallEntries.map((entry, index) => {
       const itemBase = {
         ...makeItem(entry.type, width, depth, layout, entry),
         autoSpot: true,
@@ -12124,25 +12165,23 @@ function makeAutomaticSpotItems(rule, catalogEntries, width, depth, layout, cont
         lockedPlacement: false,
         collisionEnabled: false,
         wall: wallId,
-      y: ledRailCenterY(entry),
-      dimensions: {
+        y: ledRailCenterY(entry),
+        dimensions: {
           ...(entry.dimensions || {}),
           autoSpot: true,
           autoLedRail: true,
           collisionEnabled: false,
           wallY: ledRailCenterY(entry),
         },
-    };
-    const range = wallItemAxisRange(itemBase, wallId, width, depth);
-    const blockers = wallBlockers(dummyItem, contextItems, width, depth, wallId);
-    const freeIntervals = freeWallIntervals(range, blockers);
-    const positions = distributeInFreeIntervals(count, freeIntervals.length ? freeIntervals : [range]);
-    return positions.map((rawAxis, index) => {
-      const axis = clamp(snapWallAxis(rawAxis, itemBase), range.min, range.max);
-      return constrainItem({ ...itemBase, id: `auto-spot-${wallId}-${index + 1}`, x: axis }, width, depth, layout);
+      };
+      const itemRange = wallItemAxisRange(itemBase, wallId, width, depth);
+      const rawAxis = positions[index] ?? (itemRange.min + ((index + 1) * (itemRange.max - itemRange.min)) / (wallEntries.length + 1));
+      const axis = clamp(snapWallAxis(rawAxis, itemBase), itemRange.min, itemRange.max);
+      return constrainItem({ ...itemBase, id: `auto-spot-${entry.type}-${wallId}-${index + 1}`, x: axis }, width, depth, layout);
     });
   });
 }
+
 
 function isAutomaticReserveItem(item = {}) {
   return Boolean(item?.autoReserve || item?.dimensions?.autoReserve);
