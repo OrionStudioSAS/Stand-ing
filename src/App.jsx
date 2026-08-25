@@ -990,6 +990,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     let cancelled = false;
     if (typeof document === 'undefined' || !document.fonts?.load) return undefined;
     Promise.all([
+      document.fonts.load('200 92px Oswald'),
       document.fonts.load('200 125px Oswald'),
       document.fonts.load('300 54px Oswald'),
       document.fonts.load('400 92px Oswald'),
@@ -15406,8 +15407,8 @@ function drawSmclLeftHeadInfo(ctx, { company, aisleNumber, standNumber, hall }) 
   const labelX = 245;
   const standCode = smclStandCode(aisleNumber, standNumber);
   fitCanvasText(ctx, company, 238, 48, 690, 92, 700);
-  fitCanvasText(ctx, standCode, labelX, 205, 360, 92, 500);
-  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', labelX, 375, 360, 54, 500);
+  fitCanvasText(ctx, standCode, labelX, 205, 360, 92, 200);
+  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', labelX, 375, 360, 54, 300);
   drawSmclSalonMark(ctx, labelX, 620, 0.86);
   drawSmclPartnerMarks(ctx, labelX, 760, 0.9);
 }
@@ -15415,8 +15416,8 @@ function drawSmclLeftHeadInfo(ctx, { company, aisleNumber, standNumber, hall }) 
 function drawSmclRightHeadInfo(ctx, { company, aisleNumber, standNumber, hall }) {
   const standCode = smclStandCode(aisleNumber, standNumber);
   fitCanvasText(ctx, company, 290, 48, 700, 92, 700);
-  fitCanvasText(ctx, standCode, 765, 205, 360, 92, 500);
-  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', 765, 375, 360, 54, 500);
+  fitCanvasText(ctx, standCode, 765, 205, 360, 92, 200);
+  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', 765, 375, 360, 54, 300);
   drawSmclSalonMark(ctx, 770, 620, 0.86);
   drawSmclPartnerMarks(ctx, 770, 760, 0.9);
 }
