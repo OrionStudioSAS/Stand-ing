@@ -1940,6 +1940,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
           dpr={[1, 1.5]}
           className={sceneCanvasClassName}
+          flat
           shadows
           onPointerUp={() => {
             if (!readOnly) setDraggingId(null);
@@ -1951,8 +1952,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           }}
         >
           <color attach="background" args={['#eef0f4']} />
-          <ambientLight intensity={1.18} />
-          <directionalLight position={[3, 7, 4]} intensity={0.95} castShadow shadow-mapSize={[2048, 2048]} />
+          <ambientLight intensity={1.42} />
+          <directionalLight position={[3, 7, 4]} intensity={0.72} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
             {shouldRenderScene && (
               <StandScene
@@ -2007,7 +2008,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 ) : null}
               />
             )}
-            <ContactShadows opacity={0.12} scale={12} blur={2.8} far={5} position={[0, -0.01, 0]} />
+            <ContactShadows opacity={0.07} scale={12} blur={3.2} far={5} position={[0, -0.01, 0]} />
           </Suspense>
           <OrbitControls
             makeDefault
@@ -6830,13 +6831,14 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
           dpr={[1, 1.5]}
           className={!presetAssetsReady ? 'scene-canvas-loading' : ''}
+          flat
           shadows
           onPointerUp={() => setDraggingId(null)}
           onPointerLeave={() => setDraggingId(null)}
         >
           <color attach="background" args={['#eef0f4']} />
-          <ambientLight intensity={1.18} />
-          <directionalLight position={[3, 7, 4]} intensity={0.95} castShadow shadow-mapSize={[2048, 2048]} />
+          <ambientLight intensity={1.42} />
+          <directionalLight position={[3, 7, 4]} intensity={0.72} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
             {presetAssetsReady && (
             <StandScene
@@ -6871,7 +6873,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
               ) : null}
             />
             )}
-            <ContactShadows opacity={0.12} scale={12} blur={2.8} far={5} position={[0, -0.01, 0]} />
+            <ContactShadows opacity={0.07} scale={12} blur={3.2} far={5} position={[0, -0.01, 0]} />
           </Suspense>
           <OrbitControls
             makeDefault
@@ -15150,9 +15152,11 @@ function isElectricalWhiteItem(item = {}) {
 
 function brightenElectricalMaterial(material) {
   const cloned = materialWithColor(material, '#ffffff');
-  if ('roughness' in cloned) cloned.roughness = 0.28;
-  if ('metalness' in cloned) cloned.metalness = 0.01;
-  if ('emissiveIntensity' in cloned) cloned.emissiveIntensity = 0;
+  if ('roughness' in cloned) cloned.roughness = 0.22;
+  if ('metalness' in cloned) cloned.metalness = 0;
+  if (cloned.emissive?.set) cloned.emissive.set('#ffffff');
+  if ('emissiveIntensity' in cloned) cloned.emissiveIntensity = 0.22;
+  if ('toneMapped' in cloned) cloned.toneMapped = false;
   cloned.needsUpdate = true;
   return cloned;
 }
@@ -15297,7 +15301,7 @@ function materialWithTexture(material, texture, options = {}) {
   if (options.luminous) {
     if (next.emissive?.set) next.emissive.set('#ffffff');
     if ('emissiveMap' in next) next.emissiveMap = texture;
-    if ('emissiveIntensity' in next) next.emissiveIntensity = 0.42;
+    if ('emissiveIntensity' in next) next.emissiveIntensity = 0.72;
     if ('toneMapped' in next) next.toneMapped = false;
     if ('roughness' in next) next.roughness = 0.9;
     if ('metalness' in next) next.metalness = 0;
