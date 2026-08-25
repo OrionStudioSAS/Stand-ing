@@ -2660,13 +2660,6 @@ select {
   letter-spacing: 0.02em;
 }
 
-.ground-section-heading .configurator-option-icon {
-  width: 22px;
-  height: 22px;
-  flex-basis: 22px;
-  filter: none;
-}
-
 .ground-section-heading > strong {
   color: #2f61ad;
   font-size: 0.78rem;
