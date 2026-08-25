@@ -3176,7 +3176,7 @@ function OptionsStepPanel({
   return (
     <>
       <PanelHead title={t('panel_options_title')} step={activeStep} />
-      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle="Moquette · Empreinte · Plancher technique" icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle="Moquette · Empreinte" icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
           colors={carpetColors}
           selectedColor={selectedCarpetColor}
