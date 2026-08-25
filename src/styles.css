@@ -1910,6 +1910,12 @@ select {
   color: #b54935;
 }
 
+
+.view-toolbar .toolbar-lock-button.active:not(:disabled) {
+  color: #fff;
+  background: #1f4378;
+}
+
 .toolbar-rotation-slider {
   position: absolute;
   left: 46px;

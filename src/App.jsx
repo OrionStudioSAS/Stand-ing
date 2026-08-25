@@ -20,6 +20,7 @@ import {
   KeyRound,
   Layers,
   LayoutDashboard,
+  Lock,
   LogOut,
   Mail,
   MessageSquare,
@@ -37,6 +38,7 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  Unlock,
   UserPlus,
   Users,
   X,
@@ -1684,7 +1686,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     if (readOnly || !draggingId) return;
     const dragged = visibleSceneItems.find((item) => item.id === draggingId);
     if (!dragged) return;
-    if (!isAdminViewer && itemMovementLocked(dragged)) return;
+    if (itemUserLocked(dragged) || (!isAdminViewer && itemMovementLocked(dragged))) return;
 
     if (isWallItem(dragged)) {
       updateItem(draggingId, wallDragPatch(point, dragged, visibleSceneItems, width, depth, layout));
@@ -1799,6 +1801,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       setSelectedId(placed.id);
       return [...current, placed];
     });
+  };
+
+  const toggleSelectedItemLock = () => {
+    if (readOnly || !selected) return;
+    updateItem(selected.id, { userLocked: !itemUserLocked(selected) });
   };
 
   const deleteSelectedItem = () => {
@@ -1989,6 +1996,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                   <div className={`view-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
                     <button type="button" disabled={isWallItem(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
                     <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), salonLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Pencil size={15} /></button>
+                    <button type="button" className={`toolbar-lock-button ${itemUserLocked(selected) ? 'active' : ''}`} onClick={toggleSelectedItemLock} title={tRaw(language, itemUserLocked(selected) ? 'toolbar_unlock' : 'toolbar_lock')}>{itemUserLocked(selected) ? <Unlock size={15} /> : <Lock size={15} />}</button>
                     <button type="button" disabled={!canDeleteSceneItem(selected, isAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={15} /></button>
                     {rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
                       <label className="toolbar-rotation-slider">
@@ -11615,8 +11623,12 @@ function itemPlacementLocked(item) {
   return Boolean(item?.lockedPlacement || isLockedPlacementRule(item?.placementRule));
 }
 
+function itemUserLocked(item) {
+  return Boolean(item?.userLocked);
+}
+
 function itemMovementLocked(item) {
-  return Boolean(item?.movementLocked || item?.dimensions?.movementLocked);
+  return Boolean(itemUserLocked(item) || item?.movementLocked || item?.dimensions?.movementLocked);
 }
 
 function canDeleteSceneItem(item = {}, isAdminViewer = false) {
@@ -12148,6 +12160,7 @@ function pickReserveItemOverride(item) {
     rotation: Number(item.rotation || 0),
     placementRule: item.placementRule || null,
     lockedPlacement: Boolean(item.lockedPlacement),
+    userLocked: Boolean(item.userLocked),
   };
 }
 
@@ -12177,6 +12190,7 @@ function pickLedRailOverride(item) {
     z: Number(item.z || 0),
     wallSide: item.wallSide || null,
     wallSurface: item.wallSurface || null,
+    userLocked: Boolean(item.userLocked),
   };
 }
 
@@ -13788,7 +13802,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
             event.stopPropagation();
             if (!interactive) return;
             setSelectedId(item.id);
-            if (!canEditLockedItems && itemMovementLocked(item)) return;
+            if (itemUserLocked(item) || (!canEditLockedItems && itemMovementLocked(item))) return;
             event.target.setPointerCapture(event.pointerId);
             setDraggingId(item.id);
           }}
