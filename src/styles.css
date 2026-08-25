@@ -10438,3 +10438,219 @@ img.asset-thumb {
   font-size: 0.72rem;
   font-weight: 900;
 }
+
+/* Comptoir accueil quick-view v2 */
+.counter-option-panel {
+  margin: 0;
+  padding: 10px 14px 14px;
+  background: #fff;
+  color: #252b35;
+}
+
+.counter-size-card-v2,
+.counter-finish-card-v2,
+.counter-logo-card-v2 {
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.counter-size-card-v2 {
+  gap: 8px;
+}
+
+.counter-size-card-v2 > strong {
+  color: #3b414d;
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.counter-size-card-v2 .counter-size-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.counter-size-card-v2 .counter-size-grid button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 7px 13px;
+  background: #f2f5f9;
+}
+
+.counter-size-card-v2 .counter-size-grid button.active {
+  color: #fff;
+  background: #416bb0;
+  box-shadow: none;
+}
+
+.counter-size-card-v2 .counter-size-grid button span,
+.counter-size-card-v2 .counter-size-grid button strong {
+  color: inherit;
+  font-size: 0.74rem;
+}
+
+.counter-size-card-v2 .counter-size-grid button em {
+  display: none;
+}
+
+.counter-finish-card-v2 {
+  gap: 8px;
+}
+
+.counter-finish-card-v2 .counter-finish-head strong,
+.counter-logo-card-v2 header strong {
+  color: #3b414d;
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.counter-finish-card-v2 .counter-finish-head span {
+  color: #1f5db4;
+  font-size: 0.76rem;
+  font-weight: 950;
+}
+
+.counter-finish-card-v2 > small {
+  color: #8f98a5;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.counter-finish-card-v2 .counter-finish-swatches {
+  gap: 10px;
+  padding: 0 0 5px;
+}
+
+.counter-finish-card-v2 .counter-finish-swatches button,
+.counter-finish-card-v2 .counter-finish-swatches button i {
+  width: 30px;
+  height: 30px;
+}
+
+.counter-finish-card-v2 .counter-finish-swatches button.active i {
+  box-shadow: 0 0 0 3px #416bb0, inset 0 0 0 2px #fff;
+}
+
+.counter-logo-card-v2 {
+  gap: 8px;
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.counter-logo-card-v2 header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.counter-logo-card-v2 > em {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #198047;
+  background: #d9f3df;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.counter-logo-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+}
+
+.counter-logo-switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.counter-logo-switch span {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: #416bb0;
+}
+
+.counter-logo-switch span::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.counter-logo-card-v2 .visual-upload-dropzone {
+  min-height: 92px;
+  border: 1px dashed #416bb0;
+  border-radius: 8px;
+  background: #f3f7fd;
+}
+
+.counter-logo-card-v2 .visual-upload-dropzone > svg,
+.counter-logo-card-v2 .visual-upload-dropzone > strong {
+  display: none;
+}
+
+.counter-logo-card-v2 .visual-upload-dropzone > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  border-radius: 999px;
+  padding: 9px 18px;
+  color: #fff;
+  background: #416bb0;
+  font-size: 0.76rem;
+  font-weight: 950;
+}
+
+.counter-logo-card-v2 .visual-upload-dropzone.has-image > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.counter-logo-card-v2 .visual-upload-dropzone.has-image > span {
+  position: relative;
+  z-index: 1;
+}
+
+.counter-logo-card-v2 .visual-pending-checkbox {
+  justify-content: flex-start;
+  min-height: 24px;
+  border: 0;
+  padding: 0;
+  color: #a1a8b3;
+  background: transparent;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.counter-logo-card-v2 .visual-pending-checkbox input {
+  width: 18px;
+  height: 18px;
+  accent-color: #416bb0;
+}
+
+.counter-logo-card-v2 .item-image-reset {
+  min-height: 34px;
+  border: 1px solid #ffd0ca;
+  border-radius: 7px;
+  color: #e53935;
+  background: #fff;
+  font-weight: 900;
+}

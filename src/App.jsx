@@ -2600,7 +2600,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
           <strong>{t('counter_finish_title')}</strong>
           <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : ''}</span>
         </div>
-        <small>{t('footprint_included_colors')}</small>
+        <small>{t('footprint_included_count', { count: includedFinishes.length || 1 })}</small>
         <div className="counter-finish-swatches included">
           {(includedFinishes.length ? includedFinishes : [woodFinish]).map((finish) => (
             <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
@@ -2608,7 +2608,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
         </div>
         {optionalFinishes.length > 0 && (
           <>
-            <small>{t('carpet_option_from', { price: Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '' })}</small>
+            <small>{optionalFinishes.length} couleurs en option — {Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0'} €</small>
             <div className="counter-finish-swatches optional">
               {optionalFinishes.map((finish) => (
                 <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(finish)} />
@@ -2692,7 +2692,6 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   const selectedFinish = counterFinishOptions(colors).find((finish) => finish.id === selectedColorId) || counterWoodFinish(colors);
   const imageName = selectedItem?.options?.binary3ImageName || t('counter_no_logo');
   const logoPending = Boolean(selectedItem?.options?.binary3VisualPending);
-  const selectedVisible = !isHiddenIncludedCounterItem(selectedItem);
 
   const selectCounter = (id) => {
     setSelectedCounterId(id);
@@ -2740,22 +2739,6 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
 
   return (
     <div className="counter-option-panel">
-      <div className="counter-formula-box">
-        <span><b>!</b> {t('counter_formula_title')}</span>
-        <p>{t('counter_formula_detail')}</p>
-      </div>
-
-      {selectedItem && (
-        <button
-          type="button"
-          className={selectedVisible ? 'reserve-remove-button counter-scene-toggle danger' : 'reserve-remove-button counter-scene-toggle restore'}
-          disabled={disabled}
-          onClick={() => onVisibility?.(selectedItem, !selectedVisible)}
-        >
-          {selectedVisible ? 'Retirer le comptoir accueil de la scène' : 'Remettre le comptoir accueil sur la scène'}
-        </button>
-      )}
-
       {items.length > 1 && (
         <div className="counter-selector">
           <span>{t('counter_selector_label')}</span>
@@ -2775,21 +2758,16 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
       )}
 
       {counterVariants.length > 1 && (
-        <section className="counter-size-card">
-          <header>
-            <div>
-              <strong>{t('counter_size_title')}</strong>
-              <span>{selectedVariant ? counterSizeShortLabel(selectedVariant) : (selectedItem?.label || t('option_counter'))}</span>
-            </div>
-          </header>
+        <section className="counter-size-card counter-size-card-v2">
+          <strong>{t('counter_size_title')}</strong>
           <div className="counter-size-grid">
             {counterVariants.map((variant) => {
               const active = selectedVariant?.assetType === variant.assetType;
               const supplement = Math.max(0, Number(variant.price || 0) - baseVariantPrice);
               return (
                 <button key={variant.id} type="button" className={active ? 'active' : ''} disabled={disabled} onClick={() => selectVariant(variant)}>
-                  <span><strong>{counterSizeLabel(variant)}</strong></span>
-                  <em>{supplement > 0 ? `+ ${supplement.toLocaleString('fr-FR')} € HT` : t('color_included')}</em>
+                  <span><strong>{counterSizeShortLabel(variant)}</strong></span>
+                  {supplement > 0 && <em>+ {supplement.toLocaleString('fr-FR')} €</em>}
                 </button>
               );
             })}
@@ -2798,22 +2776,22 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
       )}
 
       <CounterFinishCard
+        compact
         finishes={counterFinishOptions(colors)}
         selectedFinish={selectedFinish}
         disabled={disabled}
         onSelect={selectFinish}
       />
 
-      <section className="counter-logo-card">
+      <section className="counter-logo-card counter-logo-card-v2">
         <header>
-          <div>
-            <strong>{t('counter_logo_title')}</strong>
-            <span>{selectedItem?.options?.binary3ImageUrl ? t('counter_logo_custom') : t('counter_logo_default')}</span>
-          </div>
+          <strong>Logo</strong>
+          <label className="counter-logo-switch">
+            <input type="checkbox" checked disabled readOnly />
+            <span />
+          </label>
         </header>
-        <small className="counter-logo-spec">
-          {(() => { const [w, h] = woodReceptionDeskImageCoverSize(selectedItem); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
-        </small>
+        <em>{t('counter_included_badge')}</em>
 
         <VisualUploadDropzone
           imageUrl={selectedItem?.options?.binary3ImageUrl}
@@ -2821,6 +2799,8 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
           disabled={disabled || uploadState?.uploading}
           uploading={uploadState?.uploading}
           onImage={uploadSelectedImage}
+          label=""
+          browseLabel="Importer"
         />
 
         <label className="visual-pending-checkbox">
@@ -2854,19 +2834,19 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
 
 
 
-function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = false, onSelect }) {
+function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = false, onSelect, compact = false }) {
   const t = useT();
   const includedFinishes = finishes.filter((finish) => finish.included || finish.mode === 'wood');
   const optionalFinishes = finishes.filter((finish) => !includedFinishes.some((included) => included.id === finish.id));
   const optionPrice = optionalFinishes.find((finish) => Number(finish.price || 0) > 0)?.price || 0;
   const selectedCode = selectedFinish.code || selectedFinish.reference || '';
   return (
-    <section className="counter-color-card counter-finish-card">
+    <section className={compact ? 'counter-color-card counter-finish-card counter-finish-card-v2' : 'counter-color-card counter-finish-card'}>
       <div className="counter-finish-head">
         <strong>{t('counter_finish_title')}</strong>
         <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedCode) ? ` (${shortFinishCode(selectedCode)})` : ''}</span>
       </div>
-      <small>{t('footprint_included_colors')}</small>
+      <small>{t('footprint_included_count', { count: includedFinishes.length || 1 })}</small>
       <div className="counter-finish-swatches included">
         {(includedFinishes.length ? includedFinishes : [counterWoodFinish()]).map((finish) => (
           <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
@@ -2874,7 +2854,7 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
       </div>
       {optionalFinishes.length > 0 && (
         <>
-          <small>{t('carpet_option_from', { price: Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '' })}</small>
+          <small>{optionalFinishes.length} couleurs en option — {Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0'} €</small>
           <div className="counter-finish-swatches optional">
             {optionalFinishes.map((finish) => (
               <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
@@ -3281,7 +3261,7 @@ function OptionsStepPanel({
           onVisualOptions={onPartitionHeadVisualOptions}
         />
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('comptoir')} title={t('option_counter')} icon={<ConfiguratorOptionIcon src="/icons/comptoir_accueil.svg" />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
+      <OptionAccordion {...accordionScrollProps('comptoir')} title={t('option_counter')} subtitle="Taille · Couleur · Logo" icon={<ConfiguratorOptionIcon src="/icons/comptoir_accueil.svg" />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
         <CounterOptionCard
           items={counterItems}
           colors={counterColors}
