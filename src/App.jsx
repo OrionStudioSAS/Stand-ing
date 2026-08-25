@@ -3246,7 +3246,7 @@ function OptionsStepPanel({
           onOptions={onReserveOptions}
         />
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('tete')} title={t('option_partition_head')} icon={<ConfiguratorOptionIcon src="/icons/tete_de_cloison.svg" />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
+      <OptionAccordion {...accordionScrollProps('tete')} title={t('option_partition_head')} subtitle={t('partition_format_subtitle')} icon={<ConfiguratorOptionIcon src="/icons/tete_de_cloison.svg" />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
         <PartitionHeadOptionCard
           rule={partitionHeadRule}
           sides={partitionHeadSides}
@@ -5107,17 +5107,16 @@ function reserveSizeDescription(area = 0, label = '') {
 
 function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onImage, onResetImage, onVisualOptions }) {
   const t = useT();
-  const [formulaOpen, setFormulaOpen] = useState(true);
   const rows = [
-    { side: 'left', label: t('partition_left'), visualLabel: t('partition_left'), type: rule?.leftType, price: rule?.leftPrice },
-    { side: 'right', label: t('partition_right'), visualLabel: t('partition_right'), type: rule?.rightType, price: rule?.rightPrice },
+    { side: 'left', label: t('partition_left'), visualLabel: t('partition_visual_left'), uploadSubtitle: `${t('partition_left')} · ${t('partition_size')}`, type: rule?.leftType, price: rule?.leftPrice },
+    { side: 'right', label: t('partition_right'), visualLabel: t('partition_visual_right'), uploadSubtitle: `${t('partition_right')} · ${t('partition_size')}`, type: rule?.rightType, price: rule?.rightPrice },
   ];
   const selectedRows = rows.filter((row) => Boolean(sides?.[row.side]));
   const selectedCount = selectedRows.length;
 
   return (
-    <div className="partition-head-panel">
-      <PartitionHeadFormulaBox open={formulaOpen} onToggle={() => setFormulaOpen((current) => !current)} />
+    <div className="partition-head-panel partition-head-panel-v2">
+      <PartitionHeadFormulaBox />
 
       <div className="partition-head-choice-grid">
         {rows.map((row) => {
@@ -5139,7 +5138,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
               <span className="reserve-choice-radio" aria-hidden="true">{selected ? <span /> : null}</span>
               <span>
                 <strong>{row.label}</strong>
-                <small>{row.type ? (billable ? `+ ${price.toLocaleString('fr-FR')} € HT` : t('color_included')) : t('partition_not_configured')}</small>
+                <small className={billable ? 'price' : 'included'}>{row.type ? (billable ? `+ ${price.toLocaleString('fr-FR')} € HT` : t('color_included')) : t('partition_not_configured')}</small>
               </span>
             </button>
           );
@@ -5177,20 +5176,16 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
   );
 }
 
-function PartitionHeadFormulaBox({ open, onToggle }) {
+function PartitionHeadFormulaBox() {
   const t = useT();
   return (
-    <div className={open ? 'formula-included-box partition-head-formula open' : 'formula-included-box partition-head-formula'}>
-      <button type="button" onClick={onToggle}>
-        <span><b>!</b> {t('formula_title')}</span>
-        {open ? <Minus size={16} /> : <Plus size={16} />}
-      </button>
-      {open && (
-        <div>
-          <p>{t('partition_formula_detail1')}</p>
-          <p>{t('partition_formula_detail2')}</p>
-        </div>
-      )}
+    <div className="partition-head-formula partition-head-formula-v2">
+      <b>!</b>
+      <span>
+        {t('partition_formula_detail1')}
+        <br />
+        {t('partition_formula_detail2')}
+      </span>
     </div>
   );
 }
@@ -5200,15 +5195,15 @@ function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabl
   const hasImage = Boolean(visual.headMainImageUrl);
   const pending = Boolean(visual.visualPending);
   return (
-    <div className="partition-head-upload-block">
+    <div className="partition-head-upload-block partition-head-upload-block-v2">
       <div className="partition-head-upload-title">
         <strong>{row.visualLabel}</strong>
-        <span>{t('partition_size')}</span>
+        <span>{row.uploadSubtitle || t('partition_size')}</span>
       </div>
-      <label className={hasImage ? 'partition-head-dropzone has-image' : 'partition-head-dropzone'}>
+      <label className={hasImage ? 'partition-head-dropzone partition-head-dropzone-v2 has-image' : 'partition-head-dropzone partition-head-dropzone-v2'}>
         {hasImage ? <img src={visual.headMainImageUrl} alt={row.visualLabel} /> : <FileImage size={24} />}
-        <strong>{uploading ? t('partition_uploading') : t('partition_upload_drag')}</strong>
-        <span>{t('partition_browse')}</span>
+        <strong>{uploading ? t('partition_uploading') : ''}</strong>
+        <span>{t('partition_import')}</span>
         <input
           type="file"
           accept={visualUploadAccept}
@@ -5219,7 +5214,7 @@ function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabl
           }}
         />
       </label>
-      <label className="visual-pending-checkbox dark">
+      <label className="visual-pending-checkbox partition-head-pending-v2">
         <input
           type="checkbox"
           disabled={disabled}

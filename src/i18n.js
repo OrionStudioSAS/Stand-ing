@@ -151,8 +151,12 @@ export const translations = {
     partition_formula_detail2: 'Pour modifier votre nom, N° ou drapeau, cliquer sur « mes informations » en haut à droite.',
     partition_upload_drag: 'Glissez votre visuel',
     partition_browse: 'Parcourir',
+    partition_import: 'Importer',
     partition_uploading: 'Upload...',
     partition_size: '800 × 500 mm',
+    partition_format_subtitle: 'Format 800 × 500 mm',
+    partition_visual_left: 'Tête de cloison gauche',
+    partition_visual_right: 'Tête de cloison droite',
     visual_pending_label: 'Je veux un visuel, mais je ne l’ai pas encore',
 
     // PartitionHeadOptionsPanel (inline edit)
@@ -522,8 +526,12 @@ export const translations = {
     partition_formula_detail2: 'To change your name, number or flag, click "my information" in the top right.',
     partition_upload_drag: 'Drag your visual here',
     partition_browse: 'Browse',
+    partition_import: 'Import',
     partition_uploading: 'Uploading...',
     partition_size: '800 × 500 mm',
+    partition_format_subtitle: 'Format 800 × 500 mm',
+    partition_visual_left: 'Left partition head',
+    partition_visual_right: 'Right partition head',
     visual_pending_label: 'I want a visual, but I do not have it yet',
 
     // PartitionHeadOptionsPanel (inline edit)
