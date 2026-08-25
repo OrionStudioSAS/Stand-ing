@@ -1996,7 +1996,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                   <div className={`view-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
                     <button type="button" disabled={isWallItem(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
                     <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), salonLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Pencil size={15} /></button>
-                    <button type="button" className={`toolbar-lock-button ${itemUserLocked(selected) ? 'active' : ''}`} onClick={toggleSelectedItemLock} title={tRaw(language, itemUserLocked(selected) ? 'toolbar_unlock' : 'toolbar_lock')}>{itemUserLocked(selected) ? <Unlock size={15} /> : <Lock size={15} />}</button>
+                    <button
+                      type="button"
+                      className={`toolbar-lock-button ${itemUserLocked(selected) ? 'active' : ''} ${itemAdminMovementLocked(selected) ? 'admin-locked' : ''}`}
+                      disabled={itemAdminMovementLocked(selected)}
+                      onClick={toggleSelectedItemLock}
+                      title={tRaw(language, itemAdminMovementLocked(selected) ? 'toolbar_locked_move' : itemUserLocked(selected) ? 'toolbar_unlock' : 'toolbar_lock')}
+                    >
+                      {itemUserLocked(selected) || itemAdminMovementLocked(selected) ? <Lock size={15} /> : <Unlock size={15} />}
+                    </button>
                     <button type="button" disabled={!canDeleteSceneItem(selected, isAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={15} /></button>
                     {rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
                       <label className="toolbar-rotation-slider">
@@ -3155,7 +3163,7 @@ function OptionsStepPanel({
   return (
     <>
       <PanelHead title={t('panel_options_title')} step={activeStep} />
-      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle="Moquette · Empreinte · Plancher technique" icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
           colors={carpetColors}
           selectedColor={selectedCarpetColor}
@@ -4751,7 +4759,7 @@ function ConfiguratorOptionIcon({ src }) {
   return <img className="configurator-option-icon" src={src} alt="" aria-hidden="true" loading="eager" />;
 }
 
-function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, title, icon, open, onToggle, children }) {
+function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, title, subtitle = '', icon, open, onToggle, children }) {
   const accordionRef = useRef(null);
 
   useEffect(() => {
@@ -4766,7 +4774,13 @@ function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, 
   return (
     <section ref={accordionRef} className={`option-accordion ${open ? 'open' : ''}`}>
       <button type="button" onClick={onToggle}>
-        <span>{icon}{title}</span>
+        <span className="option-accordion-label">
+          {icon}
+          <span>
+            <strong>{title}</strong>
+            {subtitle && <small>{subtitle}</small>}
+          </span>
+        </span>
         <ChevronUp size={18} />
       </button>
       {open && children}
@@ -5323,107 +5337,39 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
   );
 }
 
-function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, configOptions = [], selectedOptions = {}, thick = false, footprintEnabled = false, footprintArea = 0, onSelect, onOptionToggle, onThickChange }) {
+function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '' }) {
   const t = useT();
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
   const includedColors = displayColors.filter((color) => color.included);
-  const optionalGroups = colorGroupsFromOptions(displayColors.filter((color) => !color.included));
   const defaultColor = displayColors.find((color) => normalizeColorId(color.id) === normalizeColorId(defaultColorId))
     || includedColors[0]
     || selectedDisplayColor;
-  const includedGroupLabel = colorGroupTitle(defaultColor?.groupLabel || includedColors[0]?.groupLabel, 'Moquette Rewind');
-  const selectColor = (colorId) => {
-    if (disabled) return;
-    onSelect(colorId);
-  };
+  const displayColor = defaultColor || selectedDisplayColor;
 
   return (
-    <div className="carpet-choice-card">
-      <section className="carpet-choice-section">
-        <div className="carpet-choice-head">
-          <h4>{includedGroupLabel}</h4>
-          <strong>{selectedDisplayColor.name} ({selectedDisplayColor.code})</strong>
-        </div>
-        <small>{t('carpet_included_count', { count: includedColors.length || 1, s: (includedColors.length || 1) > 1 ? 's' : '' })}</small>
-        <div className="carpet-swatch-row">
-          {(includedColors.length ? includedColors : [defaultColor]).filter(Boolean).map((color) => (
-            <button
-              key={color.id}
-              type="button"
-              className={selectedDisplayColor.id === color.id ? 'active' : ''}
-              style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
-              title={`${color.name} (${color.code})`}
-              disabled={disabled}
-              onClick={() => selectColor(color.id)}
-            >
-              <span>{color.name}</span>
-            </button>
-          ))}
+    <div className="carpet-choice-card ground-choice-card ground-carpet-card">
+      <section className="carpet-choice-section ground-section">
+        <GroundOptionHeading iconSrc="/icons/sol.svg" title="MOQUETTE" />
+        <div className="ground-main-choice">
+          <span
+            className="ground-main-swatch active"
+            style={{ '--swatch-color': displayColor?.hex, '--swatch-image': `url("${displayColor?.image || ''}")` }}
+            aria-hidden="true"
+          />
+          <strong>{displayColor?.name || selectedDisplayColor.name} ({displayColor?.code || selectedDisplayColor.code})</strong>
           <b>{t('color_included')}</b>
         </div>
       </section>
+    </div>
+  );
+}
 
-      {!!optionalGroups.length && <div className="carpet-choice-separator"><span />{t('carpet_or')}<span /></div>}
-
-      {optionalGroups.map((group) => {
-        const minPrice = Math.min(...group.colors.map((color) => Number(color.price || 0)).filter((price) => price > 0));
-        const price = Number.isFinite(minPrice) ? minPrice : 0;
-        const selectedInGroup = group.colors.some((color) => selectedDisplayColor.id === color.id);
-        return (
-          <section key={group.id} className={`carpet-choice-section premium ${selectedInGroup ? 'active' : ''}`}>
-            <div className="carpet-choice-head">
-              <h4>{colorGroupTitle(group.label, 'Moquette épaisse Salsa')}</h4>
-              <span>{t('carpet_premium')}</span>
-            </div>
-            <p>{carpetGroupDescription(group.label)}</p>
-            <div className="carpet-premium-facts">
-              <span>{t('carpet_velvet')}</span>
-              <span>{t('carpet_dense')}</span>
-              <span>◆ {group.colors.length} coloris</span>
-            </div>
-            <div className="carpet-premium-price">
-              <span>{t('carpet_starting', { price: formatNumber(price) })}</span>
-              <em>{t('carpet_for_area', { area: formatNumber(area), extra: formatNumber(Math.round(price * Number(area || 0))) })}</em>
-            </div>
-            <div className="carpet-swatch-row premium">
-              {group.colors.map((color) => (
-                <button
-                  key={color.id}
-                  type="button"
-                  className={selectedDisplayColor.id === color.id ? 'active' : ''}
-                  style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
-                  title={`${color.name} (${color.code}) · ${colorOptionLabel(color, 'Option')}`}
-                  disabled={disabled}
-                  onClick={() => selectColor(color.id)}
-                >
-                  <span>{color.name}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        );
-      })}
-
-      <div className="carpet-config-options">
-        <ToggleOption
-          active={thick}
-          label={t('carpet_thick_label')}
-          detail={footprintEnabled ? t('carpet_thick_detail_with_footprint', { carpet: formatNumber(Math.round(30 * Number(area || 0))), footprint: formatNumber(Math.round(30 * Number(footprintArea || 0))) }) : t('carpet_thick_detail')}
-          price={thickCarpetPriceFromCarpetTab(area, footprintArea, t)}
-          onChange={(v) => onThickChange?.(v)}
-        />
-        {configOptions.map((option) => (
-          <ToggleOption
-            key={option.id}
-            active={Boolean(selectedOptions[option.id])}
-            label={option.label}
-            detail={option.detail}
-            price={`+ ${Number(option.price || 0).toLocaleString('fr-FR')} €`}
-            onChange={(checked) => onOptionToggle?.(option.id, checked)}
-          />
-        ))}
-      </div>
+function GroundOptionHeading({ iconSrc, title, value = '' }) {
+  return (
+    <div className="ground-section-heading">
+      <span><ConfiguratorOptionIcon src={iconSrc} /> {title}</span>
+      {value && <strong>{value}</strong>}
     </div>
   );
 }
@@ -5434,9 +5380,9 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
   const groups = colorGroupsFromOptions(displayColors);
   const standardGroups = groups.filter((group) => group.colors.some((color) => color.included));
-  const premiumGroups = groups.filter((group) => !group.colors.some((color) => color.included));
-  const visibleStandardGroups = standardGroups.length ? standardGroups : groups.slice(0, 1);
-  const visiblePremiumGroups = standardGroups.length ? premiumGroups : groups.slice(1);
+  const visibleStandardGroups = standardGroups.length ? [standardGroups[0]] : groups.slice(0, 1);
+  const paidOptionColors = displayColors.filter((color) => !color.included);
+  const visiblePremiumGroups = [];
   const selectColor = (colorId) => {
     if (disabled || !enabled) return;
     onSelect(colorId);
@@ -5453,16 +5399,12 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
 
       {visibleStandardGroups.map((group) => {
         const includedColors = group.colors.filter((color) => color.included);
-        const paidColors = group.colors.filter((color) => !color.included);
-        const selectedInGroup = group.colors.some((color) => selectedDisplayColor.id === color.id);
-        const referenceColor = selectedInGroup ? selectedDisplayColor : includedColors[0] || group.colors[0];
+        const paidColors = paidOptionColors;
+        const referenceColor = selectedDisplayColor || includedColors[0] || group.colors[0];
         const minPrice = minColorPrice(paidColors);
         return (
           <section key={group.id} className="carpet-choice-section footprint-standard">
-            <div className="carpet-choice-head">
-              <h4>{colorGroupTitle(group.label, 'Moquette Rewind')}</h4>
-              <strong>{referenceColor?.name} ({referenceColor?.code})</strong>
-            </div>
+            <GroundOptionHeading iconSrc="/icons/sol.svg" title="EMPREINTE MOQUETTE" value={`${referenceColor?.name} (${referenceColor?.code})`} />
             <small>{t('footprint_included_colors')}</small>
             <div className="carpet-swatch-row">
               {(includedColors.length ? includedColors : [referenceColor]).filter(Boolean).map((color) => (
@@ -5481,12 +5423,6 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
             </div>
             {!!paidColors.length && (
               <>
-                {dirtyCarpetColorCodes.includes(selectedDisplayColor.code) && (
-                  <div className="carpet-locked-notice footprint-warning">
-                    <strong>!</strong>
-                    <span>{t('carpet_dirty_warning')}</span>
-                  </div>
-                )}
                 <small>{t('carpet_option_from', { price: formatNumber(minPrice) })}</small>
                 <div className="carpet-swatch-row premium">
                   {paidColors.map((color) => (
@@ -5503,6 +5439,12 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
                     </button>
                   ))}
                 </div>
+                {dirtyCarpetColorCodes.includes(selectedDisplayColor.code) && (
+                  <div className="carpet-locked-notice footprint-warning">
+                    <strong>!</strong>
+                    <span>{t('carpet_dirty_warning')}</span>
+                  </div>
+                )}
               </>
             )}
           </section>
@@ -11625,6 +11567,10 @@ function itemPlacementLocked(item) {
 
 function itemUserLocked(item) {
   return Boolean(item?.userLocked);
+}
+
+function itemAdminMovementLocked(item) {
+  return Boolean(item?.movementLocked || item?.dimensions?.movementLocked);
 }
 
 function itemMovementLocked(item) {

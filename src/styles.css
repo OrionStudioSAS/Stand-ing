@@ -1916,6 +1916,11 @@ select {
   background: #1f4378;
 }
 
+.view-toolbar .toolbar-lock-button.admin-locked:disabled {
+  color: #fff;
+  background: #d64235;
+}
+
 .toolbar-rotation-slider {
   position: absolute;
   left: 46px;
@@ -2523,10 +2528,27 @@ select {
   background: #eef1f5;
 }
 
-.option-accordion > button span {
+.option-accordion > button .option-accordion-label {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.option-accordion > button .option-accordion-label > span {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+}
+
+.option-accordion > button .option-accordion-label strong {
+  color: inherit;
+  font: inherit;
+}
+
+.option-accordion > button .option-accordion-label small {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.72rem;
+  font-weight: 750;
 }
 .configurator-option-icon {
   width: 25px;
@@ -2589,6 +2611,121 @@ select {
   color: #d99022;
   font-style: normal;
   font-weight: 950;
+}
+
+
+.ground-choice-card {
+  gap: 0;
+  margin-bottom: 0;
+  padding: 0 14px 0;
+  border-radius: 0;
+}
+
+.ground-carpet-card {
+  padding-top: 14px;
+  border-radius: 9px 9px 0 0;
+}
+
+.footprint-choice-card {
+  margin-top: 0;
+  padding-top: 12px;
+  border-radius: 0 0 9px 9px;
+}
+
+.ground-section {
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e5e9f0;
+}
+
+.ground-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.ground-section-heading > span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #416bb0;
+  font-size: 0.82rem;
+  font-weight: 950;
+  letter-spacing: 0.02em;
+}
+
+.ground-section-heading .configurator-option-icon {
+  width: 22px;
+  height: 22px;
+  flex-basis: 22px;
+  filter: none;
+}
+
+.ground-section-heading > strong {
+  color: #2f61ad;
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.ground-main-choice {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 11px;
+}
+
+.ground-main-choice > strong {
+  color: #252c37;
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.ground-main-choice > b {
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: #19884d;
+  background: #e3f6ea;
+  font-size: 0.7rem;
+  font-weight: 950;
+}
+
+.ground-main-swatch {
+  display: block;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background-color: var(--swatch-color);
+  background-image: var(--swatch-image);
+  background-position: center;
+  background-size: cover;
+  box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.06);
+}
+
+.ground-main-swatch.active {
+  outline: 3px solid #2f61ad;
+  outline-offset: 2px;
+}
+
+.footprint-choice-card .carpet-config-options {
+  padding-top: 16px;
+  border-top: 1px solid #e5e9f0;
+}
+
+.footprint-choice-card .config-toggle-option {
+  min-height: 76px;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.footprint-choice-card .config-toggle-option strong {
+  font-size: 0.86rem;
+}
+
+.footprint-choice-card .config-toggle-option em {
+  justify-self: end;
+  color: #1f5db4;
+  background: #e9f2ff;
 }
 
 .carpet-choice-section {
