@@ -3147,7 +3147,7 @@ function OptionsStepPanel({
   return (
     <>
       <PanelHead title={t('panel_options_title')} step={activeStep} />
-      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} icon={<Layers size={16} />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} icon={<ConfiguratorOptionIcon src="/icons/sol.png" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
           colors={carpetColors}
           selectedColor={selectedCarpetColor}
@@ -3178,7 +3178,7 @@ function OptionsStepPanel({
           onThickChange={onFootprintThick}
         />
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} icon={<Box size={16} />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} icon={<ConfiguratorOptionIcon src="/icons/cloison.png" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
         <ColorOptionCard
           title={t('color_title')}
           colors={wallFabricColors}
@@ -3223,7 +3223,7 @@ function OptionsStepPanel({
           onChange={onLedRailsEnabled}
         />
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('reserve')} title={t('option_reserve')} icon={<Layers size={16} />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
+      <OptionAccordion {...accordionScrollProps('reserve')} title={t('option_reserve')} icon={<ConfiguratorOptionIcon src="/icons/reserve.png" />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
         <ReserveOptionCard
           rule={reserveRule}
           selectedOptionType={reserveOptionType}
@@ -3233,7 +3233,7 @@ function OptionsStepPanel({
           onChange={onReserveOption}
         />
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('tete')} title={t('option_partition_head')} icon={<Ruler size={16} />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
+      <OptionAccordion {...accordionScrollProps('tete')} title={t('option_partition_head')} icon={<ConfiguratorOptionIcon src="/icons/tete_de_cloison.png" />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
         <PartitionHeadOptionCard
           rule={partitionHeadRule}
           sides={partitionHeadSides}
@@ -3248,7 +3248,7 @@ function OptionsStepPanel({
           onVisualOptions={onPartitionHeadVisualOptions}
         />
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('comptoir')} title={t('option_counter')} icon={<Box size={16} />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
+      <OptionAccordion {...accordionScrollProps('comptoir')} title={t('option_counter')} icon={<ConfiguratorOptionIcon src="/icons/comptoir_accueil.png" />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
         <CounterOptionCard
           items={counterItems}
           colors={counterColors}
@@ -4736,6 +4736,11 @@ function FurnitureCatalogRow({ entry, count, salonLabel, readOnly = false, onAdd
       </button>
     </article>
   );
+}
+
+
+function ConfiguratorOptionIcon({ src }) {
+  return <img className="configurator-option-icon" src={src} alt="" aria-hidden="true" loading="eager" />;
 }
 
 function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, title, icon, open, onToggle, children }) {
