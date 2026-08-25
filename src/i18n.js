@@ -73,7 +73,7 @@ export const translations = {
     wall_cover_spec: 'Format simulateur conseillé :',
     wall_cover_missing: 'Visuel à fournir',
     wall_cover_ready: 'VISUEL',
-    wall_cover_external_notice: 'Si vous activez une ou plusieurs bâches, notre équipe vous contactera pour récupérer les fichiers HD adaptés à l’impression.',
+    wall_cover_external_notice: 'Cliquez sur importer pour visualiser votre fichier dans la scène 3D. Si vous n’avez pas de fichier, nous reviendrons vers vous.',
     wall_cover_generic_visual: 'Aperçu importé',
     wall_cover_preview_upload: 'Importer un aperçu',
     wall_cover_preview_replace: 'Remplacer l’aperçu',

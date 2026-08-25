@@ -5332,14 +5332,6 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
 
   return (
     <div className="carpet-choice-card">
-      {defaultColor && (
-        <div className="carpet-locked-notice">
-          <strong>!</strong>
-          <span>{t('carpet_locked', { color: defaultColor.name?.toLowerCase() || 'gris clair' })}</span>
-          <em>—</em>
-        </div>
-      )}
-
       <section className="carpet-choice-section">
         <div className="carpet-choice-head">
           <h4>{includedGroupLabel}</h4>
