@@ -15147,7 +15147,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
 
 function isElectricalWhiteItem(item = {}) {
   const text = normalizedItemText(item);
-  return text.includes('alimentation') || text.includes('multiprise');
+  return text.includes('alimentation') || text.includes('multiprise') || text.includes('triplette');
 }
 
 function brightenElectricalMaterial(material) {
@@ -15623,19 +15623,19 @@ function isAluminiumMaterial(material = {}) {
 function defaultModelColor(item) {
   const text = normalizeTextValue(`${item?.type || ''} ${item?.label || ''}`);
   if (/porte[-_ ]?doc/i.test(item?.type || item?.label || '')) return '#bfc5c8';
-  if (text.includes('alimentation') || text.includes('multiprise')) return '#ffffff';
+  if (text.includes('alimentation') || text.includes('multiprise') || text.includes('triplette')) return '#ffffff';
   return item?.color || '#ece7da';
 }
 
 function defaultModelMetalness(item) {
   const text = normalizeTextValue(`${item?.type || ''} ${item?.label || ''}`);
-  if (text.includes('alimentation') || text.includes('multiprise')) return 0.01;
+  if (text.includes('alimentation') || text.includes('multiprise') || text.includes('triplette')) return 0.01;
   return /porte[-_ ]?doc/i.test(item?.type || item?.label || '') ? 0.35 : 0.03;
 }
 
 function defaultModelRoughness(item) {
   const text = normalizeTextValue(`${item?.type || ''} ${item?.label || ''}`);
-  if (text.includes('alimentation') || text.includes('multiprise')) return 0.32;
+  if (text.includes('alimentation') || text.includes('multiprise') || text.includes('triplette')) return 0.32;
   return /porte[-_ ]?doc/i.test(item?.type || item?.label || '') ? 0.42 : 0.58;
 }
 
