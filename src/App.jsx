@@ -5390,13 +5390,6 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
 
   return (
     <div className={`carpet-choice-card footprint-choice-card ${!enabled ? 'disabled' : ''}`}>
-      {!enabled && (
-        <div className="footprint-disabled-note">
-          <span>{disabledReason || t('footprint_disabled')}</span>
-          <button type="button" disabled={disabled} onClick={() => onEnabledChange(true)}>{t('footprint_restore')}</button>
-        </div>
-      )}
-
       {visibleStandardGroups.map((group) => {
         const includedColors = group.colors.filter((color) => color.included);
         const paidColors = paidOptionColors;
@@ -5405,7 +5398,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
         return (
           <section key={group.id} className="carpet-choice-section footprint-standard">
             <GroundOptionHeading iconSrc="/icons/sol.svg" title="EMPREINTE MOQUETTE" value={`${referenceColor?.name} (${referenceColor?.code})`} />
-            <small>{t('footprint_included_colors')}</small>
+            <small>{`${includedColors.length || 1} couleur${(includedColors.length || 1) > 1 ? 's' : ''} incluse${(includedColors.length || 1) > 1 ? 's' : ''}`}</small>
             <div className="carpet-swatch-row">
               {(includedColors.length ? includedColors : [referenceColor]).filter(Boolean).map((color) => (
                 <button
@@ -5423,7 +5416,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
             </div>
             {!!paidColors.length && (
               <>
-                <small>{t('carpet_option_from', { price: formatNumber(minPrice) })}</small>
+                <small>{`${paidColors.length} couleur${paidColors.length > 1 ? 's' : ''} en option — ${formatNumber(minPrice)} €`}</small>
                 <div className="carpet-swatch-row premium">
                   {paidColors.map((color) => (
                     <button
@@ -5495,17 +5488,11 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
         <ToggleOption
           active={thick}
           label={t('carpet_thick_label')}
-          detail={t('footprint_thick_detail_with_carpet', { carpet: formatNumber(Math.round(30 * Number(carpetArea || 0))) })}
+          detail="S’applique à la moquette et à l’empreinte moquette."
           price={thickCarpetPriceFromFootprintTab(carpetArea, area, t)}
           onChange={(v) => onThickChange?.(v)}
         />
       </div>
-
-      {enabled && (
-        <button className="reserve-remove-button footprint-remove-button" type="button" disabled={disabled} onClick={() => onEnabledChange(false)}>
-          {t('footprint_remove')}
-        </button>
-      )}
     </div>
   );
 }

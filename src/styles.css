@@ -2621,6 +2621,10 @@ select {
   border-radius: 0;
 }
 
+.ground-choice-card .carpet-choice-section {
+  padding-inline: 0;
+}
+
 .ground-carpet-card {
   padding-top: 14px;
   border-radius: 9px 9px 0 0;
@@ -2713,6 +2717,8 @@ select {
 }
 
 .footprint-choice-card .config-toggle-option {
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
   min-height: 76px;
   border-radius: 8px;
   background: #fff;
@@ -2722,7 +2728,20 @@ select {
   font-size: 0.86rem;
 }
 
+.footprint-choice-card .config-toggle-option span {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.footprint-choice-card .config-toggle-option i {
+  grid-column: 3;
+  grid-row: 1;
+}
+
 .footprint-choice-card .config-toggle-option em {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
   justify-self: end;
   color: #1f5db4;
   background: #e9f2ff;
