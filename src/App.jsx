@@ -2069,7 +2069,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             {basePackOpen && (
               <div className="base-pack-scene-list">
                 {scenePricing.baseUsage.map((item) => (
-                  <span key={item.type}>{basePackItemLabel(item.label, item.quantity)} {basePackIncludedWord(item.label, item.quantity)} {item.used}/{item.quantity}</span>
+                  <span key={item.type}>{basePackItemLabel(item.label, item.quantity)} {item.used}/{item.quantity}</span>
                 ))}
               </div>
             )}
