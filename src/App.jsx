@@ -11830,10 +11830,7 @@ function wallCoverDisplaySegments(surface, items, width, depth, layout = 'back')
     .map((interval, index) => wallCoverSegmentFromInterval(surface, interval, width, depth, index));
   const segments = rawSegments.filter((segment) => Number(segment.width || 0) >= minWallCoverDisplayWidth);
   if (!segments.length) return [];
-  const singleSegmentUsesBaseWall = rawSegments.length === 1
-    && segments.length === 1
-    && Math.abs(Number(segments[0].width || 0) - wallCoverBaseAvailableWidth(surface, width, depth, layout)) <= 0.03;
-  if (singleSegmentUsesBaseWall) {
+  if (segments.length === 1) {
     const segment = segments[0];
     return [{
       ...segment,
