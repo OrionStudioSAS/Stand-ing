@@ -3846,7 +3846,18 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   };
 
   const toggleExtra = (id, checked) => {
-    setSelectedExtras((current) => ({ ...current, [id]: checked }));
+    const option = extraOptions.find((extra) => extra.id === id);
+    setSelectedExtras((current) => {
+      if (!checked && option?.required && option?.exclusiveGroup && current[id]) return current;
+      const next = { ...current };
+      if (checked && option?.exclusiveGroup) {
+        extraOptions
+          .filter((extra) => extra.exclusiveGroup === option.exclusiveGroup)
+          .forEach((extra) => { next[extra.id] = false; });
+      }
+      next[id] = checked;
+      return next;
+    });
   };
 
   const updateDraftVisualOptions = (patch) => {
@@ -4259,6 +4270,8 @@ function normalizeAssetConfigOptions(options = []) {
       reference: option.reference || option.ref || '',
       price: Number(option.price || 0),
       defaultChecked: Boolean(option.defaultChecked),
+      exclusiveGroup: option.exclusiveGroup || option.group || '',
+      required: Boolean(option.required),
       type: option.type || 'toggle',
       choices: option.type === 'select' ? (option.choices || []) : undefined,
     }))
