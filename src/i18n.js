@@ -6,7 +6,7 @@ export const translations = {
     // Stepper / Header
     step_home: 'Accueil',
     step_options: 'Configuration',
-    step_furniture: 'Mobilier',
+    step_furniture: 'Boutique',
     step_validation: 'Validation',
     step_counter: 'Étape {step} / 4',
     total_ht_estimated: 'Total HT estimé',
@@ -38,7 +38,7 @@ export const translations = {
 
     // Panel heads
     panel_options_title: 'Personnalisez votre stand.',
-    panel_furniture_title: 'Bibliothèque accessoires',
+    panel_furniture_title: 'Boutique accessoires',
     panel_validation_title: 'Validation',
     panel_step: 'Etape {step} / 4',
 
@@ -210,7 +210,7 @@ export const translations = {
     cart_quantity: 'Quantité · 1',
     cart_next: 'Étape suivante',
     cart_next_detail: 'Validation →',
-    cart_next_furniture: 'Mobilier →',
+    cart_next_furniture: 'Boutique →',
 
     // ItemConfiguratorModal
     item_config_add: '{name}',
@@ -381,7 +381,7 @@ export const translations = {
     // Stepper / Header
     step_home: 'Home',
     step_options: 'Configuration',
-    step_furniture: 'Furniture',
+    step_furniture: 'Shop',
     step_validation: 'Review',
     step_counter: 'Step {step} / 4',
     total_ht_estimated: 'Estimated total excl. VAT',
@@ -413,7 +413,7 @@ export const translations = {
 
     // Panel heads
     panel_options_title: 'Personalize your stand.',
-    panel_furniture_title: 'Accessories library',
+    panel_furniture_title: 'Accessories shop',
     panel_validation_title: 'Review',
     panel_step: 'Step {step} / 4',
 
