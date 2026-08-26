@@ -100,6 +100,7 @@ const partitionHeadWallGap = 0.02;
 const partitionHeadWallCoverWidth = 0.6;
 const minWallCoverDisplayWidth = 0.7;
 const wallCoverSurfaceOffset = 0.008;
+const wallCoverUnitPrice = 288;
 const reserveWallCoverEdgeInset = 0.02;
 const partitionHeadWallAxisInset = 0;
 const collisionPlacementStep = 0.25;
@@ -5590,7 +5591,6 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
     .reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0);
   const includedUsed = Math.min(activeMl, Number(includedMl || 0));
   const billableMl = Math.max(0, activeMl - includedUsed);
-  const wallCoverUnitPrice = 245;
   const wallCoverTotal = Math.round(billableMl * wallCoverUnitPrice);
 
   return (
@@ -11310,7 +11310,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
 
   const activeWallCovers = wallCoverSurfaces.filter((surface) => wallCoverEnabledForSurface(wallCovers, surface));
   if (activeWallCovers.length) {
-    const unitPrice = 245;
+    const unitPrice = wallCoverUnitPrice;
     const quantity = roundLinearMeters(activeWallCovers.reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0));
     const includedQuantity = roundLinearMeters(Math.min(quantity, wallCoverIncludedLinearMeters(scene)));
     const billableQuantity = roundLinearMeters(Math.max(0, quantity - includedQuantity));

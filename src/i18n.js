@@ -69,7 +69,7 @@ export const translations = {
     // WallCoverOptionCard
     wall_cover_title: 'BÂCHE IMPRIMÉE',
     wall_cover_ref: 'SMCL14BAC01A',
-    wall_cover_price: '245 € / ml',
+    wall_cover_price: '288 € / ml',
     wall_cover_active: 'actives',
     wall_cover_empty: 'Aucune cloison disponible sur cette implantation.',
     wall_cover_spec: 'Format simulateur conseillé :',
@@ -444,7 +444,7 @@ export const translations = {
     // WallCoverOptionCard
     wall_cover_title: 'PRINTED BANNER',
     wall_cover_ref: 'SMCL14BAC01A',
-    wall_cover_price: '245 € / lm',
+    wall_cover_price: '288 € / lm',
     wall_cover_active: 'active',
     wall_cover_empty: 'No partition available for this layout.',
     wall_cover_spec: 'Recommended simulator format:',
