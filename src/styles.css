@@ -2338,6 +2338,10 @@ select {
   box-shadow: 0 1px 0 rgba(14, 31, 58, 0.06);
 }
 
+.option-accordion.open {
+  background: #fff;
+}
+
 .option-accordion > button {
   display: flex;
   align-items: center;
@@ -2616,7 +2620,7 @@ select {
 
 .ground-choice-card {
   gap: 0;
-  margin-bottom: 0;
+  margin: 0;
   padding: 0;
   border-radius: 0;
 }
@@ -10047,7 +10051,7 @@ img.asset-thumb {
 /* Cloison quick-view v2 */
 .wall-fabric-option-card {
   gap: 12px;
-  margin-bottom: 0;
+  margin: 0;
   padding: 14px;
   border-radius: 9px 9px 0 0;
 }
@@ -10094,6 +10098,8 @@ img.asset-thumb {
 
 .wall-cover-card {
   margin-top: 0;
+  margin-inline: 0;
+  margin-bottom: 0;
   padding: 0 14px 14px;
   border-top: 1px solid #dce3ed;
   border-radius: 0 0 9px 9px;
