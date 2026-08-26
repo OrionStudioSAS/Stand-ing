@@ -875,6 +875,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [fontRevision, setFontRevision] = useState(0);
   const [headerPanel, setHeaderPanel] = useState(null);
   const introStorageKey = useMemo(() => `standing-config-intro:${initialScene.id || initialScene.share_token || initialScene.project_name || 'scene'}`, [initialScene.id, initialScene.share_token, initialScene.project_name]);
+  const tutorialStorageKey = useMemo(() => `standing-config-tutorial:${initialScene.id || initialScene.share_token || initialScene.project_name || 'scene'}`, [initialScene.id, initialScene.share_token, initialScene.project_name]);
+  const tutorialAutoOpened = useRef(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
   const [activeStep, setActiveStepValue] = useState(() => {
     if (typeof window === 'undefined') return 1;
     return window.localStorage.getItem(introStorageKey) === 'started' ? 2 : 1;
@@ -891,6 +895,27 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       if (resolvedStep > 1) markIntroStarted();
       return resolvedStep;
     });
+  };
+  const tutorialStepTargets = [2, 2, 2, 3, 4];
+  const setTutorialStepAndFocus = (nextStep) => {
+    const clampedStep = Math.max(0, Math.min(tutorialStepTargets.length - 1, nextStep));
+    setTutorialStep(clampedStep);
+    setActiveStep(tutorialStepTargets[clampedStep] || 2);
+  };
+  const openTutorial = () => {
+    setHeaderPanel(null);
+    setItemConfigModal(null);
+    setRotationPanelOpen(false);
+    setTutorialOpen(true);
+    setTutorialStepAndFocus(0);
+  };
+  const closeTutorial = (persist = true) => {
+    setTutorialOpen(false);
+    if (typeof window !== 'undefined' && persist) {
+      try {
+        window.localStorage.setItem(tutorialStorageKey, 'done');
+      } catch (_) {}
+    }
   };
   const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, plancher: false, led: false, reserve: false, tete: false, comptoir: false });
   const [optionScrollTarget, setOptionScrollTarget] = useState('');
@@ -1129,11 +1154,27 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   useEffect(() => {
     setSceneHasRendered(false);
+    tutorialAutoOpened.current = false;
   }, [initialScene?.id]);
 
   useEffect(() => {
     if (sceneAssetsReady) setSceneHasRendered(true);
   }, [sceneAssetsReady]);
+
+  useEffect(() => {
+    if (tutorialAutoOpened.current || isAdminViewer || readOnly || !sceneHasRendered || activeStep <= 1) return;
+    tutorialAutoOpened.current = true;
+    if (typeof window === 'undefined') return;
+    try {
+      if (window.localStorage.getItem(tutorialStorageKey) !== 'done') {
+        setTutorialOpen(true);
+        setTutorialStepAndFocus(0);
+      }
+    } catch (_) {
+      setTutorialOpen(true);
+      setTutorialStepAndFocus(0);
+    }
+  }, [activeStep, isAdminViewer, readOnly, sceneHasRendered, tutorialStorageKey]);
 
   useEffect(() => {
     if (!objectBank.length) return;
@@ -1913,6 +1954,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             </button>
           ))}
         </nav>
+        {!readOnly && (
+          <button className={`round-tool tutorial-trigger ${tutorialOpen ? 'active' : ''}`} type="button" onClick={openTutorial} aria-label="Relancer le tutoriel">
+            <Sparkles size={18} />
+          </button>
+        )}
         <button className={`round-tool ${headerPanel === 'question' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('question')} aria-label={tRaw(language, 'aria_questions')}>
           <HelpCircle size={18} />
         </button>
@@ -2261,6 +2307,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       </aside>
       )}
 
+      {tutorialOpen && (
+        <ConfiguratorTutorial
+          step={tutorialStep}
+          language={language}
+          onStep={setTutorialStepAndFocus}
+          onClose={() => closeTutorial(true)}
+          onSkip={() => closeTutorial(true)}
+        />
+      )}
+
       {itemConfigModal && (() => {
         const modalItem = itemConfigModal.item
           ? visibleSceneItems.find((item) => item.id === itemConfigModal.item.id) || itemConfigModal.item
@@ -2322,6 +2378,156 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       )}
     </main>
     </LanguageContext.Provider>
+  );
+}
+
+const tutorialSlides = {
+  fr: [
+    {
+      eyebrow: 'Bienvenue',
+      title: 'Configure ton stand en quelques minutes',
+      text: 'Le tutoriel te montre les gestes essentiels : tourner la scène, ouvrir une option, modifier un objet et valider ton panier.',
+      hint: 'Tu peux relancer ce tutoriel depuis l’icône ✨ dans le header.',
+      cta: 'Commencer',
+      visual: 'overview',
+    },
+    {
+      eyebrow: 'Étape 2 · Configuration',
+      title: 'Clique sur les zones à personnaliser',
+      text: 'Les points bleus indiquent les surfaces importantes : sol, cloison, réserve, spots, tête de cloison ou comptoir accueil.',
+      hint: 'Un clic sur un point ouvre directement le bon panneau de réglages.',
+      visual: 'hotspots',
+    },
+    {
+      eyebrow: 'Modifier un élément',
+      title: 'Utilise la mini-toolbar près de l’objet',
+      text: 'Le crayon ouvre les réglages, la rotation pivote l’objet, le cadenas verrouille le déplacement et la poubelle retire l’élément si autorisé.',
+      hint: 'Si une action est grisée, c’est volontaire : l’objet est protégé ou verrouillé.',
+      visual: 'toolbar',
+    },
+    {
+      eyebrow: 'Étape 3 · Mobilier',
+      title: 'Ajoute puis place tes objets',
+      text: 'Choisis un objet dans la boutique, configure ses variantes, puis déplace-le directement dans la scène en le glissant.',
+      hint: 'Le panier en bas garde la liste des objets et options ajoutés.',
+      visual: 'drag',
+    },
+    {
+      eyebrow: 'Étape 4 · Validation',
+      title: 'Vérifie le récapitulatif avant envoi',
+      text: 'Tu retrouves les options choisies, les éléments inclus, les suppléments facturés, l’assurance mobilier et la demande particulière si besoin.',
+      hint: 'Une fois envoyé, Stand·ING reçoit ta configuration et revient vers toi si une demande spéciale est ajoutée.',
+      visual: 'validation',
+    },
+  ],
+  en: [
+    {
+      eyebrow: 'Welcome',
+      title: 'Configure your booth in a few minutes',
+      text: 'This quick tour shows the essential gestures: rotate the scene, open an option, edit an item and validate your cart.',
+      hint: 'You can replay this tutorial from the ✨ icon in the header.',
+      cta: 'Start',
+      visual: 'overview',
+    },
+    {
+      eyebrow: 'Step 2 · Configuration',
+      title: 'Click the editable areas',
+      text: 'Blue pins indicate key areas: floor, walls, storage, LED spots, partition heads or welcome counter.',
+      hint: 'Click a pin to open the right settings panel.',
+      visual: 'hotspots',
+    },
+    {
+      eyebrow: 'Edit an item',
+      title: 'Use the mini toolbar next to the object',
+      text: 'The pencil opens settings, rotate turns the object, lock freezes movement and trash removes it when allowed.',
+      hint: 'Greyed actions are intentional: the object is protected or locked.',
+      visual: 'toolbar',
+    },
+    {
+      eyebrow: 'Step 3 · Furniture',
+      title: 'Add and place objects',
+      text: 'Pick an item in the shop, configure variants, then drag it directly in the scene.',
+      hint: 'The bottom cart keeps every added object and option visible.',
+      visual: 'drag',
+    },
+    {
+      eyebrow: 'Step 4 · Review',
+      title: 'Check the summary before sending',
+      text: 'Review selected options, included items, charged extras, furniture insurance and any special request.',
+      hint: 'After sending, Stand·ING receives your configuration and follows up if a special request was added.',
+      visual: 'validation',
+    },
+  ],
+};
+
+function ConfiguratorTutorial({ step = 0, language = 'fr', onStep, onClose, onSkip }) {
+  const slides = tutorialSlides[language] || tutorialSlides.fr;
+  const currentIndex = Math.max(0, Math.min(slides.length - 1, step));
+  const slide = slides[currentIndex];
+  const isLast = currentIndex === slides.length - 1;
+  const nextLabel = language === 'en' ? (isLast ? 'Finish' : 'Next') : (isLast ? 'Terminer' : 'Suivant');
+  const backLabel = language === 'en' ? 'Back' : 'Retour';
+  const skipLabel = language === 'en' ? 'Skip tutorial' : 'Passer le tutoriel';
+
+  return (
+    <div className={`tutorial-layer tutorial-step-${currentIndex}`} role="dialog" aria-modal="true" aria-label="Tutoriel configurateur">
+      <div className="tutorial-focus-grid" aria-hidden="true">
+        <span className="tutorial-focus-dot dot-a" />
+        <span className="tutorial-focus-dot dot-b" />
+        <span className="tutorial-focus-dot dot-c" />
+      </div>
+      <article className="tutorial-card">
+        <button type="button" className="tutorial-close" onClick={onClose} aria-label="Fermer le tutoriel"><X size={17} /></button>
+        <div className="tutorial-progress">
+          {slides.map((item, index) => (
+            <button key={item.title} type="button" className={index === currentIndex ? 'active' : index < currentIndex ? 'done' : ''} onClick={() => onStep(index)}>
+              {index < currentIndex ? <Check size={11} /> : index + 1}
+            </button>
+          ))}
+        </div>
+        <div className="tutorial-content">
+          <TutorialVisual type={slide.visual} />
+          <section>
+            <span className="tutorial-eyebrow">{slide.eyebrow}</span>
+            <h2>{slide.title}</h2>
+            <p>{slide.text}</p>
+            <div className="tutorial-hint"><Sparkles size={15} />{slide.hint}</div>
+          </section>
+        </div>
+        <footer className="tutorial-actions">
+          <button type="button" className="tutorial-skip" onClick={onSkip}>{skipLabel}</button>
+          <div>
+            {currentIndex > 0 && <button type="button" className="tutorial-back" onClick={() => onStep(currentIndex - 1)}>{backLabel}</button>}
+            <button type="button" className="tutorial-next" onClick={() => (isLast ? onClose() : onStep(currentIndex + 1))}>
+              {slide.cta || nextLabel} <ChevronDown size={15} />
+            </button>
+          </div>
+        </footer>
+      </article>
+    </div>
+  );
+}
+
+function TutorialVisual({ type }) {
+  return (
+    <div className={`tutorial-visual tutorial-visual-${type}`} aria-hidden="true">
+      <div className="tutorial-mini-scene">
+        <span className="mini-wall wall-back" />
+        <span className="mini-wall wall-left" />
+        <span className="mini-floor" />
+        <span className="mini-counter" />
+        <span className="mini-reserve" />
+        <span className="mini-head" />
+        <span className="mini-screen" />
+        <span className="mini-object moving" />
+        <span className="mini-hotspot hot-a"><i />Sol</span>
+        <span className="mini-hotspot hot-b"><i />Réserve</span>
+        <span className="mini-hotspot hot-c"><i />Objet</span>
+        <span className="mini-toolbar"><Pencil size={13} /><RotateCcw size={13} /><Lock size={13} /></span>
+        <span className="mini-cart"><ShoppingCart size={13} /> Panier</span>
+        <span className="mini-check"><Check size={16} /></span>
+      </div>
+    </div>
   );
 }
 
