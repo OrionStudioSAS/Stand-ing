@@ -11260,3 +11260,145 @@ img.asset-thumb {
     justify-content: center;
   }
 }
+
+/* Tuto branch: align onboarding with the current main configurator (panel + toolbar + cart). */
+.tutorial-mini-panel,
+.tutorial-mini-shop,
+.tutorial-mini-validation {
+  position: absolute;
+  display: none;
+  z-index: 3;
+  border: 1px solid #d8e1ef;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 36px rgba(20, 32, 48, 0.18);
+}
+
+.tutorial-visual-panel .tutorial-mini-panel {
+  right: 16px;
+  top: 22px;
+  display: grid;
+  gap: 9px;
+  width: 144px;
+  padding: 12px;
+  animation: tutorialPanelSlide 0.32s ease both;
+}
+
+.mini-panel-title {
+  color: #1f4378;
+  font-size: 0.72rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.mini-panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  color: #536176;
+  background: #fff;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.mini-panel-row.active {
+  color: #fff;
+  border-color: #1f4378;
+  background: #1f4378;
+}
+
+.mini-panel-row i {
+  width: 22px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.26;
+}
+
+.tutorial-visual-shop .tutorial-mini-shop {
+  right: 14px;
+  top: 22px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 158px;
+  padding: 12px;
+  animation: tutorialPanelSlide 0.32s ease both;
+}
+
+.mini-shop-tab {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: #fff;
+  background: #1f4378;
+  font-size: 0.66rem;
+  font-weight: 950;
+}
+
+.mini-shop-card {
+  height: 48px;
+  border-radius: 10px;
+  background: linear-gradient(#f7f9fc 0 48%, #fff 48% 100%);
+  box-shadow: inset 0 0 0 1px #e3e8f0;
+}
+
+.mini-shop-card.dark {
+  background: linear-gradient(#eef1f6 0 48%, #fff 48% 100%);
+}
+
+.tutorial-visual-shop .mini-cart {
+  display: inline-flex !important;
+}
+
+.tutorial-visual-validation .tutorial-mini-validation {
+  right: 18px;
+  top: 26px;
+  display: grid;
+  gap: 8px;
+  width: 150px;
+  padding: 13px;
+  animation: tutorialPanelSlide 0.32s ease both;
+}
+
+.tutorial-mini-validation span {
+  color: #7d8796;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.tutorial-mini-validation strong {
+  color: #171b22;
+  font-size: 1.1rem;
+  font-weight: 950;
+}
+
+.tutorial-mini-validation i {
+  height: 7px;
+  border-radius: 999px;
+  background: #dfe7f2;
+}
+
+.tutorial-visual-validation .mini-check {
+  display: grid !important;
+}
+
+.tutorial-visual-panel .mini-object,
+.tutorial-visual-validation .mini-object,
+.tutorial-visual-overview .mini-object {
+  animation: none;
+}
+
+.tutorial-visual-toolbar .mini-toolbar {
+  display: flex !important;
+}
+
+@keyframes tutorialPanelSlide {
+  from { opacity: 0; transform: translateX(18px); }
+  to { opacity: 1; transform: translateX(0); }
+}

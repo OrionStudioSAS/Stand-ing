@@ -2386,37 +2386,37 @@ const tutorialSlides = {
     {
       eyebrow: 'Bienvenue',
       title: 'Configure ton stand en quelques minutes',
-      text: 'Le tutoriel te montre les gestes essentiels : tourner la scène, ouvrir une option, modifier un objet et valider ton panier.',
-      hint: 'Tu peux relancer ce tutoriel depuis l’icône ✨ dans le header.',
+      text: 'Ce tutoriel présente l’interface actuelle : la scène 3D au centre, le panneau à droite, la toolbar sur les objets et le panier en bas.',
+      hint: 'Tu peux le relancer à tout moment avec l’icône ✨ dans le header.',
       cta: 'Commencer',
       visual: 'overview',
     },
     {
       eyebrow: 'Étape 2 · Configuration',
-      title: 'Clique sur les zones à personnaliser',
-      text: 'Les points bleus indiquent les surfaces importantes : sol, cloison, réserve, spots, tête de cloison ou comptoir accueil.',
-      hint: 'Un clic sur un point ouvre directement le bon panneau de réglages.',
-      visual: 'hotspots',
+      title: 'Personnalise depuis le panneau de droite',
+      text: 'Ouvre les menus Sol, Cloison, Réserve, Spots LED, Tête de cloison ou Comptoir accueil pour modifier les options incluses dans ton stand.',
+      hint: 'Un seul menu s’ouvre à la fois pour garder la lecture claire.',
+      visual: 'panel',
     },
     {
-      eyebrow: 'Modifier un élément',
-      title: 'Utilise la mini-toolbar près de l’objet',
-      text: 'Le crayon ouvre les réglages, la rotation pivote l’objet, le cadenas verrouille le déplacement et la poubelle retire l’élément si autorisé.',
-      hint: 'Si une action est grisée, c’est volontaire : l’objet est protégé ou verrouillé.',
+      eyebrow: 'Modifier un objet',
+      title: 'Clique l’objet puis utilise la toolbar',
+      text: 'Sélectionne un élément dans la scène. La toolbar permet de configurer, tourner, verrouiller ou supprimer l’objet quand l’action est disponible.',
+      hint: 'Le crayon ouvre soit la bonne section de l’étape 2, soit la popup de personnalisation de l’objet.',
       visual: 'toolbar',
     },
     {
       eyebrow: 'Étape 3 · Mobilier',
-      title: 'Ajoute puis place tes objets',
-      text: 'Choisis un objet dans la boutique, configure ses variantes, puis déplace-le directement dans la scène en le glissant.',
-      hint: 'Le panier en bas garde la liste des objets et options ajoutés.',
-      visual: 'drag',
+      title: 'Ajoute du mobilier et place-le dans la scène',
+      text: 'Choisis une catégorie, clique sur un produit, sélectionne ses variantes ou options, puis déplace l’objet directement dans la scène.',
+      hint: 'Le panier en bas reste visible et récapitule les objets ajoutés et leur prix.',
+      visual: 'shop',
     },
     {
       eyebrow: 'Étape 4 · Validation',
-      title: 'Vérifie le récapitulatif avant envoi',
-      text: 'Tu retrouves les options choisies, les éléments inclus, les suppléments facturés, l’assurance mobilier et la demande particulière si besoin.',
-      hint: 'Une fois envoyé, Stand·ING reçoit ta configuration et revient vers toi si une demande spéciale est ajoutée.',
+      title: 'Vérifie puis envoie ta configuration',
+      text: 'Contrôle les options choisies, les éléments inclus, les suppléments facturés et ajoute une demande particulière si nécessaire.',
+      hint: 'Stand·ING reçoit ensuite ta configuration et ton bon de commande, ou traite ta demande particulière avant validation finale.',
       visual: 'validation',
     },
   ],
@@ -2424,37 +2424,37 @@ const tutorialSlides = {
     {
       eyebrow: 'Welcome',
       title: 'Configure your booth in a few minutes',
-      text: 'This quick tour shows the essential gestures: rotate the scene, open an option, edit an item and validate your cart.',
-      hint: 'You can replay this tutorial from the ✨ icon in the header.',
+      text: 'This tour introduces the current interface: 3D scene in the center, right-side panel, object toolbar and bottom cart.',
+      hint: 'You can replay it anytime with the ✨ icon in the header.',
       cta: 'Start',
       visual: 'overview',
     },
     {
       eyebrow: 'Step 2 · Configuration',
-      title: 'Click the editable areas',
-      text: 'Blue pins indicate key areas: floor, walls, storage, LED spots, partition heads or welcome counter.',
-      hint: 'Click a pin to open the right settings panel.',
-      visual: 'hotspots',
+      title: 'Customize from the right panel',
+      text: 'Open Floor, Wall, Storage, LED spots, Partition head or Welcome counter to adjust the options included in your booth.',
+      hint: 'Only one section opens at a time to keep things readable.',
+      visual: 'panel',
     },
     {
-      eyebrow: 'Edit an item',
-      title: 'Use the mini toolbar next to the object',
-      text: 'The pencil opens settings, rotate turns the object, lock freezes movement and trash removes it when allowed.',
-      hint: 'Greyed actions are intentional: the object is protected or locked.',
+      eyebrow: 'Edit an object',
+      title: 'Click an object, then use the toolbar',
+      text: 'Select an item in the scene. The toolbar lets you configure, rotate, lock or delete the object when available.',
+      hint: 'The pencil opens either the right Step 2 section or the item customization popup.',
       visual: 'toolbar',
     },
     {
       eyebrow: 'Step 3 · Furniture',
-      title: 'Add and place objects',
-      text: 'Pick an item in the shop, configure variants, then drag it directly in the scene.',
-      hint: 'The bottom cart keeps every added object and option visible.',
-      visual: 'drag',
+      title: 'Add furniture and place it in the scene',
+      text: 'Choose a category, click a product, select variants or options, then drag the object directly in the scene.',
+      hint: 'The bottom cart stays visible and summarizes added items and prices.',
+      visual: 'shop',
     },
     {
       eyebrow: 'Step 4 · Review',
-      title: 'Check the summary before sending',
-      text: 'Review selected options, included items, charged extras, furniture insurance and any special request.',
-      hint: 'After sending, Stand·ING receives your configuration and follows up if a special request was added.',
+      title: 'Check and send your configuration',
+      text: 'Review selected options, included items, charged extras and add a special request if needed.',
+      hint: 'Stand·ING then receives your configuration and purchase order, or handles your special request before final validation.',
       visual: 'validation',
     },
   ],
@@ -2471,11 +2471,6 @@ function ConfiguratorTutorial({ step = 0, language = 'fr', onStep, onClose, onSk
 
   return (
     <div className={`tutorial-layer tutorial-step-${currentIndex}`} role="dialog" aria-modal="true" aria-label="Tutoriel configurateur">
-      <div className="tutorial-focus-grid" aria-hidden="true">
-        <span className="tutorial-focus-dot dot-a" />
-        <span className="tutorial-focus-dot dot-b" />
-        <span className="tutorial-focus-dot dot-c" />
-      </div>
       <article className="tutorial-card">
         <button type="button" className="tutorial-close" onClick={onClose} aria-label="Fermer le tutoriel"><X size={17} /></button>
         <div className="tutorial-progress">
@@ -2520,12 +2515,28 @@ function TutorialVisual({ type }) {
         <span className="mini-head" />
         <span className="mini-screen" />
         <span className="mini-object moving" />
-        <span className="mini-hotspot hot-a"><i />Sol</span>
-        <span className="mini-hotspot hot-b"><i />Réserve</span>
-        <span className="mini-hotspot hot-c"><i />Objet</span>
         <span className="mini-toolbar"><Pencil size={13} /><RotateCcw size={13} /><Lock size={13} /></span>
         <span className="mini-cart"><ShoppingCart size={13} /> Panier</span>
         <span className="mini-check"><Check size={16} /></span>
+      </div>
+      <div className="tutorial-mini-panel">
+        <span className="mini-panel-title">Configuration</span>
+        <span className="mini-panel-row active">Sol <i /></span>
+        <span className="mini-panel-row">Réserve <i /></span>
+        <span className="mini-panel-row">Tête de cloison <i /></span>
+      </div>
+      <div className="tutorial-mini-shop">
+        <span className="mini-shop-tab active">Mobilier</span>
+        <span className="mini-shop-card" />
+        <span className="mini-shop-card" />
+        <span className="mini-shop-card dark" />
+      </div>
+      <div className="tutorial-mini-validation">
+        <span>Total options</span>
+        <strong>2 183 € HT</strong>
+        <i />
+        <i />
+        <i />
       </div>
     </div>
   );
