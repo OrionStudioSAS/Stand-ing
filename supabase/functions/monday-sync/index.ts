@@ -318,13 +318,20 @@ function mondayStatusLabel(columns: Array<any>, columnId = "", configuredLabel =
   const cleanConfigured = clean(configuredLabel);
   const column = columns.find((entry) => entry.id === columnId);
   const labels = mondayColumnLabels(column);
-  const candidates = ["Mail envoyé", "MAIL ENVOYÉ", cleanConfigured, "ENVOYE PAR MAIL", "ENVOYÉ PAR MAIL"].filter(Boolean);
+  const firstSendLabel = "1ER ENVOI";
+  const candidates = [
+    firstSendLabel,
+    cleanConfigured && normalizeText(cleanConfigured) === normalizeText(firstSendLabel) ? cleanConfigured : "",
+    "1er envoi",
+  ].filter(Boolean);
   for (const candidate of candidates) {
     const found = labels.find((label) => normalizeText(label) === normalizeText(candidate));
     if (found) return found;
   }
-  if (cleanConfigured && normalizeText(cleanConfigured) !== normalizeText("ENVOYE PAR MAIL")) return cleanConfigured;
-  return labels.find((label) => normalizeText(label).includes("mail") && normalizeText(label).includes("envoy")) || "Mail envoyé";
+  const firstSendFallback = labels.find((label) => normalizeText(label).includes("1er") && normalizeText(label).includes("envoi"));
+  if (firstSendFallback) return firstSendFallback;
+  if (cleanConfigured) return cleanConfigured;
+  return firstSendLabel;
 }
 
 function mondayColumnLabels(column: any) {
