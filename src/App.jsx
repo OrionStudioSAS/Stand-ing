@@ -4224,10 +4224,12 @@ function syncSharedGlobalGroupOptions(items = [], sourceOptions = {}, catalogEnt
 }
 
 function entryNeedsConfigurator(entry = {}) {
-  if (itemConfigVariants(entry, '').length > 1) return true;
+  const variants = itemConfigVariants(entry, '');
+  if (variants.length > 1) return true;
   if (isWoodReceptionDeskItem(entry)) return true;
   if (marketplaceItemDescription(entry)) return true;
   if (normalizeTextureSlots(entry?.dimensions?.textureSlots).length > 0) return true;
+  if (isVariantGroupEntry(entry) && variants.some((variant) => normalizeTextureSlots(variant.entry?.dimensions?.textureSlots).length > 0)) return true;
   return itemConfigExtraOptions(entry).length > 0;
 }
 
@@ -4318,6 +4320,7 @@ function normalizeTextureSlots(slots = []) {
         targetName,
         kind: slot.kind === 'color' ? 'color' : 'image',
         colorUsage: slot.colorUsage || slot.paletteUsage || slot.colorGroupUsage || '',
+        matchMode: slot.matchMode || slot.materialMatch || '',
       };
     })
     .filter((slot) => slot.label || slot.targetName);
@@ -15580,7 +15583,7 @@ function applyTextureSlotMaterial(material, item = {}, textureOptions = {}, mate
   if (!slots.length) return material;
   const values = item?.options?.textureSlotValues || {};
   for (const slot of slots) {
-    if (!materialMatchesTextureSlot(materialName, material, slot.targetName)) continue;
+    if (!materialMatchesTextureSlot(materialName, material, slot.targetName, slot.matchMode)) continue;
     const value = values[slot.id] || {};
     const image = textureOptions.textureSlotImages?.[slot.id];
     if (slot.kind === 'color') {
