@@ -4647,13 +4647,7 @@ function validationPendingVisuals({ partitionHeadRule, partitionHeadSides, parti
 }
 
 function basePackUsageText(item) {
-  return `Pack de base : ${basePackItemLabel(item.label, item.quota)} ${basePackIncludedWord(item.label, item.quota)} ${item.count}/${item.quota}`;
-}
-
-function basePackIncludedWord(label = '', quantity = 1) {
-  const feminine = String(label).trim().toLowerCase().endsWith('e');
-  if (Number(quantity || 0) > 1) return feminine ? 'comprises' : 'compris';
-  return feminine ? 'comprise' : 'compris';
+  return `Pack de base : ${basePackItemLabel(item.label, item.quota)} ${item.count}/${item.quota}`;
 }
 
 function basePackItemLabel(label = 'Objet', quantity = 1) {
