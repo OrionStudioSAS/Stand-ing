@@ -4346,7 +4346,7 @@ function marketplaceCategories(entries) {
 }
 
 function marketplaceItemSubtitle(entry, categoryLabel) {
-  if (isPatereEntry(entry)) return '';
+  if (isPatereEntry(entry)) return entry.dimensions?.category || categoryLabel;
   if (isVariantGroupEntry(entry)) return `${variantPrimaryAssetTypes(entry).length || 0} variantes disponibles`;
   if (isTelevisionMarketplaceEntry(entry)) return '32 / 43 / 55 / 65 pouces';
   if (entry.dimensions?.category) return entry.dimensions.category;
