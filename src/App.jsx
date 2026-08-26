@@ -13604,8 +13604,8 @@ function wallTopSnapItemHeight(item = {}, entry = null) {
 }
 
 function wallMountedNormalOffset(item, objectSurface = false) {
-  const wallFaceOffset = objectSurface ? 0 : wallThickness;
-  if (isPosterItem(item)) return wallFaceOffset + 0.006;
+  const wallFaceOffset = objectSurface ? wallThickness / 2 : wallThickness;
+  if (isPosterItem(item)) return wallFaceOffset + (objectSurface ? wallCoverSurfaceOffset : 0) + 0.006;
   if (item?.type === 'screen') return wallFaceOffset + screenDepth / 2;
   if (isPartitionHeadItem(item)) {
     const bounds = itemGroupBounds(item);
@@ -13798,6 +13798,41 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
     setSelectedId(null);
   };
 
+  const floorItems = items.filter((item) => !isWallItem(item));
+  const wallItems = items.filter((item) => isWallItem(item));
+  const renderSceneItem = (item) => (
+    <Suspense key={item.id} fallback={null}>
+      <SceneItem
+        item={item}
+        items={items}
+        width={width}
+        depth={depth}
+        selected={item.id === selectedId}
+        hovered={item.id === hoveredId}
+        dragging={item.id === draggingId}
+        onSelect={() => interactive && setSelectedId(item.id)}
+        onHover={hoverEnabled ? ((hovered) => setItemHover(item.id, hovered)) : null}
+        onDragStart={(event) => {
+          event.stopPropagation();
+          if (!interactive) return;
+          setSelectedId(item.id);
+          if (itemUserLocked(item) || (!canEditLockedItems && itemMovementLocked(item))) return;
+          event.target.setPointerCapture(event.pointerId);
+          setDraggingId(item.id);
+        }}
+        onDragEnd={(event) => {
+          event.stopPropagation();
+          if (draggingId === item.id && event.target.hasPointerCapture?.(event.pointerId)) {
+            event.target.releasePointerCapture(event.pointerId);
+          }
+          if (draggingId === item.id) setDraggingId(null);
+        }}
+        onDragMove={dragFromPointer}
+        visualContext={visualContext}
+      />
+    </Suspense>
+  );
+
   return (
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
       {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
@@ -13807,39 +13842,9 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
         {width}m x {depth}m
       </Text>
       {sceneConstraint && <SceneConstraintColumn constraint={sceneConstraint} />}
-      {items.map((item) => (
-        <Suspense key={item.id} fallback={null}>
-          <SceneItem
-          item={item}
-          items={items}
-          width={width}
-          depth={depth}
-          selected={item.id === selectedId}
-          hovered={item.id === hoveredId}
-          dragging={item.id === draggingId}
-          onSelect={() => interactive && setSelectedId(item.id)}
-          onHover={hoverEnabled ? ((hovered) => setItemHover(item.id, hovered)) : null}
-          onDragStart={(event) => {
-            event.stopPropagation();
-            if (!interactive) return;
-            setSelectedId(item.id);
-            if (itemUserLocked(item) || (!canEditLockedItems && itemMovementLocked(item))) return;
-            event.target.setPointerCapture(event.pointerId);
-            setDraggingId(item.id);
-          }}
-          onDragEnd={(event) => {
-            event.stopPropagation();
-            if (draggingId === item.id && event.target.hasPointerCapture?.(event.pointerId)) {
-              event.target.releasePointerCapture(event.pointerId);
-            }
-            if (draggingId === item.id) setDraggingId(null);
-          }}
-            onDragMove={dragFromPointer}
-            visualContext={visualContext}
-          />
-        </Suspense>
-      ))}
+      {floorItems.map(renderSceneItem)}
       <WallCoverSurfaces width={width} depth={depth} layout={layout} items={items} covers={wallCovers} previews={wallCoverPreviews} />
+      {wallItems.map(renderSceneItem)}
       {selectedToolbar && selectedItem && !draggingId && (
         <SceneItemToolbarAnchor item={selectedItem} items={items} width={width} depth={depth}>
           {selectedToolbar}
@@ -14980,6 +14985,7 @@ function ObjModel({ item, selected, hovered, dragging }) {
       if (child.isMesh) {
         child.castShadow = true;
         child.receiveShadow = true;
+        child.renderOrder = modelRenderOrderForItem(item);
         child.material = material;
       }
     });
@@ -14996,11 +15002,16 @@ function prepareLoadedModel(source, item = null, textureOptions = {}) {
     if (child.isMesh) {
       child.castShadow = true;
       child.receiveShadow = true;
+      child.renderOrder = modelRenderOrderForItem(item);
       child.material = cloneMeshMaterial(child.material);
       child.material = applyItemOptionMaterials(child.material, item, textureOptions, child.name);
     }
   });
   return centerModel(clone, item);
+}
+
+function modelRenderOrderForItem(item = null) {
+  return isWallItem(item) ? 6 : 0;
 }
 
 function useExternalTexture(url, options = {}) {
@@ -16025,13 +16036,13 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
     >
       {isPoster ? (
         <>
-          <mesh>
+          <mesh renderOrder={5}>
             <boxGeometry args={[posterWidth, posterHeight, 0.018]} />
             <meshStandardMaterial color={activeColor(selected, dragging, '#f7f1dc')} roughness={0.62} />
           </mesh>
-          <mesh position={[0, 0, 0.014]}>
+          <mesh position={[0, 0, 0.014]} renderOrder={6}>
             <boxGeometry args={[posterWidth, posterHeight, 0.006]} />
-            <meshStandardMaterial color="#ffffff" map={posterTexture || null} roughness={0.5} />
+            <meshStandardMaterial color="#ffffff" map={posterTexture || null} roughness={0.5} polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2} />
           </mesh>
           {!posterTexture && <Text position={[0, 0, 0.022]} fontSize={Math.min(0.18, posterWidth / 8)} color="#1f4378" anchorX="center" anchorY="middle">AFFICHE</Text>}
           {selected && <SelectionFrame bounds={{ width: posterWidth, height: posterHeight, depth: 0.05 }} centerY={0} />}
