@@ -102,7 +102,7 @@ export const translations = {
 
     // LedRailOptionCard
     led_title: 'Spots LED automatiques',
-    led_count: '{count} spots calculés automatiquement, soit 1 spot tous les 3 m². Ils sont placés en haut des murs.',
+    led_count: 'Votre formule inclut {count} spots LED. Si vous souhaitez les enlever de votre stand, cliquez ci-dessous.',
     led_keep: 'Les laisser',
     led_remove: 'Supprimer les Spots LED',
     led_restore: 'Remettre les Spots LED',
@@ -477,7 +477,7 @@ export const translations = {
 
     // LedRailOptionCard
     led_title: 'Automatic LED spots',
-    led_count: '{count} spots are calculated automatically, 1 spot every 3 m². They are placed at the top of the walls.',
+    led_count: 'Your package includes {count} LED spots. If you want to remove them from your stand, click below.',
     led_keep: 'Keep them',
     led_remove: 'Remove LED spots',
     led_restore: 'Restore LED spots',

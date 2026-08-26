@@ -932,7 +932,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [technicalFloorTrimType, setTechnicalFloorTrimType] = useState(initialOptions.technicalFloorTrimType || 'straight');
   const [technicalFloorRampX, setTechnicalFloorRampX] = useState(Number(initialOptions.technicalFloorRampX || 0));
   const [ledRailsEnabled, setLedRailsEnabled] = useState(initialOptions.ledRailsEnabled !== false);
-  const [ledRailMode, setLedRailMode] = useState(['2', '3'].includes(String(initialOptions.ledRailMode || '')) ? String(initialOptions.ledRailMode) : 'auto');
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
   const [reserveItemOverrides, setReserveItemOverrides] = useState(initialOptions.reserveItemOverrides || {});
   const [reserveOptionType, setReserveOptionType] = useState(initialOptions.reserveOptionType || (initialOptions.reserveUpgradeEnabled ? '__legacy__' : ''));
@@ -1104,7 +1103,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     [activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, salonLabel, partitionHeadVisuals],
   );
   const autoSpotsBaseRule = useMemo(() => initialOptions.autoSpotsRule || null, [initialOptions]);
-  const autoSpotsRule = useMemo(() => autoSpotsRuleForMode(autoSpotsBaseRule, ledRailMode), [autoSpotsBaseRule, ledRailMode]);
+  const autoSpotsRule = autoSpotsBaseRule;
   const automaticLedItems = useMemo(
     () => (ledRailsEnabled && !hasAutoSpotsRule(autoSpotsRule)
       ? makeAutomaticLedRailItems(ledRailEntries, width, depth, layout, ledSpotCount)
@@ -1248,7 +1247,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       technicalFloorRampX,
       language,
       ledRailsEnabled,
-      ledRailMode,
+      ledRailMode: 'auto',
       autoSpotsRule: autoSpotsBaseRule,
       ledSpotCount,
       ledRailOverrides,
@@ -2191,7 +2190,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             technicalFloor={selectedTechnicalFloor}
             technicalFloorTrimType={technicalFloorTrimType}
             ledRailsEnabled={ledRailsEnabled}
-            ledRailMode={ledRailMode}
             ledSpotCount={actualLedSpotCount}
             autoSpotsRule={autoSpotsBaseRule}
             reserveRule={activeReserveRuleConfig}
@@ -2242,8 +2240,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             technicalFloorType={technicalFloorType}
             technicalFloorTrimType={technicalFloorTrimType}
             ledRailsEnabled={ledRailsEnabled}
-            ledRailMode={ledRailMode}
-            ledSpotCount={actualLedSpotCount}
+            ledSpotCount={ledSpotCount}
             autoSpotsRule={autoSpotsBaseRule}
             reserveRule={activeReserveRuleConfig}
             reserveOptionType={effectiveReserveOptionType}
@@ -2286,7 +2283,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onTechnicalFloorType={(type) => !readOnly && handleTechnicalFloorType(type)}
             onTechnicalFloorTrimType={(type) => !readOnly && setTechnicalFloorTrimType(type)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
-            onLedRailMode={(mode) => !readOnly && setLedRailMode(mode)}
             onReserveOption={(type) => { if (!readOnly) { if (type === '__none__') { removeReserve(); } else { setReserveOptionType(type); } } }}
             onReserveOptions={(patch) => !readOnly && setReserveOptions((current) => ({ ...current, ...patch }))}
             onPartitionHeadSide={(side, enabled) => !readOnly && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
@@ -3328,9 +3324,7 @@ function OptionsStepPanel({
   technicalFloorType,
   technicalFloorTrimType,
   ledRailsEnabled,
-  ledRailMode = 'auto',
   ledSpotCount,
-  autoSpotsRule = null,
   reserveRule,
   reserveOptionType,
   reserveOptions = {},
@@ -3364,7 +3358,6 @@ function OptionsStepPanel({
   onTechnicalFloorType,
   onTechnicalFloorTrimType,
   onLedRailsEnabled,
-  onLedRailMode,
   onReserveOption,
   onReserveOptions,
   onPartitionHeadSide,
@@ -3459,13 +3452,9 @@ function OptionsStepPanel({
       <OptionAccordion {...accordionScrollProps('led')} title={t('option_led')} icon={<ConfiguratorOptionIcon src="/icons/spots.svg" />} open={openOptions.led} onToggle={() => toggleOption('led')}>
         <LedRailOptionCard
           enabled={ledRailsEnabled}
-          railMode={ledRailMode}
           spotCount={ledSpotCount}
-          rule={autoSpotsRule}
-          catalog={catalog}
           disabled={readOnly}
           onEnabledChange={onLedRailsEnabled}
-          onRailMode={onLedRailMode}
         />
       </OptionAccordion>
       <OptionAccordion {...accordionScrollProps('reserve')} title={t('option_reserve')} icon={<ConfiguratorOptionIcon src="/icons/reserve.svg" />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
@@ -5050,29 +5039,13 @@ function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, 
   );
 }
 
-function LedRailOptionCard({ enabled, railMode = 'auto', spotCount, rule = null, catalog = [], disabled = false, onEnabledChange, onRailMode }) {
+function LedRailOptionCard({ enabled, spotCount, disabled = false, onEnabledChange }) {
   const t = useT();
-  const railRows = ledRailDisplayRows(rule, catalog, spotCount, railMode);
   return (
     <div className="led-option-card led-option-card-v2">
       <div className="led-info-box">
         <b>i</b>
         <span>{t('led_count', { count: spotCount })}</span>
-      </div>
-      <strong className="led-choice-title">Type de rail</strong>
-      <div className="led-rail-choice-list">
-        {railRows.map((row) => (
-          <button
-            key={row.id}
-            type="button"
-            className={row.active ? 'led-rail-choice active' : 'led-rail-choice'}
-            disabled={disabled || !enabled || row.disabled}
-            onClick={() => onRailMode?.(row.id)}
-          >
-            <span className="reserve-choice-radio" aria-hidden="true">{row.active ? <span /> : null}</span>
-            <strong>{row.label}</strong>
-          </button>
-        ))}
       </div>
       <button
         type="button"
@@ -5084,25 +5057,6 @@ function LedRailOptionCard({ enabled, railMode = 'auto', spotCount, rule = null,
       </button>
     </div>
   );
-}
-
-function ledRailDisplayRows(rule = null, catalog = [], spotCount = 0, railMode = 'auto') {
-  const entries = hasAutoSpotsRule(rule) ? autoSpotsRuleEntries(rule, catalog) : ledRailCatalogEntries(catalog);
-  const plan = makeLedRailPlan(entries, spotCount);
-  const active = new Set(plan.map((entry) => ledSpotsPerRail(entry)));
-  const available = new Set(entries.map((entry) => ledSpotsPerRail(entry)));
-  const selectedMode = ['2', '3'].includes(String(railMode || '')) ? String(railMode) : '';
-  return [
-    { id: '3', label: 'Rail · 3 spots lumineux', active: selectedMode ? selectedMode === '3' : active.has(3), disabled: !available.has(3) },
-    { id: '2', label: 'Rail · 2 spots lumineux', active: selectedMode ? selectedMode === '2' : active.has(2), disabled: !available.has(2) },
-  ];
-}
-
-function autoSpotsRuleForMode(rule = null, railMode = 'auto') {
-  if (!rule || !hasAutoSpotsRule(rule)) return rule;
-  if (String(railMode) === '2') return { ...rule, threeSpotType: '' };
-  if (String(railMode) === '3') return { ...rule, twoSpotType: '' };
-  return rule;
 }
 
 function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled = false, onFloorType, onTrimType }) {
@@ -12651,15 +12605,24 @@ function makeLedRailPlan(entries, spotCount) {
 
   if (wanted <= 2) {
     plan.push(twoSpotRail);
-  } else if (wanted === 3) {
-    plan.push(threeSpotRail);
-  } else if (wanted % 2 === 1) {
-    plan.push(threeSpotRail);
-    for (let remaining = wanted - 3; remaining > 0; remaining -= 2) plan.push(twoSpotRail);
-  } else if (wanted % 3 === 0) {
-    for (let remaining = wanted; remaining > 0; remaining -= 3) plan.push(threeSpotRail);
   } else {
-    for (let remaining = wanted; remaining > 0; remaining -= 2) plan.push(twoSpotRail);
+    let best = null;
+    for (let threeCount = Math.floor(wanted / 3); threeCount >= 0; threeCount -= 1) {
+      const remaining = wanted - threeCount * 3;
+      if (remaining % 2 !== 0) continue;
+      const twoCount = remaining / 2;
+      const railCount = threeCount + twoCount;
+      if (!best || railCount < best.railCount || (railCount === best.railCount && threeCount > best.threeCount)) {
+        best = { threeCount, twoCount, railCount };
+      }
+    }
+    if (best) {
+      for (let index = 0; index < best.threeCount; index += 1) plan.push(threeSpotRail);
+      for (let index = 0; index < best.twoCount; index += 1) plan.push(twoSpotRail);
+    } else {
+      plan.push(threeSpotRail);
+      for (let remaining = Math.max(0, wanted - 3); remaining > 0; remaining -= 2) plan.push(twoSpotRail);
+    }
   }
 
   return plan;
