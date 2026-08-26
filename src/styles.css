@@ -10424,12 +10424,15 @@ img.asset-thumb {
   grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
+  width: 100%;
   min-height: 40px;
   border: 1px solid #dce5ef;
   border-radius: 7px;
   padding: 9px 12px;
   color: #252b35;
   background: #fff;
+  text-align: left;
+  cursor: pointer;
 }
 
 .led-rail-choice.active {
@@ -10442,6 +10445,11 @@ img.asset-thumb {
   color: #252b35;
   font-size: 0.78rem;
   font-weight: 900;
+}
+
+.led-rail-choice:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
 }
 
 .led-option-card-v2 .reserve-remove-button {
