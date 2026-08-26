@@ -4348,10 +4348,17 @@ function marketplaceCategories(entries) {
 function marketplaceItemSubtitle(entry, categoryLabel) {
   if (isPatereEntry(entry)) return '';
   if (isVariantGroupEntry(entry)) return `${variantPrimaryAssetTypes(entry).length || 0} variantes disponibles`;
-  if (entry.dimensions?.isTelevision) return '32 / 43 / 55 / 65 pouces';
+  if (isTelevisionMarketplaceEntry(entry)) return '32 / 43 / 55 / 65 pouces';
   if (entry.dimensions?.category) return entry.dimensions.category;
   return categoryLabel;
 }
+
+function isTelevisionMarketplaceEntry(entry = {}) {
+  if (!entry.dimensions?.isTelevision && entry.type !== 'screen') return false;
+  const text = normalizeTextValue(`${entry.label || ''} ${entry.type || ''} ${entry.dimensions?.category || ''}`);
+  return /\b(tv|lcd|ecran|televiseur|television)\b/.test(text);
+}
+
 function marketplaceItemDescription(entry = {}) {
   const dimensions = entry?.dimensions || {};
   const candidates = [
