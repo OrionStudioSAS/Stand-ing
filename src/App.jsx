@@ -286,7 +286,7 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
     id: createSceneItemId(type),
     type,
     label: entry?.label,
-    rotation: 0,
+    rotation: defaultSceneItemRotation(entry, type),
     collisionEnabled: entry?.dimensions?.collisionEnabled !== false,
     placementRule,
     lockedPlacement: isLockedPlacementRule(placementRule),
@@ -342,6 +342,14 @@ function makeItem(type, width, depth, layout, catalogEntry = null) {
     z: Math.min(depth / 2 - 0.9, 0.7),
     y: baseY,
   };
+}
+
+function defaultSceneItemRotation(entry = {}, type = '') {
+  const configuredRotation = entry?.dimensions?.defaultRotation ?? entry?.defaultRotation;
+  if (Number.isFinite(Number(configuredRotation))) return Number(configuredRotation);
+  const signature = normalizeTextValue(`${type} ${entry?.label || ''}`);
+  if (signature.includes('meuble') && signature.includes('rangement')) return 180;
+  return 0;
 }
 
 function resolveGroupChildren(children) {
