@@ -3523,7 +3523,7 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
   const entries = catalog.filter((entry) => (
     !['hidden'].includes(furniturePanelCategory(entry))
     && !groupedVariantTypes.has(entry.type)
-    && (!isVariantGroupEntry(entry) || entry.dimensions?.variantAssets?.length)
+    && (!isVariantGroupEntry(entry) || variantGroupHasDisplayVariants(entry))
   ));
   const categories = marketplaceCategories(entries);
   const selectedCategory = categories.find((category) => category.id === activeCategory) || categories[0];
@@ -4564,10 +4564,22 @@ function marketplaceCategories(entries) {
 
 function marketplaceItemSubtitle(entry, categoryLabel) {
   if (isPatereEntry(entry)) return entry.dimensions?.category || categoryLabel;
-  if (isVariantGroupEntry(entry)) return `${variantPrimaryAssetTypes(entry).length || 0} variantes disponibles`;
+  if (isVariantGroupEntry(entry)) return `${variantGroupDisplayVariantCount(entry)} variantes disponibles`;
   if (isTelevisionMarketplaceEntry(entry)) return '32 / 43 / 55 / 65 pouces';
   if (entry.dimensions?.category) return entry.dimensions.category;
   return categoryLabel;
+}
+
+function variantGroupHasDisplayVariants(entry = {}) {
+  return variantGroupDisplayVariantCount(entry) > 0;
+}
+
+function variantGroupDisplayVariantCount(entry = {}) {
+  const variantAssetsCount = Array.isArray(entry.dimensions?.variantAssets) ? entry.dimensions.variantAssets.length : 0;
+  if (variantAssetsCount > 0) return variantAssetsCount;
+  return (entry.dimensions?.configOptions || [])
+    .filter((option) => option?.type === 'select')
+    .reduce((count, option) => count + (option.choices || []).filter((choice) => choice?.entry || choice?.assetType).length, 0);
 }
 
 function isTelevisionMarketplaceEntry(entry = {}) {
