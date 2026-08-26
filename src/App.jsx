@@ -10137,24 +10137,103 @@ async function fillPurchaseOrderTemplate(order = {}) {
   const pdfDoc = await PDFDocument.load(await response.arrayBuffer());
   const form = pdfDoc.getForm();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const templateFields = purchaseOrderTemplateFieldMap(form);
 
   for (let index = 0; index < 15; index += 1) {
     const rowNumber = index + 1;
     const line = rows[index];
-    setPdfField(form, `ACC${rowNumber}a`, line ? truncatePdfText(line.label || line.reference, 62) : '');
-    setPdfField(form, `Quant${rowNumber}a`, line ? String(line.quantity) : '');
-    setPdfField(form, `PU${rowNumber}a`, line ? moneyPdf(line.unitPrice) : '');
-    setPdfField(form, `PT${rowNumber}a`, line ? moneyPdf(line.total) : '');
+    const rowFields = templateFields.rows[index] || {};
+    setPdfFieldAny(form, [`ACC${rowNumber}a`, rowFields.description], line ? truncatePdfText(line.label || line.reference, 62) : '', 8);
+    setPdfFieldAny(form, [`Quant${rowNumber}a`, rowFields.quantity], line ? String(line.quantity) : '', 9);
+    setPdfFieldAny(form, [`PU${rowNumber}a`, rowFields.unitPrice], line ? moneyPdf(line.unitPrice) : '', 9);
+    setPdfFieldAny(form, [`PT${rowNumber}a`, rowFields.total], line ? moneyPdf(line.total) : '', 9);
   }
 
   const totalHt = Number(order.total || 0);
   const totalTva = Math.round(totalHt * 0.2);
-  setPdfField(form, 'TOTAL', moneyPdf(totalHt));
-  setPdfField(form, 'TVA', moneyPdf(totalTva));
-  setPdfField(form, 'TOTAL_TTC', moneyPdf(totalHt + totalTva));
+  setPdfFieldAny(form, ['TOTAL', templateFields.total], moneyPdf(totalHt), 9);
+  setPdfFieldAny(form, ['TVA', templateFields.tva], moneyPdf(totalTva), 9);
+  setPdfFieldAny(form, ['TOTAL_TTC', templateFields.totalTtc], moneyPdf(totalHt + totalTva), 9);
   form.updateFieldAppearances(font);
 
   return new Blob([await pdfDoc.save()], { type: 'application/pdf' });
+}
+
+function purchaseOrderTemplateFieldMap(form) {
+  const widgets = [];
+  form.getFields().forEach((field) => {
+    let textField = null;
+    try {
+      textField = form.getTextField(field.getName());
+    } catch {
+      textField = null;
+    }
+    if (!textField) return;
+    const acroWidgets = field.acroField?.getWidgets?.() || [];
+    acroWidgets.forEach((widget) => {
+      const rect = widget.getRectangle?.();
+      if (!rect) return;
+      widgets.push({
+        name: field.getName(),
+        x: Number(rect.x || 0),
+        y: Number(rect.y || 0),
+        width: Number(rect.width || 0),
+        height: Number(rect.height || 0),
+      });
+    });
+  });
+
+  const lineWidgets = widgets
+    .filter((widget) => widget.y > 380 && widget.width > 40 && widget.height > 8)
+    .sort((a, b) => b.y - a.y || a.x - b.x);
+  const groupedRows = [];
+  lineWidgets.forEach((widget) => {
+    const row = groupedRows.find((candidate) => Math.abs(candidate.y - widget.y) < 3);
+    if (row) {
+      row.fields.push(widget);
+      row.y = (row.y + widget.y) / 2;
+    } else {
+      groupedRows.push({ y: widget.y, fields: [widget] });
+    }
+  });
+
+  const rows = groupedRows
+    .map((row) => row.fields.sort((a, b) => a.x - b.x))
+    .filter((fields) => fields.length >= 4)
+    .slice(0, 15)
+    .map((fields) => ({
+      description: fields[0]?.name,
+      quantity: fields[1]?.name,
+      unitPrice: fields[2]?.name,
+      total: fields[3]?.name,
+    }));
+
+  const totals = widgets
+    .filter((widget) => widget.x > 450 && widget.y > 300 && widget.y < 380 && widget.width > 40)
+    .sort((a, b) => b.y - a.y);
+
+  return {
+    rows,
+    total: totals[0]?.name,
+    tva: totals[1]?.name,
+    totalTtc: totals[2]?.name,
+  };
+}
+
+function setPdfFieldAny(form, names = [], value, fontSize = 9) {
+  const candidates = uniqueTextValues(names.filter(Boolean));
+  for (const name of candidates) {
+    try {
+      const field = form.getTextField(name);
+      field.setText(toPdfWinAnsi(value));
+      field.setFontSize(fontSize);
+      return true;
+    } catch {
+      // Try the next known field name: templates may change while keeping the same layout.
+    }
+  }
+  if (candidates.length) console.warn('Champ PDF bon de commande introuvable', candidates.join(' / '));
+  return false;
 }
 
 function setPdfField(form, name, value) {
