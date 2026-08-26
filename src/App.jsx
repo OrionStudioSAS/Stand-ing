@@ -2857,7 +2857,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
   );
 }
 
-function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetImage, onColorChange, onResetColor, embedded = false }) {
+function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetImage, onColorChange, onResetColor, counterColors = [], embedded = false }) {
   const slots = normalizeTextureSlots(item?.dimensions?.textureSlots);
   const values = item?.options?.textureSlotValues || {};
   if (!slots.length) return null;
@@ -2866,13 +2866,38 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
       {slots.map((slot) => {
         const value = values[slot.id] || {};
         if (slot.kind === 'color') {
+          const finishes = slot.colorUsage === 'counter' ? counterFinishOptions(counterColors) : [];
+          const selectedFinish = finishes.find((finish) => normalizeColorId(finish.id) === normalizeColorId(value.colorId))
+            || finishes.find((finish) => normalizeColorId(finish.id) === normalizeColorId(value.color))
+            || counterWoodFinish(counterColors);
+          if (finishes.length) {
+            return (
+              <section key={slot.id} className="counter-color-card counter-finish-card item-counter-finish-card generic-texture-slot">
+                <div className="counter-finish-head">
+                  <strong>{slot.label || 'Couleur'}</strong>
+                  <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : ''}</span>
+                </div>
+                <div className="counter-finish-swatches optional">
+                  {finishes.map((finish) => (
+                    <CounterFinishSwatch
+                      key={finish.id}
+                      finish={finish}
+                      active={normalizeColorId(selectedFinish.id) === normalizeColorId(finish.id)}
+                      onClick={() => onColorChange?.(slot, textureSlotColorPatch(finish))}
+                    />
+                  ))}
+                </div>
+                {(value.color || value.colorImage) && <button type="button" className="item-image-reset" onClick={() => onResetColor?.(slot)}>Réinitialiser</button>}
+              </section>
+            );
+          }
           return (
             <label key={slot.id} className="item-color-upload generic-texture-slot">
               <span>{slot.label || 'Couleur'}</span>
               <input
                 type="color"
                 value={value.color || '#ffffff'}
-                onChange={(event) => onColorChange?.(slot, event.target.value)}
+                onChange={(event) => onColorChange?.(slot, { color: event.target.value })}
               />
               {value.color && <button type="button" className="item-image-reset" onClick={() => onResetColor?.(slot)}>Réinitialiser</button>}
             </label>
@@ -2897,6 +2922,19 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
     </aside>
   );
+}
+
+function textureSlotColorPatch(finish = {}) {
+  const isWood = finish.mode === 'wood';
+  return {
+    color: isWood ? '' : (finish.hex || '#ffffff'),
+    colorImage: isWood ? '' : (finish.image || ''),
+    colorId: finish.id || '',
+    colorName: finish.name || '',
+    colorReference: finish.reference || finish.code || '',
+    colorPrice: isWood ? 0 : Number(finish.price || 0),
+    colorMode: finish.mode || 'color',
+  };
 }
 
 function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel = '', uploadState = {}, disabled = false, onImage, onOptions, onVisibility, onRestore, onVariant, onSelect }) {
@@ -3978,8 +4016,9 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             uploadState={modalUploadState}
             onImageChange={(slot, file) => (item ? onImageChange?.(item, file, { textureSlot: slot }) : handleDraftImage(file, { urlKey: 'unused', nameKey: 'unused', textureSlot: slot }))}
             onResetImage={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { imageUrl: '', imageName: '' }))}
-            onColorChange={(slot, color) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { color }))}
-            onResetColor={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { color: '' }))}
+            onColorChange={(slot, patch) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, patch))}
+            onResetColor={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { color: '', colorImage: '', colorId: '', colorName: '', colorReference: '', colorPrice: 0, colorMode: '' }))}
+            counterColors={counterColors}
             embedded
           />
         )}
@@ -4278,6 +4317,7 @@ function normalizeTextureSlots(slots = []) {
         label,
         targetName,
         kind: slot.kind === 'color' ? 'color' : 'image',
+        colorUsage: slot.colorUsage || slot.paletteUsage || slot.colorGroupUsage || '',
       };
     })
     .filter((slot) => slot.label || slot.targetName);
@@ -4335,7 +4375,7 @@ function cartItemPrice(item, entry, salonLabel) {
   const colorSupplement = isBillableCounterColorOption(item, entry)
     ? Number(item.options?.binary2ColorPrice || 0)
     : 0;
-  return basePrice + colorSupplement;
+  return basePrice + colorSupplement + textureSlotColorSupplement(item);
 }
 
 function cartItemBasePrice(item, entry, salonLabel, catalogEntries = []) {
@@ -4401,7 +4441,19 @@ function uniqueTextValues(values = []) {
 }
 
 function itemOptionReferenceTokens(item = {}) {
-  return uniqueTextValues((item.options?.optionReferences || []).map((option) => option?.reference));
+  return uniqueTextValues([
+    ...(item.options?.optionReferences || []).map((option) => option?.reference),
+    ...textureSlotColorValues(item).map((value) => value.colorReference),
+  ]);
+}
+
+function textureSlotColorValues(item = {}) {
+  return Object.values(item.options?.textureSlotValues || {})
+    .filter((value) => value && (value.colorName || value.color || value.colorImage || value.colorId));
+}
+
+function textureSlotColorSupplement(item = {}) {
+  return textureSlotColorValues(item).reduce((sum, value) => sum + Number(value.colorPrice || 0), 0);
 }
 
 function itemReferenceWithOptions(item = {}, entry = {}, salonLabel = '') {
@@ -4670,6 +4722,11 @@ function itemOptionLines(item) {
   } else if (isWoodReceptionDeskItem(item)) {
     result.push('Couleur : Bois');
   }
+  textureSlotColorValues(item).forEach((value) => {
+    const colorPrice = Number(value.colorPrice || 0);
+    const colorLabel = value.colorName || value.color || 'finition';
+    result.push(`Couleur : ${colorLabel}${colorPrice > 0 ? ` (+${colorPrice.toLocaleString('fr-FR')} € HT)` : ''}`);
+  });
   const optionRefs = Array.isArray(opts.optionReferences) ? opts.optionReferences : [];
   optionRefs.forEach((option) => {
     const label = option?.label || 'Option';
@@ -11167,7 +11224,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     const entry = findCatalogEntry(catalog, type);
     const typeItems = items.filter((item) => item.type === type);
     const billableItems = typeItems.slice(includedCount);
-    const itemPrices = billableItems.map((item) => cartItemBasePrice(item, entry, salonLabel, catalog));
+    const itemPrices = billableItems.map((item) => cartItemBasePrice(item, entry, salonLabel, catalog) + textureSlotColorSupplement(item));
     const lineTotal = itemPrices.reduce((sum, price) => sum + price, 0);
     const unitPrice = billableCount ? Math.round(lineTotal / billableCount) : assetUnitPrice(entry, salonLabel);
     billableCounts.set(type, billableCount);
@@ -11650,6 +11707,7 @@ function collectSceneTextureUrls(items = [], extraUrls = []) {
     if (item.options?.binary3ImageUrl) urls.add(item.options.binary3ImageUrl);
     Object.values(item.options?.textureSlotValues || {}).forEach((value) => {
       if (value?.imageUrl) urls.add(value.imageUrl);
+      if (value?.colorImage) urls.add(value.colorImage);
     });
 
     const referenceUrl = item.modelUrl || item.materialUrl || item.dimensions?.materialUrl || '';
@@ -15389,8 +15447,8 @@ function useTextureSlotImages(item = {}) {
   const slots = normalizeTextureSlots(item?.dimensions?.textureSlots);
   const values = item?.options?.textureSlotValues || {};
   const imageEntries = slots
-    .filter((slot) => slot.kind === 'image' && values?.[slot.id]?.imageUrl)
-    .map((slot) => ({ slot, url: values[slot.id].imageUrl }));
+    .map((slot) => ({ slot, url: slot.kind === 'color' ? values?.[slot.id]?.colorImage : values?.[slot.id]?.imageUrl }))
+    .filter((entry) => entry.url);
   const key = imageEntries.map((entry) => `${entry.slot.id}:${entry.url}`).join('|');
   const [images, setImages] = useState({});
 
@@ -15524,8 +15582,14 @@ function applyTextureSlotMaterial(material, item = {}, textureOptions = {}, mate
   for (const slot of slots) {
     if (!materialMatchesTextureSlot(materialName, material, slot.targetName)) continue;
     const value = values[slot.id] || {};
-    if (slot.kind === 'color' && value.color) return materialWithColor(material, value.color);
     const image = textureOptions.textureSlotImages?.[slot.id];
+    if (slot.kind === 'color') {
+      if (value.colorImage && image) {
+        const texture = createDecodedImageTexture(image, { flipY: textureOptions.textureSlotFlipY ?? true });
+        if (texture) return materialWithTexture(material, texture);
+      }
+      if (value.color) return materialWithColor(material, value.color);
+    }
     if (slot.kind === 'image' && image) {
       const [targetWidth, targetHeight] = materialTextureCanvasSize(material);
       const texture = createCoverImageTexture(image, targetWidth, targetHeight, { flipY: textureOptions.textureSlotFlipY ?? true });
