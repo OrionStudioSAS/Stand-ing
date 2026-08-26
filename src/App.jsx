@@ -2786,10 +2786,6 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
       <section className="counter-logo-card counter-logo-card-v2">
         <header>
           <strong>Logo</strong>
-          <label className="counter-logo-switch">
-            <input type="checkbox" checked disabled readOnly />
-            <span />
-          </label>
         </header>
         <em>{t('counter_included_badge')}</em>
 
