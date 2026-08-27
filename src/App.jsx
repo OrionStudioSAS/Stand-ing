@@ -4896,7 +4896,6 @@ function ValidationStepPanel({
   const t = useT();
   const lines = pricing?.lines || [];
   const visibleSupplementLines = lines.filter((line) => !line.mandatory && !String(line.type || '').startsWith('technical-floor-'));
-  const baseItems = pricing?.baseUsage || pricing?.baseItems || [];
   const includedCounts = pricing?.includedCounts || new Map();
   const confirmed = saveState === 'configured';
   const specialRequestText = String(specialRequest || '');
@@ -4904,131 +4903,197 @@ function ValidationStepPanel({
   const reserveOption = reserveOptionType ? normalizeComplementaryOptions(reserveRule?.options).find((option) => option.type === reserveOptionType) : null;
   const activeCovers = wallCoverSurfaces.filter((surface) => wallCoverEnabledForSurface(wallCovers, surface));
   const pendingVisuals = validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals, wallCovers, wallCoverSurfaces });
-  const completeCount = pendingVisuals.length + (hasSpecialRequest ? 1 : 0);
-  const requestTagOptions = ['Visuel à transmettre', 'Position à vérifier', 'Demande technique', 'Autre'];
+  const insuranceLine = pricing?.insuranceLine;
+  const sectionRows = {
+    personalization: [],
+    furniture: [],
+    multimedia: [],
+    signage: [],
+    electricity: [],
+  };
+
   const optionSupplementTotal = (match) => lines
     .filter((line) => !line.mandatory)
     .filter((line) => match(line, normalizeTextValue(line.label || '')))
     .reduce((sum, line) => sum + Number(line.total || 0), 0);
-  const valueWithSupplement = (value, amount) => {
-    const safeAmount = Number(amount || 0);
-    return safeAmount > 0 ? `${value} · +${safeAmount.toLocaleString('fr-FR')} € HT` : value;
-  };
-  const carpetSupplement = optionSupplementTotal((line, label) => label.startsWith('moquette'));
+  const carpetSupplement = optionSupplementTotal((line, label) => label.startsWith('moquette') && !label.includes('epaisse'));
   const footprintSupplement = optionSupplementTotal((line, label) => label.startsWith('empreinte moquette'));
-  const wallFabricSupplement = optionSupplementTotal((line, label) => label.startsWith('coton cloison'));
+  const thickCarpetSupplement = optionSupplementTotal((line, label) => label.includes('moquette epaisse'));
+  const wallFabricSupplement = optionSupplementTotal((line, label) => label.startsWith('coton') || label.includes('coton cloison'));
   const reserveSupplement = optionSupplementTotal((line, label) => label.includes('reserve'));
   const reserveOptionDetails = reserveOptionSummary(reserveOptions);
   const partitionHeadSupplement = optionSupplementTotal((line, label) => label.includes('tete de cloison'));
   const wallCoverSupplement = optionSupplementTotal((line) => line.type === 'wall-cover');
-  const toggleTag = (tag) => {
-    const current = new Set(specialRequestTags || []);
-    if (current.has(tag)) current.delete(tag);
-    else current.add(tag);
-    onSpecialRequestTags?.([...current]);
+
+  const pushRow = (section, row) => {
+    if (!row) return;
+    const target = sectionRows[section] ? section : 'furniture';
+    sectionRows[target].push(row);
   };
+
+  pushRow('personalization', {
+    id: 'carpet',
+    label: 'Moquette',
+    detail: validationColorLabel(carpetColor),
+    swatchColor: colorHex(carpetColor, '#b8b8b8'),
+    swatchImage: colorTextureUrl(carpetColor),
+    badge: validationBadgeText(carpetSupplement),
+    badgeTone: carpetSupplement > 0 ? 'price' : 'included',
+  });
+  pushRow('personalization', {
+    id: 'footprint',
+    label: 'Empreinte moquette',
+    detail: carpetFootprintEnabled ? validationColorLabel(carpetFootprintColor) : 'Non sélectionnée',
+    swatchColor: colorHex(carpetFootprintColor, '#b8b8b8'),
+    swatchImage: carpetFootprintEnabled ? colorTextureUrl(carpetFootprintColor) : '',
+    badge: validationBadgeText(footprintSupplement),
+    badgeTone: footprintSupplement > 0 ? 'price' : 'included',
+  });
+  if (thickCarpetSupplement > 0) {
+    pushRow('personalization', {
+      id: 'thick-carpet',
+      label: 'Option Moquette Épaisse',
+      detail: 'S’applique à la moquette et à l’empreinte moquette',
+      badge: validationBadgeText(thickCarpetSupplement),
+      badgeTone: 'price',
+      option: true,
+    });
+  }
+  pushRow('personalization', {
+    id: 'wall-fabric',
+    label: 'Coton gratté',
+    detail: validationColorLabel(wallFabricColor),
+    swatchColor: colorHex(wallFabricColor, '#b8b8b8'),
+    swatchImage: colorTextureUrl(wallFabricColor),
+    badge: validationBadgeText(wallFabricSupplement),
+    badgeTone: wallFabricSupplement > 0 ? 'price' : 'included',
+  });
+  pushRow('personalization', {
+    id: 'reserve',
+    label: 'Réserve',
+    detail: [reserveOptionType === '__none__' ? 'Non sélectionnée' : (reserveOption?.label || reserveRule?.includedLabel || 'Non configurée'), reserveOptionDetails].filter(Boolean).join(' · '),
+    swatchColor: '#bdbdbd',
+    badge: validationBadgeText(reserveSupplement),
+    badgeTone: reserveSupplement > 0 ? 'price' : 'included',
+  });
+
+  partitionHeadSelectedSides(partitionHeadRule, partitionHeadSides).forEach((side) => {
+    const visual = partitionHeadVisuals?.[side] || {};
+    const billable = partitionHeadBillableSides(partitionHeadRule, partitionHeadSides).has(side);
+    const sidePrice = billable ? Math.max(0, partitionHeadSupplement / Math.max(1, partitionHeadBillableSides(partitionHeadRule, partitionHeadSides).size)) : 0;
+    pushRow('signage', {
+      id: `partition-head-${side}`,
+      label: 'Tête de cloison',
+      detail: side === 'left' ? 'Gauche' : 'Droite',
+      imageUrl: validationPartitionHeadThumb(side, catalog),
+      badge: validationBadgeText(sidePrice),
+      badgeTone: sidePrice > 0 ? 'price' : 'included',
+      visualStatus: validationVisualStatus(visual.visualPending, visual.headMainImageUrl || visual.headMainImageName),
+    });
+  });
+
+  activeCovers.forEach((surface, index) => {
+    const cover = wallCovers?.[surface.id] || (surface.sourceWall ? wallCovers?.[surface.sourceWall] : null) || {};
+    const preview = wallCoverPreviewForSurface(wallCoverPreviewsFromCovers(wallCovers), surface);
+    pushRow('signage', {
+      id: `wall-cover-${surface.id}`,
+      label: `Bâche - ${surface.label || 'cloison'}`,
+      detail: `${formatNumber(surface.visibleWidth || surface.width || 0)} m × 2,5 m`,
+      imageUrl: preview?.url || '',
+      swatchColor: '#dfe5ee',
+      badge: index === 0 ? validationBadgeText(wallCoverSupplement) : '+ 0€',
+      badgeTone: wallCoverSupplement > 0 && index === 0 ? 'price' : 'price',
+      visualStatus: validationVisualStatus(cover.visualPending, preview?.url || cover.previewUrl),
+    });
+  });
+
+  if (ledRailsEnabled) {
+    pushRow('electricity', {
+      id: 'spots-led',
+      label: 'Spot LED',
+      detail: `${ledSpotCount || 0} spots`,
+      imageUrl: validationLedThumb(autoSpotsRule, catalog),
+      badge: 'Inclus',
+      badgeTone: 'included',
+    });
+  }
+
+  items.filter(shopCartItemVisible).filter(isIncludedSceneItem).forEach((item) => {
+    const entry = findCatalogEntry(catalog, item.type) || item;
+    const section = validationCategoryFromEntry(entry, item);
+    pushRow(section, validationRowFromItem({ item, entry, amount: 0, included: true, readOnly, isAdminViewer, onRemoveItem }));
+  });
+
+  visibleSupplementLines
+    .filter((line) => !validationLineHandledByOptions(line))
+    .forEach((line, index) => {
+      const associatedItem = line.optionForItemId ? items.find((item) => item.id === line.optionForItemId) : null;
+      const includedCount = includedCounts.get(line.type) || 0;
+      const billableItems = associatedItem ? [associatedItem] : items.filter((i) => i.type === line.type).slice(includedCount);
+      const firstItem = billableItems[0] || associatedItem || null;
+      const entry = firstItem ? (findCatalogEntry(catalog, firstItem.type) || firstItem) : findCatalogEntry(catalog, line.type);
+      const optionLines = uniqueTextValues([
+        ...(Array.isArray(line.optionLines) ? line.optionLines : []),
+        ...billableItems.flatMap((item) => itemOptionLines(item)),
+      ]);
+      const removable = !associatedItem ? billableItems.find((item) => canDeleteSceneItem(item, isAdminViewer)) : null;
+      const section = validationCategoryFromLine(line, entry, firstItem);
+      pushRow(section, {
+        id: `line-${line.type}-${index}`,
+        label: line.label,
+        detail: optionLines.slice(0, 2).join(' · '),
+        imageUrl: validationItemImage(firstItem, entry),
+        badge: validationBadgeText(line.total),
+        badgeTone: 'price',
+        option: Boolean(associatedItem || String(line.type || '').startsWith('global-option-')),
+        onRemove: removable && !readOnly ? () => onRemoveItem?.(removable.id) : null,
+      });
+    });
+
+  const sectionOrder = [
+    ['personalization', 'PERSONNALISATION'],
+    ['furniture', 'MOBILIER'],
+    ['multimedia', 'MULTIMÉDIA'],
+    ['signage', 'SIGNALÉTIQUE'],
+    ['electricity', 'ÉLECTRICITÉ'],
+  ];
 
   return (
     <>
       <PanelHead title="Validation" step={4} />
 
-      <section className={`validation-state-card ${completeCount ? 'warning' : 'success'}`}>
-        <strong>État de la configuration</strong>
-        <h2>{completeCount ? `${completeCount} élément${completeCount > 1 ? 's' : ''} à compléter` : 'Configuration prête'}</h2>
-        <p>{completeCount ? 'Vous pouvez tout de même envoyer votre configuration. Notre équipe reviendra vers vous.' : 'Votre configuration est prête à être envoyée à Stand-ING.'}</p>
-      </section>
-
-      <section className="validation-summary-card flat">
+      <section className="validation-modern-total-card">
         <span>Total options et mobilier</span>
-        <strong>{(pricing?.total || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € HT</strong>
+        <strong>{validationMoney(pricing?.total || 0, true)} € HT</strong>
       </section>
 
-      <section className="validation-section clean">
-        <h3>{t('validation_options_title')}</h3>
-        <ValidationOptionLine label={t('validation_carpet')} value={valueWithSupplement(`${carpetColor.name} (${carpetColor.code})`, carpetSupplement)} />
-        <ValidationOptionLine label={t('validation_footprint')} value={valueWithSupplement(carpetFootprintEnabled ? `${carpetFootprintColor.name} (${carpetFootprintColor.code})` : t('validation_footprint_removed'), footprintSupplement)} />
-        <ValidationOptionLine label="Cloison" value={valueWithSupplement(`${wallFabricColor.name} (${wallFabricColor.code})`, wallFabricSupplement)} />
-        <ValidationOptionLine label={t('validation_led')} value={ledRailsEnabled ? t('validation_led_kept', { count: ledSpotCount }) : t('validation_led_removed')} />
-        <ValidationOptionLine label={t('validation_reserve')} value={valueWithSupplement([reserveOptionType === '__none__' ? t('validation_reserve_removed') : (reserveOption?.label || reserveRule?.includedLabel || t('validation_reserve_none')), reserveOptionDetails].filter(Boolean).join(' · '), reserveSupplement)} />
-        <ValidationOptionLine label={t('validation_partition_heads')} value={valueWithSupplement(partitionHeadSummary(partitionHeadRule, partitionHeadSides), partitionHeadSupplement)} tone="amber" />
-        {activeCovers.length > 0 && <ValidationOptionLine label="Bâches sur cloison" value={valueWithSupplement(`${formatNumber(activeCovers.reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0))} ml sélectionnés`, wallCoverSupplement)} tone="amber" />}
-        {pendingVisuals.length > 0 && (
-          <div className="validation-warning-note">
-            {pendingVisuals.map((item) => <span key={item}>{item}</span>)}
+      {insuranceLine && (
+        <section className="validation-modern-insurance-card">
+          <div>
+            <strong><HelpCircle size={14} /> Assurance mobilier obligatoire incluse</strong>
+            <span>Calculée sur {validationMoney(insuranceLine.insuranceBase || pricing?.furnitureInsuranceBase || 0)} € HT de lots/options mobilier</span>
           </div>
-        )}
-        {activeCovers.length > 0 && (
-          <div className="validation-warning-note muted">
-            <strong>Bâches sur cloison</strong>
-            <span>{activeCovers.length} zone{activeCovers.length > 1 ? 's' : ''} sélectionnée{activeCovers.length > 1 ? 's' : ''}. Notre équipe vous contactera pour récupérer les fichiers HD adaptés à l’impression.</span>
-          </div>
-        )}
-      </section>
+          <b>+ {validationMoney(insuranceLine.total || 0, true)} €</b>
+        </section>
+      )}
 
-      <section className="validation-section clean">
-        <h3>{t('validation_base_items_title')}</h3>
-        {baseItems.length ? (
-          baseItems.map((bu) => (
-            <div key={bu.type} className="validation-pack-row">
-              <span>{basePackItemLabel(bu.label, bu.quantity)}</span>
-              <strong>{bu.used ?? 0}/{bu.quantity}</strong>
-            </div>
-          ))
-        ) : (
-          <p className="validation-muted">Aucun objet inclus configuré sur ce pack.</p>
-        )}
-      </section>
+      {pendingVisuals.length > 0 && (
+        <section className="validation-modern-alert-card">
+          <strong><AlertTriangle size={15} /> {pendingVisuals.length} visuel{pendingVisuals.length > 1 ? 's' : ''} manquant{pendingVisuals.length > 1 ? 's' : ''} - Vous n’avez pas le fichier ?</strong>
+          <span>Pas de panique, notre équipe reviendra vers vous ultérieurement.</span>
+        </section>
+      )}
 
-      <section className="validation-section clean">
-        <h3>{t('validation_supplements_title')}</h3>
-        {visibleSupplementLines.length ? (
-          visibleSupplementLines.map((line) => {
-            const includedCount = includedCounts.get(line.type) || 0;
-            const billableItems = items.filter((i) => i.type === line.type).slice(includedCount);
-            const optionLines = uniqueTextValues([
-              ...(Array.isArray(line.optionLines) ? line.optionLines : []),
-              ...billableItems.flatMap((item) => itemOptionLines(item)),
-            ]);
-            const removable = billableItems.find((item) => canDeleteSceneItem(item, isAdminViewer));
-            return (
-              <details key={line.type} className="validation-supplement-details" open={!optionLines.length}>
-                <summary>
-                  <span>{line.label}{validationLineQuantitySuffix(line)}</span>
-                  <strong>{line.total.toLocaleString('fr-FR')} € HT</strong>
-                  {removable && !readOnly && (
-                    <button type="button" aria-label="Retirer" onClick={(event) => { event.preventDefault(); onRemoveItem?.(removable.id); }}>
-                      <Trash2 size={13} />
-                    </button>
-                  )}
-                </summary>
-                {optionLines.length > 0 && (
-                  <div className="validation-supplement-options">
-                    {optionLines.map((option) => <span key={option}>{option}</span>)}
-                  </div>
-                )}
-              </details>
-            );
-          })
-        ) : (
-          <p className="validation-muted">Aucun supplément facturé.</p>
-        )}
-        {pricing?.insuranceLine && (
-          <div className="validation-insurance-row">
-            <span><HelpCircle size={14} /> Assurance mobilier obligatoire incluse</span>
-            <strong>{pricing.insuranceLine.total.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € HT</strong>
-          </div>
-        )}
-      </section>
+      {sectionOrder.map(([id, title]) => sectionRows[id].length > 0 && (
+        <ValidationModernSection key={id} title={title}>
+          {sectionRows[id].map((row) => <ValidationModernRow key={row.id} {...row} />)}
+        </ValidationModernSection>
+      ))}
 
-      <section className="validation-section clean special-request-box">
-        <h3>Une demande particulière ?</h3>
+      <section className="validation-modern-request-box">
+        <h3>UNE DEMANDE PARTICULIÈRE ?</h3>
         <p>Indiquez toute information utile à notre équipe.</p>
-        <div className="special-request-tags">
-          {requestTagOptions.map((tag) => (
-            <button key={tag} type="button" className={specialRequestTags?.includes(tag) ? 'active' : ''} onClick={() => toggleTag(tag)} disabled={readOnly}>{tag}</button>
-          ))}
-        </div>
-        <textarea value={specialRequestText} onChange={(event) => onSpecialRequest?.(event.target.value)} disabled={readOnly} placeholder="Ajouter une remarque ou une demande particulière..." rows={5} />
+        <textarea value={specialRequestText} onChange={(event) => onSpecialRequest?.(event.target.value)} disabled={readOnly} placeholder="Ajouter une remarque ou une demande particulière..." rows={6} />
         {hasSpecialRequest && (
           <div className="validation-warning-note">
             <strong>Demande détectée</strong>
@@ -5048,6 +5113,40 @@ function ValidationStepPanel({
   );
 }
 
+function ValidationModernSection({ title, children }) {
+  return (
+    <details className="validation-modern-section" open>
+      <summary><span>{title}</span><ChevronUp size={14} /></summary>
+      <div className="validation-modern-list">{children}</div>
+    </details>
+  );
+}
+
+function ValidationModernRow({ label, detail, imageUrl, swatchColor, swatchImage, badge, badgeTone = 'included', visualStatus = null, option = false, onRemove = null }) {
+  return (
+    <article className={`validation-modern-row ${option ? 'option' : ''}`}>
+      {!option && <ValidationModernThumb imageUrl={imageUrl} color={swatchColor} image={swatchImage} />}
+      <div className="validation-modern-row-copy">
+        <strong>{label}</strong>
+        {detail && <span>{detail}</span>}
+      </div>
+      <div className="validation-modern-row-side">
+        {badge && <b className={`validation-modern-badge ${badgeTone}`}>{badge}</b>}
+        {visualStatus && <em className={`validation-modern-visual-status ${visualStatus.tone}`}>{visualStatus.label}</em>}
+      </div>
+      {onRemove && (
+        <button type="button" className="validation-modern-remove" aria-label="Retirer" onClick={onRemove}><Trash2 size={14} /></button>
+      )}
+    </article>
+  );
+}
+
+function ValidationModernThumb({ imageUrl = '', color = '#bdbdbd', image = '' }) {
+  if (imageUrl) return <span className="validation-modern-thumb"><img src={imageUrl} alt="" /></span>;
+  if (image) return <span className="validation-modern-thumb"><img src={image} alt="" /></span>;
+  return <span className="validation-modern-thumb" style={{ background: color || '#bdbdbd' }} />;
+}
+
 function ValidationOptionLine({ label, value, tone = 'green' }) {
   return (
     <div className={`validation-option-row modern ${tone}`}>
@@ -5055,6 +5154,90 @@ function ValidationOptionLine({ label, value, tone = 'green' }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function validationMoney(value = 0, cents = false) {
+  return Number(value || 0).toLocaleString('fr-FR', {
+    minimumFractionDigits: cents ? 2 : 0,
+    maximumFractionDigits: cents ? 2 : 0,
+  });
+}
+
+function validationBadgeText(amount = 0) {
+  const safeAmount = Number(amount || 0);
+  return safeAmount > 0 ? `+ ${validationMoney(safeAmount)}€` : 'Inclus';
+}
+
+function validationColorLabel(color = {}) {
+  const name = color?.name || color?.label || 'Non sélectionné';
+  const code = color?.code || color?.reference || '';
+  return code ? `${name} ${String(code).startsWith('(') ? code : `(${code})`}` : name;
+}
+
+function validationVisualStatus(pending = false, hasImage = false) {
+  if (hasImage && !pending) return { label: 'Visuel fourni', tone: 'provided' };
+  return { label: 'Visuel manquant', tone: 'missing' };
+}
+
+function validationLineHandledByOptions(line = {}) {
+  const type = String(line.type || '');
+  const label = normalizeTextValue(line.label || '');
+  if (type === 'wall-cover') return true;
+  if (type.startsWith('color-')) return true;
+  if (label.includes('moquette') || label.includes('empreinte') || label.includes('coton')) return true;
+  if (label.includes('reserve') || label.includes('tete de cloison')) return true;
+  return false;
+}
+
+function validationCategoryFromEntry(entry = {}, item = {}) {
+  const text = normalizeTextValue(`${entry?.label || ''} ${entry?.type || ''} ${item?.label || ''} ${item?.type || ''}`);
+  if (text.includes('spot') || text.includes('led') || text.includes('alimentation') || text.includes('triplette') || text.includes('multiprise')) return 'electricity';
+  return normalizeMarketCategory(entry || item) || 'furniture';
+}
+
+function validationCategoryFromLine(line = {}, entry = {}, item = null) {
+  const label = normalizeTextValue(`${line.label || ''} ${entry?.label || ''} ${entry?.type || ''}`);
+  if (label.includes('spot') || label.includes('led') || label.includes('alimentation') || label.includes('triplette') || label.includes('multiprise')) return 'electricity';
+  if (label.includes('tv') || label.includes('ecran') || label.includes('televiseur') || label.includes('multimedia')) return 'multimedia';
+  if (label.includes('bache') || label.includes('enseigne') || label.includes('affiche') || label.includes('cloison') || label.includes('signaletique')) return 'signage';
+  if (entry) return validationCategoryFromEntry(entry, item || {});
+  return 'furniture';
+}
+
+function validationItemImage(item = null, entry = {}) {
+  return item?.options?.variantImageUrl || item?.options?.thumbnailUrl || entry?.thumbnailUrl || entry?.thumbnail_url || '';
+}
+
+function validationRowFromItem({ item, entry, amount = 0, included = false, readOnly = false, isAdminViewer = false, onRemoveItem }) {
+  const optionLines = uniqueTextValues(itemOptionLines(item));
+  const hasCustomImage = Boolean(item?.options?.binary3ImageUrl || item?.options?.headMainImageUrl || item?.options?.posterImageUrl);
+  const visualPending = Boolean(item?.options?.binary3VisualPending || item?.options?.headMainVisualPending || item?.options?.posterVisualPending);
+  const needsVisual = visualPending || Boolean(item?.options?.binary3ImageName || item?.options?.headMainImageName || item?.options?.posterImageName);
+  return {
+    id: item.id,
+    label: itemCartLabel(item),
+    detail: optionLines.slice(0, 2).join(' · '),
+    imageUrl: validationItemImage(item, entry),
+    badge: included ? 'Inclus' : validationBadgeText(amount),
+    badgeTone: included ? 'included' : 'price',
+    visualStatus: needsVisual ? validationVisualStatus(visualPending, hasCustomImage) : null,
+    onRemove: canDeleteSceneItem(item, isAdminViewer) && !readOnly ? () => onRemoveItem?.(item.id) : null,
+  };
+}
+
+function validationPartitionHeadThumb(side, catalog = []) {
+  const candidates = catalog.filter((entry) => normalizeTextValue(`${entry.label || ''} ${entry.type || ''}`).includes('tete de cloison'));
+  const sideText = side === 'left' ? 'gauche' : 'droite';
+  return candidates.find((entry) => normalizeTextValue(`${entry.label || ''} ${entry.type || ''}`).includes(sideText))?.thumbnailUrl
+    || candidates[0]?.thumbnailUrl
+    || '';
+}
+
+function validationLedThumb(rule = null, catalog = []) {
+  const entry = [rule?.threeSpotType, rule?.twoSpotType, rule?.type]
+    .map((type) => findCatalogEntry(catalog, type))
+    .find(Boolean);
+  return entry?.thumbnailUrl || ledRailCatalogEntries(catalog)[0]?.thumbnailUrl || '';
 }
 
 function validationLineQuantitySuffix(line = {}) {
