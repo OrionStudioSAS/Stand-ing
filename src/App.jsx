@@ -5826,10 +5826,17 @@ function ToggleOptionCard({ enabled, enabledLabel, disabledLabel, disabled = fal
 function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', includedLabel = 'Inclus', optionLabel, area = 0, disabled = false, onSelect }) {
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
-  const includedColors = displayColors.filter((color) => color.included);
-  const optionalColors = displayColors.filter((color) => !color.included);
+  const explicitIncludedColors = displayColors.filter((color) => color.isDefault || color.isFree || (color.included && !color.defaultIncluded));
+  const includedColors = explicitIncludedColors.length ? explicitIncludedColors : displayColors.filter((color) => color.included);
+  const includedIds = new Set(includedColors.map((color) => normalizeColorId(color.id)));
+  const mainIncludedColor = includedColors.find((color) => color.isDefault)
+    || includedColors.find((color) => color.isFree)
+    || includedColors[0]
+    || selectedDisplayColor;
+  const optionalColors = displayColors.filter((color) => !includedIds.has(normalizeColorId(color.id)));
   const minOptionPrice = minColorPrice(optionalColors);
   const optionTotal = Math.round(Number(minOptionPrice || 0) * Number(area || 0));
+  const selectedId = normalizeColorId(selectedDisplayColor.id);
   const selectColor = (colorId) => {
     if (disabled) return;
     onSelect(colorId);
@@ -5840,14 +5847,34 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
       <GroundOptionHeading title={title} />
       <small>{`${includedColors.length || 1} couleur${(includedColors.length || 1) > 1 ? 's' : ''} disponible${(includedColors.length || 1) > 1 ? 's' : ''}`}</small>
       <div className="ground-main-choice wall-fabric-main-choice">
-        <span
-          className="ground-main-swatch active"
-          style={{ '--swatch-color': selectedDisplayColor.hex, '--swatch-image': `url("${selectedDisplayColor.image}")` }}
-          aria-hidden="true"
+        <button
+          type="button"
+          className={selectedId === normalizeColorId(mainIncludedColor.id) ? 'ground-main-swatch active' : 'ground-main-swatch'}
+          style={{ '--swatch-color': mainIncludedColor.hex, '--swatch-image': `url("${mainIncludedColor.image}")` }}
+          aria-label={`Sélectionner ${mainIncludedColor.name}`}
+          disabled={disabled}
+          onClick={() => selectColor(mainIncludedColor.id)}
         />
-        <strong>{selectedDisplayColor.name} ({selectedDisplayColor.code})</strong>
-        {selectedDisplayColor.included && <b>{includedLabel}</b>}
+        <strong>{mainIncludedColor.name} ({mainIncludedColor.code})</strong>
+        <b>{includedLabel}</b>
       </div>
+      {includedColors.length > 1 && (
+        <div className="carpet-swatch-row premium wall-fabric-swatches included">
+          {includedColors.filter((color) => normalizeColorId(color.id) !== normalizeColorId(mainIncludedColor.id)).map((color) => (
+            <button
+              key={color.id}
+              className={selectedId === normalizeColorId(color.id) ? 'active' : ''}
+              type="button"
+              style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+              title={`${color.name} (${color.code}) · ${includedLabel}`}
+              disabled={disabled}
+              onClick={() => selectColor(color.id)}
+            >
+              <span>{color.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {!!optionalColors.length && (
         <>
           <div className="wall-fabric-option-line">
@@ -5858,7 +5885,7 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
             {optionalColors.map((color) => (
               <button
                 key={color.id}
-                className={selectedDisplayColor.id === color.id ? 'active' : ''}
+                className={selectedId === normalizeColorId(color.id) ? 'active' : ''}
                 type="button"
                 style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
                 title={`${color.name} (${color.code}) · ${colorOptionLabel(color, optionLabel, area)}`}

@@ -11775,3 +11775,17 @@ img.asset-thumb {
 .validation-modern-request-box textarea::placeholder {
   color: #a9b1be;
 }
+
+.wall-fabric-main-choice .ground-main-swatch {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.wall-fabric-main-choice .ground-main-swatch:disabled {
+  cursor: not-allowed;
+}
+
+.wall-fabric-swatches.included {
+  margin-top: 8px;
+}
