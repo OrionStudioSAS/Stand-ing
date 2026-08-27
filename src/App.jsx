@@ -101,6 +101,12 @@ const partitionHeadWallCoverWidth = 0.6;
 const minWallCoverDisplayWidth = 0.7;
 const wallCoverSurfaceOffset = 0.008;
 const wallCoverUnitPrice = 288;
+const counterOptionalColorPrice = 79;
+const counterLogoPrices = [
+  { minWidth: 1.85, price: 372 },
+  { minWidth: 1.25, price: 279 },
+  { minWidth: 0, price: 186 },
+];
 const reserveWallCoverEdgeInset = 0.02;
 const partitionHeadWallAxisInset = 0;
 const collisionPlacementStep = 0.25;
@@ -2951,6 +2957,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   const selectedFinish = counterFinishOptions(colors).find((finish) => finish.id === selectedColorId) || counterWoodFinish(colors);
   const imageName = selectedItem?.options?.binary3ImageName || t('counter_no_logo');
   const logoPending = Boolean(selectedItem?.options?.binary3VisualPending);
+  const logoPrice = counterLogoOptionPrice(selectedItem, selectedVariant?.entry || selectedItem);
 
   const selectCounter = (id) => {
     setSelectedCounterId(id);
@@ -3046,7 +3053,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
         <header>
           <strong>Logo</strong>
         </header>
-        <em>{t('counter_included_badge')}</em>
+        <em>{logoPrice > 0 ? `+ ${logoPrice.toLocaleString('fr-FR')} €` : t('counter_included_badge')}</em>
 
         <VisualUploadDropzone
           imageUrl={selectedItem?.options?.binary3ImageUrl}
@@ -3200,7 +3207,7 @@ function variantOptionLabel(variant = {}, groupEntry = {}) {
 }
 
 function counterWhiteFinish() {
-  return { id: '__counter-white__', name: 'Blanc', code: '', hex: '#ffffff', image: '', price: 98, mode: 'white' };
+  return { id: '__counter-white__', name: 'Blanc', code: '', hex: '#ffffff', image: '', price: counterOptionalColorPrice, mode: 'white' };
 }
 
 function shortFinishName(name = '') {
@@ -3238,7 +3245,7 @@ function counterFinishOptions(colors = []) {
     .filter((color) => normalizeColorId(color.id) !== normalizeColorId(wood.id))
     .filter((color) => !/bois|wood/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`))
     .filter((color) => !isHiddenCounterFinish(color))
-    .map((color) => ({ ...color, mode: 'color', price: (color.isFree || color.included) ? 0 : Number(color.price || white.price) }));
+    .map((color) => ({ ...color, mode: 'color', price: (color.isFree || color.included) ? 0 : counterOptionalColorPrice }));
   return [wood, white, ...paidColors];
 }
 
@@ -3270,6 +3277,33 @@ function counterVariantUpgradeOptionLine(item = {}, entry = {}, salonLabel = '',
     quantity: 1,
     unitPrice: upgradePrice,
     total: upgradePrice,
+    reference: item.options?.variantReference || assetReference(entry, salonLabel),
+    optionForItemId: item.id || '',
+  };
+}
+
+function counterLogoOptionActive(item = {}) {
+  return Boolean(item.options?.binary3ImageUrl || item.options?.binary3ImageName || item.options?.binary3VisualPending);
+}
+
+function counterLogoOptionPrice(item = {}, entry = {}) {
+  if (!isWoodReceptionDeskItem({ ...entry, ...item })) return 0;
+  const size = itemDefaultSize({ ...entry, ...item, dimensions: { ...(entry?.dimensions || {}), ...(item?.dimensions || {}) } });
+  const width = Number(size?.[0] || 0) || counterVariantWidth({ entry, label: item.options?.variantLabel || item.label || entry?.label || '' });
+  return counterLogoPrices.find((row) => width >= row.minWidth)?.price || 186;
+}
+
+function counterLogoOptionLine(item = {}, entry = {}, salonLabel = '', index = 0) {
+  if (!isIncludedSceneItem(item) || !counterLogoOptionActive(item)) return null;
+  const logoPrice = counterLogoOptionPrice(item, entry);
+  if (logoPrice <= 0) return null;
+  const sizeLabel = item.options?.variantLabel || counterSizeShortLabel({ entry, label: item.label || entry?.label || '' });
+  return {
+    type: `counter-logo-${item.id || entry?.type || index}`,
+    label: `Signalétique comptoir accueil — ${sizeLabel}`,
+    quantity: 1,
+    unitPrice: logoPrice,
+    total: logoPrice,
     reference: item.options?.variantReference || assetReference(entry, salonLabel),
     optionForItemId: item.id || '',
   };
@@ -11305,6 +11339,11 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       itemsTotal += colorLine.total;
       if (isFurnitureInsuranceEligible(entry)) furnitureInsuranceBase += colorLine.total;
       lines.push(colorLine);
+    }
+    const logoLine = counterLogoOptionLine(item, entry, salonLabel, index);
+    if (logoLine) {
+      itemsTotal += logoLine.total;
+      lines.push(logoLine);
     }
   });
 
