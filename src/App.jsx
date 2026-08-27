@@ -8,6 +8,7 @@ import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import {
+  AlertTriangle,
   Box,
   Check,
   Copy,
@@ -953,6 +954,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
+  const [placementMessage, setPlacementMessage] = useState('');
   const [specialRequest, setSpecialRequest] = useState(() => initialScene.source_payload?.specialRequest?.text || initialOptions.specialRequest?.text || '');
   const [specialRequestTags, setSpecialRequestTags] = useState(() => initialScene.source_payload?.specialRequest?.tags || initialOptions.specialRequest?.tags || []);
   const [itemOptionState, setItemOptionState] = useState({ uploading: false, error: '' });
@@ -1454,6 +1456,20 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }
   };
 
+  const showPlacementMessage = (message) => {
+    setPlacementMessage(message);
+    window.clearTimeout(showPlacementMessage.timeoutId);
+    showPlacementMessage.timeoutId = window.setTimeout(() => setPlacementMessage(''), 5200);
+  };
+
+  const placementErrorMessage = (entryOrItem = {}) => {
+    const label = itemConfigTitle(entryOrItem) || entryOrItem.label || 'Cet objet';
+    if (isWallItemType(entryOrItem.type) || isWallItem(entryOrItem)) {
+      return `${label} ne peut pas être placé : aucun espace libre suffisant sur les murs disponibles.`;
+    }
+    return `${label} ne peut pas être placé : pas assez d’espace disponible sur la scène.`;
+  };
+
   const updateItem = (id, patch) => {
     if (readOnly) return;
     const currentItem = sceneItems.find((item) => item.id === id);
@@ -1717,6 +1733,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   };
 
   const replaceItemWithEntry = (item, entry, options = {}) => {
+    let failedPlacement = false;
     setItems((current) => {
       const nextBase = {
         ...makeItem(entry.type, width, depth, layout, entry),
@@ -1744,9 +1761,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       const placed = collidesWithScene(candidate, blockers, candidate.id, width, depth)
         ? placeItemInFreeSpot(candidate, blockers, width, depth, layout, effectiveCarpetFootprintEnabled)
         : candidate;
-      if (!placed) return current;
+      if (!placed) {
+        failedPlacement = true;
+        return current;
+      }
       return syncSharedGlobalGroupOptions([...others, placed], options, availableCatalog, salonLabel);
     });
+    window.setTimeout(() => {
+      if (failedPlacement) showPlacementMessage(placementErrorMessage(entry || item));
+    }, 0);
   };
 
   const moveDraggedItem = (point) => {
@@ -1766,6 +1789,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const addItem = (entry, options = {}, quantity = 1) => {
     if (readOnly) return;
     let lastPlacedId = null;
+    let placedCount = 0;
     const safeQuantity = Math.max(1, Number(quantity || 1));
     setItems((current) => {
       let next = current;
@@ -1776,6 +1800,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         };
         const placed = placeItemInFreeSpot(item, [...next, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth, layout, effectiveCarpetFootprintEnabled);
         if (!placed) break;
+        placedCount += 1;
         lastPlacedId = placed.id;
         next = [...next, placed];
       }
@@ -1783,6 +1808,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     });
     window.setTimeout(() => {
       if (lastPlacedId) setSelectedId(lastPlacedId);
+      if (placedCount < safeQuantity) showPlacementMessage(placementErrorMessage(entry));
     }, 0);
   };
 
@@ -1977,6 +2003,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         </button>
         <button className={`user-pill ${headerPanel === 'client' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('client')} aria-label={tRaw(language, 'aria_client')}>{contactInitials}</button>
       </header>
+
+      {placementMessage && (
+        <div className="placement-feedback" role="status" aria-live="polite">
+          <AlertTriangle size={17} />
+          <span>{placementMessage}</span>
+        </div>
+      )}
 
       {headerPanel === 'client' && (
         <div className="header-modal-layer" onMouseDown={(event) => event.target === event.currentTarget && setHeaderPanel(null)}>
