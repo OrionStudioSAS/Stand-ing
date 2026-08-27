@@ -15602,12 +15602,24 @@ function applyTextureSlotMaterial(material, item = {}, textureOptions = {}, mate
   return material;
 }
 
-function materialMatchesTextureSlot(materialName = '', material = null, targetName = '') {
+function materialMatchesTextureSlot(materialName = '', material = null, targetName = '', matchMode = '') {
   const target = normalizeMaterialName(targetName);
   if (!target) return false;
   if (materialName === target) return true;
-  if (/^_[a-z0-9]+$/i.test(target)) return new RegExp(`^${escapeRegExp(target)}(\\.\\d+)?$`).test(materialName);
+  const exactMaterialPattern = new RegExp(`^${escapeRegExp(target)}(\\.\\d+)?$`);
+  if (exactMaterialPattern.test(materialName)) return true;
+  if (/^_[a-z0-9]+$/i.test(target)) {
+    const numericTarget = target.slice(1);
+    return new RegExp(`^${escapeRegExp(numericTarget)}(\\.\\d+)?$`).test(materialName);
+  }
+  if (textureSlotNeedsExactMaterialMatch(target, matchMode)) return false;
   return materialName.includes(target) || materialMapMatchesFile(material, targetName);
+}
+
+function textureSlotNeedsExactMaterialMatch(target = '', matchMode = '') {
+  if (matchMode === 'exact') return true;
+  // Laminate materials share long prefixes; an includes() match colors sibling materials too.
+  return /^laminate_d02_120cm(?:_?\d+)?$/.test(target);
 }
 
 function escapeRegExp(value = '') {
