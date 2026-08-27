@@ -351,7 +351,7 @@ function defaultSceneItemRotation(entry = {}, type = '') {
   const signature = normalizeTextValue(`${type} ${entry?.label || ''}`);
   if (signature.includes('meuble') && signature.includes('rangement')) return 180;
   if (signature.includes('bar') && (signature.includes('signa') || signature.includes('signal'))) return 0;
-  if (signature.includes('bar')) return 180;
+  if (signature.includes('bar')) return 0;
   return 0;
 }
 
@@ -1519,10 +1519,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           }
         : targetItem;
       const imageUrl = await uploadSceneItemOptionImage(initialScene, uploadTarget, file);
+      const displayUrl = cacheBustedUrl(imageUrl);
+      await preloadImage(displayUrl);
       if (optionKeys.textureSlot) {
-        updateItemOptions(targetItem, textureSlotPatch(targetItem, optionKeys.textureSlot, { imageUrl, imageName: file.name }));
+        updateItemOptions(targetItem, textureSlotPatch(targetItem, optionKeys.textureSlot, { imageUrl: displayUrl, imageName: file.name }));
       } else {
-        updateItemOptions(targetItem, { [urlKey]: imageUrl, [nameKey]: file.name, ...(optionKeys.extraPatch || {}) });
+        updateItemOptions(targetItem, { [urlKey]: displayUrl, [nameKey]: file.name, ...(optionKeys.extraPatch || {}) });
       }
       setItemOptionState({ uploading: false, error: '' });
     } catch (error) {
@@ -2071,18 +2073,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                     </button>
                     <button type="button" disabled={!canDeleteSceneItem(selected, isAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={15} /></button>
                     {rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
-                      <label className="toolbar-rotation-slider">
-                        <span>{selected.rotation || 0}°</span>
-                        <input
-                          type="range"
-                          min="-180"
-                          max="180"
-                          step="5"
-                          value={selected.rotation || 0}
-                          onInput={(event) => updateItem(selected.id, { rotation: Number(event.currentTarget.value) })}
-                          onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })}
-                        />
-                      </label>
+                      <RotationDial value={selected.rotation || 0} onChange={(nextRotation) => updateItem(selected.id, { rotation: nextRotation })} />
                     )}
                   </div>
                 ) : null}
@@ -3911,7 +3902,9 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     };
     setDraftUploadState({ uploading: true, error: '' });
     try {
-      const imageUrl = await uploadSceneItemOptionImage(scene, draftUploadItem, file);
+      const uploadedUrl = await uploadSceneItemOptionImage(scene, draftUploadItem, file);
+      const imageUrl = cacheBustedUrl(uploadedUrl);
+      await preloadImage(imageUrl);
       if (keys.textureSlot) {
         updateDraftVisualOptions(textureSlotPatch(visualItem, keys.textureSlot, { imageUrl, imageName: file.name }));
       } else {
@@ -4093,6 +4086,64 @@ function ToggleOption({ active, label, detail, price, onChange }) {
       <em className={normalizeTextValue(price).includes('inclus') ? 'included' : ''}>{price}</em>
     </button>
   );
+}
+
+function RotationDial({ value = 0, onChange }) {
+  const dialRef = useRef(null);
+  const normalizedValue = normalizeRotationDegrees(value);
+
+  const updateFromPointer = (event) => {
+    const rect = dialRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const raw = (Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180) / Math.PI + 90;
+    onChange?.(normalizeRotationDegrees(Math.round(raw / 5) * 5));
+  };
+
+  const handlePointerDown = (event) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    updateFromPointer(event);
+  };
+
+  const handlePointerMove = (event) => {
+    if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) return;
+    updateFromPointer(event);
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const delta = event.key === 'ArrowRight' ? 5 : -5;
+    onChange?.(normalizeRotationDegrees(normalizedValue + delta));
+  };
+
+  return (
+    <div className="toolbar-rotation-slider toolbar-rotation-dial-panel">
+      <span>{normalizedValue}°</span>
+      <div
+        ref={dialRef}
+        className="toolbar-rotation-dial"
+        role="slider"
+        tabIndex={0}
+        aria-label="Rotation"
+        aria-valuemin={-180}
+        aria-valuemax={180}
+        aria-valuenow={normalizedValue}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onKeyDown={handleKeyDown}
+      >
+        <i style={{ transform: `translate(-50%, -50%) rotate(${normalizedValue}deg)` }}><b /></i>
+      </div>
+    </div>
+  );
+}
+
+function normalizeRotationDegrees(value = 0) {
+  const numeric = Number(value || 0);
+  return ((((numeric + 180) % 360) + 360) % 360) - 180;
 }
 
 function itemConfigVariants(entry, salonLabel) {
@@ -7158,10 +7209,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
                   <button type="button" disabled={isWallItem(selected) || itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
                   <button type="button" onClick={() => { setItems((current) => current.filter((item) => item.id !== selected.id)); setSelectedId(null); }} title="Supprimer"><Trash2 size={15} /></button>
                   {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (
-                    <label className="toolbar-rotation-slider">
-                      <span>{selected.rotation || 0}°</span>
-                      <input type="range" min="-180" max="180" step="5" value={selected.rotation || 0} onChange={(event) => updateItem(selected.id, { rotation: Number(event.target.value) })} />
-                    </label>
+                    <RotationDial value={selected.rotation || 0} onChange={(nextRotation) => updateItem(selected.id, { rotation: nextRotation })} />
                   )}
                 </div>
               ) : null}
@@ -15610,7 +15658,9 @@ function materialMatchesTextureSlot(materialName = '', material = null, targetNa
   if (exactMaterialPattern.test(materialName)) return true;
   if (/^_[a-z0-9]+$/i.test(target)) {
     const numericTarget = target.slice(1);
-    return new RegExp(`^${escapeRegExp(numericTarget)}(\\.\\d+)?$`).test(materialName);
+    return new RegExp(`^${escapeRegExp(numericTarget)}(\\.\\d+)?$`).test(materialName)
+      || materialMapMatchesFile(material, targetName)
+      || materialMapMatchesFile(material, target);
   }
   if (textureSlotNeedsExactMaterialMatch(target, matchMode)) return false;
   return materialName.includes(target) || materialMapMatchesFile(material, targetName);

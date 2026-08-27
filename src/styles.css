@@ -1902,8 +1902,8 @@ select {
 
 .view-toolbar.selection-mode button:first-child:not(:disabled),
 .view-toolbar.selection-mode.rotation-open button:first-child:not(:disabled) {
-  color: #fff;
-  background: #1f4378;
+  color: #1f4378;
+  background: #fff;
 }
 
 .view-toolbar.selection-mode button:last-of-type:not(:disabled) {
@@ -1960,6 +1960,57 @@ select {
 .toolbar-rotation-slider input {
   width: 100%;
   accent-color: #1f9b8f;
+}
+
+.toolbar-rotation-dial-panel {
+  width: 116px;
+  justify-items: center;
+}
+
+.toolbar-rotation-dial {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  border: 2px solid #d9e2ee;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, #fff 0 46%, transparent 47%),
+    conic-gradient(from -90deg, #1f4378 0deg, #3d70b6 14deg, #edf2f8 14deg 360deg);
+  cursor: grab;
+  touch-action: none;
+}
+
+.toolbar-rotation-dial:active {
+  cursor: grabbing;
+}
+
+.toolbar-rotation-dial:focus-visible {
+  outline: 3px solid rgba(31, 67, 120, 0.24);
+  outline-offset: 3px;
+}
+
+.toolbar-rotation-dial i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 27px;
+  border-radius: 999px;
+  background: #1f4378;
+  transform-origin: 50% 100%;
+}
+
+.toolbar-rotation-dial b {
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  width: 14px;
+  height: 14px;
+  border: 3px solid #fff;
+  border-radius: 999px;
+  background: #1f4378;
+  box-shadow: 0 5px 12px rgba(31, 67, 120, 0.28);
+  transform: translateX(-50%);
 }
 
 .toolbar-lock-note {
