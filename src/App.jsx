@@ -4481,9 +4481,7 @@ function normalizeVariantGroupOptions(variantAssets = [], salonLabel = '', varia
 }
 
 function itemConfigTitle(entry = {}) {
-  const label = entry.label || 'cet objet';
-  if (/tv|télé|tele|ecran|écran|lcd/i.test(label)) return 'un téléviseur';
-  return label;
+  return entry.label || 'cet objet';
 }
 
 function itemCartLabel(item) {
