@@ -1993,10 +1993,8 @@ select {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 2px;
-  height: 27px;
-  border-radius: 999px;
-  background: #1f4378;
+  width: 0;
+  height: 0;
   transform-origin: 50% 100%;
 }
 
