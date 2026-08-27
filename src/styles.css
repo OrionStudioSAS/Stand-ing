@@ -10448,6 +10448,11 @@ img.asset-thumb {
   font-size: 0.78rem;
 }
 
+.reserve-choice-panel-v2 .reserve-remove-button.active {
+  color: #fff;
+  background: #ff3f3f;
+}
+
 /* Spots LED quick-view v2 */
 .led-option-card-v2 {
   gap: 13px;

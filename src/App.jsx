@@ -5340,27 +5340,6 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
         })}
       </div>
 
-      <ReserveRadioGroup
-        title="OUVERTURE DE PORTE"
-        value={options.doorOpening}
-        options={[
-          { value: 'push', label: 'Poussante' },
-          { value: 'pull', label: 'Tirante' },
-        ]}
-        disabled={disabled || noneSelected}
-        onChange={(value) => onOptions?.({ doorOpening: value })}
-      />
-      <ReserveRadioGroup
-        title="ORIENTATION DE LA POIGNÉE"
-        value={options.handleOrientation}
-        options={[
-          { value: 'left', label: 'Gauche' },
-          { value: 'right', label: 'Droite' },
-        ]}
-        disabled={disabled || noneSelected}
-        onChange={(value) => onOptions?.({ handleOrientation: value })}
-      />
-
       <button
         type="button"
         className={noneSelected ? 'reserve-remove-button active' : 'reserve-remove-button'}
