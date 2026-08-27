@@ -350,7 +350,7 @@ function defaultSceneItemRotation(entry = {}, type = '') {
   if (Number.isFinite(Number(configuredRotation))) return Number(configuredRotation);
   const signature = normalizeTextValue(`${type} ${entry?.label || ''}`);
   if (signature.includes('meuble') && signature.includes('rangement')) return 180;
-  if (signature.includes('bar') && (signature.includes('signa') || signature.includes('signal'))) return 0;
+  if (signature.includes('bar') && (signature.includes('signa') || signature.includes('signal'))) return 180;
   if (signature.includes('bar')) return 180;
   return 0;
 }

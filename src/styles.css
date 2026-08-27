@@ -1975,7 +1975,7 @@ select {
   border-radius: 999px;
   background:
     radial-gradient(circle at center, #fff 0 46%, transparent 47%),
-    conic-gradient(from -90deg, #1f4378 0deg, #3d70b6 14deg, #edf2f8 14deg 360deg);
+    #edf2f8;
   cursor: grab;
   touch-action: none;
 }
@@ -1993,9 +1993,11 @@ select {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 0;
-  height: 0;
-  transform-origin: 50% 100%;
+  width: 3px;
+  height: 26px;
+  border-radius: 999px;
+  background: #1f4378;
+  transform-origin: 50% 50%;
 }
 
 .toolbar-rotation-dial b {
