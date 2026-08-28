@@ -11895,3 +11895,8 @@ img.asset-thumb {
 .prestige-signage-upload {
   margin: 0;
 }
+
+.led-option-card-v2 .reserve-remove-button.active {
+  color: #fff;
+  background: #ff3f3f;
+}

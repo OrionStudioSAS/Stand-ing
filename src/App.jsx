@@ -1134,25 +1134,33 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       ? [...automaticLedItems, ...automaticSpotItems].reduce((count, item) => count + ledSpotsPerRail(findCatalogEntry(availableCatalog, item.type) || item), 0)
       : 0
   ), [ledRailsEnabled, automaticLedItems, automaticSpotItems, availableCatalog]);
-  const manualVisibleItems = useMemo(() => manualHydratedItems.filter((item) => !isHiddenIncludedCounterItem(item)), [manualHydratedItems]);
+  const prestigeBaseHidden = (item) => isHiddenPrestigeBaseItem(item, { archEnabled: prestigeArchEnabled, signageEnabled: prestigeSignageEnabled });
+  const manualVisibleItems = useMemo(() => manualHydratedItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [manualHydratedItems, prestigeArchEnabled, prestigeSignageEnabled]);
   const wallCoverSurfaces = useMemo(
     () => wallCoverSurfaceOptions(layout, width, depth, [...manualVisibleItems, ...automaticReserveItems, ...automaticPartitionHeadItems], { splitForCovers: true }),
     [layout, width, depth, manualVisibleItems, automaticReserveItems, automaticPartitionHeadItems],
   );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems]);
-  const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item)), [sceneItems]);
+  const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled]);
   const includedCounterItems = useMemo(() => sceneItems.filter((item) => isWoodReceptionDeskItem(item) && isIncludedSceneItem(item)), [sceneItems]);
   const isPrestigeStand = useMemo(() => isPrestigeScene(initialScene), [initialScene]);
   const includedPrestigeArchItems = useMemo(() => sceneItems.filter(isIncludedPrestigeArchItem), [sceneItems]);
   const includedPrestigeSignageItems = useMemo(() => sceneItems.filter(isIncludedPrestigeHighSignItem), [sceneItems]);
+  const visiblePrestigeArchItems = useMemo(() => includedPrestigeArchItems.filter((item) => !prestigeBaseHidden(item)), [includedPrestigeArchItems, prestigeArchEnabled]);
+  const visiblePrestigeSignageItems = useMemo(() => includedPrestigeSignageItems.filter((item) => !prestigeBaseHidden(item)), [includedPrestigeSignageItems, prestigeSignageEnabled]);
 
   useEffect(() => {
-    if (!isPrestigeStand || (prestigeArchEnabled && prestigeSignageEnabled)) return;
-    setItems((current) => current.filter((item) => (
-      (prestigeArchEnabled || !isIncludedPrestigeArchItem(item))
-      && (prestigeSignageEnabled || !isIncludedPrestigeHighSignItem(item))
-    )));
-  }, [isPrestigeStand]);
+    if (!isPrestigeStand) return;
+    setItems((current) => current.map((item) => {
+      if (isIncludedPrestigeArchItem(item)) {
+        return { ...item, options: { ...(item.options || {}), prestigeHidden: !prestigeArchEnabled } };
+      }
+      if (isIncludedPrestigeHighSignItem(item)) {
+        return { ...item, options: { ...(item.options || {}), prestigeHidden: !prestigeSignageEnabled } };
+      }
+      return item;
+    }));
+  }, [isPrestigeStand, prestigeArchEnabled, prestigeSignageEnabled]);
 
   const cartItems = useMemo(() => visibleSceneItems.filter(shopCartItemVisible), [visibleSceneItems]);
   const showCartBar = !readOnly && (activeStep === 2 || activeStep === 3);
@@ -1946,21 +1954,30 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       setPrestigeArchEnabled(false);
       const ids = new Set(includedPrestigeArchItems.map((item) => item.id));
       if (ids.has(selectedId)) setSelectedId(null);
-      setItems((current) => current.filter((item) => !isIncludedPrestigeArchItem(item)));
+      setItems((current) => current.map((item) => (
+        isIncludedPrestigeArchItem(item)
+          ? { ...item, options: { ...(item.options || {}), prestigeHidden: true } }
+          : item
+      )));
       return;
     }
     if (includedPrestigeArchItems.length) {
       setPrestigeArchEnabled(true);
+      setItems((current) => current.map((item) => (
+        isIncludedPrestigeArchItem(item)
+          ? { ...item, options: { ...(item.options || {}), prestigeHidden: false, prestigeBaseKey: 'arche', prestigeArchTvEnabled } }
+          : item
+      )));
       return;
     }
-    const entry = findPrestigeArchCatalogEntry(availableCatalog);
+    const entry = findPrestigeArchCatalogEntry(availableCatalog, initialScene);
     if (!entry) {
       showPlacementMessage('Aucun objet Arche Prestige disponible dans les assets 3D.');
       return;
     }
     setPrestigeArchEnabled(true);
     placeIncludedPrestigeItem(entry, {
-      label: 'Arche Prestige',
+      label: entry.label || 'Arche Prestige',
       itemOptions: { prestigeBaseKey: 'arche', prestigeArchTvEnabled },
     });
   };
@@ -1981,21 +1998,30 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       setPrestigeSignageEnabled(false);
       const ids = new Set(includedPrestigeSignageItems.map((item) => item.id));
       if (ids.has(selectedId)) setSelectedId(null);
-      setItems((current) => current.filter((item) => !isIncludedPrestigeHighSignItem(item)));
+      setItems((current) => current.map((item) => (
+        isIncludedPrestigeHighSignItem(item)
+          ? { ...item, options: { ...(item.options || {}), prestigeHidden: true } }
+          : item
+      )));
       return;
     }
     if (includedPrestigeSignageItems.length) {
       setPrestigeSignageEnabled(true);
+      setItems((current) => current.map((item) => (
+        isIncludedPrestigeHighSignItem(item)
+          ? { ...item, options: { ...(item.options || {}), prestigeHidden: false, prestigeBaseKey: 'enseigne-haute' } }
+          : item
+      )));
       return;
     }
-    const entry = findPrestigeHighSignCatalogEntry(availableCatalog);
+    const entry = findPrestigeHighSignCatalogEntry(availableCatalog, initialScene);
     if (!entry) {
       showPlacementMessage('Aucune enseigne haute Prestige disponible dans les assets 3D.');
       return;
     }
     setPrestigeSignageEnabled(true);
     placeIncludedPrestigeItem(entry, {
-      label: 'Enseigne haute Prestige',
+      label: entry.label || 'Enseigne haute Prestige',
       itemOptions: { prestigeBaseKey: 'enseigne-haute' },
     });
   };
@@ -2405,10 +2431,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             counterColors={counterPalette}
             counterUploadState={itemOptionState}
             isPrestigeStand={isPrestigeStand}
-            prestigeArchItems={includedPrestigeArchItems}
+            prestigeArchItems={visiblePrestigeArchItems}
             prestigeArchEnabled={prestigeArchEnabled}
             prestigeArchTvEnabled={prestigeArchTvEnabled}
-            prestigeSignageItems={includedPrestigeSignageItems}
+            prestigeSignageItems={visiblePrestigeSignageItems}
             prestigeSignageEnabled={prestigeSignageEnabled}
             prestigeSignageUploadState={itemOptionState}
             salonLabel={salonLabel}
@@ -3226,7 +3252,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   const selectedFinish = counterFinishOptions(colors).find((finish) => finish.id === selectedColorId) || counterWoodFinish(colors);
   const imageName = selectedItem?.options?.binary3ImageName || t('counter_no_logo');
   const logoPending = Boolean(selectedItem?.options?.binary3VisualPending);
-  const logoPrice = counterLogoOptionPrice(selectedItem, selectedVariant?.entry || selectedItem);
+  const logoPrice = isIncludedSceneItem(selectedItem) ? 0 : counterLogoOptionPrice(selectedItem, selectedVariant?.entry || selectedItem);
 
   const selectCounter = (id) => {
     setSelectedCounterId(id);
@@ -3563,7 +3589,7 @@ function counterLogoOptionPrice(item = {}, entry = {}) {
 }
 
 function counterLogoOptionLine(item = {}, entry = {}, salonLabel = '', index = 0) {
-  if (!isIncludedSceneItem(item) || !counterLogoOptionActive(item)) return null;
+  if (isIncludedSceneItem(item) || !counterLogoOptionActive(item)) return null;
   const logoPrice = counterLogoOptionPrice(item, entry);
   if (logoPrice <= 0) return null;
   const sizeLabel = item.options?.variantLabel || counterSizeShortLabel({ entry, label: item.label || entry?.label || '' });
@@ -4177,8 +4203,12 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const globalExtraOptions = extraOptions
     .filter(isSharedGlobalGroupOption)
     .reduce((acc, option) => ({ ...acc, [option.id]: Boolean(selectedExtras[option.id]) }), {});
-  const total = ((basePrice + nonGlobalExtras) * (mode === 'add' ? quantity : 1)) + globalExtras;
   const canConfigureCounterVisual = isWoodReceptionDeskItem(visualItem) || isWoodReceptionDeskItem(resolvedEntry);
+  const counterLogoSupplement = canConfigureCounterVisual && !isIncludedSceneItem(visualItem) && counterLogoOptionActive(visualItem)
+    ? counterLogoOptionPrice(visualItem, resolvedEntry || catalogEntry)
+    : 0;
+  const perItemTotal = basePrice + nonGlobalExtras + counterLogoSupplement;
+  const total = (perItemTotal * (mode === 'add' ? quantity : 1)) + globalExtras;
   const hasVisualOptions = Boolean(item || mode === 'add') && (
     (item && isPartitionHeadItem(item))
     || (item && isPosterItem(item))
@@ -4390,7 +4420,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
           <div className="item-config-footer-total">
             <span>{t('item_config_total')}</span>
             <strong>{total.toLocaleString('fr-FR')} €</strong>
-            {quantity > 1 && <small>{quantity} × {(basePrice + extras).toLocaleString('fr-FR')} €</small>}
+            {quantity > 1 && <small>{quantity} × {perItemTotal.toLocaleString('fr-FR')} €</small>}
           </div>
           <div className="item-config-footer-actions">
             <button type="button" className="item-config-delete" disabled={!canDeleteCurrentItem} onClick={deleteFromModal}>{t('item_config_delete')}</button>
@@ -4675,16 +4705,37 @@ function isIncludedPrestigeHighSignItem(item = {}) {
   return isIncludedSceneItem(item) && isPrestigeHighSignItem(item);
 }
 
-function findPrestigeArchCatalogEntry(catalogEntries = []) {
-  return (catalogEntries || []).find((entry) => !isVariantGroupEntry(entry) && isPrestigeArchItem(entry))
+function isHiddenPrestigeBaseItem(item = {}, state = {}) {
+  if (isIncludedPrestigeArchItem(item)) return state.archEnabled === false || item?.options?.prestigeHidden === true;
+  if (isIncludedPrestigeHighSignItem(item)) return state.signageEnabled === false || item?.options?.prestigeHidden === true;
+  return false;
+}
+
+function findPrestigeArchCatalogEntry(catalogEntries = [], scene = {}) {
+  return findPrestigeBaseCatalogEntry(catalogEntries, scene, isPrestigeArchItem)
+    || (catalogEntries || []).find((entry) => !isVariantGroupEntry(entry) && isPrestigeArchItem(entry))
     || (catalogEntries || []).find(isPrestigeArchItem)
     || null;
 }
 
-function findPrestigeHighSignCatalogEntry(catalogEntries = []) {
-  return (catalogEntries || []).find((entry) => !isVariantGroupEntry(entry) && isPrestigeHighSignItem(entry))
+function findPrestigeHighSignCatalogEntry(catalogEntries = [], scene = {}) {
+  const fromBasePack = findPrestigeBaseCatalogEntry(catalogEntries, scene, isPrestigeHighSignItem);
+  if (fromBasePack) return fromBasePack;
+  const highSigns = (catalogEntries || []).filter((entry) => !isVariantGroupEntry(entry) && isPrestigeHighSignItem(entry));
+  return highSigns.find((entry) => normalizeTextValue(normalizedItemText(entry)).includes('hexagon'))
+    || highSigns.find((entry) => normalizeTextValue(normalizedItemText(entry)).includes('prestige'))
+    || highSigns[0]
     || (catalogEntries || []).find(isPrestigeHighSignItem)
     || null;
+}
+
+function findPrestigeBaseCatalogEntry(catalogEntries = [], scene = {}, matcher = () => false) {
+  const baseItems = sceneBaseItems(scene).filter((item) => matcher(item));
+  for (const baseItem of baseItems) {
+    const entry = (catalogEntries || []).find((candidate) => candidate.type === baseItem.type);
+    if (entry) return entry;
+  }
+  return null;
 }
 
 function firstImageTextureSlot(item = {}) {
@@ -4821,7 +4872,10 @@ function cartItemPrice(item, entry, salonLabel) {
   const colorSupplement = isBillableCounterColorOption(item, entry)
     ? Number(item.options?.binary2ColorPrice || 0)
     : 0;
-  return basePrice + colorSupplement + textureSlotColorSupplement(item);
+  const logoSupplement = !isIncludedSceneItem(item) && counterLogoOptionActive(item)
+    ? counterLogoOptionPrice(item, entry)
+    : 0;
+  return basePrice + colorSupplement + textureSlotColorSupplement(item) + logoSupplement;
 }
 
 function cartItemBasePrice(item, entry, salonLabel, catalogEntries = []) {
