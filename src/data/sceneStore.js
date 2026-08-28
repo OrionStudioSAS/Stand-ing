@@ -208,7 +208,24 @@ export async function getSceneByToken(token) {
   return dbSceneToScene(data);
 }
 
+const sceneSaveQueues = new Map();
+
 export async function saveScene(scene) {
+  const queueKey = scene?.id || scene?.share_token || '__local_scene__';
+  const previousSave = sceneSaveQueues.get(queueKey) || Promise.resolve();
+  const nextSave = previousSave.catch(() => {}).then(() => persistScene(scene));
+  sceneSaveQueues.set(queueKey, nextSave);
+
+  try {
+    return await nextSave;
+  } finally {
+    if (sceneSaveQueues.get(queueKey) === nextSave) {
+      sceneSaveQueues.delete(queueKey);
+    }
+  }
+}
+
+async function persistScene(scene) {
   if (!supabase) {
     const scenes = readLocalScenes();
     const next = scenes.some((item) => item.id === scene.id)
@@ -242,26 +259,78 @@ export async function saveScene(scene) {
   const { error } = await supabase.from('scenes').update(payload).eq('id', scene.id);
   if (error) throw error;
 
-  await supabase.from('scene_items').delete().eq('scene_id', scene.id);
-  if (scene.items?.length) {
-    const { error: itemError } = await supabase.from('scene_items').insert(
-      scene.items.map((item) => ({
-        scene_id: scene.id,
-        item_uid: item.id,
-        type: item.type,
-        label: item.label,
-        x: item.x,
-        y: item.y || 0,
-        z: item.z,
-        rotation: item.rotation || 0,
-        wall: item.wall,
-        config: item,
-      }))
-    );
-    if (itemError) throw itemError;
-  }
+  await saveSceneItems(scene);
 
   return scene;
+}
+
+function sceneItemPayload(sceneId, item) {
+  return {
+    scene_id: sceneId,
+    item_uid: item.id,
+    type: item.type,
+    label: item.label,
+    x: item.x,
+    y: item.y || 0,
+    z: item.z,
+    rotation: item.rotation || 0,
+    wall: item.wall,
+    config: item,
+  };
+}
+
+async function saveSceneItems(scene) {
+  const nextItems = Array.isArray(scene.items) ? scene.items.filter((item) => item?.id && item?.type) : [];
+  if (!nextItems.length) {
+    const { error } = await supabase.from('scene_items').delete().eq('scene_id', scene.id);
+    if (error) throw error;
+    return;
+  }
+
+  const { data: existingRows, error: existingError } = await supabase
+    .from('scene_items')
+    .select('id,item_uid')
+    .eq('scene_id', scene.id);
+  if (existingError) throw existingError;
+
+  const nextUids = new Set(nextItems.map((item) => item.id));
+  const existingByUid = new Map();
+  const duplicateIds = [];
+  (existingRows || []).forEach((row) => {
+    if (nextUids.has(row.item_uid) && existingByUid.has(row.item_uid)) {
+      duplicateIds.push(row.id);
+      return;
+    }
+    existingByUid.set(row.item_uid, row);
+  });
+  const updates = [];
+  const inserts = [];
+
+  nextItems.forEach((item) => {
+    const existing = existingByUid.get(item.id);
+    const payload = sceneItemPayload(scene.id, item);
+    if (existing?.id) updates.push({ id: existing.id, payload });
+    else inserts.push(payload);
+  });
+
+  for (const update of updates) {
+    const { error } = await supabase.from('scene_items').update(update.payload).eq('id', update.id);
+    if (error) throw error;
+  }
+
+  if (inserts.length) {
+    const { error } = await supabase.from('scene_items').insert(inserts);
+    if (error) throw error;
+  }
+
+  const staleIds = (existingRows || [])
+    .filter((row) => !nextUids.has(row.item_uid))
+    .map((row) => row.id);
+  const deleteIds = [...new Set([...staleIds, ...duplicateIds])];
+  if (deleteIds.length) {
+    const { error } = await supabase.from('scene_items').delete().in('id', deleteIds);
+    if (error) throw error;
+  }
 }
 
 export async function deleteSceneAndRemote(scene) {
