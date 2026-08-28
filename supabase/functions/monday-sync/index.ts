@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
   for (const source of sources ?? []) {
     const { columns: mondayColumns, warning: columnWarning } = await fetchMondayBoardColumnsSafe(mondayToken, source.board_id);
     if (columnWarning) warnings.push(columnWarning);
-    if (String(source.board_id) === "18395911999" && mondayColumns.length) {
+    if (mondayColumns.length) {
       warnings.push(...mondayConstraintColumnMessages(source.board_id, mondayColumns));
     }
     const resolvedSource = withResolvedMondayColumns(source, mondayColumns, warnings);
@@ -82,20 +82,23 @@ Deno.serve(async (req) => {
       if (existingScene) {
         const existingWidth = Number(existingScene.width_m) || Number(readMappingValue(item, resolvedSource.mapping?.width_m)) || 4;
         const existingDepth = Number(existingScene.depth_m) || Number(readMappingValue(item, resolvedSource.mapping?.depth_m)) || 3;
-        const constraint = mondayConstraintForItem(item, resolvedSource, existingWidth, existingDepth);
+        const constraints = mondayConstraintsForItem(item, resolvedSource, existingWidth, existingDepth);
+        const constraint = constraints[0] || null;
         const mappedClientEmail = readMappingValue(item, resolvedSource.mapping?.client_email);
         const mappedClientName = readMappingValue(item, resolvedSource.mapping?.client_name) || item.name;
         const scenePatch: Record<string, unknown> = {
           source_payload: {
             ...(existingScene.source_payload || {}),
             constraint,
+            constraints,
           },
         };
         if (!clean(existingScene.client_email) && mappedClientEmail) scenePatch.client_email = mappedClientEmail;
         if (!clean(existingScene.client_name) && mappedClientName) scenePatch.client_name = mappedClientName;
         const hasScenePatch = Object.keys(scenePatch).some((key) => key !== "source_payload")
           || constraintColumnsConfigured(resolvedSource)
-          || Boolean(constraint);
+          || Boolean(constraint)
+          || constraints.length > 0;
         if (hasScenePatch) {
           const { error: updateConstraintError } = await supabase
             .from("scenes")
@@ -240,6 +243,8 @@ function withResolvedMondayColumns(source: any, columns: Array<{ id: string; tit
   const constraintLocationColumnId = mapping.constraint_location
     || mapping.emplacement_contrainte
     || findConstraintLocationColumnId(columns);
+  const pole1ColumnId = resolveMappedColumnId(columns, mappedPoleColumnId(mapping, 1), findPoleColumnId(columns, 1));
+  const pole2ColumnId = resolveMappedColumnId(columns, mappedPoleColumnId(mapping, 2), findPoleColumnId(columns, 2));
   const statusColumnId = resolveMappedColumnId(columns, source.status_column_id, findStatusColumnId(columns));
   const linkColumnId = resolveMappedColumnId(columns, source.link_column_id, findLinkColumnId(columns));
 
@@ -263,6 +268,8 @@ function withResolvedMondayColumns(source: any, columns: Array<{ id: string; tit
       ...(layoutColumnId ? { layout: layoutColumnId } : {}),
       ...(constraintColumnId ? { constraint: constraintColumnId } : {}),
       ...(constraintLocationColumnId ? { constraint_location: constraintLocationColumnId } : {}),
+      ...(pole1ColumnId ? { poteau_1: pole1ColumnId } : {}),
+      ...(pole2ColumnId ? { poteau_2: pole2ColumnId } : {}),
     },
   };
 }
@@ -279,14 +286,18 @@ function columnExists(columns: Array<{ id: string }>, columnId = "") {
 function mondayConstraintColumnMessages(boardId: string, columns: Array<{ id: string; title: string }>) {
   const messages: string[] = [];
   const sizeColumnId = findConstraintSizeColumnId(columns);
+  const pole1ColumnId = findPoleColumnId(columns, 1);
+  const pole2ColumnId = findPoleColumnId(columns, 2);
 
   if (sizeColumnId) messages.push(`ID colonne Contrainte détecté sur le board ${boardId}: ${sizeColumnId}`);
+  if (pole1ColumnId) messages.push(`ID colonne POTEAU 1 détecté sur le board ${boardId}: ${pole1ColumnId}`);
+  if (pole2ColumnId) messages.push(`ID colonne POTEAU 2 détecté sur le board ${boardId}: ${pole2ColumnId}`);
 
-  if (!sizeColumnId) {
+  if (!sizeColumnId && !pole1ColumnId && !pole2ColumnId) {
     messages.push(`Colonnes disponibles sur le board ${boardId}: ${formatMondayColumnList(columns)}`);
   }
 
-  if (!sizeColumnId) messages.push(`Colonne Monday manquante sur le board ${boardId}: Contrainte`);
+  if (!sizeColumnId && !pole1ColumnId && !pole2ColumnId) messages.push(`Colonne Monday manquante sur le board ${boardId}: Contrainte / POTEAU 1 / POTEAU 2`);
   return messages;
 }
 
@@ -358,13 +369,28 @@ function findConstraintLocationColumnId(columns: Array<{ id: string; title: stri
   return findMondayColumnId(columns, (value) => value.includes("contrainte") && (value.includes("emplacement") || value.includes("empacement")));
 }
 
+function findPoleColumnId(columns: Array<{ id: string; title: string }>, poleNumber: number) {
+  const number = String(poleNumber);
+  return findMondayColumnId(columns, (value) => value === `poteau_${number}` || value === `poteau${number}` || value === `pole_${number}` || value === `pole${number}`)
+    || findMondayColumnId(columns, (value) => (value.includes("poteau") || value.includes("pole")) && value.includes(number));
+}
+
+function mappedPoleColumnId(mapping: Record<string, string> = {}, poleNumber: number) {
+  const number = String(poleNumber);
+  return mapping[`poteau_${number}`]
+    || mapping[`poteau${number}`]
+    || mapping[`pole_${number}`]
+    || mapping[`pole${number}`]
+    || "";
+}
+
 function findMondayColumnId(columns: Array<{ id: string; title: string }>, predicate: (value: string) => boolean) {
   return columns.find((column) => [column.title, column.id].some((candidate) => predicate(normalizeColumnLookup(candidate))))?.id || "";
 }
 
 function constraintColumnsConfigured(source: any) {
   const mapping = source.mapping ?? {};
-  return Boolean(mapping.constraint || mapping.contrainte);
+  return Boolean(mapping.constraint || mapping.contrainte || mappedPoleColumnId(mapping, 1) || mappedPoleColumnId(mapping, 2));
 }
 
 async function fetchMondayBoardColumnsSafe(token: string, boardId: string) {
@@ -543,7 +569,8 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
   const standNumber = readMappingValue(item, mapping.stand_number) || readColumn(item, "n_");
   const aisleNumber = readMappingValue(item, mapping.aisle_number || mapping.allee) || readColumnAny(item, ["text5", "allée", "allee"]);
   const sector = readMappingValue(item, mapping.sector || mapping.secteur) || readColumnAny(item, ["dup__of_secteur1", "secteur"]);
-  const constraint = mondayConstraintForItem(item, source, width, depth);
+  const constraints = mondayConstraintsForItem(item, source, width, depth);
+  const constraint = constraints[0] || null;
 
   return {
     monday_item_id: item.id,
@@ -566,7 +593,7 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
     depth_m: depth,
     height_m: 2.5,
     layout,
-    source_payload: { ...item, stand_number: standNumber, aisle_number: aisleNumber, sector, constraint },
+    source_payload: { ...item, stand_number: standNumber, aisle_number: aisleNumber, sector, constraint, constraints },
   };
 }
 
@@ -579,23 +606,69 @@ function mondaySceneDimensions(item: any, source: any) {
 }
 
 function mondayConstraintForItem(item: any, source: any, width = 0, depth = 0) {
+  return mondayConstraintsForItem(item, source, width, depth)[0] || null;
+}
+
+function mondayConstraintsForItem(item: any, source: any, width = 0, depth = 0) {
+  const mapping = source.mapping ?? {};
+  const constraints = [
+    parseSceneConstraint(
+      readMappingValue(item, mappedPoleColumnId(mapping, 1)) || readColumnAny(item, ["poteau 1", "poteau_1", "poteau1", "pole 1", "pole_1", "pole1"]),
+      "",
+      width,
+      depth,
+      "Poteau 1",
+      { forceMillimeters: true },
+    ),
+    parseSceneConstraint(
+      readMappingValue(item, mappedPoleColumnId(mapping, 2)) || readColumnAny(item, ["poteau 2", "poteau_2", "poteau2", "pole 2", "pole_2", "pole2"]),
+      "",
+      width,
+      depth,
+      "Poteau 2",
+      { forceMillimeters: true },
+    ),
+    mondayLegacyConstraintForItem(item, source, width, depth),
+  ].filter(Boolean);
+
+  return dedupeSceneConstraints(constraints);
+}
+
+function mondayLegacyConstraintForItem(item: any, source: any, width = 0, depth = 0) {
   const mapping = source.mapping ?? {};
   return parseSceneConstraint(
     readMappingValue(item, mapping.constraint || mapping.contrainte) || readColumnAny(item, ["contrainte"]),
     readMappingValue(item, mapping.constraint_location || mapping.emplacement_contrainte) || readColumnAny(item, ["emplacement contrainte", "emplacement_contrainte", "empacement contrainte"]),
     width,
     depth,
+    "Poteau",
   );
 }
 
-function parseSceneConstraint(sizeValue = "", locationValue = "", width = 0, depth = 0) {
+function dedupeSceneConstraints(constraints: any[]) {
+  const seen = new Set<string>();
+  return constraints.filter((constraint) => {
+    const key = [
+      Math.round(Number(constraint.width || 0) * 1000),
+      Math.round(Number(constraint.depth || 0) * 1000),
+      Math.round(Number(constraint.x || 0) * 1000),
+      Math.round(Number(constraint.z || 0) * 1000),
+    ].join(":");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function parseSceneConstraint(sizeValue = "", locationValue = "", width = 0, depth = 0, label = "Poteau", options: Record<string, boolean> = {}) {
   const combined = parseCombinedConstraintValue(sizeValue);
   const sizeParts = combined?.sizeParts || parseNumberParts(sizeValue);
   const locationParts = combined?.locationParts || parseNumberParts(locationValue);
   if (sizeParts.length < 2 || locationParts.length < 2) return null;
 
-  const sizeDivisor = combined?.sizeUnit === "mm" ? 1000 : sizeParts.some((value) => value > 100) ? 1000 : 100;
-  const locationDivisor = combined?.locationUnit === "mm" ? 1000 : locationParts.some((value) => value > 50) ? 1000 : 1;
+  const forceMillimeters = Boolean(options.forceMillimeters);
+  const sizeDivisor = forceMillimeters || combined?.sizeUnit === "mm" ? 1000 : sizeParts.some((value) => value > 100) ? 1000 : 100;
+  const locationDivisor = forceMillimeters || combined?.locationUnit === "mm" ? 1000 : locationParts.some((value) => value > 50) ? 1000 : 1;
   const sizeX = sizeParts[0] / sizeDivisor;
   const sizeZ = sizeParts[1] / sizeDivisor;
   const fromLeft = locationParts[0] / locationDivisor;
@@ -605,6 +678,8 @@ function parseSceneConstraint(sizeValue = "", locationValue = "", width = 0, dep
   return {
     rawSize: String(sizeValue || "").trim(),
     rawLocation: String(locationValue || "").trim(),
+    id: slugify(`${label}-${sizeValue}-${locationValue}`),
+    label,
     width: Math.max(0.01, sizeX),
     depth: Math.max(0.01, sizeZ),
     height: 5,

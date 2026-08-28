@@ -1044,7 +1044,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     hall: sceneHallLabel(initialScene, contactDetails),
     sector: sceneSectorLabel(initialScene),
   }), [fontRevision, language, initialScene, clientInfo, contactDetails, standLabel]);
-  const sceneConstraint = useMemo(() => sceneConstraintFromPayload(initialScene.source_payload, width, depth), [initialScene.source_payload, width, depth]);
+  const sceneConstraints = useMemo(() => sceneConstraintsFromPayload(initialScene.source_payload, width, depth), [initialScene.source_payload, width, depth]);
+  const sceneConstraint = sceneConstraints[0] || null;
 
   useEffect(() => {
     let cancelled = false;
@@ -2251,7 +2252,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
                 onTechnicalFloorRampX={setTechnicalFloorRampX}
                 onTechnicalFloorRampDragChange={setTechnicalFloorRampDragging}
                 visualContext={sceneVisualContext}
-                sceneConstraint={sceneConstraint}
+                sceneConstraints={sceneConstraints}
                 selectedToolbar={selected && !readOnly && !itemConfigModal ? (
                   <div className={`view-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
                     <button type="button" disabled={isWallItem(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
@@ -13609,12 +13610,44 @@ function sceneSectorLabel(scene = {}) {
     || '';
 }
 
-function sceneConstraintFromPayload(sourcePayload = {}, width = 0, depth = 0) {
-  const saved = sourcePayload?.constraint;
+function sceneConstraintsFromPayload(sourcePayload = {}, width = 0, depth = 0) {
+  const savedConstraints = Array.isArray(sourcePayload?.constraints)
+    ? sourcePayload.constraints.map((constraint, index) => normalizeSceneConstraint(constraint, width, depth, `Poteau ${index + 1}`)).filter(Boolean)
+    : [];
+  if (savedConstraints.length) return dedupeSceneConstraints(savedConstraints);
+
+  const saved = normalizeSceneConstraint(sourcePayload?.constraint, width, depth, 'Poteau');
+  if (saved) return [saved];
+
+  const parsedPoles = [1, 2]
+    .map((number) => parseSceneConstraintValues(
+      mondayPoleText(sourcePayload, number),
+      '',
+      width,
+      depth,
+      `Poteau ${number}`,
+      { forceMillimeters: true },
+    ))
+    .filter(Boolean);
+  if (parsedPoles.length) return dedupeSceneConstraints(parsedPoles);
+
+  const legacy = parseSceneConstraintValues(
+    mondayConstraintSizeText(sourcePayload),
+    mondayConstraintLocationText(sourcePayload),
+    width,
+    depth,
+    'Poteau',
+  );
+  return legacy ? [legacy] : [];
+}
+
+function normalizeSceneConstraint(saved, width = 0, depth = 0, fallbackLabel = 'Poteau') {
   if (saved && Number(saved.width) > 0 && Number(saved.depth) > 0) {
     const fromLeft = Number(saved.fromLeft);
     const fromBack = Number(saved.fromBack);
     return {
+      id: saved.id || `${fallbackLabel}-${saved.rawSize || ''}-${saved.rawLocation || ''}`,
+      label: saved.label || fallbackLabel,
       rawSize: saved.rawSize || `${Math.round(Number(saved.width || 0) * 100)}x${Math.round(Number(saved.depth || 0) * 100)}`,
       rawLocation: saved.rawLocation || `${fromLeft || 0} - ${fromBack || 0}`,
       width: Number(saved.width),
@@ -13626,13 +13659,26 @@ function sceneConstraintFromPayload(sourcePayload = {}, width = 0, depth = 0) {
       z: Number.isFinite(Number(saved.z)) ? Number(saved.z) : -Number(depth || 0) / 2 + fromBack,
     };
   }
+  return null;
+}
 
-  return parseSceneConstraintValues(
-    mondayConstraintSizeText(sourcePayload),
-    mondayConstraintLocationText(sourcePayload),
-    width,
-    depth,
-  );
+function dedupeSceneConstraints(constraints = []) {
+  const seen = new Set();
+  return constraints.filter((constraint) => {
+    const key = [
+      Math.round(Number(constraint.width || 0) * 1000),
+      Math.round(Number(constraint.depth || 0) * 1000),
+      Math.round(Number(constraint.x || 0) * 1000),
+      Math.round(Number(constraint.z || 0) * 1000),
+    ].join(':');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function sceneConstraintFromPayload(sourcePayload = {}, width = 0, depth = 0) {
+  return sceneConstraintsFromPayload(sourcePayload, width, depth)[0] || null;
 }
 
 function mondayConstraintSizeText(sourcePayload = {}) {
@@ -13646,6 +13692,17 @@ function mondayConstraintLocationText(sourcePayload = {}) {
     || mondayColumnTextAny(sourcePayload, ['emplacement contrainte', 'emplacement_contrainte', 'empacement contrainte', 'empacement_contrainte']);
 }
 
+function mondayPoleText(sourcePayload = {}, poleNumber = 1) {
+  const number = String(poleNumber);
+  return mondayColumnTextByNormalizedPredicate(sourcePayload, (value) => (
+    value === `poteau_${number}`
+    || value === `poteau${number}`
+    || value === `pole_${number}`
+    || value === `pole${number}`
+    || ((value.includes('poteau') || value.includes('pole')) && value.includes(number))
+  )) || mondayColumnTextAny(sourcePayload, [`poteau ${number}`, `poteau_${number}`, `poteau${number}`, `pole ${number}`, `pole_${number}`, `pole${number}`]);
+}
+
 function mondayColumnTextByNormalizedPredicate(sourcePayload = {}, predicate = () => false) {
   if (!Array.isArray(sourcePayload?.column_values)) return '';
   return sourcePayload.column_values.find((column) => {
@@ -13654,14 +13711,15 @@ function mondayColumnTextByNormalizedPredicate(sourcePayload = {}, predicate = (
   })?.text || '';
 }
 
-function parseSceneConstraintValues(sizeValue = '', locationValue = '', width = 0, depth = 0) {
+function parseSceneConstraintValues(sizeValue = '', locationValue = '', width = 0, depth = 0, label = 'Poteau', options = {}) {
   const combined = parseCombinedConstraintValue(sizeValue);
   const sizeParts = combined?.sizeParts || parseNumberParts(sizeValue);
   const locationParts = combined?.locationParts || parseNumberParts(locationValue);
   if (sizeParts.length < 2 || locationParts.length < 2) return null;
 
-  const sizeDivisor = combined?.sizeUnit === 'mm' ? 1000 : sizeParts.some((value) => value > 100) ? 1000 : 100;
-  const locationDivisor = combined?.locationUnit === 'mm' ? 1000 : locationParts.some((value) => value > 50) ? 1000 : 1;
+  const forceMillimeters = Boolean(options.forceMillimeters);
+  const sizeDivisor = forceMillimeters || combined?.sizeUnit === 'mm' ? 1000 : sizeParts.some((value) => value > 100) ? 1000 : 100;
+  const locationDivisor = forceMillimeters || combined?.locationUnit === 'mm' ? 1000 : locationParts.some((value) => value > 50) ? 1000 : 1;
   const sizeX = sizeParts[0] / sizeDivisor;
   const sizeZ = sizeParts[1] / sizeDivisor;
   const fromLeft = locationParts[0] / locationDivisor;
@@ -13669,6 +13727,8 @@ function parseSceneConstraintValues(sizeValue = '', locationValue = '', width = 
   if (![sizeX, sizeZ, fromLeft, fromBack].every((value) => Number.isFinite(value) && value >= 0)) return null;
 
   return {
+    id: `${label}-${sizeValue}-${locationValue}`,
+    label,
     rawSize: String(sizeValue || '').trim(),
     rawLocation: String(locationValue || '').trim(),
     width: Math.max(0.01, sizeX),
@@ -14881,7 +14941,7 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
   };
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, selectedToolbar = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedId) || null, [items, selectedId]);
@@ -14955,7 +15015,9 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
         {width}m x {depth}m
       </Text>
-      {sceneConstraint && <SceneConstraintColumn constraint={sceneConstraint} />}
+      {(Array.isArray(sceneConstraints) && sceneConstraints.length ? sceneConstraints : sceneConstraint ? [sceneConstraint] : []).map((constraint, index) => (
+        <SceneConstraintColumn key={constraint.id || `${constraint.x}-${constraint.z}-${index}`} constraint={constraint} />
+      ))}
       {floorItems.map(renderSceneItem)}
       <WallCoverSurfaces width={width} depth={depth} layout={layout} items={items} covers={wallCovers} previews={wallCoverPreviews} />
       {wallItems.map(renderSceneItem)}
