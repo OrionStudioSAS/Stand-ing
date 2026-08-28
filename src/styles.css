@@ -11789,3 +11789,109 @@ img.asset-thumb {
 .wall-fabric-swatches.included {
   margin-top: 8px;
 }
+
+/* Prestige step-2 included modules */
+.prestige-base-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px 14px;
+  background: #fff;
+}
+
+.prestige-base-info {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border: 1px solid #79bd91;
+  border-radius: 7px;
+  padding: 9px 11px;
+  color: #17824b;
+  background: #effaf3;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.prestige-base-info b {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  color: #fff;
+  background: #24935a;
+  font-size: 0.65rem;
+}
+
+.prestige-base-select {
+  min-height: 34px;
+  border: 1px solid #d6e1ef;
+  border-radius: 8px;
+  color: #1f4378;
+  background: #f5f8fd;
+  font-weight: 900;
+}
+
+.prestige-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  padding: 12px;
+  color: #2b313c;
+  background: #fff;
+}
+
+.prestige-switch-row span {
+  display: grid;
+  gap: 3px;
+}
+
+.prestige-switch-row strong {
+  font-size: 0.88rem;
+  font-weight: 950;
+}
+
+.prestige-switch-row small {
+  color: #8d96a4;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.prestige-switch-row button {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  background: #e6e9ee;
+  transition: background 0.18s ease;
+}
+
+.prestige-switch-row button i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+  transition: transform 0.18s ease;
+}
+
+.prestige-switch-row button.active {
+  background: #416bb0;
+}
+
+.prestige-switch-row button.active i {
+  transform: translateX(18px);
+}
+
+.prestige-signage-upload {
+  margin: 0;
+}

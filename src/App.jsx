@@ -925,7 +925,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       } catch (_) {}
     }
   };
-  const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, plancher: false, led: false, reserve: false, tete: false, comptoir: false });
+  const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, plancher: false, led: false, reserve: false, tete: false, comptoir: false, arche: false, enseigne: false });
   const [optionScrollTarget, setOptionScrollTarget] = useState('');
   const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || initialOptions.defaultColorOptions?.carpetColorId || '');
   const [selectedCarpetFootprintId, setSelectedCarpetFootprintId] = useState(initialOptions.carpetFootprintColorId || initialOptions.defaultColorOptions?.carpetFootprintColorId || initialOptions.carpetColorId || initialOptions.defaultColorOptions?.carpetColorId || '');
@@ -951,6 +951,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     right: hasOwn(initialOptions, 'partitionHeadRightEnabled') ? Boolean(initialOptions.partitionHeadRightEnabled) : null,
   });
   const [partitionHeadVisuals, setPartitionHeadVisuals] = useState(initialOptions.partitionHeadVisuals || {});
+  const [prestigeArchEnabled, setPrestigeArchEnabled] = useState(initialOptions.prestigeArchEnabled !== false);
+  const [prestigeArchTvEnabled, setPrestigeArchTvEnabled] = useState(initialOptions.prestigeArchTvEnabled !== false);
+  const [prestigeSignageEnabled, setPrestigeSignageEnabled] = useState(initialOptions.prestigeSignageEnabled !== false);
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
@@ -1139,6 +1142,18 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems]);
   const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item)), [sceneItems]);
   const includedCounterItems = useMemo(() => sceneItems.filter((item) => isWoodReceptionDeskItem(item) && isIncludedSceneItem(item)), [sceneItems]);
+  const isPrestigeStand = useMemo(() => isPrestigeScene(initialScene), [initialScene]);
+  const includedPrestigeArchItems = useMemo(() => sceneItems.filter(isIncludedPrestigeArchItem), [sceneItems]);
+  const includedPrestigeSignageItems = useMemo(() => sceneItems.filter(isIncludedPrestigeHighSignItem), [sceneItems]);
+
+  useEffect(() => {
+    if (!isPrestigeStand || (prestigeArchEnabled && prestigeSignageEnabled)) return;
+    setItems((current) => current.filter((item) => (
+      (prestigeArchEnabled || !isIncludedPrestigeArchItem(item))
+      && (prestigeSignageEnabled || !isIncludedPrestigeHighSignItem(item))
+    )));
+  }, [isPrestigeStand]);
+
   const cartItems = useMemo(() => visibleSceneItems.filter(shopCartItemVisible), [visibleSceneItems]);
   const showCartBar = !readOnly && (activeStep === 2 || activeStep === 3);
   const sceneTextureLoad = useSceneTexturePreload(visibleSceneItems, [
@@ -1265,6 +1280,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       partitionHeadLeftEnabled: effectivePartitionHeadSides.left,
       partitionHeadRightEnabled: effectivePartitionHeadSides.right,
       partitionHeadVisuals,
+      prestigeArchEnabled,
+      prestigeArchTvEnabled,
+      prestigeSignageEnabled,
       specialRequest: {
         text: String(specialRequest || '').trim(),
         tags: specialRequestTags,
@@ -1322,7 +1340,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, specialRequest, specialRequestTags, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly]);
 
   const persistWallCoversNow = (nextWallCovers) => {
     if (readOnly) return;
@@ -1896,6 +1914,110 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     });
   };
 
+  const placeIncludedPrestigeItem = (entry, options = {}) => {
+    if (!entry) return null;
+    const item = {
+      ...makeItem(entry.type, width, depth, layout, entry),
+      label: entry.label || options.label,
+      included: true,
+      priceMode: 'included',
+      deleteLocked: true,
+      options: {
+        ...(options.itemOptions || {}),
+        unitPrice: 0,
+      },
+    };
+    let placedItem = null;
+    setItems((current) => {
+      const placed = placeItemInFreeSpot(item, [...current, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth, layout, effectiveCarpetFootprintEnabled)
+        || constrainItem(item, width, depth, layout, effectiveCarpetFootprintEnabled);
+      placedItem = placed;
+      return [...current, placed];
+    });
+    window.setTimeout(() => {
+      if (placedItem?.id) setSelectedId(placedItem.id);
+    }, 0);
+    return placedItem;
+  };
+
+  const setPrestigeArchPresence = (enabled) => {
+    if (readOnly || !isPrestigeStand) return;
+    if (!enabled) {
+      setPrestigeArchEnabled(false);
+      const ids = new Set(includedPrestigeArchItems.map((item) => item.id));
+      if (ids.has(selectedId)) setSelectedId(null);
+      setItems((current) => current.filter((item) => !isIncludedPrestigeArchItem(item)));
+      return;
+    }
+    if (includedPrestigeArchItems.length) {
+      setPrestigeArchEnabled(true);
+      return;
+    }
+    const entry = findPrestigeArchCatalogEntry(availableCatalog);
+    if (!entry) {
+      showPlacementMessage('Aucun objet Arche Prestige disponible dans les assets 3D.');
+      return;
+    }
+    setPrestigeArchEnabled(true);
+    placeIncludedPrestigeItem(entry, {
+      label: 'Arche Prestige',
+      itemOptions: { prestigeBaseKey: 'arche', prestigeArchTvEnabled },
+    });
+  };
+
+  const updatePrestigeArchTv = (enabled) => {
+    if (readOnly || !isPrestigeStand) return;
+    setPrestigeArchTvEnabled(Boolean(enabled));
+    setItems((current) => current.map((item) => (
+      isIncludedPrestigeArchItem(item)
+        ? { ...item, options: { ...(item.options || {}), prestigeArchTvEnabled: Boolean(enabled) } }
+        : item
+    )));
+  };
+
+  const setPrestigeSignagePresence = (enabled) => {
+    if (readOnly || !isPrestigeStand) return;
+    if (!enabled) {
+      setPrestigeSignageEnabled(false);
+      const ids = new Set(includedPrestigeSignageItems.map((item) => item.id));
+      if (ids.has(selectedId)) setSelectedId(null);
+      setItems((current) => current.filter((item) => !isIncludedPrestigeHighSignItem(item)));
+      return;
+    }
+    if (includedPrestigeSignageItems.length) {
+      setPrestigeSignageEnabled(true);
+      return;
+    }
+    const entry = findPrestigeHighSignCatalogEntry(availableCatalog);
+    if (!entry) {
+      showPlacementMessage('Aucune enseigne haute Prestige disponible dans les assets 3D.');
+      return;
+    }
+    setPrestigeSignageEnabled(true);
+    placeIncludedPrestigeItem(entry, {
+      label: 'Enseigne haute Prestige',
+      itemOptions: { prestigeBaseKey: 'enseigne-haute' },
+    });
+  };
+
+  const uploadPrestigeSignageImage = (item, file, slot) => {
+    if (!item || !file) return;
+    if (slot) {
+      uploadItemImage(item, file, { textureSlot: slot });
+      return;
+    }
+    uploadItemImage(item, file, { urlKey: 'headMainImageUrl', nameKey: 'headMainImageName' });
+  };
+
+  const resetPrestigeSignageImage = (item, slot) => {
+    if (!item) return;
+    if (slot) {
+      updateItemOptions(item, textureSlotPatch(item, slot, { imageUrl: '', imageName: '' }));
+      return;
+    }
+    updateItemOptions(item, { headMainImageUrl: '', headMainImageName: '' });
+  };
+
   const toggleSelectedItemLock = () => {
     if (readOnly || !selected) return;
     updateItem(selected.id, { userLocked: !itemUserLocked(selected) });
@@ -2282,6 +2404,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             counterItems={includedCounterItems}
             counterColors={counterPalette}
             counterUploadState={itemOptionState}
+            isPrestigeStand={isPrestigeStand}
+            prestigeArchItems={includedPrestigeArchItems}
+            prestigeArchEnabled={prestigeArchEnabled}
+            prestigeArchTvEnabled={prestigeArchTvEnabled}
+            prestigeSignageItems={includedPrestigeSignageItems}
+            prestigeSignageEnabled={prestigeSignageEnabled}
+            prestigeSignageUploadState={itemOptionState}
             salonLabel={salonLabel}
             catalog={availableCatalog}
             readOnly={readOnly}
@@ -2328,6 +2457,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onCounterRestore={restoreIncludedCounter}
             onCounterVariant={updateIncludedCounterVariant}
             onSelectCounter={setSelectedId}
+            onPrestigeArchToggle={setPrestigeArchPresence}
+            onPrestigeArchTv={updatePrestigeArchTv}
+            onPrestigeSignageToggle={setPrestigeSignagePresence}
+            onPrestigeSignageImage={uploadPrestigeSignageImage}
+            onPrestigeSignageResetImage={resetPrestigeSignageImage}
+            onSelectPrestigeItem={setSelectedId}
             isAdminViewer={isAdminViewer}
           />
         )}
@@ -2954,6 +3089,107 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
   );
 }
 
+function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = false, onEnabledChange, onTvChange, onSelect }) {
+  return (
+    <div className="prestige-base-card">
+      <div className="prestige-base-info">
+        <b>i</b>
+        <span>L'arche Prestige est comprise dans la scène de base. Elle se retire uniquement depuis ce menu.</span>
+      </div>
+
+      {enabled && (
+        <button type="button" className="prestige-base-select" onClick={onSelect}>
+          Sélectionner l'arche dans la scène
+        </button>
+      )}
+
+      {enabled && (
+        <label className="prestige-switch-row">
+          <span>
+            <strong>Option TV</strong>
+            <small>{tvEnabled ? 'TV conservée sur l’arche' : 'TV non souhaitée'}</small>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={tvEnabled}
+            className={tvEnabled ? 'active' : ''}
+            disabled={disabled}
+            onClick={() => onTvChange?.(!tvEnabled)}
+          >
+            <i />
+          </button>
+        </label>
+      )}
+
+      <button
+        type="button"
+        className={enabled ? 'reserve-remove-button' : 'reserve-remove-button active'}
+        disabled={disabled}
+        onClick={() => onEnabledChange?.(!enabled)}
+      >
+        {enabled ? <><X size={15} /> Retirer l'arche</> : <><Plus size={15} /> Remettre l'arche</>}
+      </button>
+    </div>
+  );
+}
+
+function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = {}, disabled = false, onEnabledChange, onImage, onResetImage, onSelect }) {
+  const item = items[0] || null;
+  const slot = firstImageTextureSlot(item);
+  const value = slot ? item?.options?.textureSlotValues?.[slot.id] || {} : {};
+  const imageUrl = slot ? value.imageUrl : item?.options?.headMainImageUrl;
+  const imageName = slot ? value.imageName : item?.options?.headMainImageName;
+  const uploading = Boolean(uploadState?.uploading);
+
+  return (
+    <div className="prestige-base-card prestige-signage-card">
+      <div className="prestige-base-info">
+        <b>i</b>
+        <span>L'enseigne haute Prestige est comprise dans la scène de base. Le visuel se modifie ici uniquement.</span>
+      </div>
+
+      {enabled && item && (
+        <>
+          <button type="button" className="prestige-base-select" onClick={() => onSelect?.(item.id)}>
+            Sélectionner l'enseigne dans la scène
+          </button>
+          <div className="partition-head-upload-block partition-head-upload-block-v2 prestige-signage-upload">
+            <div className="partition-head-upload-title">
+              <strong>{slot?.label || 'Visuel enseigne haute'}</strong>
+              {imageName && <span>{imageName}</span>}
+            </div>
+            <VisualUploadDropzone
+              imageUrl={imageUrl}
+              alt={slot?.label || 'Visuel enseigne haute'}
+              disabled={disabled || uploading}
+              uploading={uploading}
+              onImage={(file) => onImage?.(item, file, slot)}
+              label=""
+              browseLabel="Importer"
+            />
+            {imageUrl && (
+              <button className="item-image-reset" type="button" disabled={disabled} onClick={() => onResetImage?.(item, slot)}>
+                Retirer le visuel
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {uploadState?.error && <small className="partition-head-upload-error">{uploadState.error}</small>}
+      <button
+        type="button"
+        className={enabled ? 'reserve-remove-button' : 'reserve-remove-button active'}
+        disabled={disabled}
+        onClick={() => onEnabledChange?.(!enabled)}
+      >
+        {enabled ? <><X size={15} /> Retirer l'enseigne haute</> : <><Plus size={15} /> Remettre l'enseigne haute</>}
+      </button>
+    </div>
+  );
+}
+
 function textureSlotColorPatch(finish = {}) {
   const isWood = finish.mode === 'wood';
   return {
@@ -3431,6 +3667,13 @@ function OptionsStepPanel({
   counterItems = [],
   counterColors = [],
   counterUploadState = {},
+  isPrestigeStand = false,
+  prestigeArchItems = [],
+  prestigeArchEnabled = true,
+  prestigeArchTvEnabled = true,
+  prestigeSignageItems = [],
+  prestigeSignageEnabled = true,
+  prestigeSignageUploadState = {},
   salonLabel,
   catalog,
   readOnly = false,
@@ -3466,6 +3709,12 @@ function OptionsStepPanel({
   onCounterRestore,
   onCounterVariant,
   onSelectCounter,
+  onPrestigeArchToggle,
+  onPrestigeArchTv,
+  onPrestigeSignageToggle,
+  onPrestigeSignageImage,
+  onPrestigeSignageResetImage,
+  onSelectPrestigeItem,
   isAdminViewer = false,
 }) {
   const t = useT();
@@ -3580,6 +3829,32 @@ function OptionsStepPanel({
           onVisualOptions={onPartitionHeadVisualOptions}
         />
       </OptionAccordion>
+      {isPrestigeStand && (
+        <OptionAccordion {...accordionScrollProps('arche')} title="Arche" subtitle="TV · Présence" icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
+          <PrestigeArchOptionCard
+            enabled={prestigeArchEnabled && prestigeArchItems.length > 0}
+            tvEnabled={prestigeArchTvEnabled}
+            disabled={readOnly}
+            onEnabledChange={onPrestigeArchToggle}
+            onTvChange={onPrestigeArchTv}
+            onSelect={() => onSelectPrestigeItem?.(prestigeArchItems[0]?.id)}
+          />
+        </OptionAccordion>
+      )}
+      {isPrestigeStand && (
+        <OptionAccordion {...accordionScrollProps('enseigne')} title="Enseigne haute" subtitle="Visuel" icon={<ConfiguratorOptionIcon src="/icons/enseigne_haute.svg" />} open={openOptions.enseigne} onToggle={() => toggleOption('enseigne')}>
+          <PrestigeSignageOptionCard
+            items={prestigeSignageItems}
+            enabled={prestigeSignageEnabled && prestigeSignageItems.length > 0}
+            uploadState={prestigeSignageUploadState}
+            disabled={readOnly}
+            onEnabledChange={onPrestigeSignageToggle}
+            onImage={onPrestigeSignageImage}
+            onResetImage={onPrestigeSignageResetImage}
+            onSelect={onSelectPrestigeItem}
+          />
+        </OptionAccordion>
+      )}
       <OptionAccordion {...accordionScrollProps('comptoir')} title={t('option_counter')} subtitle="Taille · Couleur · Logo" icon={<ConfiguratorOptionIcon src="/icons/comptoir_accueil.svg" />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
         <CounterOptionCard
           items={counterItems}
@@ -4366,9 +4641,61 @@ function itemEditNeedsConfigurator(item = {}, entry = {}, salonLabel = '') {
     || textureSlots.length > 0;
 }
 
+function isPrestigeScene(scene = {}) {
+  const boardId = String(scene.source_payload?.board_id || scene.source_payload?.boardId || scene.monday_board_id || '');
+  const signature = normalizeTextValue([
+    scene.pack,
+    scene.pack_name,
+    scene.offer,
+    scene.offer_name,
+    scene.formula,
+    scene.source_payload?.pack,
+    scene.source_payload?.offer,
+    scene.source_payload?.offerName,
+    scene.source_payload?.group_title,
+    scene.source_payload?.board_name,
+  ].filter(Boolean).join(' '));
+  return boardId === '18395912050' || signature.includes('prestige');
+}
+
+function isPrestigeArchItem(item = {}) {
+  return normalizedItemText(item).includes('arche');
+}
+
+function isPrestigeHighSignItem(item = {}) {
+  const text = normalizedItemText(item);
+  return text.includes('enseigne') && (text.includes('haute') || text.includes('suspend'));
+}
+
+function isIncludedPrestigeArchItem(item = {}) {
+  return isIncludedSceneItem(item) && isPrestigeArchItem(item);
+}
+
+function isIncludedPrestigeHighSignItem(item = {}) {
+  return isIncludedSceneItem(item) && isPrestigeHighSignItem(item);
+}
+
+function findPrestigeArchCatalogEntry(catalogEntries = []) {
+  return (catalogEntries || []).find((entry) => !isVariantGroupEntry(entry) && isPrestigeArchItem(entry))
+    || (catalogEntries || []).find(isPrestigeArchItem)
+    || null;
+}
+
+function findPrestigeHighSignCatalogEntry(catalogEntries = []) {
+  return (catalogEntries || []).find((entry) => !isVariantGroupEntry(entry) && isPrestigeHighSignItem(entry))
+    || (catalogEntries || []).find(isPrestigeHighSignItem)
+    || null;
+}
+
+function firstImageTextureSlot(item = {}) {
+  return normalizeTextureSlots(item?.dimensions?.textureSlots).find((slot) => slot.kind !== 'color') || null;
+}
+
 function step2OptionKeyForItem(item = {}) {
   if (!item) return '';
   if (isPartitionHeadItem(item) || isAutomaticPartitionHeadItem(item)) return 'tete';
+  if (isIncludedPrestigeArchItem(item)) return 'arche';
+  if (isIncludedPrestigeHighSignItem(item)) return 'enseigne';
   if (isReserveSceneItem(item) || isAutomaticReserveItem(item)) return 'reserve';
   if (isWoodReceptionDeskItem(item) && isIncludedSceneItem(item)) return 'comptoir';
   if (isLedRailEntry(item) || isAutomaticLedRailItem(item) || isAutomaticSpotItem(item)) return 'led';
@@ -12314,12 +12641,19 @@ function itemMovementLocked(item) {
 
 function canDeleteSceneItem(item = {}, isAdminViewer = false) {
   if (isIncludedSceneItem(item) && isWoodReceptionDeskItem(item)) return false;
+  if (isIncludedPrestigeArchItem(item) || isIncludedPrestigeHighSignItem(item)) return false;
   if (isAdminViewer) return true;
   return !itemDeletionLocked(item);
 }
 
 function itemDeletionLocked(item) {
-  return Boolean(item?.deleteLocked || item?.dimensions?.deleteLocked || (isIncludedSceneItem(item) && isWoodReceptionDeskItem(item)));
+  return Boolean(
+    item?.deleteLocked
+    || item?.dimensions?.deleteLocked
+    || (isIncludedSceneItem(item) && isWoodReceptionDeskItem(item))
+    || isIncludedPrestigeArchItem(item)
+    || isIncludedPrestigeHighSignItem(item)
+  );
 }
 
 function itemRotationLocked(item) {
