@@ -10663,6 +10663,11 @@ img.asset-thumb {
   font-weight: 950;
 }
 
+.counter-logo-card-v2 > em.billable {
+  color: #1f5db4;
+  background: #eaf2ff;
+}
+
 .counter-logo-switch {
   position: relative;
   display: inline-block;

@@ -861,6 +861,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     ...(initialScene.source_payload?.options || {}),
     ...(initialScene.options || {}),
   };
+  const initialPrestigeStand = isPrestigeScene(initialScene);
+  const initialPrestigeArchVisible = initialPrestigeStand && (initialScene.items || []).some((item) => isPrestigeArchControlItem(item, true) && item?.options?.prestigeHidden !== true);
+  const initialPrestigeSignageVisible = initialPrestigeStand && (initialScene.items || []).some((item) => isPrestigeHighSignControlItem(item, true) && item?.options?.prestigeHidden !== true);
   const initialWidth = initialScene.dimensions?.width || 4;
   const initialDepth = initialScene.dimensions?.depth || 3;
   const initialLayout = initialScene.layout || 'u';
@@ -951,9 +954,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     right: hasOwn(initialOptions, 'partitionHeadRightEnabled') ? Boolean(initialOptions.partitionHeadRightEnabled) : null,
   });
   const [partitionHeadVisuals, setPartitionHeadVisuals] = useState(initialOptions.partitionHeadVisuals || {});
-  const [prestigeArchEnabled, setPrestigeArchEnabled] = useState(initialOptions.prestigeArchEnabled !== false);
+  const [prestigeArchEnabled, setPrestigeArchEnabled] = useState(() => (
+    initialPrestigeArchVisible || (hasOwn(initialOptions, 'prestigeArchEnabled') ? initialOptions.prestigeArchEnabled !== false : false)
+  ));
   const [prestigeArchTvEnabled, setPrestigeArchTvEnabled] = useState(initialOptions.prestigeArchTvEnabled !== false);
-  const [prestigeSignageEnabled, setPrestigeSignageEnabled] = useState(initialOptions.prestigeSignageEnabled !== false);
+  const [prestigeSignageEnabled, setPrestigeSignageEnabled] = useState(() => (
+    initialPrestigeSignageVisible || (hasOwn(initialOptions, 'prestigeSignageEnabled') ? initialOptions.prestigeSignageEnabled !== false : false)
+  ));
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
@@ -1134,28 +1141,28 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       ? [...automaticLedItems, ...automaticSpotItems].reduce((count, item) => count + ledSpotsPerRail(findCatalogEntry(availableCatalog, item.type) || item), 0)
       : 0
   ), [ledRailsEnabled, automaticLedItems, automaticSpotItems, availableCatalog]);
-  const prestigeBaseHidden = (item) => isHiddenPrestigeBaseItem(item, { archEnabled: prestigeArchEnabled, signageEnabled: prestigeSignageEnabled });
-  const manualVisibleItems = useMemo(() => manualHydratedItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [manualHydratedItems, prestigeArchEnabled, prestigeSignageEnabled]);
+  const isPrestigeStand = useMemo(() => isPrestigeScene(initialScene), [initialScene]);
+  const prestigeBaseHidden = (item) => isHiddenPrestigeBaseItem(item, { archEnabled: prestigeArchEnabled, signageEnabled: prestigeSignageEnabled, isPrestigeStand });
+  const manualVisibleItems = useMemo(() => manualHydratedItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [manualHydratedItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand]);
   const wallCoverSurfaces = useMemo(
     () => wallCoverSurfaceOptions(layout, width, depth, [...manualVisibleItems, ...automaticReserveItems, ...automaticPartitionHeadItems], { splitForCovers: true }),
     [layout, width, depth, manualVisibleItems, automaticReserveItems, automaticPartitionHeadItems],
   );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems]);
-  const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled]);
+  const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand]);
   const includedCounterItems = useMemo(() => sceneItems.filter((item) => isWoodReceptionDeskItem(item) && isIncludedSceneItem(item)), [sceneItems]);
-  const isPrestigeStand = useMemo(() => isPrestigeScene(initialScene), [initialScene]);
-  const includedPrestigeArchItems = useMemo(() => sceneItems.filter(isIncludedPrestigeArchItem), [sceneItems]);
-  const includedPrestigeSignageItems = useMemo(() => sceneItems.filter(isIncludedPrestigeHighSignItem), [sceneItems]);
-  const visiblePrestigeArchItems = useMemo(() => includedPrestigeArchItems.filter((item) => !prestigeBaseHidden(item)), [includedPrestigeArchItems, prestigeArchEnabled]);
-  const visiblePrestigeSignageItems = useMemo(() => includedPrestigeSignageItems.filter((item) => !prestigeBaseHidden(item)), [includedPrestigeSignageItems, prestigeSignageEnabled]);
+  const includedPrestigeArchItems = useMemo(() => sceneItems.filter((item) => isPrestigeArchControlItem(item, isPrestigeStand)), [sceneItems, isPrestigeStand]);
+  const includedPrestigeSignageItems = useMemo(() => sceneItems.filter((item) => isPrestigeHighSignControlItem(item, isPrestigeStand)), [sceneItems, isPrestigeStand]);
+  const visiblePrestigeArchItems = useMemo(() => includedPrestigeArchItems.filter((item) => !prestigeBaseHidden(item)), [includedPrestigeArchItems, prestigeArchEnabled, isPrestigeStand]);
+  const visiblePrestigeSignageItems = useMemo(() => includedPrestigeSignageItems.filter((item) => !prestigeBaseHidden(item)), [includedPrestigeSignageItems, prestigeSignageEnabled, isPrestigeStand]);
 
   useEffect(() => {
     if (!isPrestigeStand) return;
     setItems((current) => current.map((item) => {
-      if (isIncludedPrestigeArchItem(item)) {
+      if (isPrestigeArchControlItem(item, isPrestigeStand)) {
         return { ...item, options: { ...(item.options || {}), prestigeHidden: !prestigeArchEnabled } };
       }
-      if (isIncludedPrestigeHighSignItem(item)) {
+      if (isPrestigeHighSignControlItem(item, isPrestigeStand)) {
         return { ...item, options: { ...(item.options || {}), prestigeHidden: !prestigeSignageEnabled } };
       }
       return item;
@@ -1955,7 +1962,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       const ids = new Set(includedPrestigeArchItems.map((item) => item.id));
       if (ids.has(selectedId)) setSelectedId(null);
       setItems((current) => current.map((item) => (
-        isIncludedPrestigeArchItem(item)
+        isPrestigeArchControlItem(item, isPrestigeStand)
           ? { ...item, options: { ...(item.options || {}), prestigeHidden: true } }
           : item
       )));
@@ -1964,8 +1971,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     if (includedPrestigeArchItems.length) {
       setPrestigeArchEnabled(true);
       setItems((current) => current.map((item) => (
-        isIncludedPrestigeArchItem(item)
-          ? { ...item, options: { ...(item.options || {}), prestigeHidden: false, prestigeBaseKey: 'arche', prestigeArchTvEnabled } }
+        isPrestigeArchControlItem(item, isPrestigeStand)
+          ? { ...item, included: true, priceMode: 'included', deleteLocked: true, options: { ...(item.options || {}), prestigeHidden: false, prestigeBaseKey: 'arche', prestigeArchTvEnabled, unitPrice: 0 } }
           : item
       )));
       return;
@@ -1986,7 +1993,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     if (readOnly || !isPrestigeStand) return;
     setPrestigeArchTvEnabled(Boolean(enabled));
     setItems((current) => current.map((item) => (
-      isIncludedPrestigeArchItem(item)
+      isPrestigeArchControlItem(item, isPrestigeStand)
         ? { ...item, options: { ...(item.options || {}), prestigeArchTvEnabled: Boolean(enabled) } }
         : item
     )));
@@ -1999,7 +2006,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
       const ids = new Set(includedPrestigeSignageItems.map((item) => item.id));
       if (ids.has(selectedId)) setSelectedId(null);
       setItems((current) => current.map((item) => (
-        isIncludedPrestigeHighSignItem(item)
+        isPrestigeHighSignControlItem(item, isPrestigeStand)
           ? { ...item, options: { ...(item.options || {}), prestigeHidden: true } }
           : item
       )));
@@ -2008,8 +2015,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     if (includedPrestigeSignageItems.length) {
       setPrestigeSignageEnabled(true);
       setItems((current) => current.map((item) => (
-        isIncludedPrestigeHighSignItem(item)
-          ? { ...item, options: { ...(item.options || {}), prestigeHidden: false, prestigeBaseKey: 'enseigne-haute' } }
+        isPrestigeHighSignControlItem(item, isPrestigeStand)
+          ? { ...item, included: true, priceMode: 'included', deleteLocked: true, options: { ...(item.options || {}), prestigeHidden: false, prestigeBaseKey: 'enseigne-haute', unitPrice: 0 } }
           : item
       )));
       return;
@@ -2987,7 +2994,7 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
   );
 }
 
-function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, embedded = false, optionsFree = false }) {
+function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onVisualPendingChange, embedded = false, optionsFree = false, logoPrice = 0 }) {
   const t = useT();
   const finishes = counterFinishOptions(colors);
   const woodFinish = counterWoodFinish(colors);
@@ -2996,6 +3003,8 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
   const includedFinishes = optionsFree ? finishes : finishes.filter((finish) => finish.included || finish.mode === 'wood');
   const optionalFinishes = optionsFree ? [] : finishes.filter((finish) => !includedFinishes.some((included) => included.id === finish.id));
   const optionPrice = optionalFinishes.find((finish) => Number(finish.price || 0) > 0)?.price || 0;
+  const logoPending = Boolean(item.options?.binary3VisualPending);
+  const displayLogoPrice = Number(logoPrice || 0);
   return (
     <aside className={embedded ? 'item-visual-config' : 'item-options-panel'}>
       <div className="item-options-heading">
@@ -3006,15 +3015,35 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
         </div>
       </div>
 
-      <VisualUploadDropzone
-        imageUrl={item.options?.binary3ImageUrl}
-        disabled={uploadState?.uploading}
-        uploading={uploadState?.uploading}
-        onImage={onImageChange}
-      />
-      <small className="visual-upload-spec">
-        {(() => { const [w, h] = woodReceptionDeskImageCoverSize(item); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
-      </small>
+      <section className="counter-logo-card counter-logo-card-v2 item-counter-logo-card">
+        <header>
+          <strong>Logo</strong>
+        </header>
+        <em className={displayLogoPrice > 0 ? 'billable' : 'included'}>
+          {displayLogoPrice > 0 ? `+ ${displayLogoPrice.toLocaleString('fr-FR')} €` : t('counter_included_badge')}
+        </em>
+
+        <VisualUploadDropzone
+          imageUrl={item.options?.binary3ImageUrl}
+          disabled={uploadState?.uploading}
+          uploading={uploadState?.uploading}
+          onImage={onImageChange}
+          label=""
+          browseLabel="Importer"
+        />
+        <small className="visual-upload-spec">
+          {(() => { const [w, h] = woodReceptionDeskImageCoverSize(item); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
+        </small>
+        <label className="visual-pending-checkbox">
+          <input
+            type="checkbox"
+            checked={logoPending}
+            onChange={(event) => onVisualPendingChange?.(event.target.checked)}
+          />
+          <span>{t('visual_pending_label')}</span>
+        </label>
+        {item.options?.binary3ImageUrl && <button className="item-image-reset" type="button" onClick={onResetImage}>{t('wood_desk_reset_image')}</button>}
+      </section>
 
       <section className="counter-color-card counter-finish-card item-counter-finish-card">
         <div className="counter-finish-head">
@@ -3039,9 +3068,6 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
         )}
       </section>
 
-      <div className="item-option-actions">
-        {item.options?.binary3ImageUrl && <button className="item-image-reset" type="button" onClick={onResetImage}>{t('wood_desk_reset_image')}</button>}
-      </div>
       {uploadState?.uploading && <p className="item-options-status">{t('img_uploading')}</p>}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
     </aside>
@@ -3348,7 +3374,9 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
         <header>
           <strong>Logo</strong>
         </header>
-        <em>{logoPrice > 0 ? `+ ${logoPrice.toLocaleString('fr-FR')} €` : t('counter_included_badge')}</em>
+        <em className={logoPrice > 0 ? 'billable' : 'included'}>
+          {logoPrice > 0 ? `+ ${logoPrice.toLocaleString('fr-FR')} €` : t('counter_included_badge')}
+        </em>
 
         <VisualUploadDropzone
           imageUrl={selectedItem?.options?.binary3ImageUrl}
@@ -4204,8 +4232,11 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     .filter(isSharedGlobalGroupOption)
     .reduce((acc, option) => ({ ...acc, [option.id]: Boolean(selectedExtras[option.id]) }), {});
   const canConfigureCounterVisual = isWoodReceptionDeskItem(visualItem) || isWoodReceptionDeskItem(resolvedEntry);
-  const counterLogoSupplement = canConfigureCounterVisual && !isIncludedSceneItem(visualItem) && counterLogoOptionActive(visualItem)
+  const counterLogoUnitPrice = canConfigureCounterVisual && !isIncludedSceneItem(visualItem)
     ? counterLogoOptionPrice(visualItem, resolvedEntry || catalogEntry)
+    : 0;
+  const counterLogoSupplement = counterLogoUnitPrice > 0 && counterLogoOptionActive(visualItem)
+    ? counterLogoUnitPrice
     : 0;
   const perItemTotal = basePrice + nonGlobalExtras + counterLogoSupplement;
   const total = (perItemTotal * (mode === 'add' ? quantity : 1)) + globalExtras;
@@ -4367,11 +4398,13 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             item={visualItem}
             colors={counterColors}
             uploadState={modalUploadState}
-            onImageChange={(file) => handleDraftImage(file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName' })}
+            onImageChange={(file) => handleDraftImage(file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName', extraPatch: { binary3VisualPending: false } })}
             onResetImage={() => updateDraftVisualOptions({ binary3ImageUrl: '', binary3ImageName: '' })}
             onColorChange={(finish) => updateDraftVisualOptions(counterFinishPatch(finish))}
+            onVisualPendingChange={(checked) => updateDraftVisualOptions({ binary3VisualPending: checked })}
             embedded
             optionsFree
+            logoPrice={counterLogoUnitPrice}
           />
         )}
 
@@ -4705,9 +4738,21 @@ function isIncludedPrestigeHighSignItem(item = {}) {
   return isIncludedSceneItem(item) && isPrestigeHighSignItem(item);
 }
 
+function isPrestigeArchControlItem(item = {}, isPrestigeStand = false) {
+  if (!isPrestigeArchItem(item)) return false;
+  if (item?.options?.prestigeBaseKey === 'arche') return true;
+  return isIncludedSceneItem(item) || Boolean(isPrestigeStand);
+}
+
+function isPrestigeHighSignControlItem(item = {}, isPrestigeStand = false) {
+  if (!isPrestigeHighSignItem(item)) return false;
+  if (item?.options?.prestigeBaseKey === 'enseigne-haute') return true;
+  return isIncludedSceneItem(item) || Boolean(isPrestigeStand);
+}
+
 function isHiddenPrestigeBaseItem(item = {}, state = {}) {
-  if (isIncludedPrestigeArchItem(item)) return state.archEnabled === false || item?.options?.prestigeHidden === true;
-  if (isIncludedPrestigeHighSignItem(item)) return state.signageEnabled === false || item?.options?.prestigeHidden === true;
+  if (isPrestigeArchControlItem(item, state.isPrestigeStand)) return state.archEnabled === false || item?.options?.prestigeHidden === true;
+  if (isPrestigeHighSignControlItem(item, state.isPrestigeStand)) return state.signageEnabled === false || item?.options?.prestigeHidden === true;
   return false;
 }
 
@@ -4745,8 +4790,8 @@ function firstImageTextureSlot(item = {}) {
 function step2OptionKeyForItem(item = {}) {
   if (!item) return '';
   if (isPartitionHeadItem(item) || isAutomaticPartitionHeadItem(item)) return 'tete';
-  if (isIncludedPrestigeArchItem(item)) return 'arche';
-  if (isIncludedPrestigeHighSignItem(item)) return 'enseigne';
+  if (isPrestigeArchControlItem(item, true)) return 'arche';
+  if (isPrestigeHighSignControlItem(item, true)) return 'enseigne';
   if (isReserveSceneItem(item) || isAutomaticReserveItem(item)) return 'reserve';
   if (isWoodReceptionDeskItem(item) && isIncludedSceneItem(item)) return 'comptoir';
   if (isLedRailEntry(item) || isAutomaticLedRailItem(item) || isAutomaticSpotItem(item)) return 'led';
