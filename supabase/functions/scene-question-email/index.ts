@@ -40,6 +40,7 @@ Deno.serve(async (req) => {
   const clientName = clean(scene.client_name) || clean(scene.source_payload?.contactDetails?.company) || "Exposant";
   const contact = scene.source_payload?.contactDetails || {};
   const clientEmail = clean(contact.email) || clean(scene.client_email);
+  const offerLabel = sceneOfferLabel(scene);
 
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -49,8 +50,8 @@ Deno.serve(async (req) => {
       to: [questionTo],
       reply_to: clientEmail || undefined,
       subject: `[Stand-ING] ${subject}`,
-      html: questionEmailHtml({ scene, clientName, clientEmail, subject, message, sceneUrl, category: clean(body.category), urgency: clean(body.urgency) }),
-      text: `Question / remarque Stand-ING\n\nExposant: ${clientName}\nEmail: ${clientEmail || "-"}\nSalon: ${scene.salon || scene.event_name || "-"}\nStand: ${scene.project_name || "-"}\nCatégorie: ${clean(body.category) || "-"}\nUrgence: ${clean(body.urgency) || "-"}\n\nObjet: ${subject}\n\n${message || "(aucun message)"}\n\nScène: ${sceneUrl}`,
+      html: questionEmailHtml({ scene, clientName, clientEmail, offerLabel, subject, message, sceneUrl, category: clean(body.category), urgency: clean(body.urgency) }),
+      text: `Question / remarque Stand-ING\n\nExposant: ${clientName}\nEmail: ${clientEmail || "-"}\nSalon: ${scene.salon || scene.event_name || "-"}\nFormule: ${offerLabel || "-"}\nStand: ${scene.project_name || "-"}\nCatégorie: ${clean(body.category) || "-"}\nUrgence: ${clean(body.urgency) || "-"}\n\nObjet: ${subject}\n\n${message || "(aucun message)"}\n\nScène: ${sceneUrl}`,
     }),
   });
 
@@ -59,13 +60,14 @@ Deno.serve(async (req) => {
   return json({ sent: true, to: questionTo, id: payload?.id || null });
 });
 
-function questionEmailHtml({ scene, clientName, clientEmail, subject, message, sceneUrl, category, urgency }: any) {
+function questionEmailHtml({ scene, clientName, clientEmail, offerLabel, subject, message, sceneUrl, category, urgency }: any) {
   return `
   <div style="font-family:Arial,sans-serif;color:#182033;line-height:1.5">
     <h2>Question / remarque configurateur</h2>
     <p><strong>Exposant :</strong> ${escapeHtml(clientName)}</p>
     <p><strong>Email :</strong> ${escapeHtml(clientEmail || "-")}</p>
     <p><strong>Salon :</strong> ${escapeHtml(scene.salon || scene.event_name || "-")}</p>
+    <p><strong>Formule :</strong> ${escapeHtml(offerLabel || "-")}</p>
     <p><strong>Stand :</strong> ${escapeHtml(scene.project_name || "-")}</p>
     <p><strong>Catégorie :</strong> ${escapeHtml(category || "-")} — <strong>Urgence :</strong> ${escapeHtml(urgency || "-")}</p>
     <hr />
@@ -73,6 +75,18 @@ function questionEmailHtml({ scene, clientName, clientEmail, subject, message, s
     <p style="white-space:pre-wrap;background:#f4f7fb;border-radius:12px;padding:14px">${escapeHtml(message || "(aucun message)")}</p>
     <p><a href="${escapeHtml(sceneUrl)}" style="display:inline-block;background:#1f4378;color:white;text-decoration:none;padding:10px 14px;border-radius:8px">Voir la scène</a></p>
   </div>`;
+}
+
+function sceneOfferLabel(scene: any = {}) {
+  const raw = clean(scene.offer)
+    || clean(scene.source_payload?.offer)
+    || clean(scene.source_payload?.pack)
+    || clean(scene.source_payload?.pricing?.offer)
+    || clean(scene.source_payload?.pricing?.pack);
+  const normalized = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (normalized.includes("prestige")) return "PRESTIGE";
+  if (normalized.includes("confort")) return "CONFORT";
+  return raw.toUpperCase();
 }
 
 function json(payload: Record<string, unknown>, status = 200) {
