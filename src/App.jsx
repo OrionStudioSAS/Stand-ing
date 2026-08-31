@@ -9,6 +9,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import {
   AlertTriangle,
+  ArrowRight,
   Box,
   Check,
   Copy,
