@@ -6889,14 +6889,19 @@ function AdminDashboard({ user, adminProfile }) {
       const sentInvites = Number(result?.invite_emails_sent || 0);
       const skippedInvites = Number(result?.invite_emails_skipped || 0);
       const updatedMondayStatuses = Number(result?.monday_status_updated || 0);
+      const skippedNotConfigurable = Number(result?.skipped_not_configurable || 0);
+      const skippedNotFirstSend = Number(result?.skipped_not_first_send || 0);
       const inviteMessage = sentInvites || skippedInvites
-        ? `\n${sentInvites} email(s) configurateur envoyé(s), ${updatedMondayStatuses} statut(s) Monday mis à jour${skippedInvites ? `, ${skippedInvites} email(s) non envoyé(s)` : ''}.`
+        ? `\n${sentInvites} email(s) configurateur envoyé(s), statut Étape 1 non modifié${updatedMondayStatuses ? `, ${updatedMondayStatuses} statut(s) Monday mis à jour` : ''}${skippedInvites ? `, ${skippedInvites} email(s) non envoyé(s)` : ''}.`
+        : '';
+      const skippedMessage = skippedNotConfigurable || skippedNotFirstSend
+        ? `\n${skippedNotConfigurable} ligne(s) ignorée(s) car CONFIGURABLE ≠ OUI, ${skippedNotFirstSend} ligne(s) ignorée(s) car Étape 1 ≠ 1ER ENVOI.`
         : '';
       setSyncState({
         loading: false,
         message: (createdCount
           ? `${createdCount} nouvelle(s) scène(s) créée(s), ${result?.clients ?? 0} exposant(s) traité(s) depuis Monday.`
-          : 'Aucune nouvelle scène à créer depuis Monday.') + constraintMessage + inviteMessage + warnings,
+          : 'Aucune nouvelle scène à créer depuis Monday.') + constraintMessage + inviteMessage + skippedMessage + warnings,
         error: syncErrors,
       });
     } catch (error) {

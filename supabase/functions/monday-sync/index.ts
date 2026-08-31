@@ -56,6 +56,8 @@ Deno.serve(async (req) => {
   let inviteEmailsSkipped = 0;
   let mondayStatusUpdated = 0;
   let skippedMissingLayout = 0;
+  let skippedNotConfigurable = 0;
+  let skippedNotFirstSend = 0;
   let sftpFoldersCreated = 0;
   let sftpFoldersSkipped = 0;
   const warnings: string[] = [];
@@ -80,8 +82,9 @@ Deno.serve(async (req) => {
       if (existingSceneError) throw existingSceneError;
 
       const createValue = readColumn(item, resolvedSource.create_column_id);
-      const triggerValues = resolvedSource.create_trigger_values ?? ["OK", "OUI"];
-      const shouldCreateScene = triggerValues.some((value: string) => normalizeText(createValue) === normalizeText(value));
+      const stepOneValue = readColumn(item, resolvedSource.status_column_id);
+      const shouldCreateScene = isConfigurableYes(createValue);
+      const isFirstSendRequested = isFirstSendStatusValue(stepOneValue);
 
       if (existingScene) {
         const existingWidth = Number(existingScene.width_m) || Number(readMappingValue(item, resolvedSource.mapping?.width_m)) || 4;
@@ -124,7 +127,15 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      if (!shouldCreateScene) continue;
+      if (!shouldCreateScene) {
+        skippedNotConfigurable += 1;
+        continue;
+      }
+
+      if (!isFirstSendRequested) {
+        skippedNotFirstSend += 1;
+        continue;
+      }
 
       const rawLayout = readMondayLayoutValue(item, resolvedSource);
       const parsedLayout = normalizeMondayLayoutStrict(rawLayout);
@@ -254,6 +265,8 @@ Deno.serve(async (req) => {
     sftp_folders_created: sftpFoldersCreated,
     sftp_folders_skipped: sftpFoldersSkipped,
     skipped_missing_layout: skippedMissingLayout,
+    skipped_not_configurable: skippedNotConfigurable,
+    skipped_not_first_send: skippedNotFirstSend,
     errors,
     warnings,
   });
@@ -273,6 +286,7 @@ function withResolvedMondayColumns(source: any, columns: Array<{ id: string; tit
   const pole1ColumnId = resolveMappedColumnId(columns, mappedPoleColumnId(mapping, 1), findPoleColumnId(columns, 1));
   const pole2ColumnId = resolveMappedColumnId(columns, mappedPoleColumnId(mapping, 2), findPoleColumnId(columns, 2));
   const statusColumnId = resolveMappedColumnId(columns, source.status_column_id, findStatusColumnId(columns));
+  const createColumnId = resolveMappedColumnId(columns, source.create_column_id, findConfigurableColumnId(columns));
   const linkColumnId = resolveMappedColumnId(columns, source.link_column_id, findLinkColumnId(columns));
 
   if (mapping.client_email && clientEmailColumnId && mapping.client_email !== clientEmailColumnId) {
@@ -281,6 +295,9 @@ function withResolvedMondayColumns(source: any, columns: Array<{ id: string; tit
   if (source.status_column_id && statusColumnId && source.status_column_id !== statusColumnId) {
     warnings.push(`Colonne Étape 1 corrigée sur le board ${source.board_id}: ${source.status_column_id} → ${statusColumnId}`);
   }
+  if (source.create_column_id && createColumnId && source.create_column_id !== createColumnId) {
+    warnings.push(`Colonne CONFIGURABLE corrigée sur le board ${source.board_id}: ${source.create_column_id} → ${createColumnId}`);
+  }
   if (mapping.layout && layoutColumnId && mapping.layout !== layoutColumnId) {
     warnings.push(`Colonne implantation corrigée sur le board ${source.board_id}: ${mapping.layout} → ${layoutColumnId}`);
   }
@@ -288,6 +305,7 @@ function withResolvedMondayColumns(source: any, columns: Array<{ id: string; tit
   return {
     ...source,
     status_column_id: statusColumnId || source.status_column_id,
+    create_column_id: createColumnId || source.create_column_id,
     link_column_id: linkColumnId || source.link_column_id,
     mapping: {
       ...mapping,
@@ -340,6 +358,11 @@ function findStatusColumnId(columns: Array<{ id: string; title: string }>) {
     || findMondayColumnId(columns, (value) => value.includes("etape_1") || value.includes("etape1"));
 }
 
+function findConfigurableColumnId(columns: Array<{ id: string; title: string }>) {
+  return findMondayColumnId(columns, (value) => value === "configurable")
+    || findMondayColumnId(columns, (value) => value.includes("configurable"));
+}
+
 function findEmailColumnId(columns: Array<{ id: string; title: string; type?: string }>) {
   return columns.find((column) => column.type === "email")?.id
     || findMondayColumnId(columns, (value) => value === "email" || value === "e_mail" || value.includes("email"));
@@ -365,6 +388,15 @@ function findAisleColumnId(columns: Array<{ id: string; title: string }>) {
 
 function findStandNumberColumnId(columns: Array<{ id: string; title: string }>) {
   return findMondayColumnId(columns, (value) => value === "n" || value === "numero" || value === "numero_stand");
+}
+
+function isConfigurableYes(value = "") {
+  return normalizeText(value) === normalizeText("OUI");
+}
+
+function isFirstSendStatusValue(value = "") {
+  return normalizeText(value) === normalizeText("1ER ENVOI")
+    || (normalizeText(value).includes("1er") && normalizeText(value).includes("envoi"));
 }
 
 function mondayStatusLabel(columns: Array<any>, columnId = "", configuredLabel = "") {
@@ -1092,14 +1124,6 @@ async function sendInvitationAndUpdateMonday({
     },
   }).eq("id", sceneId);
 
-  const statusColumnId = source.status_column_id || findStatusColumnId(mondayColumns);
-  const statusLabel = mondayStatusLabel(mondayColumns, statusColumnId, source.created_status_label);
-  if (statusColumnId && statusLabel) {
-    await updateMondayColumnValue(mondayToken, source.board_id, item.id, statusColumnId, { label: statusLabel });
-    return { sent: 1, skipped: 0, statusUpdated: 1 };
-  }
-
-  warnings.push(`Mail envoyé pour ${item.name}, mais colonne Étape 1 introuvable sur le board ${source.board_id}.`);
   return { sent: 1, skipped: 0, statusUpdated: 0 };
 }
 
