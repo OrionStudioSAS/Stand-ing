@@ -2169,20 +2169,20 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             </button>
           ))}
         </nav>
-        {!readOnly && (
-          <button className={`round-tool tutorial-trigger ${tutorialOpen ? 'active' : ''}`} type="button" onClick={openTutorial} aria-label="Relancer le tutoriel">
-            <Sparkles size={18} />
-          </button>
-        )}
-        <button className={`round-tool ${headerPanel === 'question' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('question')} aria-label={tRaw(language, 'aria_questions')}>
-          <HelpCircle size={18} />
-        </button>
         <button className={`language-pill ${headerPanel === 'language' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('language')} aria-label={tRaw(language, 'aria_language')}>
           <span className="flag-dot">{selectedLanguage.flag}</span>
-          {selectedLanguage.short}
-          <ChevronDown size={15} />
         </button>
-        <button className={`user-pill ${headerPanel === 'client' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('client')} aria-label={tRaw(language, 'aria_client')}>{contactInitials}</button>
+        <button className={`user-pill ${headerPanel === 'client' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('client')} aria-label={tRaw(language, 'aria_client')}>
+          <img className="topbar-tool-icon" src="/icons/account.svg" alt="" aria-hidden="true" />
+        </button>
+        <button className={`round-tool ${headerPanel === 'question' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('question')} aria-label={tRaw(language, 'aria_questions')}>
+          <img className="topbar-tool-icon" src="/icons/qr.svg" alt="" aria-hidden="true" />
+        </button>
+        {!readOnly && (
+          <button className={`round-tool tutorial-trigger ${tutorialOpen ? 'active' : ''}`} type="button" onClick={openTutorial} aria-label="Relancer le tutoriel">
+            <img className="topbar-tool-icon" src="/icons/tuto.svg" alt="" aria-hidden="true" />
+          </button>
+        )}
         {activeStep > 1 && (
           <HeaderCartMenu
             items={cartItems}
@@ -3384,7 +3384,9 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
               return (
                 <button key={variant.id} type="button" className={active ? 'active' : ''} disabled={disabled} onClick={() => selectVariant(variant)}>
                   <span><strong>{counterSizeShortLabel(variant)}</strong></span>
-                  {supplement > 0 && <em>+ {supplement.toLocaleString('fr-FR')} €</em>}
+                  <em className={supplement > 0 ? 'price' : 'included'}>
+                    {supplement > 0 ? `${supplement.toLocaleString('fr-FR')} €` : t('counter_included_badge')}
+                  </em>
                 </button>
               );
             })}
