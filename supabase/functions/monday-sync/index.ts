@@ -124,6 +124,36 @@ Deno.serve(async (req) => {
           if (constraintColumnsConfigured(resolvedSource) || constraint) constraintsUpdated += 1;
         }
 
+        const shouldSendMissingInvite = shouldCreateScene
+          && isFirstSendRequested
+          && !existingScene.source_payload?.invitation_email_sent_at;
+        if (shouldSendMissingInvite) {
+          const inviteScene = {
+            ...existingScene,
+            ...scenePatch,
+            client_email: clean(String(scenePatch.client_email || "")) || existingScene.client_email,
+            client_name: clean(String(scenePatch.client_name || "")) || existingScene.client_name,
+          };
+          const inviteResult = await sendInvitationAndUpdateMonday({
+            supabase,
+            mondayToken,
+            resendApiKey,
+            fromEmail,
+            publicAppUrl,
+            scene: inviteScene,
+            sceneId: existingScene.id,
+            shareToken: existingScene.share_token,
+            source: resolvedSource,
+            context,
+            item,
+            mondayColumns,
+            warnings,
+          });
+          inviteEmailsSent += inviteResult.sent;
+          inviteEmailsSkipped += inviteResult.skipped;
+          mondayStatusUpdated += inviteResult.statusUpdated;
+        }
+
         continue;
       }
 
@@ -1144,9 +1174,9 @@ async function sendConfiguratorInvitationEmail({
   item: any;
   shareUrl: string;
 }) {
-  const toEmail = normalizeEmail(scene.client_email);
+  const toEmails = normalizeEmailRecipients(scene.client_email);
   if (!resendApiKey) return { sent: false, reason: "RESEND_API_KEY manquant" };
-  if (!toEmail) return { sent: false, reason: "email exposant manquant" };
+  if (!toEmails.length) return { sent: false, reason: "email exposant manquant ou invalide" };
   if (!shareUrl) return { sent: false, reason: "lien configurateur manquant" };
 
   const firstName = firstNameFromMondayItem(item, source) || "client";
@@ -1164,7 +1194,7 @@ async function sendConfiguratorInvitationEmail({
     },
     body: JSON.stringify({
       from: fromEmail,
-      to: [toEmail],
+      to: toEmails,
       subject,
       html,
       text,
@@ -1175,7 +1205,14 @@ async function sendConfiguratorInvitationEmail({
   if (!response.ok) {
     return { sent: false, reason: result?.message || "erreur Resend" };
   }
-  return { sent: true, to: toEmail, providerId: result?.id || null };
+  return { sent: true, to: toEmails.join(", "), providerId: result?.id || null };
+}
+
+function normalizeEmailRecipients(value: string) {
+  return [...new Set(String(value || "")
+    .match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)
+    ?.map((email) => normalizeEmail(email))
+    .filter(Boolean) || [])];
 }
 
 function firstNameFromMondayItem(item: any, source: any) {
