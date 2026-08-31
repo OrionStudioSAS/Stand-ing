@@ -15267,10 +15267,6 @@ function SceneConstraintColumn({ constraint }) {
         <boxGeometry args={[columnWidth, columnHeight, columnDepth]} />
         <meshStandardMaterial color="#8f98a3" roughness={0.72} metalness={0.02} />
       </mesh>
-      <mesh position={[0, 0.002 - columnHeight / 2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[columnWidth + 0.16, columnDepth + 0.16]} />
-        <meshBasicMaterial color="#f97316" transparent opacity={0.18} depthWrite={false} />
-      </mesh>
     </group>
   );
 }
