@@ -21,6 +21,8 @@ Deno.serve(async (req) => {
   const publicAppUrl = Deno.env.get("PUBLIC_APP_URL") || "https://stand-ing.vercel.app/";
   const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
   const fromEmail = Deno.env.get("RESEND_FROM_EMAIL") || "Stand-ING <no-reply@stand-ing.com>";
+  const sftpGatewayUrl = Deno.env.get("SFTP_GATEWAY_URL") || "";
+  const sftpGatewayToken = Deno.env.get("SFTP_GATEWAY_TOKEN") || Deno.env.get("GATEWAY_API_TOKEN") || "";
 
   if (!mondayToken) {
     return json({ error: "Missing MONDAY_API_TOKEN" }, 500);
@@ -54,6 +56,8 @@ Deno.serve(async (req) => {
   let inviteEmailsSkipped = 0;
   let mondayStatusUpdated = 0;
   let skippedMissingLayout = 0;
+  let sftpFoldersCreated = 0;
+  let sftpFoldersSkipped = 0;
   const warnings: string[] = [];
   const errors: string[] = [];
 
@@ -86,19 +90,28 @@ Deno.serve(async (req) => {
         const constraint = constraints[0] || null;
         const mappedClientEmail = readMappingValue(item, resolvedSource.mapping?.client_email);
         const mappedClientName = readMappingValue(item, resolvedSource.mapping?.client_name) || item.name;
+        const mappedLocation = mondaySceneLocation(item, resolvedSource);
         const scenePatch: Record<string, unknown> = {
           source_payload: {
             ...(existingScene.source_payload || {}),
+            stand_number: mappedLocation.standNumber || existingScene.source_payload?.stand_number || "",
+            aisle_number: mappedLocation.aisleNumber || existingScene.source_payload?.aisle_number || "",
+            hall: mappedLocation.hall || existingScene.source_payload?.hall || "",
+            sector: mappedLocation.sector || existingScene.source_payload?.sector || "",
             constraint,
             constraints,
+            poteau_1_text: mondayPoleRawText(item, resolvedSource, 1),
+            poteau_2_text: mondayPoleRawText(item, resolvedSource, 2),
           },
         };
         if (!clean(existingScene.client_email) && mappedClientEmail) scenePatch.client_email = mappedClientEmail;
         if (!clean(existingScene.client_name) && mappedClientName) scenePatch.client_name = mappedClientName;
+        const hasLocationPatch = Boolean(mappedLocation.standNumber || mappedLocation.aisleNumber || mappedLocation.hall || mappedLocation.sector);
         const hasScenePatch = Object.keys(scenePatch).some((key) => key !== "source_payload")
           || constraintColumnsConfigured(resolvedSource)
           || Boolean(constraint)
-          || constraints.length > 0;
+          || constraints.length > 0
+          || hasLocationPatch;
         if (hasScenePatch) {
           const { error: updateConstraintError } = await supabase
             .from("scenes")
@@ -188,6 +201,15 @@ Deno.serve(async (req) => {
 
       if (saveError) throw saveError;
 
+      const sftpFolderResult = await ensureSceneSftpFolder({
+        gatewayUrl: sftpGatewayUrl,
+        gatewayToken: sftpGatewayToken,
+        scene: { ...scene, id: savedScene.id, share_token: savedScene.share_token },
+        warnings,
+      });
+      if (sftpFolderResult.created) sftpFoldersCreated += 1;
+      if (sftpFolderResult.skipped) sftpFoldersSkipped += 1;
+
       if (savedScene?.id && preset?.stand_preset_items?.length) {
         const inserted = await applyPresetItems(supabase, savedScene.id, preset, scene);
         baseItemsApplied += inserted;
@@ -229,6 +251,8 @@ Deno.serve(async (req) => {
     invite_emails_sent: inviteEmailsSent,
     invite_emails_skipped: inviteEmailsSkipped,
     monday_status_updated: mondayStatusUpdated,
+    sftp_folders_created: sftpFoldersCreated,
+    sftp_folders_skipped: sftpFoldersSkipped,
     skipped_missing_layout: skippedMissingLayout,
     errors,
     warnings,
@@ -566,9 +590,8 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
   const { width, depth } = mondaySceneDimensions(item, source);
   const layout = layoutOverride || normalizeLayout(readMondayLayoutValue(item, source));
   const clientName = readMappingValue(item, mapping.client_name) || item.name;
-  const standNumber = readMappingValue(item, mapping.stand_number) || readColumn(item, "n_");
-  const aisleNumber = readMappingValue(item, mapping.aisle_number || mapping.allee) || readColumnAny(item, ["text5", "allée", "allee"]);
-  const sector = readMappingValue(item, mapping.sector || mapping.secteur) || readColumnAny(item, ["dup__of_secteur1", "secteur"]);
+  const location = mondaySceneLocation(item, source);
+  const { standNumber, aisleNumber, hall, sector } = location;
   const constraints = mondayConstraintsForItem(item, source, width, depth);
   const constraint = constraints[0] || null;
 
@@ -593,8 +616,70 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
     depth_m: depth,
     height_m: 2.5,
     layout,
-    source_payload: { ...item, stand_number: standNumber, aisle_number: aisleNumber, sector, constraint, constraints },
+    source_payload: {
+      ...item,
+      stand_number: standNumber,
+      aisle_number: aisleNumber,
+      hall,
+      sector,
+      constraint,
+      constraints,
+      poteau_1_text: mondayPoleRawText(item, source, 1),
+      poteau_2_text: mondayPoleRawText(item, source, 2),
+    },
   };
+}
+
+
+function mondaySceneLocation(item: any, source: any) {
+  const mapping = source.mapping ?? {};
+  return {
+    standNumber: readMappingValue(item, mapping.stand_number || mapping.standNumber || mapping.numero_stand || mapping["numéro_stand"])
+      || readColumnAny(item, ["n_", "n°", "n", "numero", "numéro", "numero stand", "numéro stand", "stand", "emplacement"]),
+    aisleNumber: readMappingValue(item, mapping.aisle_number || mapping.allee || mapping["allée"])
+      || readColumnAny(item, ["text5", "allée", "allee", "allee stand", "allée stand"]),
+    hall: readMappingValue(item, mapping.hall || mapping.pavillon)
+      || readColumnAny(item, ["hall", "pavillon"]),
+    sector: readMappingValue(item, mapping.sector || mapping.secteur)
+      || readColumnAny(item, ["dup__of_secteur1", "secteur", "secteur activité", "secteur d'activité"]),
+  };
+}
+
+function mondayPoleRawText(item: any, source: any, poleNumber: number) {
+  const mapping = source.mapping ?? {};
+  return readMappingValue(item, mappedPoleColumnId(mapping, poleNumber))
+    || readColumnAny(item, [`poteau ${poleNumber}`, `poteau_${poleNumber}`, `poteau${poleNumber}`, `pole ${poleNumber}`, `pole_${poleNumber}`, `pole${poleNumber}`]);
+}
+
+async function ensureSceneSftpFolder({ gatewayUrl, gatewayToken, scene, warnings }: { gatewayUrl: string; gatewayToken: string; scene: any; warnings: string[] }) {
+  if (!gatewayUrl || !gatewayToken || !scene?.id) return { created: false, skipped: true };
+
+  try {
+    const response = await fetch(`${gatewayUrl.replace(/\/+$/g, "")}/scene-folder`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${gatewayToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sceneId: scene.id,
+        sceneToken: scene.share_token || "",
+        salon: scene.salon || scene.event_name || scene.source_payload?.salon || "",
+        offer: scene.offer || scene.source_payload?.offer || scene.source_payload?.pack || "",
+        company: scene.client_name || scene.source_payload?.name || scene.source_payload?.item?.name || "",
+        hall: scene.source_payload?.hall || "",
+        aisle: scene.source_payload?.aisle_number || scene.source_payload?.allee || "",
+        standNumber: scene.source_payload?.stand_number || "",
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.message || payload?.error || `Gateway ${response.status}`);
+    return { created: true, skipped: false };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    warnings.push(`Dossier SFTP non créé pour ${scene.project_name || scene.client_name || scene.id}: ${message}`);
+    return { created: false, skipped: true };
+  }
 }
 
 function mondaySceneDimensions(item: any, source: any) {

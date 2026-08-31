@@ -47,7 +47,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deleteSceneAndRemote, deleteStandPreset, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deleteSceneAndRemote, deleteStandPreset, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { exportTechnicalPng } from './technicalExport.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
@@ -972,7 +972,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [wallCoverPreviews, setWallCoverPreviews] = useState(() => wallCoverPreviewsFromCovers(initialOptions.wallCovers));
   const wallCoverPreviewUrls = useRef(new Set());
   const [itemConfigModal, setItemConfigModal] = useState(null);
-  const [basePackOpen, setBasePackOpen] = useState(false);
   const [sceneHasRendered, setSceneHasRendered] = useState(false);
   const [clientInfo, setClientInfo] = useState({
     client: initialScene.client_name || '',
@@ -998,6 +997,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const [questionCategory, setQuestionCategory] = useState('technical');
   const [urgency, setUrgency] = useState('important');
   const [questionForm, setQuestionForm] = useState({ subject: '', message: '' });
+  const [questionState, setQuestionState] = useState({ loading: false, message: '', error: '' });
   const [objectBank, setObjectBank] = useState([]);
   const [objectBankLoaded, setObjectBankLoaded] = useState(false);
   const [viewAngle] = useState(35);
@@ -1005,6 +1005,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const area = width * depth;
   const salonLabel = initialScene.salon || clientInfo.event || 'SMCL 2026';
+  const offerLabel = sceneOfferLabel(initialScene);
   const standLabel = initialScene.project_name || clientInfo.project || 'Stand A-14';
   const clientLabel = clientInfo.client || contactDetails.company || 'Aerosys Industries';
   const carpetPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'carpet', carpetColors), [objectBank, salonLabel]);
@@ -1324,15 +1325,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         contactDetails: nextContactDetails,
         specialRequest: options.specialRequest,
         options,
-          pricing: {
-            basePrice: scenePricing.basePrice,
-            baseItems: scenePricing.baseItems,
-            baseUsage: scenePricing.baseUsage,
-            baseItemsConfigured: scenePricing.baseItemsConfigured,
-            itemsTotal: scenePricing.itemsTotal,
-            insuranceLine: scenePricing.insuranceLine,
-            total: scenePricing.total,
-            lines: scenePricing.lines,
+        pricing: {
+          basePrice: scenePricing.basePrice,
+          baseItems: scenePricing.baseItems,
+          baseUsage: scenePricing.baseUsage,
+          baseItemsConfigured: scenePricing.baseItemsConfigured,
+          itemsTotal: scenePricing.itemsTotal,
+          insuranceLine: scenePricing.insuranceLine,
+          total: scenePricing.total,
+          lines: scenePricing.lines,
         },
       },
     };
@@ -1397,7 +1398,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     try {
       const requestText = String(specialRequest || '').trim();
       const hasSpecialRequest = Boolean(requestText);
-      const confirmedScene = currentScenePayload(hasSpecialRequest ? 'special_request' : 'configured', hasSpecialRequest ? 'special_request' : 'configured');
+      const confirmedScene = currentScenePayload(hasSpecialRequest ? 'bat_pending' : 'configured', 'configured');
       await saveScene(confirmedScene);
 
       if (hasSpecialRequest) {
@@ -1416,7 +1417,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           emailMessage = 'La demande est enregistrée, mais l’email de prise en compte n’a pas pu être envoyé automatiquement.';
           console.warn('Special request email failed', error);
         }
-        setSaveState('special_request');
+        setSaveState('configured');
         setDraggingId(null);
         setActiveStep(4);
         setConfirmState({ loading: false, message: `Votre configuration est sauvegardée. ${emailMessage}`, error: '' });
@@ -2111,10 +2112,32 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     setHeaderPanel(null);
   };
 
-  const submitQuestion = (event) => {
+  const submitQuestion = async (event) => {
     event.preventDefault();
-    setQuestionForm({ subject: '', message: '' });
-    setHeaderPanel(null);
+    if (questionState.loading) return;
+    const subject = String(questionForm.subject || '').trim();
+    const message = String(questionForm.message || '').trim();
+    if (!subject && !message) {
+      setQuestionState({ loading: false, message: '', error: 'Ajoute au moins un objet ou un message.' });
+      return;
+    }
+
+    setQuestionState({ loading: true, message: '', error: '' });
+    try {
+      await sendSceneQuestionEmail(currentScenePayload(saveState === 'configured' ? 'configured' : 'created', saveState === 'configured' ? 'configured' : 'draft'), {
+        subject,
+        message,
+        category: questionCategory,
+        urgency,
+        sceneUrl: sceneShareUrl(initialScene),
+      });
+      setQuestionForm({ subject: '', message: '' });
+      setQuestionState({ loading: false, message: 'Question envoyée à Stand-ING.', error: '' });
+      window.setTimeout(() => setHeaderPanel(null), 650);
+    } catch (error) {
+      console.error('Question email failed', error);
+      setQuestionState({ loading: false, message: '', error: error.message || 'Envoi impossible pour le moment.' });
+    }
   };
 
   if (!objectBankLoaded) return <div className="loading-screen">{tRaw(language, 'loading_objects')}</div>;
@@ -2128,6 +2151,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         </a>
         <div className="config-breadcrumb">
           <span>{salonLabel}</span>
+          {offerLabel && <span className="config-offer-chip">{offerLabel}</span>}
           <span>{standLabel}</span>
           <span>{area.toFixed(0)} m²</span>
         </div>
@@ -2186,6 +2210,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             form={questionForm}
             onFormChange={(key, value) => setQuestionForm((current) => ({ ...current, [key]: value }))}
             onClose={() => setHeaderPanel(null)}
+            state={questionState}
             onSubmit={submitQuestion}
           />
         </div>
@@ -2302,22 +2327,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         {readOnly && !headerPanel && (
           <div className="readonly-badge">
             <Check size={15} /> {tRaw(language, 'scene_confirmed_badge')}
-          </div>
-        )}
-
-        {activeStep > 1 && !headerPanel && scenePricing.baseUsage?.length > 0 && (
-          <div className="base-pack-scene-note">
-            <button type="button" onClick={() => setBasePackOpen((open) => !open)} aria-expanded={basePackOpen}>
-              <strong>{tRaw(language, 'base_pack')}</strong>
-              {basePackOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-            </button>
-            {basePackOpen && (
-              <div className="base-pack-scene-list">
-                {scenePricing.baseUsage.map((item) => (
-                  <span key={item.type}>{basePackItemLabel(item.label, item.quantity)} {item.used}/{item.quantity}</span>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
@@ -2827,7 +2836,7 @@ function QuestionFaq() {
   );
 }
 
-function QuestionModal({ salonLabel, form, onFormChange, onClose, onSubmit }) {
+function QuestionModal({ salonLabel, form, state = {}, onFormChange, onClose, onSubmit }) {
   const t = useT();
   return (
     <form className="question-modal" onSubmit={onSubmit}>
@@ -2860,7 +2869,9 @@ function QuestionModal({ salonLabel, form, onFormChange, onClose, onSubmit }) {
         </label>
 
         <div className="question-note">{t('question_note')}</div>
-        <button className="modal-primary-button centered" type="submit"><Mail size={15} /> {t('question_send')}</button>
+        {state.message && <div className="question-submit-feedback success">{state.message}</div>}
+        {state.error && <div className="question-submit-feedback error">{state.error}</div>}
+        <button className="modal-primary-button centered" type="submit" disabled={state.loading}><Mail size={15} /> {state.loading ? 'Envoi...' : t('question_send')}</button>
         <button className="modal-cancel-button" type="button" onClick={onClose}>{t('question_cancel')}</button>
       </div>
     </form>
@@ -3051,7 +3062,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
           <strong>{t('counter_finish_title')}</strong>
           <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : ''}</span>
         </div>
-        <small>{t('footprint_included_count', { count: includedFinishes.length || 1 })}</small>
+        <small>{includedFinishes.length > 1 ? `${includedFinishes.length} coloris inclus` : 'Coloris inclus'}</small>
         <div className="counter-finish-swatches included">
           {(includedFinishes.length ? includedFinishes : [woodFinish]).map((finish) => (
             <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
@@ -3151,12 +3162,6 @@ function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = 
       </div>
 
       {enabled && (
-        <button type="button" className="prestige-base-select" onClick={onSelect}>
-          Sélectionner l'arche dans la scène
-        </button>
-      )}
-
-      {enabled && (
         <label className="prestige-switch-row">
           <span>
             <strong>Option TV</strong>
@@ -3204,9 +3209,6 @@ function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = 
 
       {enabled && item && (
         <>
-          <button type="button" className="prestige-base-select" onClick={() => onSelect?.(item.id)}>
-            Sélectionner l'enseigne dans la scène
-          </button>
           <div className="partition-head-upload-block partition-head-upload-block-v2 prestige-signage-upload">
             <div className="partition-head-upload-title">
               <strong>{slot?.label || 'Visuel enseigne haute'}</strong>
@@ -3432,7 +3434,7 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
         <strong>{t('counter_finish_title')}</strong>
         <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedCode) ? ` (${shortFinishCode(selectedCode)})` : ''}</span>
       </div>
-      <small>{t('footprint_included_count', { count: includedFinishes.length || 1 })}</small>
+      <small>{includedFinishes.length > 1 ? `${includedFinishes.length} coloris inclus` : 'Coloris inclus'}</small>
       <div className="counter-finish-swatches included">
         {(includedFinishes.length ? includedFinishes : [counterWoodFinish()]).map((finish) => (
           <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
@@ -5617,15 +5619,20 @@ function validationLineHandledByOptions(line = {}) {
 }
 
 function validationCategoryFromEntry(entry = {}, item = {}) {
+  const configured = configuredMarketCategory(entry) || configuredMarketCategory(item);
+  if (configured) return configured;
   const text = normalizeTextValue(`${entry?.label || ''} ${entry?.type || ''} ${item?.label || ''} ${item?.type || ''}`);
+  if (text.includes('tv') || text.includes('ecran') || text.includes('televiseur') || text.includes('multimedia') || text.includes('comptoir numerique')) return 'multimedia';
   if (text.includes('spot') || text.includes('led') || text.includes('alimentation') || text.includes('triplette') || text.includes('multiprise')) return 'electricity';
   return normalizeMarketCategory(entry || item) || 'furniture';
 }
 
 function validationCategoryFromLine(line = {}, entry = {}, item = null) {
+  const configured = configuredMarketCategory(entry) || configuredMarketCategory(item || {});
+  if (configured) return configured;
   const label = normalizeTextValue(`${line.label || ''} ${entry?.label || ''} ${entry?.type || ''}`);
+  if (label.includes('tv') || label.includes('ecran') || label.includes('televiseur') || label.includes('multimedia') || label.includes('comptoir numerique')) return 'multimedia';
   if (label.includes('spot') || label.includes('led') || label.includes('alimentation') || label.includes('triplette') || label.includes('multiprise')) return 'electricity';
-  if (label.includes('tv') || label.includes('ecran') || label.includes('televiseur') || label.includes('multimedia')) return 'multimedia';
   if (label.includes('bache') || label.includes('enseigne') || label.includes('affiche') || label.includes('cloison') || label.includes('signaletique')) return 'signage';
   if (entry) return validationCategoryFromEntry(entry, item || {});
   return 'furniture';
@@ -11858,17 +11865,27 @@ function makeAutomaticPartitionHeadItems(rule, sides = {}, catalogEntries = [], 
   const selectedSides = partitionHeadSelectedSides(rule, sides);
   const billableSides = partitionHeadBillableSides(rule, sides);
   return selectedSides.map((side) => {
-    const type = side === 'left' ? rule.leftType : rule.rightType;
-    const entry = findCatalogEntry(catalogEntries, type);
+    const configuredType = side === 'left' ? rule.leftType : rule.rightType;
+    const configuredEntry = findCatalogEntry(catalogEntries, configuredType);
+    const configuredSide = configuredEntry && isSmclPartitionHeadItem(configuredEntry) ? smclPartitionHeadSide(configuredEntry) : '';
+    const matchingSmclEntry = configuredSide && configuredSide !== side
+      ? (catalogEntries || []).find((candidate) => isSmclPartitionHeadItem(candidate) && smclPartitionHeadSide(candidate) === side)
+        || catalog.find((candidate) => isSmclPartitionHeadItem(candidate) && smclPartitionHeadSide(candidate) === side)
+      : null;
+    const entry = matchingSmclEntry || configuredEntry;
     if (!entry) return null;
+    const type = entry.type || configuredType;
     const billable = billableSides.has(side);
     const price = side === 'left' ? rule.leftPrice : rule.rightPrice;
     const unitPrice = billable ? firstPriceValue(assetUnitPrice(entry, salonLabel), price, 0) : 0;
     const base = makeItem(type, width, depth, layout, entry);
+    const isSmclHead = isSmclPartitionHeadItem(entry);
     return constrainItem({
       ...base,
       id: `auto-partition-head-${rule.id}-${side}`,
       label: side === 'left' ? (rule.leftLabel || entry.label) : (rule.rightLabel || entry.label),
+      placementRule: isSmclHead ? placementRuleFromId(side === 'left' ? 'outer-left' : 'outer-right') : base.placementRule,
+      dimensions: isSmclHead ? { ...(base.dimensions || {}), smclHeadSide: side } : base.dimensions,
       autoPartitionHead: true,
       included: !billable,
       priceMode: billable ? 'billable' : 'included',
@@ -13580,9 +13597,19 @@ function sceneExhibitorCompanyName(scene = {}, clientInfo = {}, contactDetails =
     || '';
 }
 
+function sceneOfferLabel(scene = {}) {
+  const raw = scene.offer || scene.source_payload?.offer || scene.source_payload?.pack || scene.source_payload?.includedPack || scene.source_payload?.options?.includedPack || '';
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  if (/prestige/i.test(text)) return 'PRESTIGE';
+  if (/confort/i.test(text)) return 'CONFORT';
+  return text.toUpperCase();
+}
+
 function sceneStandNumber(scene = {}, contactDetails = {}, standLabel = '') {
   return scene.source_payload?.stand_number
-    || mondayColumnTextAny(scene.source_payload, ['n_', 'n°', 'numero', 'numéro'])
+    || scene.source_payload?.standNumber
+    || mondayColumnTextAny(scene.source_payload, ['n_', 'n°', 'n', 'numero', 'numéro', 'numero stand', 'numéro stand'])
     || contactDetails.emplacement
     || standLabel.replace(/^Stand\s+/i, '')
     || '';
@@ -13694,6 +13721,11 @@ function mondayConstraintLocationText(sourcePayload = {}) {
 
 function mondayPoleText(sourcePayload = {}, poleNumber = 1) {
   const number = String(poleNumber);
+  const direct = sourcePayload?.[`poteau_${number}_text`]
+    || sourcePayload?.[`poteau${number}_text`]
+    || sourcePayload?.[`pole_${number}_text`]
+    || sourcePayload?.[`pole${number}_text`];
+  if (direct) return direct;
   return mondayColumnTextByNormalizedPredicate(sourcePayload, (value) => (
     value === `poteau_${number}`
     || value === `poteau${number}`
@@ -16648,19 +16680,19 @@ function smclCanvasFont(weight = 400, size = 80) {
 
 function drawSmclLeftHeadInfo(ctx, { company, aisleNumber, standNumber, hall }) {
   const labelX = 245;
-  const standCode = smclStandCode(aisleNumber, standNumber);
+  const standCode = smclStandCode(hall, aisleNumber);
   fitCanvasText(ctx, company, 238, 48, 690, 92, 700);
   fitCanvasText(ctx, standCode, labelX, 205, 360, 92, 200);
-  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', labelX, 375, 360, 54, 300);
+  fitCanvasText(ctx, standNumber ? `PAVILLON ${standNumber}` : 'PAVILLON —', labelX, 375, 360, 54, 300);
   drawSmclSalonMark(ctx, labelX, 620, 0.86);
   drawSmclPartnerMarks(ctx, labelX, 760, 0.9);
 }
 
 function drawSmclRightHeadInfo(ctx, { company, aisleNumber, standNumber, hall }) {
-  const standCode = smclStandCode(aisleNumber, standNumber);
+  const standCode = smclStandCode(hall, aisleNumber);
   fitCanvasText(ctx, company, 290, 48, 700, 92, 700);
   fitCanvasText(ctx, standCode, 765, 205, 360, 92, 200);
-  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', 765, 375, 360, 54, 300);
+  fitCanvasText(ctx, standNumber ? `PAVILLON ${standNumber}` : 'PAVILLON —', 765, 375, 360, 54, 300);
   drawSmclSalonMark(ctx, 770, 620, 0.86);
   drawSmclPartnerMarks(ctx, 770, 760, 0.9);
 }

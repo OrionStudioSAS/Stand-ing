@@ -1150,8 +1150,19 @@ select {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  align-items: center;
   color: #757b86;
   font-size: 0.84rem;
+}
+
+.config-offer-chip {
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #1f4378;
+  background: #eaf1fb;
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
 }
 
 .config-breadcrumb span + span::before {
@@ -1190,7 +1201,7 @@ select {
 .stepper button::before {
   content: "";
   position: absolute;
-  top: 33px;
+  top: calc(50% - 12px);
   left: -50%;
   width: 100%;
   height: 2px;
@@ -1628,6 +1639,23 @@ select {
   background: #e9eef5;
   font-size: 0.78rem;
   line-height: 1.28;
+}
+
+.question-submit-feedback {
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.question-submit-feedback.success {
+  color: #0f7a42;
+  background: #e8f7ee;
+}
+
+.question-submit-feedback.error {
+  color: #b42318;
+  background: #fff0ee;
 }
 
 .question-faq {

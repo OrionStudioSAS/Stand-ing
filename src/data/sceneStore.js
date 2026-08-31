@@ -434,6 +434,26 @@ export async function setSceneExhibitorReadOnly(scene, locked) {
   return dbSceneToScene(data);
 }
 
+export async function sendSceneQuestionEmail(scene, options = {}) {
+  if (!supabase) return { sent: false, local: true };
+
+  const { data, error } = await supabase.functions.invoke('scene-question-email', {
+    body: {
+      sceneId: scene?.id,
+      shareToken: scene?.share_token,
+      subject: options.subject || '',
+      message: options.message || '',
+      category: options.category || '',
+      urgency: options.urgency || '',
+      sceneUrl: options.sceneUrl || '',
+    },
+  });
+
+  const functionError = await getFunctionError(error, data);
+  if (functionError) throw functionError;
+  return data;
+}
+
 export async function sendSceneCompletionEmail(scene, options = {}) {
   if (!supabase) return { sent: false, local: true };
 

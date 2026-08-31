@@ -85,6 +85,22 @@ app.get('/sftp/health', requireGatewayToken, async (_req, res) => {
   }
 });
 
+
+app.post('/scene-folder', requireGatewayToken, async (req, res, next) => {
+  const sftp = new SftpClient();
+  try {
+    const scene = await loadSceneForUpload(req.body, { mode: 'gateway-token', admin: true });
+    const remoteDir = joinRemotePath(SFTP_BASE_DIR, buildSceneFolder(req.body, scene));
+    await connectSftp(sftp);
+    await sftp.mkdir(remoteDir, true);
+    res.status(201).json({ ok: true, remoteDir });
+  } catch (error) {
+    next(error);
+  } finally {
+    await closeSftp(sftp);
+  }
+});
+
 app.post(
   '/uploads/production-file',
   upload.single('file'),
