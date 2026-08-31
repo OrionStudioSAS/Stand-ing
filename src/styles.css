@@ -1201,7 +1201,7 @@ select {
 .stepper button::before {
   content: "";
   position: absolute;
-  top: calc(50% - 12px);
+  top: calc(50% - 9px);
   left: -50%;
   width: 100%;
   height: 2px;
