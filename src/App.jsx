@@ -104,6 +104,11 @@ const minWallCoverDisplayWidth = 0.7;
 const wallCoverSurfaceOffset = 0.008;
 const wallCoverUnitPrice = 288;
 const counterOptionalColorPrice = 79;
+const includedCounterSizeUpgradePrices = [
+  { minWidth: 1.85, price: 656 },
+  { minWidth: 1.25, price: 373 },
+  { minWidth: 0, price: 0 },
+];
 const counterLogoPrices = [
   { minWidth: 1.85, price: 372 },
   { minWidth: 1.25, price: 279 },
@@ -3324,7 +3329,9 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   };
   const selectVariant = (variant) => {
     if (!selectedItem || !variant?.entry) return;
-    const upgradePrice = Math.max(0, Number(variant.price || 0) - baseVariantPrice);
+    const upgradePrice = isIncludedSceneItem(selectedItem)
+      ? includedCounterSizeUpgradePrice(variant)
+      : Math.max(0, Number(variant.price || 0) - baseVariantPrice);
     onVariant?.(selectedItem, variant.entry, {
       ...(selectedItem.options || {}),
       variantId: variant.id,
@@ -3380,7 +3387,9 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
           <div className="counter-size-grid">
             {counterVariants.map((variant) => {
               const active = selectedVariant?.assetType === variant.assetType;
-              const supplement = Math.max(0, Number(variant.price || 0) - baseVariantPrice);
+              const supplement = isIncludedSceneItem(selectedItem)
+                ? includedCounterSizeUpgradePrice(variant)
+                : Math.max(0, Number(variant.price || 0) - baseVariantPrice);
               return (
                 <button key={variant.id} type="button" className={active ? 'active' : ''} disabled={disabled} onClick={() => selectVariant(variant)}>
                   <span><strong>{counterSizeShortLabel(variant)}</strong></span>
@@ -3553,6 +3562,11 @@ function counterSizeShortLabel(variant = {}) {
   if (label.includes('50')) return '1,5 m';
   if (label.includes('2')) return '2 m';
   return '1 m';
+}
+
+function includedCounterSizeUpgradePrice(variant = {}) {
+  const width = counterVariantWidth(variant);
+  return includedCounterSizeUpgradePrices.find((row) => width >= row.minWidth)?.price || 0;
 }
 
 function variantOptionLabel(variant = {}, groupEntry = {}) {
