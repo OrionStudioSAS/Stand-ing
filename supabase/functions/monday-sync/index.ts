@@ -263,6 +263,9 @@ function withResolvedMondayColumns(source: any, columns: Array<{ id: string; tit
   const mapping = source.mapping ?? {};
   const clientEmailColumnId = resolveMappedColumnId(columns, mapping.client_email, findEmailColumnId(columns));
   const layoutColumnId = resolveMappedColumnId(columns, mapping.layout, findLayoutColumnId(columns));
+  const hallColumnId = findHallColumnId(columns) || resolveMappedColumnId(columns, mapping.hall || mapping.pavillon, '');
+  const aisleColumnId = findAisleColumnId(columns) || resolveMappedColumnId(columns, mapping.aisle_number || mapping.allee || mapping["allée"], '');
+  const standNumberColumnId = findStandNumberColumnId(columns) || resolveMappedColumnId(columns, mapping.stand_number || mapping.standNumber || mapping.numero_stand || mapping["numéro_stand"], '');
   const constraintColumnId = mapping.constraint || mapping.contrainte || findConstraintSizeColumnId(columns);
   const constraintLocationColumnId = mapping.constraint_location
     || mapping.emplacement_contrainte
@@ -290,6 +293,9 @@ function withResolvedMondayColumns(source: any, columns: Array<{ id: string; tit
       ...mapping,
       ...(clientEmailColumnId ? { client_email: clientEmailColumnId } : {}),
       ...(layoutColumnId ? { layout: layoutColumnId } : {}),
+      ...(hallColumnId ? { hall: hallColumnId } : {}),
+      ...(aisleColumnId ? { aisle_number: aisleColumnId, allee: aisleColumnId } : {}),
+      ...(standNumberColumnId ? { stand_number: standNumberColumnId } : {}),
       ...(constraintColumnId ? { constraint: constraintColumnId } : {}),
       ...(constraintLocationColumnId ? { constraint_location: constraintLocationColumnId } : {}),
       ...(pole1ColumnId ? { poteau_1: pole1ColumnId } : {}),
@@ -347,6 +353,18 @@ function findLinkColumnId(columns: Array<{ id: string; title: string; type?: str
 function findLayoutColumnId(columns: Array<{ id: string; title: string }>) {
   return findMondayColumnId(columns, (value) => value === "implantation" || value === "layout" || value === "disposition")
     || findMondayColumnId(columns, (value) => value.includes("implantation"));
+}
+
+function findHallColumnId(columns: Array<{ id: string; title: string }>) {
+  return findMondayColumnId(columns, (value) => value === "hall" || value === "pavillon");
+}
+
+function findAisleColumnId(columns: Array<{ id: string; title: string }>) {
+  return findMondayColumnId(columns, (value) => value === "allee" || value === "allee_stand");
+}
+
+function findStandNumberColumnId(columns: Array<{ id: string; title: string }>) {
+  return findMondayColumnId(columns, (value) => value === "n" || value === "numero" || value === "numero_stand");
 }
 
 function mondayStatusLabel(columns: Array<any>, columnId = "", configuredLabel = "") {
@@ -635,9 +653,9 @@ function mondaySceneLocation(item: any, source: any) {
   const mapping = source.mapping ?? {};
   return {
     standNumber: readMappingValue(item, mapping.stand_number || mapping.standNumber || mapping.numero_stand || mapping["numéro_stand"])
-      || readColumnAny(item, ["n_", "n°", "n", "numero", "numéro", "numero stand", "numéro stand", "stand", "emplacement"]),
+      || readColumnAny(item, ["n°", "n", "numero", "numéro", "numero stand", "numéro stand", "stand", "emplacement"]),
     aisleNumber: readMappingValue(item, mapping.aisle_number || mapping.allee || mapping["allée"])
-      || readColumnAny(item, ["text5", "allée", "allee", "allee stand", "allée stand"]),
+      || readColumnAny(item, ["allée", "allee", "allee stand", "allée stand"]),
     hall: readMappingValue(item, mapping.hall || mapping.pavillon)
       || readColumnAny(item, ["hall", "pavillon"]),
     sector: readMappingValue(item, mapping.sector || mapping.secteur)
@@ -655,6 +673,10 @@ async function ensureSceneSftpFolder({ gatewayUrl, gatewayToken, scene, warnings
   if (!gatewayUrl || !gatewayToken || !scene?.id) return { created: false, skipped: true };
 
   try {
+    const sourcePayload = scene.source_payload || {};
+    const hall = readColumnAny(sourcePayload, ["hall", "pavillon"]) || sourcePayload.hall || "";
+    const aisle = readColumnAny(sourcePayload, ["allée", "allee", "allee stand", "allée stand"]) || sourcePayload.aisle_number || sourcePayload.allee || "";
+    const standNumber = readColumnAny(sourcePayload, ["n°", "n", "numero", "numéro", "numero stand", "numéro stand"]) || sourcePayload.stand_number || "";
     const response = await fetch(`${gatewayUrl.replace(/\/+$/g, "")}/scene-folder`, {
       method: "POST",
       headers: {
@@ -667,9 +689,9 @@ async function ensureSceneSftpFolder({ gatewayUrl, gatewayToken, scene, warnings
         salon: scene.salon || scene.event_name || scene.source_payload?.salon || "",
         offer: scene.offer || scene.source_payload?.offer || scene.source_payload?.pack || "",
         company: scene.client_name || scene.source_payload?.name || scene.source_payload?.item?.name || "",
-        hall: scene.source_payload?.hall || "",
-        aisle: scene.source_payload?.aisle_number || scene.source_payload?.allee || "",
-        standNumber: scene.source_payload?.stand_number || "",
+        hall,
+        aisle,
+        standNumber,
       }),
     });
     const payload = await response.json().catch(() => ({}));

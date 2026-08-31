@@ -1080,7 +1080,7 @@ select {
 .configurator-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 374px;
-  grid-template-rows: 68px minmax(0, 1fr) 76px;
+  grid-template-rows: 68px minmax(0, 1fr);
   height: 100vh;
   overflow: hidden;
   background: #eef0f4;
@@ -1093,14 +1093,14 @@ select {
 }
 
 .configurator-shell.has-cart-bar {
-  grid-template-rows: 68px minmax(0, 1fr) 62px;
+  grid-template-rows: 68px minmax(0, 1fr);
 }
 
 .configurator-topbar {
   position: relative;
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 136px minmax(190px, 1fr) auto auto auto auto;
+  grid-template-columns: 136px minmax(190px, 1fr) auto auto auto auto auto;
   align-items: center;
   gap: 16px;
   min-width: 0;
@@ -2378,13 +2378,56 @@ select {
 
 .config-panel {
   display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-content: stretch;
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  background: #fff;
+  border-left: 1px solid #dbe0e7;
+}
+
+.config-panel-content {
+  display: grid;
   align-content: start;
   gap: 13px;
   min-height: 0;
   overflow-y: auto;
   padding: 18px 8px 18px;
+}
+
+.config-panel-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 14px 14px 18px;
+  border-top: 1px solid #e0e4ea;
   background: #fff;
-  border-left: 1px solid #dbe0e7;
+  box-shadow: 0 -10px 24px rgba(17, 28, 45, 0.08);
+}
+
+.panel-step-button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 950;
+}
+
+.panel-step-button.secondary {
+  color: #343a43;
+  background: #f4f4f4;
+}
+
+.panel-step-button.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: #fff;
+  background: #1f4378;
+  box-shadow: 0 10px 22px rgba(31, 67, 120, 0.24);
 }
 
 .config-panel-head {
@@ -7633,6 +7676,82 @@ img.asset-thumb {
   text-align: center;
 }
 
+.topbar-cart {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: end;
+}
+
+.topbar-cart-total {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  min-width: max-content;
+}
+
+.topbar-cart-total strong {
+  color: #1f4378;
+  font-size: 1rem;
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.topbar-cart-total span {
+  color: #9ba1aa;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.topbar-cart-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 9px;
+  color: #fff;
+  background: #1f4378;
+  box-shadow: 0 10px 22px rgba(31, 67, 120, 0.22);
+}
+
+.topbar-cart-button.active {
+  background: #173766;
+}
+
+.topbar-cart-button span {
+  position: absolute;
+  right: -6px;
+  top: -6px;
+  min-width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  color: #fff;
+  background: #1f9b8f;
+  font-size: 0.62rem;
+  font-weight: 950;
+}
+
+.topbar-cart-popover {
+  top: calc(100% + 16px);
+  right: 0;
+  bottom: auto;
+  z-index: 30;
+}
+
+.topbar-cart-popover::after {
+  top: -7px;
+  bottom: auto;
+  transform: rotate(225deg);
+}
+
 .item-config-overlay {
   position: fixed;
   inset: 0;
@@ -8239,6 +8358,17 @@ img.asset-thumb {
     right: 10px;
     bottom: 70px;
     width: calc(100vw - 20px);
+  }
+
+  .topbar-cart-popover {
+    top: calc(100% + 14px);
+    right: 0;
+    bottom: auto;
+    width: min(420px, calc(100vw - 20px));
+  }
+
+  .topbar-cart-total {
+    display: none;
   }
 
   .config-choice-section > div {

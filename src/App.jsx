@@ -1172,7 +1172,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   }, [isPrestigeStand, prestigeArchEnabled, prestigeSignageEnabled]);
 
   const cartItems = useMemo(() => visibleSceneItems.filter(shopCartItemVisible), [visibleSceneItems]);
-  const showCartBar = !readOnly && (activeStep === 2 || activeStep === 3);
+  const showCartBar = false;
   const sceneTextureLoad = useSceneTexturePreload(visibleSceneItems, [
     selectedCarpetColor.image,
     effectiveCarpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
@@ -2182,6 +2182,22 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           <ChevronDown size={15} />
         </button>
         <button className={`user-pill ${headerPanel === 'client' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('client')} aria-label={tRaw(language, 'aria_client')}>{contactInitials}</button>
+        {activeStep > 1 && (
+          <HeaderCartMenu
+            items={cartItems}
+            catalog={availableCatalog}
+            selectedId={selectedId}
+            total={scenePricing.total || 0}
+            salonLabel={salonLabel}
+            readOnly={readOnly}
+            onSelectItem={setSelectedId}
+            onIncrementItem={duplicateCartItem}
+            onDecrementItem={removeSceneItemById}
+            onDeleteItems={removeSceneItemsById}
+            canRemoveItem={(item) => canDeleteSceneItem(item, isAdminViewer)}
+            onValidate={() => setActiveStep(4)}
+          />
+        )}
       </header>
 
       {placementMessage && (
@@ -2356,6 +2372,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
       {activeStep > 1 && (
       <aside className="config-panel">
+        <div className="config-panel-content">
         {activeStep === 3 ? (
           <FurnitureStepPanel
             items={visibleSceneItems}
@@ -2509,6 +2526,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             isAdminViewer={isAdminViewer}
           />
         )}
+        </div>
+        {activeStep < 4 && !readOnly && (
+          <PanelStepActions
+            previousLabel={tRaw(language, 'back')}
+            nextLabel={tRaw(language, 'next_step')}
+            onPrevious={() => setActiveStep((step) => Math.max(1, step - 1))}
+            onNext={() => setActiveStep((step) => Math.min(4, step + 1))}
+          />
+        )}
       </aside>
       )}
 
@@ -2549,7 +2575,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         );
       })()}
 
-      {showCartBar && (
+      {false && showCartBar && (
         <FurnitureCartBar
           items={cartItems}
           catalog={availableCatalog}
@@ -2569,7 +2595,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         />
       )}
 
-      {activeStep > 1 && !showCartBar && !readOnly && (
+      {false && activeStep > 1 && !showCartBar && !readOnly && (
       <footer className="configurator-footer">
         <div>
           <span>{tRaw(language, 'total_ht_estimated')}</span>
@@ -4055,6 +4081,116 @@ function groupCartItems(items = []) {
     groups.set(key, group);
   });
   return [...groups.values()];
+}
+
+function PanelStepActions({ previousLabel, nextLabel, onPrevious, onNext }) {
+  return (
+    <footer className="config-panel-actions">
+      <button type="button" className="panel-step-button secondary" onClick={onPrevious}>{previousLabel}</button>
+      <button type="button" className="panel-step-button primary" onClick={onNext}>{nextLabel} <ArrowRight size={14} /></button>
+    </footer>
+  );
+}
+
+function HeaderCartMenu({ items, catalog, selectedId, total, salonLabel, readOnly, onSelectItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onValidate }) {
+  const t = useT();
+  const itemRefs = useRef(new Map());
+  const [cartOpen, setCartOpen] = useState(false);
+  const cartGroups = useMemo(() => groupCartItems(items), [items]);
+
+  useEffect(() => {
+    if (!selectedId || !cartOpen) return;
+    const selectedGroup = cartGroups.find((group) => group.items.some((item) => item.id === selectedId));
+    const selectedNode = selectedGroup ? itemRefs.current.get(selectedGroup.key) : null;
+    selectedNode?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+  }, [selectedId, cartGroups, cartOpen]);
+
+  return (
+    <div className="topbar-cart">
+      <div className="topbar-cart-total">
+        <strong>{total.toLocaleString('fr-FR')} € HT</strong>
+        <span>{t('total_ht_estimated')}</span>
+      </div>
+      <button
+        type="button"
+        className={`topbar-cart-button ${cartOpen ? 'active' : ''}`}
+        onClick={() => setCartOpen((open) => !open)}
+        aria-expanded={cartOpen}
+        aria-label="Ouvrir le panier"
+      >
+        <ShoppingCart size={20} />
+        <span>{items.length}</span>
+      </button>
+
+      {cartOpen && (
+        <div className="cart-popover topbar-cart-popover">
+          <header>
+            <div>
+              <strong>{t('cart_my_stand')}</strong>
+              <small>{t('cart_articles', { count: items.length, s: items.length > 1 ? 's' : '' })}</small>
+            </div>
+            <button type="button" className="cart-popover-close" onClick={() => setCartOpen(false)} aria-label="Fermer le panier">
+              <X size={16} />
+            </button>
+          </header>
+          <div className="cart-item-strip">
+            {items.length === 0 && <p className="cart-empty-state">Aucun objet AMCO ajouté pour le moment.</p>}
+            {cartGroups.map((group) => {
+              const item = group.items[0];
+              const entry = findCatalogEntry(catalog, item.type) || item;
+              const selected = group.items.some((groupItem) => groupItem.id === selectedId);
+              const removableItems = group.items.filter((groupItem) => canRemoveItem?.(groupItem) ?? true);
+              const decrementItem = [...removableItems].pop();
+              const optionLines = itemOptionLines(item).filter((line) => line !== item.options?.variantLabel);
+              const groupTotal = group.items.reduce((sum, groupItem) => sum + cartItemPrice(groupItem, entry, salonLabel), 0);
+              return (
+                <article
+                  key={group.key}
+                  ref={(node) => {
+                    if (node) itemRefs.current.set(group.key, node);
+                    else itemRefs.current.delete(group.key);
+                  }}
+                  className={`cart-item-card ${selected ? 'active' : ''}`}
+                >
+                  <button type="button" className="cart-item-main" onClick={() => onSelectItem(selected ? selectedId : item.id)}>
+                    <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
+                    <span className="cart-item-copy">
+                      <strong>{itemCartLabel(item)}</strong>
+                      <small>Quantité : {group.items.length}</small>
+                      {optionLines.length > 0 && (
+                        <span className="cart-item-options">
+                          {optionLines.map((line, index) => <em key={`${line}-${index}`}>{line}</em>)}
+                        </span>
+                      )}
+                      <b>{groupTotal.toLocaleString('fr-FR')} € HT</b>
+                    </span>
+                  </button>
+                  <div className="cart-item-controls">
+                    <div className="cart-quantity-controls">
+                      <button type="button" disabled={readOnly || !decrementItem} onClick={() => decrementItem && onDecrementItem?.(decrementItem.id)} aria-label="-1">
+                        <Minus size={13} />
+                      </button>
+                      <span>{group.items.length}</span>
+                      <button type="button" disabled={readOnly} onClick={() => onIncrementItem?.(item)} aria-label="+1">
+                        <Plus size={13} />
+                      </button>
+                    </div>
+                    <button type="button" className="danger" disabled={readOnly || !removableItems.length} onClick={() => onDeleteItems?.(removableItems.map((groupItem) => groupItem.id))} aria-label="Supprimer">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <button type="button" className="cart-validate-button" onClick={() => { setCartOpen(false); onValidate?.(); }}>
+            Valider le panier
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel, nextDetail, onSelectItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onPrevious, onNext }) {
@@ -13607,24 +13743,27 @@ function sceneOfferLabel(scene = {}) {
 }
 
 function sceneStandNumber(scene = {}, contactDetails = {}, standLabel = '') {
-  return scene.source_payload?.stand_number
+  return mondayColumnTextByTitle(scene.source_payload, ['n°', 'n', 'numero', 'numéro', 'numero stand', 'numéro stand'])
+    || scene.source_payload?.stand_number
     || scene.source_payload?.standNumber
-    || mondayColumnTextAny(scene.source_payload, ['n_', 'n°', 'n', 'numero', 'numéro', 'numero stand', 'numéro stand'])
+    || mondayColumnTextAny(scene.source_payload, ['n°', 'n', 'numero', 'numéro', 'numero stand', 'numéro stand'])
     || contactDetails.emplacement
     || standLabel.replace(/^Stand\s+/i, '')
     || '';
 }
 
 function sceneAisleNumber(scene = {}, contactDetails = {}) {
-  return scene.source_payload?.aisle_number
+  return mondayColumnTextByTitle(scene.source_payload, ['allée', 'allee', 'allee stand', 'allée stand'])
+    || scene.source_payload?.aisle_number
     || scene.source_payload?.allee
-    || mondayColumnTextAny(scene.source_payload, ['text5', 'allée', 'allee'])
+    || mondayColumnTextAny(scene.source_payload, ['allée', 'allee'])
     || contactDetails.allee
     || '';
 }
 
 function sceneHallLabel(scene = {}, contactDetails = {}) {
-  return scene.source_payload?.hall
+  return mondayColumnTextByTitle(scene.source_payload, ['hall', 'pavillon'])
+    || scene.source_payload?.hall
     || mondayColumnTextAny(scene.source_payload, ['hall', 'pavillon'])
     || contactDetails.hall
     || 'À définir';
@@ -13812,6 +13951,15 @@ function mondayColumnTextAny(sourcePayload = {}, keys = []) {
   return sourcePayload.column_values.find((column) => {
     const candidates = [column.id, column.title, column.column?.title, column.text];
     return candidates.some((candidate) => normalizedKeys.includes(normalizeLookupText(candidate)));
+  })?.text || '';
+}
+
+function mondayColumnTextByTitle(sourcePayload = {}, titles = []) {
+  if (!Array.isArray(sourcePayload?.column_values)) return '';
+  const normalizedTitles = titles.map(normalizeLookupText).filter(Boolean);
+  return sourcePayload.column_values.find((column) => {
+    const title = column.column?.title || column.title || '';
+    return normalizedTitles.includes(normalizeLookupText(title));
   })?.text || '';
 }
 

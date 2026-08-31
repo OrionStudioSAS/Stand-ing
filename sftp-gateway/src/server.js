@@ -89,7 +89,8 @@ app.get('/sftp/health', requireGatewayToken, async (_req, res) => {
 app.post('/scene-folder', requireGatewayToken, async (req, res, next) => {
   const sftp = new SftpClient();
   try {
-    const scene = await loadSceneForUpload(req.body, { mode: 'gateway-token', admin: true });
+    const scene = sceneMetadataFromFolderRequest(req.body)
+      || await loadSceneForUpload(req.body, { mode: 'gateway-token', admin: true });
     const remoteDir = joinRemotePath(SFTP_BASE_DIR, buildSceneFolder(req.body, scene));
     await connectSftp(sftp);
     await sftp.mkdir(remoteDir, true);
@@ -172,6 +173,27 @@ app.use((error, _req, res, _next) => {
 app.listen(PORT, () => {
   console.log(`Stand-ING SFTP gateway listening on http://0.0.0.0:${PORT}`);
 });
+
+function sceneMetadataFromFolderRequest(body = {}) {
+  const hasFolderMetadata = ['salon', 'offer', 'company', 'hall', 'aisle', 'standNumber']
+    .some((key) => String(body[key] || '').trim());
+  if (!hasFolderMetadata) return null;
+  return {
+    id: body.sceneId || '',
+    share_token: body.sceneToken || '',
+    salon: body.salon || '',
+    offer: body.offer || '',
+    event_name: body.salon || '',
+    client_name: body.company || '',
+    source_payload: {
+      offer: body.offer || '',
+      pack: body.offer || '',
+      hall: body.hall || '',
+      aisle_number: body.aisle || '',
+      stand_number: body.standNumber || '',
+    },
+  };
+}
 
 function requireGatewayToken(req, res, next) {
   if (!TOKEN) {
