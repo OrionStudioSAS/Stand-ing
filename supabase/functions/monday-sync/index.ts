@@ -1221,7 +1221,7 @@ async function sendConfiguratorInvitationEmail({
   const firstName = firstNameFromMondayItem(item, source) || "client";
   const salonName = clean(context?.salonLabel || source?.salon || scene?.salon || "votre salon");
   const offerName = clean(source?.offer || scene?.offer || "CONFORT").toUpperCase();
-  const subject = `Votre stand sur le salon ${salonName}`;
+  const subject = `Votre stand ${offerName} sur le salon ${salonName}`;
   const html = invitationEmailHtml({ firstName, salonName, offerName, sceneUrl: shareUrl });
   const text = invitationEmailText({ firstName, salonName, offerName, sceneUrl: shareUrl });
 
@@ -1271,7 +1271,7 @@ function firstWord(value = "") {
 function invitationEmailText({ firstName, salonName, offerName, sceneUrl }: { firstName: string; salonName: string; offerName: string; sceneUrl: string }) {
   return `Bonjour ${firstName},
 
-Dans le cadre de votre participation au prochain Salon ${salonName}, vous avez opté pour un aménagement de stand auprès du ${salonName}.
+Dans le cadre de votre participation au prochain Salon ${salonName}, vous avez opté pour un aménagement de stand en formule ${offerName} auprès du ${salonName}.
 
 En cliquant sur le lien ci-dessous vous accéderez au configurateur qui vous permettra de personnaliser votre stand.
 Configurer mon stand - ${sceneUrl}
@@ -1287,7 +1287,7 @@ Hello ${firstName},
 As part of your participation in the ${salonName}, you have opted for a booth layout in ${offerName} formula.
 
 By clicking on the link below you will access the configurator which will allow you to customize your stand.
-Configurer mon stand - ${sceneUrl}
+Configure my stand - ${sceneUrl}
 
 NOTE: if your stand is not configurable, choose your colors and options via the configurator until validation and our exhibitor service will get back to you as soon as possible.
 
@@ -1301,7 +1301,7 @@ function invitationEmailHtml({ firstName, salonName, offerName, sceneUrl }: { fi
   return `
   <div style="font-family:Arial,sans-serif;color:#172033;line-height:1.55">
     <p>Bonjour ${escapeHtml(firstName)},</p>
-    <p>Dans le cadre de votre participation au prochain Salon <strong>${escapeHtml(salonName)}</strong>, vous avez opté pour un aménagement de stand auprès du <strong>${escapeHtml(salonName)}</strong>.</p>
+    <p>Dans le cadre de votre participation au prochain Salon <strong>${escapeHtml(salonName)}</strong>, vous avez opté pour un aménagement de stand en formule <strong>${escapeHtml(offerName)}</strong> auprès du <strong>${escapeHtml(salonName)}</strong>.</p>
     <p>En cliquant sur le lien ci-dessous vous accéderez au configurateur qui vous permettra de personnaliser votre stand.</p>
     <p><a href="${escapedUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">Configurer mon stand</a></p>
     <p><a href="${escapedUrl}" style="color:#1f4378">${escapedUrl}</a></p>
@@ -1311,7 +1311,7 @@ function invitationEmailHtml({ firstName, salonName, offerName, sceneUrl }: { fi
     <p>Hello ${escapeHtml(firstName)},</p>
     <p>As part of your participation in the <strong>${escapeHtml(salonName)}</strong>, you have opted for a booth layout in <strong>${escapeHtml(offerName)}</strong> formula.</p>
     <p>By clicking on the link below you will access the configurator which will allow you to customize your stand.</p>
-    <p><a href="${escapedUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">Configurer mon stand</a></p>
+    <p><a href="${escapedUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">Configure my stand</a></p>
     <p><a href="${escapedUrl}" style="color:#1f4378">${escapedUrl}</a></p>
     <p><strong>NOTE:</strong> if your stand is not configurable, choose your colors and options via the configurator until validation and our exhibitor service will get back to you as soon as possible.</p>
     <p>Thanks.</p>
