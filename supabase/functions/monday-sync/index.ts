@@ -124,6 +124,16 @@ Deno.serve(async (req) => {
           if (constraintColumnsConfigured(resolvedSource) || constraint) constraintsUpdated += 1;
         }
 
+        if (shouldCreateScene) {
+          await ensureMondayConfiguratorLink({
+            mondayToken,
+            publicAppUrl,
+            shareToken: existingScene.share_token,
+            source: resolvedSource,
+            item,
+          });
+        }
+
         const hasInviteAlreadyBeenSent = Boolean(existingScene.source_payload?.invitation_email_sent_at);
         const shouldSendMissingInvite = shouldCreateScene
           && isFirstSendRequested
@@ -239,6 +249,14 @@ Deno.serve(async (req) => {
         .single();
 
       if (saveError) throw saveError;
+
+      await ensureMondayConfiguratorLink({
+        mondayToken,
+        publicAppUrl,
+        shareToken: savedScene.share_token,
+        source: resolvedSource,
+        item,
+      });
 
       const sftpFolderResult = await ensureSceneSftpFolder({
         gatewayUrl: sftpGatewayUrl,
@@ -1121,16 +1139,7 @@ async function sendInvitationAndUpdateMonday({
   mondayColumns: Array<any>;
   warnings: string[];
 }) {
-  const shareUrl = publicAppUrl && shareToken
-    ? `${publicAppUrl.replace(/\/$/, "")}?scene=${shareToken}`
-    : "";
-
-  if (source.link_column_id && source.link_column_id !== source.create_column_id && shareUrl) {
-    await updateMondayColumnValue(mondayToken, source.board_id, item.id, source.link_column_id, {
-      url: shareUrl,
-      text: "Configurer mon stand",
-    });
-  }
+  const shareUrl = configuratorShareUrl(publicAppUrl, shareToken);
 
   const inviteResult = await sendConfiguratorInvitationEmail({
     resendApiKey,
@@ -1157,6 +1166,34 @@ async function sendInvitationAndUpdateMonday({
   }).eq("id", sceneId);
 
   return { sent: 1, skipped: 0, statusUpdated: 0 };
+}
+
+function configuratorShareUrl(publicAppUrl: string, shareToken: string) {
+  return publicAppUrl && shareToken
+    ? `${publicAppUrl.replace(/\/$/, "")}?scene=${shareToken}`
+    : "";
+}
+
+async function ensureMondayConfiguratorLink({
+  mondayToken,
+  publicAppUrl,
+  shareToken,
+  source,
+  item,
+}: {
+  mondayToken: string;
+  publicAppUrl: string;
+  shareToken: string;
+  source: any;
+  item: any;
+}) {
+  const shareUrl = configuratorShareUrl(publicAppUrl, shareToken);
+  if (!source.link_column_id || source.link_column_id === source.create_column_id || !shareUrl) return;
+
+  await updateMondayColumnValue(mondayToken, source.board_id, item.id, source.link_column_id, {
+    url: shareUrl,
+    text: "Configurer mon stand",
+  });
 }
 
 async function sendConfiguratorInvitationEmail({
