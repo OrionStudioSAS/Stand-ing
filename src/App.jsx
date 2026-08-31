@@ -6895,7 +6895,7 @@ function AdminDashboard({ user, adminProfile }) {
         ? `\n${sentInvites} email(s) configurateur envoyé(s), statut Étape 1 non modifié${updatedMondayStatuses ? `, ${updatedMondayStatuses} statut(s) Monday mis à jour` : ''}${skippedInvites ? `, ${skippedInvites} email(s) non envoyé(s)` : ''}.`
         : '';
       const skippedMessage = skippedNotConfigurable || skippedNotFirstSend
-        ? `\n${skippedNotConfigurable} ligne(s) ignorée(s) car CONFIGURABLE ≠ OUI, ${skippedNotFirstSend} ligne(s) ignorée(s) car Étape 1 ≠ 1ER ENVOI.`
+        ? `\n${skippedNotConfigurable} ligne(s) ignorée(s) car CONFIGURABLE ≠ OUI, ${skippedNotFirstSend} scène(s) créée(s)/existante(s) sans mail car Étape 1 ≠ 1ER ENVOI.`
         : '';
       setSyncState({
         loading: false,

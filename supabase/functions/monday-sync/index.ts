@@ -124,9 +124,10 @@ Deno.serve(async (req) => {
           if (constraintColumnsConfigured(resolvedSource) || constraint) constraintsUpdated += 1;
         }
 
+        const hasInviteAlreadyBeenSent = Boolean(existingScene.source_payload?.invitation_email_sent_at);
         const shouldSendMissingInvite = shouldCreateScene
           && isFirstSendRequested
-          && !existingScene.source_payload?.invitation_email_sent_at;
+          && !hasInviteAlreadyBeenSent;
         if (shouldSendMissingInvite) {
           const inviteScene = {
             ...existingScene,
@@ -152,6 +153,8 @@ Deno.serve(async (req) => {
           inviteEmailsSent += inviteResult.sent;
           inviteEmailsSkipped += inviteResult.skipped;
           mondayStatusUpdated += inviteResult.statusUpdated;
+        } else if (shouldCreateScene && !isFirstSendRequested && !hasInviteAlreadyBeenSent) {
+          skippedNotFirstSend += 1;
         }
 
         continue;
@@ -159,11 +162,6 @@ Deno.serve(async (req) => {
 
       if (!shouldCreateScene) {
         skippedNotConfigurable += 1;
-        continue;
-      }
-
-      if (!isFirstSendRequested) {
-        skippedNotFirstSend += 1;
         continue;
       }
 
@@ -256,24 +254,28 @@ Deno.serve(async (req) => {
         baseItemsApplied += inserted;
       }
 
-      const inviteResult = await sendInvitationAndUpdateMonday({
-        supabase,
-        mondayToken,
-        resendApiKey,
-        fromEmail,
-        publicAppUrl,
-        scene,
-        sceneId: savedScene.id,
-        shareToken: savedScene.share_token,
-        source: resolvedSource,
-        context,
-        item,
-        mondayColumns,
-        warnings,
-      });
-      inviteEmailsSent += inviteResult.sent;
-      inviteEmailsSkipped += inviteResult.skipped;
-      mondayStatusUpdated += inviteResult.statusUpdated;
+      if (isFirstSendRequested) {
+        const inviteResult = await sendInvitationAndUpdateMonday({
+          supabase,
+          mondayToken,
+          resendApiKey,
+          fromEmail,
+          publicAppUrl,
+          scene,
+          sceneId: savedScene.id,
+          shareToken: savedScene.share_token,
+          source: resolvedSource,
+          context,
+          item,
+          mondayColumns,
+          warnings,
+        });
+        inviteEmailsSent += inviteResult.sent;
+        inviteEmailsSkipped += inviteResult.skipped;
+        mondayStatusUpdated += inviteResult.statusUpdated;
+      } else {
+        skippedNotFirstSend += 1;
+      }
 
       processed += 1;
       clients += 1;
