@@ -3689,11 +3689,7 @@ function counterVariantUpgradeOptionLine(item = {}, entry = {}, salonLabel = '',
 
 function counterLogoOptionActive(item = {}) {
   if (item.options?.binary3Enabled === false) return false;
-  return Boolean(item.options?.binary3Enabled || item.options?.binary3ImageUrl || item.options?.binary3ImageName || item.options?.binary3VisualPending || counterItemHasDefaultLogo(item));
-}
-
-function counterItemHasDefaultLogo(item = {}) {
-  return normalizeTextValue(`${item.label || ''} ${item.type || ''} ${item.options?.variantLabel || ''}`).includes('signa');
+  return Boolean(item.options?.binary3Enabled || item.options?.binary3ImageUrl || item.options?.binary3ImageName || item.options?.binary3VisualPending);
 }
 
 function counterLogoTogglePatch(enabled = false) {
@@ -5480,9 +5476,8 @@ function itemOptionLines(item) {
     });
     if (sizeLabel) result.push(sizeLabel);
     if (opts.binary2ColorName || opts.binary2Color) {
-      const colorPrice = Number(opts.binary2ColorPrice || 0);
       const colorName = shortFinishName(opts.binary2ColorName || opts.binary2Color);
-      result.push(`Couleur : ${colorName}${colorPrice > 0 ? ` (+${colorPrice.toLocaleString('fr-FR')} € HT/m²)` : ''}`);
+      result.push(`Couleur : ${colorName}`);
     } else {
       result.push('Couleur : Bois');
     }
