@@ -5653,7 +5653,7 @@ function ValidationStepPanel({
         <section className="validation-modern-insurance-card">
           <div>
             <strong><HelpCircle size={14} /> Assurance mobilier obligatoire incluse</strong>
-            <span>Calculée sur {validationMoney(insuranceLine.insuranceBase || pricing?.furnitureInsuranceBase || 0)} € HT de lots/options mobilier</span>
+            <span>Calculée sur {validationMoney(insuranceLine.insuranceBase || pricing?.furnitureInsuranceBase || 0)} € HT de mobilier</span>
           </div>
           <b>+ {validationMoney(insuranceLine.total || 0, true)} €</b>
         </section>
