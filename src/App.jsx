@@ -13812,18 +13812,21 @@ function normalizeSceneConstraint(saved, width = 0, depth = 0, fallbackLabel = '
   if (saved && Number(saved.width) > 0 && Number(saved.depth) > 0) {
     const fromLeft = Number(saved.fromLeft);
     const fromBack = Number(saved.fromBack);
+    const constraintWidth = Number(saved.width);
+    const constraintDepth = Number(saved.depth);
+    const hasCornerPosition = Number.isFinite(fromLeft) && Number.isFinite(fromBack);
     return {
       id: saved.id || `${fallbackLabel}-${saved.rawSize || ''}-${saved.rawLocation || ''}`,
       label: saved.label || fallbackLabel,
-      rawSize: saved.rawSize || `${Math.round(Number(saved.width || 0) * 100)}x${Math.round(Number(saved.depth || 0) * 100)}`,
+      rawSize: saved.rawSize || `${Math.round(constraintWidth * 100)}x${Math.round(constraintDepth * 100)}`,
       rawLocation: saved.rawLocation || `${fromLeft || 0} - ${fromBack || 0}`,
-      width: Number(saved.width),
-      depth: Number(saved.depth),
+      width: constraintWidth,
+      depth: constraintDepth,
       height: Number(saved.height || 5),
       fromLeft,
       fromBack,
-      x: Number.isFinite(Number(saved.x)) ? Number(saved.x) : -Number(width || 0) / 2 + fromLeft,
-      z: Number.isFinite(Number(saved.z)) ? Number(saved.z) : -Number(depth || 0) / 2 + fromBack,
+      x: hasCornerPosition ? clamp(-Number(width || 0) / 2 + fromLeft + constraintWidth / 2, -Number(width || 0) / 2 + constraintWidth / 2, Number(width || 0) / 2 - constraintWidth / 2) : Number(saved.x || 0),
+      z: hasCornerPosition ? clamp(-Number(depth || 0) / 2 + fromBack + constraintDepth / 2, -Number(depth || 0) / 2 + constraintDepth / 2, Number(depth || 0) / 2 - constraintDepth / 2) : Number(saved.z || 0),
     };
   }
   return null;
@@ -13908,8 +13911,8 @@ function parseSceneConstraintValues(sizeValue = '', locationValue = '', width = 
     height: 5,
     fromLeft,
     fromBack,
-    x: clamp(-Number(width || 0) / 2 + fromLeft, -Number(width || 0) / 2, Number(width || 0) / 2),
-    z: clamp(-Number(depth || 0) / 2 + fromBack, -Number(depth || 0) / 2, Number(depth || 0) / 2),
+    x: clamp(-Number(width || 0) / 2 + fromLeft + sizeX / 2, -Number(width || 0) / 2 + sizeX / 2, Number(width || 0) / 2 - sizeX / 2),
+    z: clamp(-Number(depth || 0) / 2 + fromBack + sizeZ / 2, -Number(depth || 0) / 2 + sizeZ / 2, Number(depth || 0) / 2 - sizeZ / 2),
   };
 }
 

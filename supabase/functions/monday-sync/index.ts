@@ -792,8 +792,8 @@ function parseSceneConstraint(sizeValue = "", locationValue = "", width = 0, dep
     height: 5,
     fromLeft,
     fromBack,
-    x: clampNumber(-Number(width || 0) / 2 + fromLeft, -Number(width || 0) / 2, Number(width || 0) / 2),
-    z: clampNumber(-Number(depth || 0) / 2 + fromBack, -Number(depth || 0) / 2, Number(depth || 0) / 2),
+    x: clampNumber(-Number(width || 0) / 2 + fromLeft + sizeX / 2, -Number(width || 0) / 2 + sizeX / 2, Number(width || 0) / 2 - sizeX / 2),
+    z: clampNumber(-Number(depth || 0) / 2 + fromBack + sizeZ / 2, -Number(depth || 0) / 2 + sizeZ / 2, Number(depth || 0) / 2 - sizeZ / 2),
   };
 }
 
