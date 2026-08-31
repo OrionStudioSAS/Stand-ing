@@ -121,7 +121,7 @@ function specialRequestReceivedEmailHtml({ clientName, standName, eventName, sce
     <p style="background:#fff7df;border:1px solid #f5b42c;border-radius:10px;padding:12px;color:#8a5a00"><strong>${escapeHtml(specialRequest)}</strong></p>
     <p>Notre équipe revient vers vous sous <strong>2 jours ouvrés</strong> avec les modifications réalisées sur votre scène.</p>
     <p><a href="${sceneUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">Voir ma configuration</a></p>
-    <p style="color:#687386;font-size:13px">L'équipe Stand-ING</p>
+    ${emailSignatureHtml()}
   </div>`;
 }
 
@@ -133,7 +133,7 @@ function specialRequestCompletedEmailHtml({ clientName, standName, eventName, sc
     <p>Notre équipe a réalisé les modifications demandées sur votre configuration <strong>${escapeHtml(standName)}</strong> pour <strong>${escapeHtml(eventName)}</strong>.</p>
     ${hasPurchaseOrder ? "<p>Votre bon de commande est joint à cet email.</p>" : ""}
     <p><a href="${sceneUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">Voir ma configuration</a></p>
-    <p style="color:#687386;font-size:13px">L'équipe Stand-ING</p>
+    ${emailSignatureHtml()}
   </div>`;
 }
 
@@ -147,9 +147,66 @@ function completionEmailHtml({ clientName, standName, eventName, sceneUrl, hasPu
     <p>Vous pouvez consulter votre scène à tout moment depuis le lien ci-dessous :</p>
     <p><a href="${sceneUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">Voir ma configuration</a></p>
     <p style="color:#687386;font-size:13px">L'équipe Stand-ING reviendra vers vous pour les prochaines étapes si nécessaire.</p>
+    ${emailSignatureHtml()}
   </div>`;
 }
 
+function emailSignatureHtml() {
+  return `
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:24px;border-top:1px solid #d7dde8;padding-top:14px;font-family:Arial,sans-serif;color:#172033;line-height:1.35">
+      <tr>
+        <td style="padding:0 0 4px;font-size:11pt;font-weight:bold;color:#002060">Contact exposant</td>
+      </tr>
+      <tr>
+        <td style="padding:0 0 12px;font-size:10pt;color:#767171">
+          <a href="mailto:configurateur@stand-ing.com" style="color:#767171;text-decoration:none">configurateur@stand-ing.com</a>
+          <span style="color:#767171"> | +33 (0)1 34 64 64 13</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 0 4px;font-size:11pt;font-weight:bold;color:#002060">Stand-ING | LA FORCE BLEUE</td>
+      </tr>
+      <tr>
+        <td style="padding:0 0 12px;font-size:10pt;color:#767171">
+          2 Rue de la Métairie - 95640 MARINES<br />
+          T : +33 (0)1 34 30 46 62<br />
+          <a href="https://www.stand-ing.com" style="color:#767171;text-decoration:none">www.stand-ing.com</a>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 0 12px">
+          <img src="https://mail.stand-ing.com/img/mail/signature-00.png" width="151" height="220" alt="Stand-ING" style="display:inline-block;border:0;vertical-align:top" />
+          <img src="https://mail.stand-ing.com/img/mail/signature-02.png" width="360" height="220" alt="EXPOSITION | EVENEMENTIEL | AGENCEMENT" style="display:inline-block;border:0;vertical-align:top" />
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 0 12px">
+          <img src="https://mail.stand-ing.com/img/mail/icone1.png" width="128" height="34" alt="" style="display:inline-block;border:0;vertical-align:middle" />
+          <a href="https://www.linkedin.com/company/stand-ing/" style="text-decoration:none"><img src="https://mail.stand-ing.com/img/mail/icone6.png" width="36" height="34" alt="LinkedIn" style="display:inline-block;border:0;vertical-align:middle" /></a>
+          <a href="https://www.instagram.com/standing_officiel/" style="text-decoration:none"><img src="https://mail.stand-ing.com/img/mail/icone7.png" width="36" height="34" alt="Instagram" style="display:inline-block;border:0;vertical-align:middle" /></a>
+          <a href="https://www.facebook.com/standing95/" style="text-decoration:none"><img src="https://mail.stand-ing.com/img/mail/icone2.png" width="36" height="34" alt="Facebook" style="display:inline-block;border:0;vertical-align:middle" /></a>
+          <a href="https://www.youtube.com/channel/UCB_U0sKwdannk3HAowNHlZA" style="text-decoration:none"><img src="https://mail.stand-ing.com/img/mail/icone3.png" width="36" height="34" alt="Youtube" style="display:inline-block;border:0;vertical-align:middle" /></a>
+          <a href="https://fr.pinterest.com/ing2355/" style="text-decoration:none"><img src="https://mail.stand-ing.com/img/mail/icone4.png" width="36" height="34" alt="Pinterest" style="display:inline-block;border:0;vertical-align:middle" /></a>
+          <a href="https://www.stand-ing.com" style="text-decoration:none"><img src="https://mail.stand-ing.com/img/mail/icone5.png" width="36" height="34" alt="stand-ing.com" style="display:inline-block;border:0;vertical-align:middle" /></a>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <img src="https://mail.stand-ing.com/img/mail/pub2.png" width="320" height="75" alt="" style="display:block;border:0" />
+        </td>
+      </tr>
+    </table>`;
+}
+
+function emailSignatureText() {
+  return `Contact exposant
+configurateur@stand-ing.com | +33 (0)1 34 64 64 13
+
+Stand-ING | LA FORCE BLEUE
+2 Rue de la Métairie - 95640 MARINES
+T : +33 (0)1 34 30 46 62
+www.stand-ing.com`;
+}
 function normalizePurchaseOrderAttachment(value: any) {
   const content = clean(value?.contentBase64);
   if (!content || !/^[A-Za-z0-9+/=\s]+$/.test(content)) return null;
