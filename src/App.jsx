@@ -2962,7 +2962,7 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
       <div className="item-dynamic-preview">
         <span className="preview-flag">{languageFlag(visualContext?.language)}</span>
         <strong>{visualContext?.company || t('partition_head_company')}</strong>
-        <span>{isSmclPartitionHeadItem(item) ? smclStandCode(normalizeSmclAisleCode(visualContext?.aisleNumber), normalizeSmclStandNumber(visualContext?.standNumber)) : (visualContext?.standNumber || 'A-14')}</span>
+        <span>{isSmclPartitionHeadItem(item) ? smclPartitionHeadDisplayCode(visualContext) : (visualContext?.standNumber || 'A-14')}</span>
       </div>
 
       <VisualUploadDropzone
@@ -16829,21 +16829,28 @@ function smclCanvasFont(weight = 400, size = 80) {
 
 function drawSmclLeftHeadInfo(ctx, { company, aisleNumber, standNumber, hall }) {
   const labelX = 245;
-  const standCode = smclStandCode(hall, aisleNumber);
+  const standCode = smclStandCode(standNumber, aisleNumber);
   fitCanvasText(ctx, company, 238, 48, 690, 92, 700);
   fitCanvasText(ctx, standCode, labelX, 205, 360, 92, 200);
-  fitCanvasText(ctx, standNumber ? `PAVILLON ${standNumber}` : 'PAVILLON —', labelX, 375, 360, 54, 300);
+  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', labelX, 375, 360, 54, 300);
   drawSmclSalonMark(ctx, labelX, 620, 0.86);
   drawSmclPartnerMarks(ctx, labelX, 760, 0.9);
 }
 
 function drawSmclRightHeadInfo(ctx, { company, aisleNumber, standNumber, hall }) {
-  const standCode = smclStandCode(hall, aisleNumber);
+  const standCode = smclStandCode(standNumber, aisleNumber);
   fitCanvasText(ctx, company, 290, 48, 700, 92, 700);
   fitCanvasText(ctx, standCode, 765, 205, 360, 92, 200);
-  fitCanvasText(ctx, standNumber ? `PAVILLON ${standNumber}` : 'PAVILLON —', 765, 375, 360, 54, 300);
+  fitCanvasText(ctx, hall ? `PAVILLON ${hall}` : 'PAVILLON —', 765, 375, 360, 54, 300);
   drawSmclSalonMark(ctx, 770, 620, 0.86);
   drawSmclPartnerMarks(ctx, 770, 760, 0.9);
+}
+
+function smclPartitionHeadDisplayCode(visualContext = {}) {
+  return smclStandCode(
+    normalizeSmclStandNumber(visualContext?.standNumber),
+    normalizeSmclAisleCode(visualContext?.aisleNumber),
+  );
 }
 
 function normalizeSmclAisleCode(value = '') {
