@@ -3668,9 +3668,8 @@ function counterLogoOptionPrice(item = {}, entry = {}) {
 }
 
 function counterLogoOptionLine(item = {}, entry = {}, salonLabel = '', index = 0) {
-  if (isIncludedSceneItem(item) || !counterLogoOptionActive(item)) return null;
-  const logoPrice = counterLogoOptionPrice(item, entry);
-  if (logoPrice <= 0) return null;
+  if (!isWoodReceptionDeskItem({ ...entry, ...item }) || !counterLogoOptionActive(item)) return null;
+  const logoPrice = isIncludedSceneItem(item) ? 0 : counterLogoOptionPrice(item, entry);
   const sizeLabel = item.options?.variantLabel || counterSizeShortLabel({ entry, label: item.label || entry?.label || '' });
   return {
     type: `counter-logo-${item.id || entry?.type || index}`,
@@ -5116,7 +5115,7 @@ function selectedGlobalSharedOptionsForItem(item = {}, catalogEntries = []) {
 
 function globalSharedOptionLines(items = [], catalogEntries = []) {
   const lines = new Map();
-  (items || []).forEach((item) => {
+  (items || []).filter(Boolean).forEach((item) => {
     selectedGlobalSharedOptionsForItem(item, catalogEntries).forEach((option) => {
       const key = `${option.groupType || 'group'}:${option.id || option.label}`;
       if (lines.has(key)) return;
@@ -5542,6 +5541,31 @@ function ValidationStepPanel({
     const target = sectionRows[section] ? section : 'furniture';
     sectionRows[target].push(row);
   };
+  const supplementLineKey = (line, index) => `${line.type || 'line'}:${line.optionForItemId || ''}:${index}`;
+  const renderedSupplementLineKeys = new Set();
+  const supplementRowFromLine = (line, index, billableItems = [], entry = null, associatedItem = null) => ({
+    id: `line-${line.type}-${index}`,
+    label: line.label,
+    detail: uniqueTextValues([
+      ...(Array.isArray(line.optionLines) ? line.optionLines : []),
+      ...billableItems.flatMap((item) => itemOptionLines(item)),
+    ]).slice(0, 2).join(' · '),
+    imageUrl: validationItemImage(billableItems[0] || associatedItem, entry),
+    badge: validationBadgeText(line.total),
+    badgeTone: Number(line.total || 0) > 0 ? 'price' : 'included',
+    option: Boolean(associatedItem || String(line.type || '').startsWith('global-option-')),
+  });
+  const pushAssociatedOptionRows = (parentItem, parentEntry, parentSection) => {
+    visibleSupplementLines.forEach((line, index) => {
+      if (line.optionForItemId !== parentItem.id) return;
+      if (validationLineHandledByOptions(line) || validationLineMergedIntoIncludedCounter(line, safeItems)) return;
+      const lineSection = validationCategoryFromLine(line, parentEntry, parentItem);
+      if (lineSection !== parentSection) return;
+      const key = supplementLineKey(line, index);
+      renderedSupplementLineKeys.add(key);
+      pushRow(parentSection, supplementRowFromLine(line, index, [parentItem], parentEntry, parentItem));
+    });
+  };
 
   pushRow('personalization', {
     id: 'carpet',
@@ -5644,33 +5668,26 @@ function ValidationStepPanel({
       isAdminViewer,
       onRemoveItem,
     }));
+    pushAssociatedOptionRows(item, entry, section);
   });
 
   visibleSupplementLines
     .filter((line) => !validationLineHandledByOptions(line))
     .filter((line) => !validationLineMergedIntoIncludedCounter(line, safeItems))
     .forEach((line, index) => {
+      if (renderedSupplementLineKeys.has(supplementLineKey(line, index))) return;
       const associatedItem = line.optionForItemId ? safeItems.find((item) => item.id === line.optionForItemId) : null;
       const includedCount = includedCounts.get(line.type) || 0;
       const billableItems = associatedItem ? [associatedItem] : safeItems.filter((i) => i.type === line.type).slice(includedCount);
       const firstItem = billableItems[0] || associatedItem || null;
       const entry = firstItem ? (findCatalogEntry(catalog, firstItem.type) || firstItem) : findCatalogEntry(catalog, line.type);
-      const optionLines = uniqueTextValues([
-        ...(Array.isArray(line.optionLines) ? line.optionLines : []),
-        ...billableItems.flatMap((item) => itemOptionLines(item)),
-      ]);
       const removable = !associatedItem ? billableItems.find((item) => canDeleteSceneItem(item, isAdminViewer)) : null;
       const section = validationCategoryFromLine(line, entry, firstItem);
       pushRow(section, {
-        id: `line-${line.type}-${index}`,
-        label: line.label,
-        detail: optionLines.slice(0, 2).join(' · '),
-        imageUrl: validationItemImage(firstItem, entry),
-        badge: validationBadgeText(line.total),
-        badgeTone: 'price',
-        option: Boolean(associatedItem || String(line.type || '').startsWith('global-option-')),
+        ...supplementRowFromLine(line, index, billableItems, entry, associatedItem),
         onRemove: removable && !readOnly ? () => onRemoveItem?.(removable.id) : null,
       });
+      billableItems.forEach((item) => pushAssociatedOptionRows(item, findCatalogEntry(catalog, item.type) || item, section));
     });
 
   const sectionOrder = [
@@ -12219,7 +12236,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     }
   });
 
-  globalSharedOptionLines(items, catalog).forEach((line) => {
+  globalSharedOptionLines(safeItems, catalog).forEach((line) => {
     itemsTotal += line.total;
     lines.push(line);
   });
