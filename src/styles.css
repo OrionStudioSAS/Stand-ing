@@ -10918,6 +10918,7 @@ img.asset-thumb {
   position: absolute;
   inset: 0;
   opacity: 0;
+  cursor: pointer;
 }
 
 .counter-logo-switch span {
@@ -10926,18 +10927,37 @@ img.asset-thumb {
   width: 100%;
   height: 100%;
   border-radius: 999px;
-  background: #416bb0;
+  background: #e4e8ee;
+  transition: background 0.18s ease;
 }
 
 .counter-logo-switch span::after {
   content: '';
   position: absolute;
   top: 3px;
-  right: 3px;
+  left: 3px;
   width: 14px;
   height: 14px;
   border-radius: 999px;
   background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+  transition: transform 0.18s ease;
+}
+
+.counter-logo-switch input:checked + span {
+  background: #416bb0;
+}
+
+.counter-logo-switch input:checked + span::after {
+  transform: translateX(16px);
+}
+
+.counter-logo-switch input:disabled {
+  cursor: not-allowed;
+}
+
+.counter-logo-switch input:disabled + span {
+  opacity: 0.55;
 }
 
 .counter-logo-card-v2 .visual-upload-dropzone {

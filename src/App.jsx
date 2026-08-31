@@ -3038,7 +3038,7 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
   );
 }
 
-function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onVisualPendingChange, embedded = false, optionsFree = false, logoPrice = 0 }) {
+function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onVisualPendingChange, onLogoEnabledChange, embedded = false, optionsFree = false, logoPrice = 0 }) {
   const t = useT();
   const finishes = counterFinishOptions(colors);
   const woodFinish = counterWoodFinish(colors);
@@ -3048,6 +3048,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
   const optionalFinishes = optionsFree ? [] : finishes.filter((finish) => !includedFinishes.some((included) => included.id === finish.id));
   const optionPrice = optionalFinishes.find((finish) => Number(finish.price || 0) > 0)?.price || 0;
   const logoPending = Boolean(item.options?.binary3VisualPending);
+  const logoEnabled = counterLogoOptionActive(item);
   const displayLogoPrice = Number(logoPrice || 0);
   return (
     <aside className={embedded ? 'item-visual-config' : 'item-options-panel'}>
@@ -3058,36 +3059,6 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
           <span>{t('wood_desk_subtitle')}</span>
         </div>
       </div>
-
-      <section className="counter-logo-card counter-logo-card-v2 item-counter-logo-card">
-        <header>
-          <strong>Logo</strong>
-        </header>
-        <em className={displayLogoPrice > 0 ? 'billable' : 'included'}>
-          {displayLogoPrice > 0 ? `+ ${displayLogoPrice.toLocaleString('fr-FR')} €` : t('counter_included_badge')}
-        </em>
-
-        <VisualUploadDropzone
-          imageUrl={item.options?.binary3ImageUrl}
-          disabled={uploadState?.uploading}
-          uploading={uploadState?.uploading}
-          onImage={onImageChange}
-          label=""
-          browseLabel="Importer"
-        />
-        <small className="visual-upload-spec">
-          {(() => { const [w, h] = woodReceptionDeskImageCoverSize(item); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
-        </small>
-        <label className="visual-pending-checkbox">
-          <input
-            type="checkbox"
-            checked={logoPending}
-            onChange={(event) => onVisualPendingChange?.(event.target.checked)}
-          />
-          <span>{t('visual_pending_label')}</span>
-        </label>
-        {item.options?.binary3ImageUrl && <button className="item-image-reset" type="button" onClick={onResetImage}>{t('wood_desk_reset_image')}</button>}
-      </section>
 
       <section className="counter-color-card counter-finish-card item-counter-finish-card">
         <div className="counter-finish-head">
@@ -3108,6 +3079,48 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
                 <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(finish)} />
               ))}
             </div>
+          </>
+        )}
+      </section>
+
+      <section className="counter-logo-card counter-logo-card-v2 item-counter-logo-card">
+        <header>
+          <strong>Logo</strong>
+          <label className="counter-logo-switch" aria-label="Activer le logo">
+            <input
+              type="checkbox"
+              checked={logoEnabled}
+              onChange={(event) => onLogoEnabledChange?.(event.target.checked)}
+            />
+            <span aria-hidden="true" />
+          </label>
+        </header>
+        {logoEnabled && (
+          <>
+            <em className={displayLogoPrice > 0 ? 'billable' : 'included'}>
+              {displayLogoPrice > 0 ? `+ ${displayLogoPrice.toLocaleString('fr-FR')} €` : t('counter_included_badge')}
+            </em>
+
+            <VisualUploadDropzone
+              imageUrl={item.options?.binary3ImageUrl}
+              disabled={uploadState?.uploading}
+              uploading={uploadState?.uploading}
+              onImage={onImageChange}
+              label=""
+              browseLabel="Importer"
+            />
+            <small className="visual-upload-spec">
+              {(() => { const [w, h] = woodReceptionDeskImageCoverSize(item); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
+            </small>
+            <label className="visual-pending-checkbox">
+              <input
+                type="checkbox"
+                checked={logoPending}
+                onChange={(event) => onVisualPendingChange?.(event.target.checked)}
+              />
+              <span>{t('visual_pending_label')}</span>
+            </label>
+            {item.options?.binary3ImageUrl && <button className="item-image-reset" type="button" onClick={onResetImage}>{t('wood_desk_reset_image')}</button>}
           </>
         )}
       </section>
@@ -3313,6 +3326,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   const selectedFinish = counterFinishOptions(colors).find((finish) => finish.id === selectedColorId) || counterWoodFinish(colors);
   const imageName = selectedItem?.options?.binary3ImageName || t('counter_no_logo');
   const logoPending = Boolean(selectedItem?.options?.binary3VisualPending);
+  const logoEnabled = counterLogoOptionActive(selectedItem || {});
   const logoPrice = isIncludedSceneItem(selectedItem) ? 0 : counterLogoOptionPrice(selectedItem, selectedVariant?.entry || selectedItem);
   const [logoSpecW, logoSpecH] = counterLogoFormatSize(selectedItem || {}, selectedVariant);
 
@@ -3326,7 +3340,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   };
   const uploadSelectedImage = (file) => {
     if (!selectedItem || !file) return;
-    onImage?.(selectedItem, file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName', extraPatch: { binary3VisualPending: false } });
+    onImage?.(selectedItem, file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName', extraPatch: { binary3Enabled: true, binary3VisualPending: false } });
   };
   const selectVariant = (variant) => {
     if (!selectedItem || !variant?.entry) return;
@@ -3415,43 +3429,56 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
       <section className="counter-logo-card counter-logo-card-v2">
         <header>
           <strong>Logo</strong>
+          <label className="counter-logo-switch" aria-label="Activer le logo">
+            <input
+              type="checkbox"
+              disabled={disabled}
+              checked={logoEnabled}
+              onChange={(event) => updateSelected(counterLogoTogglePatch(event.target.checked))}
+            />
+            <span aria-hidden="true" />
+          </label>
         </header>
-        <em className={logoPrice > 0 ? 'billable' : 'included'}>
-          {logoPrice > 0 ? `+ ${logoPrice.toLocaleString('fr-FR')} €` : t('counter_included_badge')}
-        </em>
+        {logoEnabled && (
+          <>
+            <em className={logoPrice > 0 ? 'billable' : 'included'}>
+              {logoPrice > 0 ? `+ ${logoPrice.toLocaleString('fr-FR')} €` : t('counter_included_badge')}
+            </em>
 
-        <VisualUploadDropzone
-          imageUrl={selectedItem?.options?.binary3ImageUrl}
-          alt={imageName}
-          disabled={disabled || uploadState?.uploading}
-          uploading={uploadState?.uploading}
-          onImage={uploadSelectedImage}
-          label=""
-          browseLabel="Importer"
-        />
-        <small className="visual-upload-spec">
-          {t('img_format_spec', { w: logoSpecW.toLocaleString('fr-FR'), h: logoSpecH.toLocaleString('fr-FR') })}
-        </small>
+            <VisualUploadDropzone
+              imageUrl={selectedItem?.options?.binary3ImageUrl}
+              alt={imageName}
+              disabled={disabled || uploadState?.uploading}
+              uploading={uploadState?.uploading}
+              onImage={uploadSelectedImage}
+              label=""
+              browseLabel="Importer"
+            />
+            <small className="visual-upload-spec">
+              {t('img_format_spec', { w: logoSpecW.toLocaleString('fr-FR'), h: logoSpecH.toLocaleString('fr-FR') })}
+            </small>
 
-        <label className="visual-pending-checkbox">
-          <input
-            type="checkbox"
-            disabled={disabled}
-            checked={logoPending}
-            onChange={(event) => updateSelected({ binary3VisualPending: event.target.checked })}
-          />
-          <span>{t('visual_pending_label')}</span>
-        </label>
+            <label className="visual-pending-checkbox">
+              <input
+                type="checkbox"
+                disabled={disabled}
+                checked={logoPending}
+                onChange={(event) => updateSelected({ binary3Enabled: true, binary3VisualPending: event.target.checked })}
+              />
+              <span>{t('visual_pending_label')}</span>
+            </label>
 
-        {selectedItem?.options?.binary3ImageUrl && (
-          <button
-            type="button"
-            className="item-image-reset"
-            disabled={disabled}
-            onClick={() => updateSelected({ binary3ImageUrl: '', binary3ImageName: '' })}
-          >
-            {t('counter_remove')}
-          </button>
+            {selectedItem?.options?.binary3ImageUrl && (
+              <button
+                type="button"
+                className="item-image-reset"
+                disabled={disabled}
+                onClick={() => updateSelected({ binary3ImageUrl: '', binary3ImageName: '' })}
+              >
+                {t('counter_remove')}
+              </button>
+            )}
+          </>
         )}
       </section>
 
@@ -3661,7 +3688,23 @@ function counterVariantUpgradeOptionLine(item = {}, entry = {}, salonLabel = '',
 }
 
 function counterLogoOptionActive(item = {}) {
-  return Boolean(item.options?.binary3ImageUrl || item.options?.binary3ImageName || item.options?.binary3VisualPending);
+  if (item.options?.binary3Enabled === false) return false;
+  return Boolean(item.options?.binary3Enabled || item.options?.binary3ImageUrl || item.options?.binary3ImageName || item.options?.binary3VisualPending || counterItemHasDefaultLogo(item));
+}
+
+function counterItemHasDefaultLogo(item = {}) {
+  return normalizeTextValue(`${item.label || ''} ${item.type || ''} ${item.options?.variantLabel || ''}`).includes('signa');
+}
+
+function counterLogoTogglePatch(enabled = false) {
+  return enabled
+    ? { binary3Enabled: true }
+    : {
+      binary3Enabled: false,
+      binary3ImageUrl: '',
+      binary3ImageName: '',
+      binary3VisualPending: false,
+    };
 }
 
 function counterLogoOptionPrice(item = {}, entry = {}) {
@@ -3677,7 +3720,7 @@ function counterLogoOptionLine(item = {}, entry = {}, salonLabel = '', index = 0
   const sizeLabel = item.options?.variantLabel || counterSizeShortLabel({ entry, label: item.label || entry?.label || '' });
   return {
     type: `counter-logo-${item.id || entry?.type || index}`,
-    label: `Signalétique comptoir accueil — ${sizeLabel}`,
+    label: `Logo comptoir accueil — ${sizeLabel}`,
     quantity: 1,
     unitPrice: logoPrice,
     total: logoPrice,
@@ -4562,10 +4605,11 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             item={visualItem}
             colors={counterColors}
             uploadState={modalUploadState}
-            onImageChange={(file) => handleDraftImage(file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName', extraPatch: { binary3VisualPending: false } })}
+            onImageChange={(file) => handleDraftImage(file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName', extraPatch: { binary3Enabled: true, binary3VisualPending: false } })}
             onResetImage={() => updateDraftVisualOptions({ binary3ImageUrl: '', binary3ImageName: '' })}
             onColorChange={(finish) => updateDraftVisualOptions(counterFinishPatch(finish))}
-            onVisualPendingChange={(checked) => updateDraftVisualOptions({ binary3VisualPending: checked })}
+            onVisualPendingChange={(checked) => updateDraftVisualOptions({ binary3Enabled: true, binary3VisualPending: checked })}
+            onLogoEnabledChange={(checked) => updateDraftVisualOptions(counterLogoTogglePatch(checked))}
             embedded
             optionsFree
             logoPrice={counterLogoUnitPrice}
@@ -5185,7 +5229,7 @@ function counterColorSurfaceM2(item = {}, entry = {}) {
 function counterColorOptionLine(item = {}, entry = {}, salonLabel = '', index = 0) {
   const colorPrice = Number(item.options?.binary2ColorPrice || 0);
   if (!isWoodReceptionDeskItem({ ...entry, ...item }) || colorPrice <= 0) return null;
-  const colorName = item.options?.binary2ColorName || item.options?.binary2Color || 'finition';
+  const colorName = shortFinishName(item.options?.binary2ColorName || item.options?.binary2Color || 'finition');
   return {
     type: `counter-color-${item.id || entry?.type || index}`,
     label: `Option finition comptoir accueil — ${colorName}`,
@@ -5283,6 +5327,14 @@ function sortAdminAssets(assets = []) {
   return [...assets].sort((a, b) => (
     assetCategorySortIndex(a) - assetCategorySortIndex(b)
     || assetDisplayOrder(a) - assetDisplayOrder(b)
+    || String(a?.label || a?.type || '').localeCompare(String(b?.label || b?.type || ''), 'fr')
+  ));
+}
+
+function sortAdminAssetsForCategory(assets = [], category = 'Tout', allAssets = []) {
+  if (!assetCategoryOptions.includes(category)) return sortAdminAssets(assets);
+  return [...assets].sort((a, b) => (
+    assetDisplayOrder(a) - assetDisplayOrder(b)
     || String(a?.label || a?.type || '').localeCompare(String(b?.label || b?.type || ''), 'fr')
   ));
 }
@@ -5429,12 +5481,12 @@ function itemOptionLines(item) {
     if (sizeLabel) result.push(sizeLabel);
     if (opts.binary2ColorName || opts.binary2Color) {
       const colorPrice = Number(opts.binary2ColorPrice || 0);
-      result.push(`Couleur : ${opts.binary2ColorName || opts.binary2Color}${colorPrice > 0 ? ` (+${colorPrice.toLocaleString('fr-FR')} € HT/m²)` : ''}`);
+      const colorName = shortFinishName(opts.binary2ColorName || opts.binary2Color);
+      result.push(`Couleur : ${colorName}${colorPrice > 0 ? ` (+${colorPrice.toLocaleString('fr-FR')} € HT/m²)` : ''}`);
     } else {
       result.push('Couleur : Bois');
     }
-    const hasLogo = normalizeTextValue(`${item.label || ''} ${item.type || ''} ${opts.variantLabel || ''}`).includes('signa')
-      || Boolean(opts.binary3ImageUrl || opts.binary3ImageName || opts.binary3VisualPending);
+    const hasLogo = counterLogoOptionActive(item);
     result.push(hasLogo ? 'Avec logo' : 'Sans logo');
     return uniqueTextValues(result);
   }
@@ -5555,7 +5607,7 @@ function ValidationStepPanel({
     const isCounterLogo = validationIsCounterLogoLine(line);
     return {
       id: `line-${line.type}-${index}`,
-      label: isCounterLogo ? 'Signalétique comptoir accueil' : line.label,
+      label: isCounterLogo ? 'Logo comptoir accueil' : line.label,
       detail: isCounterLogo ? '' : uniqueTextValues([
         ...(Array.isArray(line.optionLines) ? line.optionLines : []),
         ...billableItems.flatMap((item) => itemOptionLines(item)),
@@ -5893,7 +5945,7 @@ function validationRowFromItem({ item, entry, amount = 0, included = false, read
   const optionLines = uniqueTextValues(itemOptionLines(item));
   const hasCustomImage = Boolean(item?.options?.binary3ImageUrl || item?.options?.headMainImageUrl || item?.options?.posterImageUrl);
   const visualPending = Boolean(item?.options?.binary3VisualPending || item?.options?.headMainVisualPending || item?.options?.posterVisualPending);
-  const needsVisual = visualPending || Boolean(item?.options?.binary3ImageName || item?.options?.headMainImageName || item?.options?.posterImageName);
+  const needsVisual = (isWoodReceptionDeskItem(item) && counterLogoOptionActive(item)) || visualPending || Boolean(item?.options?.binary3ImageName || item?.options?.headMainImageName || item?.options?.posterImageName);
   return {
     id: item.id,
     label: itemCartLabel(item),
@@ -8956,13 +9008,14 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
   const [assetSearch, setAssetSearch] = useState(search || '');
   const [draggingAssetType, setDraggingAssetType] = useState('');
   const categories = ['Tout', 'Groupes', 'Groupes de variantes', 'Groupes de couleurs', ...assetCategoryOptions];
-  const filteredAssets = sortAdminAssets(assets.filter((asset) => {
-    const assetCategory = assetCategoryLabel(asset);
-    const matchesCategory = category === 'Tout' || assetCategory === category;
+  const filteredAssets = sortAdminAssetsForCategory(assets.filter((asset) => {
+    const technicalCategory = assetCategoryLabel(asset);
+    const businessCategory = assetBusinessCategoryLabel(asset, assets);
+    const matchesCategory = adminAssetMatchesCategory(asset, category, assets);
     const normalizedSearch = assetSearch.trim().toLowerCase();
-    const matchesSearch = !normalizedSearch || [asset.label, asset.type, assetCategory].filter(Boolean).some((value) => value.toLowerCase().includes(normalizedSearch));
+    const matchesSearch = !normalizedSearch || [asset.label, asset.type, technicalCategory, businessCategory].filter(Boolean).some((value) => value.toLowerCase().includes(normalizedSearch));
     return matchesCategory && matchesSearch;
-  }));
+  }), category, assets);
 
   const reorderVisibleAsset = (targetType) => {
     if (!draggingAssetType || draggingAssetType === targetType) return;
@@ -9079,7 +9132,7 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
             <AssetPreview asset={asset} />
             <div className="asset-card-body">
               <strong>{asset.label}</strong>
-              <span>{assetCategoryLabel(asset)}</span>
+              <span>{assetAdminCardCategoryLabel(asset, assets)}</span>
               <em>{assetSizeLabel(asset)}</em>
               <div className="asset-tags">
                 {assetSalons(asset, scenes).slice(0, 2).map((salon) => <small key={salon}>{salonShortLabel(salon)}</small>)}
@@ -9537,7 +9590,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
       dimensions: {
         ...(draft.dimensions || {}),
         isGroup: true,
-        category: 'Groupes',
+        category: assetBusinessCategoryLabel(draft, assets),
         groupSize: computeGroupSize(children),
         children,
         format: 'Groupe',
@@ -9655,11 +9708,11 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
           </label>
         )}
 
-        {!isGroupAsset && !isColorGroup && (
+        {!isColorGroup && (
           <label className="asset-group-field">
             <span>Catégorie</span>
             <select
-              value={draft.dimensions?.category || assetCategoryLabel(draft)}
+              value={assetBusinessCategoryLabel(draft, assets)}
               onChange={(event) => updateAssetBehavior({ category: event.target.value })}
             >
               {assetCategoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -10508,6 +10561,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
   const sourceAssets = groupSourceAssets(assets);
   const fallbackType = sourceAssets[0]?.type || '';
   const [name, setName] = useState('Nouveau groupe');
+  const [category, setCategory] = useState('Mobilier');
   const [saving, setSaving] = useState(false);
   const [rows, setRows] = useState([
     { uid: `group-row-${Date.now()}-1`, type: fallbackType, x: -0.4, z: 0, rotation: 0 },
@@ -10553,7 +10607,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
       thumbnail_url: null,
       is_active: true,
       dimensions: {
-        category: 'Groupes',
+        category,
         isGroup: true,
         groupSize: computeGroupSize(children),
         children,
@@ -10580,6 +10634,13 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
         <label className="asset-group-field">
           <span>Nom du groupe</span>
           <input value={name} onChange={(event) => setName(event.target.value)} />
+        </label>
+
+        <label className="asset-group-field">
+          <span>Catégorie boutique</span>
+          <select value={category} onChange={(event) => setCategory(event.target.value)}>
+            {assetCategoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
         </label>
 
         <section className="asset-group-placement">
@@ -11395,6 +11456,61 @@ function assetCategoryLabel(asset) {
   if (asset.type?.includes('cloison') || asset.type?.includes('porte')) return 'Sol & Cloisons';
   if (asset.type?.includes('enseigne')) return 'Enseignes';
   return 'Mobilier';
+}
+
+function assetBusinessCategoryLabel(asset = {}, allAssets = []) {
+  const configured = asset.dimensions?.category || '';
+  if (assetCategoryOptions.includes(configured)) return configured;
+  if (asset.dimensions?.isGroup) return inferGroupBusinessCategory(asset, allAssets);
+  if (asset.dimensions?.isVariantGroup) return inferVariantGroupBusinessCategory(asset, allAssets);
+  return assetCategoryLabel(asset);
+}
+
+function assetAdminCardCategoryLabel(asset = {}, allAssets = []) {
+  const technical = assetCategoryLabel(asset);
+  const business = assetBusinessCategoryLabel(asset, allAssets);
+  if ((asset.dimensions?.isGroup || asset.dimensions?.isVariantGroup) && assetCategoryOptions.includes(business)) {
+    return `${technical} · ${business}`;
+  }
+  return technical;
+}
+
+function adminAssetMatchesCategory(asset = {}, category = 'Tout', allAssets = []) {
+  if (category === 'Tout') return true;
+  if (category === 'Groupes') return Boolean(asset.dimensions?.isGroup);
+  if (category === 'Groupes de variantes') return Boolean(asset.dimensions?.isVariantGroup);
+  if (category === 'Groupes de couleurs') return Boolean(asset.dimensions?.isColorGroup);
+  if (assetCategoryOptions.includes(category)) {
+    if (adminGroupedMemberTypes(allAssets).has(asset.type) && !asset.dimensions?.isGroup && !asset.dimensions?.isVariantGroup) return false;
+    return assetBusinessCategoryLabel(asset, allAssets) === category;
+  }
+  return assetCategoryLabel(asset) === category;
+}
+
+function adminGroupedMemberTypes(assets = []) {
+  return new Set((assets || []).flatMap((asset) => {
+    if (asset.dimensions?.isVariantGroup) return variantManagedAssetTypes(asset);
+    if (asset.dimensions?.isGroup) return (asset.dimensions?.children || []).map((child) => child?.type).filter(Boolean);
+    return [];
+  }));
+}
+
+function inferVariantGroupBusinessCategory(asset = {}, allAssets = []) {
+  return inferBusinessCategoryFromTypes(variantManagedAssetTypes(asset), allAssets);
+}
+
+function inferGroupBusinessCategory(asset = {}, allAssets = []) {
+  const childTypes = (asset.dimensions?.children || []).map((child) => child?.type).filter(Boolean);
+  return inferBusinessCategoryFromTypes(childTypes, allAssets);
+}
+
+function inferBusinessCategoryFromTypes(types = [], allAssets = []) {
+  const categories = uniqueTextValues(types
+    .map((type) => allAssets.find((candidate) => candidate.type === type))
+    .filter(Boolean)
+    .map((asset) => assetBusinessCategoryLabel({ ...asset, dimensions: { ...(asset.dimensions || {}), isGroup: false, isVariantGroup: false } }, allAssets))
+    .filter((category) => assetCategoryOptions.includes(category)));
+  return categories[0] || 'Mobilier';
 }
 
 function assetFormat(asset) {

@@ -177,7 +177,7 @@ export const translations = {
     counter_logo_default: 'Image frontale du comptoir',
     counter_logo_ok: '',
     counter_included_badge: 'Inclus',
-    counter_logo_spec: 'Format conseillé :',
+    counter_logo_spec: 'Format :',
     counter_logo_add: 'Importer une image JPG, PNG ou WebP',
     counter_logo_replace_hint: 'Cliquer pour remplacer',
     counter_replace: 'Remplacer',
@@ -337,7 +337,7 @@ export const translations = {
     img_upload_browse: 'Parcourir',
     img_upload_reset: 'Revenir à l\'image d\'origine',
     img_uploading: 'Upload du visuel...',
-    img_format_spec: 'Format conseillé : {w} × {h} mm · PNG, JPG ou PDF',
+    img_format_spec: 'Format : {w} × {h} mm · PNG, JPG ou PDF',
 
     // Wood desk
     wood_desk_title: 'Comptoir accueil bois',
