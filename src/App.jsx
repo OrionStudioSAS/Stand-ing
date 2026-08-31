@@ -5075,7 +5075,7 @@ function itemCartLabel(item) {
 
 function cartItemPrice(item, entry, salonLabel) {
   const basePrice = cartItemBasePrice(item, entry, salonLabel, []);
-  const colorSupplement = isBillableCounterColorOption(item, entry)
+  const colorSupplement = isWoodReceptionDeskItem({ ...entry, ...item })
     ? Number(item.options?.binary2ColorPrice || 0)
     : 0;
   const logoSupplement = !isIncludedSceneItem(item) && counterLogoOptionActive(item)
@@ -5180,7 +5180,7 @@ function counterColorSurfaceM2(item = {}, entry = {}) {
 
 function counterColorOptionLine(item = {}, entry = {}, salonLabel = '', index = 0) {
   const colorPrice = Number(item.options?.binary2ColorPrice || 0);
-  if (!isBillableCounterColorOption(item, entry) || colorPrice <= 0) return null;
+  if (!isWoodReceptionDeskItem({ ...entry, ...item }) || colorPrice <= 0) return null;
   const colorName = item.options?.binary2ColorName || item.options?.binary2Color || 'finition';
   return {
     type: `counter-color-${item.id || entry?.type || index}`,
@@ -5535,13 +5535,16 @@ function ValidationStepPanel({
       .filter((line) => String(line.type || '').startsWith('counter-size-') && line.optionForItemId)
       .map((line) => [line.optionForItemId, line]),
   );
+  const counterMergedSupplementTotal = (itemId = '') => visibleSupplementLines
+    .filter((line) => line.optionForItemId === itemId && validationLineMergedIntoCounterRow(line, safeItems))
+    .reduce((sum, line) => sum + Number(line.total || 0), 0);
 
   const pushRow = (section, row) => {
     if (!row) return;
     const target = sectionRows[section] ? section : 'furniture';
     sectionRows[target].push(row);
   };
-  const supplementLineKey = (line, index) => `${line.type || 'line'}:${line.optionForItemId || ''}:${index}`;
+  const supplementLineKey = (line) => `${line.type || 'line'}:${line.optionForItemId || ''}:${normalizeTextValue(line.label || '')}`;
   const renderedSupplementLineKeys = new Set();
   const supplementRowFromLine = (line, index, billableItems = [], entry = null, associatedItem = null) => ({
     id: `line-${line.type}-${index}`,
@@ -5558,10 +5561,10 @@ function ValidationStepPanel({
   const pushAssociatedOptionRows = (parentItem, parentEntry, parentSection) => {
     visibleSupplementLines.forEach((line, index) => {
       if (line.optionForItemId !== parentItem.id) return;
-      if (validationLineHandledByOptions(line) || validationLineMergedIntoIncludedCounter(line, safeItems)) return;
+      if (validationLineHandledByOptions(line) || validationLineMergedIntoCounterRow(line, safeItems)) return;
       const lineSection = validationCategoryFromLine(line, parentEntry, parentItem);
       if (lineSection !== parentSection) return;
-      const key = supplementLineKey(line, index);
+      const key = supplementLineKey(line);
       renderedSupplementLineKeys.add(key);
       pushRow(parentSection, supplementRowFromLine(line, index, [parentItem], parentEntry, parentItem));
     });
@@ -5659,11 +5662,12 @@ function ValidationStepPanel({
     const section = validationCategoryFromEntry(entry, item);
     const mergedCounterSizeLine = isWoodReceptionDeskItem(item) ? counterSizeSupplementByItemId.get(item.id) : null;
     const mergedCounterSizeAmount = Number(mergedCounterSizeLine?.total || 0);
+    const mergedCounterAmount = isWoodReceptionDeskItem(item) ? counterMergedSupplementTotal(item.id) : mergedCounterSizeAmount;
     pushRow(section, validationRowFromItem({
       item,
       entry,
-      amount: mergedCounterSizeAmount,
-      included: mergedCounterSizeAmount <= 0,
+      amount: mergedCounterAmount,
+      included: mergedCounterAmount <= 0,
       readOnly,
       isAdminViewer,
       onRemoveItem,
@@ -5673,9 +5677,9 @@ function ValidationStepPanel({
 
   visibleSupplementLines
     .filter((line) => !validationLineHandledByOptions(line))
-    .filter((line) => !validationLineMergedIntoIncludedCounter(line, safeItems))
+    .filter((line) => !validationLineMergedIntoCounterRow(line, safeItems))
     .forEach((line, index) => {
-      if (renderedSupplementLineKeys.has(supplementLineKey(line, index))) return;
+      if (renderedSupplementLineKeys.has(supplementLineKey(line))) return;
       const associatedItem = line.optionForItemId ? safeItems.find((item) => item.id === line.optionForItemId) : null;
       const includedCount = includedCounts.get(line.type) || 0;
       const billableItems = associatedItem ? [associatedItem] : safeItems.filter((i) => i.type === line.type).slice(includedCount);
@@ -5683,11 +5687,16 @@ function ValidationStepPanel({
       const entry = firstItem ? (findCatalogEntry(catalog, firstItem.type) || firstItem) : findCatalogEntry(catalog, line.type);
       const removable = !associatedItem ? billableItems.find((item) => canDeleteSceneItem(item, isAdminViewer)) : null;
       const section = validationCategoryFromLine(line, entry, firstItem);
+      const mergedCounterAmount = !associatedItem && firstItem && isWoodReceptionDeskItem(firstItem)
+        ? counterMergedSupplementTotal(firstItem.id)
+        : 0;
       pushRow(section, {
-        ...supplementRowFromLine(line, index, billableItems, entry, associatedItem),
+        ...supplementRowFromLine({ ...line, total: Number(line.total || 0) + mergedCounterAmount }, index, billableItems, entry, associatedItem),
         onRemove: removable && !readOnly ? () => onRemoveItem?.(removable.id) : null,
       });
-      billableItems.forEach((item) => pushAssociatedOptionRows(item, findCatalogEntry(catalog, item.type) || item, section));
+      if (!associatedItem) {
+        billableItems.forEach((item) => pushAssociatedOptionRows(item, findCatalogEntry(catalog, item.type) || item, section));
+      }
     });
 
   const sectionOrder = [
@@ -5829,10 +5838,11 @@ function validationLineHandledByOptions(line = {}) {
   return false;
 }
 
-function validationLineMergedIntoIncludedCounter(line = {}, items = []) {
-  if (!String(line.type || '').startsWith('counter-size-') || !line.optionForItemId) return false;
+function validationLineMergedIntoCounterRow(line = {}, items = []) {
+  const type = String(line.type || '');
+  if (!(type.startsWith('counter-size-') || type.startsWith('counter-color-')) || !line.optionForItemId) return false;
   const item = items.find((candidate) => candidate.id === line.optionForItemId);
-  return Boolean(item && isIncludedSceneItem(item) && isWoodReceptionDeskItem(item));
+  return Boolean(item && isWoodReceptionDeskItem(item));
 }
 
 function validationCategoryFromEntry(entry = {}, item = {}) {
@@ -6580,8 +6590,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
         </div>
       )}
       <div className="wall-cover-info-box">
-        <strong><b>!</b>Vous n’avez pas le fichier ?</strong>
-        <span>{t('wall_cover_external_notice')}</span>
+        <span><b>!</b>Cliquez sur <strong>importer</strong> pour visualiser votre fichier dans la scène 3D et il nous sera envoyé automatiquement. Vous n’avez pas de fichier ? Pas de panique. Cliquez simplement sur "je fournirai le visuel plus tard" et nous reviendrons vers vous ultérieurement.</span>
       </div>
 
       {activeMl > 0 && (

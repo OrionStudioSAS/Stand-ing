@@ -8617,6 +8617,19 @@ img.asset-thumb {
   color: #a56105;
 }
 
+.wall-cover-info-box span b {
+  display: inline-grid;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.wall-cover-info-box span strong {
+  display: inline;
+  color: inherit;
+  font-size: inherit;
+  font-weight: 950;
+}
+
 .wall-cover-row {
   display: grid;
   gap: 10px;
