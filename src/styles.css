@@ -147,8 +147,6 @@ label {
 }
 
 label span {
-  justify-self: end;
-  margin-top: -23px;
   color: var(--muted);
   font-size: 0.8rem;
 }

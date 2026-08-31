@@ -3314,6 +3314,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   const imageName = selectedItem?.options?.binary3ImageName || t('counter_no_logo');
   const logoPending = Boolean(selectedItem?.options?.binary3VisualPending);
   const logoPrice = isIncludedSceneItem(selectedItem) ? 0 : counterLogoOptionPrice(selectedItem, selectedVariant?.entry || selectedItem);
+  const [logoSpecW, logoSpecH] = counterLogoFormatSize(selectedItem || {}, selectedVariant);
 
   const selectCounter = (id) => {
     setSelectedCounterId(id);
@@ -3428,6 +3429,9 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
           label=""
           browseLabel="Importer"
         />
+        <small className="visual-upload-spec">
+          {t('img_format_spec', { w: logoSpecW.toLocaleString('fr-FR'), h: logoSpecH.toLocaleString('fr-FR') })}
+        </small>
 
         <label className="visual-pending-checkbox">
           <input
@@ -5546,18 +5550,22 @@ function ValidationStepPanel({
   };
   const supplementLineKey = (line) => `${line.type || 'line'}:${line.optionForItemId || ''}:${normalizeTextValue(line.label || '')}`;
   const renderedSupplementLineKeys = new Set();
-  const supplementRowFromLine = (line, index, billableItems = [], entry = null, associatedItem = null) => ({
-    id: `line-${line.type}-${index}`,
-    label: line.label,
-    detail: uniqueTextValues([
-      ...(Array.isArray(line.optionLines) ? line.optionLines : []),
-      ...billableItems.flatMap((item) => itemOptionLines(item)),
-    ]).slice(0, 2).join(' · '),
-    imageUrl: validationItemImage(billableItems[0] || associatedItem, entry),
-    badge: validationBadgeText(line.total),
-    badgeTone: Number(line.total || 0) > 0 ? 'price' : 'included',
-    option: Boolean(associatedItem || String(line.type || '').startsWith('global-option-')),
-  });
+  const supplementRowFromLine = (line, index, billableItems = [], entry = null, associatedItem = null) => {
+    const sourceItem = billableItems[0] || associatedItem;
+    const isCounterLogo = validationIsCounterLogoLine(line);
+    return {
+      id: `line-${line.type}-${index}`,
+      label: isCounterLogo ? 'Signalétique comptoir accueil' : line.label,
+      detail: isCounterLogo ? '' : uniqueTextValues([
+        ...(Array.isArray(line.optionLines) ? line.optionLines : []),
+        ...billableItems.flatMap((item) => itemOptionLines(item)),
+      ]).slice(0, 2).join(' · '),
+      imageUrl: isCounterLogo ? validationCounterLogoImage(sourceItem, entry) : validationItemImage(sourceItem, entry),
+      badge: validationBadgeText(line.total),
+      badgeTone: Number(line.total || 0) > 0 ? 'price' : 'included',
+      option: !isCounterLogo && Boolean(associatedItem || String(line.type || '').startsWith('global-option-')),
+    };
+  };
   const pushAssociatedOptionRows = (parentItem, parentEntry, parentSection) => {
     visibleSupplementLines.forEach((line, index) => {
       if (line.optionForItemId !== parentItem.id) return;
@@ -5838,6 +5846,12 @@ function validationLineHandledByOptions(line = {}) {
   return false;
 }
 
+function validationIsCounterLogoLine(line = {}) {
+  const type = String(line.type || '');
+  const label = normalizeTextValue(line.label || '');
+  return type.startsWith('counter-logo-') || label.includes('signaletique comptoir accueil');
+}
+
 function validationLineMergedIntoCounterRow(line = {}, items = []) {
   const type = String(line.type || '');
   if (!(type.startsWith('counter-size-') || type.startsWith('counter-color-')) || !line.optionForItemId) return false;
@@ -5869,6 +5883,10 @@ function validationCategoryFromLine(line = {}, entry = {}, item = null) {
 
 function validationItemImage(item = null, entry = {}) {
   return item?.options?.variantImageUrl || item?.options?.thumbnailUrl || item?.thumbnailUrl || item?.thumbnail_url || entry?.thumbnailUrl || entry?.thumbnail_url || '';
+}
+
+function validationCounterLogoImage(item = null, entry = {}) {
+  return item?.options?.binary3ImageUrl || item?.options?.variantImageUrl || validationItemImage(item, entry);
 }
 
 function validationRowFromItem({ item, entry, amount = 0, included = false, readOnly = false, isAdminViewer = false, onRemoveItem }) {
@@ -16734,11 +16752,21 @@ function isWoodReceptionDeskImageMaterial(materialName = '', material = null, it
     || materialMatchesReference(materialName, material, 'binary_3', 'Binary_3.jpeg');
 }
 
+function counterLogoFormatSize(item = {}, variant = null) {
+  const entry = variant?.entry || {};
+  const dimensions = variant?.entry
+    ? { ...(item?.dimensions || {}), ...(entry.dimensions || {}) }
+    : item?.dimensions;
+  const source = variant?.entry ? { ...item, ...entry, dimensions } : item;
+  const width = Number(itemDefaultSize(source)?.[0] || 0)
+    || counterVariantWidth(variant || { entry: item, label: item?.options?.variantLabel || item?.label || item?.type || '' });
+  if (width >= 1.85) return [2000, 981];
+  if (width >= 1.25) return [1200, 981];
+  return [1000, 981];
+}
+
 function woodReceptionDeskImageCoverSize(item = {}) {
-  const width = itemDefaultSize(item)?.[0] || 1.0;
-  if (width >= 1.85) return [2400, 800];
-  if (width >= 1.25) return [1800, 800];
-  return [1200, 800];
+  return counterLogoFormatSize(item);
 }
 
 function isWoodReceptionDeskColorMaterial(materialName = '', material = null) {
