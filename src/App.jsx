@@ -3640,9 +3640,14 @@ function counterFinishPatch(finish = {}) {
 function counterVariantUpgradeOptionLine(item = {}, entry = {}, salonLabel = '', index = 0) {
   const upgradePrice = Number(item.options?.variantUpgradePrice || 0);
   if (!isIncludedSceneItem(item) || !isWoodReceptionDeskItem({ ...entry, ...item }) || upgradePrice <= 0) return null;
+  const sizeLabel = counterSizeShortLabel({
+    entry: { ...entry, ...item },
+    label: item.options?.variantLabel || item.label || entry?.label || '',
+    assetType: item.type || entry?.type || '',
+  });
   return {
     type: `counter-size-${item.id || entry?.type || index}`,
-    label: `${item.options?.variantGroupLabel || "Comptoir accueil"} — option ${item.options?.variantLabel || 'taille supérieure'}`,
+    label: `Comptoir accueil — ${sizeLabel || 'taille supérieure'}`,
     quantity: 1,
     unitPrice: upgradePrice,
     total: upgradePrice,
@@ -5064,6 +5069,7 @@ function itemConfigTitle(entry = {}) {
 }
 
 function itemCartLabel(item) {
+  if (isWoodReceptionDeskItem(item)) return 'Comptoir accueil';
   if (item?.options?.variantGroupLabel) return item.options.variantGroupLabel;
   return item?.label || item?.type || 'Objet';
 }
@@ -5411,6 +5417,24 @@ function shopCartItemVisible(item) {
 function itemOptionLines(item) {
   const opts = item.options || {};
   const result = [];
+  if (isWoodReceptionDeskItem(item)) {
+    const sizeLabel = counterSizeShortLabel({
+      entry: item,
+      label: opts.variantLabel || item.label || item.type || '',
+      assetType: item.type || '',
+    });
+    if (sizeLabel) result.push(sizeLabel);
+    if (opts.binary2ColorName || opts.binary2Color) {
+      const colorPrice = Number(opts.binary2ColorPrice || 0);
+      result.push(`Couleur : ${opts.binary2ColorName || opts.binary2Color}${colorPrice > 0 ? ` (+${colorPrice.toLocaleString('fr-FR')} € HT/m²)` : ''}`);
+    } else {
+      result.push('Couleur : Bois');
+    }
+    const hasLogo = normalizeTextValue(`${item.label || ''} ${item.type || ''} ${opts.variantLabel || ''}`).includes('signa')
+      || Boolean(opts.binary3ImageUrl || opts.binary3ImageName || opts.binary3VisualPending);
+    result.push(hasLogo ? 'Avec logo' : 'Sans logo');
+    return uniqueTextValues(result);
+  }
   if (opts.reserveDoorOpening) result.push(`Ouverture de porte : ${reserveDoorOpeningLabel(opts.reserveDoorOpening)}`);
   if (opts.reserveHandleOrientation) result.push(`Orientation de la poignée : ${reserveHandleOrientationLabel(opts.reserveHandleOrientation)}`);
   if (opts.variantLabel) result.push(opts.variantLabel);
@@ -5506,6 +5530,11 @@ function ValidationStepPanel({
   const reserveOptionDetails = reserveOptionSummary(reserveOptions);
   const partitionHeadSupplement = optionSupplementTotal((line, label) => label.includes('tete de cloison'));
   const wallCoverSupplement = optionSupplementTotal((line) => line.type === 'wall-cover');
+  const counterSizeSupplementByItemId = new Map(
+    visibleSupplementLines
+      .filter((line) => String(line.type || '').startsWith('counter-size-') && line.optionForItemId)
+      .map((line) => [line.optionForItemId, line]),
+  );
 
   const pushRow = (section, row) => {
     if (!row) return;
@@ -5603,11 +5632,22 @@ function ValidationStepPanel({
   items.filter(shopCartItemVisible).filter(isIncludedSceneItem).forEach((item) => {
     const entry = findCatalogEntry(catalog, item.type) || item;
     const section = validationCategoryFromEntry(entry, item);
-    pushRow(section, validationRowFromItem({ item, entry, amount: 0, included: true, readOnly, isAdminViewer, onRemoveItem }));
+    const mergedCounterSizeLine = isWoodReceptionDeskItem(item) ? counterSizeSupplementByItemId.get(item.id) : null;
+    const mergedCounterSizeAmount = Number(mergedCounterSizeLine?.total || 0);
+    pushRow(section, validationRowFromItem({
+      item,
+      entry,
+      amount: mergedCounterSizeAmount,
+      included: mergedCounterSizeAmount <= 0,
+      readOnly,
+      isAdminViewer,
+      onRemoveItem,
+    }));
   });
 
   visibleSupplementLines
     .filter((line) => !validationLineHandledByOptions(line))
+    .filter((line) => !validationLineMergedIntoIncludedCounter(line, items))
     .forEach((line, index) => {
       const associatedItem = line.optionForItemId ? items.find((item) => item.id === line.optionForItemId) : null;
       const includedCount = includedCounts.get(line.type) || 0;
@@ -5771,6 +5811,12 @@ function validationLineHandledByOptions(line = {}) {
   return false;
 }
 
+function validationLineMergedIntoIncludedCounter(line = {}, items = []) {
+  if (!String(line.type || '').startsWith('counter-size-') || !line.optionForItemId) return false;
+  const item = items.find((candidate) => candidate.id === line.optionForItemId);
+  return Boolean(item && isIncludedSceneItem(item) && isWoodReceptionDeskItem(item));
+}
+
 function validationCategoryFromEntry(entry = {}, item = {}) {
   const configured = configuredMarketCategory(entry) || configuredMarketCategory(item);
   if (configured) return configured;
@@ -5781,18 +5827,20 @@ function validationCategoryFromEntry(entry = {}, item = {}) {
 }
 
 function validationCategoryFromLine(line = {}, entry = {}, item = null) {
-  const configured = configuredMarketCategory(entry) || configuredMarketCategory(item || {});
-  if (configured) return configured;
+  const type = String(line.type || '');
   const label = normalizeTextValue(`${line.label || ''} ${entry?.label || ''} ${entry?.type || ''}`);
+  if (type.startsWith('counter-logo-') || label.includes('signaletique comptoir')) return 'signage';
   if (label.includes('tv') || label.includes('ecran') || label.includes('televiseur') || label.includes('multimedia') || label.includes('comptoir numerique')) return 'multimedia';
   if (label.includes('spot') || label.includes('led') || label.includes('alimentation') || label.includes('triplette') || label.includes('multiprise')) return 'electricity';
   if (label.includes('bache') || label.includes('enseigne') || label.includes('affiche') || label.includes('cloison') || label.includes('signaletique')) return 'signage';
+  const configured = configuredMarketCategory(entry) || configuredMarketCategory(item || {});
+  if (configured) return configured;
   if (entry) return validationCategoryFromEntry(entry, item || {});
   return 'furniture';
 }
 
 function validationItemImage(item = null, entry = {}) {
-  return item?.options?.variantImageUrl || item?.options?.thumbnailUrl || entry?.thumbnailUrl || entry?.thumbnail_url || '';
+  return item?.options?.variantImageUrl || item?.options?.thumbnailUrl || item?.thumbnailUrl || item?.thumbnail_url || entry?.thumbnailUrl || entry?.thumbnail_url || '';
 }
 
 function validationRowFromItem({ item, entry, amount = 0, included = false, readOnly = false, isAdminViewer = false, onRemoveItem }) {
@@ -12276,6 +12324,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
 }
 
 function pricingLineLabelForItems(items = [], entry = {}, fallbackType = '') {
+  if (isWoodReceptionDeskItem(entry) || items.some(isWoodReceptionDeskItem)) return 'Comptoir accueil';
   const groupLabel = items.find((item) => item?.options?.variantGroupLabel)?.options?.variantGroupLabel;
   return groupLabel || entry?.label || fallbackType || 'Lot AMCO';
 }
@@ -12376,6 +12425,7 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
     rotationLocked: item.rotationLocked ?? entry.rotationLocked ?? entry.dimensions?.rotationLocked,
     modelUrl: entry.modelUrl || item.modelUrl,
     modelSize: entry.modelSize || item.modelSize,
+    thumbnailUrl: item.thumbnailUrl || entry.thumbnailUrl || entry.thumbnail_url,
     materialUrl,
     dimensions,
     color: item.color || entry.color,

@@ -9242,8 +9242,11 @@ img.asset-thumb {
 .visual-pending-checkbox span {
   display: flex;
   align-items: center;
+  justify-self: start;
+  align-self: center;
   min-height: 18px;
   line-height: 1.15;
+  text-align: left;
 }
 
 .visual-pending-checkbox.dark input {
