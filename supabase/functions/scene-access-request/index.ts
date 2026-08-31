@@ -31,7 +31,9 @@ Deno.serve(async (req) => {
     return json({ error: "Aucune adresse email n'est associée à cette scène." }, 404);
   }
 
-  const clientEmail = scene.client_email.trim().toLowerCase();
+  const clientEmail = firstValidEmail(scene.client_email);
+  if (!clientEmail) return json({ error: "Aucune adresse email valide n'est associée à cette scène." }, 400);
+
   const authUser = await ensureConfirmedAuthUser(admin, clientEmail);
   if (!authUser) return json({ error: "Impossible de préparer l'accès email pour cette scène." }, 500);
 
@@ -114,6 +116,12 @@ async function linkExhibitorProfile(admin: any, email: string, userId: string) {
     .update({ auth_user_id: userId, updated_at: new Date().toISOString() })
     .eq("email", email)
     .is("auth_user_id", null);
+}
+
+function firstValidEmail(value: string) {
+  return String(value || "")
+    .match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]
+    ?.toLowerCase() || "";
 }
 
 function maskEmail(email: string) {

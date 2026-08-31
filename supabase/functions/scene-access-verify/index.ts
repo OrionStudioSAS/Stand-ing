@@ -31,9 +31,12 @@ Deno.serve(async (req) => {
     return json({ error: "Scène introuvable." }, 404);
   }
 
+  const clientEmail = firstValidEmail(scene.client_email);
+  if (!clientEmail) return json({ error: "Aucune adresse email valide n'est associée à cette scène." }, 400);
+
   const auth = createClient(supabaseUrl, anonKey);
   const { data, error } = await auth.auth.verifyOtp({
-    email: scene.client_email,
+    email: clientEmail,
     token: String(code),
     type: "email",
   });
@@ -48,6 +51,12 @@ Deno.serve(async (req) => {
     expires_at: data.session.expires_at,
   });
 });
+
+function firstValidEmail(value: string) {
+  return String(value || "")
+    .match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]
+    ?.toLowerCase() || "";
+}
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
