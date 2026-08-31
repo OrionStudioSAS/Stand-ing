@@ -16761,7 +16761,7 @@ function counterLogoFormatSize(item = {}, variant = null) {
   const width = Number(itemDefaultSize(source)?.[0] || 0)
     || counterVariantWidth(variant || { entry: item, label: item?.options?.variantLabel || item?.label || item?.type || '' });
   if (width >= 1.85) return [2000, 981];
-  if (width >= 1.25) return [1200, 981];
+  if (width >= 1.25) return [1500, 981];
   return [1000, 981];
 }
 
