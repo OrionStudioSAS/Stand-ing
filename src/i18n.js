@@ -83,7 +83,7 @@ export const translations = {
     wall_cover_not_selected: '',
     wall_cover_toggle_add: 'Activer {label}',
     wall_cover_toggle_remove: 'Retirer {label}',
-    wall_cover_pending_visual: 'Je veux un visuel, mais je ne l’ai pas encore',
+    wall_cover_pending_visual: 'Je fournirai le visuel plus tard',
     wall_cover_remove_preview: 'Retirer l’aperçu',
     footprint_included_colors: 'Coloris inclus',
     wall_color_included_singular: 'Couleur incluse',
@@ -157,7 +157,7 @@ export const translations = {
     partition_format_subtitle: 'Format 800 × 500 mm',
     partition_visual_left: 'Tête de cloison gauche',
     partition_visual_right: 'Tête de cloison droite',
-    visual_pending_label: 'Je veux un visuel, mais je ne l’ai pas encore',
+    visual_pending_label: 'Je fournirai le visuel plus tard',
 
     // PartitionHeadOptionsPanel (inline edit)
     partition_head_title: 'Tête de cloison',
@@ -337,7 +337,7 @@ export const translations = {
     img_upload_browse: 'Parcourir',
     img_upload_reset: 'Revenir à l\'image d\'origine',
     img_uploading: 'Upload du visuel...',
-    img_format_spec: 'Format conseillé : {w} × {h} px · JPG ou PNG',
+    img_format_spec: 'Format conseillé : {w} × {h} mm · PNG, JPG ou PDF',
 
     // Wood desk
     wood_desk_title: 'Comptoir accueil bois',
@@ -532,7 +532,7 @@ export const translations = {
     partition_format_subtitle: 'Format 800 × 500 mm',
     partition_visual_left: 'Left partition head',
     partition_visual_right: 'Right partition head',
-    visual_pending_label: 'I want a visual, but I do not have it yet',
+    visual_pending_label: 'I will provide the visual later',
 
     // PartitionHeadOptionsPanel (inline edit)
     partition_head_title: 'Partition head',
@@ -712,7 +712,7 @@ export const translations = {
     img_upload_browse: 'Browse',
     img_upload_reset: 'Revert to original image',
     img_uploading: 'Uploading visual...',
-    img_format_spec: 'Recommended format: {w} × {h} px · JPG or PNG',
+    img_format_spec: 'Recommended format: {w} × {h} mm · PNG, JPG or PDF',
 
     // Wood desk
     wood_desk_title: 'Wood reception desk',
