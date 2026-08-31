@@ -136,7 +136,7 @@ export const translations = {
     reserve_remove: 'Supprimer la réserve',
     reserve_restore: 'Remettre la réserve',
     reserve_included: 'Inclus',
-    formula_title: 'Votre formule inclus :',
+    formula_title: 'Votre formule inclut :',
     formula_reserve_included: 'Votre formule inclut une réserve blanche de {area} (la couleur ne peut pas être modifiée) fermant avec une poignée à code et équipée de 2 étagères, un miroir et une patère.',
     formula_reserve_detail: '',
     formula_reserve_none: 'Aucune réserve n\'est incluse automatiquement pour cette surface.',
