@@ -10991,7 +10991,8 @@ img.asset-thumb {
   width: 100%;
   height: 100%;
   border-radius: 8px;
-  object-fit: cover;
+  object-fit: contain;
+  background: #fff;
 }
 
 .counter-logo-card-v2 .visual-upload-dropzone.has-image > span {

@@ -1751,6 +1751,20 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     setItemConfigModal({ mode: 'edit', item: selected, entry });
   };
 
+  const openCartItemConfigurator = (item) => {
+    if (!item) return;
+    setSelectedId(item.id);
+    setHeaderPanel(null);
+    if (openStepOptionForItem(item)) return;
+    const entry = itemConfiguratorEntry(item);
+    if (!readOnly && itemEditNeedsConfigurator(item, entry, salonLabel)) {
+      setActiveStep(3);
+      setItemConfigModal({ mode: 'edit', item, entry });
+      return;
+    }
+    setActiveStep(3);
+  };
+
   const closeItemConfigurator = () => setItemConfigModal(null);
 
   const confirmItemConfigurator = ({ entry, item, options, quantity = 1 }) => {
@@ -2197,6 +2211,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             salonLabel={salonLabel}
             readOnly={readOnly}
             onSelectItem={setSelectedId}
+            onOpenItem={openCartItemConfigurator}
             onIncrementItem={duplicateCartItem}
             onDecrementItem={removeSceneItemById}
             onDeleteItems={removeSceneItemsById}
@@ -2592,6 +2607,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
           nextLabel={tRaw(language, 'cart_next')}
           nextDetail={activeStep === 2 ? tRaw(language, 'cart_next_furniture') : tRaw(language, 'cart_next_detail')}
           onSelectItem={setSelectedId}
+          onOpenItem={openCartItemConfigurator}
           onIncrementItem={duplicateCartItem}
           onDecrementItem={removeSceneItemById}
           onDeleteItems={removeSceneItemsById}
@@ -3689,7 +3705,7 @@ function counterVariantUpgradeOptionLine(item = {}, entry = {}, salonLabel = '',
 
 function counterLogoOptionActive(item = {}) {
   if (item.options?.binary3Enabled === false) return false;
-  return Boolean(item.options?.binary3Enabled || item.options?.binary3ImageUrl || item.options?.binary3ImageName || item.options?.binary3VisualPending);
+  return true;
 }
 
 function counterLogoTogglePatch(enabled = false) {
@@ -4156,7 +4172,7 @@ function PanelStepActions({ previousLabel, nextLabel, onPrevious, onNext }) {
   );
 }
 
-function HeaderCartMenu({ items, catalog, selectedId, total, salonLabel, readOnly, onSelectItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onValidate }) {
+function HeaderCartMenu({ items, catalog, selectedId, total, salonLabel, readOnly, onSelectItem, onOpenItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onValidate }) {
   const t = useT();
   const itemRefs = useRef(new Map());
   const [cartOpen, setCartOpen] = useState(false);
@@ -4216,7 +4232,7 @@ function HeaderCartMenu({ items, catalog, selectedId, total, salonLabel, readOnl
                   }}
                   className={`cart-item-card ${selected ? 'active' : ''}`}
                 >
-                  <button type="button" className="cart-item-main" onClick={() => onSelectItem(selected ? selectedId : item.id)}>
+                  <button type="button" className="cart-item-main" onClick={() => { setCartOpen(false); if (onOpenItem) onOpenItem(item); else onSelectItem?.(selected ? selectedId : item.id); }}>
                     <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
                     <span className="cart-item-copy">
                       <strong>{itemCartLabel(item)}</strong>
@@ -4257,7 +4273,7 @@ function HeaderCartMenu({ items, catalog, selectedId, total, salonLabel, readOnl
   );
 }
 
-function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel, nextDetail, onSelectItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onPrevious, onNext }) {
+function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel, nextDetail, onSelectItem, onOpenItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onPrevious, onNext }) {
   const t = useT();
   const itemRefs = useRef(new Map());
   const [cartOpen, setCartOpen] = useState(false);
@@ -4328,7 +4344,7 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
                   }}
                   className={`cart-item-card ${selected ? 'active' : ''}`}
                 >
-                  <button type="button" className="cart-item-main" onClick={() => onSelectItem(selected ? selectedId : item.id)}>
+                  <button type="button" className="cart-item-main" onClick={() => { setCartOpen(false); if (onOpenItem) onOpenItem(item); else onSelectItem?.(selected ? selectedId : item.id); }}>
                     <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
                     <span className="cart-item-copy">
                       <strong>{itemCartLabel(item)}</strong>
@@ -16389,7 +16405,7 @@ function MissingModelFallback({ item, selected, hovered, dragging }) {
 
 function GlbModel({ item, selected, hovered, visualContext }) {
   const gltf = useGlbModel(item.modelUrl);
-  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item) });
+  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff' });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '', { flipY: false });
   const textureSlotImages = useTextureSlotImages(item);
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item) });
@@ -16431,7 +16447,7 @@ function useObjModel(modelUrl, materials) {
 
 function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualContext }) {
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: partitionHeadMainImageCoverSize(item) });
-  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item) });
+  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff' });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '');
   const textureSlotImages = useTextureSlotImages(item);
   const exhibitorTexture = useMemo(() => (
@@ -16653,7 +16669,7 @@ function useExternalTexture(url, options = {}) {
       disposed = true;
       currentTexture?.dispose?.();
     };
-  }, [url, options.coverSize?.[0], options.coverSize?.[1], options.flipY]);
+  }, [url, options.coverSize?.[0], options.coverSize?.[1], options.flipY, options.fit, options.backgroundColor]);
 
   return texture;
 }
@@ -16705,6 +16721,8 @@ function createDecodedImageTexture(image, options = {}) {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
+  ctx.fillStyle = options.backgroundColor || '#ffffff';
+  ctx.fillRect(0, 0, width, height);
   ctx.drawImage(image, 0, 0, width, height);
   return prepareDynamicTexture(new CanvasTexture(canvas), options);
 }
@@ -16717,12 +16735,14 @@ function createCoverImageTexture(image, targetWidth, targetHeight, options = {})
   const ctx = canvas.getContext('2d');
   const imageWidth = image.naturalWidth || image.videoWidth || image.width || targetWidth;
   const imageHeight = image.naturalHeight || image.videoHeight || image.height || targetHeight;
-  const scale = Math.max(targetWidth / imageWidth, targetHeight / imageHeight);
+  const scale = options.fit === 'contain'
+    ? Math.min(targetWidth / imageWidth, targetHeight / imageHeight)
+    : Math.max(targetWidth / imageWidth, targetHeight / imageHeight);
   const drawWidth = imageWidth * scale;
   const drawHeight = imageHeight * scale;
   const dx = (targetWidth - drawWidth) / 2;
   const dy = (targetHeight - drawHeight) / 2;
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = options.backgroundColor || '#ffffff';
   ctx.fillRect(0, 0, targetWidth, targetHeight);
   ctx.drawImage(image, dx, dy, drawWidth, drawHeight);
   return prepareDynamicTexture(new CanvasTexture(canvas), options);
@@ -16807,7 +16827,7 @@ function applyTextureSlotMaterial(material, item = {}, textureOptions = {}, mate
     }
     if (slot.kind === 'image' && image) {
       const [targetWidth, targetHeight] = materialTextureCanvasSize(material);
-      const texture = createCoverImageTexture(image, targetWidth, targetHeight, { flipY: textureOptions.textureSlotFlipY ?? true });
+      const texture = createCoverImageTexture(image, targetWidth, targetHeight, { flipY: textureOptions.textureSlotFlipY ?? true, fit: 'contain', backgroundColor: '#ffffff' });
       if (texture) return materialWithTexture(material, texture);
     }
   }
