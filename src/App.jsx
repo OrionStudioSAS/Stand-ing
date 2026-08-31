@@ -5500,6 +5500,7 @@ function ValidationStepPanel({
   onRemoveItem,
 }) {
   const t = useT();
+  const safeItems = (items || []).filter(Boolean);
   const lines = pricing?.lines || [];
   const visibleSupplementLines = lines.filter((line) => !line.mandatory && !String(line.type || '').startsWith('technical-floor-'));
   const includedCounts = pricing?.includedCounts || new Map();
@@ -5629,7 +5630,7 @@ function ValidationStepPanel({
     });
   }
 
-  items.filter(shopCartItemVisible).filter(isIncludedSceneItem).forEach((item) => {
+  safeItems.filter(shopCartItemVisible).filter(isIncludedSceneItem).forEach((item) => {
     const entry = findCatalogEntry(catalog, item.type) || item;
     const section = validationCategoryFromEntry(entry, item);
     const mergedCounterSizeLine = isWoodReceptionDeskItem(item) ? counterSizeSupplementByItemId.get(item.id) : null;
@@ -5647,11 +5648,11 @@ function ValidationStepPanel({
 
   visibleSupplementLines
     .filter((line) => !validationLineHandledByOptions(line))
-    .filter((line) => !validationLineMergedIntoIncludedCounter(line, items))
+    .filter((line) => !validationLineMergedIntoIncludedCounter(line, safeItems))
     .forEach((line, index) => {
-      const associatedItem = line.optionForItemId ? items.find((item) => item.id === line.optionForItemId) : null;
+      const associatedItem = line.optionForItemId ? safeItems.find((item) => item.id === line.optionForItemId) : null;
       const includedCount = includedCounts.get(line.type) || 0;
-      const billableItems = associatedItem ? [associatedItem] : items.filter((i) => i.type === line.type).slice(includedCount);
+      const billableItems = associatedItem ? [associatedItem] : safeItems.filter((i) => i.type === line.type).slice(includedCount);
       const firstItem = billableItems[0] || associatedItem || null;
       const entry = firstItem ? (findCatalogEntry(catalog, firstItem.type) || firstItem) : findCatalogEntry(catalog, line.type);
       const optionLines = uniqueTextValues([
@@ -12134,25 +12135,26 @@ function partitionHeadSummary(rule, sides = {}) {
 }
 
 function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelections = [], technicalFloor = null, wallCovers = {}, wallCoverSurfaces = [], ledRailsEnabled = true, expectedLedSpotCount = 0 }) {
+  const safeItems = (items || []).filter(Boolean);
   const basePrice = 0;
   const baseItems = sceneBaseItems(scene);
   const baseItemsConfigured = sceneHasBaseItems(scene);
-  const includedSceneCounts = countSceneItems(items.filter(isIncludedSceneItem));
+  const includedSceneCounts = countSceneItems(safeItems.filter(isIncludedSceneItem));
   const baseItemCounts = baseItemsToCountMap(baseItems);
   const includedCounts = baseItemsConfigured
     ? mergeIncludedCountMaps(includedSceneCounts, baseItemCounts)
     : includedSceneCounts;
-  items.filter(isIncludedSceneItem).forEach((item) => {
+  safeItems.filter(isIncludedSceneItem).forEach((item) => {
     const baseType = item.options?.includedBaseType;
     if (baseType && baseType !== item.type) {
       includedCounts.set(baseType, Math.max(0, (includedCounts.get(baseType) || 0) - 1));
     }
   });
-  const totalCounts = countSceneItems(items);
+  const totalCounts = countSceneItems(safeItems);
   const configuredBaseUsage = baseItemsConfigured
     ? baseItems.map((item) => {
       const quantity = Number(item.quantity || 0);
-      const rawUsed = countBasePackUsageForType(items, item);
+      const rawUsed = countBasePackUsageForType(safeItems, item);
       const used = Math.min(rawUsed, quantity);
       return {
         ...item,
@@ -12163,7 +12165,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       };
     })
     : [];
-  const baseUsage = mergeBaseUsageRows(configuredBaseUsage, automaticBaseUsageRows(items, scene, catalog, { ledRailsEnabled, expectedLedSpotCount }));
+  const baseUsage = mergeBaseUsageRows(configuredBaseUsage, automaticBaseUsageRows(safeItems, scene, catalog, { ledRailsEnabled, expectedLedSpotCount }));
   const billableCounts = new Map();
   const lines = [];
   let itemsTotal = 0;
@@ -12177,7 +12179,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       return;
     }
     const entry = findCatalogEntry(catalog, type);
-    const typeItems = items.filter((item) => item.type === type);
+    const typeItems = safeItems.filter((item) => item.type === type);
     const billableItems = typeItems.slice(includedCount);
     const itemPrices = billableItems.map((item) => cartItemBasePrice(item, entry, salonLabel, catalog) + textureSlotColorSupplement(item));
     const lineTotal = itemPrices.reduce((sum, price) => sum + price, 0);
@@ -12196,7 +12198,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     });
   });
 
-  items.forEach((item, index) => {
+  safeItems.forEach((item, index) => {
     const entry = findCatalogEntry(catalog, item.type) || item;
     const sizeLine = counterVariantUpgradeOptionLine(item, entry, salonLabel, index);
     if (sizeLine) {
@@ -12441,7 +12443,8 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
 }
 
 function countSceneItems(sceneItems) {
-  return sceneItems.reduce((counts, item) => {
+  return (sceneItems || []).filter(Boolean).reduce((counts, item) => {
+    if (!item.type) return counts;
     counts.set(item.type, (counts.get(item.type) || 0) + 1);
     return counts;
   }, new Map());
@@ -13774,7 +13777,8 @@ function smclPartitionHeadSide(item = {}) {
 }
 
 function normalizedItemText(item = {}) {
-  return `${item.type || ''} ${item.label || ''} ${item.dimensions?.folderName || ''}`
+  const safeItem = item || {};
+  return `${safeItem.type || ''} ${safeItem.label || ''} ${safeItem.dimensions?.folderName || ''}`
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
