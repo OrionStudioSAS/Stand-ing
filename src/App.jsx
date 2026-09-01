@@ -5328,7 +5328,7 @@ function furnitureInsuranceLine(amount = 0) {
 function marketplaceStartingPrice(entry, catalog = [], salonLabel = '') {
   if (isVariantGroupEntry(entry)) {
     const prices = normalizeVariantGroupOptions(entry.dimensions?.variantAssets, salonLabel)
-      .map((variant) => Number(variant.price || 0))
+      .map((variant) => Number(variant.price || 0) || assetAnySalonUnitPrice(variant.entry))
       .filter((price) => price > 0);
     if (prices.length) return Math.min(...prices);
   }
@@ -11959,16 +11959,17 @@ function assetToCatalogEntry(asset, allAssets = []) {
         }),
       };
     });
+    const salonLabel = assetSalons(asset)[0];
     const allEntryPrices = [
-      ...variantAssets.map((entry) => assetUnitPrice(entry, assetSalons(asset)[0])),
-      ...configOptions.filter((o) => o.type === 'select').flatMap((o) => (o.choices || []).map((c) => c.entry ? assetUnitPrice(c.entry, assetSalons(asset)[0]) : 0)),
+      ...variantAssets.map((entry) => assetUnitPrice(entry, salonLabel) || assetAnySalonUnitPrice(entry)),
+      ...configOptions.filter((o) => o.type === 'select').flatMap((o) => (o.choices || []).map((c) => (c.entry ? assetUnitPrice(c.entry, salonLabel) || assetAnySalonUnitPrice(c.entry) : 0))),
     ].filter((price) => price > 0);
     return {
       type: asset.type,
       label: asset.label,
       icon: Layers,
       color: asset.dimensions?.color || '#dfe8ec',
-      price: Math.min(...allEntryPrices, 0) || 0,
+      price: allEntryPrices.length ? Math.min(...allEntryPrices) : 0,
       thumbnailUrl: asset.thumbnail_url,
       dimensions: {
         ...(asset.dimensions || {}),
@@ -13176,6 +13177,20 @@ function assetUnitPrice(entry, salonLabel) {
     entry?.dimensions?.price,
     entry?.optionPrice,
     defaultPrices[entry?.type],
+    0,
+  );
+}
+
+function assetAnySalonUnitPrice(entry = {}) {
+  const pricing = entry?.dimensions?.salonPricing || entry?.salonPricing || {};
+  const salonPrices = Object.values(pricing)
+    .map((row) => Number(row?.price || 0))
+    .filter((price) => price > 0);
+  return firstPriceValue(
+    entry?.price,
+    entry?.dimensions?.price,
+    entry?.optionPrice,
+    salonPrices.length ? Math.min(...salonPrices) : 0,
     0,
   );
 }
