@@ -10707,7 +10707,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
 }
 
 function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
-  const sourceAssets = groupSourceAssets(assets, draft);
+  const sourceAssets = groupSourceAssets(assets);
   const fallbackType = sourceAssets[0]?.type || '';
   const [name, setName] = useState('Nouveau groupe');
   const [category, setCategory] = useState('Mobilier');
