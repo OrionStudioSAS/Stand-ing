@@ -3080,7 +3080,10 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
           <strong>{t('counter_finish_title')}</strong>
           <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : ''}</span>
         </div>
-        <small>{includedColorisLabel(includedFinishes.length)}</small>
+        <div className="counter-finish-meta-line">
+          <small>{includedColorisLabel(includedFinishes.length)}</small>
+          <em className="included">Inclus</em>
+        </div>
         <div className="counter-finish-swatches included">
           {(includedFinishes.length ? includedFinishes : [woodFinish]).map((finish) => (
             <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
@@ -3088,7 +3091,10 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
         </div>
         {optionalFinishes.length > 0 && (
           <>
-            <small>{optionalFinishes.length} couleurs en option — {Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0'} €</small>
+            <div className="counter-finish-meta-line">
+              <small>{optionalFinishes.length} couleurs en option</small>
+              <em className="price">+ {Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0'} €</em>
+            </div>
             <div className="counter-finish-swatches optional">
               {optionalFinishes.map((finish) => (
                 <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(finish)} />
@@ -3523,7 +3529,10 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
         <strong>{t('counter_finish_title')}</strong>
         <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedCode) ? ` (${shortFinishCode(selectedCode)})` : ''}</span>
       </div>
-      <small>{includedColorisLabel(includedFinishes.length)}</small>
+      <div className="counter-finish-meta-line">
+        <small>{includedColorisLabel(includedFinishes.length)}</small>
+        <em className="included">Inclus</em>
+      </div>
       <div className="counter-finish-swatches included">
         {(includedFinishes.length ? includedFinishes : [counterWoodFinish()]).map((finish) => (
           <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
@@ -3531,7 +3540,10 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
       </div>
       {optionalFinishes.length > 0 && (
         <>
-          <small>{optionalFinishes.length} couleurs en option — {Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0'} €</small>
+          <div className="counter-finish-meta-line">
+            <small>{optionalFinishes.length} couleurs en option</small>
+            <em className="price">+ {Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0'} €</em>
+          </div>
           <div className="counter-finish-swatches optional">
             {optionalFinishes.map((finish) => (
               <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
@@ -3930,7 +3942,7 @@ function OptionsStepPanel({
           colors={wallFabricColors}
           selectedColor={selectedWallFabricColor}
           defaultColorId={defaultColorOptions.wallFabricColorId}
-          includedLabel={t((wallFabricColors.filter((color) => colorWithDefaultIncluded(color, defaultColorOptions.wallFabricColorId).included).length || 1) > 1 ? 'wall_color_included_plural' : 'wall_color_included_singular')}
+          includedLabel={t('color_included')}
           optionLabel={t('color_options_paid')}
           area={wallFabricArea}
           disabled={readOnly}

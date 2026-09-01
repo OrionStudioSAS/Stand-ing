@@ -9945,6 +9945,38 @@ img.asset-thumb {
   font-weight: 850;
 }
 
+.counter-finish-meta-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.counter-finish-meta-line small {
+  color: #a0a6af;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.counter-finish-meta-line em {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.counter-finish-meta-line em.included {
+  color: #19884d;
+  background: #e3f6ea;
+}
+
+.counter-finish-meta-line em.price {
+  color: #1f5db4;
+  background: #e9f2ff;
+}
+
 .counter-finish-swatches {
   display: flex;
   flex-wrap: wrap;
