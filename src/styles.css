@@ -8492,8 +8492,9 @@ img.asset-thumb {
 .poster-image-preview img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
+  background: #fff;
 }
 
 .poster-print-quality {
@@ -9192,7 +9193,7 @@ img.asset-thumb {
   min-height: 150px;
   padding: 0;
   border-style: solid;
-  background: #0e2449;
+  background: #fff;
 }
 
 .partition-head-dropzone.has-image img {
@@ -9200,7 +9201,8 @@ img.asset-thumb {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  background: #fff;
 }
 
 .partition-head-dropzone.has-image strong,
@@ -11199,11 +11201,12 @@ img.asset-thumb {
 .partition-head-dropzone-v2.has-image {
   min-height: 105px;
   border-style: solid;
-  background: #0e2449;
+  background: #fff;
 }
 
 .partition-head-dropzone-v2.has-image img {
-  object-fit: cover;
+  object-fit: contain;
+  background: #fff;
 }
 
 .partition-head-dropzone-v2.has-image > span {

@@ -526,6 +526,8 @@ async function makeScenePreviewImage(file) {
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
     ctx.drawImage(bitmap.image || bitmap, 0, 0, width, height);
     bitmap.close?.();
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.68));
