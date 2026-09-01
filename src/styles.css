@@ -7559,6 +7559,15 @@ img.asset-thumb {
   text-align: left;
 }
 
+.cart-item-card.clickable {
+  cursor: pointer;
+}
+
+.cart-item-card.clickable:hover {
+  border-color: #9eb7dc;
+  background: #f8fbff;
+}
+
 .cart-item-card.active {
   border-color: #1f4378;
   outline: 2px solid #1f4378;
@@ -11914,6 +11923,14 @@ img.asset-thumb {
   min-height: 61px;
   border-bottom: 1px solid #edf1f6;
   padding: 9px 0;
+}
+
+.validation-modern-row.clickable {
+  cursor: pointer;
+}
+
+.validation-modern-row.clickable:hover {
+  background: #f8fbff;
 }
 
 .validation-modern-row.option {

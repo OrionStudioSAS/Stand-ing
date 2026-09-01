@@ -1757,12 +1757,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     setHeaderPanel(null);
     if (openStepOptionForItem(item)) return;
     const entry = itemConfiguratorEntry(item);
-    if (!readOnly && itemEditNeedsConfigurator(item, entry, salonLabel)) {
-      setActiveStep(3);
-      setItemConfigModal({ mode: 'edit', item, entry });
-      return;
-    }
     setActiveStep(3);
+    if (!readOnly) {
+      setItemConfigModal({ mode: 'edit', item, entry });
+    }
   };
 
   const closeItemConfigurator = () => setItemConfigModal(null);
@@ -2446,6 +2444,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onSpecialRequestTags={setSpecialRequestTags}
             onConfirm={validateConfiguration}
             onRemoveItem={removeSceneItemById}
+            onOpenItem={openCartItemConfigurator}
           />
         ) : (
           <OptionsStepPanel
@@ -4190,6 +4189,12 @@ function HeaderCartMenu({ items, catalog, selectedId, total, salonLabel, readOnl
     selectedNode?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
   }, [selectedId, cartGroups, cartOpen]);
 
+  const openCartItem = (item) => {
+    setCartOpen(false);
+    if (onOpenItem) onOpenItem(item);
+    else onSelectItem?.(item?.id);
+  };
+
   return (
     <div className="topbar-cart">
       <div className="topbar-cart-total">
@@ -4235,9 +4240,10 @@ function HeaderCartMenu({ items, catalog, selectedId, total, salonLabel, readOnl
                     if (node) itemRefs.current.set(group.key, node);
                     else itemRefs.current.delete(group.key);
                   }}
-                  className={`cart-item-card ${selected ? 'active' : ''}`}
+                  className={`cart-item-card ${selected ? 'active' : ''} clickable`}
+                  onClick={() => openCartItem(item)}
                 >
-                  <button type="button" className="cart-item-main" onClick={() => { setCartOpen(false); if (onOpenItem) onOpenItem(item); else onSelectItem?.(selected ? selectedId : item.id); }}>
+                  <button type="button" className="cart-item-main" onClick={(event) => { event.stopPropagation(); openCartItem(item); }}>
                     <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
                     <span className="cart-item-copy">
                       <strong>{itemCartLabel(item)}</strong>
@@ -4250,7 +4256,7 @@ function HeaderCartMenu({ items, catalog, selectedId, total, salonLabel, readOnl
                       <b>{groupTotal.toLocaleString('fr-FR')} € HT</b>
                     </span>
                   </button>
-                  <div className="cart-item-controls">
+                  <div className="cart-item-controls" onClick={(event) => event.stopPropagation()}>
                     <div className="cart-quantity-controls">
                       <button type="button" disabled={readOnly || !decrementItem} onClick={() => decrementItem && onDecrementItem?.(decrementItem.id)} aria-label="-1">
                         <Minus size={13} />
@@ -4290,6 +4296,12 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
     const selectedNode = selectedGroup ? itemRefs.current.get(selectedGroup.key) : null;
     selectedNode?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
   }, [selectedId, cartGroups]);
+
+  const openCartItem = (item) => {
+    setCartOpen(false);
+    if (onOpenItem) onOpenItem(item);
+    else onSelectItem?.(item?.id);
+  };
 
   return (
     <div className="furniture-cart-bar">
@@ -4347,9 +4359,10 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
                     if (node) itemRefs.current.set(group.key, node);
                     else itemRefs.current.delete(group.key);
                   }}
-                  className={`cart-item-card ${selected ? 'active' : ''}`}
+                  className={`cart-item-card ${selected ? 'active' : ''} clickable`}
+                  onClick={() => openCartItem(item)}
                 >
-                  <button type="button" className="cart-item-main" onClick={() => { setCartOpen(false); if (onOpenItem) onOpenItem(item); else onSelectItem?.(selected ? selectedId : item.id); }}>
+                  <button type="button" className="cart-item-main" onClick={(event) => { event.stopPropagation(); openCartItem(item); }}>
                     <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
                     <span className="cart-item-copy">
                       <strong>{itemCartLabel(item)}</strong>
@@ -4362,7 +4375,7 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
                       <b>{groupTotal.toLocaleString('fr-FR')} € HT</b>
                     </span>
                   </button>
-                  <div className="cart-item-controls">
+                  <div className="cart-item-controls" onClick={(event) => event.stopPropagation()}>
                     <div className="cart-quantity-controls">
                       <button type="button" disabled={readOnly || !decrementItem} onClick={() => decrementItem && onDecrementItem?.(decrementItem.id)} aria-label="-1">
                         <Minus size={13} />
@@ -5569,6 +5582,7 @@ function ValidationStepPanel({
   onSpecialRequestTags,
   onConfirm,
   onRemoveItem,
+  onOpenItem,
 }) {
   const t = useT();
   const safeItems = (items || []).filter(Boolean);
@@ -5631,6 +5645,7 @@ function ValidationStepPanel({
       badge: validationBadgeText(line.total),
       badgeTone: Number(line.total || 0) > 0 ? 'price' : 'included',
       visualStatus: isCounterLogo ? validationCounterLogoVisualStatus(sourceItem) : null,
+      onOpen: sourceItem ? () => onOpenItem?.(sourceItem) : null,
       option: !isCounterLogo && Boolean(associatedItem || String(line.type || '').startsWith('global-option-')),
     };
   };
@@ -5747,6 +5762,7 @@ function ValidationStepPanel({
       readOnly,
       isAdminViewer,
       onRemoveItem,
+      onOpenItem,
     }));
     pushAssociatedOptionRows(item, entry, section);
   });
@@ -5847,9 +5863,9 @@ function ValidationModernSection({ title, children }) {
   );
 }
 
-function ValidationModernRow({ label, detail, imageUrl, swatchColor, swatchImage, badge, badgeTone = 'included', visualStatus = null, option = false, onRemove = null }) {
+function ValidationModernRow({ label, detail, imageUrl, swatchColor, swatchImage, badge, badgeTone = 'included', visualStatus = null, option = false, onRemove = null, onOpen = null }) {
   return (
-    <article className={`validation-modern-row ${option ? 'option' : ''}`}>
+    <article className={`validation-modern-row ${option ? 'option' : ''} ${onOpen ? 'clickable' : ''}`} onClick={onOpen || undefined}>
       {!option && <ValidationModernThumb imageUrl={imageUrl} color={swatchColor} image={swatchImage} />}
       <div className="validation-modern-row-copy">
         <strong>{label}</strong>
@@ -5860,7 +5876,7 @@ function ValidationModernRow({ label, detail, imageUrl, swatchColor, swatchImage
         {visualStatus && <em className={`validation-modern-visual-status ${visualStatus.tone}`}>{visualStatus.label}</em>}
       </div>
       {onRemove && (
-        <button type="button" className="validation-modern-remove" aria-label="Retirer" onClick={onRemove}><Trash2 size={14} /></button>
+        <button type="button" className="validation-modern-remove" aria-label="Retirer" onClick={(event) => { event.stopPropagation(); onRemove(); }}><Trash2 size={14} /></button>
       )}
     </article>
   );
@@ -5992,7 +6008,7 @@ function validationCounterLogoVisualStatus(item = null) {
   return validationVisualStatus(false, hasLogo);
 }
 
-function validationRowFromItem({ item, entry, amount = 0, included = false, readOnly = false, isAdminViewer = false, onRemoveItem }) {
+function validationRowFromItem({ item, entry, amount = 0, included = false, readOnly = false, isAdminViewer = false, onRemoveItem, onOpenItem }) {
   const optionLines = uniqueTextValues(itemOptionLines(item));
   const hasCustomImage = Boolean(item?.options?.binary3ImageUrl || item?.options?.headMainImageUrl || item?.options?.posterImageUrl);
   const visualPending = Boolean(item?.options?.binary3VisualPending || item?.options?.headMainVisualPending || item?.options?.posterVisualPending);
@@ -6006,6 +6022,7 @@ function validationRowFromItem({ item, entry, amount = 0, included = false, read
     badgeTone: included ? 'included' : 'price',
     visualStatus: needsVisual ? validationVisualStatus(visualPending, hasCustomImage) : null,
     onRemove: canDeleteSceneItem(item, isAdminViewer) && !readOnly ? () => onRemoveItem?.(item.id) : null,
+    onOpen: onOpenItem ? () => onOpenItem(item) : null,
   };
 }
 
