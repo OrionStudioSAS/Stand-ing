@@ -8904,6 +8904,20 @@ function adminClientSalonChoices(baseChoices = [], currentSalon = '') {
 
 function AdminClientsView({ clients, scenes = [], assets = [], filters, salonChoices = [], updateFilter, onDeleteScene }) {
   const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
+  const [clientPage, setClientPage] = useState(1);
+  const clientPageSize = 20;
+  const clientPageCount = Math.max(1, Math.ceil(clients.length / clientPageSize));
+  const safeClientPage = Math.min(clientPage, clientPageCount);
+  const paginatedClients = useMemo(() => clients.slice((safeClientPage - 1) * clientPageSize, safeClientPage * clientPageSize), [clients, safeClientPage]);
+
+  useEffect(() => {
+    setClientPage(1);
+  }, [filters.search, filters.salon, filters.status]);
+
+  useEffect(() => {
+    if (clientPage > clientPageCount) setClientPage(clientPageCount);
+  }, [clientPage, clientPageCount]);
+
   const sceneLookup = useMemo(() => {
     const map = new Map();
     scenes.forEach((scene) => {
@@ -8953,7 +8967,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
           <span>Commercial</span>
           <span>Actions</span>
         </header>
-        {clients.length ? clients.map((client) => {
+        {clients.length ? paginatedClients.map((client) => {
           const clientScenes = clientScenesWithFullData(client, sceneLookup);
           return (
             <article key={client.id || client.client_key} className="client-expanded-row">
@@ -9001,6 +9015,15 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
           );
         }) : <div className="admin-empty-row">Aucun exposant trouvé avec les filtres actuels.</div>}
       </section>
+      {clients.length > clientPageSize && (
+        <nav className="admin-pagination" aria-label="Pagination exposants">
+          <span>{clients.length} exposant{clients.length > 1 ? 's' : ''} · page {safeClientPage}/{clientPageCount}</span>
+          <div>
+            <button type="button" disabled={safeClientPage <= 1} onClick={() => setClientPage((page) => Math.max(1, page - 1))}>Précédent</button>
+            <button type="button" disabled={safeClientPage >= clientPageCount} onClick={() => setClientPage((page) => Math.min(clientPageCount, page + 1))}>Suivant</button>
+          </div>
+        </nav>
+      )}
     </section>
   );
 }

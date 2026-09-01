@@ -189,7 +189,7 @@ export const translations = {
     counter_why_3: 'Rangement intégré (documents, sacs)',
     counter_why_4: 'Plus professionnel et structuré',
     counter_uploading: 'Upload du visuel...',
-    counter_finish_title: 'Finition',
+    counter_finish_title: 'Couleur',
 
     // FurnitureStepPanel
     furniture_subtitle: 'Cliquez un accessoire pour le configurer',
