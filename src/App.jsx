@@ -3081,7 +3081,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
           <strong>{t('counter_finish_title')}</strong>
           <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : ''}</span>
         </div>
-        <small>{includedFinishes.length > 1 ? `${includedFinishes.length} coloris inclus` : 'Coloris inclus'}</small>
+        <small>{includedColorisLabel(includedFinishes.length)}</small>
         <div className="counter-finish-swatches included">
           {(includedFinishes.length ? includedFinishes : [woodFinish]).map((finish) => (
             <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
@@ -3507,6 +3507,10 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
 
 
 
+function includedColorisLabel(count = 0) {
+  return `${Math.max(1, Number(count || 0))} coloris inclus`;
+}
+
 function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = false, onSelect, compact = false }) {
   const t = useT();
   const includedFinishes = finishes.filter((finish) => finish.included || finish.mode === 'wood');
@@ -3519,7 +3523,7 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
         <strong>{t('counter_finish_title')}</strong>
         <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedCode) ? ` (${shortFinishCode(selectedCode)})` : ''}</span>
       </div>
-      <small>{includedFinishes.length > 1 ? `${includedFinishes.length} coloris inclus` : 'Coloris inclus'}</small>
+      <small>{includedColorisLabel(includedFinishes.length)}</small>
       <div className="counter-finish-swatches included">
         {(includedFinishes.length ? includedFinishes : [counterWoodFinish()]).map((finish) => (
           <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
