@@ -10016,7 +10016,8 @@ img.asset-thumb {
   padding: 4px 0 8px;
 }
 
-.counter-finish-swatches button {
+.counter-finish-swatches button,
+.counter-finish-included-row button {
   position: relative;
   display: inline-grid;
   place-items: center;
@@ -10029,7 +10030,8 @@ img.asset-thumb {
   cursor: pointer;
 }
 
-.counter-finish-swatches button i {
+.counter-finish-swatches button i,
+.counter-finish-included-row button i {
   display: block;
   width: 36px;
   height: 36px;
@@ -10040,17 +10042,20 @@ img.asset-thumb {
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
 }
 
-.counter-finish-swatches button i.wood {
+.counter-finish-swatches button i.wood,
+.counter-finish-included-row button i.wood {
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 42%),
     repeating-linear-gradient(90deg, #d7bd92 0 5px, #a8763d 5px 7px);
 }
 
-.counter-finish-swatches button.active i {
+.counter-finish-swatches button.active i,
+.counter-finish-included-row button.active i {
   box-shadow: 0 0 0 3px #1f4378, inset 0 0 0 2px #fff;
 }
 
-.counter-finish-swatches button span {
+.counter-finish-swatches button span,
+.counter-finish-included-row button span {
   position: absolute;
   width: 1px;
   height: 1px;
