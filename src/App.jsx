@@ -1763,6 +1763,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
     }
   };
 
+  const openValidationItemConfigurator = (item) => {
+    if (!item || readOnly) return;
+    setSelectedId(item.id);
+    setHeaderPanel(null);
+    const entry = itemConfiguratorEntry(item);
+    setItemConfigModal({ mode: 'edit', item, entry });
+  };
+
   const closeItemConfigurator = () => setItemConfigModal(null);
 
   const confirmItemConfigurator = ({ entry, item, options, quantity = 1 }) => {
@@ -2444,7 +2452,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
             onSpecialRequestTags={setSpecialRequestTags}
             onConfirm={validateConfiguration}
             onRemoveItem={removeSceneItemById}
-            onOpenItem={openCartItemConfigurator}
+            onOpenItem={openValidationItemConfigurator}
           />
         ) : (
           <OptionsStepPanel
@@ -3084,14 +3092,22 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
           <small>{includedColorisLabel(includedFinishes.length)}</small>
           <em className="included">Inclus</em>
         </div>
-        <div className="counter-finish-included-list">
-          {(includedFinishes.length ? includedFinishes : [woodFinish]).map((finish) => (
-            <div key={finish.id} className="counter-finish-included-row">
-              <CounterFinishSwatch finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
-              <strong>{shortFinishName(finish.name)}</strong>
-            </div>
-          ))}
-        </div>
+        {includedFinishes.length > 1 ? (
+          <div className="counter-finish-swatches included">
+            {includedFinishes.map((finish) => (
+              <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
+            ))}
+          </div>
+        ) : (
+          <div className="counter-finish-included-list">
+            {(includedFinishes.length ? includedFinishes : [woodFinish]).map((finish) => (
+              <div key={finish.id} className="counter-finish-included-row">
+                <CounterFinishSwatch finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
+                <strong>{shortFinishName(finish.name)}</strong>
+              </div>
+            ))}
+          </div>
+        )}
         {optionalFinishes.length > 0 && (
           <>
             <div className="counter-finish-meta-line">
