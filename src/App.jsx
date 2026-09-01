@@ -9413,7 +9413,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
   const isColorGroup = Boolean(draft.dimensions?.isColorGroup);
   const isGroupAsset = Boolean(draft.dimensions?.isGroup);
   const isVariantGroup = Boolean(draft.dimensions?.isVariantGroup);
-  const sourceAssets = groupSourceAssets(assets);
+  const sourceAssets = groupSourceAssets(assets, draft);
   const variantSourceAssetsList = variantSourceAssets(assets, draft.type);
   const fallbackType = sourceAssets[0]?.type || '';
   const activeGroupRowUid = selectedGroupRowUid || groupRows[0]?.uid || null;
@@ -10707,7 +10707,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
 }
 
 function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
-  const sourceAssets = groupSourceAssets(assets);
+  const sourceAssets = groupSourceAssets(assets, draft);
   const fallbackType = sourceAssets[0]?.type || '';
   const [name, setName] = useState('Nouveau groupe');
   const [category, setCategory] = useState('Mobilier');
@@ -11716,7 +11716,8 @@ function variantManagedAssetTypes(assetOrEntry = {}) {
   ]);
 }
 
-function groupSourceAssets(assets = []) {
+function groupSourceAssets(assets = [], currentGroup = null) {
+  const currentChildTypes = new Set((currentGroup?.dimensions?.children || []).map((child) => child?.type).filter(Boolean));
   const baseAssets = nativeCatalogEntries()
     .filter((entry) => !entry.isGroup && !isWallItemType(entry.type))
     .map((entry) => ({
@@ -11730,7 +11731,7 @@ function groupSourceAssets(assets = []) {
         materialUrl: entry.materialUrl || null,
       },
     }));
-  const dynamicAssets = assets.filter((asset) => asset.is_active && !asset.dimensions?.isColorGroup && !asset.dimensions?.isGroup && !asset.dimensions?.isVariantGroup && !isWallItemType(asset.type));
+  const dynamicAssets = assets.filter((asset) => (asset.is_active || currentChildTypes.has(asset.type)) && !asset.dimensions?.isColorGroup && !asset.dimensions?.isGroup && !asset.dimensions?.isVariantGroup && !isWallItemType(asset.type));
   const all = [...baseAssets, ...dynamicAssets];
   return all.filter((asset, index) => all.findIndex((candidate) => candidate.type === asset.type) === index);
 }
@@ -11760,9 +11761,11 @@ function assetToGroupRows(asset) {
     type: child.type,
     label: child.label || '',
     x: Number(child.x || 0),
+    y: Number(child.y || 0),
     z: Number(child.z || 0),
     rotation: Number(child.rotation || 0),
     depthLocked6cm: Boolean(child.dimensions?.depthLocked6cm),
+    child,
   }));
 }
 
@@ -11770,7 +11773,20 @@ function buildGroupChildren(rows, sourceAssets) {
   return rows
     .map((row, index) => {
       const source = sourceAssets.find((asset) => asset.type === row.type);
-      if (!source) return null;
+      if (!source) {
+        const child = row.child || {};
+        if (!child.type) return null;
+        return {
+          ...child,
+          id: child.id || `${child.type}-child-${index + 1}`,
+          label: row.label || child.label,
+          x: Number(row.x ?? child.x ?? 0),
+          y: Number(row.y ?? child.y ?? 0),
+          z: Number(row.z ?? child.z ?? 0),
+          rotation: Number(row.rotation ?? child.rotation ?? 0),
+          lockedInGroup: true,
+        };
+      }
       const sourceEntry = assetToCatalogEntry(source, sourceAssets) || source;
       const isWallMounted = assetPlacementMode(sourceEntry) === 'wall';
       return {
@@ -11778,7 +11794,7 @@ function buildGroupChildren(rows, sourceAssets) {
         type: source.type,
         label: row.label || source.label,
         x: Number(row.x || 0),
-        y: isWallMounted ? defaultWallItemCenterY(sourceEntry, source.type) : 0,
+        y: Number.isFinite(Number(row.y)) ? Number(row.y) : (isWallMounted ? defaultWallItemCenterY(sourceEntry, source.type) : 0),
         z: Number(row.z || 0),
         rotation: Number(row.rotation || 0),
         modelUrl: source.model_url,
