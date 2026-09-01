@@ -3082,11 +3082,14 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
         </div>
         <div className="counter-finish-meta-line">
           <small>{includedColorisLabel(includedFinishes.length)}</small>
-          <em className="included">Inclus</em>
         </div>
-        <div className="counter-finish-swatches included">
+        <div className="counter-finish-included-list">
           {(includedFinishes.length ? includedFinishes : [woodFinish]).map((finish) => (
-            <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
+            <div key={finish.id} className="counter-finish-included-row">
+              <CounterFinishSwatch finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
+              <strong>{shortFinishName(finish.name)}</strong>
+              <em className="included">Inclus</em>
+            </div>
           ))}
         </div>
         {optionalFinishes.length > 0 && (
@@ -3531,11 +3534,14 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
       </div>
       <div className="counter-finish-meta-line">
         <small>{includedColorisLabel(includedFinishes.length)}</small>
-        <em className="included">Inclus</em>
       </div>
-      <div className="counter-finish-swatches included">
+      <div className="counter-finish-included-list">
         {(includedFinishes.length ? includedFinishes : [counterWoodFinish()]).map((finish) => (
-          <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
+          <div key={finish.id} className="counter-finish-included-row">
+            <CounterFinishSwatch finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
+            <strong>{shortFinishName(finish.name)}</strong>
+            <em className="included">Inclus</em>
+          </div>
         ))}
       </div>
       {optionalFinishes.length > 0 && (

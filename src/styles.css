@@ -9977,6 +9977,37 @@ img.asset-thumb {
   background: #e9f2ff;
 }
 
+.counter-finish-included-list {
+  display: grid;
+  gap: 8px;
+}
+
+.counter-finish-included-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+}
+
+.counter-finish-included-row strong {
+  overflow: hidden;
+  color: #2c3340;
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.counter-finish-included-row em {
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #19884d;
+  background: #e3f6ea;
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
 .counter-finish-swatches {
   display: flex;
   flex-wrap: wrap;
