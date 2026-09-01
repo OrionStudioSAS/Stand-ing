@@ -15,6 +15,7 @@ Deno.serve(async (req) => {
   const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
   const fromEmail = Deno.env.get("RESEND_FROM_EMAIL") || "Stand-ING <no-reply@stand-ing.com>";
   const publicAppUrl = Deno.env.get("PUBLIC_APP_URL") || "https://stand-ing.vercel.app/";
+  const completionNotifyTo = clean(Deno.env.get("COMPLETION_NOTIFICATION_EMAIL") || "configurateur@stand-ing.com").toLowerCase();
 
   if (!resendApiKey) return json({ sent: false, reason: "Missing RESEND_API_KEY" }, 200);
 
@@ -56,9 +57,12 @@ Deno.serve(async (req) => {
   const specialRequest = requestedSpecialText || clean(scene.source_payload?.specialRequest?.text);
   const emailContent = buildEmailContent({ mode, clientName, standName, eventName, sceneUrl, hasPurchaseOrder: Boolean(purchaseOrder), specialRequest });
 
+  const notifyAdmin = mode === 'completed' || mode === 'special_request_completed';
+  const adminCopy = notifyAdmin && completionNotifyTo && completionNotifyTo !== toEmail ? [completionNotifyTo] : [];
   const payload = {
     from: fromEmail,
     to: [toEmail],
+    ...(adminCopy.length ? { bcc: adminCopy } : {}),
     subject: emailContent.subject,
     html: emailContent.html,
     text: emailContent.text,
@@ -82,6 +86,7 @@ Deno.serve(async (req) => {
       ...(scene.source_payload || {}),
       completion_email_sent_at: new Date().toISOString(),
       completion_email_to: toEmail,
+      completion_email_admin_copy_to: adminCopy[0] || '',
       last_completion_email_mode: mode,
     },
   }).eq("id", scene.id);

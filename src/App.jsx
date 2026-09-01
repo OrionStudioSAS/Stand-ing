@@ -5648,6 +5648,7 @@ function ValidationStepPanel({
   const wallFabricSupplement = optionSupplementTotal((line, label) => label.startsWith('coton') || label.includes('coton cloison'));
   const reserveSupplement = optionSupplementTotal((line, label) => label.includes('reserve'));
   const reserveOptionDetails = reserveOptionSummary(reserveOptions);
+  const reserveEntry = findCatalogEntry(catalog, reserveOption?.type || reserveRule?.includedType) || null;
   const partitionHeadSupplement = optionSupplementTotal((line, label) => label.includes('tete de cloison'));
   const counterSizeSupplementByItemId = new Map(
     visibleSupplementLines
@@ -5675,7 +5676,7 @@ function ValidationStepPanel({
         ...(Array.isArray(line.optionLines) ? line.optionLines : []),
         ...billableItems.flatMap((item) => itemOptionLines(item)),
       ]).slice(0, 2).join(' · '),
-      imageUrl: isCounterLogo ? validationCounterLogoImage(sourceItem, entry) : validationItemImage(sourceItem, entry),
+      imageUrl: isCounterLogo ? validationCounterLogoImage(sourceItem, entry, catalog) : validationItemImage(sourceItem, entry, catalog),
       badge: validationBadgeText(line.total),
       badgeTone: Number(line.total || 0) > 0 ? 'price' : 'included',
       visualStatus: isCounterLogo ? validationCounterLogoVisualStatus(sourceItem) : null,
@@ -5736,6 +5737,7 @@ function ValidationStepPanel({
     id: 'reserve',
     label: 'Réserve',
     detail: [reserveOptionType === '__none__' ? 'Non sélectionnée' : (reserveOption?.label || reserveRule?.includedLabel || 'Non configurée'), reserveOptionDetails].filter(Boolean).join(' · '),
+    imageUrl: validationItemImage(null, reserveEntry, catalog),
     swatchColor: '#bdbdbd',
     badge: validationBadgeText(reserveSupplement),
     badgeTone: reserveSupplement > 0 ? 'price' : 'included',
@@ -5797,6 +5799,7 @@ function ValidationStepPanel({
       isAdminViewer,
       onRemoveItem,
       onOpenItem,
+      catalog,
     }));
     pushAssociatedOptionRows(item, entry, section);
   });
@@ -6026,12 +6029,22 @@ function validationCategoryFromLine(line = {}, entry = {}, item = null) {
   return 'furniture';
 }
 
-function validationItemImage(item = null, entry = {}) {
-  return item?.options?.variantImageUrl || item?.options?.thumbnailUrl || item?.thumbnailUrl || item?.thumbnail_url || entry?.thumbnailUrl || entry?.thumbnail_url || '';
+function validationItemImage(item = null, entry = {}, catalog = []) {
+  const directImage = item?.options?.variantImageUrl || item?.options?.thumbnailUrl || item?.thumbnailUrl || item?.thumbnail_url || entry?.thumbnailUrl || entry?.thumbnail_url || '';
+  if (directImage) return directImage;
+  if (isWoodReceptionDeskItem(item) || isWoodReceptionDeskItem(entry)) {
+    return catalog.find((candidate) => isVariantGroupEntry(candidate) && isCounterVariantGroup(candidate))?.thumbnailUrl
+      || catalog.find((candidate) => isWoodReceptionDeskItem(candidate) && candidate.thumbnailUrl)?.thumbnailUrl
+      || '';
+  }
+  if (isReserveCatalogEntry(entry)) {
+    return entry?.thumbnailUrl || entry?.thumbnail_url || '';
+  }
+  return '';
 }
 
-function validationCounterLogoImage(item = null, entry = {}) {
-  return item?.options?.binary3ImageUrl || item?.options?.variantImageUrl || validationItemImage(item, entry);
+function validationCounterLogoImage(item = null, entry = {}, catalog = []) {
+  return item?.options?.binary3ImageUrl || item?.options?.variantImageUrl || validationItemImage(item, entry, catalog);
 }
 
 function validationCounterLogoVisualStatus(item = null) {
@@ -6042,7 +6055,7 @@ function validationCounterLogoVisualStatus(item = null) {
   return validationVisualStatus(false, hasLogo);
 }
 
-function validationRowFromItem({ item, entry, amount = 0, included = false, readOnly = false, isAdminViewer = false, onRemoveItem, onOpenItem }) {
+function validationRowFromItem({ item, entry, amount = 0, included = false, readOnly = false, isAdminViewer = false, onRemoveItem, onOpenItem, catalog = [] }) {
   const optionLines = uniqueTextValues(itemOptionLines(item));
   const hasCustomImage = Boolean(item?.options?.binary3ImageUrl || item?.options?.headMainImageUrl || item?.options?.posterImageUrl);
   const visualPending = Boolean(item?.options?.binary3VisualPending || item?.options?.headMainVisualPending || item?.options?.posterVisualPending);
@@ -6051,7 +6064,7 @@ function validationRowFromItem({ item, entry, amount = 0, included = false, read
     id: item.id,
     label: itemCartLabel(item),
     detail: optionLines.slice(0, 2).join(' · '),
-    imageUrl: validationItemImage(item, entry),
+    imageUrl: validationItemImage(item, entry, catalog),
     badge: included ? 'Inclus' : validationBadgeText(amount),
     badgeTone: included ? 'included' : 'price',
     visualStatus: needsVisual ? validationVisualStatus(visualPending, hasCustomImage) : null,
