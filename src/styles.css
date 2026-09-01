@@ -5149,6 +5149,40 @@ select {
   font-size: 0.72rem;
 }
 
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #687284;
+  background: #fff;
+  box-shadow: 0 3px 13px rgba(22, 28, 38, 0.08);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.admin-pagination div {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-pagination button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 13px;
+  color: #fff;
+  background: #1f4378;
+  font-weight: 900;
+}
+
+.admin-pagination button:disabled {
+  color: #9ba2ac;
+  background: #eef1f5;
+}
+
 .admin-clients-table article.client-expanded-row {
   display: block;
   min-height: 0;

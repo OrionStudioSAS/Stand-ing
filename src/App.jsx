@@ -5575,7 +5575,7 @@ function ValidationStepPanel({
   const hasSpecialRequest = Boolean(specialRequestText.trim());
   const reserveOption = reserveOptionType ? normalizeComplementaryOptions(reserveRule?.options).find((option) => option.type === reserveOptionType) : null;
   const activeCovers = wallCoverSurfaces.filter((surface) => wallCoverEnabledForSurface(wallCovers, surface));
-  const pendingVisuals = validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals, wallCovers, wallCoverSurfaces });
+  const pendingVisuals = validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals, wallCovers, wallCoverSurfaces, items: safeItems });
   const insuranceLine = pricing?.insuranceLine;
   const sectionRows = {
     personalization: [],
@@ -5596,7 +5596,6 @@ function ValidationStepPanel({
   const reserveSupplement = optionSupplementTotal((line, label) => label.includes('reserve'));
   const reserveOptionDetails = reserveOptionSummary(reserveOptions);
   const partitionHeadSupplement = optionSupplementTotal((line, label) => label.includes('tete de cloison'));
-  const wallCoverSupplement = optionSupplementTotal((line) => line.type === 'wall-cover');
   const counterSizeSupplementByItemId = new Map(
     visibleSupplementLines
       .filter((line) => String(line.type || '').startsWith('counter-size-') && line.optionForItemId)
@@ -5626,6 +5625,7 @@ function ValidationStepPanel({
       imageUrl: isCounterLogo ? validationCounterLogoImage(sourceItem, entry) : validationItemImage(sourceItem, entry),
       badge: validationBadgeText(line.total),
       badgeTone: Number(line.total || 0) > 0 ? 'price' : 'included',
+      visualStatus: isCounterLogo ? validationCounterLogoVisualStatus(sourceItem) : null,
       option: !isCounterLogo && Boolean(associatedItem || String(line.type || '').startsWith('global-option-')),
     };
   };
@@ -5702,17 +5702,17 @@ function ValidationStepPanel({
     });
   });
 
-  activeCovers.forEach((surface, index) => {
+  wallCoverValidationRows(activeCovers, pricing?.wallCoverIncludedMl).forEach(({ surface, includedMl, total }) => {
     const cover = wallCovers?.[surface.id] || (surface.sourceWall ? wallCovers?.[surface.sourceWall] : null) || {};
     const preview = wallCoverPreviewForSurface(wallCoverPreviewsFromCovers(wallCovers), surface);
     pushRow('signage', {
       id: `wall-cover-${surface.id}`,
       label: `Bâche - ${surface.label || 'cloison'}`,
-      detail: `${formatNumber(surface.visibleWidth || surface.width || 0)} m × 2,5 m`,
+      detail: validationWallCoverDetail(surface, includedMl),
       imageUrl: preview?.url || '',
       swatchColor: '#dfe5ee',
-      badge: index === 0 ? validationBadgeText(wallCoverSupplement) : '+ 0€',
-      badgeTone: wallCoverSupplement > 0 && index === 0 ? 'price' : 'price',
+      badge: validationBadgeText(total),
+      badgeTone: total > 0 ? 'price' : 'included',
       visualStatus: validationVisualStatus(cover.visualPending, preview?.url || cover.previewUrl),
     });
   });
@@ -5888,6 +5888,29 @@ function validationBadgeText(amount = 0) {
   return safeAmount > 0 ? `+ ${validationMoney(safeAmount)}€` : 'Inclus';
 }
 
+function wallCoverValidationRows(surfaces = [], includedMl = 0) {
+  let remainingIncluded = Math.max(0, Number(includedMl || 0));
+  return surfaces.map((surface) => {
+    const quantityMl = roundLinearMeters(Number(surface.visibleWidth || surface.width || 0));
+    const appliedIncluded = roundLinearMeters(Math.min(quantityMl, remainingIncluded));
+    remainingIncluded = roundLinearMeters(Math.max(0, remainingIncluded - appliedIncluded));
+    const billableMl = roundLinearMeters(Math.max(0, quantityMl - appliedIncluded));
+    return {
+      surface,
+      quantityMl,
+      includedMl: appliedIncluded,
+      billableMl,
+      total: Math.round(billableMl * wallCoverUnitPrice),
+    };
+  });
+}
+
+function validationWallCoverDetail(surface = {}, includedMl = 0) {
+  const width = formatNumber(surface.visibleWidth || surface.width || 0);
+  const included = Number(includedMl || 0);
+  return `${width} m × 2,5 m${included > 0 ? ` · ${formatNumber(included)} ml inclus` : ''}`;
+}
+
 function validationColorLabel(color = {}) {
   const name = color?.name || color?.label || 'Non sélectionné';
   const code = color?.code || color?.reference || '';
@@ -5952,11 +5975,19 @@ function validationCounterLogoImage(item = null, entry = {}) {
   return item?.options?.binary3ImageUrl || item?.options?.variantImageUrl || validationItemImage(item, entry);
 }
 
+function validationCounterLogoVisualStatus(item = null) {
+  if (!item || !isWoodReceptionDeskItem(item) || !counterLogoOptionActive(item)) return null;
+  const visualPending = Boolean(item?.options?.binary3VisualPending);
+  const hasLogo = Boolean(item?.options?.binary3ImageUrl || item?.options?.binary3ImageName);
+  if (visualPending) return { label: 'Logo à remettre plus tard', tone: 'missing' };
+  return validationVisualStatus(false, hasLogo);
+}
+
 function validationRowFromItem({ item, entry, amount = 0, included = false, readOnly = false, isAdminViewer = false, onRemoveItem }) {
   const optionLines = uniqueTextValues(itemOptionLines(item));
   const hasCustomImage = Boolean(item?.options?.binary3ImageUrl || item?.options?.headMainImageUrl || item?.options?.posterImageUrl);
   const visualPending = Boolean(item?.options?.binary3VisualPending || item?.options?.headMainVisualPending || item?.options?.posterVisualPending);
-  const needsVisual = (isWoodReceptionDeskItem(item) && counterLogoOptionActive(item)) || visualPending || Boolean(item?.options?.binary3ImageName || item?.options?.headMainImageName || item?.options?.posterImageName);
+  const needsVisual = !isWoodReceptionDeskItem(item) && (visualPending || Boolean(item?.options?.binary3ImageName || item?.options?.headMainImageName || item?.options?.posterImageName));
   return {
     id: item.id,
     label: itemCartLabel(item),
@@ -5990,7 +6021,7 @@ function validationLineQuantitySuffix(line = {}) {
   return quantity > 1 ? ` × ${formatNumber(quantity)}` : '';
 }
 
-function validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals = {}, wallCovers = {}, wallCoverSurfaces = [] }) {
+function validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals = {}, wallCovers = {}, wallCoverSurfaces = [], items = [] }) {
   const rows = [];
   const headSides = partitionHeadSelectedSides(partitionHeadRule, partitionHeadSides);
   headSides.forEach((side) => {
@@ -6001,6 +6032,8 @@ function validationPendingVisuals({ partitionHeadRule, partitionHeadSides, parti
     const cover = wallCovers?.[surface.id] || (surface.sourceWall ? wallCovers?.[surface.sourceWall] : null) || {};
     if (cover.enabled && cover.visualPending) rows.push(`Visuel bâche ${surface.label || surface.id} à transmettre`);
   });
+  items.filter((item) => isWoodReceptionDeskItem(item) && counterLogoOptionActive(item) && item?.options?.binary3VisualPending)
+    .forEach((item, index) => rows.push(`Logo comptoir accueil ${index + 1} à transmettre`));
   return uniqueTextValues(rows);
 }
 
@@ -8710,8 +8743,21 @@ function presetMetaLabel(preset, presets = []) {
 function AdminUsersView({ users = [], clients = [], salonChoices = [], onDeleteUser }) {
   const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
   const [userFilters, setUserFilters] = useState({ search: '', salon: '' });
+  const [userPage, setUserPage] = useState(1);
   const userSalonChoices = useMemo(() => adminUserSalonChoices(salonChoices, clients, users), [salonChoices, clients, users]);
   const filteredUsers = useMemo(() => filterAdminUsers(users, clients, userFilters), [users, clients, userFilters]);
+  const userPageSize = 25;
+  const pageCount = Math.max(1, Math.ceil(filteredUsers.length / userPageSize));
+  const safePage = Math.min(userPage, pageCount);
+  const paginatedUsers = useMemo(() => filteredUsers.slice((safePage - 1) * userPageSize, safePage * userPageSize), [filteredUsers, safePage]);
+
+  useEffect(() => {
+    setUserPage(1);
+  }, [userFilters.search, userFilters.salon]);
+
+  useEffect(() => {
+    if (userPage > pageCount) setUserPage(pageCount);
+  }, [userPage, pageCount]);
 
   const runDelete = async (userRow) => {
     if (!userRow?.id) return;
@@ -8758,7 +8804,7 @@ function AdminUsersView({ users = [], clients = [], salonChoices = [], onDeleteU
           <span>Scènes</span>
           <span>Actions</span>
         </header>
-        {filteredUsers.length ? filteredUsers.map((userRow) => {
+        {filteredUsers.length ? paginatedUsers.map((userRow) => {
           const scenesCount = Number(userRow.scenes_count || 0);
           return (
             <article key={userRow.id}>
@@ -8783,6 +8829,15 @@ function AdminUsersView({ users = [], clients = [], salonChoices = [], onDeleteU
           );
         }) : <div className="admin-empty-row">Aucun utilisateur trouvé avec les filtres actuels.</div>}
       </section>
+      {filteredUsers.length > userPageSize && (
+        <nav className="admin-pagination" aria-label="Pagination utilisateurs">
+          <span>{filteredUsers.length} utilisateur{filteredUsers.length > 1 ? 's' : ''} · page {safePage}/{pageCount}</span>
+          <div>
+            <button type="button" disabled={safePage <= 1} onClick={() => setUserPage((page) => Math.max(1, page - 1))}>Précédent</button>
+            <button type="button" disabled={safePage >= pageCount} onClick={() => setUserPage((page) => Math.min(pageCount, page + 1))}>Suivant</button>
+          </div>
+        </nav>
+      )}
     </section>
   );
 }
