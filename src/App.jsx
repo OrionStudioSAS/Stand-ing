@@ -3508,7 +3508,8 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
 
 
 function includedColorisLabel(count = 0) {
-  return `${Math.max(1, Number(count || 0))} coloris inclus`;
+  const safeCount = Math.max(1, Number(count || 0));
+  return `${safeCount} couleur${safeCount > 1 ? 's' : ''} incluse${safeCount > 1 ? 's' : ''}`;
 }
 
 function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = false, onSelect, compact = false }) {
@@ -5706,13 +5707,13 @@ function ValidationStepPanel({
     });
   });
 
-  wallCoverValidationRows(activeCovers, pricing?.wallCoverIncludedMl).forEach(({ surface, includedMl, total }) => {
+  wallCoverValidationRows(activeCovers, pricing?.wallCoverIncludedMl).forEach(({ surface, includedMl, billableMl, total }) => {
     const cover = wallCovers?.[surface.id] || (surface.sourceWall ? wallCovers?.[surface.sourceWall] : null) || {};
     const preview = wallCoverPreviewForSurface(wallCoverPreviewsFromCovers(wallCovers), surface);
     pushRow('signage', {
       id: `wall-cover-${surface.id}`,
       label: `Bâche - ${surface.label || 'cloison'}`,
-      detail: validationWallCoverDetail(surface, includedMl),
+      detail: validationWallCoverDetail(surface, includedMl, billableMl),
       imageUrl: preview?.url || '',
       swatchColor: '#dfe5ee',
       badge: validationBadgeText(total),
@@ -5909,10 +5910,14 @@ function wallCoverValidationRows(surfaces = [], includedMl = 0) {
   });
 }
 
-function validationWallCoverDetail(surface = {}, includedMl = 0) {
+function validationWallCoverDetail(surface = {}, includedMl = 0, billableMl = 0) {
   const width = formatNumber(surface.visibleWidth || surface.width || 0);
   const included = Number(includedMl || 0);
-  return `${width} m × 2,5 m${included > 0 ? ` · ${formatNumber(included)} ml inclus` : ''}`;
+  const billable = Number(billableMl || 0);
+  const details = [`${width} m × 2,5 m`];
+  if (included > 0) details.push(`${formatNumber(included)} ml inclus déduits`);
+  if (billable > 0) details.push(`${formatNumber(billable)} ml facturés`);
+  return details.join(' · ');
 }
 
 function validationColorLabel(color = {}) {
