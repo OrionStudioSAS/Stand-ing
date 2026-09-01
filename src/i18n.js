@@ -88,6 +88,7 @@ export const translations = {
     footprint_included_colors: 'Coloris inclus',
     wall_color_included_singular: 'Couleur incluse',
     wall_color_included_plural: 'Couleurs incluses',
+    includedLabelTag: 'Inclus',
 
     // TechnicalFloorOptionCard
     floor_warning: 'Le plancher technique retire automatiquement l\'empreinte moquette.',
@@ -463,6 +464,7 @@ export const translations = {
     footprint_included_colors: 'Included colours',
     wall_color_included_singular: 'Included colour',
     wall_color_included_plural: 'Included colours',
+    includedLabelTag: 'Included',
 
     // TechnicalFloorOptionCard
     floor_warning: 'The technical floor automatically removes the carpet footprint.',
