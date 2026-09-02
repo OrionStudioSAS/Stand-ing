@@ -2909,10 +2909,8 @@ function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrecti
           <label>{t('client_lastname')}<input value={contactDetails.lastName || ''} {...lockedInputProps} /></label>
         </div>
         <label className="form-row">{t('client_company')}<input value={contactDetails.company || ''} {...lockedInputProps} /></label>
-        <div className="form-grid two">
-          <label>{t('client_email')}<input type="email" value={contactDetails.email || ''} {...lockedInputProps} /></label>
-          <label>{t('client_role')}<input value={contactDetails.role || ''} {...lockedInputProps} /></label>
-        </div>
+        <label className="form-row">{t('client_email')}<input type="email" value={contactDetails.email || ''} {...lockedInputProps} /></label>
+        <label className="form-row">{t('client_role')}<input value={contactDetails.role || ''} {...lockedInputProps} /></label>
         <label className="form-row">{t('client_phone')}<input value={contactDetails.phone || ''} {...lockedInputProps} /></label>
 
         <label className="form-row">{t('client_address')}<input value={contactDetails.address || ''} {...lockedInputProps} /></label>
