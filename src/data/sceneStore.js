@@ -691,9 +691,9 @@ function sceneProductionUploadMetadata(scene = {}, item = {}, file = {}, preview
     salon: scene.salon || scene.event_name || source.salon || source.event_name || '',
     offer: scene.offer || source.offer || source.pack || source.includedPack || source.options?.includedPack || '',
     company: contact.company || source.company_name || source.company || source.name || source.item?.name || scene.project_name || scene.client_name || source.client_name || '',
-    hall: contact.hall || source.hall || readMondayColumnAny(source, ['hall', 'pavillon']) || '',
-    aisle: source.aisle_number || source.allee || contact.allee || readMondayColumnAny(source, ['text5', 'allée', 'allee']) || '',
-    standNumber: source.stand_number || readMondayColumnAny(source, ['n_', 'n°', 'numero', 'numéro']) || '',
+    hall: readMondayColumnAny(source, ['hall', 'pavillon']) || contact.hall || source.hall || '',
+    aisle: readMondayColumnAny(source, ['allée', 'allee', 'allee stand', 'allée stand']) || source.aisle_number || source.allee || contact.allee || '',
+    standNumber: readMondayColumnTitleAny(source, ['n°', 'n', 'numero', 'numéro', 'numero stand', 'numéro stand']) || source.stand_number || contact.standNumber || contact.emplacement || '',
     itemId: item.id || '',
     itemType: item.type || '',
     itemLabel: item.label || item.visualLabel || item.type || '',
@@ -715,6 +715,13 @@ function readMondayColumnAny(payload = {}, names = []) {
   const columns = Array.isArray(payload?.column_values) ? payload.column_values : [];
   const normalizedNames = names.map((name) => normalizeKey(name));
   const match = columns.find((column) => normalizedNames.includes(normalizeKey(column.id)) || normalizedNames.includes(normalizeKey(column.title)));
+  return match?.text || match?.value || '';
+}
+
+function readMondayColumnTitleAny(payload = {}, names = []) {
+  const columns = Array.isArray(payload?.column_values) ? payload.column_values : [];
+  const normalizedNames = names.map((name) => normalizeKey(name));
+  const match = columns.find((column) => normalizedNames.includes(normalizeKey(column.title || column.column?.title)));
   return match?.text || match?.value || '';
 }
 

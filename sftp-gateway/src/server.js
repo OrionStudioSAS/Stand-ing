@@ -364,10 +364,27 @@ function exhibitorFolderName(body = {}, scene = {}) {
     || source.client_name
     || 'EXPOSANT'
   );
-  const hall = shortCode(body.hall || source.hall || '');
-  const aisle = shortCode(body.aisle || source.aisle_number || source.allee || '');
-  const stand = shortCode(body.standNumber || source.stand_number || '');
+  const hall = shortCode(body.hall || readSourceColumnAny(source, ['hall', 'pavillon']) || source.hall || contact.hall || '');
+  const aisle = shortCode(body.aisle || readSourceColumnAny(source, ['allée', 'allee', 'allee stand', 'allée stand']) || source.aisle_number || source.allee || contact.allee || '');
+  const stand = shortCode(body.standNumber || readSourceColumnTitleAny(source, ['n°', 'n', 'numero', 'numéro', 'numero stand', 'numéro stand']) || source.stand_number || contact.standNumber || contact.emplacement || '');
   return folderSegment([company, hall, aisle, stand].filter(Boolean).join(' '));
+}
+
+function readSourceColumnAny(payload = {}, names = []) {
+  const normalizedNames = names.map(normalizeForCompare).filter(Boolean);
+  const columns = Array.isArray(payload.column_values) ? payload.column_values : [];
+  const match = columns.find((column) => {
+    const candidates = [column.id, column.title, column.column?.title];
+    return candidates.some((candidate) => normalizedNames.includes(normalizeForCompare(candidate).replace(/\b(n|numero)\b/g, 'n')));
+  });
+  return match?.text || '';
+}
+
+function readSourceColumnTitleAny(payload = {}, names = []) {
+  const normalizedNames = names.map(normalizeForCompare).filter(Boolean);
+  const columns = Array.isArray(payload.column_values) ? payload.column_values : [];
+  const match = columns.find((column) => normalizedNames.includes(normalizeForCompare(column.title || column.column?.title)));
+  return match?.text || '';
 }
 
 function standCode(aisle = '', stand = '') {

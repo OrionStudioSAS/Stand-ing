@@ -769,7 +769,8 @@ function mondaySceneLocation(item: any, source: any) {
   const mapping = source.mapping ?? {};
   return {
     standNumber: readMappingValue(item, mapping.stand_number || mapping.standNumber || mapping.numero_stand || mapping["numéro_stand"])
-      || readColumnAny(item, ["n°", "n", "numero", "numéro", "numero stand", "numéro stand", "stand", "emplacement"]),
+      || readColumnTitleAny(item, ["n°", "n", "numero", "numéro", "numero stand", "numéro stand"])
+      || readColumnAny(item, ["stand", "emplacement"]),
     aisleNumber: readMappingValue(item, mapping.aisle_number || mapping.allee || mapping["allée"])
       || readColumnAny(item, ["allée", "allee", "allee stand", "allée stand"]),
     hall: readMappingValue(item, mapping.hall || mapping.pavillon)
@@ -792,7 +793,7 @@ async function ensureSceneSftpFolder({ gatewayUrl, gatewayToken, scene, warnings
     const sourcePayload = scene.source_payload || {};
     const hall = readColumnAny(sourcePayload, ["hall", "pavillon"]) || sourcePayload.hall || "";
     const aisle = readColumnAny(sourcePayload, ["allée", "allee", "allee stand", "allée stand"]) || sourcePayload.aisle_number || sourcePayload.allee || "";
-    const standNumber = readColumnAny(sourcePayload, ["n°", "n", "numero", "numéro", "numero stand", "numéro stand"]) || sourcePayload.stand_number || "";
+    const standNumber = readColumnTitleAny(sourcePayload, ["n°", "n", "numero", "numéro", "numero stand", "numéro stand"]) || sourcePayload.stand_number || "";
     const response = await fetch(`${gatewayUrl.replace(/\/+$/g, "")}/scene-folder`, {
       method: "POST",
       headers: {
@@ -1460,6 +1461,14 @@ function readColumnAny(item: any, keys: string[]) {
   const normalizedKeys = keys.map(normalizeColumnLookup).filter(Boolean);
   return item.column_values?.find((column: any) => {
     const candidates = [column.id, column.title, column.column?.title];
+    return candidates.some((candidate) => normalizedKeys.includes(normalizeColumnLookup(candidate)));
+  })?.text ?? "";
+}
+
+function readColumnTitleAny(item: any, keys: string[]) {
+  const normalizedKeys = keys.map(normalizeColumnLookup).filter(Boolean);
+  return item.column_values?.find((column: any) => {
+    const candidates = [column.title, column.column?.title];
     return candidates.some((candidate) => normalizedKeys.includes(normalizeColumnLookup(candidate)));
   })?.text ?? "";
 }
