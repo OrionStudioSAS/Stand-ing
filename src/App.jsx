@@ -5474,9 +5474,24 @@ function roundLinearMeters(value = 0) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
-function isFurnitureInsuranceEligible(entry = {}) {
-  if (!entry?.type && !entry?.label) return false;
-  return normalizeMarketCategory(entry) === 'furniture';
+function isFurnitureInsuranceEligible(entry = {}, item = {}) {
+  const text = normalizeTextValue([
+    entry?.type,
+    entry?.label,
+    entry?.dimensions?.category,
+    entry?.dimensions?.folderName,
+    item?.type,
+    item?.label,
+    item?.dimensions?.category,
+    item?.dimensions?.folderName,
+    item?.options?.variantGroupLabel,
+    item?.options?.variantAssetLabel,
+  ].filter(Boolean).join(' '));
+  if (!text) return false;
+  if (text.includes('podium')) return true;
+  if (text.includes('bar')) return true;
+  if (text.includes('comptoir') || (text.includes('banque') && text.includes('accueil'))) return true;
+  return text.includes('meuble') && (text.includes('bas') || text.includes('rangement'));
 }
 
 function furnitureInsuranceLine(amount = 0) {
@@ -12923,7 +12938,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     const unitPrice = billableCount ? Math.round(lineTotal / billableCount) : assetUnitPrice(entry, salonLabel);
     billableCounts.set(type, billableCount);
     itemsTotal += lineTotal;
-    if (isFurnitureInsuranceEligible(entry)) furnitureInsuranceBase += lineTotal;
+    if (billableItems.some((item) => isFurnitureInsuranceEligible(entry, item))) furnitureInsuranceBase += lineTotal;
     lines.push({
       type,
       label: pricingLineLabelForItems(billableItems, entry, type),
@@ -12940,13 +12955,13 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     const sizeLine = counterVariantUpgradeOptionLine(item, entry, salonLabel, index);
     if (sizeLine) {
       itemsTotal += sizeLine.total;
-      if (isFurnitureInsuranceEligible(entry)) furnitureInsuranceBase += sizeLine.total;
+      if (isFurnitureInsuranceEligible(entry, item)) furnitureInsuranceBase += sizeLine.total;
       lines.push(sizeLine);
     }
     const colorLine = counterColorOptionLine(item, entry, salonLabel, index);
     if (colorLine) {
       itemsTotal += colorLine.total;
-      if (isFurnitureInsuranceEligible(entry)) furnitureInsuranceBase += colorLine.total;
+      if (isFurnitureInsuranceEligible(entry, item)) furnitureInsuranceBase += colorLine.total;
       lines.push(colorLine);
     }
     const logoLine = counterLogoOptionLine(item, entry, salonLabel, index);
