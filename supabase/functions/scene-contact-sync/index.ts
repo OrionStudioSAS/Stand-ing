@@ -133,7 +133,7 @@ function columnById(columns: MondayColumn[], columnId: string) {
 
 async function updateMondayColumnValue(token: string, boardId: string, itemId: string, columns: MondayColumn[], columnId: string, value: string, displayText?: string) {
   const column = columnById(columns, columnId);
-  if (column?.type === "email") {
+  if (column?.type === "email" || normalizeColumnLabel(columnId).includes("email") || normalizeColumnLabel(column?.title).includes("mail")) {
     await updateMondayJsonColumnValue(token, boardId, itemId, columnId, { email: value, text: displayText || value });
     return;
   }
@@ -141,12 +141,7 @@ async function updateMondayColumnValue(token: string, boardId: string, itemId: s
 }
 
 async function changeMondayItemName(token: string, boardId: string, itemId: string, name: string) {
-  const mutation = `
-    mutation ($boardId: ID!, $itemId: ID!, $name: String!) {
-      change_item_name(board_id: $boardId, item_id: $itemId, item_name: $name) { id }
-    }
-  `;
-  await mondayRequest(token, mutation, { boardId, itemId, name });
+  await updateMondaySimpleColumnValue(token, boardId, itemId, "name", name);
 }
 
 async function updateMondaySimpleColumnValue(token: string, boardId: string, itemId: string, columnId: string, value: string) {
@@ -186,6 +181,15 @@ async function mondayRequest(token: string, query: string, variables: Record<str
 
 function clean(value: unknown) {
   return String(value || "").trim();
+}
+
+function normalizeColumnLabel(value: unknown) {
+  return clean(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function json(data: unknown, status = 200) {
