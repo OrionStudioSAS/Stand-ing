@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
   const requestedSpecialText = clean(body.specialRequest);
   if (!sceneId && !shareToken) return json({ error: "Missing scene identifier" }, 400);
 
-  let query = supabase.from("scenes").select("id, share_token, client_name, client_email, project_name, event_name, salon, source_payload").limit(1);
+  let query = supabase.from("scenes").select("id, share_token, client_name, client_email, project_name, event_name, salon, offer, source_payload").limit(1);
   query = sceneId ? query.eq("id", sceneId) : query.eq("share_token", shareToken);
   const { data: scenes, error } = await query;
   if (error) return json({ error: error.message }, 500);
@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
   const clientName = clean(scene.client_name) || clean(scene.source_payload?.exhibitor_name) || "client";
   const standName = clean(scene.project_name) || "votre stand";
   const eventName = clean(scene.event_name) || clean(scene.salon) || "Stand-ING";
-  const offerName = clean(scene.source_payload?.offer || scene.source_payload?.pack || scene.source_payload?.formule || "");
+  const offerName = standOfferLabel(scene);
   const specialRequest = requestedSpecialText || clean(scene.source_payload?.specialRequest?.text);
   const emailContent = buildEmailContent({ mode, clientName, standName, eventName, sceneUrl, hasPurchaseOrder: Boolean(purchaseOrder), specialRequest });
 
@@ -78,10 +78,10 @@ Deno.serve(async (req) => {
     const adminPayload = {
       from: fromEmail,
       to: [completionNotifyTo],
-      subject: `[BAT] Configuration ${standName} confirmée`,
-      html: adminNotificationEmailHtml({ clientName, toEmail, standName, eventName, offerName, sceneUrl, mode, hasTechnicalPlan: Boolean(technicalPlan) }),
-      text: `Configuration confirmée\n\nExposant : ${clientName}\nEmail : ${toEmail}\nStand : ${standName}\nSalon : ${eventName}${offerName ? `\nFormule : ${offerName}` : ""}\nLien : ${sceneUrl}\n\n${technicalPlan ? "Le BAT est joint à cet email." : "Aucun BAT n'a pu être généré automatiquement."}`,
-      ...(technicalPlan ? { attachments: [technicalPlan] } : {}),
+      subject: `[BAT + BDC${offerName ? ` ${offerName}` : ""}] Configuration ${standName} confirmée`,
+      html: adminNotificationEmailHtml({ clientName, toEmail, standName, eventName, offerName, sceneUrl, mode, hasTechnicalPlan: Boolean(technicalPlan), hasPurchaseOrder: Boolean(purchaseOrder) }),
+      text: `Configuration confirmée\n\nExposant : ${clientName}\nEmail : ${toEmail}\nStand : ${standName}\nSalon : ${eventName}${offerName ? `\nFormule : Stand ${offerName}` : ""}\nLien : ${sceneUrl}\n\nPièces jointes :${technicalPlan ? "\n- BAT" : "\n- BAT non généré"}${purchaseOrder ? "\n- Bon de commande" : "\n- Bon de commande non généré"}`,
+      ...((technicalPlan || purchaseOrder) ? { attachments: [technicalPlan, purchaseOrder].filter(Boolean) } : {}),
     };
     const adminResponse = await sendResendEmail(resendApiKey, adminPayload);
     adminResult = await adminResponse.json().catch(() => ({}));
@@ -176,7 +176,7 @@ function completionEmailHtml({ clientName, standName, eventName, sceneUrl, hasPu
   </div>`;
 }
 
-function adminNotificationEmailHtml({ clientName, toEmail, standName, eventName, offerName, sceneUrl, mode, hasTechnicalPlan }: { clientName: string; toEmail: string; standName: string; eventName: string; offerName: string; sceneUrl: string; mode: string; hasTechnicalPlan: boolean }) {
+function adminNotificationEmailHtml({ clientName, toEmail, standName, eventName, offerName, sceneUrl, mode, hasTechnicalPlan, hasPurchaseOrder }: { clientName: string; toEmail: string; standName: string; eventName: string; offerName: string; sceneUrl: string; mode: string; hasTechnicalPlan: boolean; hasPurchaseOrder: boolean }) {
   const title = mode === "special_request_completed" ? "Demande spécifique traitée" : "Configuration exposant confirmée";
   return `
   <div style="font-family:Arial,sans-serif;color:#172033;line-height:1.5">
@@ -187,12 +187,24 @@ function adminNotificationEmailHtml({ clientName, toEmail, standName, eventName,
       <tr><td style="padding:8px 12px;color:#687386">Email</td><td style="padding:8px 12px;font-weight:bold">${escapeHtml(toEmail)}</td></tr>
       <tr><td style="padding:8px 12px;color:#687386">Stand</td><td style="padding:8px 12px;font-weight:bold">${escapeHtml(standName)}</td></tr>
       <tr><td style="padding:8px 12px;color:#687386">Salon</td><td style="padding:8px 12px;font-weight:bold">${escapeHtml(eventName)}</td></tr>
-      ${offerName ? `<tr><td style="padding:8px 12px;color:#687386">Formule</td><td style="padding:8px 12px;font-weight:bold">${escapeHtml(offerName)}</td></tr>` : ""}
+      ${offerName ? `<tr><td style="padding:8px 12px;color:#687386">Formule</td><td style="padding:8px 12px;font-weight:bold">Stand ${escapeHtml(offerName)}</td></tr>` : ""}
     </table>
-    <p>${hasTechnicalPlan ? "Le BAT est joint à cet email." : "Attention : aucun BAT n'a pu être généré automatiquement."}</p>
+    <p>Pièces jointes :</p>
+    <ul>
+      <li>${hasTechnicalPlan ? "BAT joint" : "BAT non généré automatiquement"}</li>
+      <li>${hasPurchaseOrder ? "Bon de commande joint" : "Bon de commande non généré automatiquement"}</li>
+    </ul>
     <p><a href="${sceneUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">Ouvrir la scène</a></p>
     ${emailSignatureHtml()}
   </div>`;
+}
+
+function standOfferLabel(scene: any) {
+  const raw = clean(scene.offer || scene.source_payload?.offer || scene.source_payload?.pack || scene.source_payload?.formule || scene.source_payload?.offerName || scene.source_payload?.packName);
+  const normalized = clean(raw).toLowerCase();
+  if (normalized.includes("prestige")) return "PRESTIGE";
+  if (normalized.includes("confort")) return "CONFORT";
+  return raw;
 }
 
 function emailSignatureHtml() {
