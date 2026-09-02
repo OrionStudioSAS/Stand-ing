@@ -1543,6 +1543,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const updateItem = (id, patch) => {
     if (readOnly) return;
     const currentItem = sceneItems.find((item) => item.id === id);
+    if (isTransformPatch(patch) && itemSystemTransformLocked(currentItem)) return;
     if (!isAdminViewer && hasOwn(patch, 'rotation') && itemRotationLocked(currentItem)) return;
     const autoLedItem = sceneItems.find((item) => item.id === id && isAutomaticLedRailItem(item));
     if (autoLedItem) {
@@ -1866,7 +1867,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (readOnly || !draggingId) return;
     const dragged = visibleSceneItems.find((item) => item.id === draggingId);
     if (!dragged) return;
-    if (itemUserLocked(dragged) || (!isAdminViewer && itemMovementLocked(dragged))) return;
+    if (!canDragSceneItem(dragged, isAdminViewer)) return;
 
     if (isWallItem(dragged)) {
       updateItem(draggingId, wallDragPatch(point, dragged, visibleSceneItems, width, depth, layout));
@@ -2378,20 +2379,20 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 visualContext={sceneVisualContext}
                 sceneConstraints={sceneConstraints}
                 selectedToolbar={selected && !readOnly && !itemConfigModal ? (
-                  <div className={`view-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
-                    <button type="button" disabled={isWallItem(selected) || (!isAdminViewer && itemRotationLocked(selected))} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
+                  <div className={`view-toolbar selection-mode ${rotationPanelOpen && canRotateSceneItem(selected, isAdminViewer) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
+                    <button type="button" disabled={!canRotateSceneItem(selected, isAdminViewer)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
                     <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), salonLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Pencil size={15} /></button>
                     <button
                       type="button"
-                      className={`toolbar-lock-button ${itemUserLocked(selected) ? 'active' : ''} ${itemAdminMovementLocked(selected) ? 'admin-locked' : ''}`}
-                      disabled={itemAdminMovementLocked(selected)}
+                      className={`toolbar-lock-button ${itemUserLocked(selected) ? 'active' : ''} ${itemAdminMovementLocked(selected) || itemSystemTransformLocked(selected) ? 'admin-locked' : ''}`}
+                      disabled={itemAdminMovementLocked(selected) || itemSystemTransformLocked(selected)}
                       onClick={toggleSelectedItemLock}
-                      title={tRaw(language, itemAdminMovementLocked(selected) ? 'toolbar_locked_move' : itemUserLocked(selected) ? 'toolbar_unlock' : 'toolbar_lock')}
+                      title={tRaw(language, itemAdminMovementLocked(selected) || itemSystemTransformLocked(selected) ? 'toolbar_locked_move' : itemUserLocked(selected) ? 'toolbar_unlock' : 'toolbar_lock')}
                     >
-                      {itemUserLocked(selected) || itemAdminMovementLocked(selected) ? <Lock size={15} /> : <Unlock size={15} />}
+                      {itemUserLocked(selected) || itemAdminMovementLocked(selected) || itemSystemTransformLocked(selected) ? <Lock size={15} /> : <Unlock size={15} />}
                     </button>
                     <button type="button" disabled={!canDeleteSceneItem(selected, isAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={15} /></button>
-                    {rotationPanelOpen && !isWallItem(selected) && (isAdminViewer || !itemRotationLocked(selected)) && (
+                    {rotationPanelOpen && canRotateSceneItem(selected, isAdminViewer) && (
                       <RotationDial value={selected.rotation || 0} onChange={(nextRotation) => updateItem(selected.id, { rotation: nextRotation })} />
                     )}
                   </div>
@@ -12781,7 +12782,7 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
     autoReserve: true,
     included: !billable,
     priceMode: billable ? 'billable' : 'included',
-    movementLocked: Boolean(base.movementLocked || entry?.movementLocked || entry?.dimensions?.movementLocked),
+    movementLocked: true,
     deleteLocked: true,
     rotationLocked: true,
     options: {
@@ -13794,6 +13795,24 @@ function itemAdminMovementLocked(item) {
 
 function itemMovementLocked(item) {
   return Boolean(itemUserLocked(item) || item?.movementLocked || item?.dimensions?.movementLocked);
+}
+
+function itemSystemTransformLocked(item = {}) {
+  return Boolean(isAutomaticReserveItem(item));
+}
+
+function isTransformPatch(patch = {}) {
+  return ['x', 'y', 'z', 'wall', 'wallSide', 'wallSurface', 'rotation', 'placementRule', 'lockedPlacement'].some((key) => hasOwn(patch, key));
+}
+
+function canDragSceneItem(item = {}, canEditLockedItems = false) {
+  if (!item || itemUserLocked(item) || itemSystemTransformLocked(item)) return false;
+  return Boolean(canEditLockedItems || !itemMovementLocked(item));
+}
+
+function canRotateSceneItem(item = {}, canEditLockedItems = false) {
+  if (!item || isWallItem(item) || itemSystemTransformLocked(item)) return false;
+  return Boolean(canEditLockedItems || !itemRotationLocked(item));
 }
 
 function canDeleteSceneItem(item = {}, isAdminViewer = false) {
@@ -16090,7 +16109,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
           event.stopPropagation();
           if (!interactive) return;
           setSelectedId(item.id);
-          if (itemUserLocked(item) || (!canEditLockedItems && itemMovementLocked(item))) return;
+          if (!canDragSceneItem(item, canEditLockedItems)) return;
           event.target.setPointerCapture(event.pointerId);
           setDraggingId(item.id);
         }}
