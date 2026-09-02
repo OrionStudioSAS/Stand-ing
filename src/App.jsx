@@ -2904,6 +2904,7 @@ function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrecti
     <section className="client-info-modal client-info-modal-locked">
       <ModalHead title={t('client_title')} salonLabel={salonLabel} onClose={onClose} />
       <div className="client-info-content">
+        <button className="client-correction-button" type="button" onClick={() => setCorrectionOpen(true)}>{t('client_correction_cta')}</button>
         <div className="form-grid two">
           <label>{t('client_firstname')}<input value={contactDetails.firstName || ''} {...lockedInputProps} /></label>
           <label>{t('client_lastname')}<input value={contactDetails.lastName || ''} {...lockedInputProps} /></label>
@@ -2932,7 +2933,6 @@ function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrecti
           <label>{t('client_hall')}<input value={contactDetails.hall || ''} {...lockedInputProps} /></label>
           <label>{t('client_placement_field')}<input value={contactDetails.emplacement || ''} {...lockedInputProps} /></label>
         </div>
-        <button className="client-correction-button" type="button" onClick={() => setCorrectionOpen(true)}>{t('client_correction_cta')}</button>
       </div>
       {correctionOpen && (
         <div className="client-correction-layer" onMouseDown={(event) => event.target === event.currentTarget && setCorrectionOpen(false)}>
