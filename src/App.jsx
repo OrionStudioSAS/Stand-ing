@@ -6,7 +6,7 @@ import { Box3, BufferGeometry, Cache, CanvasTexture, DoubleSide, Float32BufferAt
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
-import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   AlertTriangle,
   ArrowRight,
@@ -11528,7 +11528,7 @@ function scenePurchaseOrder(scene = {}, assets = []) {
     : fallbackPricing.lines;
   const lines = normalizePurchaseOrderLines(sourceLines, catalogEntries);
   const total = lines.reduce((sum, line) => sum + line.total, 0);
-  return { lines, total: roundCurrency(total) };
+  return { lines, total: roundCurrency(total), header: purchaseOrderHeaderInfo(scene) };
 }
 
 function enrichPurchaseOrderLinesWithFallback(lines = [], fallbackLines = []) {
@@ -11659,7 +11659,9 @@ async function downloadScenePurchaseOrder(scene = {}, assets = []) {
 }
 
 async function scenePurchaseOrderEmailAttachment(scene = {}, assets = [], precomputedOrder = null) {
-  const order = precomputedOrder?.lines?.length ? precomputedOrder : scenePurchaseOrder(scene, assets);
+  const order = precomputedOrder?.lines?.length
+    ? { ...precomputedOrder, header: precomputedOrder.header || purchaseOrderHeaderInfo(scene) }
+    : scenePurchaseOrder(scene, assets);
   const fileName = `bon-de-commande-${slugForType(scene.client_name || scene.project_name || scene.id || 'stand')}.pdf`;
   const blob = await fillPurchaseOrderTemplate(order);
   return {
@@ -11669,6 +11671,75 @@ async function scenePurchaseOrderEmailAttachment(scene = {}, assets = [], precom
   };
 }
 
+function purchaseOrderHeaderInfo(scene = {}) {
+  const offer = sceneOfferLabel(scene);
+  const standName = String(
+    scene.client_name
+    || scene.source_payload?.exhibitor_name
+    || scene.source_payload?.company_name
+    || scene.project_name
+    || '',
+  ).trim();
+  return {
+    offer,
+    standName,
+    label: [offer ? `Stand ${offer}` : '', standName].filter(Boolean).join(' : '),
+  };
+}
+
+function drawPurchaseOrderHeaderLine(pdfDoc, header = {}, font, boldFont) {
+  const label = String(header.label || '').trim();
+  if (!label) return;
+  const page = pdfDoc.getPages()[0];
+  if (!page) return;
+  const pageHeight = page.getHeight();
+  const prefix = header.offer ? `Stand ${header.offer} : ` : '';
+  const suffix = prefix && label.startsWith(prefix) ? label.slice(prefix.length) : label;
+  const x = 34;
+  const y = pageHeight - 44;
+  const fontSize = 12.6;
+  const lineHeight = 17;
+  const maxWidth = 318;
+  const textColor = rgb(0.24, 0.24, 0.25);
+
+  if (!prefix) {
+    wrapPdfText(suffix, maxWidth, font, fontSize).slice(0, 2).forEach((line, index) => {
+      page.drawText(line, { x, y: y - index * lineHeight, size: fontSize, font, color: textColor });
+    });
+    return;
+  }
+
+  page.drawText(prefix, { x, y, size: fontSize, font: boldFont, color: textColor });
+  const suffixX = x + boldFont.widthOfTextAtSize(prefix, fontSize);
+  const suffixWidth = Math.max(90, maxWidth - (suffixX - x));
+  const firstLineWords = wrapPdfText(suffix, suffixWidth, font, fontSize);
+  const firstLine = firstLineWords[0] || '';
+  if (firstLine) page.drawText(firstLine, { x: suffixX, y, size: fontSize, font, color: textColor });
+  const remaining = suffix.slice(firstLine.length).trim();
+  if (remaining) {
+    wrapPdfText(remaining, maxWidth, font, fontSize).slice(0, 1).forEach((line, index) => {
+      page.drawText(line, { x, y: y - (index + 1) * lineHeight, size: fontSize, font, color: textColor });
+    });
+  }
+}
+
+function wrapPdfText(text = '', maxWidth = 300, font, fontSize = 12) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = '';
+  words.forEach((word) => {
+    const candidate = current ? `${current} ${word}` : word;
+    if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth || !current) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  });
+  if (current) lines.push(current);
+  return lines;
+}
+
 async function fillPurchaseOrderTemplate(order = {}) {
   const rows = order.lines?.length ? order.lines : [];
   const response = await fetch('/templates/bon-commande-template.pdf');
@@ -11676,7 +11747,9 @@ async function fillPurchaseOrderTemplate(order = {}) {
   const pdfDoc = await PDFDocument.load(await response.arrayBuffer());
   const form = pdfDoc.getForm();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const templateFields = purchaseOrderTemplateFieldMap(form);
+  drawPurchaseOrderHeaderLine(pdfDoc, order.header || {}, font, boldFont);
 
   for (let index = 0; index < 15; index += 1) {
     const rowNumber = index + 1;
