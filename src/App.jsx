@@ -1020,6 +1020,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [partitionHeadCompany, setPartitionHeadCompany] = useState(() => (
     initialOptions.partitionHeadCompany
     || initialScene.source_payload?.partitionHeadCompany
+    || mondayColumnTextByTitle(initialScene.source_payload, ['texte tete de cloison', 'texte tête de cloison'])
     || savedContactDetail(initialScene, 'company')
     || sceneExhibitorCompanyName(initialScene, {}, {})
     || ''
