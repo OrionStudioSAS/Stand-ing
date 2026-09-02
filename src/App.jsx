@@ -13816,13 +13816,21 @@ function canDragSceneItem(item = {}, canEditLockedItems = false) {
 }
 
 function canApplyAutomaticReservePatch(item = {}, patch = {}) {
-  if (!isAutomaticReserveItem(item)) return false;
+  if (!isBackWallAdjustableReserveItem(item)) return false;
   const keys = Object.keys(patch || {});
   return keys.length > 0 && keys.every((key) => ['x'].includes(key));
 }
 
 function canDragAutomaticReserveItem(item = {}, canEditLockedItems = false) {
-  return Boolean(item && isAutomaticReserveItem(item) && canEditLockedItems && !itemUserLocked(item));
+  return Boolean(item && isBackWallAdjustableReserveItem(item) && canEditLockedItems && !itemUserLocked(item));
+}
+
+function isBackWallAdjustableReserveItem(item = {}) {
+  if (!isAutomaticReserveItem(item)) return false;
+  const text = normalizedItemText(item);
+  const isCenterBack = text.includes('centre') && (text.includes('arriere') || text.includes('fond'));
+  const isAllowedSize = /(?:^|\D)(?:2|3)\s*m(?:2|²)?(?:\D|$)/.test(text);
+  return Boolean(isCenterBack && isAllowedSize);
 }
 
 function automaticReserveBackWallCandidate(item = {}, patch = {}, width = 0, depth = 0, layout = 'back') {
