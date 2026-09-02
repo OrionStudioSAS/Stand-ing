@@ -7954,6 +7954,7 @@ img.asset-thumb {
   font-size: 0.84rem;
   font-weight: 700;
   line-height: 1.42;
+  white-space: pre-line;
 }
 
 .item-config-product {
