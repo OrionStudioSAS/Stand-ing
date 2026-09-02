@@ -1543,7 +1543,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const updateItem = (id, patch) => {
     if (readOnly) return;
     const currentItem = sceneItems.find((item) => item.id === id);
-    if (isTransformPatch(patch) && itemSystemTransformLocked(currentItem)) return;
+    if (isTransformPatch(patch) && itemSystemTransformLocked(currentItem) && !canApplyAutomaticReservePatch(currentItem, patch)) return;
     if (!isAdminViewer && hasOwn(patch, 'rotation') && itemRotationLocked(currentItem)) return;
     const autoLedItem = sceneItems.find((item) => item.id === id && isAutomaticLedRailItem(item));
     if (autoLedItem) {
@@ -1556,14 +1556,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }
     const autoReserveItem = sceneItems.find((item) => item.id === id && isAutomaticReserveItem(item));
     if (autoReserveItem) {
-      const editableItem = releasePlacementRuleForManualEdit(autoReserveItem, patch);
+      const editableItem = automaticReserveBackWallCandidate(autoReserveItem, patch, width, depth, layout);
       const blockers = [...manualHydratedItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems].filter((item) => item.id !== id);
-      const updated = updateSceneItemWithCollision([editableItem, ...blockers], id, patch, width, depth, layout, effectiveCarpetFootprintEnabled);
-      const constrained = updated.find((item) => item.id === id);
-      if (!constrained || constrained === editableItem) return;
+      if (collidesWithScene(editableItem, blockers, id, width, depth)) return;
+      if (isSameSceneTransform(autoReserveItem, editableItem)) return;
       setReserveItemOverrides((current) => ({
         ...current,
-        [id]: pickReserveItemOverride(constrained),
+        [id]: pickReserveItemOverride(editableItem),
       }));
       return;
     }
@@ -1871,6 +1870,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
     if (isWallItem(dragged)) {
       updateItem(draggingId, wallDragPatch(point, dragged, visibleSceneItems, width, depth, layout));
+      return;
+    }
+
+    if (isAutomaticReserveItem(dragged)) {
+      updateItem(draggingId, { x: dragCoordinate(point.x) });
       return;
     }
 
@@ -13806,8 +13810,35 @@ function isTransformPatch(patch = {}) {
 }
 
 function canDragSceneItem(item = {}, canEditLockedItems = false) {
+  if (canDragAutomaticReserveItem(item, canEditLockedItems)) return true;
   if (!item || itemUserLocked(item) || itemSystemTransformLocked(item)) return false;
   return Boolean(canEditLockedItems || !itemMovementLocked(item));
+}
+
+function canApplyAutomaticReservePatch(item = {}, patch = {}) {
+  if (!isAutomaticReserveItem(item)) return false;
+  const keys = Object.keys(patch || {});
+  return keys.length > 0 && keys.every((key) => ['x'].includes(key));
+}
+
+function canDragAutomaticReserveItem(item = {}, canEditLockedItems = false) {
+  return Boolean(item && isAutomaticReserveItem(item) && canEditLockedItems && !itemUserLocked(item));
+}
+
+function automaticReserveBackWallCandidate(item = {}, patch = {}, width = 0, depth = 0, layout = 'back') {
+  const base = constrainItem({ ...item, placementRule: placementRuleFromId('back-center'), lockedPlacement: true, rotation: 0 }, width, depth, layout);
+  const bounds = itemPlacementBounds(base);
+  const minX = -Number(width || 0) / 2 + wallThickness - Number(bounds.minX || 0);
+  const maxX = Number(width || 0) / 2 - wallThickness - Number(bounds.maxX || 0);
+  return {
+    ...base,
+    x: Number(clamp(Number(patch.x ?? item.x ?? base.x ?? 0), minX, maxX).toFixed(2)),
+    z: Number(base.z || 0),
+    rotation: 0,
+    placementRule: placementRuleFromId('back-center'),
+    lockedPlacement: true,
+    autoReserve: true,
+  };
 }
 
 function canRotateSceneItem(item = {}, canEditLockedItems = false) {
@@ -14347,22 +14378,17 @@ function isAutomaticReserveItem(item = {}) {
 function applyReserveItemOverride(item, overrides = {}, width, depth, layout, carpetFootprintEnabled = true) {
   const override = overrides?.[item.id];
   if (!override) return item;
-  return constrainItem({
+  return automaticReserveBackWallCandidate({
     ...item,
-    ...override,
-    autoReserve: true,
+    userLocked: Boolean(override.userLocked),
     included: item.included !== false,
     priceMode: item.priceMode || 'included',
-  }, width, depth, layout, carpetFootprintEnabled);
+  }, override, width, depth, layout);
 }
 
 function pickReserveItemOverride(item) {
   return {
     x: Number(item.x || 0),
-    z: Number(item.z || 0),
-    rotation: Number(item.rotation || 0),
-    placementRule: item.placementRule || null,
-    lockedPlacement: Boolean(item.lockedPlacement),
     userLocked: Boolean(item.userLocked),
   };
 }
