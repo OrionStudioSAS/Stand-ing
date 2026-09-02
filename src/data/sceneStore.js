@@ -97,15 +97,78 @@ function writeLocalScenes(scenes) {
   window.localStorage.setItem(storageKey, JSON.stringify(scenes));
 }
 
+function normalizeTextValue(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function isIncludedReceptionDeskItem(item = {}) {
+  const config = item.config || item;
+  const text = normalizeTextValue(`${item.type || config.type || ''} ${item.label || config.label || ''}`);
+  const included = Boolean(
+    config.included
+    || config.priceMode === 'included'
+    || config.price_mode === 'included'
+    || config.basePresetId
+  );
+  return included && (text.includes('banque accueil') || text.includes('comptoir accueil'));
+}
+
+function includedReceptionDeskKey(item = {}) {
+  const config = item.config || item;
+  const type = item.type || config.type || '';
+  const basePresetId = config.basePresetId || config.base_preset_id || config.options?.basePresetId || 'base-pack';
+  const includedBaseType = config.options?.includedBaseType || config.options?.variantAssetType || type;
+  return `${basePresetId}:${includedBaseType || type}`;
+}
+
+function sceneItemVisualScore(item = {}) {
+  const config = item.config || item;
+  const options = config.options || {};
+  const hasUploadedVisual = Object.entries(options).some(([key, value]) => /image(url|name)|visual/i.test(key) && Boolean(value));
+  const hasSelectedVariant = Boolean(options.selectedSize || options.selectedColorId || options.binary2ColorId || options.variantAssetType);
+  return (hasUploadedVisual ? 100 : 0) + (hasSelectedVariant ? 10 : 0);
+}
+
+function dedupeIncludedReceptionDesks(items = []) {
+  const selectedByKey = new Map();
+  const duplicates = new Set();
+
+  items.forEach((item, index) => {
+    if (!isIncludedReceptionDeskItem(item)) return;
+    const key = includedReceptionDeskKey(item);
+    const current = selectedByKey.get(key);
+    if (!current) {
+      selectedByKey.set(key, { item, index, score: sceneItemVisualScore(item) });
+      return;
+    }
+
+    const score = sceneItemVisualScore(item);
+    if (score > current.score || (score === current.score && index > current.index)) {
+      duplicates.add(current.index);
+      selectedByKey.set(key, { item, index, score });
+    } else {
+      duplicates.add(index);
+    }
+  });
+
+  return duplicates.size ? items.filter((_, index) => !duplicates.has(index)) : items;
+}
+
 function dbSceneToScene(row) {
   const sourcePayload = applyPresetDefaultColorOptions(row);
+  const sceneItems = dedupeIncludedReceptionDesks(row.scene_items || []);
 
   return {
     ...row,
     source_payload: sourcePayload,
     client: row.clients || row.client || null,
     dimensions: row.dimensions ? { ...row.dimensions, height: fixedWallHeight } : { width: row.width_m, depth: row.depth_m, height: fixedWallHeight },
-    items: (row.scene_items || []).map((item) => ({
+    items: sceneItems.map((item) => ({
       ...item.config,
       id: item.item_uid,
       type: item.type,
@@ -280,7 +343,7 @@ function sceneItemPayload(sceneId, item) {
 }
 
 async function saveSceneItems(scene) {
-  const nextItems = Array.isArray(scene.items) ? scene.items.filter((item) => item?.id && item?.type) : [];
+  const nextItems = Array.isArray(scene.items) ? dedupeIncludedReceptionDesks(scene.items).filter((item) => item?.id && item?.type) : [];
   if (!nextItems.length) {
     const { error } = await supabase.from('scene_items').delete().eq('scene_id', scene.id);
     if (error) throw error;
