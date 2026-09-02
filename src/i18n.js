@@ -165,7 +165,7 @@ export const translations = {
     partition_head_subtitle: 'Options de cet objet uniquement',
     partition_head_image: 'Image à modifier',
     partition_head_company: 'Nom société',
-    partition_head_company_field: 'Nom de société affiché sur les têtes de cloison',
+    partition_head_company_field: 'Nom affiché sur la/les tête(s) de cloison',
     partition_head_company_placeholder: 'Nom de la société',
 
     // CounterOptionCard
