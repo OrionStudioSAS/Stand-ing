@@ -1338,6 +1338,7 @@ select {
 
 .client-info-modal,
 .question-modal {
+  position: relative;
   overflow: hidden;
   width: min(508px, 100%);
   max-height: calc(100dvh - 92px);
@@ -1459,6 +1460,15 @@ select {
   appearance: none;
 }
 
+.client-info-modal-locked input[readonly],
+.client-info-modal-locked select:disabled {
+  color: #343b47;
+  background: #f3f5f8;
+  border-color: #e1e6ee;
+  cursor: default;
+  opacity: 1;
+}
+
 .form-section-label {
   margin: 2px 0 -7px;
   color: #9aa0aa;
@@ -1485,6 +1495,65 @@ select {
   color: #a1a7b0;
   font-size: 0.62rem;
   line-height: 1.25;
+}
+
+.client-correction-button {
+  justify-self: start;
+  min-height: 38px;
+  border: 1px solid #d8e3f3;
+  border-radius: 999px;
+  padding: 0 16px;
+  color: #1f4378;
+  background: #eef5ff;
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+
+.client-correction-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.24);
+  backdrop-filter: blur(3px);
+}
+
+.client-correction-modal {
+  overflow: hidden;
+  width: min(440px, 100%);
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 22px 54px rgba(10, 18, 32, 0.28);
+}
+
+.client-correction-content {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px 18px;
+}
+
+.client-correction-content p {
+  margin: 0;
+  color: #858d9a;
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.client-correction-content textarea {
+  width: 100%;
+  min-height: 138px;
+  border: 1px solid #d9dde4;
+  border-radius: 11px;
+  padding: 12px 14px;
+  resize: vertical;
+  color: #171b22;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .modal-primary-button {
@@ -11295,6 +11364,38 @@ img.asset-thumb {
   background: #f59e0b;
   font-size: 0.72rem;
   font-weight: 950;
+}
+
+.partition-head-company-field {
+  display: grid;
+  gap: 6px;
+  color: #343b47;
+  font-size: 0.76rem;
+  font-weight: 950;
+}
+
+.partition-head-company-field input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #252b35;
+  background: #fff;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 850;
+}
+
+.partition-head-company-field input:focus {
+  outline: 0;
+  border-color: #416bb0;
+  box-shadow: 0 0 0 3px rgba(65, 107, 176, 0.14);
+}
+
+.partition-head-company-field input:disabled {
+  color: #8f98a5;
+  background: #f4f6f9;
 }
 
 .partition-head-panel-v2 .partition-head-choice-grid {

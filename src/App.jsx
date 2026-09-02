@@ -1017,6 +1017,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     hall: savedContactDetail(initialScene, 'hall') || sceneHallLabel(initialScene, {}),
     emplacement: savedContactDetail(initialScene, 'emplacement') || sceneStandNumber(initialScene, {}, initialScene.project_name || 'Stand A-14'),
   }));
+  const [partitionHeadCompany, setPartitionHeadCompany] = useState(() => (
+    initialOptions.partitionHeadCompany
+    || initialScene.source_payload?.partitionHeadCompany
+    || savedContactDetail(initialScene, 'company')
+    || sceneExhibitorCompanyName(initialScene, {}, {})
+    || ''
+  ));
   const contactInitials = userInitials(contactDetails.firstName, contactDetails.lastName, contactDetails.company);
   const [questionCategory, setQuestionCategory] = useState('technical');
   const [urgency, setUrgency] = useState('important');
@@ -1063,12 +1070,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const sceneVisualContext = useMemo(() => ({
     fontRevision,
     language,
-    company: sceneExhibitorCompanyName(initialScene, clientInfo, contactDetails),
+    company: partitionHeadCompany || sceneExhibitorCompanyName(initialScene, clientInfo, contactDetails),
     standNumber: sceneStandNumber(initialScene, contactDetails, standLabel),
     aisleNumber: sceneAisleNumber(initialScene, contactDetails),
     hall: sceneHallLabel(initialScene, contactDetails),
     sector: sceneSectorLabel(initialScene),
-  }), [fontRevision, language, initialScene, clientInfo, contactDetails, standLabel]);
+  }), [fontRevision, language, partitionHeadCompany, initialScene, clientInfo, contactDetails, standLabel]);
   const sceneConstraints = useMemo(() => sceneConstraintsFromPayload(initialScene.source_payload, width, depth), [initialScene.source_payload, width, depth]);
   const sceneConstraint = sceneConstraints[0] || null;
 
@@ -1320,6 +1327,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       reserveItemOverrides,
       partitionHeadLeftEnabled: effectivePartitionHeadSides.left,
       partitionHeadRightEnabled: effectivePartitionHeadSides.right,
+      partitionHeadCompany,
       partitionHeadVisuals,
       prestigeArchEnabled,
       prestigeArchTvEnabled,
@@ -1347,6 +1355,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       source_payload: {
         ...(initialScene.source_payload || {}),
         contactDetails: nextContactDetails,
+        partitionHeadCompany,
         specialRequest: options.specialRequest,
         options,
         pricing: {
@@ -1381,7 +1390,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly]);
 
   const persistWallCoversNow = (nextWallCovers) => {
     if (readOnly) return;
@@ -2162,6 +2171,29 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     setHeaderPanel(null);
   };
 
+  const submitContactCorrection = async (message) => {
+    const cleanMessage = String(message || '').trim();
+    if (!cleanMessage) throw new Error('Ajoute le détail des informations à corriger.');
+    const displayedDetails = [
+      `Société : ${contactDetails.company || '-'}`,
+      `Prénom : ${contactDetails.firstName || '-'}`,
+      `Nom : ${contactDetails.lastName || '-'}`,
+      `Email : ${contactDetails.email || '-'}`,
+      `Fonction : ${contactDetails.role || '-'}`,
+      `Téléphone : ${contactDetails.phone || '-'}`,
+      `Salon : ${contactDetails.salon || salonLabel || '-'}`,
+      `Hall : ${contactDetails.hall || '-'}`,
+      `Emplacement : ${contactDetails.emplacement || '-'}`,
+    ].join('\n');
+    await sendSceneQuestionEmail(currentScenePayload(saveState === 'configured' ? 'configured' : 'created', saveState === 'configured' ? 'configured' : 'draft'), {
+      subject: 'Correction des renseignements exposant',
+      message: `${cleanMessage}\n\nInformations actuellement affichées :\n${displayedDetails}`,
+      category: 'contact',
+      urgency: 'important',
+      sceneUrl: sceneShareUrl(initialScene),
+    });
+  };
+
   const submitQuestion = async (event) => {
     event.preventDefault();
     if (questionState.loading) return;
@@ -2263,9 +2295,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           <ClientInfoModal
             salonLabel={salonLabel}
             contactDetails={contactDetails}
-            onChange={updateContactDetail}
             onClose={() => setHeaderPanel(null)}
-            onValidate={validateContactDetails}
+            onReportCorrection={submitContactCorrection}
           />
         </div>
       )}
@@ -2511,6 +2542,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             reserveOptions={reserveOptions}
             partitionHeadRule={activePartitionHeadRuleConfig}
             partitionHeadSides={effectivePartitionHeadSides}
+            partitionHeadCompany={partitionHeadCompany}
             partitionHeadVisuals={partitionHeadVisuals}
             partitionHeadUploadState={itemOptionState}
             counterItems={includedCounterItems}
@@ -2557,6 +2589,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onReserveOption={(type) => { if (!readOnly) { if (type === '__none__') { removeReserve(); } else { setReserveOptionType(type); } } }}
             onReserveOptions={(patch) => !readOnly && setReserveOptions((current) => ({ ...current, ...patch }))}
             onPartitionHeadSide={(side, enabled) => !readOnly && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
+            onPartitionHeadCompany={(value) => !readOnly && setPartitionHeadCompany(value)}
             onPartitionHeadImage={uploadPartitionHeadVisual}
             onPartitionHeadResetImage={resetPartitionHeadVisual}
             onPartitionHeadVisualOptions={updatePartitionHeadVisualOptions}
@@ -2844,32 +2877,51 @@ function ModalHead({ icon, title, salonLabel, onClose }) {
   );
 }
 
-function ClientInfoModal({ salonLabel, contactDetails, onChange, onClose, onValidate }) {
+function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrection }) {
   const t = useT();
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [correctionText, setCorrectionText] = useState('');
+  const [correctionState, setCorrectionState] = useState({ loading: false, message: '', error: '' });
+  const lockedInputProps = { readOnly: true, 'aria-readonly': true };
+  const submitCorrection = async (event) => {
+    event.preventDefault();
+    if (correctionState.loading) return;
+    if (!correctionText.trim()) {
+      setCorrectionState({ loading: false, message: '', error: t('client_correction_empty') });
+      return;
+    }
+    setCorrectionState({ loading: true, message: '', error: '' });
+    try {
+      await onReportCorrection?.(correctionText);
+      setCorrectionText('');
+      setCorrectionState({ loading: false, message: t('client_correction_sent'), error: '' });
+      window.setTimeout(() => setCorrectionOpen(false), 750);
+    } catch (error) {
+      setCorrectionState({ loading: false, message: '', error: error.message || 'Envoi impossible pour le moment.' });
+    }
+  };
   return (
-    <section className="client-info-modal">
+    <section className="client-info-modal client-info-modal-locked">
       <ModalHead title={t('client_title')} salonLabel={salonLabel} onClose={onClose} />
       <div className="client-info-content">
-        <p>{t('client_intro')}</p>
         <div className="form-grid two">
-          <label>{t('client_firstname')}<input value={contactDetails.firstName} onChange={(event) => onChange('firstName', event.target.value)} /></label>
-          <label>{t('client_lastname')}<input value={contactDetails.lastName} onChange={(event) => onChange('lastName', event.target.value)} /></label>
+          <label>{t('client_firstname')}<input value={contactDetails.firstName || ''} {...lockedInputProps} /></label>
+          <label>{t('client_lastname')}<input value={contactDetails.lastName || ''} {...lockedInputProps} /></label>
         </div>
-        <label className="form-row">{t('client_company')}<input value={contactDetails.company} onChange={(event) => onChange('company', event.target.value)} /></label>
+        <label className="form-row">{t('client_company')}<input value={contactDetails.company || ''} {...lockedInputProps} /></label>
         <div className="form-grid two">
-          <label>{t('client_role')}<input value={contactDetails.role} onChange={(event) => onChange('role', event.target.value)} /></label>
-          <label>{t('client_email')}<input type="email" value={contactDetails.email} onChange={(event) => onChange('email', event.target.value)} /></label>
+          <label>{t('client_email')}<input type="email" value={contactDetails.email || ''} {...lockedInputProps} /></label>
+          <label>{t('client_role')}<input value={contactDetails.role || ''} {...lockedInputProps} /></label>
         </div>
-        <label className="form-row">{t('client_phone')}<input value={contactDetails.phone} onChange={(event) => onChange('phone', event.target.value)} /></label>
+        <label className="form-row">{t('client_phone')}<input value={contactDetails.phone || ''} {...lockedInputProps} /></label>
 
-        <span className="form-section-label">{t('client_location')}</span>
-        <label className="form-row">{t('client_address')}<input value={contactDetails.address} onChange={(event) => onChange('address', event.target.value)} /></label>
+        <label className="form-row">{t('client_address')}<input value={contactDetails.address || ''} {...lockedInputProps} /></label>
         <div className="form-grid two">
-          <label>{t('client_zip')}<input value={contactDetails.zip} onChange={(event) => onChange('zip', event.target.value)} /></label>
-          <label>{t('client_city')}<input value={contactDetails.city} onChange={(event) => onChange('city', event.target.value)} /></label>
+          <label>{t('client_zip')}<input value={contactDetails.zip || ''} {...lockedInputProps} /></label>
+          <label>{t('client_city')}<input value={contactDetails.city || ''} {...lockedInputProps} /></label>
         </div>
         <label className="form-row">{t('client_country')}
-          <select value={contactDetails.country} onChange={(event) => onChange('country', event.target.value)}>
+          <select value={contactDetails.country || ''} disabled>
             <option>{t('country_france')}</option>
             <option>{t('country_belgium')}</option>
             <option>{t('country_switzerland')}</option>
@@ -2877,15 +2929,27 @@ function ClientInfoModal({ salonLabel, contactDetails, onChange, onClose, onVali
           </select>
         </label>
 
-        <span className="form-section-label">{t('client_placement')}</span>
-        <label className="form-row locked-field">{t('client_salon')}<input value={contactDetails.salon} readOnly /><span>🔒</span></label>
+        <label className="form-row locked-field">{t('client_salon')}<input value={contactDetails.salon || ''} {...lockedInputProps} /><span>🔒</span></label>
         <div className="form-grid two locked">
-          <label>{t('client_hall')}<input value={contactDetails.hall} readOnly /></label>
-          <label>{t('client_placement_field')}<input value={contactDetails.emplacement} readOnly /></label>
+          <label>{t('client_hall')}<input value={contactDetails.hall || ''} {...lockedInputProps} /></label>
+          <label>{t('client_placement_field')}<input value={contactDetails.emplacement || ''} {...lockedInputProps} /></label>
         </div>
-        <small>{t('client_note')}</small>
-        <button className="modal-primary-button" type="button" onClick={onValidate}>{t('client_validate')}</button>
+        <button className="client-correction-button" type="button" onClick={() => setCorrectionOpen(true)}>{t('client_correction_cta')}</button>
       </div>
+      {correctionOpen && (
+        <div className="client-correction-layer" onMouseDown={(event) => event.target === event.currentTarget && setCorrectionOpen(false)}>
+          <form className="client-correction-modal" onSubmit={submitCorrection}>
+            <ModalHead title={t('client_correction_title')} salonLabel={salonLabel} onClose={() => setCorrectionOpen(false)} />
+            <div className="client-correction-content">
+              <p>{t('client_correction_intro')}</p>
+              <textarea value={correctionText} onChange={(event) => setCorrectionText(event.target.value)} placeholder={t('client_correction_placeholder')} rows={6} />
+              {correctionState.message && <div className="question-submit-feedback success">{correctionState.message}</div>}
+              {correctionState.error && <div className="question-submit-feedback error">{correctionState.error}</div>}
+              <button className="modal-primary-button centered" type="submit" disabled={correctionState.loading}><Mail size={15} /> {correctionState.loading ? 'Envoi...' : t('client_correction_send')}</button>
+            </div>
+          </form>
+        </div>
+      )}
     </section>
   );
 }
@@ -3887,6 +3951,7 @@ function OptionsStepPanel({
   reserveOptions = {},
   partitionHeadRule,
   partitionHeadSides,
+  partitionHeadCompany = '',
   partitionHeadVisuals = {},
   partitionHeadUploadState = {},
   counterItems = [],
@@ -3925,6 +3990,7 @@ function OptionsStepPanel({
   onReserveOption,
   onReserveOptions,
   onPartitionHeadSide,
+  onPartitionHeadCompany,
   onPartitionHeadImage,
   onPartitionHeadResetImage,
   onPartitionHeadVisualOptions,
@@ -4043,12 +4109,14 @@ function OptionsStepPanel({
         <PartitionHeadOptionCard
           rule={partitionHeadRule}
           sides={partitionHeadSides}
+          companyName={partitionHeadCompany}
           catalog={catalog}
           salonLabel={salonLabel}
           disabled={readOnly}
           visualOptions={partitionHeadVisuals}
           uploadState={partitionHeadUploadState}
           onChange={onPartitionHeadSide}
+          onCompanyName={onPartitionHeadCompany}
           onImage={onPartitionHeadImage}
           onResetImage={onPartitionHeadResetImage}
           onVisualOptions={onPartitionHeadVisualOptions}
@@ -6710,7 +6778,7 @@ function reserveSizeDescription(area = 0, label = '') {
   return label || 'Réserve complémentaire';
 }
 
-function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onImage, onResetImage, onVisualOptions }) {
+function PartitionHeadOptionCard({ rule, sides = {}, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions }) {
   const t = useT();
   const rows = [
     { side: 'left', label: t('partition_left'), visualLabel: t('partition_visual_left'), uploadSubtitle: `${t('partition_left')} · ${t('partition_size')}`, type: rule?.leftType, price: rule?.leftPrice },
@@ -6722,6 +6790,16 @@ function PartitionHeadOptionCard({ rule, sides = {}, catalog = [], salonLabel = 
   return (
     <div className="partition-head-panel partition-head-panel-v2">
       <PartitionHeadFormulaBox />
+
+      <label className="partition-head-company-field">
+        <span>{t('partition_head_company_field')}</span>
+        <input
+          value={companyName || ''}
+          disabled={disabled}
+          onChange={(event) => onCompanyName?.(event.target.value)}
+          placeholder={t('partition_head_company_placeholder')}
+        />
+      </label>
 
       <div className="partition-head-choice-grid">
         {rows.map((row) => {
