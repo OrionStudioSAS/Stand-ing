@@ -11673,18 +11673,28 @@ async function scenePurchaseOrderEmailAttachment(scene = {}, assets = [], precom
 
 function purchaseOrderHeaderInfo(scene = {}) {
   const offer = sceneOfferLabel(scene);
-  const standName = String(
-    scene.client_name
-    || scene.source_payload?.exhibitor_name
-    || scene.source_payload?.company_name
-    || scene.project_name
-    || '',
-  ).trim();
+  const standName = purchaseOrderCompanyName(scene);
   return {
     offer,
     standName,
     label: [offer ? `Stand ${offer}` : '', standName].filter(Boolean).join(' : '),
   };
+}
+
+function purchaseOrderCompanyName(scene = {}) {
+  return String(
+    scene.source_payload?.contactDetails?.company
+    || scene.source_payload?.company_name
+    || scene.source_payload?.company
+    || mondayColumnTextByTitle(scene.source_payload, ['société', 'societe', 'raison sociale', 'nom société', 'nom societe', 'entreprise', 'exposant'])
+    || scene.source_payload?.item?.name
+    || scene.source_payload?.name
+    || scene.project_name
+    || scene.source_payload?.exhibitor_name
+    || scene.source_payload?.client_name
+    || scene.client_name
+    || '',
+  ).trim();
 }
 
 function drawPurchaseOrderHeaderLine(pdfDoc, header = {}, font, boldFont) {
