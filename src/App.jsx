@@ -12691,11 +12691,12 @@ function reserveOptionPrice(option = {}, entry = null, salonLabel = '') {
 }
 
 function isReserveCatalogEntry(entry = {}) {
-  const text = `${entry.type || ''} ${entry.label || ''} ${entry.dimensions?.category || ''}`
+  const safeEntry = entry || {};
+  const text = `${safeEntry.type || ''} ${safeEntry.label || ''} ${safeEntry.dimensions?.category || ''}`
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
-  return Boolean(entry.dimensions?.isReserve || text.includes('reserve'));
+  return Boolean(safeEntry.dimensions?.isReserve || text.includes('reserve'));
 }
 
 function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = [], width, depth, layout, salonLabel, reserveOptions = {}) {
