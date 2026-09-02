@@ -690,7 +690,7 @@ function sceneProductionUploadMetadata(scene = {}, item = {}, file = {}, preview
     sceneToken: scene.share_token || '',
     salon: scene.salon || scene.event_name || source.salon || source.event_name || '',
     offer: scene.offer || source.offer || source.pack || source.includedPack || source.options?.includedPack || '',
-    company: scene.client_name || source.name || source.item?.name || source.client_name || source.company_name || contact.company || '',
+    company: contact.company || source.company_name || source.company || source.name || source.item?.name || scene.project_name || scene.client_name || source.client_name || '',
     hall: contact.hall || source.hall || readMondayColumnAny(source, ['hall', 'pavillon']) || '',
     aisle: source.aisle_number || source.allee || contact.allee || readMondayColumnAny(source, ['text5', 'allée', 'allee']) || '',
     standNumber: source.stand_number || readMondayColumnAny(source, ['n_', 'n°', 'numero', 'numéro']) || '',

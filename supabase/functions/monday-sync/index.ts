@@ -40,6 +40,31 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (!adminUser) return json({ error: "Admin access required" }, 403);
 
+  const body = await req.json().catch(() => ({}));
+
+  if (body?.recreateSftpFoldersOnly) {
+    const warnings: string[] = [];
+    const { data: scenes, error: sceneError } = await supabase
+      .from("scenes")
+      .select("id, share_token, client_name, project_name, event_name, salon, offer, source_payload")
+      .in("offer", ["Confort", "CONFORT", "Prestige", "PRESTIGE"]);
+    if (sceneError) return json({ error: sceneError.message }, 500);
+
+    let created = 0;
+    let skipped = 0;
+    for (const scene of scenes || []) {
+      const result = await ensureSceneSftpFolder({
+        gatewayUrl: sftpGatewayUrl,
+        gatewayToken: sftpGatewayToken,
+        scene,
+        warnings,
+      });
+      if (result.created) created += 1;
+      if (result.skipped) skipped += 1;
+    }
+    return json({ recreated: created, skipped, warnings });
+  }
+
   const { data: sources, error } = await supabase
     .from("monday_sources")
     .select("*")
@@ -132,6 +157,15 @@ Deno.serve(async (req) => {
             source: resolvedSource,
             item,
           });
+
+          const sftpFolderResult = await ensureSceneSftpFolder({
+            gatewayUrl: sftpGatewayUrl,
+            gatewayToken: sftpGatewayToken,
+            scene: { ...existingScene, ...scenePatch, source_payload: scenePatch.source_payload },
+            warnings,
+          });
+          if (sftpFolderResult.created) sftpFoldersCreated += 1;
+          if (sftpFolderResult.skipped) sftpFoldersSkipped += 1;
         }
 
         const hasInviteAlreadyBeenSent = Boolean(existingScene.source_payload?.invitation_email_sent_at);
@@ -770,7 +804,7 @@ async function ensureSceneSftpFolder({ gatewayUrl, gatewayToken, scene, warnings
         sceneToken: scene.share_token || "",
         salon: scene.salon || scene.event_name || scene.source_payload?.salon || "",
         offer: scene.offer || scene.source_payload?.offer || scene.source_payload?.pack || "",
-        company: scene.client_name || scene.source_payload?.name || scene.source_payload?.item?.name || "",
+        company: sceneCompanyNameForSftp(scene),
         hall,
         aisle,
         standNumber,
@@ -784,6 +818,22 @@ async function ensureSceneSftpFolder({ gatewayUrl, gatewayToken, scene, warnings
     warnings.push(`Dossier SFTP non créé pour ${scene.project_name || scene.client_name || scene.id}: ${message}`);
     return { created: false, skipped: true };
   }
+}
+
+function sceneCompanyNameForSftp(scene: any) {
+  const source = scene?.source_payload || {};
+  const contact = source.contactDetails || {};
+  return clean(
+    contact.company
+    || source.company_name
+    || source.company
+    || source.name
+    || source.item?.name
+    || scene.project_name
+    || scene.client_name
+    || source.client_name
+    || "EXPOSANT"
+  );
 }
 
 function mondaySceneDimensions(item: any, source: any) {

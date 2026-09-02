@@ -351,12 +351,23 @@ function buildSceneFolder(body = {}, scene = {}) {
 
 function exhibitorFolderName(body = {}, scene = {}) {
   const source = scene.source_payload || {};
-  const company = folderSegment(body.company || scene.client_name || source.name || source.item?.name || source.client_name || 'EXPOSANT');
+  const contact = source.contactDetails || {};
+  const company = folderSegment(
+    body.company
+    || contact.company
+    || source.company_name
+    || source.company
+    || source.name
+    || source.item?.name
+    || scene.project_name
+    || scene.client_name
+    || source.client_name
+    || 'EXPOSANT'
+  );
   const hall = shortCode(body.hall || source.hall || '');
   const aisle = shortCode(body.aisle || source.aisle_number || source.allee || '');
   const stand = shortCode(body.standNumber || source.stand_number || '');
-  const location = `${hall}${standCode(aisle, stand)}`.trim();
-  return folderSegment([company, location].filter(Boolean).join(' '));
+  return folderSegment([company, hall, aisle, stand].filter(Boolean).join(' '));
 }
 
 function standCode(aisle = '', stand = '') {
