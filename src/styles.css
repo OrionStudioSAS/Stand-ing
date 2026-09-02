@@ -5295,6 +5295,48 @@ select {
   font-size: 0.76rem;
 }
 
+.designer-scene-list {
+  display: grid;
+  gap: 10px;
+}
+
+.designer-scene-list article {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid #e1e7ef;
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: #fff;
+}
+
+.designer-scene-list strong {
+  display: block;
+  color: #202938;
+  font-size: 0.95rem;
+}
+
+.designer-scene-list small {
+  color: #7d8795;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.designer-scene-list .client-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.designer-scene-list .client-row-actions a,
+.designer-scene-list .client-row-actions button {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.78rem;
+}
+
 .client-row-actions .client-danger-button,
 .client-scenes-actions .client-danger-button {
   border: 1px solid #ffd0ca;
@@ -8052,6 +8094,73 @@ img.asset-thumb {
   border-radius: 999px;
   color: #fff;
   background: #416bb0;
+}
+
+.podium-config-panel {
+  display: grid;
+  gap: 16px;
+  padding: 0 18px;
+}
+
+.podium-config-panel .counter-finish-card,
+.podium-config-panel .counter-size-card {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.podium-color-swatches button {
+  position: relative;
+}
+
+.podium-color-swatches button i {
+  display: block;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #d8dee8;
+  border-radius: 999px;
+  background: var(--swatch-color, #fff);
+}
+
+.podium-color-swatches button span {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip: rect(0, 0, 0, 0);
+}
+
+.podium-size-card > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.podium-size-card button {
+  display: grid;
+  gap: 3px;
+  min-width: 76px;
+  min-height: 48px;
+  border: 1px solid #dfe4ec;
+  border-radius: 9px;
+  padding: 8px 12px;
+  color: #2f3744;
+  background: #fff;
+  font-weight: 900;
+}
+
+.podium-size-card button.active {
+  border-color: #416bb0;
+  box-shadow: inset 0 0 0 1px #416bb0;
+  background: #f4f8ff;
+}
+
+.podium-size-card small {
+  color: #416bb0;
+  font-size: 0.72rem;
+  font-weight: 950;
 }
 
 .item-config-options {

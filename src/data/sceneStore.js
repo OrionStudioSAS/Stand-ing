@@ -462,6 +462,7 @@ export async function sendSceneCompletionEmail(scene, options = {}) {
       sceneId: scene?.id,
       shareToken: scene?.share_token,
       purchaseOrder: options.purchaseOrder || null,
+      technicalPlan: options.technicalPlan || null,
       mode: options.mode || 'completed',
       specialRequest: options.specialRequest || '',
     },

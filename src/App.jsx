@@ -49,7 +49,7 @@ import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
 import { deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deleteSceneAndRemote, deleteStandPreset, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
-import { exportTechnicalPng } from './technicalExport.js';
+import { createTechnicalPlanBlob, exportTechnicalPng } from './technicalExport.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
 
@@ -68,6 +68,11 @@ function localizeItemLabel(entry = {}, lang = 'fr') {
 
 function normalizeCounterDisplayLabel(label = '') {
   return String(label || '').replace(/\bBanque\s+(?:d['’]accueil|accueil)/gi, 'Comptoir accueil');
+}
+
+function isDesignerRole(role = '') {
+  const text = normalizeTextValue(role);
+  return text.includes('dessinateur') || text.includes('dessinatrice');
 }
 
 function sentenceCaseProductLabel(label = '') {
@@ -411,11 +416,13 @@ function App() {
   const [sceneAccessRequired, setSceneAccessRequired] = useState(false);
   const [sceneError, setSceneError] = useState('');
   const [sceneAdminViewer, setSceneAdminViewer] = useState(false);
+  const [sceneForceReadOnly, setSceneForceReadOnly] = useState(false);
 
   useEffect(() => {
     if (isAdmin) return;
     if (!sceneToken) {
       setSceneAdminViewer(false);
+      setSceneForceReadOnly(false);
       setLoading(false);
       return;
     }
@@ -429,6 +436,7 @@ function App() {
           const loaded = await getSceneByToken(sceneToken);
           if (mounted) {
             setSceneAdminViewer(false);
+            setSceneForceReadOnly(false);
             setScene(loaded);
           }
           return;
@@ -443,10 +451,14 @@ function App() {
 
         const { data: adminUser } = await supabase
           .from('admin_users')
-          .select('user_id')
+          .select('user_id, role_label')
           .eq('user_id', session.user.id)
           .maybeSingle();
-        if (mounted) setSceneAdminViewer(Boolean(adminUser));
+        const isDesignerViewer = isDesignerRole(adminUser?.role_label);
+        if (mounted) {
+          setSceneAdminViewer(Boolean(adminUser && !isDesignerViewer));
+          setSceneForceReadOnly(Boolean(adminUser && isDesignerViewer));
+        }
         const verified = window.sessionStorage.getItem(`standing-scene-access:${sceneToken}`) === 'verified';
 
         if (!adminUser && !verified) {
@@ -460,6 +472,7 @@ function App() {
         window.sessionStorage.removeItem(`standing-scene-access:${sceneToken}`);
         if (mounted) {
           setSceneAdminViewer(false);
+          setSceneForceReadOnly(false);
           setSceneAccessRequired(true);
           setSceneError(error.message || 'Accès à la scène impossible.');
         }
@@ -484,6 +497,7 @@ function App() {
         onVerified={async () => {
           window.sessionStorage.setItem(`standing-scene-access:${sceneToken}`, 'verified');
           setSceneAdminViewer(false);
+          setSceneForceReadOnly(false);
           const loaded = await getSceneByToken(sceneToken);
           setScene(loaded);
           setSceneAccessRequired(false);
@@ -493,7 +507,7 @@ function App() {
   }
   if (loading || !scene) return <div className="loading-screen">Chargement de la scene...</div>;
 
-  return <ConfiguratorApp initialScene={scene} isAdminViewer={sceneAdminViewer} />;
+  return <ConfiguratorApp initialScene={scene} isAdminViewer={sceneAdminViewer} forceReadOnly={sceneForceReadOnly} />;
 }
 
 function HomeGate() {
@@ -637,6 +651,10 @@ function AdminGate() {
   if (!session || !adminUser) {
     window.location.replace('/');
     return <div className="loading-screen">Redirection...</div>;
+  }
+
+  if (isDesignerRole(adminUser?.role_label)) {
+    return <DesignerDashboard user={session.user} adminProfile={adminUser} />;
   }
 
   return <AdminDashboard user={session.user} adminProfile={adminUser} />;
@@ -862,7 +880,7 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
   );
 }
 
-function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
+function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = false }) {
   const initialOptions = {
     ...(initialScene.source_payload?.options || {}),
     ...(initialScene.options || {}),
@@ -1041,7 +1059,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
   const effectiveCarpetFootprintEnabled = carpetFootprintEnabled && !selectedTechnicalFloor;
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
-  const readOnly = !isAdminViewer && Boolean(initialScene.source_payload?.exhibitor_view_only);
+  const readOnly = Boolean(forceReadOnly) || (!isAdminViewer && Boolean(initialScene.source_payload?.exhibitor_view_only));
   const sceneVisualContext = useMemo(() => ({
     fontRevision,
     language,
@@ -1442,7 +1460,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
         };
         const directPurchaseOrder = purchaseOrderFromPricingLines(scenePricing.lines || [], availableCatalog);
         const purchaseOrder = await scenePurchaseOrderEmailAttachment(purchaseOrderScene, objectBank, directPurchaseOrder);
-        const emailResult = await sendSceneCompletionEmail(purchaseOrderScene, { purchaseOrder });
+        const technicalPlan = await sceneTechnicalPlanEmailAttachment(purchaseOrderScene, objectBank);
+        const emailResult = await sendSceneCompletionEmail(purchaseOrderScene, { purchaseOrder, technicalPlan });
         if (emailResult?.sent === false) {
           emailMessage = 'La scène est confirmée, mais l’email de confirmation n’a pas pu être envoyé automatiquement.';
           console.warn('Completion email not sent', emailResult);
@@ -1849,6 +1868,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false }) {
 
   const addItem = (entry, options = {}, quantity = 1) => {
     if (readOnly) return;
+    const duplicateHeadSide = duplicatePartitionHeadSide(entry, [...visibleSceneItems, ...automaticPartitionHeadItems]);
+    if (duplicateHeadSide) {
+      showPlacementMessage(`Une tête de cloison ${duplicateHeadSide === 'left' ? 'gauche' : 'droite'} est déjà présente dans la scène et ne peut donc être ajoutée`);
+      return;
+    }
     let lastPlacedId = null;
     let placedCount = 0;
     const safeQuantity = Math.max(1, Number(quantity || 1));
@@ -4484,21 +4508,21 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   };
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
   const extras = extraOptions
-    .reduce((sum, option) => sum + (selectedExtras[option.id] ? Number(option.price || 0) : 0), 0);
+    .reduce((sum, option) => sum + (selectedExtras[option.id] ? effectiveExtraOptionPrice(option, catalogEntry, selectedVariant) : 0), 0);
   const selectedOptionReferences = extraOptions
     .filter((option) => Boolean(selectedExtras[option.id]))
     .map((option) => ({
       id: option.id,
-      label: option.label,
+      label: displayConfigOptionLabel(option, catalogEntry),
       reference: option.reference || '',
-      price: Number(option.price || 0),
+      price: effectiveExtraOptionPrice(option, catalogEntry, selectedVariant),
       global: isSharedGlobalGroupOption(option),
     }))
     .filter((option) => option.label || option.reference);
   const nonGlobalExtras = extraOptions
-    .reduce((sum, option) => sum + (selectedExtras[option.id] && !isSharedGlobalGroupOption(option) ? Number(option.price || 0) : 0), 0);
+    .reduce((sum, option) => sum + (selectedExtras[option.id] && !isSharedGlobalGroupOption(option) ? effectiveExtraOptionPrice(option, catalogEntry, selectedVariant) : 0), 0);
   const globalExtras = extraOptions
-    .reduce((sum, option) => sum + (selectedExtras[option.id] && isSharedGlobalGroupOption(option) ? Number(option.price || 0) : 0), 0);
+    .reduce((sum, option) => sum + (selectedExtras[option.id] && isSharedGlobalGroupOption(option) ? effectiveExtraOptionPrice(option, catalogEntry, selectedVariant) : 0), 0);
   const globalExtraOptions = extraOptions
     .filter(isSharedGlobalGroupOption)
     .reduce((acc, option) => ({ ...acc, [option.id]: Boolean(selectedExtras[option.id]) }), {});
@@ -4638,7 +4662,11 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
 
         {productDescription && <p className="item-config-description">{productDescription}</p>}
 
-        {variants.length > 1 && <ConfigChoiceGrid title={t('item_config_variant_title')} choices={variants} value={format} onChange={setFormat} />}
+        {variants.length > 1 && (isPodiumVariantGroupEntry(catalogEntry) ? (
+          <PodiumVariantPicker choices={variants} value={format} onChange={setFormat} />
+        ) : (
+          <ConfigChoiceGrid title={t('item_config_variant_title')} choices={variants} value={format} onChange={setFormat} />
+        ))}
 
         {hasVisualOptions && isPartitionHeadItem(item) && (
           <PartitionHeadOptionsPanel
@@ -4680,6 +4708,25 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
           />
         )}
 
+        {extraOptions.length > 0 && (
+          <div className="item-config-options">
+            {extraOptions.map((option) => {
+              const optionPrice = effectiveExtraOptionPrice(option, catalogEntry, selectedVariant);
+              const displayPrice = optionPrice > 0 ? `+ ${optionPrice.toLocaleString('fr-FR')} €` : t('item_config_included');
+              return (
+                <ToggleOption
+                  key={option.id}
+                  active={Boolean(selectedExtras[option.id])}
+                  label={displayConfigOptionLabel(option, catalogEntry)}
+                  detail={option.detail}
+                  price={displayPrice}
+                  onChange={(checked) => toggleExtra(option.id, checked)}
+                />
+              );
+            })}
+          </div>
+        )}
+
         {hasVisualOptions && textureSlots.length > 0 && (
           <TextureSlotsOptionsPanel
             item={visualItem}
@@ -4691,25 +4738,6 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             counterColors={counterColors}
             embedded
           />
-        )}
-
-        {extraOptions.length > 0 && (
-          <div className="item-config-options">
-            {extraOptions.map((option) => {
-              const optionPrice = Number(option.price || 0);
-              const displayPrice = optionPrice > 0 ? `+ ${optionPrice.toLocaleString('fr-FR')} €` : t('item_config_included');
-              return (
-                <ToggleOption
-                  key={option.id}
-                  active={Boolean(selectedExtras[option.id])}
-                  label={option.label}
-                  detail={option.detail}
-                  price={displayPrice}
-                  onChange={(checked) => toggleExtra(option.id, checked)}
-                />
-              );
-            })}
-          </div>
         )}
 
         {mode === 'add' && (
@@ -4751,6 +4779,56 @@ function ConfigChoiceGrid({ title, choices, value, onChange }) {
           </button>
         ))}
       </div>
+    </section>
+  );
+}
+
+function PodiumVariantPicker({ choices = [], value, onChange }) {
+  const colors = uniqueTextValues(choices.map(podiumVariantColorLabel));
+  const selected = choices.find((choice) => choice.id === value) || choices[0];
+  const selectedColor = podiumVariantColorLabel(selected);
+  const sizes = choices.filter((choice) => podiumVariantColorLabel(choice) === selectedColor);
+  const selectColor = (color) => {
+    const currentHeight = podiumVariantHeightCm(selected);
+    const matching = choices.find((choice) => podiumVariantColorLabel(choice) === color && podiumVariantHeightCm(choice) === currentHeight)
+      || choices.find((choice) => podiumVariantColorLabel(choice) === color);
+    if (matching) onChange(matching.id);
+  };
+
+  return (
+    <section className="podium-config-panel">
+      <div className="counter-finish-card podium-config-card">
+        <div className="counter-finish-head">
+          <strong>Couleur</strong>
+          <span>{selectedColor}</span>
+        </div>
+        <div className="counter-finish-swatches podium-color-swatches">
+          {colors.map((color) => (
+            <button
+              key={color}
+              type="button"
+              className={selectedColor === color ? 'active' : ''}
+              style={{ '--swatch-color': normalizeTextValue(color).includes('noir') ? '#101319' : '#ffffff' }}
+              title={color}
+              onClick={() => selectColor(color)}
+            >
+              <i aria-hidden="true" />
+              <span>{color}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <section className="counter-size-card podium-size-card">
+        <strong>Taille</strong>
+        <div>
+          {sizes.map((choice) => (
+            <button key={choice.id} type="button" className={choice.id === value ? 'active' : ''} onClick={() => onChange(choice.id)}>
+              <span>{podiumVariantOptionLabel(choice)}</span>
+              <small>{choice.price ? `${choice.price.toLocaleString('fr-FR')} €` : 'Inclus'}</small>
+            </button>
+          ))}
+        </div>
+      </section>
     </section>
   );
 }
@@ -4849,6 +4927,7 @@ function sortItemConfigVariants(entry = {}, variants = []) {
       detail: '',
     }));
   }
+  if (isPodiumVariantGroupEntry(entry)) return sortPodiumVariants(variants);
   const inchValues = variants.map((variant) => variantInchSize(variant)).filter((value) => Number.isFinite(value));
   if (inchValues.length >= 2) return [...variants].sort((a, b) => variantInchSize(a) - variantInchSize(b));
   return variants;
@@ -4885,6 +4964,84 @@ function normalizeSelectOptionVariants(selectOption, variantOptionLinks = [], sa
 function itemConfigExtraOptions(entry) {
   const options = (entry?.dimensions?.configOptions || []).filter((o) => (o.type || 'toggle') !== 'select');
   return normalizeAssetConfigOptions(options);
+}
+
+function isBarVariantGroupEntry(entry = {}) {
+  const text = normalizeTextValue(`${entry?.type || ''} ${entry?.label || ''}`);
+  return isVariantGroupEntry(entry) && /\bbar\b/.test(text);
+}
+
+function isBarSceneItem(item = {}) {
+  const text = normalizedItemText(item);
+  return /\bbar\b/.test(text);
+}
+
+function isStorageCabinetSceneItem(item = {}) {
+  const text = normalizedItemText(item);
+  return text.includes('meuble') && text.includes('rangement');
+}
+
+function isBarLogoOption(option = {}, groupEntry = {}) {
+  if (!isBarVariantGroupEntry(groupEntry)) return false;
+  const text = normalizeTextValue(`${option.id || ''} ${option.label || ''}`);
+  return text.includes('signa') || text.includes('logo');
+}
+
+function barSizeMetersFromVariant(variant = {}) {
+  const text = `${variant.label || ''} ${variant.assetType || ''} ${variant.entry?.label || ''} ${variant.entry?.type || ''}`;
+  const match = String(text).match(/(\d+(?:[,.]\d+)?)\s*m\b/i);
+  return match ? Number(match[1].replace(',', '.')) : 0;
+}
+
+function barLogoOptionPriceForVariant(variant = {}) {
+  const width = barSizeMetersFromVariant(variant);
+  if (width >= 2) return 410;
+  return 297;
+}
+
+function displayConfigOptionLabel(option = {}, groupEntry = {}) {
+  if (isBarLogoOption(option, groupEntry)) return 'Logo';
+  return option.label || 'Option';
+}
+
+function effectiveExtraOptionPrice(option = {}, groupEntry = {}, selectedVariant = {}) {
+  if (isBarLogoOption(option, groupEntry)) return barLogoOptionPriceForVariant(selectedVariant);
+  return Number(option.price || 0);
+}
+
+function isPodiumVariantGroupEntry(entry = {}) {
+  const text = normalizeTextValue(`${entry?.type || ''} ${entry?.label || ''}`);
+  return isVariantGroupEntry(entry) && text.includes('podium');
+}
+
+function podiumVariantColorLabel(variant = {}) {
+  const text = normalizeTextValue(`${variant.label || ''} ${variant.assetType || ''} ${variant.entry?.label || ''}`);
+  if (text.includes('noir')) return 'Noir';
+  if (text.includes('blanc')) return 'Blanc';
+  return 'Couleur';
+}
+
+function podiumVariantHeightCm(variant = {}) {
+  const text = `${variant.label || ''} ${variant.assetType || ''} ${variant.entry?.label || ''} ${variant.entry?.type || ''}`;
+  const cmMatches = [...String(text).matchAll(/(\d{2,3})\s*cm/gi)].map((match) => Number(match[1]));
+  if (cmMatches.length) return Math.max(...cmMatches);
+  const dimensions = variant.entry?.dimensions?.size || variant.entry?.dimensions?.dimensions || [];
+  const heightMeters = Array.isArray(dimensions) ? Math.max(...dimensions.map(Number).filter(Number.isFinite)) : 0;
+  return heightMeters ? Math.round(heightMeters * 100) : 0;
+}
+
+function sortPodiumVariants(variants = []) {
+  const colorOrder = { blanc: 0, noir: 1 };
+  return [...variants].sort((a, b) => {
+    const colorA = colorOrder[normalizeTextValue(podiumVariantColorLabel(a))] ?? 9;
+    const colorB = colorOrder[normalizeTextValue(podiumVariantColorLabel(b))] ?? 9;
+    return colorA - colorB || podiumVariantHeightCm(a) - podiumVariantHeightCm(b);
+  });
+}
+
+function podiumVariantOptionLabel(variant = {}) {
+  const height = podiumVariantHeightCm(variant);
+  return height ? `${height} cm` : variant.label || '';
 }
 
 
@@ -5343,7 +5500,7 @@ function furnitureInsuranceLine(amount = 0) {
 
 function marketplaceStartingPrice(entry, catalog = [], salonLabel = '') {
   if (isVariantGroupEntry(entry)) {
-    const prices = normalizeVariantGroupOptions(entry.dimensions?.variantAssets, salonLabel)
+    const prices = itemConfigVariants(entry, salonLabel)
       .map((variant) => Number(variant.price || 0) || assetAnySalonUnitPrice(variant.entry))
       .filter((price) => price > 0);
     if (prices.length) return Math.min(...prices);
@@ -5533,6 +5690,23 @@ function shopCartItemVisible(item) {
   return true;
 }
 
+function cleanDisplayedFinishName(value = '') {
+  return shortFinishName(value)
+    .replace(/\bU\d{3,4}\b/gi, '')
+    .replace(/\bST\d+\b.*$/i, '')
+    .replace(/\bRAL\s*\d+.*$/i, '')
+    .replace(/\s+_/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function shouldHideVariantLabelInSummary(item = {}, label = '') {
+  const text = normalizeTextValue(label);
+  if (!text) return true;
+  if (isStorageCabinetSceneItem(item) && text.includes('meuble') && text.includes('bois')) return true;
+  return false;
+}
+
 function itemOptionLines(item) {
   const opts = item.options || {};
   const result = [];
@@ -5544,7 +5718,7 @@ function itemOptionLines(item) {
     });
     if (sizeLabel) result.push(sizeLabel);
     if (opts.binary2ColorName || opts.binary2Color) {
-      const colorName = shortFinishName(opts.binary2ColorName || opts.binary2Color);
+      const colorName = cleanDisplayedFinishName(opts.binary2ColorName || opts.binary2Color);
       result.push(`Couleur : ${colorName}`);
     } else {
       result.push('Couleur : Bois');
@@ -5555,26 +5729,25 @@ function itemOptionLines(item) {
   }
   if (opts.reserveDoorOpening) result.push(`Ouverture de porte : ${reserveDoorOpeningLabel(opts.reserveDoorOpening)}`);
   if (opts.reserveHandleOrientation) result.push(`Orientation de la poignée : ${reserveHandleOrientationLabel(opts.reserveHandleOrientation)}`);
-  if (opts.variantLabel) result.push(opts.variantLabel);
+  if (opts.variantLabel && !shouldHideVariantLabelInSummary(item, opts.variantLabel)) result.push(opts.variantLabel);
   if (opts.posterImageName) result.push(opts.posterImageName);
   if (opts.headMainImageName && !opts.headMainImageName.startsWith('Texture originale')) result.push(opts.headMainImageName);
   if (opts.binary3ImageName && !opts.binary3ImageName.startsWith('Texture originale')) result.push(opts.binary3ImageName);
   if (opts.binary2ColorName || opts.binary2Color) {
-    const colorPrice = Number(opts.binary2ColorPrice || 0);
-    result.push(`Couleur : ${opts.binary2ColorName || opts.binary2Color}${colorPrice > 0 ? ` (+${colorPrice.toLocaleString('fr-FR')} € HT/m²)` : ''}`);
+    result.push(`Couleur : ${cleanDisplayedFinishName(opts.binary2ColorName || opts.binary2Color)}`);
   } else if (isWoodReceptionDeskItem(item)) {
     result.push('Couleur : Bois');
   }
   textureSlotColorValues(item).forEach((value) => {
-    const colorPrice = Number(value.colorPrice || 0);
-    const colorLabel = value.colorName || value.color || 'finition';
-    result.push(`Couleur : ${colorLabel}${colorPrice > 0 ? ` (+${colorPrice.toLocaleString('fr-FR')} € HT)` : ''}`);
+    const colorLabel = cleanDisplayedFinishName(value.colorName || value.color || 'finition');
+    result.push(`Couleur : ${colorLabel}`);
   });
   const optionRefs = Array.isArray(opts.optionReferences) ? opts.optionReferences : [];
   optionRefs.forEach((option) => {
-    const label = option?.label || 'Option';
-    const reference = option?.reference ? ` — réf. ${option.reference}` : '';
-    result.push(`${label}${reference}`);
+    const label = isBarSceneItem(item) && normalizeTextValue(option?.label || '').includes('signa')
+      ? 'Logo'
+      : (option?.label || 'Option');
+    result.push(label);
   });
   const optionIds = new Set(optionRefs.map((option) => option?.id).filter(Boolean));
   if (opts.technician && !optionIds.has('technician')) result.push('Technicien inclus');
@@ -7093,6 +7266,109 @@ function rememberAdminTab(tab) {
   }
 }
 
+function DesignerDashboard({ user, adminProfile }) {
+  const [scenes, setScenes] = useState([]);
+  const [assets, setAssets] = useState([]);
+  const [filters, setFilters] = useState({ search: '', salon: '' });
+  const [loading, setLoading] = useState(true);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const profile = getAdminProfile(user, adminProfile);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    Promise.all([listScenes({}), listObjectBank()])
+      .then(([sceneRows, assetRows]) => {
+        if (!mounted) return;
+        setScenes(sceneRows || []);
+        setAssets(assetRows || []);
+      })
+      .catch((error) => console.error('Designer dashboard load failed', error))
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => { mounted = false; };
+  }, []);
+
+  const salonChoices = useMemo(() => adminSceneSalonChoices(scenes), [scenes]);
+  const filteredScenes = useMemo(() => filterDesignerScenes(scenes, filters), [scenes, filters]);
+
+  return (
+    <main className="admin-dashboard-shell designer-dashboard-shell">
+      <aside className="admin-sidebar">
+        <a className="admin-sidebar-logo" href="/admin">
+          <img src="/images/logo.png" alt="Stand-ING" />
+        </a>
+        <div className="admin-sidebar-product">Espace Dessinateur</div>
+        <nav className="admin-sidebar-nav" aria-label="Navigation dessinateur">
+          <button className="active" type="button"><LayoutDashboard size={16} />Scènes à consulter</button>
+        </nav>
+        <div className="admin-sidebar-user-wrap">
+          <button className="admin-sidebar-user" type="button" onClick={() => setAccountOpen((open) => !open)}>
+            <span>{profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : profile.initials}</span>
+            <div>
+              <strong>{profile.name}</strong>
+              <small>{profile.role}</small>
+            </div>
+            <ChevronUp size={14} />
+          </button>
+          {accountOpen && <AdminAccountPanel profile={profile} onLogout={() => supabase.auth.signOut().then(() => window.location.replace('/'))} />}
+        </div>
+      </aside>
+      <section className="admin-main-panel">
+        <header className="admin-topbar-new">
+          <div>
+            <h1>Scènes exposants</h1>
+            <p>Consultation en lecture seule pour préparer les BAT.</p>
+          </div>
+        </header>
+        <div className="admin-page-content">
+          <section className="admin-clients-search-card">
+            <div>
+              <Search size={16} />
+              <input
+                value={filters.search}
+                placeholder="Exposant, stand, salon..."
+                onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+              />
+            </div>
+            <button type="button">Rechercher</button>
+          </section>
+          <div className="admin-client-filter-line">
+            <span>Filtres actifs :</span>
+            <label>
+              Salon
+              <select value={filters.salon} onChange={(event) => setFilters((current) => ({ ...current, salon: event.target.value }))}>
+                <option value="">Tous les salons</option>
+                {salonChoices.map((salon) => <option key={salon} value={salon}>{salon}</option>)}
+              </select>
+            </label>
+          </div>
+          {loading ? (
+            <div className="admin-empty-row">Chargement des scènes...</div>
+          ) : (
+            <section className="designer-scene-list">
+              {filteredScenes.map((scene) => (
+                <article key={scene.id || scene.share_token}>
+                  <div>
+                    <strong>{scene.client_name || scene.source_payload?.exhibitor_name || 'Exposant sans nom'}</strong>
+                    <small>{[scene.project_name || sceneStandNumber(scene, {}, 'Scène'), scene.salon || scene.event_name, clientStatusLabel(scene.client_status || scene.status)].filter(Boolean).join(' · ')}</small>
+                  </div>
+                  <div className="client-row-actions">
+                    <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a>
+                    <button type="button" onClick={async () => downloadSceneTechnicalPlan(await loadSceneForAdminAction(scene), assets)}>Télécharger BAT</button>
+                  </div>
+                </article>
+              ))}
+              {!filteredScenes.length && <div className="admin-empty-row">Aucune scène trouvée.</div>}
+            </section>
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function AdminDashboard({ user, adminProfile }) {
   const [scenes, setScenes] = useState([]);
   const [clients, setClients] = useState([]);
@@ -7418,7 +7694,8 @@ function AdminDashboard({ user, adminProfile }) {
                 await saveScene(updatedScene);
                 await syncSceneConfigToMonday(updatedScene);
                 const purchaseOrder = await scenePurchaseOrderEmailAttachment(updatedScene, assets);
-                await sendSceneCompletionEmail(updatedScene, { purchaseOrder, mode: 'special_request_completed' });
+                const technicalPlan = await sceneTechnicalPlanEmailAttachment(updatedScene, assets);
+                await sendSceneCompletionEmail(updatedScene, { purchaseOrder, technicalPlan, mode: 'special_request_completed' });
                 setScenes((current) => current.map((item) => (item.id === scene.id ? updatedScene : item)));
               }}
             />
@@ -8922,6 +9199,26 @@ function adminSceneSalonChoices(scenes = []) {
     if (label) choices.add(label);
   });
   return [...choices].sort((a, b) => a.localeCompare(b, 'fr'));
+}
+
+function filterDesignerScenes(scenes = [], filters = {}) {
+  const search = normalizeTextValue(filters.search || '');
+  const salon = normalizeSalonTitle(filters.salon || '');
+  return (scenes || []).filter((scene) => {
+    const sceneSalon = normalizeSalonTitle(scene.event_name || scene.salon);
+    if (salon && sceneSalon !== salon) return false;
+    if (!search) return true;
+    const text = normalizeTextValue([
+      scene.client_name,
+      scene.client_email,
+      scene.project_name,
+      scene.salon,
+      scene.event_name,
+      scene.source_payload?.stand_label,
+      scene.source_payload?.exhibitor_name,
+    ].filter(Boolean).join(' '));
+    return text.includes(search);
+  });
 }
 
 function adminUserSalonChoices(baseChoices = [], clients = [], users = []) {
@@ -11334,6 +11631,24 @@ function downloadSceneTechnicalPlan(scene = {}, assets = []) {
     items: sceneAllAdminItems(scene, catalogEntries),
     catalog: catalogEntries,
   });
+}
+
+async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = []) {
+  const catalogEntries = sceneAdminCatalog(assets, scene);
+  const width = Number(scene.dimensions?.width || scene.width_m || 4);
+  const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
+  const blob = await createTechnicalPlanBlob({
+    width,
+    depth,
+    layout: scene.layout || 'back',
+    items: sceneAllAdminItems(scene, catalogEntries),
+    catalog: catalogEntries,
+  });
+  return {
+    filename: `bat-${slugForType(scene.client_name || scene.project_name || scene.id || 'stand')}.png`,
+    contentBase64: await blobToBase64(blob),
+    contentType: 'image/png',
+  };
 }
 
 async function downloadScenePurchaseOrder(scene = {}, assets = []) {
@@ -14127,6 +14442,18 @@ function smclPartitionHeadSide(item = {}) {
   if (text.includes('gauche')) return 'left';
   if (text.includes('droite')) return 'right';
   return '';
+}
+
+function duplicatePartitionHeadSide(entry = {}, items = []) {
+  if (!isPartitionHeadItem(entry) && !isSmclPartitionHeadItem(entry)) return '';
+  const side = entry?.dimensions?.smclHeadSide || entry?.options?.partitionHeadSide || smclPartitionHeadSide(entry);
+  if (!side) return '';
+  return (items || []).some((item) => {
+    if (!item || item.options?.partitionHeadHidden || item.options?.prestigeHidden) return false;
+    if (!isPartitionHeadItem(item) && !isSmclPartitionHeadItem(item) && !isAutomaticPartitionHeadItem(item)) return false;
+    const itemSide = item.options?.partitionHeadSide || item.dimensions?.smclHeadSide || smclPartitionHeadSide(item);
+    return itemSide === side;
+  }) ? side : '';
 }
 
 function normalizedItemText(item = {}) {

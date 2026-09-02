@@ -27,7 +27,7 @@ const reinforcementWidth = 1;
 const wallThicknessMeters = 0.06;
 const carpetFootprintOverflow = 0.2;
 
-export function exportTechnicalPng({ width, depth, layout, items, catalog }) {
+export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog }) {
   const technicalItems = applyWallItemMetrics(flattenTechnicalItems(items, catalog), width, depth, catalog);
   sheet.height = Math.max(1240, 1080 + technicalItems.length * 34);
   const canvas = document.createElement('canvas');
@@ -41,6 +41,16 @@ export function exportTechnicalPng({ width, depth, layout, items, catalog }) {
   drawSidebar(ctx, width, depth, fixedWallHeight, layout, technicalItems);
   drawPlan(ctx, width, depth, layout, technicalItems, catalog);
   drawItemTable(ctx, technicalItems, catalog, width, depth);
+  return canvas;
+}
+
+export async function createTechnicalPlanBlob({ width, depth, layout, items, catalog }) {
+  const canvas = renderTechnicalPlanCanvas({ width, depth, layout, items, catalog });
+  return canvasToBlob(canvas, 'image/png');
+}
+
+export function exportTechnicalPng({ width, depth, layout, items, catalog }) {
+  const canvas = renderTechnicalPlanCanvas({ width, depth, layout, items, catalog });
   downloadCanvas(canvas, `standing-plan-technique-${width}x${depth}m.png`);
 }
 
@@ -767,14 +777,22 @@ function wallLabel(wall) {
   return 'Mur fond';
 }
 
+function canvasToBlob(canvas, type = 'image/png') {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Export du plan technique impossible.'));
+    }, type);
+  });
+}
+
 function downloadCanvas(canvas, filename) {
-  canvas.toBlob((blob) => {
-    if (!blob) return;
+  canvasToBlob(canvas, 'image/png').then((blob) => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.download = filename;
     link.click();
     URL.revokeObjectURL(url);
-  }, 'image/png');
+  }).catch(() => {});
 }

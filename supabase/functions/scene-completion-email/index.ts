@@ -23,7 +23,8 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const sceneId = clean(body.sceneId);
   const shareToken = clean(body.shareToken);
-  const purchaseOrder = normalizePurchaseOrderAttachment(body.purchaseOrder);
+  const purchaseOrder = normalizeEmailAttachment(body.purchaseOrder, "bon-de-commande.pdf");
+  const technicalPlan = normalizeEmailAttachment(body.technicalPlan, "bat-scene.png");
   const mode = clean(body.mode) || 'completed';
   const requestedSpecialText = clean(body.specialRequest);
   if (!sceneId && !shareToken) return json({ error: "Missing scene identifier" }, 400);
@@ -54,22 +55,56 @@ Deno.serve(async (req) => {
   const clientName = clean(scene.client_name) || clean(scene.source_payload?.exhibitor_name) || "client";
   const standName = clean(scene.project_name) || "votre stand";
   const eventName = clean(scene.event_name) || clean(scene.salon) || "Stand-ING";
+  const offerName = clean(scene.source_payload?.offer || scene.source_payload?.pack || scene.source_payload?.formule || "");
   const specialRequest = requestedSpecialText || clean(scene.source_payload?.specialRequest?.text);
   const emailContent = buildEmailContent({ mode, clientName, standName, eventName, sceneUrl, hasPurchaseOrder: Boolean(purchaseOrder), specialRequest });
 
   const notifyAdmin = mode === 'completed' || mode === 'special_request_completed';
-  const adminCopy = notifyAdmin && completionNotifyTo && completionNotifyTo !== toEmail ? [completionNotifyTo] : [];
   const payload = {
     from: fromEmail,
     to: [toEmail],
-    ...(adminCopy.length ? { bcc: adminCopy } : {}),
     subject: emailContent.subject,
     html: emailContent.html,
     text: emailContent.text,
     ...(purchaseOrder ? { attachments: [purchaseOrder] } : {}),
   };
 
-  const response = await fetch("https://api.resend.com/emails", {
+  const response = await sendResendEmail(resendApiKey, payload);
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) return json({ error: result?.message || "Email sending failed", details: result }, 502);
+
+  let adminResult: Record<string, unknown> | null = null;
+  if (notifyAdmin && completionNotifyTo && completionNotifyTo !== toEmail) {
+    const adminPayload = {
+      from: fromEmail,
+      to: [completionNotifyTo],
+      subject: `[BAT] Configuration ${standName} confirmée`,
+      html: adminNotificationEmailHtml({ clientName, toEmail, standName, eventName, offerName, sceneUrl, mode, hasTechnicalPlan: Boolean(technicalPlan) }),
+      text: `Configuration confirmée\n\nExposant : ${clientName}\nEmail : ${toEmail}\nStand : ${standName}\nSalon : ${eventName}${offerName ? `\nFormule : ${offerName}` : ""}\nLien : ${sceneUrl}\n\n${technicalPlan ? "Le BAT est joint à cet email." : "Aucun BAT n'a pu être généré automatiquement."}`,
+      ...(technicalPlan ? { attachments: [technicalPlan] } : {}),
+    };
+    const adminResponse = await sendResendEmail(resendApiKey, adminPayload);
+    adminResult = await adminResponse.json().catch(() => ({}));
+    if (!adminResponse.ok) {
+      console.error("Admin completion email failed", adminResult);
+    }
+  }
+
+  await supabase.from("scenes").update({
+    source_payload: {
+      ...(scene.source_payload || {}),
+      completion_email_sent_at: new Date().toISOString(),
+      completion_email_to: toEmail,
+      completion_email_admin_copy_to: notifyAdmin ? completionNotifyTo : "",
+      last_completion_email_mode: mode,
+    },
+  }).eq("id", scene.id);
+
+  return json({ sent: true, to: maskEmail(toEmail), admin_to: notifyAdmin && completionNotifyTo ? maskEmail(completionNotifyTo) : null, provider_id: result?.id || null, admin_provider_id: adminResult?.id || null });
+});
+
+function sendResendEmail(resendApiKey: string, payload: Record<string, unknown>) {
+  return fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${resendApiKey}`,
@@ -77,22 +112,7 @@ Deno.serve(async (req) => {
     },
     body: JSON.stringify(payload),
   });
-
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) return json({ error: result?.message || "Email sending failed", details: result }, 502);
-
-  await supabase.from("scenes").update({
-    source_payload: {
-      ...(scene.source_payload || {}),
-      completion_email_sent_at: new Date().toISOString(),
-      completion_email_to: toEmail,
-      completion_email_admin_copy_to: adminCopy[0] || '',
-      last_completion_email_mode: mode,
-    },
-  }).eq("id", scene.id);
-
-  return json({ sent: true, to: maskEmail(toEmail), provider_id: result?.id || null });
-});
+}
 
 function buildEmailContent({ mode, clientName, standName, eventName, sceneUrl, hasPurchaseOrder, specialRequest }: { mode: string; clientName: string; standName: string; eventName: string; sceneUrl: string; hasPurchaseOrder: boolean; specialRequest: string }) {
   if (mode === "special_request_received") {
@@ -156,6 +176,25 @@ function completionEmailHtml({ clientName, standName, eventName, sceneUrl, hasPu
   </div>`;
 }
 
+function adminNotificationEmailHtml({ clientName, toEmail, standName, eventName, offerName, sceneUrl, mode, hasTechnicalPlan }: { clientName: string; toEmail: string; standName: string; eventName: string; offerName: string; sceneUrl: string; mode: string; hasTechnicalPlan: boolean }) {
+  const title = mode === "special_request_completed" ? "Demande spécifique traitée" : "Configuration exposant confirmée";
+  return `
+  <div style="font-family:Arial,sans-serif;color:#172033;line-height:1.5">
+    <h2 style="color:#1f4378;margin:0 0 12px">${escapeHtml(title)}</h2>
+    <p>L'exposant vient de terminer sa configuration.</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:14px 0;background:#f4f7fb;border-radius:10px;overflow:hidden">
+      <tr><td style="padding:8px 12px;color:#687386">Exposant</td><td style="padding:8px 12px;font-weight:bold">${escapeHtml(clientName)}</td></tr>
+      <tr><td style="padding:8px 12px;color:#687386">Email</td><td style="padding:8px 12px;font-weight:bold">${escapeHtml(toEmail)}</td></tr>
+      <tr><td style="padding:8px 12px;color:#687386">Stand</td><td style="padding:8px 12px;font-weight:bold">${escapeHtml(standName)}</td></tr>
+      <tr><td style="padding:8px 12px;color:#687386">Salon</td><td style="padding:8px 12px;font-weight:bold">${escapeHtml(eventName)}</td></tr>
+      ${offerName ? `<tr><td style="padding:8px 12px;color:#687386">Formule</td><td style="padding:8px 12px;font-weight:bold">${escapeHtml(offerName)}</td></tr>` : ""}
+    </table>
+    <p>${hasTechnicalPlan ? "Le BAT est joint à cet email." : "Attention : aucun BAT n'a pu être généré automatiquement."}</p>
+    <p><a href="${sceneUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">Ouvrir la scène</a></p>
+    ${emailSignatureHtml()}
+  </div>`;
+}
+
 function emailSignatureHtml() {
   return `
     <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:24px;border-top:1px solid #d7dde8;padding-top:14px;font-family:Arial,sans-serif;color:#172033;line-height:1.35">
@@ -212,12 +251,12 @@ Stand-ING | LA FORCE BLEUE
 T : +33 (0)1 34 30 46 62
 www.stand-ing.com`;
 }
-function normalizePurchaseOrderAttachment(value: any) {
+function normalizeEmailAttachment(value: any, fallbackName: string) {
   const content = clean(value?.contentBase64);
   if (!content || !/^[A-Za-z0-9+/=\s]+$/.test(content)) return null;
-  const filename = clean(value?.filename).replace(/[^\w.\-]+/g, "-") || "bon-de-commande.pdf";
+  const filename = clean(value?.filename).replace(/[^\w.\-]+/g, "-") || fallbackName;
   return {
-    filename: filename.toLowerCase().endsWith(".pdf") ? filename : `${filename}.pdf`,
+    filename,
     content: content.replace(/\s+/g, ""),
   };
 }
