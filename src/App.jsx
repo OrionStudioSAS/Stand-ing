@@ -6787,7 +6787,6 @@ function PartitionHeadOptionCard({ rule, sides = {}, companyName = '', catalog =
 
   return (
     <div className="partition-head-panel partition-head-panel-v2">
-      <PartitionHeadFormulaBox />
 
       <label className="partition-head-company-field">
         <span>{t('partition_head_company_field')}</span>
@@ -6853,20 +6852,6 @@ function PartitionHeadOptionCard({ rule, sides = {}, companyName = '', catalog =
       >
         <X size={15} /> {t('partition_remove')}
       </button>
-    </div>
-  );
-}
-
-function PartitionHeadFormulaBox() {
-  const t = useT();
-  return (
-    <div className="partition-head-formula partition-head-formula-v2">
-      <b>!</b>
-      <span>
-        {t('partition_formula_detail1')}
-        <br />
-        {t('partition_formula_detail2')}
-      </span>
     </div>
   );
 }
