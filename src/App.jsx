@@ -4104,7 +4104,7 @@ function OptionsStepPanel({
           onOptions={onReserveOptions}
         />
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('tete')} title={t('option_partition_head')} subtitle={t('partition_format_subtitle')} icon={<ConfiguratorOptionIcon src="/icons/tete_de_cloison.svg" />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
+      <OptionAccordion {...accordionScrollProps('tete')} title={t('option_partition_head')} icon={<ConfiguratorOptionIcon src="/icons/tete_de_cloison.svg" />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
         <PartitionHeadOptionCard
           rule={partitionHeadRule}
           sides={partitionHeadSides}
