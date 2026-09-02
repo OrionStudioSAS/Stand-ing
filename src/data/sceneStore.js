@@ -685,15 +685,19 @@ async function uploadSceneProductionFile(scene, item, file, preview = {}) {
 function sceneProductionUploadMetadata(scene = {}, item = {}, file = {}, preview = {}) {
   const source = scene.source_payload || {};
   const contact = source.contactDetails || {};
+  const company = contact.company || source.company_name || source.company || source.name || source.item?.name || scene.project_name || scene.client_name || source.client_name || '';
+  const hall = readMondayColumnAny(source, ['hall', 'pavillon']) || contact.hall || source.hall || '';
+  const aisle = readMondayColumnAny(source, ['allée', 'allee', 'allee stand', 'allée stand']) || source.aisle_number || source.allee || contact.allee || '';
+  const standNumber = readMondayStandNumber(source) || source.stand_number || contact.standNumber || contact.emplacement || '';
   return {
     sceneId: scene.id || '',
     sceneToken: scene.share_token || '',
     salon: scene.salon || scene.event_name || source.salon || source.event_name || '',
     offer: scene.offer || source.offer || source.pack || source.includedPack || source.options?.includedPack || '',
-    company: contact.company || source.company_name || source.company || source.name || source.item?.name || scene.project_name || scene.client_name || source.client_name || '',
-    hall: readMondayColumnAny(source, ['hall', 'pavillon']) || contact.hall || source.hall || '',
-    aisle: readMondayColumnAny(source, ['allée', 'allee', 'allee stand', 'allée stand']) || source.aisle_number || source.allee || contact.allee || '',
-    standNumber: readMondayColumnTitleAny(source, ['n°', 'n', 'numero', 'numéro', 'numero stand', 'numéro stand']) || source.stand_number || contact.standNumber || contact.emplacement || '',
+    company: sftpExhibitorFolderName(company, hall, aisle, standNumber),
+    hall: '',
+    aisle: '',
+    standNumber: '',
     itemId: item.id || '',
     itemType: item.type || '',
     itemLabel: item.label || item.visualLabel || item.type || '',
@@ -723,6 +727,38 @@ function readMondayColumnTitleAny(payload = {}, names = []) {
   const normalizedNames = names.map((name) => normalizeKey(name));
   const match = columns.find((column) => normalizedNames.includes(normalizeKey(column.title || column.column?.title)));
   return match?.text || match?.value || '';
+}
+
+function readMondayStandNumber(payload = {}) {
+  const columns = Array.isArray(payload?.column_values) ? payload.column_values : [];
+  const match = columns.find((column) => {
+    const title = normalizeColumnTitle(column.title || column.column?.title || '');
+    return title === 'n' || title === 'numero' || title === 'numero_stand';
+  });
+  return match?.text || match?.value || '';
+}
+
+function normalizeColumnTitle(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[°º]/g, '')
+    .replace(/[^a-z0-9]+/gi, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+}
+
+function sftpExhibitorFolderName(company = '', hall = '', aisle = '', standNumber = '') {
+  const location = `${sftpLocationCode(hall)}${sftpLocationCode(aisle)}${sftpLocationCode(standNumber)}`;
+  return [company, location].filter(Boolean).join(' ');
+}
+
+function sftpLocationCode(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9.]/g, '')
+    .toUpperCase();
 }
 
 export async function syncMondayScenes() {

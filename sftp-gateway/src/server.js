@@ -366,8 +366,9 @@ function exhibitorFolderName(body = {}, scene = {}) {
   );
   const hall = shortCode(body.hall || readSourceColumnAny(source, ['hall', 'pavillon']) || source.hall || contact.hall || '');
   const aisle = shortCode(body.aisle || readSourceColumnAny(source, ['allée', 'allee', 'allee stand', 'allée stand']) || source.aisle_number || source.allee || contact.allee || '');
-  const stand = shortCode(body.standNumber || readSourceColumnTitleAny(source, ['n°', 'n', 'numero', 'numéro', 'numero stand', 'numéro stand']) || source.stand_number || contact.standNumber || contact.emplacement || '');
-  return folderSegment([company, hall, aisle, stand].filter(Boolean).join(' '));
+  const stand = shortCode(body.standNumber || readSourceStandNumber(source) || source.stand_number || contact.standNumber || contact.emplacement || '');
+  const location = `${hall}${aisle}${stand}`;
+  return folderSegment([company, location].filter(Boolean).join(' '));
 }
 
 function readSourceColumnAny(payload = {}, names = []) {
@@ -387,9 +388,23 @@ function readSourceColumnTitleAny(payload = {}, names = []) {
   return match?.text || '';
 }
 
-function standCode(aisle = '', stand = '') {
-  if (aisle && stand && normalizeForCompare(stand).startsWith(normalizeForCompare(aisle))) return stand;
-  return `${aisle}${stand}`;
+function readSourceStandNumber(payload = {}) {
+  const columns = Array.isArray(payload.column_values) ? payload.column_values : [];
+  const match = columns.find((column) => {
+    const title = normalizeStandTitle(column.title || column.column?.title || '');
+    return title === 'n' || title === 'numero' || title === 'numero_stand';
+  });
+  return match?.text || '';
+}
+
+function normalizeStandTitle(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[°º]/g, '')
+    .replace(/[^a-z0-9]+/gi, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
 }
 
 function salonFolderName(value = '') {

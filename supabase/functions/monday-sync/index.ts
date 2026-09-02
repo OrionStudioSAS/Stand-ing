@@ -769,7 +769,7 @@ function mondaySceneLocation(item: any, source: any) {
   const mapping = source.mapping ?? {};
   return {
     standNumber: readMappingValue(item, mapping.stand_number || mapping.standNumber || mapping.numero_stand || mapping["numéro_stand"])
-      || readColumnTitleAny(item, ["n°", "n", "numero", "numéro", "numero stand", "numéro stand"])
+      || readStandNumberColumn(item)
       || readColumnAny(item, ["stand", "emplacement"]),
     aisleNumber: readMappingValue(item, mapping.aisle_number || mapping.allee || mapping["allée"])
       || readColumnAny(item, ["allée", "allee", "allee stand", "allée stand"]),
@@ -793,7 +793,8 @@ async function ensureSceneSftpFolder({ gatewayUrl, gatewayToken, scene, warnings
     const sourcePayload = scene.source_payload || {};
     const hall = readColumnAny(sourcePayload, ["hall", "pavillon"]) || sourcePayload.hall || "";
     const aisle = readColumnAny(sourcePayload, ["allée", "allee", "allee stand", "allée stand"]) || sourcePayload.aisle_number || sourcePayload.allee || "";
-    const standNumber = readColumnTitleAny(sourcePayload, ["n°", "n", "numero", "numéro", "numero stand", "numéro stand"]) || sourcePayload.stand_number || "";
+    const standNumber = readStandNumberColumn(sourcePayload) || sourcePayload.stand_number || "";
+    const exhibitorFolder = sftpExhibitorFolderName(sceneCompanyNameForSftp(scene), hall, aisle, standNumber);
     const response = await fetch(`${gatewayUrl.replace(/\/+$/g, "")}/scene-folder`, {
       method: "POST",
       headers: {
@@ -805,10 +806,10 @@ async function ensureSceneSftpFolder({ gatewayUrl, gatewayToken, scene, warnings
         sceneToken: scene.share_token || "",
         salon: scene.salon || scene.event_name || scene.source_payload?.salon || "",
         offer: scene.offer || scene.source_payload?.offer || scene.source_payload?.pack || "",
-        company: sceneCompanyNameForSftp(scene),
-        hall,
-        aisle,
-        standNumber,
+        company: exhibitorFolder,
+        hall: "",
+        aisle: "",
+        standNumber: "",
       }),
     });
     const payload = await response.json().catch(() => ({}));
@@ -835,6 +836,19 @@ function sceneCompanyNameForSftp(scene: any) {
     || source.client_name
     || "EXPOSANT"
   );
+}
+
+function sftpExhibitorFolderName(company: string, hall: string, aisle: string, standNumber: string) {
+  const location = `${sftpLocationCode(hall)}${sftpLocationCode(aisle)}${sftpLocationCode(standNumber)}`;
+  return [company, location].filter(Boolean).join(" ");
+}
+
+function sftpLocationCode(value: string) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9.]/g, "")
+    .toUpperCase();
 }
 
 function mondaySceneDimensions(item: any, source: any) {
@@ -1470,6 +1484,13 @@ function readColumnTitleAny(item: any, keys: string[]) {
   return item.column_values?.find((column: any) => {
     const candidates = [column.title, column.column?.title];
     return candidates.some((candidate) => normalizedKeys.includes(normalizeColumnLookup(candidate)));
+  })?.text ?? "";
+}
+
+function readStandNumberColumn(item: any) {
+  return item.column_values?.find((column: any) => {
+    const title = normalizeColumnLookup(column.title || column.column?.title || "");
+    return title === "n" || title === "numero" || title === "numero_stand";
   })?.text ?? "";
 }
 
