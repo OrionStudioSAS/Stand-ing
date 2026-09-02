@@ -52,12 +52,12 @@ Deno.serve(async (req) => {
   if (!toEmail) return json({ sent: false, reason: "Scene has no client email" }, 200);
 
   const sceneUrl = `${publicAppUrl.replace(/\/$/, "")}/?scene=${encodeURIComponent(scene.share_token)}`;
-  const clientName = clean(scene.client_name) || clean(scene.source_payload?.exhibitor_name) || "client";
+  const clientName = contactFullName(scene) || clean(scene.client_name) || clean(scene.source_payload?.exhibitor_name) || "client";
   const standName = clean(scene.project_name) || "votre stand";
   const eventName = clean(scene.event_name) || clean(scene.salon) || "Stand-ING";
   const offerName = standOfferLabel(scene);
   const specialRequest = requestedSpecialText || clean(scene.source_payload?.specialRequest?.text);
-  const emailContent = buildEmailContent({ mode, clientName, standName, eventName, sceneUrl, hasPurchaseOrder: Boolean(purchaseOrder), specialRequest });
+  const emailContent = buildEmailContent({ mode, clientName, standName, eventName, offerName, sceneUrl, hasPurchaseOrder: Boolean(purchaseOrder), specialRequest });
 
   const notifyAdmin = mode === 'completed' || mode === 'special_request_completed';
   const payload = {
@@ -114,7 +114,7 @@ function sendResendEmail(resendApiKey: string, payload: Record<string, unknown>)
   });
 }
 
-function buildEmailContent({ mode, clientName, standName, eventName, sceneUrl, hasPurchaseOrder, specialRequest }: { mode: string; clientName: string; standName: string; eventName: string; sceneUrl: string; hasPurchaseOrder: boolean; specialRequest: string }) {
+function buildEmailContent({ mode, clientName, standName, eventName, offerName, sceneUrl, hasPurchaseOrder, specialRequest }: { mode: string; clientName: string; standName: string; eventName: string; offerName: string; sceneUrl: string; hasPurchaseOrder: boolean; specialRequest: string }) {
   if (mode === "special_request_received") {
     return {
       subject: `Demande spécifique reçue pour ${standName}`,
@@ -131,8 +131,8 @@ function buildEmailContent({ mode, clientName, standName, eventName, sceneUrl, h
   }
   return {
     subject: `Configuration ${standName} confirmée`,
-    html: completionEmailHtml({ clientName, standName, eventName, sceneUrl, hasPurchaseOrder }),
-    text: `Bonjour ${clientName},\n\nVotre configuration ${standName} pour ${eventName} a bien été confirmée.\nVous pouvez la consulter ici : ${sceneUrl}${hasPurchaseOrder ? "\n\nVotre bon de commande est joint à cet email." : ""}\n\nL'équipe Stand-ING`,
+    html: completionEmailHtml({ clientName, standName, eventName, offerName, sceneUrl, hasPurchaseOrder }),
+    text: completionEmailText({ clientName, standName, eventName, offerName, sceneUrl, hasPurchaseOrder }),
   };
 }
 
@@ -162,18 +162,57 @@ function specialRequestCompletedEmailHtml({ clientName, standName, eventName, sc
   </div>`;
 }
 
-function completionEmailHtml({ clientName, standName, eventName, sceneUrl, hasPurchaseOrder }: { clientName: string; standName: string; eventName: string; sceneUrl: string; hasPurchaseOrder: boolean }) {
+function completionEmailHtml({ clientName, standName, eventName, offerName, sceneUrl, hasPurchaseOrder }: { clientName: string; standName: string; eventName: string; offerName: string; sceneUrl: string; hasPurchaseOrder: boolean }) {
+  const formula = offerName || "CONFORT";
   return `
   <div style="font-family:Arial,sans-serif;color:#172033;line-height:1.5">
     <h2 style="color:#1f4378;margin:0 0 12px">Votre configuration Stand-ING est confirmée</h2>
     <p>Bonjour ${escapeHtml(clientName)},</p>
-    <p>Votre configuration <strong>${escapeHtml(standName)}</strong> pour <strong>${escapeHtml(eventName)}</strong> a bien été confirmée.</p>
-    ${hasPurchaseOrder ? "<p>Votre bon de commande est joint à cet email.</p>" : ""}
+    <p>La configuration de votre stand <strong>${escapeHtml(standName)}</strong> de votre formule <strong>${escapeHtml(formula)}</strong> est confirmée pour <strong>${escapeHtml(eventName)}</strong>.</p>
+    ${hasPurchaseOrder ? "<p>Vous trouverez votre bon de commande joint à cet email.</p>" : ""}
+    <p><strong>Et maintenant ?</strong> Un membre de notre équipe reviendra vers vous rapidement pour vous guider pour la suite.</p>
     <p>Vous pouvez consulter votre scène à tout moment depuis le lien ci-dessous :</p>
     <p><a href="${sceneUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">Voir ma configuration</a></p>
-    <p style="color:#687386;font-size:13px">L'équipe Stand-ING reviendra vers vous pour les prochaines étapes si nécessaire.</p>
+    <p>Merci et à très vite.</p>
+
+    <hr style="border:0;border-top:1px solid #d7dde8;margin:24px 0" />
+
+    <p>Hello ${escapeHtml(clientName)},</p>
+    <p>The configuration of your stand <strong>${escapeHtml(standName)}</strong> for your <strong>${escapeHtml(formula)}</strong> package is confirmed for <strong>${escapeHtml(eventName)}</strong>.</p>
+    ${hasPurchaseOrder ? "<p>You will find your purchase order attached to this email.</p>" : ""}
+    <p><strong>What happens next?</strong> A member of our team will get back to you shortly to guide you through the next steps.</p>
+    <p>You can view your scene at any time from the link below:</p>
+    <p><a href="${sceneUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">View my configuration</a></p>
+    <p>Thank you and see you soon.</p>
     ${emailSignatureHtml()}
   </div>`;
+}
+
+function completionEmailText({ clientName, standName, eventName, offerName, sceneUrl, hasPurchaseOrder }: { clientName: string; standName: string; eventName: string; offerName: string; sceneUrl: string; hasPurchaseOrder: boolean }) {
+  const formula = offerName || "CONFORT";
+  return `Bonjour ${clientName},
+
+La configuration de votre stand ${standName} de votre formule ${formula} est confirmée pour ${eventName}.
+
+${hasPurchaseOrder ? "Vous trouverez votre bon de commande joint à cet email.\n" : ""}Et maintenant ? Un membre de notre équipe reviendra vers vous rapidement pour vous guider pour la suite.
+Vous pouvez consulter votre scène à tout moment depuis le lien ci-dessous :
+Voir ma configuration - ${sceneUrl}
+
+Merci et à très vite.
+
+____________________________________________________
+
+Hello ${clientName},
+
+The configuration of your stand ${standName} for your ${formula} package is confirmed for ${eventName}.
+
+${hasPurchaseOrder ? "You will find your purchase order attached to this email.\n" : ""}What happens next? A member of our team will get back to you shortly to guide you through the next steps.
+You can view your scene at any time from the link below:
+View my configuration - ${sceneUrl}
+
+Thank you and see you soon.
+
+${emailSignatureText()}`;
 }
 
 function adminNotificationEmailHtml({ clientName, toEmail, standName, eventName, offerName, sceneUrl, mode, hasTechnicalPlan, hasPurchaseOrder }: { clientName: string; toEmail: string; standName: string; eventName: string; offerName: string; sceneUrl: string; mode: string; hasTechnicalPlan: boolean; hasPurchaseOrder: boolean }) {
@@ -205,6 +244,13 @@ function standOfferLabel(scene: any) {
   if (normalized.includes("prestige")) return "PRESTIGE";
   if (normalized.includes("confort")) return "CONFORT";
   return raw;
+}
+
+function contactFullName(scene: any) {
+  const contact = scene?.source_payload?.contactDetails || {};
+  const firstName = clean(contact.firstName || contact.firstname || contact.first_name || scene?.source_payload?.firstName || scene?.source_payload?.first_name);
+  const lastName = clean(contact.lastName || contact.lastname || contact.last_name || scene?.source_payload?.lastName || scene?.source_payload?.last_name).toUpperCase();
+  return clean([firstName, lastName].filter(Boolean).join(" "));
 }
 
 function emailSignatureHtml() {
