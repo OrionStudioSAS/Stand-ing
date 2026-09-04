@@ -1223,6 +1223,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     !sceneHasRendered && !sceneAssetsReady ? 'scene-canvas-loading' : '',
   ].filter(Boolean).join(' ');
   const selected = visibleSceneItems.find((item) => item.id === selectedId);
+  const selectedMovementHardLocked = selected ? itemToolbarMovementHardLocked(selected) : false;
 
   useEffect(() => {
     setSceneHasRendered(false);
@@ -2388,12 +2389,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                     <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), salonLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Pencil size={15} /></button>
                     <button
                       type="button"
-                      className={`toolbar-lock-button ${itemUserLocked(selected) ? 'active' : ''} ${itemAdminMovementLocked(selected) || itemSystemTransformLocked(selected) ? 'admin-locked' : ''}`}
-                      disabled={itemAdminMovementLocked(selected) || itemSystemTransformLocked(selected)}
+                      className={`toolbar-lock-button ${itemUserLocked(selected) ? 'active' : ''} ${selectedMovementHardLocked ? 'admin-locked' : ''}`}
+                      disabled={selectedMovementHardLocked}
                       onClick={toggleSelectedItemLock}
-                      title={tRaw(language, itemAdminMovementLocked(selected) || itemSystemTransformLocked(selected) ? 'toolbar_locked_move' : itemUserLocked(selected) ? 'toolbar_unlock' : 'toolbar_lock')}
+                      title={tRaw(language, selectedMovementHardLocked ? 'toolbar_locked_move' : itemUserLocked(selected) ? 'toolbar_unlock' : 'toolbar_lock')}
                     >
-                      {itemUserLocked(selected) || itemAdminMovementLocked(selected) || itemSystemTransformLocked(selected) ? <Lock size={15} /> : <Unlock size={15} />}
+                      {itemUserLocked(selected) || selectedMovementHardLocked ? <Lock size={15} /> : <Unlock size={15} />}
                     </button>
                     <button type="button" disabled={!canDeleteSceneItem(selected, isAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={15} /></button>
                     {rotationPanelOpen && canRotateSceneItem(selected, isAdminViewer) && (
@@ -13822,7 +13823,7 @@ function canApplyAutomaticReservePatch(item = {}, patch = {}) {
 }
 
 function canDragAutomaticReserveItem(item = {}, canEditLockedItems = false) {
-  return Boolean(item && isBackWallAdjustableReserveItem(item) && canEditLockedItems && !itemUserLocked(item));
+  return Boolean(item && isBackWallAdjustableReserveItem(item) && !itemUserLocked(item));
 }
 
 function isBackWallAdjustableReserveItem(item = {}) {
@@ -13831,6 +13832,11 @@ function isBackWallAdjustableReserveItem(item = {}) {
   const isCenterBack = text.includes('centre') && (text.includes('arriere') || text.includes('fond'));
   const isAllowedSize = /(?:^|\D)(?:2|3)\s*m(?:2|²)?(?:\D|$)/.test(text);
   return Boolean(isCenterBack && isAllowedSize);
+}
+
+function itemToolbarMovementHardLocked(item = {}) {
+  if (isBackWallAdjustableReserveItem(item)) return false;
+  return Boolean(itemAdminMovementLocked(item) || itemSystemTransformLocked(item));
 }
 
 function automaticReserveBackWallCandidate(item = {}, patch = {}, width = 0, depth = 0, layout = 'back') {
