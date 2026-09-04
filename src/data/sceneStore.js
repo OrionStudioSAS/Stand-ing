@@ -1927,7 +1927,7 @@ function defaultMondayMappingForPack() {
 function packDisplayOrder(packName = '') {
   const key = packName.trim().toLowerCase();
   if (key === 'confort') return 10;
-  if (key === 'business') return 20;
+  if (key === 'signature' || key === 'business') return 20;
   if (key === 'siae') return 25;
   if (key === 'prestige') return 30;
   return 99;

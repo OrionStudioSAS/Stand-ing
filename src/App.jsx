@@ -222,7 +222,7 @@ const languages = [
   { id: 'fr', label: 'Français', sublabel: 'Interface en français', short: 'FR', flag: '🇫🇷' },
   { id: 'en', label: 'English', sublabel: 'Interface in English', short: 'EN', flag: '🇬🇧' },
 ];
-const defaultPackNames = ['Confort', 'Business', 'SIAE', 'Prestige'];
+const defaultPackNames = ['Confort', 'Signature', 'SIAE', 'Prestige'];
 const reserveRuleBands = [
   { id: 'small', label: 'Moins de 18 m²', minArea: 0, maxArea: 17.999, includedLabel: 'Aucune réserve incluse' },
   { id: 'medium', label: '18 à 24 m²', minArea: 18, maxArea: 24.999, includedLabel: 'Réserve 2 m²' },

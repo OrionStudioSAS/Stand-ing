@@ -6,7 +6,7 @@ with desired_packs as (
   join lateral (
     values
       ('confort', 'Confort', 10),
-      ('business', 'Business', 20),
+      ('signature', 'Signature', 20),
       ('prestige', 'Prestige', 30)
   ) as pack(slug, name, display_order) on lower(salon.slug) like 'smcl%'
   union all

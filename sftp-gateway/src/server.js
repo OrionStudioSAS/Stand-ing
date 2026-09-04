@@ -418,7 +418,7 @@ function packFolderName(value = '') {
   const text = normalizeForCompare(value);
   if (text.includes('prestige')) return 'PRESTIGE';
   if (text.includes('confort')) return 'CONFORT';
-  if (text.includes('business')) return 'BUSINESS';
+  if (text.includes('signature') || text.includes('business')) return 'SIGNATURE';
   if (text.includes('siae')) return 'SIAE';
   return folderSegment(value || 'PACK');
 }
