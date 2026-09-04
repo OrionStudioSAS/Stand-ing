@@ -775,11 +775,21 @@ function SceneAccessGate({ sceneToken, initialError = '', onVerified }) {
 }
 
 function AdminLogin({ authError = '', mode = 'admin' }) {
-  const [email, setEmail] = useState('');
+  const draftKey = `standing-login-draft:${mode}`;
+  const readDraft = () => {
+    if (typeof window === 'undefined') return {};
+    try {
+      return JSON.parse(window.sessionStorage.getItem(draftKey) || '{}') || {};
+    } catch (_) {
+      return {};
+    }
+  };
+  const initialDraft = readDraft();
+  const [email, setEmail] = useState(initialDraft.email || '');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
-  const [configLink, setConfigLink] = useState('');
-  const [showConfigLink, setShowConfigLink] = useState(false);
+  const [configLink, setConfigLink] = useState(initialDraft.configLink || '');
+  const [showConfigLink, setShowConfigLink] = useState(Boolean(initialDraft.showConfigLink));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(authError);
 
@@ -787,6 +797,12 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
   useEffect(() => {
     if (!supabase) setError('Supabase non configuré : vérifie VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY.');
   }, []);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.sessionStorage.setItem(draftKey, JSON.stringify({ email, configLink, showConfigLink }));
+    } catch (_) {}
+  }, [draftKey, email, configLink, showConfigLink]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -804,6 +820,7 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
         return;
       }
 
+      window.sessionStorage.removeItem(draftKey);
       window.location.href = '/admin';
     } catch (error) {
       setError(error.message || 'Connexion admin impossible.');
