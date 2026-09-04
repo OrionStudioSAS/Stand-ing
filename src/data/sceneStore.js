@@ -1040,6 +1040,60 @@ export async function deleteStandPreset(preset) {
   return true;
 }
 
+export async function deleteSalonOffer(salon, offer) {
+  if (!offer?.id && !offer?.name) throw new Error('Pack introuvable.');
+  if (!supabase) return true;
+
+  const normalizedOfferName = normalizeKey(offer.name);
+  const linkedScenes = (salon?.scenes || []).filter((scene) => (
+    (offer.id && scene.offer_id === offer.id)
+    || (normalizedOfferName && normalizeKey(scene.offer || scene.pack || scene.formula) === normalizedOfferName)
+  ));
+  if (linkedScenes.length) {
+    throw new Error(`Ce pack est lié à ${linkedScenes.length} scène(s). Supprime ou réaffecte ces scènes avant de supprimer le pack.`);
+  }
+
+  if (offer.id) {
+    const { error: sourceError } = await supabase
+      .from('monday_sources')
+      .delete()
+      .eq('offer_id', offer.id);
+    if (sourceError) throw sourceError;
+
+    const { error } = await supabase.from('salon_offers').delete().eq('id', offer.id);
+    if (error) throw error;
+    return true;
+  }
+
+  const { error: sourceError } = await supabase
+    .from('monday_sources')
+    .delete()
+    .eq('salon_id', salon.id)
+    .eq('offer', offer.name);
+  if (sourceError) throw sourceError;
+  return true;
+}
+
+export async function deleteSalon(salon) {
+  if (!salon?.id) throw new Error('Salon introuvable.');
+  if (!supabase) return true;
+
+  const linkedSceneCount = Number(salon.scenes?.length || 0);
+  if (linkedSceneCount) {
+    throw new Error(`Ce salon contient ${linkedSceneCount} scène(s). Supprime ou réaffecte ces scènes avant de supprimer le salon.`);
+  }
+
+  const { error: sourceError } = await supabase
+    .from('monday_sources')
+    .delete()
+    .eq('salon_id', salon.id);
+  if (sourceError) throw sourceError;
+
+  const { error } = await supabase.from('salons').delete().eq('id', salon.id);
+  if (error) throw error;
+  return true;
+}
+
 export async function saveStandPresetConfig(preset, scene) {
   if (!supabase) return { ...preset, ...scene };
   const defaultColorOptions = scene.defaultColorOptions || scene.options?.defaultColorOptions || preset.base_config?.defaultColorOptions || {};

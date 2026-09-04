@@ -4352,6 +4352,15 @@ select {
   background: #eef4ff;
 }
 
+.salon-card-side button.danger,
+.admin-salon-overview-card.upcoming .salon-card-side button.danger,
+.admin-salon-overview-card.draft .salon-card-side button.danger,
+.admin-salon-overview-card.archived .salon-card-side button.danger {
+  color: #d92b32;
+  border: 1px solid #ffc8cc;
+  background: #fff0f1;
+}
+
 .salon-card-preview {
   width: 76px;
   height: 116px;
