@@ -48,7 +48,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deleteSceneAndRemote, deleteStandPreset, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deleteSceneAndRemote, deleteStandPreset, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { createTechnicalPlanBlob, exportTechnicalPng } from './technicalExport.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
@@ -7476,6 +7476,7 @@ function AdminDashboard({ user, adminProfile }) {
   const [salons, setSalons] = useState([]);
   const [salonFilterChoices, setSalonFilterChoices] = useState([]);
   const [assets, setAssets] = useState([]);
+  const [presetSalonId, setPresetSalonId] = useState('');
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [assetCategory, setAssetCategory] = useState('Tout');
   const [filters, setFilters] = useState({ search: '', salon: '', status: '' });
@@ -7519,6 +7520,13 @@ function AdminDashboard({ user, adminProfile }) {
 
   const refreshSalons = () => {
     return listSalons({ search: filters.search }).then(setSalons).catch((error) => console.error('Salon list failed', error));
+  };
+
+  const createAdminSalon = async (draft) => {
+    const salon = await createSalon(draft);
+    await refreshSalons();
+    setPresetSalonId(salon.id);
+    return salon;
   };
 
   const runMondaySync = async () => {
@@ -7743,9 +7751,14 @@ function AdminDashboard({ user, adminProfile }) {
           {tab === 'salons' && (
             <AdminSalonsView
               salons={salons}
+              onCreateSalon={createAdminSalon}
               onOpenSalon={(salon) => {
                 updateFilter('salon', salon.name);
                 setTab('clients');
+              }}
+              onOpenPacks={(salon) => {
+                if (salon?.id) setPresetSalonId(salon.id);
+                setTab('presets');
               }}
             />
           )}
@@ -7753,6 +7766,7 @@ function AdminDashboard({ user, adminProfile }) {
             <AdminPresetsView
               salons={salons}
               assets={assets}
+              initialSalonId={presetSalonId}
               onSalonChanged={refreshSalons}
             />
           )}
@@ -8033,9 +8047,26 @@ function AdminSalonRow({ title, detail, status, muted }) {
   );
 }
 
-function AdminSalonsView({ salons, onOpenSalon }) {
+function AdminSalonsView({ salons, onCreateSalon, onOpenSalon, onOpenPacks }) {
   const [statusFilter, setStatusFilter] = useState('');
+  const [creatorOpen, setCreatorOpen] = useState(false);
+  const [draft, setDraft] = useState(() => ({ name: '', year: new Date().getFullYear(), location: '', status: 'draft' }));
+  const [creatorState, setCreatorState] = useState({ loading: false, message: '', error: '' });
   const filteredSalons = salons.filter((salon) => !statusFilter || salon.status === statusFilter);
+
+  const submitSalon = async (event) => {
+    event.preventDefault();
+    setCreatorState({ loading: true, message: '', error: '' });
+    try {
+      const salon = await onCreateSalon?.(draft);
+      setCreatorState({ loading: false, message: `${salon?.name || draft.name} créé. Tu peux maintenant ajouter ses packs.`, error: '' });
+      setDraft({ name: '', year: new Date().getFullYear(), location: '', status: 'draft' });
+      setCreatorOpen(false);
+      onOpenPacks?.(salon || draft);
+    } catch (error) {
+      setCreatorState({ loading: false, message: '', error: error.message || 'Impossible de créer ce salon.' });
+    }
+  };
 
   return (
     <section className="admin-salons-view">
@@ -8047,7 +8078,39 @@ function AdminSalonsView({ salons, onOpenSalon }) {
           <option value="draft">À définir</option>
           <option value="archived">Archivés</option>
         </select>
+        <button type="button" className="admin-create-button" onClick={() => setCreatorOpen((open) => !open)}>
+          {creatorOpen ? 'Fermer' : 'Créer un salon'}
+        </button>
       </div>
+
+      {creatorOpen && (
+        <form className="admin-salon-create-card" onSubmit={submitSalon}>
+          <label>
+            Nom du salon
+            <input value={draft.name} placeholder="Ex : SMCL 2027" onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} />
+          </label>
+          <label>
+            Année
+            <input type="number" min="2024" max="2100" value={draft.year} onChange={(event) => setDraft((current) => ({ ...current, year: event.target.value }))} />
+          </label>
+          <label>
+            Lieu
+            <input value={draft.location} placeholder="Lieu à définir" onChange={(event) => setDraft((current) => ({ ...current, location: event.target.value }))} />
+          </label>
+          <label>
+            Statut
+            <select value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}>
+              <option value="draft">À définir</option>
+              <option value="upcoming">À venir</option>
+              <option value="active">Actif</option>
+              <option value="archived">Archivé</option>
+            </select>
+          </label>
+          <button type="submit" disabled={creatorState.loading}>{creatorState.loading ? 'Création...' : 'Créer le salon'}</button>
+        </form>
+      )}
+      {creatorState.message && <div className="preset-library-feedback success">{creatorState.message}</div>}
+      {creatorState.error && <div className="preset-library-feedback error">{creatorState.error}</div>}
 
       <div className="admin-salon-card-grid">
         {filteredSalons.length ? filteredSalons.map((salon) => (
@@ -8072,7 +8135,8 @@ function AdminSalonsView({ salons, onOpenSalon }) {
               </div>
 
               <div className="salon-card-side">
-                <button type="button" onClick={() => onOpenSalon?.(salon)}>Ouvrir</button>
+                <button type="button" onClick={() => onOpenSalon?.(salon)}>Voir exposants</button>
+                <button type="button" className="secondary" onClick={() => onOpenPacks?.(salon)}>Packs</button>
                 <SalonPreview salon={salon} />
               </div>
             </div>
@@ -8102,20 +8166,22 @@ function SalonPackStats({ salon }) {
   );
 }
 
-function AdminPresetsView({ salons, assets, onSalonChanged }) {
-  const [selectedSalonId, setSelectedSalonId] = useState(salons[0]?.id || '');
+function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
+  const [selectedSalonId, setSelectedSalonId] = useState(initialSalonId || salons[0]?.id || '');
   const [editing, setEditing] = useState(null);
   const [basePackEditor, setBasePackEditor] = useState(null);
   const [boardEditor, setBoardEditor] = useState(null);
+  const [newPackName, setNewPackName] = useState('');
   const [actionState, setActionState] = useState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
   const selectedSalon = salons.find((salon) => salon.id === selectedSalonId) || salons[0] || null;
 
   useEffect(() => {
+    if (initialSalonId && initialSalonId !== selectedSalonId && salons.some((salon) => salon.id === initialSalonId)) setSelectedSalonId(initialSalonId);
     if (!selectedSalonId && salons[0]?.id) setSelectedSalonId(salons[0].id);
     if (selectedSalonId && salons.length && !salons.some((salon) => salon.id === selectedSalonId)) {
       setSelectedSalonId(salons[0].id);
     }
-  }, [salons, selectedSalonId]);
+  }, [salons, selectedSalonId, initialSalonId]);
 
   const packCards = selectedSalon ? salonPackCards(selectedSalon) : [];
 
@@ -8206,6 +8272,21 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
     }
   };
 
+  const createPack = async (event) => {
+    event.preventDefault();
+    const packName = newPackName.trim();
+    if (!selectedSalon || !packName) return;
+    setActionState({ loadingPack: packName, savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
+    try {
+      await ensureSalonOffer(selectedSalon, packName);
+      setNewPackName('');
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Pack ${packName} créé pour ${selectedSalon.name}.`, error: '' });
+      await onSalonChanged?.();
+    } catch (error) {
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible de créer ce pack.' });
+    }
+  };
+
   const removePreset = async (entry) => {
     if (!entry.preset) return;
     const confirmed = window.confirm(`Retirer le pack ${entry.packName} de ${selectedSalon?.name || 'ce salon'} ? Le board Monday restera configuré.`);
@@ -8233,6 +8314,12 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
             </button>
           ))}
         </div>
+        <form className="preset-create-pack-form" onSubmit={createPack}>
+          <input value={newPackName} placeholder="Nom du pack" onChange={(event) => setNewPackName(event.target.value)} />
+          <button type="submit" disabled={!selectedSalon || !newPackName.trim() || actionState.loadingPack === newPackName.trim()}>
+            {actionState.loadingPack === newPackName.trim() ? 'Création...' : 'Créer un pack'}
+          </button>
+        </form>
       </header>
 
       {actionState.message && <div className="preset-library-feedback success">{actionState.message}</div>}
@@ -8329,7 +8416,13 @@ function AdminPresetsView({ salons, assets, onSalonChanged }) {
 }
 
 function salonPackCards(salon) {
-  return defaultPackNames.map((packName) => {
+  const packNames = uniqueByNormalized([
+    ...defaultPackNames,
+    ...(salon.offers || []).map((offer) => offer.name),
+    ...(salon.monday_sources || []).map((source) => source.offer),
+  ].filter(Boolean)).sort(packNameSort);
+
+  return packNames.map((packName) => {
     const offer = (salon.offers || []).find((item) => normalizeTextValue(item.name) === normalizeTextValue(packName)) || null;
     const presets = offer?.presets?.length ? offer.presets : (salon.presets || []).filter((item) => item.offer_id === offer?.id);
     const preset = presets.find((item) => item.layout === 'u') || presets[0] || null;
@@ -8344,6 +8437,29 @@ function salonPackCards(salon) {
       packName,
       active: Boolean(offer && presets.length),
     };
+  });
+}
+
+function packNameSort(a, b) {
+  const order = (value) => {
+    const key = normalizeTextValue(value);
+    if (key === 'confort') return 10;
+    if (key === 'signature' || key === 'business') return 20;
+    if (key === 'siae') return 25;
+    if (key === 'prestige') return 30;
+    return 100;
+  };
+  const delta = order(a) - order(b);
+  return delta || String(a).localeCompare(String(b), 'fr');
+}
+
+function uniqueByNormalized(values = []) {
+  const seen = new Set();
+  return values.filter((value) => {
+    const key = normalizeTextValue(value);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 }
 

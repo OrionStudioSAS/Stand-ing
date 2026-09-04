@@ -820,6 +820,45 @@ export async function listClients(filters = {}) {
   return filterClients((data || []).map(dbClientToClient), filters);
 }
 
+export async function createSalon(details = {}) {
+  const name = String(details.name || '').trim();
+  if (!name) throw new Error('Ajoute un nom de salon.');
+  const year = Number.parseInt(details.year, 10) || Number(String(name).match(/\b(20\d{2})\b/)?.[1]) || new Date().getFullYear();
+  const slugBase = /\b20\d{2}\b/.test(name) ? name : `${name} ${year}`;
+  const slug = slugifyAsset(slugBase);
+  const allowedStatuses = new Set(['active', 'upcoming', 'draft', 'archived']);
+  const status = allowedStatuses.has(details.status) ? details.status : 'draft';
+  const payload = {
+    slug,
+    name,
+    year,
+    status,
+    location: String(details.location || '').trim() || null,
+    metadata: details.metadata || {},
+    updated_at: new Date().toISOString(),
+  };
+
+  if (!supabase) {
+    return {
+      ...payload,
+      id: slug,
+      offers: [],
+      presets: [],
+      monday_sources: [],
+      scenes: [],
+    };
+  }
+
+  const { data, error } = await supabase
+    .from('salons')
+    .upsert(payload, { onConflict: 'slug' })
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return dbSalonToSalon(data, [], [], [], []);
+}
+
 export async function listSalons(filters = {}) {
   if (!supabase) {
     return filterSalons(groupLocalSalons(readLocalScenes()), filters);

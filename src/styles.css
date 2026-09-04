@@ -4140,6 +4140,13 @@ select {
   gap: 28px;
 }
 
+.admin-salons-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
 .admin-salons-toolbar select {
   min-width: 128px;
   min-height: 36px;
@@ -4149,6 +4156,51 @@ select {
   color: #2d333d;
   background: #fff;
   font-weight: 700;
+}
+
+.admin-create-button,
+.admin-salon-create-card button,
+.preset-create-pack-form button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 16px;
+  color: #fff;
+  background: #1f4378;
+  font-weight: 900;
+}
+
+.admin-salon-create-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(110px, 0.6fr) minmax(180px, 1fr) minmax(140px, 0.8fr) auto;
+  align-items: end;
+  gap: 12px;
+  border: 1px solid #e1e6ef;
+  border-radius: 12px;
+  padding: 16px;
+  background: #fff;
+  box-shadow: 0 3px 13px rgba(22, 28, 38, 0.07);
+}
+
+.admin-salon-create-card label,
+.preset-create-pack-form {
+  display: grid;
+  gap: 6px;
+  color: #697280;
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.admin-salon-create-card input,
+.admin-salon-create-card select,
+.preset-create-pack-form input {
+  min-height: 38px;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #2c333d;
+  background: #fff;
+  font: inherit;
 }
 
 .admin-salon-card-grid {
@@ -4261,10 +4313,10 @@ select {
 }
 
 .salon-card-side {
-  display: grid;
-  grid-template-columns: auto auto;
-  align-items: start;
-  gap: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
 }
 
 .salon-card-side button {
@@ -4277,6 +4329,12 @@ select {
   font-weight: 900;
 }
 
+.salon-card-side button.secondary {
+  color: #1f4378;
+  border: 1px solid #cbd6e8;
+  background: #eef4ff;
+}
+
 .admin-salon-overview-card.upcoming .salon-card-side button {
   background: #7d3f98;
 }
@@ -4284,6 +4342,14 @@ select {
 .admin-salon-overview-card.draft .salon-card-side button,
 .admin-salon-overview-card.archived .salon-card-side button {
   background: #9aa1aa;
+}
+
+.admin-salon-overview-card.upcoming .salon-card-side button.secondary,
+.admin-salon-overview-card.draft .salon-card-side button.secondary,
+.admin-salon-overview-card.archived .salon-card-side button.secondary {
+  color: #1f4378;
+  border: 1px solid #cbd6e8;
+  background: #eef4ff;
 }
 
 .salon-card-preview {
@@ -4358,8 +4424,14 @@ select {
 .presets-toolbar {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 20px;
+}
+
+.preset-create-pack-form {
+  grid-template-columns: minmax(180px, 260px) auto;
+  align-items: center;
 }
 
 .preset-salon-tabs {
@@ -5487,6 +5559,7 @@ select {
 
   .admin-bottom-grid,
   .admin-bat-row,
+  .admin-salon-create-card,
   .admin-salon-card-grid,
   .preset-library-grid,
   .preset-editor-grid,
