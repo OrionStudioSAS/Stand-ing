@@ -608,7 +608,7 @@ function isRasterImageFile(file) {
   const name = String(file?.name || '').toLowerCase();
   const type = String(file?.type || '').toLowerCase();
   if (/\.(pdf|psd)$/i.test(name)) return false;
-  return type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp)$/i.test(name);
+  return type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(name);
 }
 
 async function makeScenePlaceholderPreview(file) {
@@ -638,7 +638,7 @@ async function makeScenePlaceholderPreview(file) {
 }
 
 async function imageBitmapFromFile(file) {
-  if (typeof createImageBitmap === 'function') return createImageBitmap(file);
+  if (typeof createImageBitmap === 'function' && !isSvgFile(file)) return createImageBitmap(file);
   const dataUrl = await fileToDataUrl(file);
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -1376,7 +1376,7 @@ export async function uploadObjectAssetFolder(files, profileImageFile = null) {
 
   const { data: modelPublic } = bucket.getPublicUrl(modelPath);
   const { data: materialPublic } = materialPath ? bucket.getPublicUrl(materialPath) : { data: null };
-  const textureCount = fileList.filter((file) => /\.(jpe?g|png|webp|gif|bmp|tga|tiff?)$/i.test(file.name)).length;
+  const textureCount = fileList.filter((file) => /\.(jpe?g|png|webp|gif|bmp|tga|tiff?|svg)$/i.test(file.name)).length;
   const thumbnailFile = profileImageFile || findProfileImageFile(fileList);
   const thumbnail = thumbnailFile ? await uploadObjectAssetThumbnailFile(assetType, thumbnailFile, bucket) : null;
 
@@ -1409,7 +1409,7 @@ export async function uploadObjectAssetFolder(files, profileImageFile = null) {
 export async function uploadObjectAssetThumbnail(asset, file) {
   if (!supabase) throw new Error('Supabase non configure.');
   if (!asset?.type) throw new Error('Objet introuvable.');
-  if (!file || !isProfileImageFile(file)) throw new Error('Selectionne une image JPG, PNG ou WebP.');
+  if (!file || !isProfileImageFile(file)) throw new Error('Selectionne une image JPG, PNG, WebP ou SVG.');
 
   const bucket = supabase.storage.from('object-assets');
   const thumbnail = await uploadObjectAssetThumbnailFile(asset.type, file, bucket);
@@ -1435,7 +1435,7 @@ export async function uploadObjectAssetThumbnail(asset, file) {
 export async function uploadObjectAssetBatPicto(asset, file) {
   if (!supabase) throw new Error('Supabase non configure.');
   if (!asset?.type) throw new Error('Objet introuvable.');
-  if (!file || !isProfileImageFile(file)) throw new Error('Selectionne une image JPG, PNG ou WebP.');
+  if (!file || !isProfileImageFile(file)) throw new Error('Selectionne une image JPG, PNG, WebP ou SVG.');
 
   const bucket = supabase.storage.from('object-assets');
   const extension = file.name.toLowerCase().match(/\.([a-z0-9]{2,5})$/)?.[1] || 'jpg';
@@ -1466,7 +1466,7 @@ export async function uploadObjectAssetBatPicto(asset, file) {
 export async function uploadColorGroupFolder(files) {
   if (!supabase) throw new Error('Supabase non configure.');
   const fileList = Array.from(files || []).filter((file) => isProfileImageFile(file));
-  if (!fileList.length) throw new Error('Selectionne un dossier contenant des images JPG, PNG ou WebP.');
+  if (!fileList.length) throw new Error('Selectionne un dossier contenant des images JPG, PNG, WebP ou SVG.');
 
   const rootFolder = getUploadRootFolder(fileList) || 'Groupe couleurs';
   const assetType = `color-group-${slugifyAsset(rootFolder)}-${Date.now().toString(36)}`;
@@ -1559,7 +1559,13 @@ function findProfileImageFile(files) {
 }
 
 function isProfileImageFile(file) {
-  return /\.(jpe?g|png|webp)$/i.test(file?.name || '');
+  return /\.(jpe?g|png|webp|svg)$/i.test(file?.name || '') || String(file?.type || '').toLowerCase() === 'image/svg+xml';
+}
+
+function isSvgFile(file) {
+  const name = String(file?.name || '').toLowerCase();
+  const type = String(file?.type || '').toLowerCase();
+  return type === 'image/svg+xml' || /\.svg$/i.test(name);
 }
 
 function getUploadRootFolder(files) {
@@ -1847,6 +1853,7 @@ function guessContentType(file) {
     png: 'image/png',
     webp: 'image/webp',
     gif: 'image/gif',
+    svg: 'image/svg+xml',
     bmp: 'image/bmp',
     tga: 'image/x-tga',
     tif: 'image/tiff',

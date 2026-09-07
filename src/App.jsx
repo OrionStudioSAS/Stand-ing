@@ -53,7 +53,7 @@ import { createTechnicalPlanBlob, exportTechnicalPng } from './technicalExport.j
 import { t as tRaw } from './i18n.js';
 import './styles.css';
 
-const visualUploadAccept = 'image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf,.psd,image/vnd.adobe.photoshop';
+const visualUploadAccept = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf,.svg,.pdf,.psd,image/vnd.adobe.photoshop';
 const LanguageContext = createContext('fr');
 function useT() {
   const lang = useContext(LanguageContext);
@@ -3030,7 +3030,7 @@ function QuestionModal({ salonLabel, form, state = {}, onFormChange, onClose, on
           <span>{t('question_drag')}</span>
           <strong>{t('question_browse')}</strong>
           <small>{t('question_file_types')}</small>
-          <input type="file" />
+          <input type="file" accept={visualUploadAccept} />
         </label>
 
         <div className="question-note">{t('question_note')}</div>
@@ -9747,7 +9747,7 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
           <small>Le dossier doit contenir l'OBJ, son .MTL et les textures. Les chemins relatifs sont conservés.</small>
           <input
             type="file"
-            accept=".obj,.mtl,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tga,.tif,.tiff"
+            accept=".obj,.mtl,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tga,.tif,.tiff,.svg,image/svg+xml"
             multiple
             webkitdirectory=""
             directory=""
@@ -9786,7 +9786,7 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
           Importer un groupe de couleurs
           <input
             type="file"
-            accept="image/jpeg,image/png,image/webp"
+            accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg"
             multiple
             webkitdirectory=""
             directory=""
@@ -10359,7 +10359,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
           </span>
           <input
             type="file"
-            accept="image/jpeg,image/png,image/webp"
+            accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg"
             disabled={thumbnailUploading}
             onChange={(event) => {
               changeThumbnail(event.target.files?.[0] || null);
@@ -10379,7 +10379,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
           </span>
           <input
             type="file"
-            accept="image/jpeg,image/png,image/webp"
+            accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg"
             disabled={batPictoUploading}
             onChange={(event) => {
               changeBatPicto(event.target.files?.[0] || null);
@@ -17446,7 +17446,7 @@ function resolveMtlTextureValueUrl(value, baseUrl, item) {
 function mtlTexturePathFromValue(value = '') {
   const raw = String(value || '').trim();
   if (!raw) return '';
-  const matches = [...raw.replaceAll('\\', '/').matchAll(/([^"'\s]+?\.(?:jpe?g|png|webp|gif|bmp|tga|tiff?))(?:\?.*)?/gi)];
+  const matches = [...raw.replaceAll('\\', '/').matchAll(/([^"'\s]+?\.(?:jpe?g|png|webp|gif|bmp|tga|tiff?|svg))(?:\?.*)?/gi)];
   return matches[matches.length - 1]?.[1] || '';
 }
 
@@ -18356,7 +18356,7 @@ function textureReferenceMatches(reference = '', candidateFileName = '', candida
 
 function textureFileNameFromReference(value = '') {
   const cleanValue = safeDecodeUri(String(value || '').split('?')[0]).replaceAll('\\', '/');
-  const matches = [...cleanValue.matchAll(/([^/"'\s]+?\.(?:jpe?g|png|webp|gif|bmp|tga|tiff?))/gi)];
+  const matches = [...cleanValue.matchAll(/([^/"'\s]+?\.(?:jpe?g|png|webp|gif|bmp|tga|tiff?|svg))/gi)];
   const match = matches[matches.length - 1]?.[1] || cleanValue.split('/').pop() || '';
   return safeDecodeUri(String(match).replaceAll('\\', '/').split('/').pop() || '');
 }
@@ -18468,7 +18468,7 @@ function modelSiblingFolder(url = '') {
 }
 
 function isTextureResource(url = '') {
-  return /\.(jpe?g|png|webp|gif|bmp|tga|tiff?)(\?.*)?$/i.test(url);
+  return /\.(jpe?g|png|webp|gif|bmp|tga|tiff?|svg)(\?.*)?$/i.test(url);
 }
 
 function centerModel(model, item = null) {
