@@ -27,8 +27,8 @@ const reinforcementWidth = 1;
 const wallThicknessMeters = 0.06;
 const carpetFootprintOverflow = 0.2;
 
-export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog }) {
-  const technicalItems = applyWallItemMetrics(flattenTechnicalItems(items, catalog), width, depth, catalog);
+export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems: providedTechnicalItems = null, pictoImages = new Map() }) {
+  const technicalItems = providedTechnicalItems || technicalItemsForPlan(items, width, depth, catalog);
   sheet.height = Math.max(1240, 1080 + technicalItems.length * 34);
   const canvas = document.createElement('canvas');
   canvas.width = sheet.width;
@@ -39,19 +39,73 @@ export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   drawFrame(ctx);
   drawSidebar(ctx, width, depth, fixedWallHeight, layout, technicalItems);
-  drawPlan(ctx, width, depth, layout, technicalItems, catalog);
+  drawPlan(ctx, width, depth, layout, technicalItems, catalog, pictoImages);
   drawItemTable(ctx, technicalItems, catalog, width, depth);
   return canvas;
 }
 
 export async function createTechnicalPlanBlob({ width, depth, layout, items, catalog }) {
-  const canvas = renderTechnicalPlanCanvas({ width, depth, layout, items, catalog });
+  const technicalItems = technicalItemsForPlan(items, width, depth, catalog);
+  const pictoImages = await loadTechnicalPictoImages(technicalItems, catalog);
+  const canvas = renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems, pictoImages });
   return canvasToBlob(canvas, 'image/png');
 }
 
-export function exportTechnicalPng({ width, depth, layout, items, catalog }) {
-  const canvas = renderTechnicalPlanCanvas({ width, depth, layout, items, catalog });
+export async function exportTechnicalPng({ width, depth, layout, items, catalog }) {
+  const technicalItems = technicalItemsForPlan(items, width, depth, catalog);
+  const pictoImages = await loadTechnicalPictoImages(technicalItems, catalog);
+  const canvas = renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems, pictoImages });
   downloadCanvas(canvas, `standing-plan-technique-${width}x${depth}m.png`);
+}
+
+function technicalItemsForPlan(items, width, depth, catalog) {
+  return applyWallItemMetrics(flattenTechnicalItems(items, catalog), width, depth, catalog);
+}
+
+async function loadTechnicalPictoImages(items = [], catalog = []) {
+  const urls = new Set();
+  (items || []).forEach((item) => {
+    const entry = catalog.find((candidate) => candidate.type === item.type);
+    const url = technicalSvgPictoUrl(item, entry);
+    if (url) urls.add(url);
+  });
+  const loaded = await Promise.all([...urls].map(async (url) => [url, await loadCanvasImage(url)]));
+  return new Map(loaded.filter(([, image]) => image));
+}
+
+function technicalPictoImageForItem(item, entry, pictoImages) {
+  const url = technicalSvgPictoUrl(item, entry);
+  return url ? pictoImages.get(url) || null : null;
+}
+
+function technicalSvgPictoUrl(item = {}, entry = {}) {
+  const url = item.dimensions?.batPictoUrl || entry?.dimensions?.batPictoUrl || '';
+  const path = item.dimensions?.batPictoPath || entry?.dimensions?.batPictoPath || url;
+  if (!url || !/\.svg(?:$|[?#])/i.test(path)) return '';
+  return url;
+}
+
+async function loadCanvasImage(url) {
+  try {
+    const response = await fetch(url, { mode: 'cors' });
+    if (response.ok) {
+      const objectUrl = URL.createObjectURL(await response.blob());
+      return await loadImageElement(objectUrl);
+    }
+  } catch {
+    // Fallback to direct image loading below when the storage URL is already canvas-safe.
+  }
+  return loadImageElement(url);
+}
+
+function loadImageElement(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
 }
 
 function drawFrame(ctx) {
@@ -118,7 +172,7 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   drawText(ctx, 'Generateur : StandING configurateur 3D', x + 12, footerY + 64, 15);
 }
 
-function drawPlan(ctx, width, depth, layout, items, catalog) {
+function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map()) {
   const bounds = { x: sheet.left + 58, y: 130, w: 1260, h: 760 };
   const scale = Math.min(bounds.w / (width + 1.1), bounds.h / (depth + 1.1));
   const planW = width * scale;
@@ -155,17 +209,18 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
     const center = { x: toX(item.x), y: toY(item.z) };
     const color = item.color || entry?.color || '#cccccc';
     const label = `${index + 1}`;
+    const pictoImage = technicalPictoImageForItem(item, entry, pictoImages);
 
     if (isWallItem(item)) {
-      drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, item.label || entry?.label);
+      drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, item.label || entry?.label, pictoImage);
       return;
     }
 
     if (item.ceilingMounted || item.dimensions?.ceilingMounted) {
-      const solidW = 0.6 * scale;
-      const solidH = Math.max(0.6, dims.depth) * scale;
+      const solidW = Math.max(0.32, dims.width || 0.6) * scale;
+      const solidH = Math.max(0.18, dims.depth || 0.3) * scale;
       ctx.save();
-      ctx.fillStyle = item.color || entry?.color || '#c8c0d8';
+      ctx.fillStyle = '#ffffff';
       ctx.strokeStyle = technicalColors.ink;
       ctx.lineWidth = 2;
       ctx.setLineDash([5, 3]);
@@ -173,11 +228,13 @@ function drawPlan(ctx, width, depth, layout, items, catalog) {
       ctx.strokeRect(center.x - solidW / 2, center.y - solidH / 2, solidW, solidH);
       ctx.setLineDash([]);
       ctx.restore();
+      if (pictoImage) drawContainedImage(ctx, pictoImage, center.x - solidW / 2 + 4, center.y - solidH / 2 + 4, solidW - 8, solidH - 8);
       drawBadge(ctx, center.x, center.y, label);
       return;
     }
 
-    drawRotatedObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, color, label);
+    if (pictoImage) drawRotatedPictoObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, pictoImage, label);
+    else drawRotatedObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, color, label);
     drawObjectDimensions(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, dims, item.rotation || 0);
   });
 
@@ -486,13 +543,37 @@ function drawRotatedObject(ctx, x, y, w, h, rotation, color, label) {
   drawBadge(ctx, x, y, label);
 }
 
+function drawRotatedPictoObject(ctx, x, y, w, h, rotation, image, label) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = technicalColors.ink;
+  ctx.lineWidth = 2;
+  ctx.fillRect(-w / 2, -h / 2, w, h);
+  ctx.strokeRect(-w / 2, -h / 2, w, h);
+  drawContainedImage(ctx, image, -w / 2 + 5, -h / 2 + 5, w - 10, h - 10);
+  ctx.restore();
+  drawBadge(ctx, x, y, label);
+}
+
+function drawContainedImage(ctx, image, x, y, w, h) {
+  if (!image || w <= 1 || h <= 1) return;
+  const imageW = image.naturalWidth || image.width || 1;
+  const imageH = image.naturalHeight || image.height || 1;
+  const scale = Math.min(w / imageW, h / imageH);
+  const drawW = imageW * scale;
+  const drawH = imageH * scale;
+  ctx.drawImage(image, x + (w - drawW) / 2, y + (h - drawH) / 2, drawW, drawH);
+}
+
 function drawObjectDimensions(ctx, x, y, w, h, dims, rotation) {
   if (Math.abs(rotation) > 1 || w < 34 || h < 26) return;
   drawDimension(ctx, x - w / 2, y - h / 2 - 18, x + w / 2, y - h / 2 - 18, mm(dims.width), 'horizontal', technicalColors.red, 12);
   drawDimension(ctx, x + w / 2 + 18, y - h / 2, x + w / 2 + 18, y + h / 2, mm(dims.depth), 'vertical', technicalColors.red, 12);
 }
 
-function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, defaultLabel) {
+function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, defaultLabel, pictoImage = null) {
   const isCustomWallModel = Boolean(item.modelUrl) && !['screen', 'poster'].includes(item.type);
   const itemWidth = (item.type === 'poster' ? Number(item.posterWidth || 1) : isCustomWallModel ? dims.width : 0.95) * scale;
   const itemDepth = (item.type === 'poster' ? 0.04 : isCustomWallModel ? Math.max(0.04, dims.depth) : 0.08) * scale;
@@ -506,6 +587,7 @@ function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY
     const y = toY(-depth / 2) + wallThickness + 4;
     ctx.fillRect(x, y, itemWidth, itemDepth);
     ctx.strokeRect(x, y, itemWidth, itemDepth);
+    if (pictoImage) drawContainedImage(ctx, pictoImage, x + 2, y + 2, itemWidth - 4, itemDepth - 4);
     drawText(ctx, wallLabelText, x + itemWidth / 2, y + itemDepth + 42, 15, '#22364d', 'bold', 'center');
     drawBadge(ctx, x + itemWidth / 2, y + itemDepth + 22, label);
     return;
@@ -515,6 +597,7 @@ function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY
   const y = toY(item.x) - itemWidth / 2;
   ctx.fillRect(x, y, itemDepth, itemWidth);
   ctx.strokeRect(x, y, itemDepth, itemWidth);
+  if (pictoImage) drawContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4);
   drawSideTvLabel(ctx, wallLabelText, item.wall, x, y + itemWidth / 2, itemDepth);
   drawBadge(ctx, x + itemDepth + 22, y + itemWidth / 2, label);
 }
