@@ -219,17 +219,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     if (item.ceilingMounted || item.dimensions?.ceilingMounted) {
       const solidW = Math.max(0.32, dims.width || 0.6) * scale;
       const solidH = Math.max(0.18, dims.depth || 0.3) * scale;
-      ctx.save();
-      ctx.fillStyle = '#ffffff';
-      ctx.strokeStyle = technicalColors.ink;
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 3]);
-      ctx.fillRect(center.x - solidW / 2, center.y - solidH / 2, solidW, solidH);
-      ctx.strokeRect(center.x - solidW / 2, center.y - solidH / 2, solidW, solidH);
-      ctx.setLineDash([]);
-      ctx.restore();
-      if (pictoImage) drawContainedImage(ctx, pictoImage, center.x - solidW / 2 + 4, center.y - solidH / 2 + 4, solidW - 8, solidH - 8);
-      drawBadge(ctx, center.x, center.y, label);
+      drawCeilingObject(ctx, center.x, center.y, solidW, solidH, item.rotation || 0, pictoImage, item.color || entry?.color || '#c8c0d8', label);
       return;
     }
 
@@ -557,6 +547,22 @@ function drawRotatedPictoObject(ctx, x, y, w, h, rotation, image, label) {
   drawBadge(ctx, x, y, label);
 }
 
+function drawCeilingObject(ctx, x, y, w, h, rotation, image, color, label) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.fillStyle = image ? '#ffffff' : color;
+  ctx.strokeStyle = technicalColors.ink;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 3]);
+  ctx.fillRect(-w / 2, -h / 2, w, h);
+  ctx.strokeRect(-w / 2, -h / 2, w, h);
+  ctx.setLineDash([]);
+  if (image) drawContainedImage(ctx, image, -w / 2 + 4, -h / 2 + 4, w - 8, h - 8);
+  ctx.restore();
+  drawBadge(ctx, x, y, label);
+}
+
 function drawContainedImage(ctx, image, x, y, w, h) {
   if (!image || w <= 1 || h <= 1) return;
   const imageW = image.naturalWidth || image.width || 1;
@@ -565,6 +571,18 @@ function drawContainedImage(ctx, image, x, y, w, h) {
   const drawW = imageW * scale;
   const drawH = imageH * scale;
   ctx.drawImage(image, x + (w - drawW) / 2, y + (h - drawH) / 2, drawW, drawH);
+}
+
+function drawRotatedContainedImage(ctx, image, x, y, w, h, angleRadians) {
+  if (!angleRadians) {
+    drawContainedImage(ctx, image, x, y, w, h);
+    return;
+  }
+  ctx.save();
+  ctx.translate(x + w / 2, y + h / 2);
+  ctx.rotate(angleRadians);
+  drawContainedImage(ctx, image, -h / 2, -w / 2, h, w);
+  ctx.restore();
 }
 
 function drawObjectDimensions(ctx, x, y, w, h, dims, rotation) {
@@ -597,7 +615,7 @@ function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY
   const y = toY(item.x) - itemWidth / 2;
   ctx.fillRect(x, y, itemDepth, itemWidth);
   ctx.strokeRect(x, y, itemDepth, itemWidth);
-  if (pictoImage) drawContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4);
+  if (pictoImage) drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4, item.wall === 'left' ? Math.PI / 2 : -Math.PI / 2);
   drawSideTvLabel(ctx, wallLabelText, item.wall, x, y + itemWidth / 2, itemDepth);
   drawBadge(ctx, x + itemDepth + 22, y + itemWidth / 2, label);
 }
