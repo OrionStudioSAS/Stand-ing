@@ -2684,6 +2684,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onImageChange={uploadItemImage}
             onUpdateItemOptions={updateItemOptions}
             counterColors={counterPalette}
+            catalog={objectBank}
             onClose={closeItemConfigurator}
             onConfirm={confirmItemConfigurator}
             onDeleteItem={removeSceneItemById}
@@ -4648,7 +4649,7 @@ function ClockIcon() {
   return <span className="cart-clock">◷</span>;
 }
 
-function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualContext, items, width, depth, uploadState, onImageChange, onUpdateItemOptions, counterColors = [], onClose, onConfirm, onDeleteItem, canDeleteItem }) {
+function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualContext, items, width, depth, uploadState, onImageChange, onUpdateItemOptions, counterColors = [], catalog = [], onClose, onConfirm, onDeleteItem, canDeleteItem }) {
   const t = useT();
   const catalogEntry = entry || item || {};
   const isVariantGroup = isVariantGroupEntry(catalogEntry);
@@ -4656,6 +4657,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const [draftVisualOptions, setDraftVisualOptions] = useState(initialOptions);
   const variants = itemConfigVariants(catalogEntry, salonLabel);
   const extraOptions = itemConfigExtraOptions(catalogEntry);
+  const colorOptions = itemConfigColorOptions(catalogEntry);
   const defaultVariant = variants.find((variant) => variant.isDefault) || variants[0];
   const [format, setFormat] = useState(initialOptions.variantId || initialOptions.format || defaultVariant?.id || 'standard');
   const [selectedExtras, setSelectedExtras] = useState(() => {
@@ -4666,6 +4668,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
       return acc;
     }, {});
   });
+  const [selectedColors, setSelectedColors] = useState(() => (initialOptions.variantColorSelections || {}));
   const [quantity, setQuantity] = useState(1);
   const [draftUploadState, setDraftUploadState] = useState({ uploading: false, error: '' });
   const modalUploadState = item ? uploadState : draftUploadState;
@@ -4680,7 +4683,18 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const textureSourceEntry = isVariantGroup
     ? (resolvedEntry || selectedVariant?.entry || {})
     : (item || resolvedEntry || catalogEntry);
-  const textureSlots = normalizeTextureSlots(textureSourceEntry?.dimensions?.textureSlots);
+  const rawTextureSlots = normalizeTextureSlots(textureSourceEntry?.dimensions?.textureSlots);
+  const colorOptionSlotIds = new Set(colorOptions.map((option) => option.textureSlotId).filter(Boolean));
+  const colorOptionUsesDefaultSlot = colorOptions.some((option) => !option.textureSlotId);
+  const textureSlots = rawTextureSlots.filter((slot) => !(slot.kind === 'color' && (colorOptionUsesDefaultSlot || colorOptionSlotIds.has(slot.id))));
+  const resolvedColorSelections = colorOptions.reduce((acc, option) => {
+    const previous = selectedColors[option.id];
+    const choices = colorChoicesForConfigOption(option, catalog, salonLabel);
+    const selected = choices.find((color) => normalizeColorId(color.id) === normalizeColorId(previous?.id || previous?.colorId))
+      || defaultColorChoiceForConfigOption(option, catalog, salonLabel);
+    if (selected) acc[option.id] = selected;
+    return acc;
+  }, {});
   const visualOptions = { ...initialOptions, ...draftVisualOptions };
   const visualItem = {
     ...(item || resolvedEntry || catalogEntry),
@@ -4695,6 +4709,24 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
   const extras = extraOptions
     .reduce((sum, option) => sum + (selectedExtras[option.id] ? effectiveExtraOptionPrice(option, catalogEntry, selectedVariant) : 0), 0);
+  const colorOptionExtras = colorOptions.reduce((sum, option) => sum + Number(resolvedColorSelections[option.id]?.price || 0), 0);
+  const selectedColorOptionReferences = colorOptions
+    .map((option) => {
+      const color = resolvedColorSelections[option.id];
+      if (!color) return null;
+      return {
+        id: option.id,
+        label: `${option.label || 'Couleur'} : ${shortFinishName(color.name || color.code || '')}`,
+        reference: color.reference || color.code || '',
+        price: Number(color.price || 0),
+        colorId: color.id,
+        batPictoUrl: color.batPictoUrl || '',
+        batPictoPath: color.batPictoPath || '',
+      };
+    })
+    .filter(Boolean);
+  const selectedBatColor = Object.values(resolvedColorSelections).find((color) => color?.batPictoUrl || color?.batPictoPath) || null;
+  const selectedVariantMeta = variantGroupMetaForType(catalogEntry, selectedVariant?.assetType);
   const selectedOptionReferences = extraOptions
     .filter((option) => Boolean(selectedExtras[option.id]))
     .map((option) => ({
@@ -4719,7 +4751,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const counterLogoSupplement = counterLogoUnitPrice > 0 && counterLogoOptionActive(visualItem)
     ? counterLogoUnitPrice
     : 0;
-  const perItemTotal = basePrice + nonGlobalExtras + counterLogoSupplement;
+  const perItemTotal = basePrice + nonGlobalExtras + colorOptionExtras + counterLogoSupplement;
   const total = (perItemTotal * (mode === 'add' ? quantity : 1)) + globalExtras;
   const hasVisualOptions = Boolean(item || mode === 'add') && (
     (item && isPartitionHeadItem(item))
@@ -4732,7 +4764,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const headerMetaParts = [
     headerFinishCount ? `${headerFinishCount} coloris` : '',
     variants.length > 1 ? `${variants.length} taille${variants.length > 1 ? 's' : ''}` : '',
-    extraOptions.length ? `${extraOptions.length} option${extraOptions.length > 1 ? 's' : ''}` : '',
+    (extraOptions.length + colorOptions.length) ? `${extraOptions.length + colorOptions.length} option${extraOptions.length + colorOptions.length > 1 ? 's' : ''}` : '',
   ].filter(Boolean);
   const headerMeta = headerMetaParts.length
     ? headerMetaParts.join(' · ')
@@ -4829,12 +4861,29 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   };
 
   const submit = () => {
+    const colorTextureSlotValues = colorOptions.reduce((acc, option) => {
+      const color = resolvedColorSelections[option.id];
+      if (!color) return acc;
+      const slot = rawTextureSlots.find((candidate) => (option.textureSlotId ? candidate.id === option.textureSlotId : candidate.kind === 'color'));
+      if (!slot) return acc;
+      return {
+        ...acc,
+        [slot.id]: {
+          ...(visualOptions.textureSlotValues?.[slot.id] || {}),
+          ...textureSlotColorPatch({ ...color, price: 0 }),
+        },
+      };
+    }, {});
+    const nextTextureSlotValues = Object.keys(colorTextureSlotValues).length
+      ? { ...(visualOptions.textureSlotValues || {}), ...colorTextureSlotValues }
+      : visualOptions.textureSlotValues;
     onConfirm({
       entry: resolvedEntry,
       item,
       quantity,
       options: {
         ...visualOptions,
+        ...(nextTextureSlotValues ? { textureSlotValues: nextTextureSlotValues } : {}),
         ...(isVariantGroup ? { variantGroupType: catalogEntry.type, variantGroupLabel: catalogEntry.label } : {}),
         format,
         variantId: selectedVariant?.id || format,
@@ -4846,14 +4895,18 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
         resolvedObjectReference: assetReference(resolvedEntry, salonLabel),
         variantImageUrl: selectedVariant?.imageUrl,
         variantAssetType: resolvedEntry?.type || selectedVariant?.assetType,
+        variantBatPictoUrl: selectedBatColor?.batPictoUrl || selectedVariantMeta?.batPictoUrl || '',
+        variantBatPictoPath: selectedBatColor?.batPictoPath || selectedVariantMeta?.batPictoPath || '',
+        variantBatDescription: catalogEntry.dimensions?.batDescription || resolvedEntry?.dimensions?.batDescription || '',
         extraOptions: selectedExtras,
         globalExtraOptions,
-        optionReferences: selectedOptionReferences,
+        optionReferences: [...selectedOptionReferences, ...selectedColorOptionReferences],
+        variantColorSelections: resolvedColorSelections,
         technician: Boolean(selectedExtras.technician),
         fileCheck: Boolean(selectedExtras.fileCheck),
         baseUnitPrice: basePrice,
-        billableUnitPrice: basePrice + nonGlobalExtras,
-        unitPrice: basePrice + extras,
+        billableUnitPrice: basePrice + nonGlobalExtras + colorOptionExtras + counterLogoSupplement,
+        unitPrice: basePrice + extras + colorOptionExtras + counterLogoSupplement,
       },
     });
   };
@@ -4919,6 +4972,20 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             embedded
             optionsFree
             logoPrice={counterLogoUnitPrice}
+          />
+        )}
+
+        {colorOptions.length > 0 && (
+          <VariantColorOptionsPanel
+            options={colorOptions}
+            catalog={catalog}
+            salonLabel={salonLabel}
+            selectedColors={resolvedColorSelections}
+            onSelect={(option, color) => {
+              setSelectedColors((current) => ({ ...current, [option.id]: color }));
+              const slot = rawTextureSlots.find((candidate) => (option.textureSlotId ? candidate.id === option.textureSlotId : candidate.kind === 'color'));
+              if (slot) updateDraftVisualOptions(textureSlotPatch(visualItem, slot, textureSlotColorPatch({ ...color, price: 0 })));
+            }}
           />
         )}
 
@@ -5043,6 +5110,69 @@ function PodiumVariantPicker({ choices = [], value, onChange }) {
         </div>
       </section>
     </section>
+  );
+}
+
+function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '', selectedColors = {}, onSelect }) {
+  return (
+    <div className="variant-color-options-panel">
+      {options.map((option) => {
+        const choices = colorChoicesForConfigOption(option, catalog, salonLabel);
+        const selected = selectedColors[option.id] || defaultColorChoiceForConfigOption(option, catalog, salonLabel);
+        const includedChoices = choices.filter((choice) => Number(choice.price || 0) <= 0);
+        const optionalChoices = choices.filter((choice) => Number(choice.price || 0) > 0);
+        const optionalPrice = optionalChoices.find((choice) => Number(choice.price || 0) > 0)?.price || 0;
+        return (
+          <section key={option.id} className="counter-color-card counter-finish-card item-counter-finish-card variant-color-card">
+            <div className="counter-finish-head">
+              <strong>{option.label || 'Couleur'}</strong>
+              {selected && (
+                <span>
+                  {shortFinishName(selected.name || selected.code)}
+                  {shortFinishCode(selected.code || selected.reference) ? ` (${shortFinishCode(selected.code || selected.reference)})` : ''}
+                </span>
+              )}
+            </div>
+            {includedChoices.length > 0 && (
+              <>
+                <div className="counter-finish-meta-line">
+                  <small>{includedColorisLabel(includedChoices.length)}</small>
+                  <em className="included">Inclus</em>
+                </div>
+                <div className="counter-finish-swatches included">
+                  {includedChoices.map((choice) => (
+                    <CounterFinishSwatch
+                      key={choice.id}
+                      finish={choice}
+                      active={normalizeColorId(selected?.id) === normalizeColorId(choice.id)}
+                      onClick={() => onSelect?.(option, choice)}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+            {optionalChoices.length > 0 && (
+              <>
+                <div className="counter-finish-meta-line">
+                  <small>{optionalChoices.length} couleurs en option</small>
+                  <em className="price">+ {Number(optionalPrice || 0).toLocaleString('fr-FR')} €</em>
+                </div>
+                <div className="counter-finish-swatches optional">
+                  {optionalChoices.map((choice) => (
+                    <CounterFinishSwatch
+                      key={choice.id}
+                      finish={choice}
+                      active={normalizeColorId(selected?.id) === normalizeColorId(choice.id)}
+                      onClick={() => onSelect?.(option, choice)}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+        );
+      })}
+    </div>
   );
 }
 
@@ -5178,8 +5308,53 @@ function normalizeSelectOptionVariants(selectOption, variantOptionLinks = [], sa
     });
 }
 
+
+function itemConfigColorOptions(entry) {
+  const options = (entry?.dimensions?.configOptions || []).filter((o) => o.type === 'color');
+  return normalizeAssetConfigOptions(options);
+}
+
+function colorGroupEntryForOption(option = {}, catalog = [], salonLabel = '') {
+  const group = (catalog || []).find((entry) => entry?.type === option.colorGroupType && entry?.dimensions?.isColorGroup);
+  if (!group || !colorGroupMatchesSalon(group, salonLabel)) return null;
+  return group;
+}
+
+function colorChoicesForConfigOption(option = {}, catalog = [], salonLabel = '') {
+  const group = colorGroupEntryForOption(option, catalog, salonLabel);
+  if (!group) return [];
+  const groupPrice = Number(group.dimensions?.colorGroupPrice || option.price || 0);
+  const groupReference = group.dimensions?.colorGroupReference || option.reference || '';
+  return normalizeColorGroupOptions(group).map((color) => ({
+    ...color,
+    groupId: group.type,
+    groupLabel: group.label,
+    price: (color.isFree || color.included || color.isDefault) ? 0 : groupPrice,
+    reference: groupReference || color.reference || color.code || '',
+    batPictoUrl: color.batPictoUrl || '',
+    batPictoPath: color.batPictoPath || '',
+  }));
+}
+
+function defaultColorChoiceForConfigOption(option = {}, catalog = [], salonLabel = '') {
+  const choices = colorChoicesForConfigOption(option, catalog, salonLabel);
+  return choices.find((color) => color.isDefault) || choices.find((color) => color.included || color.isFree) || choices[0] || null;
+}
+
+function variantGroupMetaForType(groupEntry = {}, assetType = '') {
+  return groupEntry?.dimensions?.variantMeta?.[assetType] || groupEntry?.dimensions?.variantBatPictos?.[assetType] || {};
+}
+
+function batDescriptionForItem(item = {}, entry = {}) {
+  return item.options?.variantBatDescription
+    || item.dimensions?.batDescription
+    || entry?.dimensions?.batDescription
+    || item.options?.batDescription
+    || '';
+}
+
 function itemConfigExtraOptions(entry) {
-  const options = (entry?.dimensions?.configOptions || []).filter((o) => (o.type || 'toggle') !== 'select');
+  const options = (entry?.dimensions?.configOptions || []).filter((o) => !['select', 'color'].includes(o.type || 'toggle'));
   return normalizeAssetConfigOptions(options);
 }
 
@@ -5376,6 +5551,7 @@ function entryNeedsConfigurator(entry = {}) {
   if (isWoodReceptionDeskItem(entry)) return true;
   if (marketplaceItemDescription(entry)) return true;
   if (normalizeTextureSlots(entry?.dimensions?.textureSlots).length > 0) return true;
+  if (itemConfigColorOptions(entry).length > 0) return true;
   if (isVariantGroupEntry(entry) && variants.some((variant) => normalizeTextureSlots(variant.entry?.dimensions?.textureSlots).length > 0)) return true;
   return itemConfigExtraOptions(entry).length > 0;
 }
@@ -5385,9 +5561,11 @@ function itemEditNeedsConfigurator(item = {}, entry = {}, salonLabel = '') {
   const catalogEntry = entry || item;
   const variants = itemConfigVariants(catalogEntry, salonLabel);
   const extraOptions = itemConfigExtraOptions(catalogEntry);
+  const colorOptions = itemConfigColorOptions(catalogEntry);
   const textureSlots = normalizeTextureSlots(item?.dimensions?.textureSlots || catalogEntry?.dimensions?.textureSlots);
   return variants.length > 1
     || extraOptions.length > 0
+    || colorOptions.length > 0
     || isPartitionHeadItem(item)
     || isPosterItem(item)
     || (isWoodReceptionDeskItem(item) && !isIncludedSceneItem(item))
@@ -5536,6 +5714,8 @@ function normalizeAssetConfigOptions(options = []) {
       exclusiveGroup: option.exclusiveGroup || option.group || '',
       required: Boolean(option.required),
       type: option.type || 'toggle',
+      colorGroupType: option.colorGroupType || option.colorGroupId || '',
+      textureSlotId: option.textureSlotId || '',
       choices: option.type === 'select' ? (option.choices || []) : undefined,
     }))
     .filter((option) => option.label.trim());
@@ -10187,6 +10367,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   const draftTextureSlots = normalizeTextureSlots(draft.dimensions?.textureSlots);
   const [variantAssetTypes, setVariantAssetTypes] = useState(() => variantPrimaryAssetTypes(draft));
   const [variantOptionLinks, setVariantOptionLinks] = useState(() => draft.dimensions?.variantOptionLinks || []);
+  const [variantMeta, setVariantMeta] = useState(() => draft.dimensions?.variantMeta || draft.dimensions?.variantBatPictos || {});
 
   useEffect(() => {
     setDraft(asset);
@@ -10197,6 +10378,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     setGroupRows(assetToGroupRows(asset));
     setVariantAssetTypes(variantPrimaryAssetTypes(asset));
     setVariantOptionLinks(asset.dimensions?.variantOptionLinks || []);
+    setVariantMeta(asset.dimensions?.variantMeta || asset.dimensions?.variantBatPictos || {});
     setSelectedGroupRowUid(null);
   }, [asset]);
 
@@ -10474,6 +10656,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           category: draft.dimensions?.category || 'Mobilier',
           variantAssetTypes: cleanTypes,
           variantDependencyAssetTypes: uniqueTextValues([...selectChoiceTypes, ...linkedTypes].filter((type) => !cleanTypes.includes(type))),
+          variantMeta,
           configOptions: draftConfigOptions,
           variantOptionLinks,
           format: 'Groupe de variantes',
@@ -10533,6 +10716,52 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     }
   };
 
+
+  const updateVariantMeta = (assetType, patch) => {
+    if (!assetType) return;
+    setVariantMeta((current) => ({
+      ...current,
+      [assetType]: {
+        ...(current[assetType] || {}),
+        ...patch,
+      },
+    }));
+  };
+
+  const changeVariantBatPicto = async (assetType, file) => {
+    if (!assetType || !file) return;
+    setBatPictoUploading(true);
+    setBatPictoError('');
+    try {
+      const updated = await uploadObjectAssetBatPicto(draft, file, `variant-${slugForType(assetType)}`);
+      updateVariantMeta(assetType, { batPictoUrl: updated.dimensions?.batPictoUrl || '', batPictoPath: updated.dimensions?.batPictoPath || '' });
+    } catch (error) {
+      setBatPictoError(error.message || 'Upload du picto variante impossible.');
+    } finally {
+      setBatPictoUploading(false);
+    }
+  };
+
+  const changeColorBatPicto = async (colorId, file) => {
+    if (!colorId || !file) return;
+    setBatPictoUploading(true);
+    setBatPictoError('');
+    try {
+      const updated = await uploadObjectAssetBatPicto(draft, file, `color-${slugForType(colorId)}`);
+      updateColorGroupBehavior({
+        colorOptions: normalizeColorGroupOptions(draft).map((color) => (
+          color.id === colorId
+            ? { ...color, batPictoUrl: updated.dimensions?.batPictoUrl || '', batPictoPath: updated.dimensions?.batPictoPath || '' }
+            : color
+        )),
+      });
+    } catch (error) {
+      setBatPictoError(error.message || 'Upload du picto couleur impossible.');
+    } finally {
+      setBatPictoUploading(false);
+    }
+  };
+
   return (
     <div className="asset-drawer-layer">
       <aside className="asset-drawer">
@@ -10564,6 +10793,19 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           />
         </label>
 
+
+        {!isColorGroup && (
+          <label className="asset-group-field">
+            <span>Descriptif BAT</span>
+            <textarea
+              value={draft.dimensions?.batDescription || ''}
+              placeholder="Texte affiché dans le tableau du BAT. Les sauts de ligne sont conservés."
+              rows={4}
+              onChange={(event) => updateAssetBehavior({ batDescription: event.target.value })}
+            />
+          </label>
+        )}
+
         {!isColorGroup && !isVariantGroup && (
         <label className="asset-thumbnail-edit">
           <FileImage size={18} />
@@ -10584,7 +10826,6 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           />
         </label>
         )}
-
         <label className="asset-group-field">
           <span>Nom</span>
           <input value={draft.label || ''} onChange={(event) => setDraft({ ...draft, label: event.target.value })} />
@@ -10704,6 +10945,19 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
                     />
                     Gratuite
                   </label>
+                  <label className="color-bat-picto-upload">
+                    <FileImage size={13} />
+                    <span>{color.batPictoUrl ? 'Picto BAT importé' : 'Picto BAT couleur'}</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg"
+                      disabled={batPictoUploading}
+                      onChange={(event) => {
+                        changeColorBatPicto(color.id, event.target.files?.[0] || null);
+                        event.target.value = '';
+                      }}
+                    />
+                  </label>
                 </span>
               ))}
             </div>
@@ -10718,6 +10972,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
             <AssetConfigOptionRows
               rows={draftConfigOptions}
               emptyLabel="Aucune option configurée pour ce groupe."
+              colorGroups={assets.filter((asset) => asset.dimensions?.isColorGroup)}
+              textureSlots={draftTextureSlots}
               onChange={updateConfigOptionRow}
               onRemove={removeConfigOptionRow}
             />
@@ -10896,6 +11152,9 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
             <AssetVariantSourceRows
               rows={variantAssetTypes}
               sourceAssets={variantSourceAssetsList}
+              variantMeta={variantMeta}
+              batPictoUploading={batPictoUploading}
+              onBatPictoChange={changeVariantBatPicto}
               onChange={(index, type) => setVariantAssetTypes((current) => current.map((item, itemIndex) => (itemIndex === index ? type : item)))}
               onRemove={(index) => setVariantAssetTypes((current) => current.filter((_, itemIndex) => itemIndex !== index))}
               onReorder={(fromIndex, toIndex) => setVariantAssetTypes((current) => moveArrayItem(current, fromIndex, toIndex))}
@@ -10912,6 +11171,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
               rows={draftConfigOptions}
               emptyLabel="Aucune option configurée."
               sourceAssets={variantSourceAssetsList}
+              colorGroups={assets.filter((asset) => asset.dimensions?.isColorGroup)}
+              textureSlots={draftTextureSlots}
               links={variantOptionLinks}
               onChange={updateConfigOptionRow}
               onRemove={removeConfigOptionRow}
@@ -11051,37 +11312,62 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   );
 }
 
-function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], links = [], onChange, onRemove, onAddChoice, onUpdateChoice, onRemoveChoice, onSetLink }) {
+function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroups = [], textureSlots = [], links = [], onChange, onRemove, onAddChoice, onUpdateChoice, onRemoveChoice, onSetLink }) {
   if (!rows.length) return <p className="asset-variants-empty">{emptyLabel}</p>;
   const selectOption = rows.find((r) => r.type === 'select');
-  const toggleRows = rows.filter((r) => (r.type || 'toggle') !== 'select');
+  const toggleRows = rows.filter((r) => !['select', 'color'].includes(r.type || 'toggle'));
   const comboRows = optionCombinationRows(toggleRows);
   return (
     <div className="asset-variant-list">
       {rows.map((row, index) => {
         const isSelect = row.type === 'select';
-        const isToggle = !isSelect;
+        const isColor = row.type === 'color';
+        const isToggle = !isSelect && !isColor;
         return (
           <article key={`${row.id}-${index}`} className={`asset-variant-row option-row ${isSelect ? 'option-row-select' : ''}`}>
             <div className="option-row-fields">
               <div className="option-type-tabs">
                 <button
                   type="button"
-                  className={!isSelect ? 'active' : ''}
-                  onClick={() => onChange(index, { type: 'toggle', choices: undefined })}
+                  className={isToggle ? 'active' : ''}
+                  onClick={() => onChange(index, { type: 'toggle', choices: undefined, colorGroupType: '', textureSlotId: '' })}
                   title="Case à cocher"
                 >Case à cocher</button>
                 <button
                   type="button"
                   className={isSelect ? 'active' : ''}
-                  onClick={() => onChange(index, { type: 'select', choices: row.choices || [] })}
+                  onClick={() => onChange(index, { type: 'select', choices: row.choices || [], colorGroupType: '', textureSlotId: '' })}
                   title="Sélection exclusive"
                 >Sélection</button>
+                <button
+                  type="button"
+                  className={isColor ? 'active' : ''}
+                  onClick={() => onChange(index, { type: 'color', choices: undefined, label: row.label || 'Couleur' })}
+                  title="Groupe de couleurs"
+                >Couleurs</button>
               </div>
               <label>
                 <span>Nom</span>
-                <input value={row.label || ''} onChange={(event) => onChange(index, { label: event.target.value })} placeholder={isSelect ? 'Ex : Taille' : 'Ex : Sur pied'} />
+                <input value={row.label || ''} onChange={(event) => onChange(index, { label: event.target.value })} placeholder={isSelect ? 'Ex : Taille' : isColor ? 'Ex : Couleur' : 'Ex : Sur pied'} />
               </label>
+              {isColor && (
+                <>
+                  <label>
+                    <span>Groupe de couleurs lié</span>
+                    <select value={row.colorGroupType || ''} onChange={(event) => onChange(index, { colorGroupType: event.target.value })}>
+                      <option value="">— Choisir un groupe de couleurs —</option>
+                      {colorGroups.map((group) => <option key={group.type} value={group.type}>{group.label}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Matériau couleur à modifier</span>
+                    <select value={row.textureSlotId || ''} onChange={(event) => onChange(index, { textureSlotId: event.target.value })}>
+                      <option value="">— Aucun / descriptif uniquement —</option>
+                      {textureSlots.filter((slot) => slot.kind === 'color').map((slot) => <option key={slot.id} value={slot.id}>{slot.label || slot.targetName}</option>)}
+                    </select>
+                  </label>
+                </>
+              )}
               {isToggle && (
                 <>
                   <label>
@@ -11244,7 +11530,7 @@ function AssetTextureSlotRows({ rows, onChange, onRemove }) {
   );
 }
 
-function AssetVariantSourceRows({ rows, sourceAssets, onChange, onRemove, onReorder }) {
+function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, batPictoUploading = false, onBatPictoChange, onChange, onRemove, onReorder }) {
   const [draggingIndex, setDraggingIndex] = useState(null);
   if (!sourceAssets.length) return <p className="asset-variants-empty">Aucun objet disponible pour créer des variantes.</p>;
   if (!rows.length) return <p className="asset-variants-empty">Aucun objet associé : ce groupe ne s'affichera pas encore dans la boutique.</p>;
@@ -11256,6 +11542,7 @@ function AssetVariantSourceRows({ rows, sourceAssets, onChange, onRemove, onReor
     <div className="asset-variant-list">
       {rows.map((type, index) => {
         const selectedSource = sourceAssets.find((asset) => asset.type === type) || sourceAssets[0];
+        const meta = variantMeta[type] || {};
         return (
           <article
             key={`${type}-${index}`}
@@ -11277,6 +11564,21 @@ function AssetVariantSourceRows({ rows, sourceAssets, onChange, onRemove, onReor
               <strong>{selectedSource?.label || 'Objet'}</strong>
               <small>{assetCategoryLabel(selectedSource || {})} · {assetSizeLabel(selectedSource || {})}</small>
             </div>
+            {onBatPictoChange && (
+              <label className="variant-bat-picto-upload">
+                <FileImage size={13} />
+                <span>{meta.batPictoUrl ? 'Picto BAT variante importé' : 'Picto BAT variante'}</span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg"
+                  disabled={batPictoUploading}
+                  onChange={(event) => {
+                    onBatPictoChange(type, event.target.files?.[0] || null);
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+            )}
             <button type="button" onClick={() => onRemove(index)} aria-label="Retirer cet objet"><Trash2 size={14} /></button>
           </article>
         );
@@ -11294,6 +11596,7 @@ function AssetVariantGroupCreator({ assets, scenes, salons: adminSalons = [], on
   const [rows, setRows] = useState(fallbackType ? [fallbackType] : []);
   const [configOptions, setConfigOptions] = useState([]);
   const [variantOptionLinks, setVariantOptionLinks] = useState([]);
+  const [batDescription, setBatDescription] = useState('');
   const salonChoices = adminSalonAssignmentChoices(adminSalons, scenes);
   const [assignedSalons, setAssignedSalons] = useState(() => salonChoices.slice(0, 1));
   const [saving, setSaving] = useState(false);
@@ -11370,6 +11673,7 @@ function AssetVariantGroupCreator({ assets, scenes, salons: adminSalons = [], on
         variantDependencyAssetTypes: uniqueTextValues([...selectChoiceTypes, ...linkedTypes].filter((type) => !cleanRows.includes(type))),
         configOptions,
         variantOptionLinks,
+        batDescription,
         salons: assignedSalons,
         addedBy: 'Admin Stand-ING',
         format: 'Groupe de variantes',
@@ -11399,6 +11703,16 @@ function AssetVariantGroupCreator({ assets, scenes, salons: adminSalons = [], on
           <select value={category} onChange={(event) => setCategory(event.target.value)}>
             {assetCategoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
+        </label>
+
+        <label className="asset-group-field">
+          <span>Descriptif BAT</span>
+          <textarea
+            value={batDescription}
+            placeholder="Texte affiché dans le tableau du BAT. Les sauts de ligne sont conservés."
+            rows={4}
+            onChange={(event) => setBatDescription(event.target.value)}
+          />
         </label>
 
         <section className="asset-variants-settings">
@@ -11432,6 +11746,7 @@ function AssetVariantGroupCreator({ assets, scenes, salons: adminSalons = [], on
             rows={configOptions}
             emptyLabel="Aucune option configurée."
             sourceAssets={sourceAssets}
+            colorGroups={assets.filter((asset) => asset.dimensions?.isColorGroup)}
             links={variantOptionLinks}
             onChange={updateConfigOptionRow}
             onRemove={(index) => setConfigOptions((current) => current.filter((_, itemIndex) => itemIndex !== index))}
@@ -11483,6 +11798,7 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
   const salonChoices = adminSalonAssignmentChoices(adminSalons, scenes);
   const [assignedSalons, setAssignedSalons] = useState(() => salonChoices.slice(0, 1));
   const [placementRuleId, setPlacementRuleId] = useState('free');
+  const [batDescription, setBatDescription] = useState('');
 
   useEffect(() => {
     setAssignedSalons((current) => current.length ? current.filter((salon) => salonChoices.includes(salon)) : salonChoices.slice(0, 1));
@@ -11527,6 +11843,7 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
         groupSize: computeGroupSize(children),
         children,
         placementRule: placementRuleFromId(placementRuleId),
+        batDescription,
         salons: assignedSalons,
         addedBy: 'Admin Stand-ING',
         format: 'Groupe',
@@ -11556,6 +11873,16 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
           <select value={category} onChange={(event) => setCategory(event.target.value)}>
             {assetCategoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
+        </label>
+
+        <label className="asset-group-field">
+          <span>Descriptif BAT</span>
+          <textarea
+            value={batDescription}
+            placeholder="Texte affiché dans le tableau du BAT. Les sauts de ligne sont conservés."
+            rows={4}
+            onChange={(event) => setBatDescription(event.target.value)}
+          />
         </label>
 
         <section className="asset-group-placement">
@@ -12810,6 +13137,8 @@ function normalizeColorGroupOptions(asset = {}) {
         hex: color.hex || '#b8b8b8',
         image: color.image || '',
         storagePath: color.storagePath || '',
+        batPictoUrl: color.batPictoUrl || '',
+        batPictoPath: color.batPictoPath || '',
         isDefault,
         isFree,
         included: Boolean(isDefault || isFree),

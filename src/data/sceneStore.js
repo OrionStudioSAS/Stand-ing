@@ -1457,14 +1457,15 @@ export async function uploadObjectAssetThumbnail(asset, file) {
   };
 }
 
-export async function uploadObjectAssetBatPicto(asset, file) {
+export async function uploadObjectAssetBatPicto(asset, file, scopeKey = '') {
   if (!supabase) throw new Error('Supabase non configure.');
   if (!asset?.type) throw new Error('Objet introuvable.');
   if (!file || !isProfileImageFile(file)) throw new Error('Selectionne une image JPG, PNG, WebP ou SVG.');
 
   const bucket = supabase.storage.from('object-assets');
   const extension = file.name.toLowerCase().match(/\.([a-z0-9]{2,5})$/)?.[1] || 'jpg';
-  const path = `${asset.type}/bat-picto-${Date.now().toString(36)}.${extension}`;
+  const scope = scopeKey ? `${sanitizeStoragePath(scopeKey).replace(/^\/+|\/+$/g, '')}/` : '';
+  const path = `${asset.type}/${scope}bat-picto-${Date.now().toString(36)}.${extension}`;
   const { error } = await bucket.upload(path, file, {
     cacheControl: '31536000',
     contentType: guessContentType(file),
@@ -1472,7 +1473,7 @@ export async function uploadObjectAssetBatPicto(asset, file) {
   });
   if (error) throw error;
   const { data } = bucket.getPublicUrl(path);
-  const previousPath = asset.dimensions?.batPictoPath;
+  const previousPath = scopeKey ? '' : asset.dimensions?.batPictoPath;
   if (previousPath && previousPath !== path) {
     bucket.remove([previousPath]).then(({ error: rmError }) => {
       if (rmError) console.warn('Ancien picto BAT non supprime', rmError);

@@ -29,7 +29,7 @@ const carpetFootprintOverflow = 0.2;
 
 export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems: providedTechnicalItems = null, pictoImages = new Map() }) {
   const technicalItems = providedTechnicalItems || technicalItemsForPlan(items, width, depth, catalog);
-  sheet.height = Math.max(1240, 1080 + technicalItems.length * 34);
+  sheet.height = Math.max(1240, 1080 + technicalItems.length * 52);
   const canvas = document.createElement('canvas');
   canvas.width = sheet.width;
   canvas.height = sheet.height;
@@ -66,23 +66,49 @@ async function loadTechnicalPictoImages(items = [], catalog = []) {
   const urls = new Set();
   (items || []).forEach((item) => {
     const entry = catalog.find((candidate) => candidate.type === item.type);
-    const url = technicalSvgPictoUrl(item, entry);
+    const url = technicalSvgPictoUrl(item, entry, catalog);
     if (url) urls.add(url);
   });
   const loaded = await Promise.all([...urls].map(async (url) => [url, await loadCanvasImage(url)]));
   return new Map(loaded.filter(([, image]) => image));
 }
 
-function technicalPictoImageForItem(item, entry, pictoImages) {
-  const url = technicalSvgPictoUrl(item, entry);
+function technicalPictoImageForItem(item, entry, pictoImages, catalog = []) {
+  const url = technicalSvgPictoUrl(item, entry, catalog);
   return url ? pictoImages.get(url) || null : null;
 }
 
-function technicalSvgPictoUrl(item = {}, entry = {}) {
-  const url = item.dimensions?.batPictoUrl || entry?.dimensions?.batPictoUrl || '';
-  const path = item.dimensions?.batPictoPath || entry?.dimensions?.batPictoPath || url;
+function technicalSvgPictoUrl(item = {}, entry = {}, catalog = []) {
+  const groupEntry = technicalOverrideGroupEntry(item, catalog);
+  const variantMeta = groupEntry?.dimensions?.variantMeta?.[item.type] || groupEntry?.dimensions?.variantBatPictos?.[item.type] || {};
+  const url = item.options?.variantBatPictoUrl
+    || variantMeta?.batPictoUrl
+    || groupEntry?.dimensions?.batPictoUrl
+    || item.dimensions?.batPictoUrl
+    || entry?.dimensions?.batPictoUrl
+    || '';
+  const path = item.options?.variantBatPictoPath
+    || variantMeta?.batPictoPath
+    || groupEntry?.dimensions?.batPictoPath
+    || item.dimensions?.batPictoPath
+    || entry?.dimensions?.batPictoPath
+    || url;
   if (!url || !/\.svg(?:$|[?#])/i.test(path)) return '';
   return url;
+}
+
+function technicalOverrideGroupEntry(item = {}, catalog = []) {
+  const groupType = item.options?.variantGroupType || item.options?.groupType || item.groupType || '';
+  return groupType ? catalog.find((entry) => entry.type === groupType) || null : null;
+}
+
+function technicalBatDescription(item = {}, entry = {}, catalog = []) {
+  const groupEntry = technicalOverrideGroupEntry(item, catalog);
+  return item.options?.variantBatDescription
+    || groupEntry?.dimensions?.batDescription
+    || item.dimensions?.batDescription
+    || entry?.dimensions?.batDescription
+    || '';
 }
 
 async function loadCanvasImage(url) {
@@ -209,7 +235,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     const center = { x: toX(item.x), y: toY(item.z) };
     const color = item.color || entry?.color || '#cccccc';
     const label = `${index + 1}`;
-    const pictoImage = technicalPictoImageForItem(item, entry, pictoImages);
+    const pictoImage = technicalPictoImageForItem(item, entry, pictoImages, catalog);
 
     if (isWallItem(item)) {
       drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, item.label || entry?.label, pictoImage);
@@ -259,7 +285,13 @@ function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale) {
 function drawItemTable(ctx, items, catalog, width, depth) {
   const x = sheet.left + 18;
   const rowH = 28;
-  const y = Math.max(900, sheet.height - sheet.margin - 70 - (items.length + 1) * rowH);
+  const rows = (items || []).map((item) => {
+    const entry = catalog.find((candidate) => candidate.type === item.type);
+    const descriptionLines = technicalDescriptionLines(technicalBatDescription(item, entry, catalog));
+    return { item, entry, descriptionLines, height: rowH + descriptionLines.length * 15 };
+  });
+  const bodyHeight = rows.reduce((sum, row) => sum + row.height, rowH);
+  const y = Math.max(900, sheet.height - sheet.margin - 70 - bodyHeight);
   const w = sheet.width - sheet.margin - x - 18;
   const headers = ['#', 'Element', 'Dimensions L x P x H', 'Position', 'Rotation / mur'];
   const cols = [48, 250, 300, 230, 260];
@@ -279,8 +311,7 @@ function drawItemTable(ctx, items, catalog, width, depth) {
   });
   cy += rowH;
 
-  items.forEach((item, index) => {
-    const entry = catalog.find((candidate) => candidate.type === item.type);
+  rows.forEach(({ item, entry, descriptionLines, height }, index) => {
     const dims = itemDimensions(item, entry);
     const values = [
       String(index + 1),
@@ -291,14 +322,28 @@ function drawItemTable(ctx, items, catalog, width, depth) {
     ];
 
     ctx.strokeStyle = '#cccccc';
-    ctx.strokeRect(x + 10, cy, w - 20, rowH);
+    ctx.strokeRect(x + 10, cy, w - 20, height);
     cx = x + 16;
     values.forEach((value, colIndex) => {
       drawText(ctx, value, cx, cy + 19, 13);
+      if (colIndex === 1 && descriptionLines.length) {
+        descriptionLines.forEach((line, lineIndex) => {
+          drawText(ctx, line, cx, cy + 36 + lineIndex * 15, 11, '#777777');
+        });
+      }
       cx += cols[colIndex];
     });
-    cy += rowH;
+    cy += height;
   });
+}
+
+function technicalDescriptionLines(text = '') {
+  return String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((line) => (line.length > 58 ? `${line.slice(0, 55)}...` : line));
 }
 
 function drawWalls(ctx, x, y, w, h, thickness, layout, width, depth, scale, items) {
@@ -720,6 +765,18 @@ function flattenTechnicalItems(items, catalog) {
       const childCatalog = catalog.find((entry) => entry.type === child.type) || {};
       const localX = Number(child.x || 0);
       const localZ = Number(child.z || 0);
+      const parentOptions = item.options || {};
+      const parentDimensions = item.dimensions || {};
+      const inheritedOptions = {
+        ...(child.options || {}),
+        ...(parentOptions.variantBatPictoUrl || parentDimensions.batPictoUrl ? {
+          variantBatPictoUrl: parentOptions.variantBatPictoUrl || parentDimensions.batPictoUrl || '',
+          variantBatPictoPath: parentOptions.variantBatPictoPath || parentDimensions.batPictoPath || '',
+        } : {}),
+        ...(parentOptions.variantBatDescription || parentDimensions.batDescription ? {
+          variantBatDescription: parentOptions.variantBatDescription || parentDimensions.batDescription || '',
+        } : {}),
+      };
       return {
         ...child,
         id: `${item.id}-${child.id || index}`,
@@ -731,6 +788,12 @@ function flattenTechnicalItems(items, catalog) {
         modelUrl: child.modelUrl || childCatalog.modelUrl,
         modelSize: child.modelSize || childCatalog.modelSize,
         color: child.color || childCatalog.color,
+        options: inheritedOptions,
+        dimensions: {
+          ...(child.dimensions || {}),
+          ...(parentDimensions.batPictoUrl ? { batPictoUrl: parentDimensions.batPictoUrl, batPictoPath: parentDimensions.batPictoPath || '' } : {}),
+          ...(parentDimensions.batDescription ? { batDescription: parentDimensions.batDescription } : {}),
+        },
         groupId: item.id,
         groupLabel: parentLabel,
       };
