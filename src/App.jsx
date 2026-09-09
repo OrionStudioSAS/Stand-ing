@@ -2,7 +2,7 @@ import React, { Suspense, createContext, useContext, useEffect, useMemo, useRef,
 import { createRoot } from 'react-dom/client';
 import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, BufferGeometry, Cache, CanvasTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MOUSE, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
+import { Box3, BufferGeometry, Cache, CanvasTexture, Color, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MOUSE, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -2366,6 +2366,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           className={sceneCanvasClassName}
           flat
           shadows
+          gl={{ alpha: true }}
           onPointerUp={() => {
             if (!readOnly) setDraggingId(null);
           }}
@@ -2375,9 +2376,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             }
           }}
         >
-          <color attach="background" args={[activeStep === 4 ? '#e7ebf0' : '#eef0f4']} />
-          <ambientLight intensity={activeStep === 4 ? 1.28 : 1.42} />
-          <directionalLight position={[3, 7, 4]} intensity={activeStep === 4 ? 0.86 : 0.72} castShadow shadow-mapSize={[2048, 2048]} />
+          <SceneCanvasBackground immersive={activeStep === 4} />
+          <ambientLight intensity={activeStep === 4 ? 1.36 : 1.42} />
+          <directionalLight position={[3, 7, 4]} intensity={activeStep === 4 ? 0.92 : 0.72} castShadow shadow-mapSize={[2048, 2048]} />
           {activeStep === 4 && <ValidationImmersiveEnvironment width={width} depth={depth} />}
           <Suspense fallback={<Html center>Chargement</Html>}>
             {shouldRenderScene && (
@@ -16965,6 +16966,19 @@ function SceneConstraintColumn({ constraint }) {
   );
 }
 
+function SceneCanvasBackground({ immersive = false }) {
+  const { scene } = useThree();
+
+  useEffect(() => {
+    scene.background = immersive ? null : new Color('#eef0f4');
+    return () => {
+      scene.background = null;
+    };
+  }, [scene, immersive]);
+
+  return null;
+}
+
 function StepFourCamera({ active = false, width = 0, depth = 0 }) {
   const { camera, controls } = useThree();
   const transition = useRef({
@@ -16989,11 +17003,11 @@ function StepFourCamera({ active = false, width = 0, depth = 0 }) {
       startPosition: camera.position.clone(),
       startTarget: controls?.target?.clone?.() || new Vector3(0, 0.7, 0),
       endPosition: new Vector3(
-        Math.max(3.8, Number(width || 0) * 0.58),
-        Math.max(3.45, span * 0.54),
-        Math.max(4.6, Number(depth || 0) * 0.78),
+        Math.max(4.1, Number(width || 0) * 0.64),
+        Math.max(3.65, span * 0.56),
+        Math.max(5.05, Number(depth || 0) * 0.84),
       ),
-      endTarget: new Vector3(0, 0.68, 0),
+      endTarget: new Vector3(0, 0.72, 0),
     };
   }, [active, width, depth, camera, controls]);
 
@@ -17014,74 +17028,88 @@ function StepFourCamera({ active = false, width = 0, depth = 0 }) {
 }
 
 function ValidationImmersiveEnvironment({ width = 0, depth = 0 }) {
-  const hallWidth = Math.max(Number(width || 0) + 7, 11.5);
-  const hallDepth = Math.max(Number(depth || 0) + 8, 10);
-  const backZ = -Number(depth || 0) / 2 - 1.35;
-  const frontZ = Number(depth || 0) / 2 + 2.15;
-  const sideX = hallWidth / 2;
-  const boothZ = Number(depth || 0) / 2 + 1.45;
+  const standWidth = Math.max(1, Number(width || 0));
+  const standDepth = Math.max(1, Number(depth || 0));
+  const hallWidth = Math.max(standWidth + 14, 18);
+  const hallDepth = Math.max(standDepth + 14, 17);
+  const backZ = -standDepth / 2 - 4.2;
+  const frontZ = standDepth / 2 + 3.6;
+  const sideBoothX = standWidth / 2 + 4.1;
+  const aisleWidth = Math.max(standWidth + 2.4, 6.4);
 
   return (
     <group>
-      <mesh receiveShadow position={[0, -0.085, 0.32]}>
-        <boxGeometry args={[hallWidth, 0.06, hallDepth]} />
-        <meshStandardMaterial color="#d7dce2" roughness={0.92} metalness={0.02} />
+      <mesh receiveShadow position={[0, -0.11, 0.35]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[hallWidth, hallDepth]} />
+        <meshStandardMaterial color="#eee7dc" roughness={0.86} metalness={0.01} />
       </mesh>
 
-      <mesh receiveShadow position={[0, 1.45, backZ]}>
-        <boxGeometry args={[hallWidth, 2.9, 0.08]} />
-        <meshStandardMaterial color="#eef1f5" roughness={0.82} />
+      <mesh receiveShadow position={[0, -0.101, frontZ]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[aisleWidth, 1.05]} />
+        <meshStandardMaterial color="#dfe7ef" roughness={0.9} />
       </mesh>
-      <mesh receiveShadow position={[-sideX, 1.28, 0.15]}>
-        <boxGeometry args={[0.08, 2.55, hallDepth - 1.2]} />
-        <meshStandardMaterial color="#e4e8ee" roughness={0.86} />
+      <mesh receiveShadow position={[0, -0.099, backZ + 1.65]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[hallWidth - 4, 0.42]} />
+        <meshStandardMaterial color="#d6dfe9" roughness={0.9} transparent opacity={0.62} />
       </mesh>
-      <mesh receiveShadow position={[sideX, 1.28, 0.15]}>
-        <boxGeometry args={[0.08, 2.55, hallDepth - 1.2]} />
-        <meshStandardMaterial color="#e4e8ee" roughness={0.86} />
-      </mesh>
-
-      <mesh position={[0, 3.05, backZ + 1.18]} castShadow>
-        <boxGeometry args={[hallWidth - 1.5, 0.055, 0.055]} />
-        <meshStandardMaterial color="#6f7884" roughness={0.5} metalness={0.18} />
-      </mesh>
-      <mesh position={[-sideX + 1.2, 3.05, 0.28]} castShadow>
-        <boxGeometry args={[0.055, 0.055, hallDepth - 2.5]} />
-        <meshStandardMaterial color="#6f7884" roughness={0.5} metalness={0.18} />
-      </mesh>
-      <mesh position={[sideX - 1.2, 3.05, 0.28]} castShadow>
-        <boxGeometry args={[0.055, 0.055, hallDepth - 2.5]} />
-        <meshStandardMaterial color="#6f7884" roughness={0.5} metalness={0.18} />
-      </mesh>
-
       {[-1, 1].map((side) => (
-        <group key={side} position={[side * (sideX - 1.35), 0, boothZ]}>
-          <mesh castShadow receiveShadow position={[0, 0.7, 0]}>
-            <boxGeometry args={[1.55, 1.4, 0.08]} />
-            <meshStandardMaterial color={side < 0 ? '#f5f0e8' : '#edf3f6'} roughness={0.8} />
+        <mesh key={`side-aisle-${side}`} receiveShadow position={[side * (standWidth / 2 + 1.45), -0.098, 0.2]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[0.52, hallDepth - 4.5]} />
+          <meshStandardMaterial color="#f6efe5" roughness={0.9} transparent opacity={0.66} />
+        </mesh>
+      ))}
+
+      {[-1, 0, 1].map((slot) => (
+        <group key={`back-booth-${slot}`} position={[slot * 3.2, 0, backZ]}>
+          <mesh castShadow receiveShadow position={[0, 0.58, 0]}>
+            <boxGeometry args={[2.35, 1.16, 0.1]} />
+            <meshStandardMaterial color="#fffaf2" roughness={0.78} />
           </mesh>
-          <mesh castShadow position={[0, 1.55, -0.03]}>
-            <boxGeometry args={[1.3, 0.38, 0.1]} />
-            <meshStandardMaterial color={side < 0 ? '#d74d42' : '#21477f'} roughness={0.5} emissive={side < 0 ? '#180302' : '#020b18'} emissiveIntensity={0.22} />
+          <mesh castShadow position={[0, 1.25, -0.02]}>
+            <boxGeometry args={[2.05, 0.34, 0.11]} />
+            <meshStandardMaterial color={slot === 0 ? '#1f4378' : '#d94d43'} roughness={0.48} emissive={slot === 0 ? '#051633' : '#2d0704'} emissiveIntensity={0.18} />
           </mesh>
-          <mesh receiveShadow position={[0, 0.18, 0.42]}>
-            <boxGeometry args={[1.2, 0.36, 0.62]} />
+          <mesh receiveShadow position={[0, 0.14, 0.55]}>
+            <boxGeometry args={[1.0, 0.28, 0.55]} />
             <meshStandardMaterial color="#ffffff" roughness={0.72} />
           </mesh>
         </group>
       ))}
 
-      {[-0.36, 0, 0.36].map((x, index) => (
-        <mesh key={x} position={[x * hallWidth, 3.0, backZ + 1.1 + index * 0.45]}>
-          <boxGeometry args={[0.18, 0.08, 0.18]} />
-          <meshStandardMaterial color="#fff4cf" emissive="#fff1ad" emissiveIntensity={0.9} roughness={0.4} />
+      {[-1, 1].map((side) => (
+        <group key={`open-neighbor-${side}`} position={[side * sideBoothX, 0, 0.75]} rotation={[0, side * -0.18, 0]}>
+          <mesh castShadow receiveShadow position={[0, 0.55, -1.1]}>
+            <boxGeometry args={[1.55, 1.1, 0.08]} />
+            <meshStandardMaterial color="#f8f3eb" roughness={0.8} transparent opacity={0.92} />
+          </mesh>
+          <mesh castShadow receiveShadow position={[0, 0.18, -0.35]}>
+            <boxGeometry args={[1.05, 0.36, 0.58]} />
+            <meshStandardMaterial color="#fff" roughness={0.72} />
+          </mesh>
+          <mesh position={[0, 1.28, -1.14]}>
+            <boxGeometry args={[1.24, 0.22, 0.09]} />
+            <meshStandardMaterial color={side < 0 ? '#2c6ba5' : '#d9a12d'} roughness={0.52} />
+          </mesh>
+        </group>
+      ))}
+
+      {[0.18, 0.5, 0.82].map((ratio, index) => (
+        <mesh key={`ceiling-light-${index}`} position={[-hallWidth / 2 + hallWidth * ratio, 3.25, backZ + 2.1 + index * 1.05]}>
+          <boxGeometry args={[1.18, 0.045, 0.18]} />
+          <meshStandardMaterial color="#fff7d5" emissive="#fff0a8" emissiveIntensity={1.1} roughness={0.35} />
         </mesh>
       ))}
 
-      <mesh position={[0, -0.045, frontZ]} receiveShadow>
-        <boxGeometry args={[hallWidth - 2.8, 0.015, 0.52]} />
-        <meshStandardMaterial color="#cfd6df" roughness={0.9} />
+      <mesh position={[0, 3.18, backZ + 2.2]} castShadow>
+        <boxGeometry args={[hallWidth - 4.2, 0.045, 0.045]} />
+        <meshStandardMaterial color="#6b7480" roughness={0.52} metalness={0.2} transparent opacity={0.58} />
       </mesh>
+      {[-1, 1].map((side) => (
+        <mesh key={`truss-depth-${side}`} position={[side * (standWidth / 2 + 2.5), 3.16, 0.4]} castShadow>
+          <boxGeometry args={[0.045, 0.045, hallDepth - 5.6]} />
+          <meshStandardMaterial color="#6b7480" roughness={0.52} metalness={0.2} transparent opacity={0.42} />
+        </mesh>
+      ))}
     </group>
   );
 }
