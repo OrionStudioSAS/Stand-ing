@@ -6660,16 +6660,30 @@ function validationCategoryFromLine(line = {}, entry = {}, item = null) {
 }
 
 function validationItemImage(item = null, entry = {}, catalog = []) {
-  const directImage = item?.options?.variantImageUrl || item?.options?.thumbnailUrl || item?.thumbnailUrl || item?.thumbnail_url || entry?.thumbnailUrl || entry?.thumbnail_url || '';
-  if (directImage) return directImage;
+  const preferredImages = [
+    entry?.thumbnailUrl,
+    entry?.thumbnail_url,
+    item?.options?.thumbnailUrl,
+    item?.thumbnailUrl,
+    item?.thumbnail_url,
+    item?.options?.variantImageUrl,
+  ].map(validDisplayImageUrl).filter(Boolean);
+  if (preferredImages.length) return preferredImages[0];
   if (isWoodReceptionDeskItem(item) || isWoodReceptionDeskItem(entry)) {
-    return catalog.find((candidate) => isVariantGroupEntry(candidate) && isCounterVariantGroup(candidate))?.thumbnailUrl
-      || catalog.find((candidate) => isWoodReceptionDeskItem(candidate) && candidate.thumbnailUrl)?.thumbnailUrl
+    return validDisplayImageUrl(catalog.find((candidate) => isVariantGroupEntry(candidate) && isCounterVariantGroup(candidate))?.thumbnailUrl)
+      || validDisplayImageUrl(catalog.find((candidate) => isWoodReceptionDeskItem(candidate) && candidate.thumbnailUrl)?.thumbnailUrl)
       || '';
   }
   if (isReserveCatalogEntry(entry)) {
-    return entry?.thumbnailUrl || entry?.thumbnail_url || '';
+    return validDisplayImageUrl(entry?.thumbnailUrl || entry?.thumbnail_url);
   }
+  return '';
+}
+
+function validDisplayImageUrl(url = '') {
+  const value = String(url || '').trim();
+  if (!value || value === 'null' || value === 'undefined' || value === '[object Object]') return '';
+  if (/^(https?:|data:|blob:|\/)/i.test(value)) return value;
   return '';
 }
 

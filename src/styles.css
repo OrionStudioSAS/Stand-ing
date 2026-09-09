@@ -12650,3 +12650,44 @@ img.asset-thumb {
 .color-group-preview-list .color-bat-picto-upload {
   white-space: nowrap;
 }
+
+.round-tool,
+.user-pill,
+.language-pill {
+  box-sizing: border-box;
+  padding: 0;
+  line-height: 0;
+}
+
+.round-tool.active,
+.user-pill.active,
+.language-pill.active {
+  color: #111827;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(31, 67, 120, 0.18);
+}
+
+.tutorial-trigger.active,
+.tutorial-trigger:hover {
+  color: #111827;
+  background: #fff;
+}
+
+.topbar-tool-icon {
+  margin: auto;
+  object-position: center;
+  pointer-events: none;
+}
+
+.config-choice-section button {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.config-choice-section strong,
+.config-choice-section em,
+.config-choice-section small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
