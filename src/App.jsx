@@ -373,6 +373,13 @@ function defaultSceneItemRotation(entry = {}, type = '') {
   return 0;
 }
 
+function rotationForVariantSwap(item = {}, previousEntry = {}, nextEntry = {}) {
+  const currentRotation = Number(item.rotation || 0);
+  const previousDefault = defaultSceneItemRotation(previousEntry, item.type || previousEntry?.type || '');
+  const nextDefault = defaultSceneItemRotation(nextEntry, nextEntry?.type || item.type || '');
+  return normalizeRotationDegrees(currentRotation - previousDefault + nextDefault);
+}
+
 function resolveGroupChildren(children) {
   return children.map((child, index) => {
     const entry = catalog.find((item) => item.type === child.type) || {};
@@ -1843,6 +1850,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const replaceItemWithEntry = (item, entry, options = {}) => {
     let failedPlacement = false;
     setItems((current) => {
+      const previousEntry = findCatalogEntry(availableCatalog, item.type) || item;
+      const preservedRotation = rotationForVariantSwap(item, previousEntry, entry);
       const nextBase = {
         ...makeItem(entry.type, width, depth, layout, entry),
         id: item.id,
@@ -1860,7 +1869,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           ...(isWallItem(nextBase)
             ? { wall: item.wall, x: item.x, y: isTelevisionItem(nextBase) ? screenCenterHeight : item.y, z: item.z }
             : { x: item.x, z: item.z }),
-          ...((isAdminViewer || !itemRotationLocked(nextBase)) ? { rotation: item.rotation } : {}),
+          ...((isAdminViewer || !itemRotationLocked(nextBase)) ? { rotation: preservedRotation } : {}),
         }
         : {};
       const candidate = constrainItem({ ...nextBase, ...compatiblePosition }, width, depth, layout, effectiveCarpetFootprintEnabled);
