@@ -8397,8 +8397,8 @@ img.asset-thumb {
   justify-self: start;
   border-radius: 999px;
   padding: 6px 10px;
-  color: #f28a00;
-  background: #fff3dc;
+  color: #255f9f;
+  background: #e8f1ff;
   font-style: normal;
   font-size: 0.76rem;
   font-weight: 950;
@@ -11419,6 +11419,33 @@ img.asset-thumb {
   padding: 14px;
   color: #252b35;
   background: #fff;
+}
+
+.partition-head-activity-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid #ffc066;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #d57700;
+  background: #fff8eb;
+  font-size: 0.74rem;
+  font-weight: 900;
+  line-height: 1.18;
+}
+
+.partition-head-activity-info b {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  color: #fff;
+  background: #f59e0b;
+  font-size: 0.72rem;
+  font-weight: 950;
 }
 
 .partition-head-formula-v2 {

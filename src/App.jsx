@@ -1632,7 +1632,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       const displayUrl = cacheBustedUrl(imageUrl);
       await preloadImage(displayUrl);
       if (optionKeys.textureSlot) {
-        updateItemOptions(targetItem, textureSlotPatch(targetItem, optionKeys.textureSlot, { imageUrl: displayUrl, imageName: file.name }));
+        updateItemOptions(targetItem, textureSlotPatch(targetItem, optionKeys.textureSlot, { imageUrl: displayUrl, imageName: file.name, visualPending: false }));
       } else {
         updateItemOptions(targetItem, { [urlKey]: displayUrl, [nameKey]: file.name, ...(optionKeys.extraPatch || {}) });
       }
@@ -3281,13 +3281,17 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
   );
 }
 
-function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetImage, onColorChange, onResetColor, counterColors = [], embedded = false }) {
+function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetImage, onImagePending, onColorChange, onResetColor, counterColors = [], embedded = false, beforeImageContent = null }) {
+  const t = useT();
   const slots = normalizeTextureSlots(item?.dimensions?.textureSlots);
   const values = item?.options?.textureSlotValues || {};
+  const isLightBridge = isLightBridgeItem(item);
+  const orderedSlots = [...slots].sort((a, b) => (a.kind === 'color' ? 0 : 1) - (b.kind === 'color' ? 0 : 1));
+  const firstImageSlotId = orderedSlots.find((slot) => slot.kind !== 'color')?.id || '';
   if (!slots.length) return null;
   return (
     <aside className={embedded ? 'item-visual-config texture-slots-compact' : 'item-options-panel texture-slots-compact'}>
-      {slots.map((slot) => {
+      {orderedSlots.map((slot) => {
         const value = values[slot.id] || {};
         if (slot.kind === 'color') {
           const finishes = slot.colorUsage === 'counter' ? counterFinishOptions(counterColors) : [];
@@ -3328,20 +3332,35 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
           );
         }
         return (
-          <div key={slot.id} className="generic-texture-slot compact-image-slot">
-            <div className="partition-head-upload-title visual-upload-title">
-              <strong>{slot.label || 'Visuel'}</strong>
+          <React.Fragment key={slot.id}>
+            {beforeImageContent && slot.id === firstImageSlotId ? beforeImageContent : null}
+            <div className="generic-texture-slot compact-image-slot">
+              <div className="partition-head-upload-title visual-upload-title">
+                <strong>{textureSlotDisplayLabel(slot, item)}</strong>
+              </div>
+              <VisualUploadDropzone
+                imageUrl={value.imageUrl}
+                disabled={uploadState?.uploading}
+                uploading={uploadState?.uploading}
+                onImage={(file) => onImageChange?.(slot, file)}
+              />
+              {isLightBridge && (
+                <label className="visual-pending-checkbox texture-slot-pending-checkbox">
+                  <input
+                    type="checkbox"
+                    disabled={uploadState?.uploading}
+                    checked={Boolean(value.visualPending)}
+                    onChange={(event) => onImagePending?.(slot, event.target.checked)}
+                  />
+                  <span>{t('visual_pending_label')}</span>
+                </label>
+              )}
+              {value.imageUrl && <button type="button" className="item-image-reset" onClick={() => onResetImage?.(slot)}>Réinitialiser</button>}
             </div>
-            <VisualUploadDropzone
-              imageUrl={value.imageUrl}
-              disabled={uploadState?.uploading}
-              uploading={uploadState?.uploading}
-              onImage={(file) => onImageChange?.(slot, file)}
-            />
-            {value.imageUrl && <button type="button" className="item-image-reset" onClick={() => onResetImage?.(slot)}>Réinitialiser</button>}
-          </div>
+          </React.Fragment>
         );
       })}
+      {beforeImageContent && !firstImageSlotId ? beforeImageContent : null}
       {uploadState?.uploading && <p className="item-options-status">Import de l'image...</p>}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
     </aside>
@@ -4642,6 +4661,8 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     ? headerMetaParts.join(' · ')
     : marketCategoryMeta(normalizeMarketCategory(resolvedEntry || catalogEntry)).label;
   const canDeleteCurrentItem = mode !== 'edit' || canDeleteItem?.(item) !== false;
+  const barLogoExtraOptions = extraOptions.filter((option) => isBarLogoOption(option, catalogEntry));
+  const regularExtraOptions = extraOptions.filter((option) => !isBarLogoOption(option, catalogEntry));
   const deleteFromModal = () => {
     if (mode === 'edit' && item?.id) {
       if (!canDeleteCurrentItem) return;
@@ -4694,7 +4715,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
       const imageUrl = cacheBustedUrl(uploadedUrl);
       await preloadImage(imageUrl);
       if (keys.textureSlot) {
-        updateDraftVisualOptions(textureSlotPatch(visualItem, keys.textureSlot, { imageUrl, imageName: file.name }));
+        updateDraftVisualOptions(textureSlotPatch(visualItem, keys.textureSlot, { imageUrl, imageName: file.name, visualPending: false }));
       } else {
         updateDraftVisualOptions({ [urlKey]: imageUrl, [nameKey]: file.name, ...(keys.extraPatch || {}) });
       }
@@ -4702,6 +4723,21 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     } catch (error) {
       setDraftUploadState({ uploading: false, error: error.message || 'Upload impossible.' });
     }
+  };
+
+  const renderExtraOption = (option) => {
+    const optionPrice = effectiveExtraOptionPrice(option, catalogEntry, selectedVariant);
+    const displayPrice = optionPrice > 0 ? `+ ${optionPrice.toLocaleString('fr-FR')} €` : t('item_config_included');
+    return (
+      <ToggleOption
+        key={option.id}
+        active={Boolean(selectedExtras[option.id])}
+        label={displayConfigOptionLabel(option, catalogEntry)}
+        detail={displayConfigOptionDetail(option, catalogEntry)}
+        price={displayPrice}
+        onChange={(checked) => toggleExtra(option.id, checked)}
+      />
+    );
   };
 
   const submit = () => {
@@ -4798,22 +4834,9 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
           />
         )}
 
-        {extraOptions.length > 0 && (
+        {regularExtraOptions.length > 0 && (
           <div className="item-config-options">
-            {extraOptions.map((option) => {
-              const optionPrice = effectiveExtraOptionPrice(option, catalogEntry, selectedVariant);
-              const displayPrice = optionPrice > 0 ? `+ ${optionPrice.toLocaleString('fr-FR')} €` : t('item_config_included');
-              return (
-                <ToggleOption
-                  key={option.id}
-                  active={Boolean(selectedExtras[option.id])}
-                  label={displayConfigOptionLabel(option, catalogEntry)}
-                  detail={option.detail}
-                  price={displayPrice}
-                  onChange={(checked) => toggleExtra(option.id, checked)}
-                />
-              );
-            })}
+            {regularExtraOptions.map(renderExtraOption)}
           </div>
         )}
 
@@ -4822,12 +4845,24 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             item={visualItem}
             uploadState={modalUploadState}
             onImageChange={(slot, file) => (item ? onImageChange?.(item, file, { textureSlot: slot }) : handleDraftImage(file, { urlKey: 'unused', nameKey: 'unused', textureSlot: slot }))}
-            onResetImage={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { imageUrl: '', imageName: '' }))}
+            onResetImage={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { imageUrl: '', imageName: '', visualPending: false }))}
+            onImagePending={(slot, checked) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { visualPending: checked }))}
             onColorChange={(slot, patch) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, patch))}
             onResetColor={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { color: '', colorImage: '', colorId: '', colorName: '', colorReference: '', colorPrice: 0, colorMode: '' }))}
             counterColors={counterColors}
             embedded
+            beforeImageContent={barLogoExtraOptions.length > 0 ? (
+              <div className="item-config-options bar-logo-options">
+                {barLogoExtraOptions.map(renderExtraOption)}
+              </div>
+            ) : null}
           />
+        )}
+
+        {barLogoExtraOptions.length > 0 && (!hasVisualOptions || !textureSlots.length) && (
+          <div className="item-config-options bar-logo-options">
+            {barLogoExtraOptions.map(renderExtraOption)}
+          </div>
         )}
 
         {mode === 'add' && (
@@ -4924,10 +4959,14 @@ function PodiumVariantPicker({ choices = [], value, onChange }) {
 }
 
 function ToggleOption({ active, label, detail, price, onChange }) {
+  const detailLines = Array.isArray(detail) ? detail : (detail ? [detail] : []);
   return (
     <button type="button" className={`config-toggle-option ${active ? 'active' : ''}`} onClick={() => onChange(!active)}>
       <i />
-      <span><strong>{label}</strong>{detail && <small>{detail}</small>}</span>
+      <span>
+        <strong>{label}</strong>
+        {detailLines.map((line, index) => <small key={`${line}-${index}`}>{line}</small>)}
+      </span>
       <em className={normalizeTextValue(price).includes('inclus') ? 'included' : ''}>{price}</em>
     </button>
   );
@@ -5071,6 +5110,11 @@ function isStorageCabinetSceneItem(item = {}) {
   return text.includes('meuble') && text.includes('rangement');
 }
 
+function isLightBridgeItem(item = {}) {
+  const text = normalizeTextValue(`${item?.type || ''} ${item?.label || ''} ${item?.options?.variantGroupLabel || ''} ${item?.options?.variantLabel || ''}`);
+  return text.includes('pont') && text.includes('lumiere');
+}
+
 function isBarLogoOption(option = {}, groupEntry = {}) {
   if (!isBarVariantGroupEntry(groupEntry)) return false;
   const text = normalizeTextValue(`${option.id || ''} ${option.label || ''}`);
@@ -5092,6 +5136,22 @@ function barLogoOptionPriceForVariant(variant = {}) {
 function displayConfigOptionLabel(option = {}, groupEntry = {}) {
   if (isBarLogoOption(option, groupEntry)) return 'Logo';
   return option.label || 'Option';
+}
+
+function textureSlotDisplayLabel(slot = {}, item = {}) {
+  const label = slot.label || 'Visuel';
+  if (isLightBridgeItem(item) && normalizeTextValue(label).includes('image personnalisable')) {
+    return 'Bâche recto verso de 3000 x 1000 mm (fichiers pdf, jpeg ou png)';
+  }
+  return label;
+}
+
+function displayConfigOptionDetail(option = {}, groupEntry = {}) {
+  const detail = option.detail || '';
+  if (isSharedGlobalGroupOption(option, groupEntry)) {
+    return [detail, 'Facturé une seule fois, même si vous avez plusieurs TV'].filter(Boolean);
+  }
+  return detail;
 }
 
 function effectiveExtraOptionPrice(option = {}, groupEntry = {}, selectedVariant = {}) {
@@ -6385,6 +6445,14 @@ function validationPendingVisuals({ partitionHeadRule, partitionHeadSides, parti
   });
   items.filter((item) => isWoodReceptionDeskItem(item) && counterLogoOptionActive(item) && item?.options?.binary3VisualPending)
     .forEach((item, index) => rows.push(`Logo comptoir accueil ${index + 1} à transmettre`));
+  items.forEach((item) => {
+    const slots = normalizeTextureSlots(item?.dimensions?.textureSlots).filter((slot) => slot.kind === 'image');
+    slots.forEach((slot) => {
+      if (item?.options?.textureSlotValues?.[slot.id]?.visualPending) {
+        rows.push(`${textureSlotDisplayLabel(slot, item)} à transmettre`);
+      }
+    });
+  });
   return uniqueTextValues(rows);
 }
 
@@ -6803,14 +6871,18 @@ function reserveSizeDescription(area = 0, label = '') {
 function PartitionHeadOptionCard({ rule, sides = {}, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions }) {
   const t = useT();
   const rows = [
-    { side: 'left', label: t('partition_left'), visualLabel: t('partition_visual_left'), uploadSubtitle: `${t('partition_left')} · ${t('partition_size')}`, type: rule?.leftType, price: rule?.leftPrice },
-    { side: 'right', label: t('partition_right'), visualLabel: t('partition_visual_right'), uploadSubtitle: `${t('partition_right')} · ${t('partition_size')}`, type: rule?.rightType, price: rule?.rightPrice },
+    { side: 'left', label: t('partition_left'), visualLabel: 'VISUEL LUMINEUX tête de cloison gauche', uploadSubtitle: 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.leftType, price: rule?.leftPrice },
+    { side: 'right', label: t('partition_right'), visualLabel: 'VISUEL LUMINEUX tête de cloison droite', uploadSubtitle: 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.rightType, price: rule?.rightPrice },
   ];
   const selectedRows = rows.filter((row) => Boolean(sides?.[row.side]));
   const selectedCount = selectedRows.length;
 
   return (
     <div className="partition-head-panel partition-head-panel-v2">
+      <div className="partition-head-activity-info">
+        <b>i</b>
+        <span>Le fond de couleur correspond à votre secteur d'activité et ne peut être modifié.</span>
+      </div>
 
       <label className="partition-head-company-field">
         <span>{t('partition_head_company_field')}</span>
