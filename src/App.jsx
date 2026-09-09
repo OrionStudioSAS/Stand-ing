@@ -3171,6 +3171,73 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
   );
 }
 
+function LogoUploadCard({
+  enabled = true,
+  disabled = false,
+  uploading = false,
+  title = 'Logo',
+  priceLabel = '',
+  priceTone = 'included',
+  imageUrl = '',
+  alt = 'Logo',
+  spec = '',
+  visualPending = false,
+  resetLabel = '',
+  onEnabledChange,
+  onImageChange,
+  onVisualPendingChange,
+  onResetImage,
+  className = '',
+}) {
+  const t = useT();
+  return (
+    <section className={`counter-logo-card counter-logo-card-v2 ${className}`.trim()}>
+      <header>
+        <strong>{title}</strong>
+        <label className="counter-logo-switch" aria-label="Activer le logo">
+          <input
+            type="checkbox"
+            disabled={disabled}
+            checked={enabled}
+            onChange={(event) => onEnabledChange?.(event.target.checked)}
+          />
+          <span aria-hidden="true" />
+        </label>
+      </header>
+      {enabled && (
+        <>
+          {priceLabel && <em className={priceTone}>{priceLabel}</em>}
+
+          <VisualUploadDropzone
+            imageUrl={imageUrl}
+            alt={alt}
+            disabled={disabled || uploading}
+            uploading={uploading}
+            onImage={onImageChange}
+            label=""
+            browseLabel="Importer"
+          />
+          {spec && <small className="visual-upload-spec">{spec}</small>}
+          <label className="visual-pending-checkbox">
+            <input
+              type="checkbox"
+              disabled={disabled}
+              checked={visualPending}
+              onChange={(event) => onVisualPendingChange?.(event.target.checked)}
+            />
+            <span>{t('visual_pending_label')}</span>
+          </label>
+          {imageUrl && onResetImage && (
+            <button className="item-image-reset" type="button" disabled={disabled} onClick={onResetImage}>
+              {resetLabel || t('wood_desk_reset_image')}
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onVisualPendingChange, onLogoEnabledChange, embedded = false, optionsFree = false, logoPrice = 0 }) {
   const t = useT();
   const finishes = counterFinishOptions(colors);
@@ -3233,47 +3300,21 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
         )}
       </section>
 
-      <section className="counter-logo-card counter-logo-card-v2 item-counter-logo-card">
-        <header>
-          <strong>Logo</strong>
-          <label className="counter-logo-switch" aria-label="Activer le logo">
-            <input
-              type="checkbox"
-              checked={logoEnabled}
-              onChange={(event) => onLogoEnabledChange?.(event.target.checked)}
-            />
-            <span aria-hidden="true" />
-          </label>
-        </header>
-        {logoEnabled && (
-          <>
-            <em className={displayLogoPrice > 0 ? 'billable' : 'included'}>
-              {displayLogoPrice > 0 ? `+ ${displayLogoPrice.toLocaleString('fr-FR')} €` : t('counter_included_badge')}
-            </em>
-
-            <VisualUploadDropzone
-              imageUrl={item.options?.binary3ImageUrl}
-              disabled={uploadState?.uploading}
-              uploading={uploadState?.uploading}
-              onImage={onImageChange}
-              label=""
-              browseLabel="Importer"
-            />
-            <small className="visual-upload-spec">
-              {(() => { const [w, h] = woodReceptionDeskImageCoverSize(item); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
-            </small>
-            <label className="visual-pending-checkbox">
-              <input
-                type="checkbox"
-                checked={logoPending}
-                onChange={(event) => onVisualPendingChange?.(event.target.checked)}
-              />
-              <span>{t('visual_pending_label')}</span>
-            </label>
-            {item.options?.binary3ImageUrl && <button className="item-image-reset" type="button" onClick={onResetImage}>{t('wood_desk_reset_image')}</button>}
-          </>
-        )}
-      </section>
+      <LogoUploadCard
+        enabled={logoEnabled}
+        uploading={uploadState?.uploading}
+        className="item-counter-logo-card"
+        priceLabel={displayLogoPrice > 0 ? `+ ${displayLogoPrice.toLocaleString('fr-FR')} €` : t('counter_included_badge')}
+        priceTone={displayLogoPrice > 0 ? 'billable' : 'included'}
+        imageUrl={item.options?.binary3ImageUrl}
+        spec={(() => { const [w, h] = woodReceptionDeskImageCoverSize(item); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
+        visualPending={logoPending}
+        onEnabledChange={onLogoEnabledChange}
+        onImageChange={onImageChange}
+        onVisualPendingChange={onVisualPendingChange}
+        onResetImage={onResetImage}
+        resetLabel={t('wood_desk_reset_image')}
+      />
 
       {uploadState?.uploading && <p className="item-options-status">{t('img_uploading')}</p>}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
@@ -3281,13 +3322,12 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
   );
 }
 
-function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetImage, onImagePending, onColorChange, onResetColor, counterColors = [], embedded = false, beforeImageContent = null }) {
+function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetImage, onImagePending, onColorChange, onResetColor, onLogoGateChange, logoGateControls = [], counterColors = [], embedded = false }) {
   const t = useT();
   const slots = normalizeTextureSlots(item?.dimensions?.textureSlots);
   const values = item?.options?.textureSlotValues || {};
   const isLightBridge = isLightBridgeItem(item);
   const orderedSlots = [...slots].sort((a, b) => (a.kind === 'color' ? 0 : 1) - (b.kind === 'color' ? 0 : 1));
-  const firstImageSlotId = orderedSlots.find((slot) => slot.kind !== 'color')?.id || '';
   if (!slots.length) return null;
   return (
     <aside className={embedded ? 'item-visual-config texture-slots-compact' : 'item-options-panel texture-slots-compact'}>
@@ -3332,9 +3372,31 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
           );
         }
         const logoGateActive = textureSlotLogoGateActive(item, slot);
+        const logoGate = textureSlotHasLogoGate(item, slot) ? (logoGateControls[0] || null) : null;
+        if (logoGate) {
+          return (
+            <LogoUploadCard
+              key={slot.id}
+              enabled={logoGateActive}
+              disabled={uploadState?.uploading}
+              uploading={uploadState?.uploading}
+              className="texture-slot-logo-card"
+              title={logoGate.label || 'Logo'}
+              priceLabel={logoGate.priceLabel || ''}
+              priceTone={logoGate.priceTone || 'included'}
+              imageUrl={value.imageUrl}
+              alt={textureSlotDisplayLabel(slot, item)}
+              visualPending={Boolean(value.visualPending)}
+              onEnabledChange={(checked) => onLogoGateChange?.(logoGate.id, checked)}
+              onImageChange={(file) => onImageChange?.(slot, file)}
+              onVisualPendingChange={(checked) => onImagePending?.(slot, checked)}
+              onResetImage={() => onResetImage?.(slot)}
+              resetLabel={t('img_upload_reset')}
+            />
+          );
+        }
         return (
           <React.Fragment key={slot.id}>
-            {beforeImageContent && slot.id === firstImageSlotId ? beforeImageContent : null}
             {logoGateActive && (
               <div className="generic-texture-slot compact-image-slot">
                 <div className="partition-head-upload-title visual-upload-title">
@@ -3363,7 +3425,6 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
           </React.Fragment>
         );
       })}
-      {beforeImageContent && !firstImageSlotId ? beforeImageContent : null}
       {uploadState?.uploading && <p className="item-options-status">Import de l'image...</p>}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
     </aside>
@@ -4669,6 +4730,16 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const canDeleteCurrentItem = mode !== 'edit' || canDeleteItem?.(item) !== false;
   const barLogoExtraOptions = extraOptions.filter((option) => isBarLogoOption(option, catalogEntry));
   const regularExtraOptions = extraOptions.filter((option) => !isBarLogoOption(option, catalogEntry));
+  const textureSlotHasLogoGateControl = textureSlots.some((slot) => textureSlotHasLogoGate(visualItem, slot));
+  const textureSlotLogoGateControls = barLogoExtraOptions.map((option) => {
+    const optionPrice = effectiveExtraOptionPrice(option, catalogEntry, selectedVariant);
+    return {
+      id: option.id,
+      label: displayConfigOptionLabel(option, catalogEntry),
+      priceLabel: optionPrice > 0 ? `+ ${optionPrice.toLocaleString('fr-FR')} €` : t('item_config_included'),
+      priceTone: optionPrice > 0 ? 'billable' : 'included',
+    };
+  });
   const deleteFromModal = () => {
     if (mode === 'edit' && item?.id) {
       if (!canDeleteCurrentItem) return;
@@ -4855,17 +4926,14 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             onImagePending={(slot, checked) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { visualPending: checked }))}
             onColorChange={(slot, patch) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, patch))}
             onResetColor={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { color: '', colorImage: '', colorId: '', colorName: '', colorReference: '', colorPrice: 0, colorMode: '' }))}
+            onLogoGateChange={(id, checked) => toggleExtra(id, checked)}
+            logoGateControls={textureSlotLogoGateControls}
             counterColors={counterColors}
             embedded
-            beforeImageContent={barLogoExtraOptions.length > 0 ? (
-              <div className="item-config-options bar-logo-options">
-                {barLogoExtraOptions.map(renderExtraOption)}
-              </div>
-            ) : null}
           />
         )}
 
-        {barLogoExtraOptions.length > 0 && (!hasVisualOptions || !textureSlots.length) && (
+        {barLogoExtraOptions.length > 0 && (!hasVisualOptions || !textureSlots.length || !textureSlotHasLogoGateControl) && (
           <div className="item-config-options bar-logo-options">
             {barLogoExtraOptions.map(renderExtraOption)}
           </div>
