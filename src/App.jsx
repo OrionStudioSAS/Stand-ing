@@ -3331,32 +3331,35 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
             </label>
           );
         }
+        const logoGateActive = textureSlotLogoGateActive(item, slot);
         return (
           <React.Fragment key={slot.id}>
             {beforeImageContent && slot.id === firstImageSlotId ? beforeImageContent : null}
-            <div className="generic-texture-slot compact-image-slot">
-              <div className="partition-head-upload-title visual-upload-title">
-                <strong>{textureSlotDisplayLabel(slot, item)}</strong>
+            {logoGateActive && (
+              <div className="generic-texture-slot compact-image-slot">
+                <div className="partition-head-upload-title visual-upload-title">
+                  <strong>{textureSlotDisplayLabel(slot, item)}</strong>
+                </div>
+                <VisualUploadDropzone
+                  imageUrl={value.imageUrl}
+                  disabled={uploadState?.uploading}
+                  uploading={uploadState?.uploading}
+                  onImage={(file) => onImageChange?.(slot, file)}
+                />
+                {isLightBridge && (
+                  <label className="visual-pending-checkbox texture-slot-pending-checkbox">
+                    <input
+                      type="checkbox"
+                      disabled={uploadState?.uploading}
+                      checked={Boolean(value.visualPending)}
+                      onChange={(event) => onImagePending?.(slot, event.target.checked)}
+                    />
+                    <span>{t('visual_pending_label')}</span>
+                  </label>
+                )}
+                {value.imageUrl && <button type="button" className="item-image-reset" onClick={() => onResetImage?.(slot)}>Réinitialiser</button>}
               </div>
-              <VisualUploadDropzone
-                imageUrl={value.imageUrl}
-                disabled={uploadState?.uploading}
-                uploading={uploadState?.uploading}
-                onImage={(file) => onImageChange?.(slot, file)}
-              />
-              {isLightBridge && (
-                <label className="visual-pending-checkbox texture-slot-pending-checkbox">
-                  <input
-                    type="checkbox"
-                    disabled={uploadState?.uploading}
-                    checked={Boolean(value.visualPending)}
-                    onChange={(event) => onImagePending?.(slot, event.target.checked)}
-                  />
-                  <span>{t('visual_pending_label')}</span>
-                </label>
-              )}
-              {value.imageUrl && <button type="button" className="item-image-reset" onClick={() => onResetImage?.(slot)}>Réinitialiser</button>}
-            </div>
+            )}
           </React.Fragment>
         );
       })}
@@ -4613,7 +4616,10 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     type: item?.type || resolvedEntry?.type || catalogEntry.type,
     label: item?.label || resolvedEntry?.label || catalogEntry.label,
     dimensions: textureSourceEntry?.dimensions || item?.dimensions || resolvedEntry?.dimensions || catalogEntry.dimensions,
-    options: visualOptions,
+    options: {
+      ...visualOptions,
+      extraOptions: { ...(visualOptions.extraOptions || {}), ...selectedExtras },
+    },
   };
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
   const extras = extraOptions
@@ -5144,6 +5150,30 @@ function textureSlotDisplayLabel(slot = {}, item = {}) {
     return 'Bâche recto verso de 3000 x 1000 mm (fichiers pdf, jpeg ou png)';
   }
   return label;
+}
+
+function textureSlotLogoGateOptions(item = {}) {
+  return normalizeAssetConfigOptions(item?.dimensions?.configOptions || [])
+    .filter((option) => {
+      const text = normalizeTextValue(`${option.id || ''} ${option.label || ''} ${option.reference || ''}`);
+      return text.includes('logo') || text.includes('signa');
+    });
+}
+
+function textureSlotHasLogoGate(item = {}, slot = {}) {
+  return slot.kind === 'image' && textureSlotLogoGateOptions(item).length > 0;
+}
+
+function textureSlotLogoGateActive(item = {}, slot = {}) {
+  const gates = textureSlotLogoGateOptions(item);
+  if (slot.kind !== 'image' || !gates.length) return true;
+  const selectedExtras = item?.options?.extraOptions || {};
+  const selectedRefs = Array.isArray(item?.options?.optionReferences) ? item.options.optionReferences : [];
+  return gates.some((option) => {
+    if (Object.prototype.hasOwnProperty.call(selectedExtras, option.id)) return Boolean(selectedExtras[option.id]);
+    if (selectedRefs.some((ref) => String(ref?.id || '') === String(option.id || ''))) return true;
+    return Boolean(option.defaultChecked);
+  });
 }
 
 function displayConfigOptionDetail(option = {}, groupEntry = {}) {
@@ -17733,6 +17763,9 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   if (textureSlotMaterial !== material) return textureSlotMaterial;
 
   if (isWoodReceptionDeskItem(item)) {
+    if (isWoodReceptionDeskImageMaterial(materialName, material, item) && !counterLogoOptionActive(item)) {
+      return materialWithColor(material, '#ffffff');
+    }
     if (textureOptions.customImageTexture && isWoodReceptionDeskImageMaterial(materialName, material, item)) {
       return materialWithTexture(material, textureOptions.customImageTexture);
     }
@@ -17794,9 +17827,15 @@ function applyTextureSlotMaterial(material, item = {}, textureOptions = {}, mate
       if (value.color) return materialWithColor(material, value.color);
     }
     if (slot.kind === 'image' && image) {
+      if (textureSlotHasLogoGate(item, slot) && !textureSlotLogoGateActive(item, slot)) {
+        return materialWithColor(material, '#ffffff');
+      }
       const [targetWidth, targetHeight] = materialTextureCanvasSize(material);
       const texture = createCoverImageTexture(image, targetWidth, targetHeight, { flipY: textureOptions.textureSlotFlipY ?? true, fit: 'contain', backgroundColor: '#ffffff' });
       if (texture) return materialWithTexture(material, texture);
+    }
+    if (slot.kind === 'image' && textureSlotHasLogoGate(item, slot) && !textureSlotLogoGateActive(item, slot)) {
+      return materialWithColor(material, '#ffffff');
     }
   }
   return material;
