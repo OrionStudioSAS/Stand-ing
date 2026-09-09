@@ -1,6 +1,6 @@
 import React, { Suspense, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Canvas, useFrame, useLoader } from '@react-three/fiber';
+import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
 import { Box3, BufferGeometry, Cache, CanvasTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MOUSE, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -1244,6 +1244,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const sceneCanvasClassName = [
     (draggingId || technicalFloorRampDragging) ? 'dragging-canvas' : '',
     !sceneHasRendered && !sceneAssetsReady ? 'scene-canvas-loading' : '',
+    activeStep === 4 ? 'validation-immersive-canvas' : '',
   ].filter(Boolean).join(' ');
   const selected = visibleSceneItems.find((item) => item.id === selectedId);
   const selectedMovementHardLocked = selected ? itemToolbarMovementHardLocked(selected) : false;
@@ -2374,9 +2375,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             }
           }}
         >
-          <color attach="background" args={['#eef0f4']} />
-          <ambientLight intensity={1.42} />
-          <directionalLight position={[3, 7, 4]} intensity={0.72} castShadow shadow-mapSize={[2048, 2048]} />
+          <color attach="background" args={[activeStep === 4 ? '#e7ebf0' : '#eef0f4']} />
+          <ambientLight intensity={activeStep === 4 ? 1.28 : 1.42} />
+          <directionalLight position={[3, 7, 4]} intensity={activeStep === 4 ? 0.86 : 0.72} castShadow shadow-mapSize={[2048, 2048]} />
+          {activeStep === 4 && <ValidationImmersiveEnvironment width={width} depth={depth} />}
           <Suspense fallback={<Html center>Chargement</Html>}>
             {shouldRenderScene && (
               <StandScene
@@ -2446,6 +2448,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onStart={() => setOrbitControlsActive(true)}
             onEnd={() => setOrbitControlsActive(false)}
           />
+          <StepFourCamera active={activeStep === 4} width={width} depth={depth} />
         </Canvas>
 
         {!sceneHasRendered && !sceneAssetsReady && <SceneTextureLoaderOverlay loaded={sceneLoadProgress.loaded} total={sceneLoadProgress.total} />}
@@ -16957,6 +16960,127 @@ function SceneConstraintColumn({ constraint }) {
       <mesh castShadow receiveShadow>
         <boxGeometry args={[columnWidth, columnHeight, columnDepth]} />
         <meshStandardMaterial color="#8f98a3" roughness={0.72} metalness={0.02} />
+      </mesh>
+    </group>
+  );
+}
+
+function StepFourCamera({ active = false, width = 0, depth = 0 }) {
+  const { camera, controls } = useThree();
+  const transition = useRef({
+    running: false,
+    progress: 1,
+    startPosition: new Vector3(),
+    startTarget: new Vector3(),
+    endPosition: new Vector3(),
+    endTarget: new Vector3(),
+  });
+
+  useEffect(() => {
+    if (!active) {
+      transition.current.running = false;
+      return;
+    }
+
+    const span = Math.max(Number(width || 0), Number(depth || 0), 3);
+    transition.current = {
+      running: true,
+      progress: 0,
+      startPosition: camera.position.clone(),
+      startTarget: controls?.target?.clone?.() || new Vector3(0, 0.7, 0),
+      endPosition: new Vector3(
+        Math.max(3.8, Number(width || 0) * 0.58),
+        Math.max(3.45, span * 0.54),
+        Math.max(4.6, Number(depth || 0) * 0.78),
+      ),
+      endTarget: new Vector3(0, 0.68, 0),
+    };
+  }, [active, width, depth, camera, controls]);
+
+  useFrame((_, delta) => {
+    if (!active || !transition.current.running) return;
+    const state = transition.current;
+    state.progress = Math.min(1, state.progress + delta / 0.82);
+    const eased = 1 - Math.pow(1 - state.progress, 3);
+    camera.position.lerpVectors(state.startPosition, state.endPosition, eased);
+    if (controls?.target) {
+      controls.target.lerpVectors(state.startTarget, state.endTarget, eased);
+      controls.update?.();
+    }
+    if (state.progress >= 1) state.running = false;
+  });
+
+  return null;
+}
+
+function ValidationImmersiveEnvironment({ width = 0, depth = 0 }) {
+  const hallWidth = Math.max(Number(width || 0) + 7, 11.5);
+  const hallDepth = Math.max(Number(depth || 0) + 8, 10);
+  const backZ = -Number(depth || 0) / 2 - 1.35;
+  const frontZ = Number(depth || 0) / 2 + 2.15;
+  const sideX = hallWidth / 2;
+  const boothZ = Number(depth || 0) / 2 + 1.45;
+
+  return (
+    <group>
+      <mesh receiveShadow position={[0, -0.085, 0.32]}>
+        <boxGeometry args={[hallWidth, 0.06, hallDepth]} />
+        <meshStandardMaterial color="#d7dce2" roughness={0.92} metalness={0.02} />
+      </mesh>
+
+      <mesh receiveShadow position={[0, 1.45, backZ]}>
+        <boxGeometry args={[hallWidth, 2.9, 0.08]} />
+        <meshStandardMaterial color="#eef1f5" roughness={0.82} />
+      </mesh>
+      <mesh receiveShadow position={[-sideX, 1.28, 0.15]}>
+        <boxGeometry args={[0.08, 2.55, hallDepth - 1.2]} />
+        <meshStandardMaterial color="#e4e8ee" roughness={0.86} />
+      </mesh>
+      <mesh receiveShadow position={[sideX, 1.28, 0.15]}>
+        <boxGeometry args={[0.08, 2.55, hallDepth - 1.2]} />
+        <meshStandardMaterial color="#e4e8ee" roughness={0.86} />
+      </mesh>
+
+      <mesh position={[0, 3.05, backZ + 1.18]} castShadow>
+        <boxGeometry args={[hallWidth - 1.5, 0.055, 0.055]} />
+        <meshStandardMaterial color="#6f7884" roughness={0.5} metalness={0.18} />
+      </mesh>
+      <mesh position={[-sideX + 1.2, 3.05, 0.28]} castShadow>
+        <boxGeometry args={[0.055, 0.055, hallDepth - 2.5]} />
+        <meshStandardMaterial color="#6f7884" roughness={0.5} metalness={0.18} />
+      </mesh>
+      <mesh position={[sideX - 1.2, 3.05, 0.28]} castShadow>
+        <boxGeometry args={[0.055, 0.055, hallDepth - 2.5]} />
+        <meshStandardMaterial color="#6f7884" roughness={0.5} metalness={0.18} />
+      </mesh>
+
+      {[-1, 1].map((side) => (
+        <group key={side} position={[side * (sideX - 1.35), 0, boothZ]}>
+          <mesh castShadow receiveShadow position={[0, 0.7, 0]}>
+            <boxGeometry args={[1.55, 1.4, 0.08]} />
+            <meshStandardMaterial color={side < 0 ? '#f5f0e8' : '#edf3f6'} roughness={0.8} />
+          </mesh>
+          <mesh castShadow position={[0, 1.55, -0.03]}>
+            <boxGeometry args={[1.3, 0.38, 0.1]} />
+            <meshStandardMaterial color={side < 0 ? '#d74d42' : '#21477f'} roughness={0.5} emissive={side < 0 ? '#180302' : '#020b18'} emissiveIntensity={0.22} />
+          </mesh>
+          <mesh receiveShadow position={[0, 0.18, 0.42]}>
+            <boxGeometry args={[1.2, 0.36, 0.62]} />
+            <meshStandardMaterial color="#ffffff" roughness={0.72} />
+          </mesh>
+        </group>
+      ))}
+
+      {[-0.36, 0, 0.36].map((x, index) => (
+        <mesh key={x} position={[x * hallWidth, 3.0, backZ + 1.1 + index * 0.45]}>
+          <boxGeometry args={[0.18, 0.08, 0.18]} />
+          <meshStandardMaterial color="#fff4cf" emissive="#fff1ad" emissiveIntensity={0.9} roughness={0.4} />
+        </mesh>
+      ))}
+
+      <mesh position={[0, -0.045, frontZ]} receiveShadow>
+        <boxGeometry args={[hallWidth - 2.8, 0.015, 0.52]} />
+        <meshStandardMaterial color="#cfd6df" roughness={0.9} />
       </mesh>
     </group>
   );

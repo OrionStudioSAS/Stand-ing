@@ -12691,3 +12691,7 @@ img.asset-thumb {
   overflow-wrap: anywhere;
   white-space: normal;
 }
+
+.validation-immersive-canvas {
+  background: radial-gradient(circle at 50% 38%, #f7f9fc 0%, #e9edf3 52%, #d8dde5 100%);
+}
