@@ -3371,8 +3371,10 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
             </label>
           );
         }
-        const logoGateActive = textureSlotLogoGateActive(item, slot);
-        const logoGate = textureSlotHasLogoGate(item, slot) ? (logoGateControls[0] || null) : null;
+        const logoGate = slot.kind === 'image' && logoGateControls.length
+          ? logoGateControls[0]
+          : (textureSlotHasLogoGate(item, slot) ? (logoGateControls[0] || null) : null);
+        const logoGateActive = logoGate ? Boolean(logoGate.active) : textureSlotLogoGateActive(item, slot);
         if (logoGate) {
           return (
             <LogoUploadCard
@@ -3387,7 +3389,7 @@ function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetIma
               imageUrl={value.imageUrl}
               alt={textureSlotDisplayLabel(slot, item)}
               visualPending={Boolean(value.visualPending)}
-              onEnabledChange={(checked) => onLogoGateChange?.(logoGate.id, checked)}
+              onEnabledChange={(checked) => onLogoGateChange?.(logoGate.id, checked, slot)}
               onImageChange={(file) => onImageChange?.(slot, file)}
               onVisualPendingChange={(checked) => onImagePending?.(slot, checked)}
               onResetImage={() => onResetImage?.(slot)}
@@ -4730,7 +4732,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const canDeleteCurrentItem = mode !== 'edit' || canDeleteItem?.(item) !== false;
   const barLogoExtraOptions = extraOptions.filter((option) => isBarLogoOption(option, catalogEntry));
   const regularExtraOptions = extraOptions.filter((option) => !isBarLogoOption(option, catalogEntry));
-  const textureSlotHasLogoGateControl = textureSlots.some((slot) => textureSlotHasLogoGate(visualItem, slot));
+  const textureSlotHasLogoGateControl = textureSlots.some((slot) => slot.kind === 'image' && (textureSlotHasLogoGate(visualItem, slot) || barLogoExtraOptions.length > 0));
   const textureSlotLogoGateControls = barLogoExtraOptions.map((option) => {
     const optionPrice = effectiveExtraOptionPrice(option, catalogEntry, selectedVariant);
     return {
@@ -4738,6 +4740,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
       label: displayConfigOptionLabel(option, catalogEntry),
       priceLabel: optionPrice > 0 ? `+ ${optionPrice.toLocaleString('fr-FR')} €` : t('item_config_included'),
       priceTone: optionPrice > 0 ? 'billable' : 'included',
+      active: Boolean(selectedExtras[option.id]),
     };
   });
   const deleteFromModal = () => {
@@ -4926,7 +4929,10 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             onImagePending={(slot, checked) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { visualPending: checked }))}
             onColorChange={(slot, patch) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, patch))}
             onResetColor={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { color: '', colorImage: '', colorId: '', colorName: '', colorReference: '', colorPrice: 0, colorMode: '' }))}
-            onLogoGateChange={(id, checked) => toggleExtra(id, checked)}
+            onLogoGateChange={(id, checked, slot) => {
+              toggleExtra(id, checked);
+              if (!checked) updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { imageUrl: '', imageName: '', visualPending: false }));
+            }}
             logoGateControls={textureSlotLogoGateControls}
             counterColors={counterColors}
             embedded
