@@ -1054,23 +1054,48 @@ export async function deleteSalonOffer(salon, offer) {
   }
 
   if (offer.id) {
-    const { error: sourceError } = await supabase
+    const { data: presets, error: presetListError } = await supabase
+      .from('stand_presets')
+      .select('id')
+      .eq('offer_id', offer.id);
+    if (presetListError) throw presetListError;
+
+    const presetIds = (presets || []).map((preset) => preset.id).filter(Boolean);
+    if (presetIds.length) {
+      const { error: itemDeleteError } = await supabase
+        .from('stand_preset_items')
+        .delete()
+        .in('preset_id', presetIds);
+      if (itemDeleteError) throw itemDeleteError;
+    }
+
+    const { error: presetDeleteError } = await supabase
+      .from('stand_presets')
+      .delete()
+      .eq('offer_id', offer.id);
+    if (presetDeleteError) throw presetDeleteError;
+
+    const { error: sourceByOfferError } = await supabase
       .from('monday_sources')
       .delete()
       .eq('offer_id', offer.id);
-    if (sourceError) throw sourceError;
-
-    const { error } = await supabase.from('salon_offers').delete().eq('id', offer.id);
-    if (error) throw error;
-    return true;
+    if (sourceByOfferError) throw sourceByOfferError;
   }
 
-  const { error: sourceError } = await supabase
-    .from('monday_sources')
-    .delete()
-    .eq('salon_id', salon.id)
-    .eq('offer', offer.name);
-  if (sourceError) throw sourceError;
+  if (salon?.id && offer.name) {
+    const { error: sourceByNameError } = await supabase
+      .from('monday_sources')
+      .delete()
+      .eq('salon_id', salon.id)
+      .eq('offer', offer.name);
+    if (sourceByNameError) throw sourceByNameError;
+  }
+
+  if (offer.id) {
+    const { error } = await supabase.from('salon_offers').delete().eq('id', offer.id);
+    if (error) throw error;
+  }
+
   return true;
 }
 

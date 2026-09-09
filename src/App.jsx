@@ -222,7 +222,6 @@ const languages = [
   { id: 'fr', label: 'Français', sublabel: 'Interface en français', short: 'FR', flag: '🇫🇷' },
   { id: 'en', label: 'English', sublabel: 'Interface in English', short: 'EN', flag: '🇬🇧' },
 ];
-const defaultPackNames = ['Confort', 'Signature', 'SIAE', 'Prestige'];
 const reserveRuleBands = [
   { id: 'small', label: 'Moins de 18 m²', minArea: 0, maxArea: 17.999, includedLabel: 'Aucune réserve incluse' },
   { id: 'medium', label: '18 à 24 m²', minArea: 18, maxArea: 24.999, includedLabel: 'Réserve 2 m²' },
@@ -7678,7 +7677,7 @@ function AdminDashboard({ user, adminProfile }) {
   useEffect(() => {
     listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error));
     listClients(filters).then(setClients).catch((error) => console.error('Client list failed', error));
-    listSalons({ search: filters.search }).then(setSalons).catch((error) => console.error('Salon list failed', error));
+    listSalons({}).then(setSalons).catch((error) => console.error('Salon list failed', error));
     listAdminUsers().then(setAdminUsers).catch((error) => console.error('Admin users list failed', error));
   }, [filters]);
 
@@ -7704,7 +7703,7 @@ function AdminDashboard({ user, adminProfile }) {
   };
 
   const refreshSalons = () => {
-    return listSalons({ search: filters.search }).then(setSalons).catch((error) => console.error('Salon list failed', error));
+    return listSalons({}).then(setSalons).catch((error) => console.error('Salon list failed', error));
   };
 
   const createAdminSalon = async (draft) => {
@@ -7971,6 +7970,7 @@ function AdminDashboard({ user, adminProfile }) {
             <AdminObjectsView
               assets={assets}
               scenes={scenes}
+              salons={salons}
               search={filters.search}
               category={assetCategory}
               selectedAsset={selectedAsset}
@@ -8199,6 +8199,15 @@ function normalizeSalonTitle(raw) {
   const label = (raw || '').replace(/\s*—\s*.+$/, '').trim();
   if (normalizeTextValue(label) === 'smcl') return 'SMCL 2026';
   return label;
+}
+
+
+function adminSalonAssignmentChoices(salons = [], scenes = []) {
+  const salonLabels = (salons || [])
+    .map((salon) => normalizeSalonTitle(salon?.name || salon?.title || salon?.salon || ''))
+    .filter(Boolean);
+  const sceneLabels = getSalonRows(scenes || []).map((salon) => salon.title);
+  return uniqueTextValues([...salonLabels, ...sceneLabels]).sort((a, b) => a.localeCompare(b, 'fr', { numeric: true, sensitivity: 'base' }));
 }
 
 function getSalonRows(scenes) {
@@ -8604,7 +8613,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
             <i />
           </article>
         )) : (
-          <div className="admin-empty-row">Aucun salon disponible pour les packs.</div>
+          <div className="admin-empty-row">Aucun pack configuré pour ce salon. Crée un pack avec le champ ci-dessus.</div>
         )}
       </div>
 
@@ -8636,7 +8645,6 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
 
 function salonPackCards(salon) {
   const packNames = uniqueByNormalized([
-    ...defaultPackNames,
     ...(salon.offers || []).map((offer) => offer.name),
     ...(salon.monday_sources || []).map((source) => source.offer),
   ].filter(Boolean)).sort(packNameSort);
@@ -9896,7 +9904,7 @@ function sceneStatusKind(scene = {}) {
   return 'neutral';
 }
 
-function AdminObjectsView({ assets, scenes, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onDuplicateAsset, onReorderAssets, onUploadAssetFolder, onUploadColorGroup }) {
+function AdminObjectsView({ assets, scenes, salons, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onDuplicateAsset, onReorderAssets, onUploadAssetFolder, onUploadColorGroup }) {
   const [groupCreatorOpen, setGroupCreatorOpen] = useState(false);
   const [variantGroupCreatorOpen, setVariantGroupCreatorOpen] = useState(false);
   const [assetSearch, setAssetSearch] = useState(search || '');
@@ -10042,6 +10050,7 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
         <AssetDrawer
           asset={selectedAsset}
           scenes={scenes}
+          salons={salons}
           assets={assets}
           onClose={onCloseAsset}
           onSave={onSaveAsset}
@@ -10053,6 +10062,7 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
         <AssetGroupCreator
           assets={assets}
           scenes={scenes}
+          salons={salons}
           onClose={() => setGroupCreatorOpen(false)}
           onCreate={async (groupAsset) => {
             const saved = await onSaveAsset(groupAsset);
@@ -10065,6 +10075,7 @@ function AdminObjectsView({ assets, scenes, search, category, selectedAsset, upl
         <AssetVariantGroupCreator
           assets={assets}
           scenes={scenes}
+          salons={salons}
           onClose={() => setVariantGroupCreatorOpen(false)}
           onCreate={async (groupAsset) => {
             const saved = await onSaveAsset(groupAsset);
@@ -10144,7 +10155,7 @@ function AssetPreview({ asset }) {
   return <span className="asset-glb-preview">{assetFormat(asset)}</span>;
 }
 
-function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDuplicate }) {
+function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose, onSave, onDelete, onDuplicate }) {
   const [draft, setDraft] = useState(asset);
   const [thumbnailUploading, setThumbnailUploading] = useState(false);
   const [thumbnailError, setThumbnailError] = useState('');
@@ -10153,7 +10164,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
   const [groupRows, setGroupRows] = useState(() => assetToGroupRows(asset));
   const [selectedGroupRowUid, setSelectedGroupRowUid] = useState(null);
   const [draggingGroupRowUid, setDraggingGroupRowUid] = useState(null);
-  const salons = getSalonRows(scenes).map((salon) => salon.title);
+  const salonChoices = adminSalonAssignmentChoices(adminSalons, scenes);
   const assignedSalons = assetSalons(draft, scenes);
   const isColorGroup = Boolean(draft.dimensions?.isColorGroup);
   const isGroupAsset = Boolean(draft.dimensions?.isGroup);
@@ -10924,7 +10935,7 @@ function AssetDrawer({ asset, assets, scenes, onClose, onSave, onDelete, onDupli
 
         <section className="asset-assignment">
           <h3>Affectation par salon</h3>
-          {(salons.length ? salons : ['SMCL 2026']).map((salon) => {
+          {(salonChoices.length ? salonChoices : ['SMCL 2026']).map((salon) => {
             const active = assignedSalons.includes(salon);
             const salonPricing = getSalonPricing(draft, salon);
             return (
@@ -11275,7 +11286,7 @@ function AssetVariantSourceRows({ rows, sourceAssets, onChange, onRemove, onReor
 }
 
 
-function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
+function AssetVariantGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, onCreate }) {
   const sourceAssets = variantSourceAssets(assets);
   const fallbackType = sourceAssets[0]?.type || '';
   const [name, setName] = useState('Nouveau groupe de variantes');
@@ -11283,8 +11294,13 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
   const [rows, setRows] = useState(fallbackType ? [fallbackType] : []);
   const [configOptions, setConfigOptions] = useState([]);
   const [variantOptionLinks, setVariantOptionLinks] = useState([]);
-  const [assignedSalons, setAssignedSalons] = useState(() => getSalonRows(scenes).map((salon) => salon.title).slice(0, 1));
+  const salonChoices = adminSalonAssignmentChoices(adminSalons, scenes);
+  const [assignedSalons, setAssignedSalons] = useState(() => salonChoices.slice(0, 1));
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setAssignedSalons((current) => current.length ? current.filter((salon) => salonChoices.includes(salon)) : salonChoices.slice(0, 1));
+  }, [salonChoices.join('|')]);
 
   const toggleSalon = (salon) => {
     setAssignedSalons((current) => (current.includes(salon) ? current.filter((item) => item !== salon) : [...current, salon]));
@@ -11428,7 +11444,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
 
         <section className="asset-assignment">
           <h3>Affectation par salon</h3>
-          {(getSalonRows(scenes).map((salon) => salon.title).length ? getSalonRows(scenes).map((salon) => salon.title) : ['SMCL 2026']).map((salon) => {
+          {(salonChoices.length ? salonChoices : ['SMCL 2026']).map((salon) => {
             const active = assignedSalons.includes(salon);
             return (
               <button key={salon} type="button" onClick={() => toggleSalon(salon)}>
@@ -11451,7 +11467,7 @@ function AssetVariantGroupCreator({ assets, scenes, onClose, onCreate }) {
   );
 }
 
-function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
+function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, onCreate }) {
   const sourceAssets = groupSourceAssets(assets);
   const fallbackType = sourceAssets[0]?.type || '';
   const [name, setName] = useState('Nouveau groupe');
@@ -11464,8 +11480,13 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
   const [selectedRowUid, setSelectedRowUid] = useState(null);
   const [draggingRowUid, setDraggingRowUid] = useState(null);
   const activeRowUid = selectedRowUid || rows[0]?.uid || null;
-  const [assignedSalons, setAssignedSalons] = useState(() => getSalonRows(scenes).map((salon) => salon.title).slice(0, 1));
+  const salonChoices = adminSalonAssignmentChoices(adminSalons, scenes);
+  const [assignedSalons, setAssignedSalons] = useState(() => salonChoices.slice(0, 1));
   const [placementRuleId, setPlacementRuleId] = useState('free');
+
+  useEffect(() => {
+    setAssignedSalons((current) => current.length ? current.filter((salon) => salonChoices.includes(salon)) : salonChoices.slice(0, 1));
+  }, [salonChoices.join('|')]);
 
   const updateRow = (uid, patch) => {
     setRows((current) => current.map((row) => (row.uid === uid ? { ...row, ...patch } : row)));
@@ -11599,7 +11620,7 @@ function AssetGroupCreator({ assets, scenes, onClose, onCreate }) {
 
         <section className="asset-assignment">
           <h3>Affectation par salon</h3>
-          {(getSalonRows(scenes).map((salon) => salon.title).length ? getSalonRows(scenes).map((salon) => salon.title) : ['SMCL 2026']).map((salon) => {
+          {(salonChoices.length ? salonChoices : ['SMCL 2026']).map((salon) => {
             const active = assignedSalons.includes(salon);
             return (
               <button key={salon} type="button" onClick={() => toggleSalon(salon)}>
