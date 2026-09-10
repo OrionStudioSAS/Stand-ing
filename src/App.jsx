@@ -144,6 +144,7 @@ const cameraPanMouseButtons = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.DOLLY, RIGHT: MOU
 const cameraOrbitTouches = { ONE: TOUCH.ROTATE, TWO: TOUCH.DOLLY_ROTATE };
 const cameraPanTouches = { ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_PAN };
 const dirtyCarpetColorCodes = ['0219', '0400', '0939'];
+const implicitCounterColorOptionId = '__counter-colors__';
 const technicalFloorOptions = [
   { id: 'floor4', label: 'Plancher technique 4 cm', height: 0.04, price: 49, reference: 'SMCL02PLA01A', detail: 'Hauteur 4 cm + cornières 4 × 4 cm', rampLabel: 'Rampe PMR 4 cm' },
   { id: 'floor12', label: 'Plancher technique 12 cm', height: 0.12, price: 59, reference: 'SMCL02PLA01B', detail: 'Hauteur 12 cm + cornières 4 × 4 cm + plinthes blanches', rampLabel: 'Rampe PMR 12 cm' },
@@ -4751,8 +4752,16 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     .find((meta) => meta?.batPictoUrl || meta?.batPictoPath) || null;
   const selectedTextureSlotColorMeta = rawTextureSlots
     .filter((slot) => slot.kind === 'color')
-    .map((slot) => variantGroupColorMetaForSelection(catalogEntry, slot.id, visualOptions.textureSlotValues?.[slot.id]))
+    .map((slot) => variantGroupColorMetaForSelection(catalogEntry, slot.id, visualOptions.textureSlotValues?.[slot.id])
+      || variantGroupColorMetaForSelection(catalogEntry, implicitCounterColorOptionId, visualOptions.textureSlotValues?.[slot.id]))
     .find((meta) => meta?.batPictoUrl || meta?.batPictoPath) || null;
+  const selectedCounterColorMeta = canConfigureCounterVisual
+    ? variantGroupColorMetaForSelection(catalogEntry, implicitCounterColorOptionId, {
+      id: visualOptions.binary2ColorId,
+      colorId: visualOptions.binary2ColorId,
+      code: visualOptions.binary2ColorReference,
+    })
+    : null;
   const selectedBatColor = Object.values(resolvedColorSelections).find((color) => color?.batPictoUrl || color?.batPictoPath) || null;
   const selectedVariantMeta = variantGroupMetaForType(catalogEntry, selectedVariant?.assetType);
   const selectedOptionReferences = extraOptions
@@ -4923,8 +4932,8 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
         resolvedObjectReference: assetReference(resolvedEntry, salonLabel),
         variantImageUrl: selectedVariant?.imageUrl,
         variantAssetType: resolvedEntry?.type || selectedVariant?.assetType,
-        variantBatPictoUrl: selectedVariantColorMeta?.batPictoUrl || selectedTextureSlotColorMeta?.batPictoUrl || selectedBatColor?.batPictoUrl || selectedVariantMeta?.batPictoUrl || '',
-        variantBatPictoPath: selectedVariantColorMeta?.batPictoPath || selectedTextureSlotColorMeta?.batPictoPath || selectedBatColor?.batPictoPath || selectedVariantMeta?.batPictoPath || '',
+        variantBatPictoUrl: selectedVariantColorMeta?.batPictoUrl || selectedTextureSlotColorMeta?.batPictoUrl || selectedCounterColorMeta?.batPictoUrl || selectedBatColor?.batPictoUrl || selectedVariantMeta?.batPictoUrl || '',
+        variantBatPictoPath: selectedVariantColorMeta?.batPictoPath || selectedTextureSlotColorMeta?.batPictoPath || selectedCounterColorMeta?.batPictoPath || selectedBatColor?.batPictoPath || selectedVariantMeta?.batPictoPath || '',
         variantBatDescription: catalogEntry.dimensions?.batDescription || resolvedEntry?.dimensions?.batDescription || '',
         extraOptions: selectedExtras,
         globalExtraOptions,
@@ -10405,6 +10414,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   const isVariantGroup = Boolean(draft.dimensions?.isVariantGroup);
   const sourceAssets = groupSourceAssets(assets, draft);
   const variantSourceAssetsList = variantSourceAssets(assets, draft.type);
+  const variantManagedAssetsList = variantManagedAssetsForGroup(draft, assets);
   const fallbackType = sourceAssets[0]?.type || '';
   const activeGroupRowUid = selectedGroupRowUid || groupRows[0]?.uid || null;
   const draftPlacementRuleId = effectivePlacementRule(draft)?.id || 'free';
@@ -10425,7 +10435,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   const [variantColorMeta, setVariantColorMeta] = useState(() => draft.dimensions?.variantColorMeta || {});
   const variantColorGroups = assets.filter((entry) => entry.dimensions?.isColorGroup);
   const implicitVariantColorPictoSources = isVariantGroup
-    ? implicitVariantColorPictoSourcesForGroup(draft, variantSourceAssetsList, variantColorGroups, assignedSalons.length ? assignedSalons : salonChoices)
+    ? implicitVariantColorPictoSourcesForGroup(draft, variantManagedAssetsList, variantColorGroups, assignedSalons.length ? assignedSalons : salonChoices)
     : [];
 
   useEffect(() => {
@@ -11613,6 +11623,31 @@ function implicitVariantColorPictoSourcesForGroup(groupEntry = {}, variantAssets
   const sources = [];
   const seen = new Set();
 
+  const pushCounterColors = (optionId = implicitCounterColorOptionId, label = 'Couleur') => {
+    const colorGroup = counterColorGroupForAdmin(colorEntries, salonLabels);
+    if (!colorGroup) return;
+    const sourceKey = `${optionId}:${colorGroup.type}`;
+    if (seen.has(sourceKey)) return;
+    seen.add(sourceKey);
+    const baseColors = normalizeColorGroupOptions(colorGroup).map((color) => ({
+      ...color,
+      id: `${colorGroup.type}:${color.id}`,
+      groupId: colorGroup.type,
+      groupLabel: colorGroup.label,
+    }));
+    sources.push({
+      option: {
+        id: optionId,
+        label,
+        colorGroupType: colorGroup.type,
+        textureSlotId: optionId,
+        implicit: true,
+      },
+      colorGroup,
+      colors: counterFinishOptions(baseColors),
+    });
+  };
+
   entries.forEach((entry) => {
     normalizeTextureSlots(entry.dimensions?.textureSlots)
       .filter((slot) => slot.kind === 'color' && slot.colorUsage)
@@ -11644,7 +11679,27 @@ function implicitVariantColorPictoSourcesForGroup(groupEntry = {}, variantAssets
       });
   });
 
+  const groupLooksLikeCounter = isBarVariantGroupEntry(groupEntry)
+    || isWoodReceptionDeskItem(groupEntry)
+    || entries.some((entry) => isBarSceneItem(entry) || isWoodReceptionDeskItem(entry));
+  if (groupLooksLikeCounter && !sources.some((source) => source.colorGroup && colorGroupUsages(source.colorGroup).includes('counter'))) {
+    pushCounterColors(implicitCounterColorOptionId, 'Couleur');
+  }
+
   return sources;
+}
+
+function variantManagedAssetsForGroup(groupEntry = {}, assets = []) {
+  const managedTypes = variantManagedAssetTypes(groupEntry);
+  return managedTypes
+    .map((type) => assets.find((asset) => asset.type === type))
+    .filter(Boolean);
+}
+
+function counterColorGroupForAdmin(colorGroups = [], salonLabels = []) {
+  return (colorGroups || []).find((group) => colorGroupUsages(group).includes('counter') && colorGroupMatchesAnySalon(group, salonLabels))
+    || (colorGroups || []).find((group) => colorGroupUsages(group).includes('counter'))
+    || null;
 }
 
 function colorGroupMatchesAnySalon(group = {}, salonLabels = []) {
