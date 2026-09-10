@@ -10511,9 +10511,6 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   const [variantMeta, setVariantMeta] = useState(() => draft.dimensions?.variantMeta || draft.dimensions?.variantBatPictos || {});
   const [variantColorMeta, setVariantColorMeta] = useState(() => draft.dimensions?.variantColorMeta || {});
   const variantColorGroups = assets.filter((entry) => entry.dimensions?.isColorGroup);
-  const implicitVariantColorPictoSources = isVariantGroup
-    ? implicitVariantColorPictoSourcesForGroup(draft, variantManagedAssetsList, variantColorGroups, assignedSalons.length ? assignedSalons : salonChoices)
-    : [];
 
   useEffect(() => {
     setDraft(asset);
@@ -11329,24 +11326,6 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
               onRemoveChoice={removeConfigOptionChoice}
               onSetLink={setVariantOptionLink}
             />
-            {implicitVariantColorPictoSources.length > 0 && (
-              <div className="variant-implicit-color-pictos">
-                <div className="option-variant-links-head">
-                  <span className="option-variant-links-label">Pictos BAT des couleurs utilisées dans la popup</span>
-                </div>
-                {implicitVariantColorPictoSources.map((source) => (
-                  <VariantColorBatPictoRows
-                    key={source.option.id}
-                    option={source.option}
-                    colorGroup={source.colorGroup}
-                    colors={source.colors}
-                    colorMeta={variantColorMeta[source.option.id] || {}}
-                    uploading={batPictoUploading}
-                    onChange={changeVariantColorBatPicto}
-                  />
-                ))}
-              </div>
-            )}
           </section>
         )}
 
@@ -11749,98 +11728,11 @@ function VariantColorBatPictoRows({ option = {}, colorGroup = null, colors: prov
 }
 
 
-function implicitVariantColorPictoSourcesForGroup(groupEntry = {}, variantAssets = [], colorGroups = [], salonLabels = []) {
-  const explicitColorOptions = normalizeAssetConfigOptions(groupEntry.dimensions?.configOptions).filter((option) => option.type === 'color');
-  const explicitTextureSlotIds = new Set(explicitColorOptions.map((option) => option.textureSlotId).filter(Boolean));
-  const hasDefaultColorOption = explicitColorOptions.some((option) => !option.textureSlotId);
-  const colorEntries = (colorGroups || []).filter((entry) => entry?.dimensions?.isColorGroup && entry.is_active !== false);
-  const entries = [groupEntry, ...(variantAssets || [])].filter(Boolean);
-  const sources = [];
-  const seen = new Set();
-
-  const pushCounterColors = (optionId = implicitCounterColorOptionId, label = 'Couleur') => {
-    const colorGroup = counterColorGroupForAdmin(colorEntries, salonLabels);
-    if (!colorGroup) return;
-    const sourceKey = `${optionId}:${colorGroup.type}`;
-    if (seen.has(sourceKey)) return;
-    seen.add(sourceKey);
-    const baseColors = normalizeColorGroupOptions(colorGroup).map((color) => ({
-      ...color,
-      id: `${colorGroup.type}:${color.id}`,
-      groupId: colorGroup.type,
-      groupLabel: colorGroup.label,
-    }));
-    sources.push({
-      option: {
-        id: optionId,
-        label,
-        colorGroupType: colorGroup.type,
-        textureSlotId: optionId,
-        implicit: true,
-      },
-      colorGroup,
-      colors: counterFinishOptions(baseColors),
-    });
-  };
-
-  entries.forEach((entry) => {
-    normalizeTextureSlots(entry.dimensions?.textureSlots)
-      .filter((slot) => slot.kind === 'color' && slot.colorUsage)
-      .forEach((slot) => {
-        if (!slot.id || explicitTextureSlotIds.has(slot.id) || hasDefaultColorOption) return;
-        const colorGroup = colorEntries.find((group) => colorGroupUsages(group).includes(slot.colorUsage) && colorGroupMatchesAnySalon(group, salonLabels));
-        if (!colorGroup) return;
-        const sourceKey = `${slot.id}:${colorGroup.type}`;
-        if (seen.has(sourceKey)) return;
-        seen.add(sourceKey);
-        const baseColors = normalizeColorGroupOptions(colorGroup).map((color) => ({
-          ...color,
-          id: `${colorGroup.type}:${color.id}`,
-          groupId: colorGroup.type,
-          groupLabel: colorGroup.label,
-        }));
-        const colors = slot.colorUsage === 'counter' ? counterFinishOptions(baseColors) : baseColors;
-        sources.push({
-          option: {
-            id: slot.id,
-            label: slot.label || colorGroup.label || 'Couleur',
-            colorGroupType: colorGroup.type,
-            textureSlotId: slot.id,
-            implicit: true,
-          },
-          colorGroup,
-          colors,
-        });
-      });
-  });
-
-  const groupLooksLikeCounter = isBarVariantGroupEntry(groupEntry)
-    || isWoodReceptionDeskItem(groupEntry)
-    || entries.some((entry) => isBarSceneItem(entry) || isWoodReceptionDeskItem(entry));
-  if (groupLooksLikeCounter && !sources.some((source) => source.colorGroup && colorGroupUsages(source.colorGroup).includes('counter'))) {
-    pushCounterColors(implicitCounterColorOptionId, 'Couleur');
-  }
-
-  return sources;
-}
-
 function variantManagedAssetsForGroup(groupEntry = {}, assets = []) {
   const managedTypes = variantManagedAssetTypes(groupEntry);
   return managedTypes
     .map((type) => assets.find((asset) => asset.type === type))
     .filter(Boolean);
-}
-
-function counterColorGroupForAdmin(colorGroups = [], salonLabels = []) {
-  return (colorGroups || []).find((group) => colorGroupUsages(group).includes('counter') && colorGroupMatchesAnySalon(group, salonLabels))
-    || (colorGroups || []).find((group) => colorGroupUsages(group).includes('counter'))
-    || null;
-}
-
-function colorGroupMatchesAnySalon(group = {}, salonLabels = []) {
-  const labels = uniqueTextValues(salonLabels.map(normalizeSalonTitle).filter(Boolean));
-  if (!labels.length) return true;
-  return labels.some((salon) => colorGroupMatchesSalon(group, salon));
 }
 
 function optionCombinationRows(toggleRows = []) {
