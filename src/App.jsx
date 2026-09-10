@@ -4722,7 +4722,11 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const rawTextureSlots = normalizeTextureSlots(textureSourceEntry?.dimensions?.textureSlots);
   const colorOptionSlotIds = new Set(colorOptions.map((option) => option.textureSlotId).filter(Boolean));
   const colorOptionUsesDefaultSlot = colorOptions.some((option) => !option.textureSlotId);
-  const textureSlots = rawTextureSlots.filter((slot) => !(slot.kind === 'color' && (colorOptionUsesDefaultSlot || colorOptionSlotIds.has(slot.id))));
+  const colorOptionUsesCounterSlot = colorOptions.some((option) => colorConfigOptionUsesCounterPalette(option, catalog, salonLabel));
+  const textureSlots = rawTextureSlots.filter((slot) => !(
+    slot.kind === 'color'
+    && (colorOptionUsesDefaultSlot || colorOptionSlotIds.has(slot.id) || (colorOptionUsesCounterSlot && slot.colorUsage === 'counter'))
+  ));
   const visualOptions = { ...initialOptions, ...draftVisualOptions };
   const resolvedColorSelections = colorOptions.reduce((acc, option) => {
     const counterPrevious = colorConfigOptionUsesCounterPalette(option, catalog, salonLabel)
