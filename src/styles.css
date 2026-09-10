@@ -12615,6 +12615,46 @@ img.asset-thumb {
   gap: 12px;
 }
 
+
+.variant-color-bat-picto-list {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  border: 1px solid #e1e8f2;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fbff;
+}
+
+.variant-color-bat-picto-upload {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.variant-color-bat-picto-upload i {
+  width: 22px;
+  height: 22px;
+  border: 1px solid #d9e1ee;
+  border-radius: 999px;
+  background: var(--swatch-image, none) center / cover, var(--swatch-color, #c6cbd2);
+}
+
+.variant-color-bat-picto-upload strong {
+  overflow: hidden;
+  color: #2b3442;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.variant-color-bat-picto-upload span {
+  color: #416bb0;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
 .item-config-modal .variant-color-card {
   border-bottom: 1px solid #e7ecf4;
   padding-bottom: 10px;
@@ -12624,8 +12664,7 @@ img.asset-thumb {
   grid-template-columns: 1fr 1.25fr 150px 32px;
 }
 
-.variant-bat-picto-upload,
-.color-bat-picto-upload {
+.variant-bat-picto-upload {
   position: relative;
   display: inline-flex !important;
   align-items: center !important;
@@ -12643,12 +12682,8 @@ img.asset-thumb {
 }
 
 .variant-bat-picto-upload input,
-.color-bat-picto-upload input {
+.variant-color-bat-picto-upload input {
   display: none;
-}
-
-.color-group-preview-list .color-bat-picto-upload {
-  white-space: nowrap;
 }
 
 .round-tool,

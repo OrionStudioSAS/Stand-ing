@@ -1,4 +1,21 @@
 {
+  "redirects": [
+    {
+      "source": "/",
+      "has": [
+        { "type": "host", "value": "stand-ing.vercel.app" },
+        { "type": "query", "key": "scene", "value": "(?<scene>.*)" }
+      ],
+      "destination": "https://configurateur3d.stand-ing.com/?scene=:scene",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "stand-ing.vercel.app" }],
+      "destination": "https://configurateur3d.stand-ing.com/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     { "source": "/admin", "destination": "/index.html" },
     { "source": "/admin/:path*", "destination": "/index.html" }

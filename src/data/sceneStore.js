@@ -1888,8 +1888,18 @@ function guessContentType(file) {
   return file.type || types[extension] || 'application/octet-stream';
 }
 
+const defaultPublicAppUrl = 'https://configurateur3d.stand-ing.com';
+
+export function publicConfiguratorUrl() {
+  const envUrl = import.meta.env.VITE_PUBLIC_APP_URL || '';
+  const fallbackUrl = typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : defaultPublicAppUrl;
+  return String(envUrl || defaultPublicAppUrl || fallbackUrl).replace(/\/+$/g, '');
+}
+
 export function sceneShareUrl(scene) {
-  return `${window.location.origin}/?scene=${scene.share_token}`;
+  return `${publicConfiguratorUrl()}/?scene=${encodeURIComponent(scene.share_token)}`;
 }
 
 function dbClientToClient(row) {
