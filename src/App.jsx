@@ -4749,6 +4749,10 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const selectedVariantColorMeta = colorOptions
     .map((option) => variantGroupColorMetaForSelection(catalogEntry, option.id, resolvedColorSelections[option.id]))
     .find((meta) => meta?.batPictoUrl || meta?.batPictoPath) || null;
+  const selectedTextureSlotColorMeta = rawTextureSlots
+    .filter((slot) => slot.kind === 'color')
+    .map((slot) => variantGroupColorMetaForSelection(catalogEntry, slot.id, visualOptions.textureSlotValues?.[slot.id]))
+    .find((meta) => meta?.batPictoUrl || meta?.batPictoPath) || null;
   const selectedBatColor = Object.values(resolvedColorSelections).find((color) => color?.batPictoUrl || color?.batPictoPath) || null;
   const selectedVariantMeta = variantGroupMetaForType(catalogEntry, selectedVariant?.assetType);
   const selectedOptionReferences = extraOptions
@@ -4919,8 +4923,8 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
         resolvedObjectReference: assetReference(resolvedEntry, salonLabel),
         variantImageUrl: selectedVariant?.imageUrl,
         variantAssetType: resolvedEntry?.type || selectedVariant?.assetType,
-        variantBatPictoUrl: selectedVariantColorMeta?.batPictoUrl || selectedBatColor?.batPictoUrl || selectedVariantMeta?.batPictoUrl || '',
-        variantBatPictoPath: selectedVariantColorMeta?.batPictoPath || selectedBatColor?.batPictoPath || selectedVariantMeta?.batPictoPath || '',
+        variantBatPictoUrl: selectedVariantColorMeta?.batPictoUrl || selectedTextureSlotColorMeta?.batPictoUrl || selectedBatColor?.batPictoUrl || selectedVariantMeta?.batPictoUrl || '',
+        variantBatPictoPath: selectedVariantColorMeta?.batPictoPath || selectedTextureSlotColorMeta?.batPictoPath || selectedBatColor?.batPictoPath || selectedVariantMeta?.batPictoPath || '',
         variantBatDescription: catalogEntry.dimensions?.batDescription || resolvedEntry?.dimensions?.batDescription || '',
         extraOptions: selectedExtras,
         globalExtraOptions,
@@ -5372,7 +5376,12 @@ function variantGroupMetaForType(groupEntry = {}, assetType = '') {
 function variantGroupColorMetaForSelection(groupEntry = {}, optionId = '', color = null) {
   if (!groupEntry?.dimensions?.isVariantGroup || !optionId || !color) return null;
   const optionMeta = groupEntry.dimensions?.variantColorMeta?.[optionId] || {};
-  const keys = [color.id, color.colorId, color.code].map(normalizeColorId).filter(Boolean);
+  const rawKeys = [color.id, color.colorId, color.code].filter(Boolean);
+  const keys = rawKeys.flatMap((key) => {
+    const normalized = normalizeColorId(key);
+    const withoutGroupPrefix = String(key).includes(':') ? normalizeColorId(String(key).split(':').pop()) : '';
+    return [normalized, withoutGroupPrefix].filter(Boolean);
+  });
   return keys.map((key) => optionMeta[key]).find((meta) => meta?.batPictoUrl || meta?.batPictoPath) || null;
 }
 
@@ -10414,6 +10423,10 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   const [variantOptionLinks, setVariantOptionLinks] = useState(() => draft.dimensions?.variantOptionLinks || []);
   const [variantMeta, setVariantMeta] = useState(() => draft.dimensions?.variantMeta || draft.dimensions?.variantBatPictos || {});
   const [variantColorMeta, setVariantColorMeta] = useState(() => draft.dimensions?.variantColorMeta || {});
+  const variantColorGroups = assets.filter((entry) => entry.dimensions?.isColorGroup);
+  const implicitVariantColorPictoSources = isVariantGroup
+    ? implicitVariantColorPictoSourcesForGroup(draft, variantSourceAssetsList, variantColorGroups, assignedSalons.length ? assignedSalons : salonChoices)
+    : [];
 
   useEffect(() => {
     setDraft(asset);
@@ -11017,7 +11030,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
             <AssetConfigOptionRows
               rows={draftConfigOptions}
               emptyLabel="Aucune option configurée pour ce groupe."
-              colorGroups={assets.filter((asset) => asset.dimensions?.isColorGroup)}
+              colorGroups={variantColorGroups}
               textureSlots={draftTextureSlots}
               onChange={updateConfigOptionRow}
               onRemove={removeConfigOptionRow}
@@ -11229,6 +11242,24 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
               onRemoveChoice={removeConfigOptionChoice}
               onSetLink={setVariantOptionLink}
             />
+            {implicitVariantColorPictoSources.length > 0 && (
+              <div className="variant-implicit-color-pictos">
+                <div className="option-variant-links-head">
+                  <span className="option-variant-links-label">Pictos BAT des couleurs utilisées dans la popup</span>
+                </div>
+                {implicitVariantColorPictoSources.map((source) => (
+                  <VariantColorBatPictoRows
+                    key={source.option.id}
+                    option={source.option}
+                    colorGroup={source.colorGroup}
+                    colors={source.colors}
+                    colorMeta={variantColorMeta[source.option.id] || {}}
+                    uploading={batPictoUploading}
+                    onChange={changeVariantColorBatPicto}
+                  />
+                ))}
+              </div>
+            )}
           </section>
         )}
 
@@ -11542,8 +11573,8 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
 }
 
 
-function VariantColorBatPictoRows({ option = {}, colorGroup = null, colorMeta = {}, uploading = false, onChange }) {
-  const colors = normalizeColorGroupOptions(colorGroup || {});
+function VariantColorBatPictoRows({ option = {}, colorGroup = null, colors: providedColors = null, colorMeta = {}, uploading = false, onChange }) {
+  const colors = Array.isArray(providedColors) ? providedColors : normalizeColorGroupOptions(colorGroup || {});
   if (!colors.length || !onChange) return null;
   return (
     <div className="variant-color-bat-picto-list">
@@ -11570,6 +11601,56 @@ function VariantColorBatPictoRows({ option = {}, colorGroup = null, colorMeta = 
       })}
     </div>
   );
+}
+
+
+function implicitVariantColorPictoSourcesForGroup(groupEntry = {}, variantAssets = [], colorGroups = [], salonLabels = []) {
+  const explicitColorOptions = normalizeAssetConfigOptions(groupEntry.dimensions?.configOptions).filter((option) => option.type === 'color');
+  const explicitTextureSlotIds = new Set(explicitColorOptions.map((option) => option.textureSlotId).filter(Boolean));
+  const hasDefaultColorOption = explicitColorOptions.some((option) => !option.textureSlotId);
+  const colorEntries = (colorGroups || []).filter((entry) => entry?.dimensions?.isColorGroup && entry.is_active !== false);
+  const entries = [groupEntry, ...(variantAssets || [])].filter(Boolean);
+  const sources = [];
+  const seen = new Set();
+
+  entries.forEach((entry) => {
+    normalizeTextureSlots(entry.dimensions?.textureSlots)
+      .filter((slot) => slot.kind === 'color' && slot.colorUsage)
+      .forEach((slot) => {
+        if (!slot.id || explicitTextureSlotIds.has(slot.id) || hasDefaultColorOption) return;
+        const colorGroup = colorEntries.find((group) => colorGroupUsages(group).includes(slot.colorUsage) && colorGroupMatchesAnySalon(group, salonLabels));
+        if (!colorGroup) return;
+        const sourceKey = `${slot.id}:${colorGroup.type}`;
+        if (seen.has(sourceKey)) return;
+        seen.add(sourceKey);
+        const baseColors = normalizeColorGroupOptions(colorGroup).map((color) => ({
+          ...color,
+          id: `${colorGroup.type}:${color.id}`,
+          groupId: colorGroup.type,
+          groupLabel: colorGroup.label,
+        }));
+        const colors = slot.colorUsage === 'counter' ? counterFinishOptions(baseColors) : baseColors;
+        sources.push({
+          option: {
+            id: slot.id,
+            label: slot.label || colorGroup.label || 'Couleur',
+            colorGroupType: colorGroup.type,
+            textureSlotId: slot.id,
+            implicit: true,
+          },
+          colorGroup,
+          colors,
+        });
+      });
+  });
+
+  return sources;
+}
+
+function colorGroupMatchesAnySalon(group = {}, salonLabels = []) {
+  const labels = uniqueTextValues(salonLabels.map(normalizeSalonTitle).filter(Boolean));
+  if (!labels.length) return true;
+  return labels.some((salon) => colorGroupMatchesSalon(group, salon));
 }
 
 function optionCombinationRows(toggleRows = []) {
