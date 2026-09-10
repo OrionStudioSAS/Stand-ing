@@ -5156,8 +5156,9 @@ function PodiumVariantPicker({ choices = [], value, onChange }) {
 }
 
 function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '', selectedColors = {}, onSelect }) {
+  const hasCounterColorOption = options.some((option) => colorConfigOptionUsesCounterPalette(option, catalog, salonLabel));
   return (
-    <div className="variant-color-options-panel">
+    <div className={`variant-color-options-panel ${hasCounterColorOption ? 'texture-slots-compact' : ''}`.trim()}>
       {options.map((option) => {
         const choices = colorChoicesForConfigOption(option, catalog, salonLabel);
         const isCounterColorOption = colorConfigOptionUsesCounterPalette(option, catalog, salonLabel);
@@ -5170,7 +5171,7 @@ function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '',
         const optionalChoices = normalizedChoices.filter((choice) => Number(choice.price || 0) > 0);
         const optionalPrice = optionalChoices.find((choice) => Number(choice.price || 0) > 0)?.price || 0;
         return (
-          <section key={option.id} className={`counter-color-card counter-finish-card item-counter-finish-card variant-color-card ${isCounterColorOption ? 'counter-finish-card-v2' : ''}`}>
+          <section key={option.id} className={isCounterColorOption ? 'counter-color-card counter-finish-card item-counter-finish-card generic-texture-slot' : 'counter-color-card counter-finish-card item-counter-finish-card variant-color-card'}>
             <div className="counter-finish-head">
               <strong>{isCounterColorOption ? 'Couleur' : option.label || 'Couleur'}</strong>
               {normalizedSelected && (
