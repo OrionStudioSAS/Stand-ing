@@ -4728,6 +4728,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
       extraOptions: { ...(visualOptions.extraOptions || {}), ...selectedExtras },
     },
   };
+  const canConfigureCounterVisual = isWoodReceptionDeskItem(visualItem) || isWoodReceptionDeskItem(resolvedEntry);
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
   const extras = extraOptions
     .reduce((sum, option) => sum + (selectedExtras[option.id] ? effectiveExtraOptionPrice(option, catalogEntry, selectedVariant) : 0), 0);
@@ -4781,7 +4782,6 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const globalExtraOptions = extraOptions
     .filter(isSharedGlobalGroupOption)
     .reduce((acc, option) => ({ ...acc, [option.id]: Boolean(selectedExtras[option.id]) }), {});
-  const canConfigureCounterVisual = isWoodReceptionDeskItem(visualItem) || isWoodReceptionDeskItem(resolvedEntry);
   const counterLogoUnitPrice = canConfigureCounterVisual && !isIncludedSceneItem(visualItem)
     ? counterLogoOptionPrice(visualItem, resolvedEntry || catalogEntry)
     : 0;
