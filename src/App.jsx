@@ -48,7 +48,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { createTechnicalPlanBlob, exportTechnicalPng } from './technicalExport.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
@@ -156,6 +156,16 @@ const blankTextureDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAA
 const textureRetryAttempts = 6;
 const textureRetryBaseDelay = 320;
 Cache.enabled = true;
+
+const legacyConfiguratorHosts = ['stand-ing.vercel.app'];
+
+function legacyConfiguratorRedirectUrl() {
+  if (typeof window === 'undefined') return '';
+  if (!legacyConfiguratorHosts.includes(window.location.hostname)) return '';
+  const targetOrigin = publicConfiguratorUrl();
+  if (!targetOrigin || targetOrigin === window.location.origin) return '';
+  return `${targetOrigin}${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
 
 // Module-level load caches shared between preload phase and components.
 // Ensures items render synchronously from cache when the scene mounts.
@@ -414,6 +424,9 @@ function moveArrayItem(items = [], fromIndex = 0, toIndex = 0) {
 }
 
 function App() {
+  const legacyRedirectUrl = legacyConfiguratorRedirectUrl();
+  if (legacyRedirectUrl) return <LegacyDomainRedirect url={legacyRedirectUrl} />;
+
   const params = new URLSearchParams(window.location.search);
   const sceneToken = params.get('scene');
   const isAdmin = window.location.pathname.replace(/\/$/, '') === '/admin' || params.get('admin') === '1';
@@ -514,6 +527,14 @@ function App() {
   if (loading || !scene) return <div className="loading-screen">Chargement de la scene...</div>;
 
   return <ConfiguratorApp initialScene={scene} isAdminViewer={sceneAdminViewer} forceReadOnly={sceneForceReadOnly} />;
+}
+
+function LegacyDomainRedirect({ url }) {
+  useEffect(() => {
+    window.location.replace(url);
+  }, [url]);
+
+  return <div className="loading-screen">Redirection vers le configurateur...</div>;
 }
 
 function HomeGate() {
@@ -890,7 +911,7 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
           <div className="config-link-panel">
             <label>
               Lien de configuration
-              <input type="url" value={configLink} onChange={(event) => setConfigLink(event.target.value)} placeholder="https://stand-ing.vercel.app/?scene=..." />
+              <input type="url" value={configLink} onChange={(event) => setConfigLink(event.target.value)} placeholder="https://configurateur3d.stand-ing.com/?scene=..." />
             </label>
             <button type="button" className="config-link-open" onClick={openConfigurationLink}>
               Ouvrir ma scene

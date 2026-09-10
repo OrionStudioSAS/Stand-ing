@@ -54,7 +54,7 @@ Variables importantes dans `.env` :
 
 ```bash
 PORT=8787
-PUBLIC_ALLOWED_ORIGINS=https://stand-ing.vercel.app
+PUBLIC_ALLOWED_ORIGINS=https://configurateur3d.stand-ing.com
 GATEWAY_API_TOKEN=un-long-token-secret
 SFTP_HOST=sftpstanding.synology.me
 SFTP_PORT=2200

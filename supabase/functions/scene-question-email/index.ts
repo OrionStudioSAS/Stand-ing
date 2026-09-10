@@ -16,7 +16,7 @@ Deno.serve(async (req) => {
   const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
   const fromEmail = Deno.env.get("RESEND_FROM_EMAIL") || "Stand-ING <no-reply@stand-ing.com>";
   const questionTo = Deno.env.get("QUESTION_NOTIFICATION_EMAIL") || "configurateur@stand-ing.com";
-  const publicAppUrl = Deno.env.get("PUBLIC_APP_URL") || "https://stand-ing.vercel.app/";
+  const publicAppUrl = Deno.env.get("PUBLIC_APP_URL") || "https://configurateur3d.stand-ing.com/";
 
   if (!resendApiKey) return json({ error: "Missing RESEND_API_KEY" }, 500);
 

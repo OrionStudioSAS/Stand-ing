@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
     email: clientEmail,
     options: {
       shouldCreateUser: false,
-      emailRedirectTo: Deno.env.get("PUBLIC_APP_URL") || "https://stand-ing.vercel.app/",
+      emailRedirectTo: Deno.env.get("PUBLIC_APP_URL") || "https://configurateur3d.stand-ing.com/",
     },
   });
 

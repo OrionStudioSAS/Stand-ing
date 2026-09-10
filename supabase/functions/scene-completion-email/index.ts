@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
   const fromEmail = Deno.env.get("RESEND_FROM_EMAIL") || "Stand-ING <no-reply@stand-ing.com>";
-  const publicAppUrl = Deno.env.get("PUBLIC_APP_URL") || "https://stand-ing.vercel.app/";
+  const publicAppUrl = Deno.env.get("PUBLIC_APP_URL") || "https://configurateur3d.stand-ing.com/";
   const completionNotifyTo = clean(Deno.env.get("COMPLETION_NOTIFICATION_EMAIL") || "configurateur@stand-ing.com").toLowerCase();
 
   if (!resendApiKey) return json({ sent: false, reason: "Missing RESEND_API_KEY" }, 200);
