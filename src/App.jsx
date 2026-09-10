@@ -4725,7 +4725,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const colorOptionUsesCounterSlot = colorOptions.some((option) => colorConfigOptionUsesCounterPalette(option, catalog, salonLabel));
   const textureSlots = rawTextureSlots.filter((slot) => !(
     slot.kind === 'color'
-    && (colorOptionUsesDefaultSlot || colorOptionSlotIds.has(slot.id) || (colorOptionUsesCounterSlot && slot.colorUsage === 'counter'))
+    && (colorOptionUsesDefaultSlot || colorOptionSlotIds.has(slot.id) || colorOptionUsesCounterSlot)
   ));
   const visualOptions = { ...initialOptions, ...draftVisualOptions };
   const resolvedColorSelections = colorOptions.reduce((acc, option) => {
