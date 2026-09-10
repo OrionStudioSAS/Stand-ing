@@ -3922,6 +3922,21 @@ function counterWoodFinish(colors = []) {
 
 function counterFinishOptions(colors = []) {
   const optionManaged = colors.some((color) => color.priceManagedByOption);
+  if (optionManaged) {
+    return colors
+      .filter((color) => !isHiddenCounterFinish(color))
+      .map((color) => {
+        const rawPrice = Number(color.price || 0);
+        const included = Boolean(color.included || color.isFree || color.isDefault || rawPrice <= 0);
+        const isWood = /bois|wood/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`);
+        return {
+          ...color,
+          mode: isWood ? 'wood' : 'color',
+          included,
+          price: included ? 0 : rawPrice,
+        };
+      });
+  }
   const allManagedColorsIncluded = optionManaged && colors.every((color) => Number(color.price || 0) <= 0 || color.included || color.isFree || color.isDefault);
   const white = allManagedColorsIncluded ? { ...counterWhiteFinish(), price: 0, included: true } : counterWhiteFinish();
   const wood = counterWoodFinish(colors);
@@ -5414,16 +5429,17 @@ function colorChoicesForConfigOption(option = {}, catalog = [], salonLabel = '')
   const allColorsIncluded = groupPrice <= 0;
   const includedIds = new Set((option.includedColorIds || []).map(normalizeColorId).filter(Boolean));
   const defaultColorId = normalizeColorId(option.defaultColorId || '');
+  const hasOptionIncludedRules = !allColorsIncluded && (includedIds.size > 0 || Boolean(defaultColorId));
   const groupReference = group.dimensions?.colorGroupReference || option.reference || '';
   return normalizeColorGroupOptions(group).map((color, index) => {
     const optionDefault = Boolean(defaultColorId) && (
       defaultColorId === normalizeColorId(color.id)
       || defaultColorId === normalizeColorId(color.code)
     );
+    const groupDefaultIncluded = !hasOptionIncludedRules && (color.included || color.isDefault);
     const included = allColorsIncluded
       || color.isFree
-      || color.included
-      || color.isDefault
+      || groupDefaultIncluded
       || optionDefault
       || includedIds.has(normalizeColorId(color.id))
       || includedIds.has(normalizeColorId(color.code));
@@ -5431,7 +5447,7 @@ function colorChoicesForConfigOption(option = {}, catalog = [], salonLabel = '')
       ...color,
       groupId: group.type,
       groupLabel: group.label,
-      isDefault: optionDefault || (!defaultColorId && color.isDefault),
+      isDefault: optionDefault || (!hasOptionIncludedRules && color.isDefault),
       optionDefault,
       included,
       price: included ? 0 : groupPrice,
@@ -5448,9 +5464,6 @@ function defaultColorChoiceForConfigOption(option = {}, catalog = [], salonLabel
   const choices = colorChoicesForConfigOption(option, catalog, salonLabel);
   const optionDefault = choices.find((color) => color.optionDefault);
   if (optionDefault) return optionDefault;
-  if (colorConfigOptionUsesCounterPalette(option, catalog, salonLabel)) {
-    return counterWoodFinish(choices);
-  }
   return choices.find((color) => color.isDefault) || choices.find((color) => color.included || color.isFree) || choices[0] || null;
 }
 
@@ -11678,6 +11691,7 @@ function VariantColorIncludedRows({ option = {}, colorGroup = null, onChange, on
   const allIncluded = price <= 0;
   const selectedIds = new Set((option.includedColorIds || []).map(normalizeColorId).filter(Boolean));
   const defaultColorId = normalizeColorId(option.defaultColorId || '');
+  const hasOptionIncludedRules = !allIncluded && (selectedIds.size > 0 || Boolean(defaultColorId));
   const toggle = (colorId, checked) => {
     const normalized = normalizeColorId(colorId);
     const next = new Set(selectedIds);
@@ -11702,7 +11716,7 @@ function VariantColorIncludedRows({ option = {}, colorGroup = null, onChange, on
         {colors.map((color) => {
           const isDefault = defaultColorId
             ? defaultColorId === normalizeColorId(color.id) || defaultColorId === normalizeColorId(color.code)
-            : color.isDefault;
+            : (!hasOptionIncludedRules && color.isDefault);
           const checked = allIncluded || isDefault || color.isFree || selectedIds.has(normalizeColorId(color.id));
           return (
             <label key={color.id} className="variant-color-included-choice">
