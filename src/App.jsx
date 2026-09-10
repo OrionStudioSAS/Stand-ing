@@ -5412,30 +5412,41 @@ function colorChoicesForConfigOption(option = {}, catalog = [], salonLabel = '')
   const groupPrice = Number(hasOptionPrice ? option.price : (group.dimensions?.colorGroupPrice || 0));
   const allColorsIncluded = groupPrice <= 0;
   const includedIds = new Set((option.includedColorIds || []).map(normalizeColorId).filter(Boolean));
+  const defaultColorId = normalizeColorId(option.defaultColorId || '');
   const groupReference = group.dimensions?.colorGroupReference || option.reference || '';
-  return normalizeColorGroupOptions(group).map((color) => {
+  return normalizeColorGroupOptions(group).map((color, index) => {
+    const optionDefault = Boolean(defaultColorId) && (
+      defaultColorId === normalizeColorId(color.id)
+      || defaultColorId === normalizeColorId(color.code)
+    );
     const included = allColorsIncluded
       || color.isFree
       || color.included
       || color.isDefault
+      || optionDefault
       || includedIds.has(normalizeColorId(color.id))
       || includedIds.has(normalizeColorId(color.code));
     return {
       ...color,
       groupId: group.type,
       groupLabel: group.label,
+      isDefault: optionDefault || (!defaultColorId && color.isDefault),
+      optionDefault,
       included,
       price: included ? 0 : groupPrice,
       priceManagedByOption: true,
       reference: groupReference || color.reference || color.code || '',
       batPictoUrl: color.batPictoUrl || '',
       batPictoPath: color.batPictoPath || '',
+      displayOrder: index,
     };
-  });
+  }).sort((a, b) => Number(b.optionDefault || b.isDefault) - Number(a.optionDefault || a.isDefault) || Number(b.included) - Number(a.included) || a.displayOrder - b.displayOrder);
 }
 
 function defaultColorChoiceForConfigOption(option = {}, catalog = [], salonLabel = '') {
   const choices = colorChoicesForConfigOption(option, catalog, salonLabel);
+  const optionDefault = choices.find((color) => color.optionDefault);
+  if (optionDefault) return optionDefault;
   if (colorConfigOptionUsesCounterPalette(option, catalog, salonLabel)) {
     return counterWoodFinish(choices);
   }
@@ -5842,6 +5853,7 @@ function normalizeAssetConfigOptions(options = []) {
       colorGroupType: option.colorGroupType || option.colorGroupId || '',
       textureSlotId: option.textureSlotId || '',
       includedColorIds: Array.isArray(option.includedColorIds) ? option.includedColorIds.map(String) : [],
+      defaultColorId: option.defaultColorId || option.defaultColor || '',
       choices: option.type === 'select' ? (option.choices || []) : undefined,
     }))
     .filter((option) => option.label.trim());
@@ -11530,6 +11542,7 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
                     option={row}
                     colorGroup={colorGroups.find((group) => group.type === row.colorGroupType)}
                     onChange={(includedColorIds) => onChange(index, { includedColorIds })}
+                    onDefaultChange={(defaultColorId) => onChange(index, { defaultColorId })}
                   />
                   <VariantColorBatPictoRows
                     option={row}
@@ -11657,18 +11670,27 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
 }
 
 
-function VariantColorIncludedRows({ option = {}, colorGroup = null, onChange }) {
+function VariantColorIncludedRows({ option = {}, colorGroup = null, onChange, onDefaultChange }) {
   const colors = normalizeColorGroupOptions(colorGroup || {});
   if (!colors.length || !onChange) return null;
   const price = Number(option.price || 0);
   const allIncluded = price <= 0;
   const selectedIds = new Set((option.includedColorIds || []).map(normalizeColorId).filter(Boolean));
+  const defaultColorId = normalizeColorId(option.defaultColorId || '');
   const toggle = (colorId, checked) => {
     const normalized = normalizeColorId(colorId);
     const next = new Set(selectedIds);
     if (checked) next.add(normalized);
     else next.delete(normalized);
+    if (!checked && defaultColorId === normalized) onDefaultChange?.('');
     onChange([...next]);
+  };
+  const setDefault = (colorId) => {
+    const normalized = normalizeColorId(colorId);
+    if (!allIncluded && !selectedIds.has(normalized)) {
+      onChange([...selectedIds, normalized]);
+    }
+    onDefaultChange?.(colorId);
   };
   return (
     <div className="variant-color-included-list">
@@ -11677,7 +11699,10 @@ function VariantColorIncludedRows({ option = {}, colorGroup = null, onChange }) 
       </span>
       <div>
         {colors.map((color) => {
-          const checked = allIncluded || color.isDefault || color.isFree || selectedIds.has(normalizeColorId(color.id));
+          const isDefault = defaultColorId
+            ? defaultColorId === normalizeColorId(color.id) || defaultColorId === normalizeColorId(color.code)
+            : color.isDefault;
+          const checked = allIncluded || isDefault || color.isFree || selectedIds.has(normalizeColorId(color.id));
           return (
             <label key={color.id} className="variant-color-included-choice">
               <input
@@ -11688,6 +11713,17 @@ function VariantColorIncludedRows({ option = {}, colorGroup = null, onChange }) 
               />
               <i style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }} />
               <span>{shortFinishName(color.name)}</span>
+              <button
+                type="button"
+                className={isDefault ? 'active' : ''}
+                disabled={!checked}
+                onClick={(event) => {
+                  event.preventDefault();
+                  setDefault(color.id);
+                }}
+              >
+                Base
+              </button>
             </label>
           );
         })}

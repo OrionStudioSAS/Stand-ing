@@ -12665,6 +12665,11 @@ img.asset-thumb {
   font-weight: 850;
 }
 
+.variant-color-included-choice:has(button.active) {
+  border-color: #416bb0;
+  background: #eef5ff;
+}
+
 .variant-color-included-choice input {
   width: 14px;
   height: 14px;
@@ -12684,6 +12689,27 @@ img.asset-thumb {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.variant-color-included-choice button {
+  border: 1px solid #d6e0ee;
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #8d98a8;
+  background: #fff;
+  font-size: 0.64rem;
+  font-weight: 950;
+}
+
+.variant-color-included-choice button.active {
+  border-color: #416bb0;
+  color: #fff;
+  background: #416bb0;
+}
+
+.variant-color-included-choice button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .variant-color-bat-picto-upload {
