@@ -3269,7 +3269,7 @@ function LogoUploadCard({
   );
 }
 
-function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onVisualPendingChange, onLogoEnabledChange, embedded = false, optionsFree = false, logoPrice = 0 }) {
+function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onVisualPendingChange, onLogoEnabledChange, embedded = false, optionsFree = false, logoPrice = 0, hideColors = false }) {
   const t = useT();
   const finishes = counterFinishOptions(colors);
   const woodFinish = counterWoodFinish(colors);
@@ -3291,45 +3291,47 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
         </div>
       </div>
 
-      <section className="counter-color-card counter-finish-card item-counter-finish-card">
-        <div className="counter-finish-head">
-          <strong>{t('counter_finish_title')}</strong>
-          <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : ''}</span>
-        </div>
-        <div className="counter-finish-meta-line">
-          <small>{includedColorisLabel(includedFinishes.length)}</small>
-          <em className="included">Inclus</em>
-        </div>
-        {includedFinishes.length > 1 ? (
-          <div className="counter-finish-swatches included">
-            {includedFinishes.map((finish) => (
-              <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
-            ))}
+      {!hideColors && (
+        <section className="counter-color-card counter-finish-card item-counter-finish-card">
+          <div className="counter-finish-head">
+            <strong>{t('counter_finish_title')}</strong>
+            <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : ''}</span>
           </div>
-        ) : (
-          <div className="counter-finish-included-list">
-            {(includedFinishes.length ? includedFinishes : [woodFinish]).map((finish) => (
-              <div key={finish.id} className="counter-finish-included-row">
-                <CounterFinishSwatch finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
-                <strong>{shortFinishName(finish.name)}</strong>
-              </div>
-            ))}
+          <div className="counter-finish-meta-line">
+            <small>{includedColorisLabel(includedFinishes.length)}</small>
+            <em className="included">Inclus</em>
           </div>
-        )}
-        {optionalFinishes.length > 0 && (
-          <>
-            <div className="counter-finish-meta-line">
-              <small>{optionalFinishes.length} couleurs en option</small>
-              <em className="price">+ {Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0'} €</em>
-            </div>
-            <div className="counter-finish-swatches optional">
-              {optionalFinishes.map((finish) => (
-                <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(finish)} />
+          {includedFinishes.length > 1 ? (
+            <div className="counter-finish-swatches included">
+              {includedFinishes.map((finish) => (
+                <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
               ))}
             </div>
-          </>
-        )}
-      </section>
+          ) : (
+            <div className="counter-finish-included-list">
+              {(includedFinishes.length ? includedFinishes : [woodFinish]).map((finish) => (
+                <div key={finish.id} className="counter-finish-included-row">
+                  <CounterFinishSwatch finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
+                  <strong>{shortFinishName(finish.name)}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+          {optionalFinishes.length > 0 && (
+            <>
+              <div className="counter-finish-meta-line">
+                <small>{optionalFinishes.length} couleurs en option</small>
+                <em className="price">+ {Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0'} €</em>
+              </div>
+              <div className="counter-finish-swatches optional">
+                {optionalFinishes.map((finish) => (
+                  <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(finish)} />
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
       <LogoUploadCard
         enabled={logoEnabled}
@@ -5009,6 +5011,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             embedded
             optionsFree
             logoPrice={counterLogoUnitPrice}
+            hideColors={colorOptions.some((option) => colorConfigOptionUsesCounterPalette(option, catalog, salonLabel))}
           />
         )}
 
@@ -5020,7 +5023,9 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             selectedColors={resolvedColorSelections}
             onSelect={(option, color) => {
               setSelectedColors((current) => ({ ...current, [option.id]: color }));
+              const isCounterColorOption = colorConfigOptionUsesCounterPalette(option, catalog, salonLabel);
               const slot = rawTextureSlots.find((candidate) => (option.textureSlotId ? candidate.id === option.textureSlotId : candidate.kind === 'color'));
+              if (isCounterColorOption && canConfigureCounterVisual) updateDraftVisualOptions(counterFinishPatch(color));
               if (slot) updateDraftVisualOptions(textureSlotPatch(visualItem, slot, textureSlotColorPatch({ ...color, price: 0 })));
             }}
           />
@@ -5155,18 +5160,23 @@ function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '',
     <div className="variant-color-options-panel">
       {options.map((option) => {
         const choices = colorChoicesForConfigOption(option, catalog, salonLabel);
+        const isCounterColorOption = colorConfigOptionUsesCounterPalette(option, catalog, salonLabel);
+        const normalizedChoices = isCounterColorOption ? counterFinishOptions(choices) : choices;
         const selected = selectedColors[option.id] || defaultColorChoiceForConfigOption(option, catalog, salonLabel);
-        const includedChoices = choices.filter((choice) => Number(choice.price || 0) <= 0);
-        const optionalChoices = choices.filter((choice) => Number(choice.price || 0) > 0);
+        const normalizedSelected = isCounterColorOption
+          ? normalizedChoices.find((choice) => normalizeColorId(choice.id) === normalizeColorId(selected?.id)) || counterWoodFinish(normalizedChoices)
+          : selected;
+        const includedChoices = normalizedChoices.filter((choice) => Number(choice.price || 0) <= 0);
+        const optionalChoices = normalizedChoices.filter((choice) => Number(choice.price || 0) > 0);
         const optionalPrice = optionalChoices.find((choice) => Number(choice.price || 0) > 0)?.price || 0;
         return (
-          <section key={option.id} className="counter-color-card counter-finish-card item-counter-finish-card variant-color-card">
+          <section key={option.id} className={`counter-color-card counter-finish-card item-counter-finish-card variant-color-card ${isCounterColorOption ? 'counter-finish-card-v2' : ''}`}>
             <div className="counter-finish-head">
-              <strong>{option.label || 'Couleur'}</strong>
-              {selected && (
+              <strong>{isCounterColorOption ? 'Couleur' : option.label || 'Couleur'}</strong>
+              {normalizedSelected && (
                 <span>
-                  {shortFinishName(selected.name || selected.code)}
-                  {shortFinishCode(selected.code || selected.reference) ? ` (${shortFinishCode(selected.code || selected.reference)})` : ''}
+                  {shortFinishName(normalizedSelected.name || normalizedSelected.code)}
+                  {shortFinishCode(normalizedSelected.code || normalizedSelected.reference) ? ` (${shortFinishCode(normalizedSelected.code || normalizedSelected.reference)})` : ''}
                 </span>
               )}
             </div>
@@ -5176,16 +5186,31 @@ function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '',
                   <small>{includedColorisLabel(includedChoices.length)}</small>
                   <em className="included">Inclus</em>
                 </div>
-                <div className="counter-finish-swatches included">
-                  {includedChoices.map((choice) => (
-                    <CounterFinishSwatch
-                      key={choice.id}
-                      finish={choice}
-                      active={normalizeColorId(selected?.id) === normalizeColorId(choice.id)}
-                      onClick={() => onSelect?.(option, choice)}
-                    />
-                  ))}
-                </div>
+                {isCounterColorOption && includedChoices.length <= 1 ? (
+                  <div className="counter-finish-included-list">
+                    {includedChoices.map((choice) => (
+                      <div key={choice.id} className="counter-finish-included-row">
+                        <CounterFinishSwatch
+                          finish={choice}
+                          active={normalizeColorId(normalizedSelected?.id) === normalizeColorId(choice.id)}
+                          onClick={() => onSelect?.(option, choice)}
+                        />
+                        <strong>{shortFinishName(choice.name)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="counter-finish-swatches included">
+                    {includedChoices.map((choice) => (
+                      <CounterFinishSwatch
+                        key={choice.id}
+                        finish={choice}
+                        active={normalizeColorId(normalizedSelected?.id) === normalizeColorId(choice.id)}
+                        onClick={() => onSelect?.(option, choice)}
+                      />
+                    ))}
+                  </div>
+                )}
               </>
             )}
             {optionalChoices.length > 0 && (
@@ -5199,7 +5224,7 @@ function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '',
                     <CounterFinishSwatch
                       key={choice.id}
                       finish={choice}
-                      active={normalizeColorId(selected?.id) === normalizeColorId(choice.id)}
+                      active={normalizeColorId(normalizedSelected?.id) === normalizeColorId(choice.id)}
                       onClick={() => onSelect?.(option, choice)}
                     />
                   ))}
@@ -5355,6 +5380,12 @@ function colorGroupEntryForOption(option = {}, catalog = [], salonLabel = '') {
   const group = (catalog || []).find((entry) => entry?.type === option.colorGroupType && entry?.dimensions?.isColorGroup);
   if (!group || !colorGroupMatchesSalon(group, salonLabel)) return null;
   return group;
+}
+
+function colorConfigOptionUsesCounterPalette(option = {}, catalog = [], salonLabel = '') {
+  const group = colorGroupEntryForOption(option, catalog, salonLabel)
+    || (catalog || []).find((entry) => entry?.type === option.colorGroupType && entry?.dimensions?.isColorGroup);
+  return Boolean(group && colorGroupUsages(group).includes('counter'));
 }
 
 function colorChoicesForConfigOption(option = {}, catalog = [], salonLabel = '') {
