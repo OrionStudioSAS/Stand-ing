@@ -3921,13 +3921,25 @@ function counterWoodFinish(colors = []) {
 }
 
 function counterFinishOptions(colors = []) {
-  const white = counterWhiteFinish();
+  const optionManaged = colors.some((color) => color.priceManagedByOption);
+  const allManagedColorsIncluded = optionManaged && colors.every((color) => Number(color.price || 0) <= 0 || color.included || color.isFree || color.isDefault);
+  const white = allManagedColorsIncluded ? { ...counterWhiteFinish(), price: 0, included: true } : counterWhiteFinish();
   const wood = counterWoodFinish(colors);
   const paidColors = colors
     .filter((color) => normalizeColorId(color.id) !== normalizeColorId(wood.id))
     .filter((color) => !/bois|wood/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`))
     .filter((color) => !isHiddenCounterFinish(color))
-    .map((color) => ({ ...color, mode: 'color', price: (color.isFree || color.included) ? 0 : counterOptionalColorPrice }));
+    .map((color) => {
+      const optionManaged = Boolean(color.priceManagedByOption);
+      const rawPrice = Number(color.price || 0);
+      const included = Boolean(color.isFree || color.included || color.isDefault || (optionManaged && rawPrice <= 0));
+      return {
+        ...color,
+        mode: 'color',
+        included,
+        price: included ? 0 : (optionManaged ? rawPrice : counterOptionalColorPrice),
+      };
+    });
   return [wood, white, ...paidColors];
 }
 
@@ -4711,15 +4723,15 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const colorOptionSlotIds = new Set(colorOptions.map((option) => option.textureSlotId).filter(Boolean));
   const colorOptionUsesDefaultSlot = colorOptions.some((option) => !option.textureSlotId);
   const textureSlots = rawTextureSlots.filter((slot) => !(slot.kind === 'color' && (colorOptionUsesDefaultSlot || colorOptionSlotIds.has(slot.id))));
+  const visualOptions = { ...initialOptions, ...draftVisualOptions };
   const resolvedColorSelections = colorOptions.reduce((acc, option) => {
-    const previous = selectedColors[option.id];
-    const choices = colorChoicesForConfigOption(option, catalog, salonLabel);
-    const selected = choices.find((color) => normalizeColorId(color.id) === normalizeColorId(previous?.id || previous?.colorId))
-      || defaultColorChoiceForConfigOption(option, catalog, salonLabel);
+    const counterPrevious = colorConfigOptionUsesCounterPalette(option, catalog, salonLabel)
+      ? { id: visualOptions.binary2ColorId, colorId: visualOptions.binary2ColorId, code: visualOptions.binary2ColorReference }
+      : null;
+    const selected = selectedColorChoiceForConfigOption(option, catalog, salonLabel, selectedColors[option.id] || counterPrevious);
     if (selected) acc[option.id] = selected;
     return acc;
   }, {});
-  const visualOptions = { ...initialOptions, ...draftVisualOptions };
   const visualItem = {
     ...(item || resolvedEntry || catalogEntry),
     type: item?.type || resolvedEntry?.type || catalogEntry.type,
@@ -5163,7 +5175,7 @@ function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '',
         const choices = colorChoicesForConfigOption(option, catalog, salonLabel);
         const isCounterColorOption = colorConfigOptionUsesCounterPalette(option, catalog, salonLabel);
         const normalizedChoices = isCounterColorOption ? counterFinishOptions(choices) : choices;
-        const selected = selectedColors[option.id] || defaultColorChoiceForConfigOption(option, catalog, salonLabel);
+        const selected = selectedColorChoiceForConfigOption(option, catalog, salonLabel, selectedColors[option.id]);
         const normalizedSelected = isCounterColorOption
           ? normalizedChoices.find((choice) => normalizeColorId(choice.id) === normalizeColorId(selected?.id)) || counterWoodFinish(normalizedChoices)
           : selected;
@@ -5392,22 +5404,50 @@ function colorConfigOptionUsesCounterPalette(option = {}, catalog = [], salonLab
 function colorChoicesForConfigOption(option = {}, catalog = [], salonLabel = '') {
   const group = colorGroupEntryForOption(option, catalog, salonLabel);
   if (!group) return [];
-  const groupPrice = Number(group.dimensions?.colorGroupPrice || option.price || 0);
+  const hasOptionPrice = option.price !== undefined && option.price !== null && option.price !== '';
+  const groupPrice = Number(hasOptionPrice ? option.price : (group.dimensions?.colorGroupPrice || 0));
+  const allColorsIncluded = groupPrice <= 0;
+  const includedIds = new Set((option.includedColorIds || []).map(normalizeColorId).filter(Boolean));
   const groupReference = group.dimensions?.colorGroupReference || option.reference || '';
-  return normalizeColorGroupOptions(group).map((color) => ({
-    ...color,
-    groupId: group.type,
-    groupLabel: group.label,
-    price: (color.isFree || color.included || color.isDefault) ? 0 : groupPrice,
-    reference: groupReference || color.reference || color.code || '',
-    batPictoUrl: color.batPictoUrl || '',
-    batPictoPath: color.batPictoPath || '',
-  }));
+  return normalizeColorGroupOptions(group).map((color) => {
+    const included = allColorsIncluded
+      || color.isFree
+      || color.included
+      || color.isDefault
+      || includedIds.has(normalizeColorId(color.id))
+      || includedIds.has(normalizeColorId(color.code));
+    return {
+      ...color,
+      groupId: group.type,
+      groupLabel: group.label,
+      included,
+      price: included ? 0 : groupPrice,
+      priceManagedByOption: true,
+      reference: groupReference || color.reference || color.code || '',
+      batPictoUrl: color.batPictoUrl || '',
+      batPictoPath: color.batPictoPath || '',
+    };
+  });
 }
 
 function defaultColorChoiceForConfigOption(option = {}, catalog = [], salonLabel = '') {
   const choices = colorChoicesForConfigOption(option, catalog, salonLabel);
+  if (colorConfigOptionUsesCounterPalette(option, catalog, salonLabel)) {
+    return counterWoodFinish(choices);
+  }
   return choices.find((color) => color.isDefault) || choices.find((color) => color.included || color.isFree) || choices[0] || null;
+}
+
+function selectedColorChoiceForConfigOption(option = {}, catalog = [], salonLabel = '', previous = null) {
+  const choices = colorChoicesForConfigOption(option, catalog, salonLabel);
+  if (!choices.length) return null;
+  const previousId = previous?.id || previous?.colorId || '';
+  if (previousId) {
+    const found = choices.find((color) => normalizeColorId(color.id) === normalizeColorId(previousId))
+      || choices.find((color) => normalizeColorId(color.code) === normalizeColorId(previousId));
+    if (found) return found;
+  }
+  return defaultColorChoiceForConfigOption(option, catalog, salonLabel);
 }
 
 function variantGroupMetaForType(groupEntry = {}, assetType = '') {
@@ -5797,6 +5837,7 @@ function normalizeAssetConfigOptions(options = []) {
       type: option.type || 'toggle',
       colorGroupType: option.colorGroupType || option.colorGroupId || '',
       textureSlotId: option.textureSlotId || '',
+      includedColorIds: Array.isArray(option.includedColorIds) ? option.includedColorIds.map(String) : [],
       choices: option.type === 'select' ? (option.choices || []) : undefined,
     }))
     .filter((option) => option.label.trim());
@@ -11487,16 +11528,34 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
                       {textureSlots.filter((slot) => slot.kind === 'color').map((slot) => <option key={slot.id} value={slot.id}>{slot.label || slot.targetName}</option>)}
                     </select>
                   </label>
+                  <label>
+                    <span>Prix couleur HT</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={row.price ?? 0}
+                      onChange={(event) => onChange(index, { price: event.target.value })}
+                      placeholder="0 = toutes incluses"
+                    />
+                  </label>
                 </>
               )}
               {isColor && row.colorGroupType && (
-                <VariantColorBatPictoRows
-                  option={row}
-                  colorGroup={colorGroups.find((group) => group.type === row.colorGroupType)}
-                  colorMeta={variantColorMeta[row.id] || {}}
-                  uploading={batPictoUploading}
-                  onChange={onColorBatPictoChange}
-                />
+                <>
+                  <VariantColorIncludedRows
+                    option={row}
+                    colorGroup={colorGroups.find((group) => group.type === row.colorGroupType)}
+                    onChange={(includedColorIds) => onChange(index, { includedColorIds })}
+                  />
+                  <VariantColorBatPictoRows
+                    option={row}
+                    colorGroup={colorGroups.find((group) => group.type === row.colorGroupType)}
+                    colorMeta={variantColorMeta[row.id] || {}}
+                    uploading={batPictoUploading}
+                    onChange={onColorBatPictoChange}
+                  />
+                </>
               )}
               {isToggle && (
                 <>
@@ -11610,6 +11669,46 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
           </article>
         );
       })}
+    </div>
+  );
+}
+
+
+function VariantColorIncludedRows({ option = {}, colorGroup = null, onChange }) {
+  const colors = normalizeColorGroupOptions(colorGroup || {});
+  if (!colors.length || !onChange) return null;
+  const price = Number(option.price || 0);
+  const allIncluded = price <= 0;
+  const selectedIds = new Set((option.includedColorIds || []).map(normalizeColorId).filter(Boolean));
+  const toggle = (colorId, checked) => {
+    const normalized = normalizeColorId(colorId);
+    const next = new Set(selectedIds);
+    if (checked) next.add(normalized);
+    else next.delete(normalized);
+    onChange([...next]);
+  };
+  return (
+    <div className="variant-color-included-list">
+      <span className="option-variant-links-label">
+        Couleurs incluses {allIncluded ? '— toutes incluses car le prix est à 0 €' : ''}
+      </span>
+      <div>
+        {colors.map((color) => {
+          const checked = allIncluded || color.isDefault || color.isFree || selectedIds.has(normalizeColorId(color.id));
+          return (
+            <label key={color.id} className="variant-color-included-choice">
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={allIncluded}
+                onChange={(event) => toggle(color.id, event.target.checked)}
+              />
+              <i style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }} />
+              <span>{shortFinishName(color.name)}</span>
+            </label>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -12615,6 +12615,14 @@ img.asset-thumb {
   gap: 12px;
 }
 
+.item-config-modal .variant-color-options-panel {
+  padding: 0 18px;
+}
+
+.item-config-modal .variant-color-options-panel.texture-slots-compact {
+  gap: 12px;
+}
+
 
 
 .variant-implicit-color-pictos {
@@ -12631,6 +12639,57 @@ img.asset-thumb {
   border-radius: 10px;
   padding: 10px;
   background: #f8fbff;
+}
+
+.variant-color-included-list {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  border: 1px solid #e1e8f2;
+  border-radius: 10px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.variant-color-included-list > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.variant-color-included-choice {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-height: 30px;
+  border: 1px solid #e2e8f3;
+  border-radius: 999px;
+  padding: 4px 8px 4px 5px;
+  color: #2b3442 !important;
+  background: #f8fbff;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.variant-color-included-choice input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.variant-color-included-choice i {
+  width: 18px;
+  height: 18px;
+  border: 1px solid #d9e1ee;
+  border-radius: 999px;
+  background: var(--swatch-image, none) center / cover, var(--swatch-color, #c6cbd2);
+}
+
+.variant-color-included-choice span {
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .variant-color-bat-picto-upload {
