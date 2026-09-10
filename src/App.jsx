@@ -3355,9 +3355,9 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
   );
 }
 
-function TextureSlotsOptionsPanel({ item, uploadState, onImageChange, onResetImage, onImagePending, onColorChange, onResetColor, onLogoGateChange, logoGateControls = [], counterColors = [], embedded = false }) {
+function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadState, onImageChange, onResetImage, onImagePending, onColorChange, onResetColor, onLogoGateChange, logoGateControls = [], counterColors = [], embedded = false }) {
   const t = useT();
-  const slots = normalizeTextureSlots(item?.dimensions?.textureSlots);
+  const slots = Array.isArray(providedSlots) ? providedSlots : normalizeTextureSlots(item?.dimensions?.textureSlots);
   const values = item?.options?.textureSlotValues || {};
   const isLightBridge = isLightBridgeItem(item);
   const orderedSlots = [...slots].sort((a, b) => (a.kind === 'color' ? 0 : 1) - (b.kind === 'color' ? 0 : 1));
@@ -5056,6 +5056,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
         {hasVisualOptions && textureSlots.length > 0 && (
           <TextureSlotsOptionsPanel
             item={visualItem}
+            slots={textureSlots}
             uploadState={modalUploadState}
             onImageChange={(slot, file) => (item ? onImageChange?.(item, file, { textureSlot: slot }) : handleDraftImage(file, { urlKey: 'unused', nameKey: 'unused', textureSlot: slot }))}
             onResetImage={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { imageUrl: '', imageName: '', visualPending: false }))}
