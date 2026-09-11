@@ -3906,7 +3906,7 @@ function shortFinishCode(code = '') {
 }
 
 function counterWoodFinish(colors = []) {
-  const configured = colors.find((color) => /bois|wood/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`));
+  const configured = colors.find((color) => /bois|wood|ch[êe]ne|oak/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`));
   return {
     id: configured?.id || '__counter-wood__',
     name: configured?.name || 'Bois',
@@ -3924,11 +3924,10 @@ function counterFinishOptions(colors = []) {
   const optionManaged = colors.some((color) => color.priceManagedByOption);
   if (optionManaged) {
     return colors
-      .filter((color) => !isHiddenCounterFinish(color))
       .map((color) => {
         const rawPrice = Number(color.price || 0);
         const included = Boolean(color.included || color.isFree || color.isDefault || rawPrice <= 0);
-        const isWood = /bois|wood/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`);
+        const isWood = /bois|wood|ch[êe]ne|oak/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`);
         return {
           ...color,
           mode: isWood ? 'wood' : 'color',
@@ -3942,7 +3941,7 @@ function counterFinishOptions(colors = []) {
   const wood = counterWoodFinish(colors);
   const paidColors = colors
     .filter((color) => normalizeColorId(color.id) !== normalizeColorId(wood.id))
-    .filter((color) => !/bois|wood/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`))
+    .filter((color) => !/bois|wood|ch[êe]ne|oak/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`))
     .filter((color) => !isHiddenCounterFinish(color))
     .map((color) => {
       const optionManaged = Boolean(color.priceManagedByOption);
