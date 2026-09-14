@@ -2886,6 +2886,14 @@ select {
   letter-spacing: 0.02em;
 }
 
+.ground-section-icon {
+  display: block;
+  flex: 0 0 auto;
+  width: 25px;
+  height: 25px;
+  object-fit: contain;
+}
+
 .ground-section-heading > strong {
   color: #2f61ad;
   font-size: 0.78rem;

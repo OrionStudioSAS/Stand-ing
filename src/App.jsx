@@ -7673,7 +7673,7 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '' }) {
   return (
     <div className="carpet-choice-card ground-choice-card ground-carpet-card">
       <section className="carpet-choice-section ground-section">
-        <GroundOptionHeading title="MOQUETTE" />
+        <GroundOptionHeading title="MOQUETTE" iconSrc="/icons/moquette.svg" />
         <div className="ground-main-choice">
           <span
             className="ground-main-swatch active"
@@ -7688,10 +7688,13 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '' }) {
   );
 }
 
-function GroundOptionHeading({ title, value = '' }) {
+function GroundOptionHeading({ title, value = '', iconSrc = '' }) {
   return (
     <div className="ground-section-heading">
-      <span>{title}</span>
+      <span>
+        {iconSrc && <img className="ground-section-icon" src={iconSrc} alt="" aria-hidden="true" />}
+        {title}
+      </span>
       {value && <strong>{value}</strong>}
     </div>
   );
@@ -7720,7 +7723,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
         const minPrice = minColorPrice(paidColors);
         return (
           <section key={group.id} className="carpet-choice-section footprint-standard">
-            <GroundOptionHeading title="EMPREINTE MOQUETTE" value={`${referenceColor?.name} (${referenceColor?.code})`} />
+            <GroundOptionHeading title="EMPREINTE MOQUETTE" value={`${referenceColor?.name} (${referenceColor?.code})`} iconSrc="/icons/empreinte_moquette.svg" />
             <small>{`${includedColors.length || 1} couleur${(includedColors.length || 1) > 1 ? 's' : ''} incluse${(includedColors.length || 1) > 1 ? 's' : ''}`}</small>
             <div className="carpet-swatch-row">
               {(includedColors.length ? includedColors : [referenceColor]).filter(Boolean).map((color) => (
