@@ -230,17 +230,13 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
   drawDimension(ctx, planX - 64, sideDimensionStartY, planX - 64, sideDimensionEndY, sideDimensionLabel, 'vertical', technicalColors.blue);
 
   items.forEach((item, index) => {
+    if (isWallItem(item)) return;
     const entry = catalog.find((candidate) => candidate.type === item.type);
     const dims = itemDimensions(item, entry);
     const center = { x: toX(item.x), y: toY(item.z) };
     const color = item.color || entry?.color || '#cccccc';
     const label = `${index + 1}`;
     const pictoImage = technicalPictoImageForItem(item, entry, pictoImages, catalog);
-
-    if (isWallItem(item)) {
-      drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, item.label || entry?.label, pictoImage);
-      return;
-    }
 
     if (item.ceilingMounted || item.dimensions?.ceilingMounted) {
       const solidW = Math.max(0.32, dims.width || 0.6) * scale;
@@ -252,6 +248,17 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     if (pictoImage) drawRotatedPictoObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, pictoImage, label);
     else drawRotatedObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, color, label);
     drawObjectDimensions(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, dims, item.rotation || 0);
+  });
+
+  drawObjectWallReinforcements(ctx, items, scale, wallThickness, toX, toY);
+
+  items.forEach((item, index) => {
+    if (!isWallItem(item)) return;
+    const entry = catalog.find((candidate) => candidate.type === item.type);
+    const dims = itemDimensions(item, entry);
+    const label = `${index + 1}`;
+    const pictoImage = technicalPictoImageForItem(item, entry, pictoImages, catalog);
+    drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, item.label || entry?.label, pictoImage);
   });
 
   drawText(ctx, 'Allee', planX + planW / 2, planY + planH + 62, 58, technicalColors.ink, 'normal', 'center');
@@ -539,6 +546,27 @@ function screenAxisOffset(item, wall, width, depth) {
   return clampValue(Number(item.x || 0) + depth / 2 - wallThicknessMeters, 0, sideWallLength(depth));
 }
 
+function drawObjectWallReinforcements(ctx, items = [], scale, wallThickness, toX, toY) {
+  (items || [])
+    .filter((item) => item?.type === 'screen' && isObjectWallItem(item))
+    .forEach((item) => {
+      const surface = objectWallSurfaceForTechnicalItem(item);
+      if (!surface) return;
+      const halfSurface = Number(surface.length || 0) / 2;
+      const center = clampValue(Number(item.x ?? surface.centerAxis ?? 0), Number(surface.centerAxis || 0) - halfSurface, Number(surface.centerAxis || 0) + halfSurface);
+      const segmentLength = Math.min(reinforcementWidth, Number(surface.length || reinforcementWidth)) * scale;
+      const thickness = Math.max(10, wallThickness * 1.35);
+      ctx.save();
+      ctx.fillStyle = technicalColors.reinforcement;
+      if (surface.orientation === 'x') {
+        ctx.fillRect(toX(center) - segmentLength / 2, toY(Number(surface.normalAxis || 0)) - thickness / 2, segmentLength, thickness);
+      } else {
+        ctx.fillRect(toX(Number(surface.normalAxis || 0)) - thickness / 2, toY(center) - segmentLength / 2, thickness, segmentLength);
+      }
+      ctx.restore();
+    });
+}
+
 function sideWallLength(depth) {
   return Math.max(0, Number(depth || 0));
 }
@@ -583,10 +611,7 @@ function drawRotatedPictoObject(ctx, x, y, w, h, rotation, image, label) {
   ctx.translate(x, y);
   ctx.rotate((rotation * Math.PI) / 180);
   ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = technicalColors.ink;
-  ctx.lineWidth = 2;
   ctx.fillRect(-w / 2, -h / 2, w, h);
-  ctx.strokeRect(-w / 2, -h / 2, w, h);
   drawContainedImage(ctx, image, -w / 2 + 5, -h / 2 + 5, w - 10, h - 10);
   ctx.restore();
   drawBadge(ctx, x, y, label);
@@ -601,7 +626,7 @@ function drawCeilingObject(ctx, x, y, w, h, rotation, image, color, label) {
   ctx.lineWidth = 2;
   ctx.setLineDash([5, 3]);
   ctx.fillRect(-w / 2, -h / 2, w, h);
-  ctx.strokeRect(-w / 2, -h / 2, w, h);
+  if (!image) ctx.strokeRect(-w / 2, -h / 2, w, h);
   ctx.setLineDash([]);
   if (image) drawContainedImage(ctx, image, -w / 2 + 4, -h / 2 + 4, w - 8, h - 8);
   ctx.restore();
@@ -645,11 +670,16 @@ function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY
   ctx.strokeStyle = technicalColors.ink;
   ctx.lineWidth = 2;
 
+  if (isObjectWallItem(item)) {
+    drawObjectWallItemTop(ctx, item, scale, toX, toY, label, itemWidth, itemDepth, wallLabelText, pictoImage);
+    return;
+  }
+
   if (item.wall === 'back') {
     const x = toX(item.x) - itemWidth / 2;
     const y = toY(-depth / 2) + wallThickness + 4;
     ctx.fillRect(x, y, itemWidth, itemDepth);
-    ctx.strokeRect(x, y, itemWidth, itemDepth);
+    if (!pictoImage) ctx.strokeRect(x, y, itemWidth, itemDepth);
     if (pictoImage) drawContainedImage(ctx, pictoImage, x + 2, y + 2, itemWidth - 4, itemDepth - 4);
     drawText(ctx, wallLabelText, x + itemWidth / 2, y + itemDepth + 42, 15, '#22364d', 'bold', 'center');
     drawBadge(ctx, x + itemWidth / 2, y + itemDepth + 22, label);
@@ -659,9 +689,38 @@ function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY
   const x = item.wall === 'left' ? toX(-width / 2) + wallThickness + 4 : toX(width / 2) - wallThickness - itemDepth - 4;
   const y = toY(item.x) - itemWidth / 2;
   ctx.fillRect(x, y, itemDepth, itemWidth);
-  ctx.strokeRect(x, y, itemDepth, itemWidth);
-  if (pictoImage) drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4, item.wall === 'left' ? Math.PI / 2 : -Math.PI / 2);
+  if (!pictoImage) ctx.strokeRect(x, y, itemDepth, itemWidth);
+  if (pictoImage) drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4, sideWallPictoAngle(item));
   drawSideTvLabel(ctx, wallLabelText, item.wall, x, y + itemWidth / 2, itemDepth);
+  drawBadge(ctx, x + itemDepth + 22, y + itemWidth / 2, label);
+}
+
+function drawObjectWallItemTop(ctx, item, scale, toX, toY, label, itemWidth, itemDepth, wallLabelText, pictoImage = null) {
+  const surface = objectWallSurfaceForTechnicalItem(item);
+  if (!surface) return;
+  const axis = clampValue(Number(item.x ?? surface.centerAxis ?? 0), Number(surface.centerAxis || 0) - Number(surface.length || 0) / 2, Number(surface.centerAxis || 0) + Number(surface.length || 0) / 2);
+  const side = objectWallSideForTechnicalItem(item, surface);
+  const gap = 4;
+
+  if (surface.orientation === 'x') {
+    const x = toX(axis) - itemWidth / 2;
+    const wallY = toY(Number(surface.normalAxis || 0));
+    const y = side >= 0 ? wallY + gap : wallY - itemDepth - gap;
+    ctx.fillRect(x, y, itemWidth, itemDepth);
+    if (!pictoImage) ctx.strokeRect(x, y, itemWidth, itemDepth);
+    if (pictoImage) drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemWidth - 4, itemDepth - 4, side >= 0 ? 0 : Math.PI);
+    drawText(ctx, wallLabelText, x + itemWidth / 2, side >= 0 ? y + itemDepth + 42 : y - 22, 15, '#22364d', 'bold', 'center');
+    drawBadge(ctx, x + itemWidth / 2, side >= 0 ? y + itemDepth + 22 : y - 42, label);
+    return;
+  }
+
+  const wallX = toX(Number(surface.normalAxis || 0));
+  const x = side >= 0 ? wallX + gap : wallX - itemDepth - gap;
+  const y = toY(axis) - itemWidth / 2;
+  ctx.fillRect(x, y, itemDepth, itemWidth);
+  if (!pictoImage) ctx.strokeRect(x, y, itemDepth, itemWidth);
+  if (pictoImage) drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4, side >= 0 ? Math.PI / 2 : -Math.PI / 2);
+  drawSideTvLabel(ctx, wallLabelText, side >= 0 ? 'left' : 'right', x, y + itemWidth / 2, itemDepth);
   drawBadge(ctx, x + itemDepth + 22, y + itemWidth / 2, label);
 }
 
@@ -673,6 +732,48 @@ function drawSideTvLabel(ctx, label, wall, x, y, screenDepth) {
   ctx.restore();
 }
 
+function sideWallPictoAngle(item = {}) {
+  const baseAngle = item.wall === 'left' ? Math.PI / 2 : -Math.PI / 2;
+  return isLedRailItem(item) ? baseAngle + Math.PI : baseAngle;
+}
+
+function isLedRailItem(item = {}) {
+  const text = `${item.type || ''} ${item.label || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return Boolean(item.isLedSpotOption || item.dimensions?.isLedSpotOption || item.autoLedRail || item.autoSpot || (text.includes('rail') && text.includes('spot')));
+}
+
+function isObjectWallItem(item = {}) {
+  return String(item?.wall || '').startsWith('object-wall:') || Boolean(item?.wallSurface?.orientation);
+}
+
+function objectWallSurfaceForTechnicalItem(item = {}) {
+  const surface = item.wallSurface || null;
+  if (!surface?.orientation) return null;
+  return {
+    ...surface,
+    orientation: surface.orientation === 'z' ? 'z' : 'x',
+    centerAxis: Number(surface.centerAxis ?? (surface.orientation === 'z' ? surface.centerZ : surface.centerX) ?? 0),
+    normalAxis: Number(surface.normalAxis ?? (surface.orientation === 'z' ? surface.centerX : surface.centerZ) ?? 0),
+    length: Math.max(0.1, Number(surface.length || 0.1)),
+  };
+}
+
+function objectWallSideForTechnicalItem(item = {}, surface = {}) {
+  const outsideSide = protectedObjectOutsideSide(surface);
+  if (outsideSide) return outsideSide;
+  return Number(item.wallSide || 1) >= 0 ? 1 : -1;
+}
+
+function protectedObjectOutsideSide(surface = {}) {
+  const bounds = surface?.protectedBounds;
+  if (!bounds) return null;
+  const normalAxis = Number(surface.normalAxis || 0);
+  const center = surface.orientation === 'x'
+    ? (Number(bounds.minZ || 0) + Number(bounds.maxZ || 0)) / 2
+    : (Number(bounds.minX || 0) + Number(bounds.maxX || 0)) / 2;
+  return normalAxis >= center ? 1 : -1;
+}
+
 function tvTechnicalLabel(item) {
   if (item.tvSize) return `TV ${item.tvSize}"`;
   if (item.label && /tv\\s*\\d+|\\d+\\s*["”]|pouce/i.test(item.label)) return item.label;
@@ -680,6 +781,11 @@ function tvTechnicalLabel(item) {
 }
 
 function screenPositionLabel(item, width, depth) {
+  if (isObjectWallItem(item)) {
+    const surface = objectWallSurfaceForTechnicalItem(item);
+    if (surface?.orientation === 'x') return `X ${signedMm(item.x)} / Z ${signedMm(surface.normalAxis)}`;
+    if (surface?.orientation === 'z') return `X ${signedMm(surface.normalAxis)} / Z ${signedMm(item.x)}`;
+  }
   if (item.wall === 'left') return `X ${signedMm(-width / 2)} / Z ${signedMm(item.x)}`;
   if (item.wall === 'right') return `X ${signedMm(width / 2)} / Z ${signedMm(item.x)}`;
   return `X ${signedMm(item.x)} / Z ${signedMm(-depth / 2)}`;
@@ -936,6 +1042,7 @@ function layoutLabel(layout) {
 }
 
 function wallLabel(wall) {
+  if (String(wall || '').startsWith('object-wall:')) return 'Mur reserve';
   if (wall === 'left') return 'Mur gauche';
   if (wall === 'right') return 'Mur droit';
   return 'Mur fond';
