@@ -48,7 +48,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { createTechnicalPlanBlob, exportTechnicalPng } from './technicalExport.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
@@ -4769,20 +4769,23 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     .map((option) => {
       const color = resolvedColorSelections[option.id];
       if (!color) return null;
+      const colorMeta = variantGroupColorMetaForSelection(catalogEntry, option.id, color);
       return {
         id: option.id,
         label: `${option.label || 'Couleur'} : ${shortFinishName(color.name || color.code || '')}`,
         reference: color.reference || color.code || '',
         price: Number(color.price || 0),
         colorId: color.id,
-        batPictoUrl: variantGroupColorMetaForSelection(catalogEntry, option.id, color)?.batPictoUrl || color.batPictoUrl || '',
-        batPictoPath: variantGroupColorMetaForSelection(catalogEntry, option.id, color)?.batPictoPath || color.batPictoPath || '',
+        batPictoUrl: colorMeta?.batPictoUrl || color.batPictoUrl || '',
+        batPictoPath: colorMeta?.batPictoPath || color.batPictoPath || '',
+        itemImageUrl: colorMeta?.itemImageUrl || color.itemImageUrl || '',
+        itemImagePath: colorMeta?.itemImagePath || color.itemImagePath || '',
       };
     })
     .filter(Boolean);
   const selectedVariantColorMeta = colorOptions
     .map((option) => variantGroupColorMetaForSelection(catalogEntry, option.id, resolvedColorSelections[option.id]))
-    .find((meta) => meta?.batPictoUrl || meta?.batPictoPath) || null;
+    .find((meta) => meta?.batPictoUrl || meta?.batPictoPath || meta?.itemImageUrl || meta?.itemImagePath) || null;
   const selectedTextureSlotColorMeta = rawTextureSlots
     .filter((slot) => slot.kind === 'color')
     .map((slot) => variantGroupColorMetaForSelection(catalogEntry, slot.id, visualOptions.textureSlotValues?.[slot.id])
@@ -4966,6 +4969,8 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
         variantAssetType: resolvedEntry?.type || selectedVariant?.assetType,
         variantBatPictoUrl: selectedVariantColorMeta?.batPictoUrl || selectedTextureSlotColorMeta?.batPictoUrl || selectedCounterColorMeta?.batPictoUrl || selectedBatColor?.batPictoUrl || selectedVariantMeta?.batPictoUrl || '',
         variantBatPictoPath: selectedVariantColorMeta?.batPictoPath || selectedTextureSlotColorMeta?.batPictoPath || selectedCounterColorMeta?.batPictoPath || selectedBatColor?.batPictoPath || selectedVariantMeta?.batPictoPath || '',
+        variantColorImageUrl: selectedVariantColorMeta?.itemImageUrl || '',
+        variantColorImagePath: selectedVariantColorMeta?.itemImagePath || '',
         variantBatDescription: catalogEntry.dimensions?.batDescription || resolvedEntry?.dimensions?.batDescription || '',
         extraOptions: selectedExtras,
         globalExtraOptions,
@@ -5491,7 +5496,7 @@ function variantGroupColorMetaForSelection(groupEntry = {}, optionId = '', color
     const withoutGroupPrefix = String(key).includes(':') ? normalizeColorId(String(key).split(':').pop()) : '';
     return [normalized, withoutGroupPrefix].filter(Boolean);
   });
-  return keys.map((key) => optionMeta[key]).find((meta) => meta?.batPictoUrl || meta?.batPictoPath) || null;
+  return keys.map((key) => optionMeta[key]).find((meta) => meta?.batPictoUrl || meta?.batPictoPath || meta?.itemImageUrl || meta?.itemImagePath) || null;
 }
 
 function batDescriptionForItem(item = {}, entry = {}) {
@@ -6812,6 +6817,8 @@ function validationCategoryFromLine(line = {}, entry = {}, item = null) {
 
 function validationItemImage(item = null, entry = {}, catalog = []) {
   const preferredImages = [
+    item?.options?.variantColorImageUrl,
+    item?.options?.variantColorImage,
     entry?.thumbnailUrl,
     entry?.thumbnail_url,
     item?.options?.thumbnailUrl,
@@ -10942,6 +10949,21 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     }
   };
 
+  const changeVariantColorItemImage = async (optionId, colorId, file) => {
+    if (!optionId || !colorId || !file) return;
+    setBatPictoUploading(true);
+    setBatPictoError('');
+    try {
+      const scope = `variant-color-${slugForType(optionId)}-${slugForType(colorId)}`;
+      const uploaded = await uploadObjectAssetScopedImage(draft, file, scope, 'recap-image');
+      updateVariantColorMeta(optionId, colorId, { itemImageUrl: uploaded.publicUrl || '', itemImagePath: uploaded.path || '' });
+    } catch (error) {
+      setBatPictoError(error.message || "Upload de l'image recap couleur impossible.");
+    } finally {
+      setBatPictoUploading(false);
+    }
+  };
+
   return (
     <div className="asset-drawer-layer">
       <aside className="asset-drawer">
@@ -11563,6 +11585,7 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
                     colorMeta={variantColorMeta[row.id] || {}}
                     uploading={batPictoUploading}
                     onChange={onColorBatPictoChange}
+                    onImageChange={changeVariantColorItemImage}
                   />
                 </>
               )}
@@ -11747,30 +11770,46 @@ function VariantColorIncludedRows({ option = {}, colorGroup = null, onChange, on
 }
 
 
-function VariantColorBatPictoRows({ option = {}, colorGroup = null, colors: providedColors = null, colorMeta = {}, uploading = false, onChange }) {
+function VariantColorBatPictoRows({ option = {}, colorGroup = null, colors: providedColors = null, colorMeta = {}, uploading = false, onChange, onImageChange }) {
   const colors = Array.isArray(providedColors) ? providedColors : normalizeColorGroupOptions(colorGroup || {});
   if (!colors.length || !onChange) return null;
   return (
     <div className="variant-color-bat-picto-list">
-      <span className="option-variant-links-label">Pictos BAT par couleur pour ce groupe de variantes</span>
+      <span className="option-variant-links-label">Pictos BAT et images recap par couleur pour ce groupe de variantes</span>
       {colors.map((color) => {
         const colorKey = normalizeColorId(color.id);
         const meta = colorMeta[colorKey] || colorMeta[color.id] || {};
         return (
-          <label key={color.id} className="variant-color-bat-picto-upload">
+          <div key={color.id} className="variant-color-bat-picto-upload">
             <i style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }} />
             <strong>{color.name}</strong>
-            <span>{meta.batPictoUrl ? 'Picto importé' : 'Associer le picto BAT'}</span>
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg"
-              disabled={uploading}
-              onChange={(event) => {
-                onChange(option.id, color.id, event.target.files?.[0] || null);
-                event.target.value = '';
-              }}
-            />
-          </label>
+            <label>
+              <span>{meta.batPictoUrl ? 'Picto BAT importé' : 'Picto BAT'}</span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg"
+                disabled={uploading}
+                onChange={(event) => {
+                  onChange(option.id, color.id, event.target.files?.[0] || null);
+                  event.target.value = '';
+                }}
+              />
+            </label>
+            {onImageChange && (
+              <label>
+                <span>{meta.itemImageUrl ? 'Image recap importée' : 'Image recap/panier'}</span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg"
+                  disabled={uploading}
+                  onChange={(event) => {
+                    onImageChange(option.id, color.id, event.target.files?.[0] || null);
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+            )}
+          </div>
         );
       })}
     </div>

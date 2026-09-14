@@ -12714,7 +12714,7 @@ img.asset-thumb {
 
 .variant-color-bat-picto-upload {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
 }
@@ -12735,10 +12735,27 @@ img.asset-thumb {
   white-space: nowrap;
 }
 
-.variant-color-bat-picto-upload span {
+.variant-color-bat-picto-upload label {
+  position: relative;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center;
+  min-height: 28px;
+  border: 1px dashed #9bbbed;
+  border-radius: 8px;
+  padding: 0 8px;
   color: #416bb0;
+  background: #f7faff;
+  cursor: pointer;
+}
+
+.variant-color-bat-picto-upload label span {
   font-size: 0.72rem;
   font-weight: 900;
+}
+
+.variant-color-bat-picto-upload input {
+  display: none;
 }
 
 .item-config-modal .variant-color-card {

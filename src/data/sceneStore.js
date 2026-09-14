@@ -1457,7 +1457,7 @@ export async function uploadObjectAssetThumbnail(asset, file) {
   };
 }
 
-export async function uploadObjectAssetBatPicto(asset, file, scopeKey = '') {
+export async function uploadObjectAssetScopedImage(asset, file, scopeKey = '', prefix = 'image') {
   if (!supabase) throw new Error('Supabase non configure.');
   if (!asset?.type) throw new Error('Objet introuvable.');
   if (!file || !isProfileImageFile(file)) throw new Error('Selectionne une image JPG, PNG, WebP ou SVG.');
@@ -1465,7 +1465,8 @@ export async function uploadObjectAssetBatPicto(asset, file, scopeKey = '') {
   const bucket = supabase.storage.from('object-assets');
   const extension = file.name.toLowerCase().match(/\.([a-z0-9]{2,5})$/)?.[1] || 'jpg';
   const scope = scopeKey ? `${sanitizeStoragePath(scopeKey).replace(/^\/+|\/+$/g, '')}/` : '';
-  const path = `${asset.type}/${scope}bat-picto-${Date.now().toString(36)}.${extension}`;
+  const safePrefix = sanitizeStorageSegment(prefix || 'image');
+  const path = `${asset.type}/${scope}${safePrefix}-${Date.now().toString(36)}.${extension}`;
   const { error } = await bucket.upload(path, file, {
     cacheControl: '31536000',
     contentType: guessContentType(file),
@@ -1473,9 +1474,14 @@ export async function uploadObjectAssetBatPicto(asset, file, scopeKey = '') {
   });
   if (error) throw error;
   const { data } = bucket.getPublicUrl(path);
+  return { publicUrl: data.publicUrl, path };
+}
+
+export async function uploadObjectAssetBatPicto(asset, file, scopeKey = '') {
+  const uploaded = await uploadObjectAssetScopedImage(asset, file, scopeKey, 'bat-picto');
   const previousPath = scopeKey ? '' : asset.dimensions?.batPictoPath;
-  if (previousPath && previousPath !== path) {
-    bucket.remove([previousPath]).then(({ error: rmError }) => {
+  if (previousPath && previousPath !== uploaded.path) {
+    supabase.storage.from('object-assets').remove([previousPath]).then(({ error: rmError }) => {
       if (rmError) console.warn('Ancien picto BAT non supprime', rmError);
     });
   }
@@ -1483,8 +1489,8 @@ export async function uploadObjectAssetBatPicto(asset, file, scopeKey = '') {
     ...asset,
     dimensions: {
       ...(asset.dimensions || {}),
-      batPictoUrl: data.publicUrl,
-      batPictoPath: path,
+      batPictoUrl: uploaded.publicUrl,
+      batPictoPath: uploaded.path,
     },
   };
 }
