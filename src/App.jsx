@@ -7715,14 +7715,14 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
   };
 
   return (
-    <div className={`carpet-choice-card footprint-choice-card ${!enabled ? 'disabled' : ''}`}>
+    <div className={`carpet-choice-card ground-choice-card ground-carpet-card ${!enabled ? 'disabled' : ''}`}>
       {visibleStandardGroups.map((group) => {
         const includedColors = group.colors.filter((color) => color.included);
         const paidColors = paidOptionColors;
         const referenceColor = selectedDisplayColor || includedColors[0] || group.colors[0];
         const minPrice = minColorPrice(paidColors);
         return (
-          <section key={group.id} className="carpet-choice-section footprint-standard">
+          <section key={group.id} className="carpet-choice-section ground-section">
             <GroundOptionHeading title="EMPREINTE MOQUETTE" value={`${referenceColor?.name} (${referenceColor?.code})`} iconSrc="/icons/empreinte_moquette_icon.svg" />
             <small>{`${includedColors.length || 1} couleur${(includedColors.length || 1) > 1 ? 's' : ''} incluse${(includedColors.length || 1) > 1 ? 's' : ''}`}</small>
             <div className="carpet-swatch-row">
