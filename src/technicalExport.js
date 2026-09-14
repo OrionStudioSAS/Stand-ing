@@ -29,6 +29,7 @@ const carpetFootprintOverflow = 0.2;
 
 export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems: providedTechnicalItems = null, pictoImages = new Map() }) {
   const technicalItems = providedTechnicalItems || technicalItemsForPlan(items, width, depth, catalog);
+  const drawableTechnicalItems = technicalItems.filter((item) => !item?.sourceOptions);
   sheet.height = Math.max(1240, 1080 + technicalItems.length * 52);
   const canvas = document.createElement('canvas');
   canvas.width = sheet.width;
@@ -38,8 +39,8 @@ export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   drawFrame(ctx);
-  drawSidebar(ctx, width, depth, fixedWallHeight, layout, technicalItems);
-  drawPlan(ctx, width, depth, layout, technicalItems, catalog, pictoImages);
+  drawSidebar(ctx, width, depth, fixedWallHeight, layout, drawableTechnicalItems);
+  drawPlan(ctx, width, depth, layout, drawableTechnicalItems, catalog, pictoImages);
   drawItemTable(ctx, technicalItems, catalog, width, depth);
   return canvas;
 }
@@ -289,59 +290,176 @@ function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale) {
   ctx.restore();
 }
 
-function drawItemTable(ctx, items, catalog, width, depth) {
+function drawItemTable(ctx, items, catalog) {
   const x = sheet.left + 18;
   const rowH = 28;
-  const rows = (items || []).map((item) => {
-    const entry = catalog.find((candidate) => candidate.type === item.type);
-    const descriptionLines = technicalDescriptionLines(technicalBatDescription(item, entry, catalog));
-    return { item, entry, descriptionLines, height: rowH + descriptionLines.length * 15 };
-  });
-  const bodyHeight = rows.reduce((sum, row) => sum + row.height, rowH);
-  const y = Math.max(900, sheet.height - sheet.margin - 70 - bodyHeight);
   const w = sheet.width - sheet.margin - x - 18;
-  const headers = ['#', 'Element', 'Dimensions L x P x H', 'Position', 'Rotation / mur'];
-  const cols = [48, 250, 300, 230, 260];
+  const sections = technicalTableSections(items, catalog);
+  const bodyHeight = sections.reduce((sum, section) => (
+    sum + rowH + section.rows.reduce((sectionSum, row) => sectionSum + row.height, 0)
+  ), rowH);
+  const y = Math.max(900, sheet.height - sheet.margin - 70 - bodyHeight);
 
   ctx.strokeStyle = '#777';
   ctx.strokeRect(x, y, w, sheet.height - sheet.margin - y - 14);
   drawText(ctx, 'DETAIL DES ELEMENTS', x + 16, y + 28, 22, technicalColors.blue, 'bold');
 
   let cy = y + 48;
-  ctx.fillStyle = technicalColors.soft;
-  ctx.fillRect(x + 10, cy, w - 20, rowH);
-  ctx.strokeRect(x + 10, cy, w - 20, rowH);
-  let cx = x + 16;
-  headers.forEach((header, index) => {
-    drawText(ctx, header, cx, cy + 19, 14, technicalColors.ink, 'bold');
-    cx += cols[index];
-  });
-  cy += rowH;
+  sections.forEach((section) => {
+    ctx.fillStyle = technicalColors.soft;
+    ctx.fillRect(x + 10, cy, w - 20, rowH);
+    ctx.strokeStyle = '#777';
+    ctx.strokeRect(x + 10, cy, w - 20, rowH);
+    drawText(ctx, section.title, x + 18, cy + 20, 14, technicalColors.blue, 'bold');
+    cy += rowH;
 
-  rows.forEach(({ item, entry, descriptionLines, height }, index) => {
-    const dims = itemDimensions(item, entry);
-    const values = [
-      String(index + 1),
-      item.label || entry?.label || item.type,
-      `${mm(dims.width)} x ${mm(dims.depth)} x ${mm(dims.height)} mm`,
-      isWallItem(item) ? screenPositionLabel(item, width, depth) : `X ${signedMm(item.x)} / Z ${signedMm(item.z)}`,
-      item.type === 'screen' ? `${wallLabel(item.wall)} + renfort 1000x2500` : isWallItem(item) ? wallLabel(item.wall) : `${Math.round(item.rotation || 0)} deg`,
-    ];
-
-    ctx.strokeStyle = '#cccccc';
-    ctx.strokeRect(x + 10, cy, w - 20, height);
-    cx = x + 16;
-    values.forEach((value, colIndex) => {
-      drawText(ctx, value, cx, cy + 19, 13);
-      if (colIndex === 1 && descriptionLines.length) {
-        descriptionLines.forEach((line, lineIndex) => {
-          drawText(ctx, line, cx, cy + 36 + lineIndex * 15, 11, '#777777');
-        });
-      }
-      cx += cols[colIndex];
+    section.rows.forEach((row) => {
+      ctx.strokeStyle = '#cccccc';
+      ctx.strokeRect(x + 10, cy, w - 20, row.height);
+      drawText(ctx, row.label, x + 18, cy + 20, 13, technicalColors.ink, 'bold');
+      row.lines.forEach((line, lineIndex) => {
+        drawText(ctx, line, x + 288, cy + 20 + lineIndex * 15, 12, '#555555');
+      });
+      cy += row.height;
     });
-    cy += height;
   });
+}
+
+function technicalTableSections(items = [], catalog = []) {
+  const sections = [
+    { id: 'amco', title: 'AMCO', rows: [] },
+    { id: 'electricity', title: 'ELEC', rows: [] },
+    { id: 'coverings', title: 'MOQUETTE / EMPREINTE / COTON CLOISON', rows: technicalCoveringRows(items) },
+    { id: 'visuals', title: 'VISUELS AJOUTES', rows: technicalVisualRows(items, catalog) },
+  ];
+
+  (items || []).filter((item) => !item?.sourceOptions).forEach((item, index) => {
+    const entry = catalog.find((candidate) => candidate.type === item.type) || {};
+    const row = technicalObjectRow(item, entry, catalog, index);
+    const sectionId = technicalItemSection(item, entry);
+    sections.find((section) => section.id === sectionId)?.rows.push(row);
+  });
+
+  return sections.filter((section) => section.rows.length > 0);
+}
+
+function technicalObjectRow(item = {}, entry = {}, catalog = [], index = 0) {
+  const descriptionLines = technicalDescriptionLines(technicalBatDescription(item, entry, catalog));
+  const optionLines = technicalItemOptionLines(item, entry);
+  const lines = [...optionLines, ...descriptionLines].slice(0, 5);
+  return {
+    label: `${index + 1}. ${item.label || entry?.label || item.type || 'Objet'}`,
+    lines: lines.length ? lines : ['—'],
+    height: 28 + Math.max(1, lines.length) * 15,
+  };
+}
+
+function technicalItemSection(item = {}, entry = {}) {
+  const text = normalizeTechnicalText(`${item.label || ''} ${item.type || ''} ${entry.label || ''} ${entry.type || ''} ${entry.dimensions?.category || ''}`);
+  if (text.includes('spot') || text.includes('rail') || text.includes('led') || text.includes('alimentation') || text.includes('multiprise') || text.includes('triplette')) return 'electricity';
+  return 'amco';
+}
+
+function technicalCoveringRows(items = []) {
+  const rows = [];
+  const sourceOptions = (items || []).find((item) => item?.sourceOptions)?.sourceOptions || null;
+  if (sourceOptions) {
+    rows.push(technicalSimpleRow('Moquette', [sourceOptions.carpetColorName, sourceOptions.carpetColorCode].filter(Boolean).join(' ')));
+    if (sourceOptions.carpetFootprintEnabled !== false) rows.push(technicalSimpleRow('Empreinte moquette', [sourceOptions.carpetFootprintColorName, sourceOptions.carpetFootprintColorCode].filter(Boolean).join(' ')));
+    rows.push(technicalSimpleRow('Coton cloison', [sourceOptions.wallFabricColorName, sourceOptions.wallFabricColorCode].filter(Boolean).join(' ')));
+  }
+  return rows;
+}
+
+function technicalVisualRows(items = [], catalog = []) {
+  const rows = [];
+  (items || []).forEach((item) => {
+    technicalItemVisuals(item, catalog.find((candidate) => candidate.type === item.type) || {}).forEach((visual) => {
+      rows.push(technicalSimpleRow(visual.label, visual.status));
+    });
+  });
+  return rows;
+}
+
+function technicalSimpleRow(label, detail = '') {
+  const lines = [String(detail || '—')];
+  return { label, lines, height: 28 + lines.length * 15 };
+}
+
+function technicalItemOptionLines(item = {}, entry = {}) {
+  const options = item.options || {};
+  const lines = [];
+  if (options.variantLabel) lines.push(`Variante : ${options.variantLabel}`);
+  if (options.binary2ColorName || options.binary2Color) lines.push(`Couleur : ${cleanTechnicalColorName(options.binary2ColorName || options.binary2Color)}`);
+  Object.values(options.textureSlotValues || {}).forEach((value) => {
+    if (value?.colorName || value?.color) lines.push(`Couleur : ${cleanTechnicalColorName(value.colorName || value.color)}`);
+  });
+  (Array.isArray(options.optionReferences) ? options.optionReferences : []).forEach((option) => {
+    if (option?.label) lines.push(String(option.label));
+  });
+  if (options.technician) lines.push('Permanence technicien');
+  if (options.fileCheck) lines.push('Vérification fichier');
+  if (entry?.dimensions?.category) lines.push(`Catégorie : ${entry.dimensions.category}`);
+  return uniqueTechnicalLines(lines).slice(0, 4);
+}
+
+function technicalItemVisuals(item = {}, entry = {}) {
+  const visuals = [];
+  const label = item.label || entry.label || item.type || 'objet';
+  if (item.options?.binary3Enabled !== false && (item.options?.binary3ImageUrl || item.options?.binary3ImageName || item.options?.binary3VisualPending || isCounterTechnicalItem(item, entry))) {
+    visuals.push({ label: `Image ${counterTechnicalLabel(label)}`, status: technicalVisualStatus(item.options?.binary3VisualPending, item.options?.binary3ImageUrl || item.options?.binary3ImageName) });
+  }
+  if (item.options?.headMainImageUrl || item.options?.headMainImageName || item.options?.visualPending) {
+    visuals.push({ label: `Image ${label}`, status: technicalVisualStatus(item.options?.visualPending, item.options?.headMainImageUrl || item.options?.headMainImageName) });
+  }
+  if (item.options?.posterImageUrl || item.options?.posterImageName || item.options?.posterVisualPending) {
+    visuals.push({ label: `Image ${label}`, status: technicalVisualStatus(item.options?.posterVisualPending, item.options?.posterImageUrl || item.options?.posterImageName) });
+  }
+  normalizeTechnicalTextureSlots(item.dimensions?.textureSlots || entry.dimensions?.textureSlots).forEach((slot) => {
+    const value = item.options?.textureSlotValues?.[slot.id] || {};
+    if (value.imageUrl || value.imageName || value.visualPending) {
+      visuals.push({ label: `${slot.label || 'Image'} ${label}`, status: technicalVisualStatus(value.visualPending, value.imageUrl || value.imageName) });
+    }
+  });
+  return visuals;
+}
+
+function technicalVisualStatus(pending = false, hasImage = false) {
+  if (hasImage && !pending) return 'Visuel fourni';
+  if (pending) return 'Visuel à fournir plus tard';
+  return 'Visuel manquant';
+}
+
+function normalizeTechnicalTextureSlots(slots = []) {
+  return (Array.isArray(slots) ? slots : [])
+    .map((slot, index) => ({ id: slot.id || `texture-slot-${index}`, label: slot.label || slot.name || 'Image', kind: slot.kind || 'image' }))
+    .filter((slot) => slot.kind !== 'color');
+}
+
+function isCounterTechnicalItem(item = {}, entry = {}) {
+  return normalizeTechnicalText(`${item.type || ''} ${item.label || ''} ${entry.type || ''} ${entry.label || ''}`).includes('comptoir accueil');
+}
+
+function counterTechnicalLabel(label = '') {
+  return normalizeTechnicalText(label).includes('comptoir') ? 'comptoir accueil' : label;
+}
+
+function cleanTechnicalColorName(value = '') {
+  return String(value || '').replace(/\s*\([^)]*\)\s*$/g, '').replace(/\b[A-Z]\d{2,4}\b/g, '').replace(/\bST\d+\b/gi, '').replace(/\s+/g, ' ').trim();
+}
+
+function uniqueTechnicalLines(lines = []) {
+  const seen = new Set();
+  return lines.map((line) => String(line || '').trim()).filter((line) => {
+    const key = normalizeTechnicalText(line);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function normalizeTechnicalText(value = '') {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
 function technicalDescriptionLines(text = '') {
@@ -522,7 +640,7 @@ function wallDescriptor(wall, width, depth, items = []) {
 
 function screenReinforcements(wall, width, depth, items, wallLength) {
   return (items || [])
-    .filter((item) => item.type === 'screen' && (item.wall || 'back') === wall)
+    .filter((item) => isTechnicalScreenItem(item) && (item.wall || 'back') === wall)
     .map((item) => {
       const center = screenAxisOffset(item, wall, width, depth);
       const start = clampValue(center - reinforcementWidth / 2, 0, Math.max(0, wallLength - reinforcementWidth));
@@ -548,7 +666,7 @@ function screenAxisOffset(item, wall, width, depth) {
 
 function drawObjectWallReinforcements(ctx, items = [], scale, wallThickness, toX, toY) {
   (items || [])
-    .filter((item) => item?.type === 'screen' && isObjectWallItem(item))
+    .filter((item) => isTechnicalScreenItem(item) && isObjectWallItem(item))
     .forEach((item) => {
       const surface = objectWallSurfaceForTechnicalItem(item);
       if (!surface) return;
@@ -664,9 +782,9 @@ function drawObjectDimensions(ctx, x, y, w, h, dims, rotation) {
 function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, defaultLabel, pictoImage = null) {
   const isCustomWallModel = Boolean(item.modelUrl) && !['screen', 'poster'].includes(item.type);
   const itemWidth = (item.type === 'poster' ? Number(item.posterWidth || 1) : isCustomWallModel ? dims.width : 0.95) * scale;
-  const itemDepth = (item.type === 'poster' ? 0.04 : isCustomWallModel ? Math.max(0.04, dims.depth) : 0.08) * scale;
-  const wallLabelText = item.type === 'poster' ? `AFFICHE ${mm(item.posterWidth || 1)}` : item.type === 'screen' ? tvTechnicalLabel(item) : (defaultLabel || 'OBJET MURAL');
-  ctx.fillStyle = item.type === 'poster' ? '#f7f1dc' : item.type === 'screen' ? '#22364d' : (item.color || '#dfe8ec');
+  const itemDepth = (item.type === 'poster' ? 0.04 : isTechnicalScreenItem(item) ? 0.18 : isCustomWallModel ? Math.max(0.04, dims.depth) : 0.08) * scale;
+  const wallLabelText = item.type === 'poster' ? `AFFICHE ${mm(item.posterWidth || 1)}` : isTechnicalScreenItem(item) ? tvTechnicalLabel(item) : (defaultLabel || 'OBJET MURAL');
+  ctx.fillStyle = item.type === 'poster' ? '#f7f1dc' : isTechnicalScreenItem(item) ? '#22364d' : (item.color || '#dfe8ec');
   ctx.strokeStyle = technicalColors.ink;
   ctx.lineWidth = 2;
 
@@ -677,7 +795,7 @@ function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY
 
   if (item.wall === 'back') {
     const x = toX(item.x) - itemWidth / 2;
-    const y = toY(-depth / 2) + wallThickness + 4;
+    const y = toY(-depth / 2) + wallThickness + wallItemPlanGap(item);
     ctx.fillRect(x, y, itemWidth, itemDepth);
     if (!pictoImage) ctx.strokeRect(x, y, itemWidth, itemDepth);
     if (pictoImage) drawContainedImage(ctx, pictoImage, x + 2, y + 2, itemWidth - 4, itemDepth - 4);
@@ -686,7 +804,8 @@ function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY
     return;
   }
 
-  const x = item.wall === 'left' ? toX(-width / 2) + wallThickness + 4 : toX(width / 2) - wallThickness - itemDepth - 4;
+  const gap = wallItemPlanGap(item);
+  const x = item.wall === 'left' ? toX(-width / 2) + wallThickness + gap : toX(width / 2) - wallThickness - itemDepth - gap;
   const y = toY(item.x) - itemWidth / 2;
   ctx.fillRect(x, y, itemDepth, itemWidth);
   if (!pictoImage) ctx.strokeRect(x, y, itemDepth, itemWidth);
@@ -737,9 +856,18 @@ function sideWallPictoAngle(item = {}) {
   return isLedRailItem(item) ? baseAngle + Math.PI : baseAngle;
 }
 
+function wallItemPlanGap(item = {}) {
+  return isLedRailItem(item) ? 0 : 4;
+}
+
 function isLedRailItem(item = {}) {
   const text = `${item.type || ''} ${item.label || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   return Boolean(item.isLedSpotOption || item.dimensions?.isLedSpotOption || item.autoLedRail || item.autoSpot || (text.includes('rail') && text.includes('spot')));
+}
+
+function isTechnicalScreenItem(item = {}) {
+  const text = `${item.type || ''} ${item.label || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return Boolean(item.type === 'screen' || item.dimensions?.isTelevision || text.includes('televiseur') || text.includes('television') || /\btv\b/.test(text));
 }
 
 function isObjectWallItem(item = {}) {
@@ -953,7 +1081,7 @@ function wallBlocker(item, wall, width, depth, catalog) {
     const axis = Number(item.x || 0);
     const entry = catalog.find((candidate) => candidate.type === item.type);
     const dims = itemDimensions(item, entry);
-    const itemWidth = item.type === 'screen' ? 0.95 : item.type === 'poster' ? Number(item.posterWidth || 1) : dims.width;
+    const itemWidth = isTechnicalScreenItem(item) ? 0.95 : item.type === 'poster' ? Number(item.posterWidth || 1) : dims.width;
     return { min: axis - itemWidth / 2 - 0.1, max: axis + itemWidth / 2 + 0.1 };
   }
 

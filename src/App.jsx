@@ -5813,8 +5813,8 @@ function firstImageTextureSlot(item = {}) {
 function step2OptionKeyForItem(item = {}) {
   if (!item) return '';
   if (isPartitionHeadItem(item) || isAutomaticPartitionHeadItem(item)) return 'tete';
-  if (isPrestigeArchControlItem(item, true)) return 'arche';
-  if (isPrestigeHighSignControlItem(item, true)) return 'enseigne';
+  if (isPrestigeArchControlItem(item, false)) return 'arche';
+  if (isPrestigeHighSignControlItem(item, false)) return 'enseigne';
   if (isReserveSceneItem(item) || isAutomaticReserveItem(item)) return 'reserve';
   if (isWoodReceptionDeskItem(item) && isIncludedSceneItem(item)) return 'comptoir';
   if (isLedRailEntry(item) || isAutomaticLedRailItem(item) || isAutomaticSpotItem(item)) return 'led';
@@ -6861,7 +6861,9 @@ function validationRowFromItem({ item, entry, amount = 0, included = false, read
   const optionLines = uniqueTextValues(itemOptionLines(item));
   const hasCustomImage = Boolean(item?.options?.binary3ImageUrl || item?.options?.headMainImageUrl || item?.options?.posterImageUrl);
   const visualPending = Boolean(item?.options?.binary3VisualPending || item?.options?.headMainVisualPending || item?.options?.posterVisualPending);
-  const needsVisual = !isWoodReceptionDeskItem(item) && (visualPending || Boolean(item?.options?.binary3ImageName || item?.options?.headMainImageName || item?.options?.posterImageName));
+  const textureRequests = validationItemTextureVisualRequests(item);
+  const missingTextureRequest = textureRequests.find((request) => !request.hasImage || request.pending);
+  const needsVisual = !isWoodReceptionDeskItem(item) && (visualPending || Boolean(item?.options?.binary3ImageName || item?.options?.headMainImageName || item?.options?.posterImageName) || Boolean(missingTextureRequest));
   return {
     id: item.id,
     label: itemCartLabel(item),
@@ -6869,7 +6871,7 @@ function validationRowFromItem({ item, entry, amount = 0, included = false, read
     imageUrl: validationItemImage(item, entry, catalog),
     badge: included ? 'Inclus' : validationBadgeText(amount),
     badgeTone: included ? 'included' : 'price',
-    visualStatus: needsVisual ? validationVisualStatus(visualPending, hasCustomImage) : null,
+    visualStatus: needsVisual ? validationVisualStatus(visualPending || missingTextureRequest?.pending, hasCustomImage || textureRequests.some((request) => request.hasImage)) : null,
     onRemove: canDeleteSceneItem(item, isAdminViewer) && !readOnly ? () => onRemoveItem?.(item.id) : null,
     onOpen: onOpenItem ? () => onOpenItem(item) : null,
   };
@@ -6905,19 +6907,32 @@ function validationPendingVisuals({ partitionHeadRule, partitionHeadSides, parti
   });
   wallCoverSurfaces.forEach((surface) => {
     const cover = wallCovers?.[surface.id] || (surface.sourceWall ? wallCovers?.[surface.sourceWall] : null) || {};
-    if (cover.enabled && cover.visualPending) rows.push(`Visuel bâche ${surface.label || surface.id} à transmettre`);
+    if (cover.enabled && (cover.visualPending || !(cover.previewUrl || cover.url))) rows.push(cover.visualPending ? `Visuel bâche ${surface.label || surface.id} à transmettre` : `Visuel bâche ${surface.label || surface.id} manquant`);
   });
-  items.filter((item) => isWoodReceptionDeskItem(item) && counterLogoOptionActive(item) && item?.options?.binary3VisualPending)
-    .forEach((item, index) => rows.push(`Logo comptoir accueil ${index + 1} à transmettre`));
+  items.filter((item) => isWoodReceptionDeskItem(item) && counterLogoOptionActive(item) && !(item?.options?.binary3ImageUrl || item?.options?.binary3ImageName))
+    .forEach((item, index) => rows.push(item?.options?.binary3VisualPending ? `Logo comptoir accueil ${index + 1} à transmettre` : `Logo comptoir accueil ${index + 1} manquant`));
   items.forEach((item) => {
-    const slots = normalizeTextureSlots(item?.dimensions?.textureSlots).filter((slot) => slot.kind === 'image');
-    slots.forEach((slot) => {
-      if (item?.options?.textureSlotValues?.[slot.id]?.visualPending) {
-        rows.push(`${textureSlotDisplayLabel(slot, item)} à transmettre`);
+    validationItemTextureVisualRequests(item).forEach((request) => {
+      if (!request.hasImage) {
+        rows.push(request.pending ? `${request.label} à transmettre` : `${request.label} manquant`);
       }
     });
   });
   return uniqueTextValues(rows);
+}
+
+function validationItemTextureVisualRequests(item = {}) {
+  const slots = normalizeTextureSlots(item?.dimensions?.textureSlots).filter((slot) => slot.kind === 'image');
+  return slots
+    .filter((slot) => !textureSlotHasLogoGate(item, slot) || textureSlotLogoGateActive(item, slot))
+    .map((slot) => {
+      const value = item?.options?.textureSlotValues?.[slot.id] || {};
+      return {
+        label: textureSlotDisplayLabel(slot, item),
+        pending: Boolean(value.visualPending),
+        hasImage: Boolean(value.imageUrl || value.imageName),
+      };
+    });
 }
 
 function basePackUsageText(item) {
@@ -12751,11 +12766,12 @@ function downloadSceneTechnicalPlan(scene = {}, assets = []) {
   const catalogEntries = sceneAdminCatalog(assets, scene);
   const width = Number(scene.dimensions?.width || scene.width_m || 4);
   const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
+  const items = sceneAllAdminItems(scene, catalogEntries);
   exportTechnicalPng({
     width,
     depth,
     layout: scene.layout || 'back',
-    items: sceneAllAdminItems(scene, catalogEntries),
+    items: withTechnicalOptionsMarker(items, scene),
     catalog: catalogEntries,
   });
 }
@@ -12768,7 +12784,7 @@ async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = []) {
     width,
     depth,
     layout: scene.layout || 'back',
-    items: sceneAllAdminItems(scene, catalogEntries),
+    items: withTechnicalOptionsMarker(sceneAllAdminItems(scene, catalogEntries), scene),
     catalog: catalogEntries,
   });
   return {
@@ -12776,6 +12792,19 @@ async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = []) {
     contentBase64: await blobToBase64(blob),
     contentType: 'image/png',
   };
+}
+
+function withTechnicalOptionsMarker(items = [], scene = {}) {
+  const options = scene.options || scene.source_payload?.options || {};
+  return [
+    ...items,
+    {
+      id: '__technical-options__',
+      type: '__technical-options__',
+      sourceOptions: options,
+      collisionEnabled: false,
+    },
+  ];
 }
 
 async function downloadScenePurchaseOrder(scene = {}, assets = []) {
