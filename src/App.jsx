@@ -11369,6 +11369,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
               variantColorMeta={variantColorMeta}
               batPictoUploading={batPictoUploading}
               onColorBatPictoChange={changeVariantColorBatPicto}
+              onColorItemImageChange={changeVariantColorItemImage}
               onChange={updateConfigOptionRow}
               onRemove={removeConfigOptionRow}
               onAddChoice={addConfigOptionChoice}
@@ -11507,7 +11508,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   );
 }
 
-function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroups = [], textureSlots = [], links = [], variantColorMeta = {}, batPictoUploading = false, onColorBatPictoChange, onChange, onRemove, onAddChoice, onUpdateChoice, onRemoveChoice, onSetLink }) {
+function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroups = [], textureSlots = [], links = [], variantColorMeta = {}, batPictoUploading = false, onColorBatPictoChange, onColorItemImageChange, onChange, onRemove, onAddChoice, onUpdateChoice, onRemoveChoice, onSetLink }) {
   if (!rows.length) return <p className="asset-variants-empty">{emptyLabel}</p>;
   const selectOption = rows.find((r) => r.type === 'select');
   const toggleRows = rows.filter((r) => !['select', 'color'].includes(r.type || 'toggle'));
@@ -11588,7 +11589,7 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
                     colorMeta={variantColorMeta[row.id] || {}}
                     uploading={batPictoUploading}
                     onChange={onColorBatPictoChange}
-                    onImageChange={changeVariantColorItemImage}
+                    onImageChange={onColorItemImageChange}
                   />
                 </>
               )}
