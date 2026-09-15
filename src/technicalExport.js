@@ -429,7 +429,8 @@ function technicalSelectedColorCandidate(options = {}, optionRefs = []) {
     : [];
   const ordered = [...colorRefs, ...textureColors, ...binaryColor].filter((candidate) => candidate.name);
   return ordered.find((candidate) => candidate.price > 0)
-    || [...colorRefs, ...textureColors].reverse().find((candidate) => candidate.name)
+    || [...colorRefs].reverse().find((candidate) => candidate.name)
+    || [...textureColors].reverse().find((candidate) => candidate.name)
     || binaryColor[0]
     || null;
 }
@@ -1042,6 +1043,41 @@ function drawBox(ctx, x, y, w, h, text, color, size) {
   drawText(ctx, text, x + w / 2, y + h / 2 + size / 3, size, color, 'bold', 'center');
 }
 
+function technicalChildOptions(childOptions = {}, parentOptions = {}, parentDimensions = {}, index = 0) {
+  const parentOptionReferences = Array.isArray(parentOptions.optionReferences) ? parentOptions.optionReferences : [];
+  const childOptionReferences = Array.isArray(childOptions.optionReferences) ? childOptions.optionReferences : [];
+  const inheritedVisuals = index === 0 ? {
+    ...(hasTechnicalValue(parentOptions.binary3ImageUrl) ? { binary3ImageUrl: parentOptions.binary3ImageUrl } : {}),
+    ...(hasTechnicalValue(parentOptions.binary3ImageName) ? { binary3ImageName: parentOptions.binary3ImageName } : {}),
+    ...(hasTechnicalValue(parentOptions.binary3VisualPending) ? { binary3VisualPending: parentOptions.binary3VisualPending } : {}),
+    ...(hasTechnicalValue(parentOptions.binary3Enabled) ? { binary3Enabled: parentOptions.binary3Enabled } : {}),
+    ...(hasTechnicalValue(parentOptions.textureSlotValues) ? { textureSlotValues: { ...(childOptions.textureSlotValues || {}), ...(parentOptions.textureSlotValues || {}) } } : {}),
+  } : {};
+
+  return {
+    ...childOptions,
+    ...(hasTechnicalValue(parentOptions.binary2ColorName) ? { binary2ColorName: parentOptions.binary2ColorName } : {}),
+    ...(hasTechnicalValue(parentOptions.binary2Color) ? { binary2Color: parentOptions.binary2Color } : {}),
+    ...(hasTechnicalValue(parentOptions.binary2ColorPrice) ? { binary2ColorPrice: parentOptions.binary2ColorPrice } : {}),
+    ...(hasTechnicalValue(parentOptions.variantColorSelections) ? { variantColorSelections: parentOptions.variantColorSelections } : {}),
+    ...(parentOptionReferences.length ? { optionReferences: [...childOptionReferences, ...parentOptionReferences] } : {}),
+    ...(parentOptions.variantBatPictoUrl || parentDimensions.batPictoUrl ? {
+      variantBatPictoUrl: parentOptions.variantBatPictoUrl || parentDimensions.batPictoUrl || '',
+      variantBatPictoPath: parentOptions.variantBatPictoPath || parentDimensions.batPictoPath || '',
+    } : {}),
+    ...(parentOptions.variantBatDescription || parentDimensions.batDescription ? {
+      variantBatDescription: parentOptions.variantBatDescription || parentDimensions.batDescription || '',
+    } : {}),
+    ...inheritedVisuals,
+  };
+}
+
+function hasTechnicalValue(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  if (value && typeof value === 'object') return Object.keys(value).length > 0;
+  return value !== undefined && value !== null && value !== '';
+}
+
 function legendLine(ctx, x, y, color, label) {
   ctx.strokeStyle = color;
   ctx.lineWidth = 3;
@@ -1070,16 +1106,7 @@ function flattenTechnicalItems(items, catalog) {
       const localZ = Number(child.z || 0);
       const parentOptions = item.options || {};
       const parentDimensions = item.dimensions || {};
-      const inheritedOptions = {
-        ...(child.options || {}),
-        ...(parentOptions.variantBatPictoUrl || parentDimensions.batPictoUrl ? {
-          variantBatPictoUrl: parentOptions.variantBatPictoUrl || parentDimensions.batPictoUrl || '',
-          variantBatPictoPath: parentOptions.variantBatPictoPath || parentDimensions.batPictoPath || '',
-        } : {}),
-        ...(parentOptions.variantBatDescription || parentDimensions.batDescription ? {
-          variantBatDescription: parentOptions.variantBatDescription || parentDimensions.batDescription || '',
-        } : {}),
-      };
+      const inheritedOptions = technicalChildOptions(child.options || {}, parentOptions, parentDimensions, index);
       return {
         ...child,
         id: `${item.id}-${child.id || index}`,
@@ -1094,6 +1121,7 @@ function flattenTechnicalItems(items, catalog) {
         options: inheritedOptions,
         dimensions: {
           ...(child.dimensions || {}),
+          ...(index === 0 && parentDimensions.textureSlots && !child.dimensions?.textureSlots ? { textureSlots: parentDimensions.textureSlots } : {}),
           ...(parentDimensions.batPictoUrl ? { batPictoUrl: parentDimensions.batPictoUrl, batPictoPath: parentDimensions.batPictoPath || '' } : {}),
           ...(parentDimensions.batDescription ? { batDescription: parentDimensions.batDescription } : {}),
         },

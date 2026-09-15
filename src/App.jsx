@@ -12681,7 +12681,8 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   return [
     ...manualItems,
     ...automaticReserveItems,
-    ...makeAutomaticPartitionHeadItems(partitionRule, partitionSides, catalogEntries, width, depth, layout, salonLabel),
+    ...makeAutomaticPartitionHeadItems(partitionRule, partitionSides, catalogEntries, width, depth, layout, salonLabel)
+      .map((item) => applyPartitionHeadVisualOptions(item, options.partitionHeadVisuals || {})),
     ...ledItems,
   ];
 }
