@@ -2931,8 +2931,8 @@ select {
 
 .ground-main-swatch {
   display: block;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border-radius: 999px;
   background-color: var(--swatch-color);
   background-image: var(--swatch-image);
@@ -3039,8 +3039,8 @@ select {
 
 .carpet-swatch-row button {
   position: relative;
-  width: 38px;
-  height: 38px;
+  width: 26px;
+  height: 26px;
   border: 0;
   border-radius: 50%;
   background-color: var(--swatch-color);
@@ -3143,12 +3143,12 @@ select {
 
 .footprint-standard .carpet-swatch-row {
   gap: 10px;
-  min-height: 34px;
+  min-height: 30px;
 }
 
 .footprint-standard .carpet-swatch-row button {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
 }
 
 .footprint-warning {
@@ -10315,8 +10315,8 @@ img.asset-thumb {
 .counter-finish-swatches button i,
 .counter-finish-included-row button i {
   display: block;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border-radius: 999px;
   background: var(--swatch-color, #fff);
   background-image: var(--swatch-image);
@@ -11265,8 +11265,8 @@ img.asset-thumb {
 
 .counter-finish-card-v2 .counter-finish-swatches button,
 .counter-finish-card-v2 .counter-finish-swatches button i {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
 }
 
 .counter-finish-card-v2 .counter-finish-swatches button.active i {

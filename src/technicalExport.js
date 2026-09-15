@@ -41,7 +41,7 @@ export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog
   drawFrame(ctx);
   drawSidebar(ctx, width, depth, fixedWallHeight, layout, drawableTechnicalItems);
   drawPlan(ctx, width, depth, layout, drawableTechnicalItems, catalog, pictoImages);
-  drawItemTable(ctx, technicalItems, catalog, width, depth);
+  drawItemTable(ctx, technicalItems, catalog, pictoImages);
   return canvas;
 }
 
@@ -69,6 +69,9 @@ async function loadTechnicalPictoImages(items = [], catalog = []) {
     const entry = catalog.find((candidate) => candidate.type === item.type);
     const url = technicalSvgPictoUrl(item, entry, catalog);
     if (url) urls.add(url);
+    technicalItemVisuals(item, entry || {}).forEach((visual) => {
+      if (visual.imageUrl) urls.add(visual.imageUrl);
+    });
   });
   const loaded = await Promise.all([...urls].map(async (url) => [url, await loadCanvasImage(url)]));
   return new Map(loaded.filter(([, image]) => image));
@@ -290,7 +293,7 @@ function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale) {
   ctx.restore();
 }
 
-function drawItemTable(ctx, items, catalog) {
+function drawItemTable(ctx, items, catalog, imageMap = new Map()) {
   const x = sheet.left + 18;
   const rowH = 28;
   const w = sheet.width - sheet.margin - x - 18;
@@ -316,7 +319,13 @@ function drawItemTable(ctx, items, catalog) {
     section.rows.forEach((row) => {
       ctx.strokeStyle = '#cccccc';
       ctx.strokeRect(x + 10, cy, w - 20, row.height);
-      drawText(ctx, row.label, x + 18, cy + 20, 13, technicalColors.ink, 'bold');
+      const thumb = row.imageUrl ? imageMap.get(row.imageUrl) : null;
+      if (thumb) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x + 18, cy + 6, 42, 42);
+        drawContainedImage(ctx, thumb, x + 20, cy + 8, 38, 38);
+      }
+      drawText(ctx, row.label, x + (thumb ? 70 : 18), cy + 20, 13, technicalColors.ink, 'bold');
       row.lines.forEach((line, lineIndex) => {
         drawText(ctx, line, x + 288, cy + 20 + lineIndex * 15, 12, '#555555');
       });
@@ -330,7 +339,7 @@ function technicalTableSections(items = [], catalog = []) {
     { id: 'amco', title: 'AMCO', rows: [] },
     { id: 'electricity', title: 'ELEC', rows: [] },
     { id: 'coverings', title: 'MOQUETTE / EMPREINTE / COTON CLOISON', rows: technicalCoveringRows(items) },
-    { id: 'visuals', title: 'VISUELS AJOUTES', rows: technicalVisualRows(items, catalog) },
+    { id: 'visuals', title: 'SIGNA / VISUELS', rows: technicalVisualRows(items, catalog) },
   ];
 
   (items || []).filter((item) => !item?.sourceOptions).forEach((item, index) => {
@@ -375,27 +384,26 @@ function technicalVisualRows(items = [], catalog = []) {
   const rows = [];
   (items || []).forEach((item) => {
     technicalItemVisuals(item, catalog.find((candidate) => candidate.type === item.type) || {}).forEach((visual) => {
-      rows.push(technicalSimpleRow(visual.label, visual.status));
+      rows.push(technicalSimpleRow(visual.label, visual.status, visual.imageUrl));
     });
   });
   return rows;
 }
 
-function technicalSimpleRow(label, detail = '') {
+function technicalSimpleRow(label, detail = '', imageUrl = '') {
   const lines = [String(detail || '—')];
-  return { label, lines, height: 28 + lines.length * 15 };
+  return { label, lines, imageUrl, height: Math.max(52, 28 + lines.length * 15) };
 }
 
 function technicalItemOptionLines(item = {}, entry = {}) {
   const options = item.options || {};
   const lines = [];
+  const optionRefs = Array.isArray(options.optionReferences) ? options.optionReferences : [];
+  const colorCandidate = technicalSelectedColorCandidate(options, optionRefs);
   if (options.variantLabel) lines.push(`Variante : ${options.variantLabel}`);
-  if (options.binary2ColorName || options.binary2Color) lines.push(`Couleur : ${cleanTechnicalColorName(options.binary2ColorName || options.binary2Color)}`);
-  Object.values(options.textureSlotValues || {}).forEach((value) => {
-    if (value?.colorName || value?.color) lines.push(`Couleur : ${cleanTechnicalColorName(value.colorName || value.color)}`);
-  });
-  (Array.isArray(options.optionReferences) ? options.optionReferences : []).forEach((option) => {
-    if (option?.label) lines.push(String(option.label));
+  if (colorCandidate?.name) lines.push(`Couleur : ${cleanTechnicalColorName(colorCandidate.name)}`);
+  optionRefs.forEach((option) => {
+    if (option?.label && !isTechnicalColorReference(option)) lines.push(String(option.label));
   });
   if (options.technician) lines.push('Permanence technicien');
   if (options.fileCheck) lines.push('Vérification fichier');
@@ -403,31 +411,92 @@ function technicalItemOptionLines(item = {}, entry = {}) {
   return uniqueTechnicalLines(lines).slice(0, 4);
 }
 
+function technicalSelectedColorCandidate(options = {}, optionRefs = []) {
+  const colorRefs = optionRefs.filter(isTechnicalColorReference).map((option, index) => ({
+    name: String(option.label || '').replace(/^\s*Couleur\s*:\s*/i, '') || option.reference || option.colorId || '',
+    price: Number(option.price || 0),
+    index,
+  }));
+  const textureColors = Object.values(options.textureSlotValues || {})
+    .filter((value) => value && (value.colorName || value.color))
+    .map((value, index) => ({
+      name: value.colorName || value.color,
+      price: Number(value.colorPrice || value.price || 0),
+      index,
+    }));
+  const binaryColor = options.binary2ColorName || options.binary2Color
+    ? [{ name: options.binary2ColorName || options.binary2Color, price: Number(options.binary2ColorPrice || 0), index: 0 }]
+    : [];
+  const ordered = [...colorRefs, ...textureColors, ...binaryColor].filter((candidate) => candidate.name);
+  return ordered.find((candidate) => candidate.price > 0)
+    || [...colorRefs, ...textureColors].reverse().find((candidate) => candidate.name)
+    || binaryColor[0]
+    || null;
+}
+
+function isTechnicalColorReference(option = {}) {
+  const text = normalizeTechnicalText(`${option.id || ''} ${option.label || ''} ${option.reference || ''}`);
+  return Boolean(option.colorId || text.startsWith('couleur') || text.includes(' couleur') || text.includes('color'));
+}
+
 function technicalItemVisuals(item = {}, entry = {}) {
+  if (item?.sourceOptions) return [];
   const visuals = [];
   const label = item.label || entry.label || item.type || 'objet';
-  if (item.options?.binary3Enabled !== false && (item.options?.binary3ImageUrl || item.options?.binary3ImageName || item.options?.binary3VisualPending || isCounterTechnicalItem(item, entry))) {
-    visuals.push({ label: `Image ${counterTechnicalLabel(label)}`, status: technicalVisualStatus(item.options?.binary3VisualPending, item.options?.binary3ImageUrl || item.options?.binary3ImageName) });
+  const textureSlots = normalizeTechnicalTextureSlots(item.dimensions?.textureSlots || entry.dimensions?.textureSlots);
+  const hasCounterTextureVisual = isCounterTechnicalItem(item, entry)
+    && textureSlots.some((slot) => technicalTextureSlotRequiresVisual(item, slot, item.options?.textureSlotValues?.[slot.id] || {}));
+  if (!hasCounterTextureVisual && item.options?.binary3Enabled !== false && (item.options?.binary3ImageUrl || item.options?.binary3ImageName || item.options?.binary3VisualPending || isCounterTechnicalItem(item, entry))) {
+    visuals.push({
+      label: `Logo ${counterTechnicalLabel(label)}`,
+      status: technicalVisualStatus(item.options?.binary3VisualPending, item.options?.binary3ImageUrl || item.options?.binary3ImageName, item.options?.binary3ImageName),
+      imageUrl: validTechnicalImageUrl(item.options?.binary3ImageUrl),
+    });
   }
   if (item.options?.headMainImageUrl || item.options?.headMainImageName || item.options?.visualPending) {
-    visuals.push({ label: `Image ${label}`, status: technicalVisualStatus(item.options?.visualPending, item.options?.headMainImageUrl || item.options?.headMainImageName) });
+    visuals.push({ label: `Image ${label}`, status: technicalVisualStatus(item.options?.visualPending, item.options?.headMainImageUrl || item.options?.headMainImageName, item.options?.headMainImageName), imageUrl: validTechnicalImageUrl(item.options?.headMainImageUrl) });
   }
   if (item.options?.posterImageUrl || item.options?.posterImageName || item.options?.posterVisualPending) {
-    visuals.push({ label: `Image ${label}`, status: technicalVisualStatus(item.options?.posterVisualPending, item.options?.posterImageUrl || item.options?.posterImageName) });
+    visuals.push({ label: `Image ${label}`, status: technicalVisualStatus(item.options?.posterVisualPending, item.options?.posterImageUrl || item.options?.posterImageName, item.options?.posterImageName), imageUrl: validTechnicalImageUrl(item.options?.posterImageUrl) });
   }
-  normalizeTechnicalTextureSlots(item.dimensions?.textureSlots || entry.dimensions?.textureSlots).forEach((slot) => {
+  textureSlots.forEach((slot) => {
     const value = item.options?.textureSlotValues?.[slot.id] || {};
-    if (value.imageUrl || value.imageName || value.visualPending) {
-      visuals.push({ label: `${slot.label || 'Image'} ${label}`, status: technicalVisualStatus(value.visualPending, value.imageUrl || value.imageName) });
+    if (technicalTextureSlotRequiresVisual(item, slot, value)) {
+      visuals.push({
+        label: `${technicalVisualSlotLabel(slot, item)} ${label}`,
+        status: technicalVisualStatus(value.visualPending, value.imageUrl || value.imageName, value.imageName),
+        imageUrl: validTechnicalImageUrl(value.imageUrl),
+      });
     }
   });
   return visuals;
 }
 
-function technicalVisualStatus(pending = false, hasImage = false) {
-  if (hasImage && !pending) return 'Visuel fourni';
-  if (pending) return 'Visuel à fournir plus tard';
+function technicalVisualStatus(pending = false, hasImage = false, imageName = '') {
+  if (hasImage && !pending) return `Visuel fourni${imageName ? ` : ${imageName}` : ''}`;
+  if (pending) return 'En attente - visuel à fournir plus tard';
   return 'Visuel manquant';
+}
+
+function technicalTextureSlotRequiresVisual(item = {}, slot = {}, value = {}) {
+  if (value.visualEnabled === false) return false;
+  if (value.imageUrl || value.imageName || value.visualPending) return true;
+  const text = normalizeTechnicalText(`${item.type || ''} ${item.label || ''} ${slot.label || ''}`);
+  const optionText = normalizeTechnicalText((item.options?.optionReferences || []).map((option) => option?.label || '').join(' '));
+  if (text.includes('enseigne') && (text.includes('haute') || text.includes('suspend'))) return true;
+  if (text.includes('pont') && text.includes('lumiere')) return true;
+  return optionText.includes('logo') || optionText.includes('signa') || optionText.includes('visuel') || optionText.includes('image');
+}
+
+function technicalVisualSlotLabel(slot = {}, item = {}) {
+  const text = normalizeTechnicalText(`${item.type || ''} ${item.label || ''} ${slot.label || ''}`);
+  if (text.includes('logo') || text.includes('signa') || (text.includes('enseigne') && text.includes('haute'))) return 'Logo';
+  return slot.label || 'Image';
+}
+
+function validTechnicalImageUrl(url = '') {
+  const value = String(url || '').trim();
+  return /^(https?:|data:|blob:|\/)/i.test(value) ? value : '';
 }
 
 function normalizeTechnicalTextureSlots(slots = []) {
