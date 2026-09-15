@@ -2166,6 +2166,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     updateItemOptions(item, { headMainImageUrl: '', headMainImageName: '' });
   };
 
+  const updatePrestigeSignageVisualPending = (item, slot, checked) => {
+    if (!item || !slot) return;
+    updateItemOptions(item, textureSlotPatch(item, slot, { visualPending: checked }));
+  };
+
+  const updatePrestigeSignageVisualEnabled = (item, slot, checked) => {
+    if (!item || !slot) return;
+    updateItemOptions(item, textureSlotPatch(item, slot, checked ? { visualEnabled: true } : { visualEnabled: false, imageUrl: '', imageName: '', visualPending: false }));
+  };
+
   const toggleSelectedItemLock = () => {
     if (readOnly || !selected) return;
     updateItem(selected.id, { userLocked: !itemUserLocked(selected) });
@@ -2661,6 +2671,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onPrestigeSignageToggle={setPrestigeSignagePresence}
             onPrestigeSignageImage={uploadPrestigeSignageImage}
             onPrestigeSignageResetImage={resetPrestigeSignageImage}
+            onPrestigeSignageVisualPending={updatePrestigeSignageVisualPending}
+            onPrestigeSignageVisualEnabled={updatePrestigeSignageVisualEnabled}
             onSelectPrestigeItem={setSelectedId}
             isAdminViewer={isAdminViewer}
           />
@@ -3358,7 +3370,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
   );
 }
 
-function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadState, onImageChange, onResetImage, onImagePending, onColorChange, onResetColor, onLogoGateChange, logoGateControls = [], counterColors = [], embedded = false }) {
+function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadState, onImageChange, onResetImage, onImagePending, onImageEnabled, onColorChange, onResetColor, onLogoGateChange, logoGateControls = [], counterColors = [], embedded = false }) {
   const t = useT();
   const slots = Array.isArray(providedSlots) ? providedSlots : normalizeTextureSlots(item?.dimensions?.textureSlots);
   const values = item?.options?.textureSlotValues || {};
@@ -3410,28 +3422,32 @@ function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadSta
         const logoGate = slot.kind === 'image' && logoGateControls.length
           ? logoGateControls[0]
           : (textureSlotHasLogoGate(item, slot) ? (logoGateControls[0] || null) : null);
+        const isHighSignageVisual = isHighSignageVisualItem(item);
         const logoGateActive = logoGate ? Boolean(logoGate.active) : textureSlotLogoGateActive(item, slot);
-        const useLogoUploadLayout = logoGate || isHighSignageVisualItem(item);
+        const visualEnabled = isHighSignageVisual ? textureSlotVisualEnabled(item, slot) : logoGateActive;
+        const useLogoUploadLayout = logoGate || isHighSignageVisual;
         if (useLogoUploadLayout) {
           return (
             <LogoUploadCard
               key={slot.id}
-              enabled={logoGateActive}
+              enabled={visualEnabled}
               disabled={uploadState?.uploading}
               uploading={uploadState?.uploading}
               className="texture-slot-logo-card"
-              title={logoGate?.label || textureSlotDisplayLabel(slot, item)}
+              title={logoGate?.label || (isHighSignageVisual ? 'Logo' : textureSlotDisplayLabel(slot, item))}
               priceLabel={logoGate?.priceLabel || ''}
               priceTone={logoGate?.priceTone || 'included'}
               imageUrl={value.imageUrl}
               alt={textureSlotDisplayLabel(slot, item)}
               visualPending={Boolean(value.visualPending)}
-              onEnabledChange={logoGate ? (checked) => onLogoGateChange?.(logoGate.id, checked, slot) : undefined}
+              onEnabledChange={logoGate
+                ? (checked) => onLogoGateChange?.(logoGate.id, checked, slot)
+                : (checked) => onImageEnabled?.(slot, checked)}
               onImageChange={(file) => onImageChange?.(slot, file)}
               onVisualPendingChange={(checked) => onImagePending?.(slot, checked)}
               onResetImage={() => onResetImage?.(slot)}
               resetLabel={t('img_upload_reset')}
-              showSwitch={Boolean(logoGate)}
+              showSwitch={Boolean(logoGate || isHighSignageVisual)}
             />
           );
         }
@@ -3510,13 +3526,13 @@ function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = 
   );
 }
 
-function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = {}, disabled = false, onEnabledChange, onImage, onResetImage, onSelect }) {
+function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = {}, disabled = false, onEnabledChange, onImage, onResetImage, onVisualPending, onVisualEnabled, onSelect }) {
   const item = items[0] || null;
   const slot = firstImageTextureSlot(item);
   const value = slot ? item?.options?.textureSlotValues?.[slot.id] || {} : {};
   const imageUrl = slot ? value.imageUrl : item?.options?.headMainImageUrl;
-  const imageName = slot ? value.imageName : item?.options?.headMainImageName;
   const uploading = Boolean(uploadState?.uploading);
+  const visualEnabled = slot ? textureSlotVisualEnabled(item, slot) : true;
 
   return (
     <div className="prestige-base-card prestige-signage-card">
@@ -3526,28 +3542,21 @@ function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = 
       </div>
 
       {enabled && item && (
-        <>
-          <div className="partition-head-upload-block partition-head-upload-block-v2 prestige-signage-upload">
-            <div className="partition-head-upload-title">
-              <strong>{slot?.label || 'Visuel enseigne haute'}</strong>
-              {imageName && <span>{imageName}</span>}
-            </div>
-            <VisualUploadDropzone
-              imageUrl={imageUrl}
-              alt={slot?.label || 'Visuel enseigne haute'}
-              disabled={disabled || uploading}
-              uploading={uploading}
-              onImage={(file) => onImage?.(item, file, slot)}
-              label=""
-              browseLabel="Importer"
-            />
-            {imageUrl && (
-              <button className="item-image-reset" type="button" disabled={disabled} onClick={() => onResetImage?.(item, slot)}>
-                Retirer le visuel
-              </button>
-            )}
-          </div>
-        </>
+        <LogoUploadCard
+          enabled={visualEnabled}
+          disabled={disabled || uploading}
+          uploading={uploading}
+          className="texture-slot-logo-card prestige-signage-upload"
+          title="Logo"
+          imageUrl={imageUrl}
+          alt={slot?.label || 'Logo enseigne haute'}
+          visualPending={Boolean(value.visualPending)}
+          onEnabledChange={(checked) => onVisualEnabled?.(item, slot, checked)}
+          onImageChange={(file) => onImage?.(item, file, slot)}
+          onVisualPendingChange={(checked) => onVisualPending?.(item, slot, checked)}
+          onResetImage={() => onResetImage?.(item, slot)}
+          resetLabel="Retirer le visuel"
+        />
       )}
 
       {uploadState?.error && <small className="partition-head-upload-error">{uploadState.error}</small>}
@@ -4176,6 +4185,8 @@ function OptionsStepPanel({
   onPrestigeSignageToggle,
   onPrestigeSignageImage,
   onPrestigeSignageResetImage,
+  onPrestigeSignageVisualPending,
+  onPrestigeSignageVisualEnabled,
   onSelectPrestigeItem,
   isAdminViewer = false,
 }) {
@@ -4315,6 +4326,8 @@ function OptionsStepPanel({
             onEnabledChange={onPrestigeSignageToggle}
             onImage={onPrestigeSignageImage}
             onResetImage={onPrestigeSignageResetImage}
+            onVisualPending={onPrestigeSignageVisualPending}
+            onVisualEnabled={onPrestigeSignageVisualEnabled}
             onSelect={onSelectPrestigeItem}
           />
         </OptionAccordion>
@@ -5085,6 +5098,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             onImageChange={(slot, file) => (item ? onImageChange?.(item, file, { textureSlot: slot }) : handleDraftImage(file, { urlKey: 'unused', nameKey: 'unused', textureSlot: slot }))}
             onResetImage={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { imageUrl: '', imageName: '', visualPending: false }))}
             onImagePending={(slot, checked) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { visualPending: checked }))}
+            onImageEnabled={(slot, checked) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, checked ? { visualEnabled: true } : { visualEnabled: false, imageUrl: '', imageName: '', visualPending: false }))}
             onColorChange={(slot, patch) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, patch))}
             onResetColor={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { color: '', colorImage: '', colorId: '', colorName: '', colorReference: '', colorPrice: 0, colorMode: '' }))}
             onLogoGateChange={(id, checked, slot) => {
@@ -5590,6 +5604,11 @@ function textureSlotLogoGateActive(item = {}, slot = {}) {
     if (selectedRefs.some((ref) => String(ref?.id || '') === String(option.id || ''))) return true;
     return Boolean(option.defaultChecked);
   });
+}
+
+function textureSlotVisualEnabled(item = {}, slot = {}) {
+  const value = item?.options?.textureSlotValues?.[slot.id] || {};
+  return value.visualEnabled !== false;
 }
 
 function displayConfigOptionDetail(option = {}, groupEntry = {}) {
@@ -6935,6 +6954,7 @@ function validationItemTextureVisualRequests(item = {}) {
   const slots = normalizeTextureSlots(item?.dimensions?.textureSlots).filter((slot) => slot.kind === 'image');
   return slots
     .filter((slot) => !textureSlotHasLogoGate(item, slot) || textureSlotLogoGateActive(item, slot))
+    .filter((slot) => !isHighSignageVisualItem(item) || textureSlotVisualEnabled(item, slot))
     .map((slot) => {
       const value = item?.options?.textureSlotValues?.[slot.id] || {};
       return {
