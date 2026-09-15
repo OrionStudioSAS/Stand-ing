@@ -3218,6 +3218,7 @@ function LogoUploadCard({
   onImageChange,
   onVisualPendingChange,
   onResetImage,
+  showSwitch = true,
   className = '',
 }) {
   const t = useT();
@@ -3225,15 +3226,17 @@ function LogoUploadCard({
     <section className={`counter-logo-card counter-logo-card-v2 ${className}`.trim()}>
       <header>
         <strong>{title}</strong>
-        <label className="counter-logo-switch" aria-label="Activer le logo">
-          <input
-            type="checkbox"
-            disabled={disabled}
-            checked={enabled}
-            onChange={(event) => onEnabledChange?.(event.target.checked)}
-          />
-          <span aria-hidden="true" />
-        </label>
+        {showSwitch && (
+          <label className="counter-logo-switch" aria-label="Activer le logo">
+            <input
+              type="checkbox"
+              disabled={disabled}
+              checked={enabled}
+              onChange={(event) => onEnabledChange?.(event.target.checked)}
+            />
+            <span aria-hidden="true" />
+          </label>
+        )}
       </header>
       {enabled && (
         <>
@@ -3408,7 +3411,8 @@ function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadSta
           ? logoGateControls[0]
           : (textureSlotHasLogoGate(item, slot) ? (logoGateControls[0] || null) : null);
         const logoGateActive = logoGate ? Boolean(logoGate.active) : textureSlotLogoGateActive(item, slot);
-        if (logoGate) {
+        const useLogoUploadLayout = logoGate || isHighSignageVisualItem(item);
+        if (useLogoUploadLayout) {
           return (
             <LogoUploadCard
               key={slot.id}
@@ -3416,17 +3420,18 @@ function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadSta
               disabled={uploadState?.uploading}
               uploading={uploadState?.uploading}
               className="texture-slot-logo-card"
-              title={logoGate.label || 'Logo'}
-              priceLabel={logoGate.priceLabel || ''}
-              priceTone={logoGate.priceTone || 'included'}
+              title={logoGate?.label || textureSlotDisplayLabel(slot, item)}
+              priceLabel={logoGate?.priceLabel || ''}
+              priceTone={logoGate?.priceTone || 'included'}
               imageUrl={value.imageUrl}
               alt={textureSlotDisplayLabel(slot, item)}
               visualPending={Boolean(value.visualPending)}
-              onEnabledChange={(checked) => onLogoGateChange?.(logoGate.id, checked, slot)}
+              onEnabledChange={logoGate ? (checked) => onLogoGateChange?.(logoGate.id, checked, slot) : undefined}
               onImageChange={(file) => onImageChange?.(slot, file)}
               onVisualPendingChange={(checked) => onImagePending?.(slot, checked)}
               onResetImage={() => onResetImage?.(slot)}
               resetLabel={t('img_upload_reset')}
+              showSwitch={Boolean(logoGate)}
             />
           );
         }
@@ -5751,6 +5756,11 @@ function isPrestigeArchItem(item = {}) {
 function isPrestigeHighSignItem(item = {}) {
   const text = normalizedItemText(item);
   return text.includes('enseigne') && (text.includes('haute') || text.includes('suspend'));
+}
+
+function isHighSignageVisualItem(item = {}) {
+  const text = normalizedItemText(item);
+  return text.includes('enseigne') && (text.includes('haute') || text.includes('suspend') || text.includes('hexagon'));
 }
 
 function isIncludedPrestigeArchItem(item = {}) {
