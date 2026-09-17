@@ -8924,7 +8924,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
   };
 
   const openBoardEditor = (entry) => {
-    setBoardEditor({ packName: entry.packName, value: entry.source?.board_id || '' });
+    setBoardEditor({ packName: entry.packName, value: entry.source?.board_id || '', salonFromGroup: Boolean(entry.source?.mapping?.salon_from_group) });
   };
 
   const openBasePackEditor = async (entry) => {
@@ -8958,7 +8958,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
     if (!selectedSalon || !boardEditor) return;
     setActionState({ loadingPack: '', savingBoardPack: entry.packName, savingBasePack: '', deletingPresetId: '', message: '', error: '' });
     try {
-      await saveMondayBoardForPack(selectedSalon, entry.packName, boardEditor.value);
+      await saveMondayBoardForPack(selectedSalon, entry.packName, boardEditor.value, { salonFromGroup: boardEditor.salonFromGroup });
       setBoardEditor(null);
       setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Board Monday enregistré pour ${entry.packName}.`, error: '' });
       await onSalonChanged?.();
@@ -9050,6 +9050,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
               <span>{entry.active ? presetMetaLabel(entry.preset, entry.presets) : 'Pack non activé sur ce salon'}</span>
               <small className="preset-board-line">
                 Monday : {entry.source?.board_id ? `board ${entry.source.board_id}` : 'aucun board'}
+                {entry.source?.mapping?.salon_from_group && ` · Groupe : ${selectedSalon.name}`}
               </small>
               <fieldset className="preset-pack-actions" disabled={Boolean(deletingGlobalPack)}>
                 {entry.active ? (
@@ -9098,6 +9099,11 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
                     placeholder="Ex : 18395911999"
                     onChange={(event) => setBoardEditor((current) => ({ ...current, value: event.target.value }))}
                   />
+                  <label className="preset-board-group-mode">
+                    <input type="checkbox" checked={boardEditor.salonFromGroup} onChange={(event) => setBoardEditor((current) => ({ ...current, salonFromGroup: event.target.checked }))} />
+                    Tableau par pack, groupes par salon
+                  </label>
+                  {boardEditor.salonFromGroup && <p className="preset-board-group-hint">Seuls les groupes nommés « {selectedSalon.name} » seront synchronisés pour ce pack.</p>}
                   <button type="submit" disabled={actionState.savingBoardPack === entry.packName}>
                     {actionState.savingBoardPack === entry.packName ? '...' : 'OK'}
                   </button>
@@ -12559,7 +12565,7 @@ function AdminMondayView({ syncState, runMondaySync }) {
   return (
     <section className="monday-panel modern">
       <h2>Synchronisation Monday</h2>
-      <p>Lit les tableaux SMCL Confort/Prestige, cree une scene quand la colonne CONFIGURABLE vaut OUI, puis remplit le lien configurateur dans Monday.</p>
+      <p>Lit les tableaux Monday associés aux packs, crée une scène quand CONFIGURABLE vaut OUI et remplit le lien configurateur. Pour un tableau organisé par pack, chaque salon utilise uniquement ses groupes. Le premier email est envoyé une seule fois, lorsque ÉTAPE 1 passe à 1ER ENVOI.</p>
       <button className="sync-button" onClick={runMondaySync} disabled={syncState.loading}>{syncState.loading ? 'Synchronisation...' : 'Synchroniser Monday'}</button>
       {syncState.message && <div className="sync-result success">{syncState.message}</div>}
       {syncState.error && <div className="sync-result error">{syncState.error}</div>}

@@ -4739,6 +4739,32 @@ select {
   font-weight: 850;
 }
 
+.preset-board-editor .preset-board-group-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  font-size: 0.8rem;
+}
+
+.preset-board-editor .preset-board-group-mode input {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.preset-board-group-hint {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  margin: 0;
+  color: #697280;
+  font-size: 0.75rem;
+}
+
 .preset-card-body button.primary {
   color: #fff;
   border-color: #1f4378;
@@ -4783,6 +4809,21 @@ select {
 .preset-board-editor button {
   min-height: 34px;
   padding: 0 12px;
+}
+
+.preset-board-editor > input {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.preset-board-editor > button[type="submit"] {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.preset-board-editor > button[type="button"] {
+  grid-column: 3;
+  grid-row: 1;
 }
 
 .preset-library-card i {

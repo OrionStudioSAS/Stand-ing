@@ -30,6 +30,13 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
   const accessToken = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  const body = await req.json().catch(() => ({}));
+  // Server diagnostics cannot invoke the scene/email synchronization path.
+  if (accessToken === serviceRoleKey) {
+    if (body?.inspectBoardId) return json(await fetchMondayBoardStructure(mondayToken, String(body.inspectBoardId)));
+    if (body?.prepareBoardId) return json(await prepareMondayBoard(mondayToken, String(body.prepareBoardId)));
+    if (body?.previewSync) return json(await previewMondaySync(supabase, mondayToken, body.boardId));
+  }
   const { data: authData, error: authError } = await supabase.auth.getUser(accessToken);
   if (authError || !authData.user) return json({ error: "Unauthorized" }, 401);
 
@@ -40,7 +47,9 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (!adminUser) return json({ error: "Admin access required" }, 403);
 
-  const body = await req.json().catch(() => ({}));
+  if (body?.inspectBoardId) return json(await fetchMondayBoardStructure(mondayToken, String(body.inspectBoardId)));
+  if (body?.prepareBoardId) return json(await prepareMondayBoard(mondayToken, String(body.prepareBoardId)));
+  if (body?.previewSync) return json(await previewMondaySync(supabase, mondayToken, body.boardId));
 
   if (body?.recreateSftpFoldersOnly) {
     const warnings: string[] = [];
@@ -88,6 +97,7 @@ Deno.serve(async (req) => {
   const warnings: string[] = [];
   const errors: string[] = [];
 
+  const boardItems = new Map<string, any[]>();
   for (const source of sources ?? []) {
     const { columns: mondayColumns, warning: columnWarning } = await fetchMondayBoardColumnsSafe(mondayToken, source.board_id);
     if (columnWarning) warnings.push(columnWarning);
@@ -96,7 +106,9 @@ Deno.serve(async (req) => {
     }
     const resolvedSource = withResolvedMondayColumns(source, mondayColumns, warnings);
     const context = await ensureSourceContext(supabase, resolvedSource);
-    const items = await fetchMondayItems(mondayToken, resolvedSource.board_id, resolvedSource.group_id);
+    if (!boardItems.has(resolvedSource.board_id)) boardItems.set(resolvedSource.board_id, await fetchMondayItems(mondayToken, resolvedSource.board_id));
+    const items = filterMondaySourceItems(boardItems.get(resolvedSource.board_id) || [], { ...resolvedSource, salon: context.salonLabel });
+    if (resolvedSource.mapping?.salon_from_group && !items.length) warnings.push(`Aucun stand dans un groupe nommé ${resolvedSource.salon} sur le tableau ${resolvedSource.board_id}.`);
 
     for (const item of items) {
       const { data: existingScene, error: existingSceneError } = await supabase
@@ -244,7 +256,7 @@ Deno.serve(async (req) => {
             metadata: {
               monday_item_id: item.id,
               monday_board_id: source.board_id,
-              monday_group_id: source.group_id,
+              monday_group_id: item.group?.id || source.group_id,
               offer: source.offer,
             },
             updated_at: new Date().toISOString(),
@@ -360,6 +372,8 @@ function withResolvedMondayColumns(source: any, columns: Array<{ id: string; tit
   const mapping = source.mapping ?? {};
   const clientEmailColumnId = resolveMappedColumnId(columns, mapping.client_email, findEmailColumnId(columns));
   const layoutColumnId = resolveMappedColumnId(columns, mapping.layout, findLayoutColumnId(columns));
+  const companyColumnId = resolveMappedColumnId(columns, mapping.company_name, findMondayColumnId(columns, (value) => value === "raison_sociale" || value === "societe"));
+  const phoneColumnId = resolveMappedColumnId(columns, mapping.client_phone, columns.find((column: any) => column.type === "phone")?.id || "");
   const hallColumnId = findHallColumnId(columns) || resolveMappedColumnId(columns, mapping.hall || mapping.pavillon, '');
   const aisleColumnId = findAisleColumnId(columns) || resolveMappedColumnId(columns, mapping.aisle_number || mapping.allee || mapping["allée"], '');
   const standNumberColumnId = findStandNumberColumnId(columns) || resolveMappedColumnId(columns, mapping.stand_number || mapping.standNumber || mapping.numero_stand || mapping["numéro_stand"], '');
@@ -395,6 +409,8 @@ function withResolvedMondayColumns(source: any, columns: Array<{ id: string; tit
       ...mapping,
       ...(clientEmailColumnId ? { client_email: clientEmailColumnId } : {}),
       ...(layoutColumnId ? { layout: layoutColumnId } : {}),
+      ...(companyColumnId ? { company_name: companyColumnId } : {}),
+      ...(phoneColumnId ? { client_phone: phoneColumnId } : {}),
       ...(hallColumnId ? { hall: hallColumnId } : {}),
       ...(aisleColumnId ? { aisle_number: aisleColumnId, allee: aisleColumnId } : {}),
       ...(standNumberColumnId ? { stand_number: standNumberColumnId } : {}),
@@ -551,6 +567,22 @@ function constraintColumnsConfigured(source: any) {
   return Boolean(mapping.constraint || mapping.contrainte || mappedPoleColumnId(mapping, 1) || mappedPoleColumnId(mapping, 2));
 }
 
+async function fetchMondayBoardStructure(token: string, boardId: string) {
+  const response = await fetch(mondayApiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: token },
+    body: JSON.stringify({
+      query: `query ($boardId: [ID!]) { boards(ids: $boardId) { id name workspace { id name } columns { id title type settings_str } groups { id title } items_page(limit: 100) { cursor items { id name group { id title } column_values { id text value } } } } }`,
+      variables: { boardId: [boardId] },
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok || payload.errors?.length) throw new Error(payload.errors?.map((entry: any) => entry.message).join(", ") || `Monday HTTP ${response.status}`);
+  const board = payload.data?.boards?.[0];
+  if (!board) throw new Error(`Tableau Monday ${boardId} introuvable ou inaccessible.`);
+  return board;
+}
+
 async function fetchMondayBoardColumnsSafe(token: string, boardId: string) {
   try {
     return { columns: await fetchMondayBoardColumns(token, boardId), warning: "" };
@@ -639,30 +671,85 @@ function salonDisplayName(value = "") {
   return /\b20\d{2}\b/.test(clean) ? clean : `${clean} 2026`;
 }
 
-async function fetchMondayItems(token: string, boardId: string, groupId?: string) {
-  const query = `
-    query ($boardId: [ID!]) {
-      boards(ids: $boardId) {
-        items_page(limit: 100) {
-          items {
-            id
-            name
-            group { id title }
-            column_values { id text value column { title } }
-          }
-        }
-      }
-    }
-  `;
+function filterMondaySourceItems(items: any[], source: any) {
+  if (source.mapping?.salon_from_group) {
+    const salonName = normalizeText(source.salon);
+    if (!salonName) return [];
+    return items.filter((item) => normalizeText(item.group?.title) === salonName);
+  }
+  return source.group_id ? items.filter((item) => item.group?.id === source.group_id) : items;
+}
 
-  const response = await fetch(mondayApiUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: token },
-    body: JSON.stringify({ query, variables: { boardId } }),
-  });
-  const payload = await response.json();
-  const items = payload.data?.boards?.[0]?.items_page?.items ?? [];
-  return groupId ? items.filter((item: any) => item.group?.id === groupId) : items;
+async function fetchMondayItems(token: string, boardId: string, groupId?: string) {
+  const items: any[] = [];
+  let cursor: string | null = null;
+  do {
+    const fields = "cursor items { id name group { id title } column_values { id text value column { title } } }";
+    const query = cursor
+      ? `query ($cursor: String!) { next_items_page(limit: 100, cursor: $cursor) { ${fields} } }`
+      : `query ($boardId: [ID!]) { boards(ids: $boardId) { items_page(limit: 100) { ${fields} } } }`;
+    const response = await fetch(mondayApiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: token },
+      body: JSON.stringify({ query, variables: cursor ? { cursor } : { boardId: [boardId] } }),
+    });
+    const payload = await response.json();
+    if (!response.ok || payload.errors?.length) throw new Error(payload.errors?.map((entry: any) => entry.message).join(", ") || `Monday HTTP ${response.status}`);
+    const board = payload.data?.boards?.[0];
+    if (!cursor && !board) throw new Error(`Tableau Monday ${boardId} introuvable ou inaccessible.`);
+    const page = cursor ? payload.data?.next_items_page : board?.items_page;
+    if (!page) throw new Error(`Réponse Monday incomplète pour le tableau ${boardId}.`);
+    items.push(...(page.items || []));
+    cursor = page.cursor || null;
+  } while (cursor);
+  return groupId ? items.filter((item) => item.group?.id === groupId) : items;
+}
+
+async function prepareMondayBoard(token: string, boardId: string) {
+  const board = await fetchMondayBoardStructure(token, boardId);
+  const created: string[] = [];
+  const needed = [
+    { title: "IMPLANTATION", type: "status", exists: findLayoutColumnId(board.columns), defaults: { labels: { "0": "ARRIERE", "1": "ARRIERE GAUCHE", "2": "ARRIERE DROITE", "3": "U" } } },
+    { title: "LIEN CONFIGURATEUR", type: "link", exists: findLinkColumnId(board.columns), defaults: null },
+  ];
+  for (const column of needed) {
+    if (column.exists) continue;
+    const response = await fetch(mondayApiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: token },
+      body: JSON.stringify({
+        query: `mutation ($boardId: ID!, $title: String!, $type: ColumnType!, $defaults: JSON) { create_column(board_id: $boardId, title: $title, column_type: $type, defaults: $defaults) { id title } }`,
+        variables: { boardId, title: column.title, type: column.type, defaults: column.defaults ? JSON.stringify(column.defaults) : null },
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok || payload.errors?.length) throw new Error(payload.errors?.map((entry: any) => entry.message).join(", ") || `Monday HTTP ${response.status}`);
+    created.push(payload.data.create_column.title);
+  }
+  return { created, board: await fetchMondayBoardStructure(token, boardId) };
+}
+
+async function previewMondaySync(supabase: any, token: string, boardId?: string) {
+  let query = supabase.from("monday_sources").select("*").eq("is_active", true);
+  if (boardId) query = query.eq("board_id", String(boardId));
+  const { data: sources, error } = await query;
+  if (error) throw error;
+  const boardItems = new Map<string, any[]>();
+  const results: any[] = [];
+  for (const source of sources || []) {
+    const columns = await fetchMondayBoardColumns(token, source.board_id);
+    const resolved = withResolvedMondayColumns(source, columns);
+    if (!boardItems.has(source.board_id)) boardItems.set(source.board_id, await fetchMondayItems(token, source.board_id));
+    const items = filterMondaySourceItems(boardItems.get(source.board_id) || [], resolved);
+    results.push({ salon: source.salon, pack: source.offer, groupMode: Boolean(source.mapping?.salon_from_group), items: items.map((item) => ({
+      id: item.id, name: item.name, group: item.group?.title,
+      configurable: readColumn(item, resolved.create_column_id),
+      firstSend: readColumn(item, resolved.status_column_id),
+      layout: readMondayLayoutValue(item, resolved),
+      canCreate: isConfigurableYes(readColumn(item, resolved.create_column_id)) && Boolean(normalizeMondayLayoutStrict(readMondayLayoutValue(item, resolved))),
+    })) });
+  }
+  return { preview: true, sources: results };
 }
 
 function mapMondayItemToUserProfile(item: any, source: any, context: any) {
@@ -683,7 +770,7 @@ function mapMondayItemToUserProfile(item: any, source: any, context: any) {
     metadata: {
       monday_item_id: item.id,
       monday_board_id: source.board_id,
-      monday_group_id: source.group_id,
+      monday_group_id: item.group?.id || source.group_id,
       salon: context.salonLabel || source.salon,
       offer: source.offer,
     },
@@ -711,7 +798,7 @@ function mapMondayItemToClient(item: any, source: any, userProfileId?: string, c
     metadata: {
       monday_item_id: item.id,
       monday_board_id: source.board_id,
-      monday_group_id: source.group_id,
+      monday_group_id: item.group?.id || source.group_id,
       salon: context?.salonLabel || source.salon,
       offer: source.offer,
     },
@@ -732,7 +819,7 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
   return {
     monday_item_id: item.id,
     monday_board_id: source.board_id,
-    monday_group_id: source.group_id,
+    monday_group_id: item.group?.id || source.group_id,
     salon: context.salonLabel || source.salon,
     offer: source.offer,
     salon_id: context.salonId || null,

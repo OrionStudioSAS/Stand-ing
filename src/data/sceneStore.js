@@ -964,16 +964,17 @@ function normalizeBaseItems(baseItems = []) {
     .filter((item) => item.type && item.quantity > 0);
 }
 
-export async function saveMondayBoardForPack(salon, packName, boardId) {
+export async function saveMondayBoardForPack(salon, packName, boardId, { salonFromGroup = false } = {}) {
   const normalizedBoardId = String(boardId || '').trim();
   if (!normalizedBoardId) throw new Error('Ajoute un ID de board Monday.');
 
   if (!supabase) {
     return {
       id: `${salon.id}-${slugifyAsset(packName)}-monday`,
-      salon: salonSourceLabel(salon),
+      salon: salonFromGroup ? salon.name : salonSourceLabel(salon),
       offer: packName,
       board_id: normalizedBoardId,
+      mapping: { salon_from_group: salonFromGroup },
       is_active: true,
     };
   }
@@ -986,8 +987,11 @@ export async function saveMondayBoardForPack(salon, packName, boardId) {
       .from('monday_sources')
       .update({
         board_id: normalizedBoardId,
+        salon: salonFromGroup ? salon.name : existing.salon,
         salon_id: salon.id,
         offer_id: offer?.id || existing.offer_id || null,
+        group_id: salonFromGroup ? null : existing.group_id,
+        mapping: { ...(existing.mapping || {}), salon_from_group: salonFromGroup },
         is_active: true,
       })
       .eq('id', existing.id)
@@ -1000,7 +1004,7 @@ export async function saveMondayBoardForPack(salon, packName, boardId) {
   const { data, error } = await supabase
     .from('monday_sources')
     .insert({
-      salon: salonSourceLabel(salon),
+      salon: salonFromGroup ? salon.name : salonSourceLabel(salon),
       offer: packName,
       board_id: normalizedBoardId,
       group_id: null,
@@ -1009,7 +1013,7 @@ export async function saveMondayBoardForPack(salon, packName, boardId) {
       status_column_id: '',
       created_status_label: '',
       link_column_id: 'lien_scene',
-      mapping: defaultMondayMappingForPack(),
+      mapping: { ...defaultMondayMappingForPack(), salon_from_group: salonFromGroup },
       salon_id: salon.id,
       offer_id: offer?.id || null,
       is_active: true,
