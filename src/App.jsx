@@ -8654,11 +8654,24 @@ function AdminSalonRow({ title, detail, status, muted }) {
 
 function AdminSalonsView({ salons, onCreateSalon, onDeleteSalon, onOpenSalon, onOpenPacks }) {
   const [statusFilter, setStatusFilter] = useState('');
+  const [view, setView] = useState('salons');
+  const [salonFilter, setSalonFilter] = useState('');
+  const [packFilter, setPackFilter] = useState('');
+  const [standSearch, setStandSearch] = useState('');
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [draft, setDraft] = useState(() => ({ name: '', year: new Date().getFullYear(), location: '', status: 'draft' }));
   const [creatorState, setCreatorState] = useState({ loading: false, message: '', error: '' });
   const [deletingSalonId, setDeletingSalonId] = useState('');
-  const filteredSalons = salons.filter((salon) => !statusFilter || salon.status === statusFilter);
+  const packChoices = [...new Map(salons.flatMap((salon) => adminSalonStandPacks(salon)).map((pack) => [pack.key, pack.name])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'fr'));
+  const filteredSalons = salons.filter((salon) => (!statusFilter || salon.status === statusFilter) && (!salonFilter || String(salon.id || salon.name) === salonFilter));
+  const visiblePacks = (salon) => adminSalonStandPacks(salon).filter((pack) => !packFilter || pack.key === packFilter).map((pack) => ({
+    ...pack,
+    scenes: pack.scenes.filter((scene) => !standSearch || normalizeTextValue([scene.project_name, scene.company_name, scene.client_name, scene.client_email, sceneStandNumber(scene, {}, '')].join(' ')).includes(normalizeTextValue(standSearch))),
+  })).filter((pack) => !standSearch || pack.scenes.length);
+  const packGroups = packChoices.filter(([key]) => !packFilter || key === packFilter).map(([key, name]) => ({
+    key, name,
+    salons: filteredSalons.map((salon) => ({ salon, pack: visiblePacks(salon).find((pack) => pack.key === key) })).filter((entry) => entry.pack),
+  })).filter((group) => group.salons.length);
 
   const submitSalon = async (event) => {
     event.preventDefault();
@@ -8690,8 +8703,21 @@ function AdminSalonsView({ salons, onCreateSalon, onDeleteSalon, onOpenSalon, on
   return (
     <section className="admin-salons-view">
       <div className="admin-salons-toolbar">
-        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+        <div className="admin-stand-view-switch" role="group" aria-label="Organisation des stands">
+          <button type="button" aria-pressed={view === 'salons'} onClick={() => setView('salons')}>Vue Salons</button>
+          <button type="button" aria-pressed={view === 'packs'} onClick={() => setView('packs')}>Vue Packs</button>
+        </div>
+        <select aria-label="Filtrer par salon" value={salonFilter} onChange={(event) => setSalonFilter(event.target.value)}>
           <option value="">Tous les salons</option>
+          {salons.map((salon) => <option key={salon.id || salon.name} value={salon.id || salon.name}>{salon.name}</option>)}
+        </select>
+        <select aria-label="Filtrer par pack" value={packFilter} onChange={(event) => setPackFilter(event.target.value)}>
+          <option value="">Tous les packs</option>
+          {packChoices.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
+        </select>
+        <input className="admin-stand-search" aria-label="Rechercher un stand" placeholder="Rechercher un stand ou un exposant…" value={standSearch} onChange={(event) => setStandSearch(event.target.value)} />
+        <select aria-label="Statut du salon" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <option value="">Tous les statuts</option>
           <option value="active">Actifs</option>
           <option value="upcoming">À venir</option>
           <option value="draft">À définir</option>
@@ -8731,8 +8757,17 @@ function AdminSalonsView({ salons, onCreateSalon, onDeleteSalon, onOpenSalon, on
       {creatorState.message && <div className="preset-library-feedback success">{creatorState.message}</div>}
       {creatorState.error && <div className="preset-library-feedback error">{creatorState.error}</div>}
 
-      <div className="admin-salon-card-grid">
-        {filteredSalons.length ? filteredSalons.map((salon) => (
+      {view === 'packs' ? (
+        <div className="admin-salon-card-grid">
+          {packGroups.length ? packGroups.map((group) => (
+            <article className="admin-pack-stand-card" key={group.key}>
+              <header><h2>{group.name}</h2><span>{group.salons.reduce((sum, entry) => sum + entry.pack.scenes.length, 0)} stands · {group.salons.length} salons</span></header>
+              {group.salons.map(({ salon, pack }) => <AdminStandGroup key={salon.id || salon.name} title={salon.name} scenes={pack.scenes} />)}
+            </article>
+          )) : <div className="admin-empty-row">Aucun pack trouvé avec les filtres actuels.</div>}
+        </div>
+      ) : <div className="admin-salon-card-grid">
+        {filteredSalons.filter((salon) => (!packFilter && !standSearch) || visiblePacks(salon).length).map((salon) => (
           <article className={`admin-salon-overview-card ${salonStatusKind(salon)}`} key={salon.id || salon.slug || salon.name}>
             <span className="salon-card-accent" />
             <div className="salon-card-body">
@@ -8744,7 +8779,7 @@ function AdminSalonsView({ salons, onCreateSalon, onDeleteSalon, onOpenSalon, on
                 <p className="salon-meta-line">📅 {formatSalonDateRange(salon)}</p>
                 <p className="salon-meta-line">📍 {salon.location || 'Lieu à définir'}</p>
                 <p className="salon-offer-line">{salonOfferSummary(salon)}</p>
-                <SalonPackStats salon={salon} />
+                {visiblePacks(salon).map((pack) => <AdminStandGroup key={pack.key} title={pack.name} scenes={pack.scenes} />)}
 
                 <div className="salon-card-metrics">
                   <div><strong>{salonExhibitorCount(salon) || '—'}</strong><span>Exposants</span></div>
@@ -8763,9 +8798,46 @@ function AdminSalonsView({ salons, onCreateSalon, onDeleteSalon, onOpenSalon, on
               </div>
             </div>
           </article>
-        )) : <div className="admin-empty-row">Aucun salon trouvé avec les filtres actuels.</div>}
-      </div>
+        ))}
+        {!filteredSalons.some((salon) => (!packFilter && !standSearch) || visiblePacks(salon).length) && <div className="admin-empty-row">Aucun salon trouvé avec les filtres actuels.</div>}
+      </div>}
     </section>
+  );
+}
+
+function adminSalonStandPacks(salon) {
+  const groups = new Map((salon.offers || []).map((offer) => [normalizeTextValue(offer.name), { key: normalizeTextValue(offer.name), name: offer.name, scenes: [] }]));
+  (salon.scenes || []).forEach((scene) => {
+    const offer = (salon.offers || []).find((offer) => scene.offer_id && offer.id === scene.offer_id);
+    const name = offer?.name || scene.offer || scene.options?.includedPack || 'Pack non renseigné';
+    const key = normalizeTextValue(name);
+    if (!groups.has(key)) groups.set(key, { key, name, scenes: [] });
+    groups.get(key).scenes.push(scene);
+  });
+  return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+}
+
+function AdminStandGroup({ title, scenes }) {
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  const pageCount = Math.max(1, Math.ceil(scenes.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  useEffect(() => { setPage(1); }, [scenes]);
+  return (
+    <details className="admin-stand-group">
+      <summary><strong>{title}</strong><span>{scenes.length} stand{scenes.length > 1 ? 's' : ''}</span><ChevronDown size={16} /></summary>
+      <div className="admin-stand-group-list">
+        {scenes.slice((safePage - 1) * pageSize, safePage * pageSize).map((scene) => (
+          <a className="admin-stand-link" key={scene.id || scene.share_token} href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">
+            <div><strong>{scene.project_name || scene.company_name || scene.client_name || 'Stand sans nom'}</strong><small>{sceneStandNumber(scene, {}, '')}{sceneArea(scene) ? ` · ${sceneArea(scene)} m²` : ''}</small></div>
+            <span className={`client-status-badge ${sceneStatusKind(scene)}`}>{clientStatusLabel(scene.client_status || scene.status)}</span>
+            <ArrowRight size={16} />
+          </a>
+        ))}
+        {!scenes.length && <p className="admin-empty-row">Aucun stand dans ce groupe.</p>}
+        {pageCount > 1 && <nav className="admin-pagination" aria-label={`Pagination ${title}`}><span>Page {safePage}/{pageCount}</span><div><button type="button" disabled={safePage === 1} onClick={() => setPage(safePage - 1)}>Précédent</button><button type="button" disabled={safePage === pageCount} onClick={() => setPage(safePage + 1)}>Suivant</button></div></nav>}
+      </div>
+    </details>
   );
 }
 

@@ -4179,6 +4179,132 @@ select {
   font-weight: 700;
 }
 
+.admin-stand-view-switch {
+  display: flex;
+  padding: 3px;
+  border-radius: 8px;
+  background: #e9edf4;
+}
+
+.admin-stand-view-switch button {
+  border: 0;
+  border-radius: 6px;
+  padding: 9px 12px;
+  color: #40516b;
+  background: transparent;
+  font-weight: 700;
+}
+
+.admin-stand-view-switch button[aria-pressed="true"] {
+  color: #fff;
+  background: #1f4378;
+}
+
+.admin-stand-search {
+  flex: 1;
+  min-width: 200px;
+  min-height: 38px;
+  border: 1px solid #dde1e7;
+  border-radius: 6px;
+  padding: 0 12px;
+}
+
+.admin-pack-stand-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #e1e6ef;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.admin-pack-stand-card > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.admin-pack-stand-card h2 {
+  margin: 0;
+  color: #1f4378;
+  font-size: 1.12rem;
+}
+
+.admin-stand-group {
+  margin-top: 12px;
+  border: 1px solid #e1e6ef;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.admin-stand-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  color: #1f4378;
+  background: #f5f7fb;
+  cursor: pointer;
+  list-style: none;
+}
+
+.admin-stand-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-stand-group > summary strong {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-stand-group[open] > summary > svg {
+  transform: rotate(180deg);
+}
+
+.admin-stand-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid #e1e6ef;
+  color: #2d333d;
+  text-decoration: none;
+}
+
+.admin-stand-link:hover {
+  background: #f0f5fc;
+}
+
+.admin-stand-link > div {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-stand-link small {
+  display: block;
+  margin-top: 4px;
+  color: #788395;
+}
+
+.admin-stand-group-list .admin-pagination {
+  flex-wrap: wrap;
+  padding: 12px;
+}
+
+@media (max-width: 600px) {
+  .admin-stand-link {
+    flex-wrap: wrap;
+  }
+
+  .admin-stand-link > div {
+    flex-basis: 100%;
+  }
+}
+
 .admin-create-button,
 .admin-salon-create-card button,
 .preset-create-pack-form button {
