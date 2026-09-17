@@ -48,7 +48,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { createTechnicalPlanBlob, exportTechnicalPng } from './technicalExport.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
@@ -8866,6 +8866,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
   const [basePackEditor, setBasePackEditor] = useState(null);
   const [boardEditor, setBoardEditor] = useState(null);
   const [newPackName, setNewPackName] = useState('');
+  const [deletingGlobalPack, setDeletingGlobalPack] = useState('');
   const [actionState, setActionState] = useState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
   const selectedSalon = salons.find((salon) => salon.id === selectedSalonId) || salons[0] || null;
 
@@ -8983,7 +8984,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
 
   const removePreset = async (entry) => {
     if (!entry.offer && !entry.source) return;
-    const confirmed = window.confirm(`Supprimer définitivement le pack ${entry.packName} de ${selectedSalon?.name || 'ce salon'} ?\n\nCette action supprime le pack, ses presets et sa liaison Monday. Elle est refusée si des scènes sont déjà liées à ce pack.`);
+    const confirmed = window.confirm(`Retirer le pack ${entry.packName} de ${selectedSalon?.name || 'ce salon'} ?\n\nCette action retire uniquement le pack, ses presets et sa liaison Monday de ce salon. Elle est refusée si des scènes sont déjà liées à ce pack.`);
     if (!confirmed) return;
 
     const deleteKey = entry.offer?.id || entry.source?.id || entry.packName;
@@ -8991,10 +8992,29 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
     try {
       await deleteSalonOffer(selectedSalon, entry.offer || { name: entry.packName });
       setEditing((current) => (entry.preset?.id && current?.preset?.id === entry.preset.id ? null : current));
-      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Pack ${entry.packName} supprimé définitivement.`, error: '' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Pack ${entry.packName} retiré de ce salon.`, error: '' });
       await onSalonChanged?.();
     } catch (error) {
       setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible de supprimer ce pack.' });
+    }
+  };
+
+  const removeGlobalPack = async (entry) => {
+    const linkedSalons = salons.filter((salon) => salonPackCards(salon).some((pack) => normalizeTextValue(pack.packName) === normalizeTextValue(entry.packName)));
+    if (!window.confirm(`Supprimer définitivement le pack ${entry.packName} de TOUS les salons ?\n\nSalons concernés : ${linkedSalons.map((salon) => salon.name).join(', ')}.\n\nSes configurations de pack et ses liaisons Monday seront supprimées. Cette action est irréversible et refusée si des scènes utilisent ce pack.`)) return;
+    setDeletingGlobalPack(entry.packName);
+    setActionState((current) => ({ ...current, message: '', error: '' }));
+    try {
+      await deletePackGlobally(entry.packName);
+      setEditing(null);
+      setBasePackEditor(null);
+      setBoardEditor(null);
+      setActionState((current) => ({ ...current, message: `Pack ${entry.packName} supprimé définitivement de tous les salons.`, error: '' }));
+      await onSalonChanged?.();
+    } catch (error) {
+      setActionState((current) => ({ ...current, message: '', error: error.message || 'Impossible de supprimer définitivement ce pack.' }));
+    } finally {
+      setDeletingGlobalPack('');
     }
   };
 
@@ -9022,7 +9042,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
 
       <div className="preset-library-grid">
         {packCards.length ? packCards.map((entry) => (
-          <article className={`preset-library-card ${entry.active ? '' : 'inactive'}`} key={`${selectedSalon?.id || 'salon'}-${entry.packName}`}>
+          <article aria-busy={deletingGlobalPack === entry.packName} className={`preset-library-card ${entry.active ? '' : 'inactive'}`} key={`${selectedSalon?.id || 'salon'}-${entry.packName}`}>
             <button className="preset-card-menu" type="button" aria-label="Options pack">⋮</button>
             <div className="preset-card-preview">{entry.active ? presetReferenceLabel(entry.preset, entry.presets) : '—'}</div>
             <div className="preset-card-body">
@@ -9031,7 +9051,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
               <small className="preset-board-line">
                 Monday : {entry.source?.board_id ? `board ${entry.source.board_id}` : 'aucun board'}
               </small>
-              <div>
+              <fieldset className="preset-pack-actions" disabled={Boolean(deletingGlobalPack)}>
                 {entry.active ? (
                   <>
                     <button className="primary" type="button" disabled={actionState.loadingPack === entry.packName} onClick={() => openPackEditor(entry)}>
@@ -9044,7 +9064,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
                       Pack de base
                     </button>
                     <button className="danger" type="button" disabled={actionState.deletingPresetId === (entry.offer?.id || entry.source?.id || entry.packName)} onClick={() => removePreset(entry)}>
-                      {actionState.deletingPresetId === (entry.offer?.id || entry.source?.id || entry.packName) ? 'Suppression...' : 'Supprimer pack'}
+                      {actionState.deletingPresetId === (entry.offer?.id || entry.source?.id || entry.packName) ? 'Suppression...' : 'Retirer de ce salon'}
                     </button>
                   </>
                 ) : (
@@ -9060,12 +9080,15 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
                     </button>
                     {entry.source && (
                       <button className="danger" type="button" disabled={actionState.deletingPresetId === (entry.offer?.id || entry.source?.id || entry.packName)} onClick={() => removePreset(entry)}>
-                        {actionState.deletingPresetId === (entry.offer?.id || entry.source?.id || entry.packName) ? 'Suppression...' : 'Supprimer pack'}
+                        {actionState.deletingPresetId === (entry.offer?.id || entry.source?.id || entry.packName) ? 'Suppression...' : 'Retirer de ce salon'}
                       </button>
                     )}
                   </>
                 )}
-              </div>
+                <button className="danger" type="button" onClick={() => removeGlobalPack(entry)}>
+                  {deletingGlobalPack === entry.packName ? 'Suppression définitive...' : 'Supprimer définitivement · tous les salons'}
+                </button>
+              </fieldset>
               {boardEditor?.packName === entry.packName && (
                 <form className="preset-board-editor" onSubmit={(event) => saveBoardId(event, entry)}>
                   <input

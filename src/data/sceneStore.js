@@ -1040,6 +1040,20 @@ export async function deleteStandPreset(preset) {
   return true;
 }
 
+export async function deletePackGlobally(packName) {
+  const name = String(packName || '').trim();
+  if (!name) throw new Error('Pack introuvable.');
+  if (!supabase) {
+    const linkedScenes = readLocalScenes().filter((scene) => normalizeKey(scene.offer || scene.options?.includedPack) === normalizeKey(name));
+    if (linkedScenes.length) throw new Error(`Ce pack est lié à ${linkedScenes.length} scène(s). Supprime ou réaffecte ces scènes avant de supprimer le pack.`);
+    return true;
+  }
+
+  const { error } = await supabase.rpc('delete_pack_globally', { pack_name: name });
+  if (error) throw error;
+  return true;
+}
+
 export async function deleteSalonOffer(salon, offer) {
   if (!offer?.id && !offer?.name) throw new Error('Pack introuvable.');
   if (!supabase) return true;
