@@ -12904,7 +12904,7 @@ async function downloadSceneTechnicalPlan(scene = {}, assets = []) {
     width,
     depth,
     layout: scene.layout || 'back',
-    items: withTechnicalOptionsMarker(items, scene),
+    items: withTechnicalOptionsMarker(items, scene, catalogEntries),
     catalog: catalogEntries,
   });
 }
@@ -12917,7 +12917,7 @@ async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = []) {
     width,
     depth,
     layout: scene.layout || 'back',
-    items: withTechnicalOptionsMarker(sceneAllAdminItems(scene, catalogEntries), scene),
+    items: withTechnicalOptionsMarker(sceneAllAdminItems(scene, catalogEntries), scene, catalogEntries),
     catalog: catalogEntries,
   });
   return {
@@ -12927,8 +12927,10 @@ async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = []) {
   };
 }
 
-function withTechnicalOptionsMarker(items = [], scene = {}) {
+function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = []) {
   const options = scene.options || scene.source_payload?.options || {};
+  const salonLabel = normalizeSalonTitle(scene.event_name || scene.salon);
+  const sourceProductReferences = Object.fromEntries(catalogEntries.map((entry) => [entry.type, assetReference(entry, salonLabel)]));
   const width = Number(scene.dimensions?.width || scene.width_m || 4);
   const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
   const covers = options.wallCovers || {};
@@ -12946,6 +12948,7 @@ function withTechnicalOptionsMarker(items = [], scene = {}) {
       id: '__technical-options__',
       type: '__technical-options__',
       sourceOptions: options,
+      sourceProductReferences,
       sourceVisualSurfaces,
       collisionEnabled: false,
     },

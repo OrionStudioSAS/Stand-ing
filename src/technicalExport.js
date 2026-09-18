@@ -354,6 +354,7 @@ function drawItemTable(ctx, sections) {
 }
 
 function technicalTableSections(items = [], catalog = []) {
+  const productReferences = items.find((item) => item?.sourceOptions)?.sourceProductReferences || {};
   const sections = [
     { id: 'amco', title: 'AMCO', rows: [] },
     { id: 'electricity', title: 'ELEC', rows: [] },
@@ -362,7 +363,7 @@ function technicalTableSections(items = [], catalog = []) {
 
   (items || []).filter((item) => !item?.sourceOptions).forEach((item, index) => {
     const entry = catalog.find((candidate) => candidate.type === item.type) || {};
-    const row = technicalObjectRow(item, entry, catalog, index);
+    const row = technicalObjectRow(item, entry, catalog, index, productReferences);
     const sectionId = technicalItemSection(item, entry);
     sections.find((section) => section.id === sectionId)?.rows.push(row);
   });
@@ -370,10 +371,12 @@ function technicalTableSections(items = [], catalog = []) {
   return sections.filter((section) => section.rows.length > 0);
 }
 
-function technicalObjectRow(item = {}, entry = {}, catalog = [], index = 0) {
+function technicalObjectRow(item = {}, entry = {}, catalog = [], index = 0, productReferences = {}) {
   const descriptionLines = technicalDescriptionLines(technicalBatDescription(item, entry, catalog));
   const optionLines = technicalItemOptionLines(item, entry);
-  const lines = [...optionLines, ...descriptionLines].slice(0, 5);
+  const reference = item.options?.baseObjectReference || item.options?.variantReference || item.options?.resolvedObjectReference
+    || productReferences[item.type] || entry.dimensions?.reference || item.dimensions?.reference || entry.reference || '';
+  const lines = [...(reference ? [`Référence : ${reference}`] : []), ...optionLines, ...descriptionLines].slice(0, 6);
   return {
     label: `${index + 1}. ${item.label || entry?.label || item.type || 'Objet'}`,
     lines: lines.length ? lines : ['—'],
@@ -400,8 +403,13 @@ function technicalCoveringRows(items = []) {
 
 function technicalPlanVisuals(items = [], catalog = [], width = 4, depth = 3) {
   const visuals = [];
+  const marker = items.find((item) => item?.sourceOptions);
   const drawable = items.filter((item) => item && !item.sourceOptions);
   drawable.forEach((item, index) => {
+    if (item.options?.partitionHeadHidden || item.options?.prestigeHidden) return;
+    const headSide = technicalHeadSide(item);
+    const savedHeadVisual = marker?.sourceOptions?.partitionHeadVisuals?.[headSide];
+    if (savedHeadVisual) item = { ...item, options: { ...(item.options || {}), ...savedHeadVisual } };
     const surface = objectWallSurfaceForTechnicalItem(item);
     let position = [Number(item.x || 0), Number(item.y || 0), Number(item.z || 0)];
     if (isWallItem(item)) {
@@ -415,7 +423,6 @@ function technicalPlanVisuals(items = [], catalog = [], width = 4, depth = 3) {
       visuals.push({ ...visual, position, slotIndex, placement: `Objet n° ${index + 1} - ${item.groupLabel || item.label || item.type}${item.options?.variantLabel ? ` (${item.options.variantLabel})` : ''}` });
     });
   });
-  const marker = items.find((item) => item?.sourceOptions);
   (marker?.sourceVisualSurfaces || []).forEach((surface) => {
     visuals.push({
       label: `Bâche - ${surface.label}`,
@@ -427,15 +434,12 @@ function technicalPlanVisuals(items = [], catalog = [], width = 4, depth = 3) {
   });
   // Some older scenes keep the head artwork only in the scene-level options.
   Object.entries(marker?.sourceOptions?.partitionHeadVisuals || {}).forEach(([side, value]) => {
-    if (!['left', 'right'].includes(side) || (!value?.headMainImageUrl && !value?.visualPending)) return;
-    const head = drawable.find((item) => {
-      const label = normalizeTechnicalText(`${item.label || ''} ${item.type || ''}`);
-      return label.includes('tete') && (item.options?.partitionHeadSide === side || item.dimensions?.smclHeadSide === side || label.includes(side === 'left' ? 'gauche' : 'droite'));
-    });
-    if (head && technicalItemVisuals(head).some((visual) => visual.imageUrl === value.headMainImageUrl || visual.status.includes('En attente'))) return;
+    if (!['left', 'right'].includes(side) || (!value?.headMainImageUrl && !value?.headMainImageName && !value?.visualPending)) return;
+    const head = drawable.find((item) => technicalHeadSide(item) === side);
+    if (visuals.some((visual) => visual.headSide === side)) return;
     if (marker.sourceOptions[side === 'left' ? 'partitionHeadLeftEnabled' : 'partitionHeadRightEnabled'] === false) return;
     const label = `Tête de cloison ${side === 'left' ? 'gauche' : 'droite'}`;
-    visuals.push({ label, placement: label, position: head ? [head.x || 0, 0, head.z || 0] : [side === 'left' ? -width / 2 : width / 2, 0, depth / 2], imageUrl: validTechnicalImageUrl(value.headMainImageUrl), status: technicalVisualStatus(value.visualPending, value.headMainImageUrl, value.headMainImageName) });
+    visuals.push({ label: `Visuel ${label.toLowerCase()}`, headSide: side, placement: label, position: head ? [head.x || 0, 0, head.z || 0] : [side === 'left' ? -width / 2 : width / 2, 0, depth / 2], imageUrl: validTechnicalImageUrl(value.headMainImageUrl), status: technicalVisualStatus(value.visualPending, value.headMainImageUrl, value.headMainImageName) });
   });
   return visuals.map((visual, index) => ({ ...visual, reference: `S${index + 1}` }));
 }
@@ -561,7 +565,8 @@ function technicalItemVisuals(item = {}, entry = {}) {
     });
   }
   if (item.options?.headMainImageUrl || item.options?.headMainImageName || item.options?.visualPending) {
-    visuals.push({ label: `Image ${label}`, status: technicalVisualStatus(item.options?.visualPending, item.options?.headMainImageUrl || item.options?.headMainImageName, item.options?.headMainImageName), imageUrl: validTechnicalImageUrl(item.options?.headMainImageUrl) });
+    const headSide = technicalHeadSide(item);
+    visuals.push({ label: headSide ? `Visuel tête de cloison ${headSide === 'left' ? 'gauche' : 'droite'}` : `Image ${label}`, headSide, status: technicalVisualStatus(item.options?.visualPending, item.options?.headMainImageUrl || item.options?.headMainImageName, item.options?.headMainImageName), imageUrl: validTechnicalImageUrl(item.options?.headMainImageUrl) });
   }
   if (item.options?.posterImageUrl || item.options?.posterImageName || item.options?.posterVisualPending) {
     visuals.push({ label: `Image ${label}`, status: technicalVisualStatus(item.options?.posterVisualPending, item.options?.posterImageUrl || item.options?.posterImageName, item.options?.posterImageName), imageUrl: validTechnicalImageUrl(item.options?.posterImageUrl) });
@@ -577,6 +582,14 @@ function technicalItemVisuals(item = {}, entry = {}) {
     }
   });
   return visuals;
+}
+
+function technicalHeadSide(item = {}) {
+  const side = item.options?.partitionHeadSide || item.dimensions?.smclHeadSide;
+  if (['left', 'right'].includes(side)) return side;
+  const text = normalizeTechnicalText(`${item.label || ''} ${item.type || ''} ${item.dimensions?.folderName || ''}`);
+  if (!text.includes('tete de cloison')) return '';
+  return text.includes('gauche') ? 'left' : text.includes('droite') ? 'right' : '';
 }
 
 function technicalVisualStatus(pending = false, hasImage = false, imageName = '') {
@@ -1153,7 +1166,8 @@ function technicalChildOptions(childOptions = {}, parentOptions = {}, parentDime
   const parentOptionReferences = Array.isArray(parentOptions.optionReferences) ? parentOptions.optionReferences : [];
   const childOptionReferences = Array.isArray(childOptions.optionReferences) ? childOptions.optionReferences : [];
   const inheritedVisuals = index === 0 ? {
-    ...Object.fromEntries(['headMainImageUrl', 'headMainImageName', 'visualPending', 'posterImageUrl', 'posterImageName', 'posterVisualPending'].filter((key) => hasTechnicalValue(parentOptions[key])).map((key) => [key, parentOptions[key]])),
+    ...(parentDimensions.smclHeadSide ? { partitionHeadSide: parentDimensions.smclHeadSide } : {}),
+    ...Object.fromEntries(['partitionHeadSide', 'headMainImageUrl', 'headMainImageName', 'visualPending', 'posterImageUrl', 'posterImageName', 'posterVisualPending'].filter((key) => hasTechnicalValue(parentOptions[key])).map((key) => [key, parentOptions[key]])),
     ...(hasTechnicalValue(parentOptions.binary3ImageUrl) ? { binary3ImageUrl: parentOptions.binary3ImageUrl } : {}),
     ...(hasTechnicalValue(parentOptions.binary3ImageName) ? { binary3ImageName: parentOptions.binary3ImageName } : {}),
     ...(hasTechnicalValue(parentOptions.binary3VisualPending) ? { binary3VisualPending: parentOptions.binary3VisualPending } : {}),

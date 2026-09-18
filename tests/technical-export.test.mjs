@@ -45,6 +45,8 @@ test('wall and reserve cover previews retain the exact surface location', () => 
 test('the admin/email marker exports enabled surfaces with database preview URLs, not HD originals', () => {
   const { api } = runtime();
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  api.normalizeSalonTitle = (value) => value;
+  api.assetReference = (entry, salon) => entry.dimensions?.salonPricing?.[salon]?.reference || '';
   for (const name of ['withTechnicalOptionsMarker', 'wallCoverPreviewsFromCovers', 'wallCoverPreviewForSurface', 'wallCoverEnabledForSurface']) {
     const start = appSource.indexOf(`function ${name}(`);
     const end = appSource.indexOf('\n}\n', start) + 2;
@@ -54,8 +56,9 @@ test('the admin/email marker exports enabled surfaces with database preview URLs
     { id: 'reserve-1', sourceWall: 'reserve', label: 'Cloison réserve', position: [1, 1.25, -1], width: 2, height: 2.5 },
     { id: 'left', label: 'Cloison gauche' },
   ];
-  const items = api.withTechnicalOptionsMarker([], { source_payload: { options: { wallCovers: { reserve: { enabled: true, previewUrl: imageUrl, previewName: 'Logo.jpg', originalUrl: 'https://storage.example/original-hd.pdf', visualPending: true }, left: { enabled: false } } } } });
+  const items = api.withTechnicalOptionsMarker([], { salon: 'SMCL 2026', source_payload: { options: { wallCovers: { reserve: { enabled: true, previewUrl: imageUrl, previewName: 'Logo.jpg', originalUrl: 'https://storage.example/original-hd.pdf', visualPending: true }, left: { enabled: false } } } } }, [{ type: 'counter', dimensions: { salonPricing: { 'SMCL 2026': { reference: 'SMCL-COMPT01' } } } }]);
   assert.equal(items[0].sourceVisualSurfaces.length, 1);
+  assert.equal(items[0].sourceProductReferences.counter, 'SMCL-COMPT01');
   const visuals = api.technicalPlanVisuals(items);
   assert.equal(visuals[0].imageUrl, imageUrl);
   assert.match(visuals[0].status, /En attente/);
@@ -86,6 +89,27 @@ test('saved head visuals are exported without duplication, and removed heads are
   assert.equal(api.technicalPlanVisuals([marker]).length, 1);
   const head = { id: 'head', type: 'head', label: 'Tête de cloison droite', options: options.partitionHeadVisuals.right };
   assert.equal(api.technicalPlanVisuals([head, marker]).length, 1);
+});
+
+test('both head artworks are exported separately and saved uploads replace stale pending artwork', () => {
+  const { api } = runtime();
+  const heads = ['left', 'right'].map((side) => ({ id: side, type: 'head', label: 'Support', options: { partitionHeadSide: side, visualPending: true }, x: side === 'left' ? -2 : 2, z: 1.5 }));
+  const marker = { sourceOptions: { partitionHeadVisuals: { left: { headMainImageUrl: imageUrl, visualPending: false }, right: { headMainImageUrl: imageUrl, visualPending: false } } } };
+  const visuals = api.technicalPlanVisuals([...heads, marker]);
+  assert.equal(visuals.length, 2);
+  assert.match(visuals[0].label, /gauche/);
+  assert.match(visuals[1].label, /droite/);
+  assert.equal(visuals[0].position[0], -2);
+  assert.equal(visuals[1].position[0], 2);
+  assert.ok(visuals.every((visual) => visual.imageUrl === imageUrl && visual.status.startsWith('Visuel fourni')));
+});
+
+test('the product recap shows the selected product reference or its salon/catalog reference', () => {
+  const { api } = runtime();
+  const entry = { type: 'counter', dimensions: { reference: 'GENERIC' } };
+  assert.equal(api.technicalObjectRow(counter('a', { baseObjectReference: 'VARIANT-1M' }), entry, [], 0, { counter: 'SMCL-1M' }).lines[0], 'Référence : VARIANT-1M');
+  assert.equal(api.technicalObjectRow(counter('b'), entry, [], 0, { counter: 'SMCL-1M' }).lines[0], 'Référence : SMCL-1M');
+  assert.equal(api.technicalObjectRow(counter('c'), entry).lines[0], 'Référence : GENERIC');
 });
 
 test('group artwork survives flattening and is associated with one child only', () => {
