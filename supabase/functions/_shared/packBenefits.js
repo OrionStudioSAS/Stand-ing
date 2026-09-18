@@ -12,6 +12,20 @@ export function scenePackBenefits(scene = {}) {
   return normalizePackBenefits(scene.source_payload?.packBenefits || scene.source_payload?.pricing?.packBenefits || {});
 }
 
+export function inheritCurrentPackBenefits(scene = {}) {
+  const metadata = scene.salon_offers?.metadata;
+  if (scene.client_status === 'configured' || !metadata?.packBenefits) return scene;
+  const packBenefits = normalizePackBenefits(metadata.packBenefits);
+  return {
+    ...scene,
+    source_payload: {
+      ...(scene.source_payload || {}),
+      packBenefits,
+      baseItems: packBenefits.mode === 'allowance' ? [] : metadata.baseItems || scene.source_payload?.baseItems || [],
+    },
+  };
+}
+
 export function packAllowanceBreakdown(eligibleTotal, benefits = {}) {
   const settings = normalizePackBenefits(benefits);
   const gross = Math.round(Math.max(0, Number(eligibleTotal) || 0) * 100) / 100;

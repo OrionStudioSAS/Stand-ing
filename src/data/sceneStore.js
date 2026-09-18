@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { demoScenes } from './seed.js';
 import { supabase } from './supabaseClient.js';
 import { catalog, layouts } from '../config/catalog.js';
-import { normalizePackBenefits, scenePackBenefits } from '../../supabase/functions/_shared/packBenefits.js';
+import { normalizePackBenefits, scenePackBenefits, inheritCurrentPackBenefits } from '../../supabase/functions/_shared/packBenefits.js';
 
 const storageKey = 'standing-scenes-v1';
 const fixedWallHeight = 2.5;
@@ -161,7 +161,7 @@ function dedupeIncludedReceptionDesks(items = []) {
 }
 
 function dbSceneToScene(row) {
-  const sourcePayload = applyPresetDefaultColorOptions(row);
+  const sourcePayload = applyPresetDefaultColorOptions(inheritCurrentPackBenefits(row));
   const sceneItems = dedupeIncludedReceptionDesks(row.scene_items || []);
 
   return {
@@ -249,7 +249,7 @@ export async function listScenes(filters = {}) {
 
   let query = supabase
     .from('scenes')
-    .select('*, scene_items(*), scene_files(*), stand_presets(base_config)')
+    .select('*, scene_items(*), scene_files(*), stand_presets(base_config), salon_offers(metadata)')
     .order('created_at', { ascending: false });
 
   if (filters.offer) query = query.ilike('offer', `%${filters.offer}%`);
@@ -268,7 +268,7 @@ export async function getSceneByToken(token) {
 
   const { data, error } = await supabase
     .from('scenes')
-    .select('*, scene_items(*), scene_files(*), stand_presets(base_config)')
+    .select('*, scene_items(*), scene_files(*), stand_presets(base_config), salon_offers(metadata)')
     .eq('share_token', token)
     .single();
 
@@ -495,7 +495,7 @@ export async function setSceneExhibitorReadOnly(scene, locked) {
     .from('scenes')
     .update({ source_payload: sourcePayload, updated_at: new Date().toISOString() })
     .eq('id', scene.id)
-    .select('*, scene_items(*), scene_files(*), stand_presets(base_config)')
+    .select('*, scene_items(*), scene_files(*), stand_presets(base_config), salon_offers(metadata)')
     .single();
 
   if (error) throw error;

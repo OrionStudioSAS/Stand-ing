@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
+import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance, inheritCurrentPackBenefits } from '../supabase/functions/_shared/packBenefits.js';
 
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 function loadFunction(api, source, name) {
@@ -25,6 +25,39 @@ test('allowance is capped at spend and never refunded; included-item packs are u
   assert.equal(normalizePackBenefits({ mode: 'allowance', allowanceAmount: -4 }).allowanceAmount, 0);
   assert.equal(normalizePackBenefits({ allowanceAmount: 'bad' }).allowanceAmount, 0);
   assert.equal(packAllowanceBreakdown(1000.01, { mode: 'allowance', allowanceAmount: 1000 }).accessoriesSupplement, 0.01);
+});
+
+test('an existing SITL scene inherits its current 1600 euro pack without Monday synchronization', () => {
+  const old = { client_status: 'draft', source_payload: { options: { wallColor: 'red' }, pricing: { lines: [{ type: 'desk', total: 500 }] } },
+    salon_offers: { metadata: { packBenefits: { mode: 'allowance', allowanceAmount: 1600 } } } };
+  const updated = inheritCurrentPackBenefits(old);
+  assert.equal(scenePackBenefits(updated).allowanceAmount, 1600);
+  assert.equal(packAllowanceBreakdown(500, scenePackBenefits(updated)).accessoriesSupplement, 0);
+  assert.equal(packAllowanceBreakdown(500, scenePackBenefits(updated)).allowanceRemaining, 1100);
+  assert.deepEqual(updated.source_payload.options, old.source_payload.options);
+  assert.deepEqual(updated.source_payload.pricing.lines, old.source_payload.pricing.lines);
+  assert.equal(old.source_payload.packBenefits, undefined);
+  const confirmed = { ...old, client_status: 'configured', source_payload: { packBenefits: { mode: 'allowance', allowanceAmount: 1000 } } };
+  assert.equal(inheritCurrentPackBenefits(confirmed), confirmed);
+  assert.equal(scenePackBenefits(confirmed).allowanceAmount, 1000);
+  assert.equal(inheritCurrentPackBenefits({ client_status: 'draft' }).source_payload, undefined);
+});
+
+test('scene loading resolves pack benefits before automatic objects and preset defaults', () => {
+  const store = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
+  const api = vm.createContext({ inheritCurrentPackBenefits, scenePackBenefits,
+    dedupeIncludedReceptionDesks: (items) => items,
+    fixedWallHeight: 2.5,
+    normalizeSceneItem: (item) => item,
+  });
+  for (const name of ['dbSceneToScene', 'applyPresetDefaultColorOptions', 'mergePresetDefaultsIntoDraftOptions']) loadFunction(api, store, name);
+  const result = api.dbSceneToScene({ client_status: 'draft', source_payload: {},
+    salon_offers: { metadata: { packBenefits: { mode: 'allowance', allowanceAmount: 1600 } } },
+    stand_presets: { base_config: { autoSpotsRule: { rail3Type: 'rail' } } },
+  });
+  assert.equal(result.source_payload.packBenefits.allowanceAmount, 1600);
+  assert.equal(result.source_payload.options.ledRailsEnabled, false);
+  assert.equal(result.source_payload.options.autoSpotsRule, null);
 });
 
 test('all objects and options consume one allowance; insurance is separate and recalculation is idempotent', () => {

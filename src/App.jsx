@@ -2524,6 +2524,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       {activeStep > 1 && (
       <aside className="config-panel">
         <div className="config-panel-content">
+        {activeStep !== 4 && <PackAllowanceProgress pricing={scenePricing} />}
         {activeStep === 3 ? (
           <FurnitureStepPanel
             items={visibleSceneItems}
@@ -4493,9 +4494,21 @@ function PanelStepActions({ previousLabel, nextLabel, onPrevious, onNext }) {
   );
 }
 
+function PackAllowanceProgress({ pricing }) {
+  if (pricing?.packBenefits?.mode !== 'allowance') return null;
+  const amount = Number(pricing.allowanceAmount || 0);
+  const used = Math.min(amount, Number(pricing.allowanceApplied || 0));
+  return <section className="pack-allowance-progress" aria-label="Utilisation du forfait accessoires">
+    <div><strong>Forfait accessoires</strong><b>{validationMoney(amount)} € HT</b></div>
+    <progress max={Math.max(1, amount)} value={used} aria-label="Montant du forfait utilisé" />
+    <div><span>{validationMoney(used)} € utilisés</span><span>{validationMoney(pricing.allowanceRemaining || 0)} € disponibles</span></div>
+  </section>;
+}
+
 function PackAllowanceSummary({ pricing }) {
   if (pricing?.packBenefits?.mode !== 'allowance') return null;
   return <section className="pack-allowance-summary" aria-label="Forfait accessoires">
+    <PackAllowanceProgress pricing={pricing} />
     <div><span>Total avant forfait</span><b>{validationMoney(pricing.grossTotal || 0, true)} € HT</b></div>
     <div><span>Forfait offert : {validationMoney(pricing.allowanceAmount || 0)} € HT</span><b>− {validationMoney(pricing.allowanceApplied || 0, true)} €</b></div>
     <div><span>Solde disponible</span><b>{validationMoney(pricing.allowanceRemaining || 0, true)} € HT</b></div>
@@ -9284,7 +9297,7 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
               <input type="number" min="0" step="0.01" value={benefits.allowanceAmount} onChange={(event) => setBenefits((current) => ({ ...current, allowanceAmount: event.target.value }))} />
             </label>
             <p>Tous les objets et options sont couverts, hors assurance. Aucun objet du pack de base n’est placé automatiquement. Seul le dépassement est facturé ; le solde inutilisé n’est pas remboursé.</p>
-            <p>Après sauvegarde, synchronisez Monday pour appliquer ce fonctionnement aux scènes non confirmées. Les scènes déjà confirmées conservent leur forfait.</p>
+            <p>Ce fonctionnement s’applique au chargement des scènes non confirmées. Les scènes déjà confirmées conservent leur forfait.</p>
           </>}
         </div>
 
