@@ -963,7 +963,7 @@ function drawGrid(ctx, x, y, w, h, width, depth, scale) {
 function drawRotatedObject(ctx, x, y, w, h, rotation, color, label) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.rotate(technicalPlanRotation(rotation));
   ctx.fillStyle = color;
   ctx.strokeStyle = technicalColors.ink;
   ctx.lineWidth = 2;
@@ -976,7 +976,7 @@ function drawRotatedObject(ctx, x, y, w, h, rotation, color, label) {
 function drawRotatedPictoObject(ctx, x, y, w, h, rotation, image, label) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.rotate(technicalPlanRotation(rotation));
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(-w / 2, -h / 2, w, h);
   drawContainedImage(ctx, image, -w / 2 + 5, -h / 2 + 5, w - 10, h - 10);
@@ -987,7 +987,7 @@ function drawRotatedPictoObject(ctx, x, y, w, h, rotation, image, label) {
 function drawCeilingObject(ctx, x, y, w, h, rotation, image, color, label) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.rotate(technicalPlanRotation(rotation));
   ctx.fillStyle = image ? '#ffffff' : color;
   ctx.strokeStyle = technicalColors.ink;
   ctx.lineWidth = 2;
@@ -998,6 +998,11 @@ function drawCeilingObject(ctx, x, y, w, h, rotation, image, color, label) {
   if (image) drawContainedImage(ctx, image, -w / 2 + 4, -h / 2 + 4, w - 8, h - 8);
   ctx.restore();
   drawBadge(ctx, x, y, label);
+}
+
+function technicalPlanRotation(rotation) {
+  // The plan maps world Z downwards; Three's positive Y rotation turns the other way.
+  return -(Number(rotation || 0) * Math.PI) / 180;
 }
 
 function drawContainedImage(ctx, image, x, y, w, h) {
@@ -1296,9 +1301,9 @@ function flattenTechnicalItems(items, catalog) {
         ...child,
         id: `${item.id}-${child.id || index}`,
         label: `${parentLabel} - ${child.label || childCatalog.label || child.type}`,
-        x: Number(item.x || 0) + localX * cos - localZ * sin,
+        x: Number(item.x || 0) + localX * cos + localZ * sin,
         y: Number(item.y || 0) + Number(child.y || 0),
-        z: Number(item.z || 0) + localX * sin + localZ * cos,
+        z: Number(item.z || 0) - localX * sin + localZ * cos,
         rotation: parentRotation + Number(child.rotation || 0),
         modelUrl: child.modelUrl || childCatalog.modelUrl,
         modelSize: child.modelSize || childCatalog.modelSize,

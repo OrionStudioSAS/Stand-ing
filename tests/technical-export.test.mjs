@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
+import { Euler, Vector3 } from 'three';
 
 const source = readFileSync(new URL('../src/technicalExport.js', import.meta.url), 'utf8').replace(/^export /gm, '');
 
@@ -28,6 +29,39 @@ function runtime() {
 
 const imageUrl = 'https://storage.example/scene-options/counter-preview.jpg';
 const counter = (id, options = {}) => ({ id, type: 'counter', label: 'Comptoir accueil', x: 0, z: 0, dimensions: { width: 1, depth: 0.5 }, options: { binary3Enabled: true, binary3ImageUrl: imageUrl, ...options } });
+
+test('BAT furniture and SVG pictos turn in the same direction as the 3D scene', () => {
+  const { api, ctx } = runtime();
+  const image = { width: 100, height: 50 };
+  for (const degrees of [0, 45, 90, -90, 180, 270]) {
+    const expected = new Vector3(1, 0, 0).applyEuler(new Euler(0, degrees * Math.PI / 180, 0));
+    for (const draw of [
+      () => api.drawRotatedObject(ctx, 0, 0, 100, 50, degrees, '#fff', '1'),
+      () => api.drawRotatedPictoObject(ctx, 0, 0, 100, 50, degrees, image, '1'),
+      () => api.drawCeilingObject(ctx, 0, 0, 100, 50, degrees, image, '#fff', '1'),
+    ]) {
+      const angles = [];
+      ctx.rotate = (angle) => angles.push(angle);
+      draw();
+      assert.equal(angles.length, 1);
+      assert.ok(Math.abs(Math.cos(angles[0]) - expected.x) < 1e-10);
+      assert.ok(Math.abs(Math.sin(angles[0]) - expected.z) < 1e-10);
+    }
+  }
+});
+
+test('rotated group child positions and orientations match Three parent transforms', () => {
+  const { api } = runtime();
+  for (const degrees of [0, 45, 90, -90, 180, 270]) {
+    const group = { id: 'group', isGroup: true, x: 2, z: -1, rotation: degrees,
+      children: [{ id: 'desk', type: 'counter', x: 0.8, z: -0.4, rotation: 30 }] };
+    const [child] = api.flattenTechnicalItems([group], []);
+    const expected = new Vector3(0.8, 0, -0.4).applyEuler(new Euler(0, degrees * Math.PI / 180, 0));
+    assert.ok(Math.abs(child.x - (group.x + expected.x)) < 1e-10);
+    assert.ok(Math.abs(child.z - (group.z + expected.z)) < 1e-10);
+    assert.equal(child.rotation, degrees + 30);
+  }
+});
 
 test('each counter has its own visual and numbered placement, even with the same image', () => {
   const { api } = runtime();
