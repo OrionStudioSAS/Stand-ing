@@ -33,6 +33,7 @@ export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog
   const drawableTechnicalItems = technicalItems.filter((item) => !item?.sourceOptions);
   const sections = technicalTableSections(technicalItems, catalog);
   const visuals = technicalPlanVisuals(technicalItems, catalog, width, depth);
+  const constraints = technicalItems.find((item) => item?.sourceOptions)?.sourceConstraints || [];
   const tableHeight = technicalTableHeight(sections);
   const galleryHeight = visuals.length ? 70 + Math.ceil(visuals.length / 2) * 240 : 0;
   const canvas = document.createElement('canvas');
@@ -48,7 +49,7 @@ export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   drawFrame(ctx);
   drawSidebar(ctx, width, depth, fixedWallHeight, layout, drawableTechnicalItems);
-  drawPlan(ctx, width, depth, layout, drawableTechnicalItems, catalog, pictoImages, visuals);
+  drawPlan(ctx, width, depth, layout, drawableTechnicalItems, catalog, pictoImages, visuals, constraints);
   drawItemTable(ctx, sections);
   drawVisualGallery(ctx, visuals, pictoImages, technicalTableY + tableHeight + 20);
   return canvas;
@@ -196,6 +197,7 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   drawText(ctx, 'au tableau des elements.', x + 16, y + 102, 17);
   drawText(ctx, 'Cotes principales exprimees en mm.', x + 16, y + 142, 17);
   drawText(ctx, 'Origine X/Z au centre du stand.', x + 16, y + 168, 17);
+  drawText(ctx, 'Rectangle barré : poteau de contrainte.', x + 16, y + 192, 13);
   y += 224;
 
   ctx.strokeRect(x, y, w, 308);
@@ -216,7 +218,7 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   drawText(ctx, 'Generateur : StandING configurateur 3D', x + 12, footerY + 64, 15);
 }
 
-function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map(), visuals = []) {
+function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map(), visuals = [], constraints = []) {
   const bounds = { x: sheet.left + 58, y: 130, w: 1260, h: 760 };
   const scale = Math.min(bounds.w / (width + 1.1), bounds.h / (depth + 1.1));
   const planW = width * scale;
@@ -279,6 +281,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, item.label || entry?.label, pictoImage);
   });
 
+  drawTechnicalConstraints(ctx, constraints, scale, toX, toY);
   visuals.forEach((visual) => {
     if (!visual.position) return;
     const x = toX(visual.position[0]);
@@ -288,6 +291,30 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     drawText(ctx, visual.reference, x, y + 5, 13, '#ffffff', 'bold', 'center');
   });
   drawText(ctx, 'Allee', planX + planW / 2, planY + planH + 62, 58, technicalColors.ink, 'normal', 'center');
+}
+
+function drawTechnicalConstraints(ctx, constraints = [], scale, toX, toY) {
+  constraints.forEach((constraint, index) => {
+    const width = Number(constraint.width);
+    const depth = Number(constraint.depth);
+    const centerX = Number(constraint.x);
+    const centerZ = Number(constraint.z);
+    if (![width, depth, centerX, centerZ].every(Number.isFinite) || width <= 0 || depth <= 0) return;
+    const x = toX(centerX - width / 2);
+    const y = toY(centerZ - depth / 2);
+    const w = width * scale;
+    const h = depth * scale;
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = technicalColors.ink;
+    ctx.lineWidth = 2.5;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeRect(x, y, w, h);
+    line(ctx, x, y, x + w, y + h);
+    line(ctx, x + w, y, x, y + h);
+    drawText(ctx, constraint.label || `Poteau ${index + 1}`, x + w / 2, y - 8, 13, technicalColors.ink, 'bold', 'center');
+    ctx.restore();
+  });
 }
 
 function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale) {

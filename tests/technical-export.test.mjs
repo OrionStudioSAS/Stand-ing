@@ -9,16 +9,21 @@ function runtime() {
   const text = [];
   const images = [];
   const rectangles = [];
+  const outlines = [];
+  const points = [];
   const ctx = new Proxy({
     fillText(value, x, y) { text.push({ value, x, y }); },
     drawImage(...args) { images.push(args); },
     fillRect(x, y, width, height) { rectangles.push({ x, y, width, height, color: ctx.fillStyle }); },
+    strokeRect(x, y, width, height) { outlines.push({ x, y, width, height }); },
+    moveTo(x, y) { points.push([x, y]); },
+    lineTo(x, y) { points.push([x, y]); },
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
   const api = vm.createContext({ document: { createElement: () => canvas }, console });
   vm.runInContext(source, api);
-  return { api, canvas, text, images, rectangles, ctx };
+  return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }
 
 const imageUrl = 'https://storage.example/scene-options/counter-preview.jpg';
@@ -50,6 +55,7 @@ test('the admin/email marker exports enabled surfaces with database preview URLs
   api.normalizeSalonTitle = (value) => value;
   api.assetReference = (entry, salon) => entry.dimensions?.salonPricing?.[salon]?.reference || '';
   api.technicalPartitionHeadInformation = () => [];
+  api.sceneConstraintsFromPayload = () => [];
   for (const name of ['withTechnicalOptionsMarker', 'wallCoverPreviewsFromCovers', 'wallCoverPreviewForSurface', 'wallCoverEnabledForSurface']) {
     const start = appSource.indexOf(`function ${name}(`);
     const end = appSource.indexOf('\n}\n', start) + 2;
@@ -246,4 +252,46 @@ test('head information uses the scene renderer even with no uploaded image, incl
   assert.match(visuals[0].label, /Habillage.*gauche/);
   assert.match(visuals[1].label, /Habillage.*droite/);
   assert.ok(visuals.every((visual) => visual.imageUrl.startsWith('data:image/png;')));
+});
+
+test('a pole is drawn at its back-left corner offset with its actual dimensions and both diagonals', () => {
+  const { api, ctx, outlines, points } = runtime();
+  const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  for (const name of ['parseSceneConstraintValues', 'parseCombinedConstraintValue', 'parseNumberParts', 'clamp', 'sceneConstraintsFromPayload', 'normalizeSceneConstraint', 'dedupeSceneConstraints']) {
+    const start = appSource.indexOf(`function ${name}(`);
+    const end = appSource.indexOf('\n}\n', start) + 2;
+    vm.runInContext(appSource.slice(start, end), api);
+  }
+  const pole = api.parseSceneConstraintValues('700 X 500 (900 - 400)', '', 4, 3, 'Poteau 1', { forceMillimeters: true });
+  const savedPole = { width: 0.7, depth: 0.5, fromLeft: 0.9, fromBack: 0.4 };
+  const saved = api.sceneConstraintsFromPayload({ constraints: [savedPole, savedPole] }, 4, 3);
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].x, pole.x);
+  assert.equal(saved[0].z, pole.z);
+  api.drawTechnicalConstraints(ctx, [pole], 100, (x) => x * 100, (z) => z * 100);
+  assert.equal(outlines.length, 1);
+  assert.ok(Math.abs(outlines[0].x + 110) < 0.000001);
+  assert.ok(Math.abs(outlines[0].y + 110) < 0.000001);
+  assert.equal(outlines[0].width, 70);
+  assert.equal(outlines[0].height, 50);
+  assert.equal(points.length, 4);
+  assert.ok(Math.abs(points[1][0] + 40) < 0.000001);
+  assert.ok(Math.abs(points[1][1] + 60) < 0.000001);
+  assert.deepEqual(points[2], [points[1][0], points[0][1]]);
+  assert.deepEqual(points[3], [points[0][0], points[1][1]]);
+});
+
+test('the BAT renders all saved poles from its marker without counting them as furniture', () => {
+  const { api, outlines, text } = runtime();
+  const poles = [{ label: 'Poteau 1', width: 0.8, depth: 0.3, x: -0.6, z: -0.85 }, { label: 'Poteau 2', width: 0.5, depth: 0.5, x: 1, z: 0.3 }];
+  api.renderTechnicalPlanCanvas({ width: 4, depth: 3, layout: 'back', items: [{ sourceOptions: {}, sourceConstraints: poles }], catalog: [] });
+  assert.ok(text.some(({ value }) => value === 'Poteau 1'));
+  assert.ok(text.some(({ value }) => value === 'Poteau 2'));
+  const scale = Math.min(1260 / 5.1, 760 / 4.1);
+  assert.equal(outlines.filter((rect) => Math.abs(rect.width - 0.8 * scale) < 0.000001 && Math.abs(rect.height - 0.3 * scale) < 0.000001).length, 1);
+  assert.equal(api.technicalTableSections([{ sourceOptions: {}, sourceConstraints: poles }], []).some((section) => section.id === 'amco'), false);
+  const { api: emptyApi, ctx, outlines: emptyOutlines } = runtime();
+  emptyApi.drawTechnicalConstraints(ctx, [], 100, (x) => x, (z) => z);
+  emptyApi.drawTechnicalConstraints(ctx, [{ width: 0, depth: 1, x: 0, z: 0 }], 100, (x) => x, (z) => z);
+  assert.equal(emptyOutlines.length, 0);
 });

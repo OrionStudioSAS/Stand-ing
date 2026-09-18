@@ -12964,6 +12964,7 @@ function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = [])
       sourceProductReferences,
       sourceVisualSurfaces,
       sourceHeadInformation: technicalPartitionHeadInformation(items, scene),
+      sourceConstraints: sceneConstraintsFromPayload(scene.source_payload, width, depth),
       collisionEnabled: false,
     },
   ];
