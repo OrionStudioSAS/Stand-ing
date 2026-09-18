@@ -15,7 +15,7 @@ function runtime() {
     fillRect(x, y, width, height) { rectangles.push({ x, y, width, height, color: ctx.fillStyle }); },
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
-  const canvas = { getContext: () => ctx };
+  const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
   const api = vm.createContext({ document: { createElement: () => canvas }, console });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, ctx };
@@ -49,6 +49,7 @@ test('the admin/email marker exports enabled surfaces with database preview URLs
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
   api.normalizeSalonTitle = (value) => value;
   api.assetReference = (entry, salon) => entry.dimensions?.salonPricing?.[salon]?.reference || '';
+  api.technicalPartitionHeadInformation = () => [];
   for (const name of ['withTechnicalOptionsMarker', 'wallCoverPreviewsFromCovers', 'wallCoverPreviewForSurface', 'wallCoverEnabledForSurface']) {
     const start = appSource.indexOf(`function ${name}(`);
     const end = appSource.indexOf('\n}\n', start) + 2;
@@ -192,4 +193,57 @@ test('the BAT uses the moved reserve and refreshes the TV surface from its curre
   assert.equal(items[0].wallSide, -1);
   assert.equal(items[0].x, tv.x);
   assert.equal(tv.wallSurface.normalAxis, -0.5);
+});
+
+test('wall breakdown labels and long summaries have separate rows, within the sidebar width', () => {
+  const { api, ctx, text } = runtime();
+  const tvs = [-2.4, -0.4, 1.6].map((x) => ({ type: 'screen', wall: 'back', x }));
+  const rows = api.technicalWallBreakdownRows(ctx, 348, 6, 4, 'u', tvs);
+  assert.ok(rows[0].lines.length > 1);
+  api.drawWallBreakdown(ctx, 48, 522, 348, 6, 4, 'u', tvs);
+  const label = text.find(({ value }) => value.startsWith('Fond '));
+  const summary = text.find(({ value }) => value.includes('renfort TV'));
+  assert.ok(summary.y > label.y);
+  assert.equal(summary.x, label.x);
+  assert.ok(rows.every((row) => row.lines.every((line) => ctx.measureText(line).width <= 320)));
+  const nextWall = text.find(({ value }) => value.startsWith('Gauche '));
+  assert.ok(nextWall.y > label.y + 20 + (rows[0].lines.length - 1) * 18);
+});
+
+test('head information uses the scene renderer even with no uploaded image, including sector colour and stand/hall', () => {
+  const { api, text, rectangles } = runtime();
+  const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const names = ['technicalPartitionHeadInformation', 'isPartitionHeadItem', 'isSmclPartitionHeadItem', 'normalizedItemText', 'smclPartitionHeadSide', 'createPartitionHeadInfoTexture', 'createSmclPartitionHeadInfoTexture', 'smclCanvasFont', 'drawSmclLeftHeadInfo', 'drawSmclRightHeadInfo', 'normalizeSmclAisleCode', 'normalizeSmclStandNumber', 'normalizeSmclHallNumber', 'smclStandCode', 'drawSmclSalonMark', 'drawSmclPartnerMarks', 'smclSectorColor', 'fitCanvasText'];
+  for (const name of names) {
+    const start = appSource.indexOf(`function ${name}(`);
+    const end = appSource.indexOf('\n}\n', start) + 2;
+    vm.runInContext(appSource.slice(start, end), api);
+  }
+  let disposed = 0;
+  Object.assign(api, {
+    CanvasTexture: class { constructor(image) { this.image = image; } dispose() { disposed += 1; } },
+    prepareDynamicTexture: (texture) => texture,
+    normalizeLookupText: (value) => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(),
+    mondayColumnTextByTitle: () => '', savedContactDetail: () => '',
+    sceneExhibitorCompanyName: (scene) => scene.project_name,
+    sceneStandNumber: (scene) => scene.source_payload.stand_number,
+    sceneAisleNumber: (scene) => scene.source_payload.aisle_number,
+    sceneHallLabel: (scene) => scene.source_payload.hall,
+    sceneSectorLabel: (scene) => scene.source_payload.sector,
+  });
+  const heads = ['left', 'right'].map((side) => ({ id: side, type: 'head-smcl', label: `Tête de cloison SMCL ${side === 'left' ? 'gauche' : 'droite'}`, x: side === 'left' ? -2 : 2, z: 1.5, options: { partitionHeadSide: side } }));
+  heads[0] = { ...heads[0], type: 'group', label: 'Support gauche', isGroup: true, children: [{ type: 'head-smcl', label: 'Tête de cloison SMCL gauche' }] };
+  const scene = { project_name: 'Société test', source_payload: { options: { partitionHeadCompany: 'Nom personnalisé' }, stand_number: '25', aisle_number: 'A', hall: '6', sector: 'Sécurité prévention protection' } };
+  const information = api.technicalPartitionHeadInformation(heads, scene);
+  assert.equal(information.length, 2);
+  assert.equal(disposed, 4);
+  assert.ok(text.some(({ value }) => value === 'NOM PERSONNALISÉ'));
+  assert.ok(text.some(({ value }) => value === '25A'));
+  assert.ok(text.some(({ value }) => value === 'PAVILLON 6'));
+  assert.ok(rectangles.some(({ color }) => color === '#E20519'));
+  const visuals = api.technicalPlanVisuals([...heads, { sourceOptions: {}, sourceHeadInformation: information }]);
+  assert.equal(visuals.length, 2);
+  assert.match(visuals[0].label, /Habillage.*gauche/);
+  assert.match(visuals[1].label, /Habillage.*droite/);
+  assert.ok(visuals.every((visual) => visual.imageUrl.startsWith('data:image/png;')));
 });

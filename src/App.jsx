@@ -12907,6 +12907,7 @@ function purchaseOrderOptionLabel(option = '') {
 
 async function downloadSceneTechnicalPlan(scene = {}, assets = []) {
   scene = await loadSceneForAdminAction(scene);
+  await prepareTechnicalExportFonts();
   const catalogEntries = sceneAdminCatalog(assets, scene);
   const width = Number(scene.dimensions?.width || scene.width_m || 4);
   const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
@@ -12921,6 +12922,7 @@ async function downloadSceneTechnicalPlan(scene = {}, assets = []) {
 }
 
 async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = []) {
+  await prepareTechnicalExportFonts();
   const catalogEntries = sceneAdminCatalog(assets, scene);
   const width = Number(scene.dimensions?.width || scene.width_m || 4);
   const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
@@ -12961,9 +12963,46 @@ function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = [])
       sourceOptions: options,
       sourceProductReferences,
       sourceVisualSurfaces,
+      sourceHeadInformation: technicalPartitionHeadInformation(items, scene),
       collisionEnabled: false,
     },
   ];
+}
+
+async function prepareTechnicalExportFonts() {
+  if (!document.fonts?.load) return;
+  await Promise.allSettled([200, 300, 700].map((weight) => document.fonts.load(`${weight} 92px Oswald`)));
+}
+
+function technicalPartitionHeadInformation(items = [], scene = {}) {
+  const heads = items.filter((item) => (isPartitionHeadItem(item) || item.children?.some(isPartitionHeadItem)) && !item.options?.partitionHeadHidden && !item.options?.prestigeHidden);
+  if (!heads.length) return [];
+  const options = scene.options || scene.source_payload?.options || {};
+  const contact = scene.source_payload?.contactDetails || {};
+  const visualContext = {
+    language: options.language || scene.source_payload?.language || 'fr',
+    company: options.partitionHeadCompany || scene.source_payload?.partitionHeadCompany
+      || mondayColumnTextByTitle(scene.source_payload, ['texte tete de cloison', 'texte tête de cloison'])
+      || savedContactDetail(scene, 'company') || sceneExhibitorCompanyName(scene, {}, contact),
+    standNumber: sceneStandNumber(scene, contact, scene.project_name || ''),
+    aisleNumber: sceneAisleNumber(scene, contact),
+    hall: sceneHallLabel(scene, contact),
+    sector: sceneSectorLabel(scene),
+  };
+  return heads.map((item) => {
+    const headChild = item.children?.find(isPartitionHeadItem);
+    const renderedItem = headChild || item;
+    const side = item.options?.partitionHeadSide || item.dimensions?.smclHeadSide || smclPartitionHeadSide(item) || smclPartitionHeadSide(renderedItem);
+    // Reuse the scene's exact renderer, including its sector colours and typography.
+    const textures = createPartitionHeadInfoTexture(visualContext, renderedItem);
+    const texture = textures?.image ? textures : textures?.[side || 'left'];
+    try {
+      return { itemId: item.id, side, label: item.label || 'Tête de cloison', position: [Number(item.x || 0), Number(item.y || 0), Number(item.z || 0)], imageUrl: texture?.image?.toDataURL('image/png') || '' };
+    } finally {
+      if (textures?.image) textures.dispose();
+      else Object.values(textures || {}).forEach((value) => value?.dispose());
+    }
+  }).filter((head) => head.imageUrl);
 }
 
 async function downloadScenePurchaseOrder(scene = {}, assets = []) {

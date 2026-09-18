@@ -35,12 +35,14 @@ export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog
   const visuals = technicalPlanVisuals(technicalItems, catalog, width, depth);
   const tableHeight = technicalTableHeight(sections);
   const galleryHeight = visuals.length ? 70 + Math.ceil(visuals.length / 2) * 240 : 0;
-  // Options and uploaded visuals need more space than a fixed height per object.
-  sheet.height = Math.max(1240, technicalTableY + tableHeight + galleryHeight + sheet.margin + 30);
   const canvas = document.createElement('canvas');
   canvas.width = sheet.width;
-  canvas.height = sheet.height;
   const ctx = canvas.getContext('2d');
+  const sidebarWidth = sheet.left - sheet.margin - 28;
+  const breakdownRows = technicalWallBreakdownRows(ctx, sidebarWidth, width, depth, layout, drawableTechnicalItems);
+  // Keep both the variable-length sidebar and the visual gallery inside the sheet.
+  sheet.height = Math.max(1240, 1210 + technicalWallBreakdownHeight(breakdownRows), technicalTableY + tableHeight + galleryHeight + sheet.margin + 30);
+  canvas.height = sheet.height;
 
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -441,6 +443,18 @@ function technicalPlanVisuals(items = [], catalog = [], width = 4, depth = 3) {
     const label = `Tête de cloison ${side === 'left' ? 'gauche' : 'droite'}`;
     visuals.push({ label: `Visuel ${label.toLowerCase()}`, headSide: side, placement: label, position: head ? [head.x || 0, 0, head.z || 0] : [side === 'left' ? -width / 2 : width / 2, 0, depth / 2], imageUrl: validTechnicalImageUrl(value.headMainImageUrl), status: technicalVisualStatus(value.visualPending, value.headMainImageUrl, value.headMainImageName) });
   });
+  (marker?.sourceHeadInformation || []).forEach((head) => {
+    const itemIndex = drawable.findIndex((item) => item.id === head.itemId || item.groupId === head.itemId);
+    const headVisual = visuals.find((visual) => visual.headSide === head.side);
+    visuals.push({
+      label: `Habillage tête de cloison ${head.side === 'left' ? 'gauche' : head.side === 'right' ? 'droite' : ''}`.trim(),
+      placement: `${itemIndex >= 0 ? `Objet n° ${itemIndex + 1} - ` : ''}${head.label}`,
+      position: head.position,
+      slotIndex: headVisual ? 1 : 0,
+      imageUrl: head.imageUrl,
+      status: 'Société, stand, pavillon et secteur - visuel automatique',
+    });
+  });
   return visuals.map((visual, index) => ({ ...visual, reference: `S${index + 1}` }));
 }
 
@@ -742,21 +756,33 @@ function drawPanelCallouts(ctx, wall, panels, x, y, scale, orientation, thicknes
 }
 
 function drawWallBreakdown(ctx, x, y, w, width, depth, layout, items) {
-  const rows = wallRows(width, depth, layout, items);
-  const h = 54 + rows.length * 32;
+  const rows = technicalWallBreakdownRows(ctx, w, width, depth, layout, items);
+  const h = technicalWallBreakdownHeight(rows);
   ctx.strokeStyle = '#777';
   ctx.strokeRect(x, y, w, h);
   ctx.fillStyle = technicalColors.soft;
   ctx.fillRect(x + 1, y + 1, w - 2, 42);
   drawText(ctx, 'DECOUPE CLOISONS', x + 16, y + 29, 20, technicalColors.blue, 'bold');
 
-  rows.forEach((row, index) => {
-    const rowY = y + 65 + index * 32;
-    drawText(ctx, row.label, x + 14, rowY, 15, '#666666');
-    drawText(ctx, row.summary, x + w - 14, rowY, 15, technicalColors.ink, 'bold', 'right');
+  let rowY = y + 48;
+  rows.forEach((row) => {
+    drawText(ctx, row.label, x + 14, rowY + 18, 14, '#666666', 'bold');
+    row.lines.forEach((text, index) => drawText(ctx, text, x + 14, rowY + 38 + index * 18, 13, technicalColors.ink));
+    rowY += row.height;
   });
 
   return y + h;
+}
+
+function technicalWallBreakdownRows(ctx, w, width, depth, layout, items) {
+  return wallRows(width, depth, layout, items).map((row) => {
+    const lines = wrappedTechnicalText(ctx, row.summary, w - 28, 13, 'normal', Infinity);
+    return { ...row, lines, height: 38 + lines.length * 18 };
+  });
+}
+
+function technicalWallBreakdownHeight(rows) {
+  return 54 + rows.reduce((sum, row) => sum + row.height, 0);
 }
 
 function wallRows(width, depth, layout, items) {
