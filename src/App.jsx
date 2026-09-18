@@ -12894,12 +12894,13 @@ function purchaseOrderOptionLabel(option = '') {
     .trim();
 }
 
-function downloadSceneTechnicalPlan(scene = {}, assets = []) {
+async function downloadSceneTechnicalPlan(scene = {}, assets = []) {
+  scene = await loadSceneForAdminAction(scene);
   const catalogEntries = sceneAdminCatalog(assets, scene);
   const width = Number(scene.dimensions?.width || scene.width_m || 4);
   const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
   const items = sceneAllAdminItems(scene, catalogEntries);
-  exportTechnicalPng({
+  return exportTechnicalPng({
     width,
     depth,
     layout: scene.layout || 'back',
@@ -12928,12 +12929,24 @@ async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = []) {
 
 function withTechnicalOptionsMarker(items = [], scene = {}) {
   const options = scene.options || scene.source_payload?.options || {};
+  const width = Number(scene.dimensions?.width || scene.width_m || 4);
+  const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
+  const covers = options.wallCovers || {};
+  const previews = wallCoverPreviewsFromCovers(covers);
+  const sourceVisualSurfaces = wallCoverSurfaceOptions(scene.layout || 'back', width, depth, items, { splitForCovers: true })
+    .filter((surface) => wallCoverEnabledForSurface(covers, surface))
+    .map((surface) => {
+      const cover = covers[surface.id] || covers[surface.sourceWall] || {};
+      const preview = wallCoverPreviewForSurface(previews, surface);
+      return { id: surface.id, label: surface.label, position: surface.position, width: surface.width, height: surface.height, previewUrl: preview?.url || '', previewName: preview?.name || '', visualPending: Boolean(cover.visualPending) };
+    });
   return [
     ...items,
     {
       id: '__technical-options__',
       type: '__technical-options__',
       sourceOptions: options,
+      sourceVisualSurfaces,
       collisionEnabled: false,
     },
   ];

@@ -26,11 +26,17 @@ const wallPanelWidth = 1;
 const reinforcementWidth = 1;
 const wallThicknessMeters = 0.06;
 const carpetFootprintOverflow = 0.2;
+const technicalTableY = 1040;
 
 export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems: providedTechnicalItems = null, pictoImages = new Map() }) {
   const technicalItems = providedTechnicalItems || technicalItemsForPlan(items, width, depth, catalog);
   const drawableTechnicalItems = technicalItems.filter((item) => !item?.sourceOptions);
-  sheet.height = Math.max(1240, 1080 + technicalItems.length * 52);
+  const sections = technicalTableSections(technicalItems, catalog);
+  const visuals = technicalPlanVisuals(technicalItems, catalog, width, depth);
+  const tableHeight = technicalTableHeight(sections);
+  const galleryHeight = visuals.length ? 70 + Math.ceil(visuals.length / 2) * 240 : 0;
+  // Options and uploaded visuals need more space than a fixed height per object.
+  sheet.height = Math.max(1240, technicalTableY + tableHeight + galleryHeight + sheet.margin + 30);
   const canvas = document.createElement('canvas');
   canvas.width = sheet.width;
   canvas.height = sheet.height;
@@ -40,8 +46,9 @@ export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   drawFrame(ctx);
   drawSidebar(ctx, width, depth, fixedWallHeight, layout, drawableTechnicalItems);
-  drawPlan(ctx, width, depth, layout, drawableTechnicalItems, catalog, pictoImages);
-  drawItemTable(ctx, technicalItems, catalog, pictoImages);
+  drawPlan(ctx, width, depth, layout, drawableTechnicalItems, catalog, pictoImages, visuals);
+  drawItemTable(ctx, sections);
+  drawVisualGallery(ctx, visuals, pictoImages, technicalTableY + tableHeight + 20);
   return canvas;
 }
 
@@ -69,9 +76,9 @@ async function loadTechnicalPictoImages(items = [], catalog = []) {
     const entry = catalog.find((candidate) => candidate.type === item.type);
     const url = technicalSvgPictoUrl(item, entry, catalog);
     if (url) urls.add(url);
-    technicalItemVisuals(item, entry || {}).forEach((visual) => {
-      if (visual.imageUrl) urls.add(visual.imageUrl);
-    });
+  });
+  technicalPlanVisuals(items, catalog).forEach((visual) => {
+    if (visual.imageUrl) urls.add(visual.imageUrl);
   });
   const loaded = await Promise.all([...urls].map(async (url) => [url, await loadCanvasImage(url)]));
   return new Map(loaded.filter(([, image]) => image));
@@ -120,7 +127,12 @@ async function loadCanvasImage(url) {
     const response = await fetch(url, { mode: 'cors' });
     if (response.ok) {
       const objectUrl = URL.createObjectURL(await response.blob());
-      return await loadImageElement(objectUrl);
+      try {
+        const image = await loadImageElement(objectUrl);
+        if (image) return image;
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
     }
   } catch {
     // Fallback to direct image loading below when the storage URL is already canvas-safe.
@@ -202,7 +214,7 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   drawText(ctx, 'Generateur : StandING configurateur 3D', x + 12, footerY + 64, 15);
 }
 
-function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map()) {
+function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map(), visuals = []) {
   const bounds = { x: sheet.left + 58, y: 130, w: 1260, h: 760 };
   const scale = Math.min(bounds.w / (width + 1.1), bounds.h / (depth + 1.1));
   const planW = width * scale;
@@ -265,6 +277,14 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, item.label || entry?.label, pictoImage);
   });
 
+  visuals.forEach((visual) => {
+    if (!visual.position) return;
+    const x = toX(visual.position[0]);
+    const y = toY(visual.position[2]) + 16 + (visual.slotIndex || 0) * 26;
+    ctx.fillStyle = technicalColors.blue;
+    ctx.fillRect(x - 19, y - 12, 38, 24);
+    drawText(ctx, visual.reference, x, y + 5, 13, '#ffffff', 'bold', 'center');
+  });
   drawText(ctx, 'Allee', planX + planW / 2, planY + planH + 62, 58, technicalColors.ink, 'normal', 'center');
 }
 
@@ -293,18 +313,18 @@ function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale) {
   ctx.restore();
 }
 
-function drawItemTable(ctx, items, catalog, imageMap = new Map()) {
+function technicalTableHeight(sections) {
+  return 58 + sections.reduce((sum, section) => sum + 28 + section.rows.reduce((total, row) => total + row.height, 0), 0);
+}
+
+function drawItemTable(ctx, sections) {
   const x = sheet.left + 18;
   const rowH = 28;
   const w = sheet.width - sheet.margin - x - 18;
-  const sections = technicalTableSections(items, catalog);
-  const bodyHeight = sections.reduce((sum, section) => (
-    sum + rowH + section.rows.reduce((sectionSum, row) => sectionSum + row.height, 0)
-  ), rowH);
-  const y = Math.max(900, sheet.height - sheet.margin - 70 - bodyHeight);
+  const y = technicalTableY;
 
   ctx.strokeStyle = '#777';
-  ctx.strokeRect(x, y, w, sheet.height - sheet.margin - y - 14);
+  ctx.strokeRect(x, y, w, technicalTableHeight(sections));
   drawText(ctx, 'DETAIL DES ELEMENTS', x + 16, y + 28, 22, technicalColors.blue, 'bold');
 
   let cy = y + 48;
@@ -319,13 +339,12 @@ function drawItemTable(ctx, items, catalog, imageMap = new Map()) {
     section.rows.forEach((row) => {
       ctx.strokeStyle = '#cccccc';
       ctx.strokeRect(x + 10, cy, w - 20, row.height);
-      const thumb = row.imageUrl ? imageMap.get(row.imageUrl) : null;
-      if (thumb) {
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(x + 18, cy + 6, 42, 42);
-        drawContainedImage(ctx, thumb, x + 20, cy + 8, 38, 38);
-      }
-      drawText(ctx, row.label, x + (thumb ? 70 : 18), cy + 20, 13, technicalColors.ink, 'bold');
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x + 18, cy, 258, row.height);
+      ctx.clip();
+      drawText(ctx, row.label, x + 18, cy + 20, 13, technicalColors.ink, 'bold');
+      ctx.restore();
       row.lines.forEach((line, lineIndex) => {
         drawText(ctx, line, x + 288, cy + 20 + lineIndex * 15, 12, '#555555');
       });
@@ -339,7 +358,6 @@ function technicalTableSections(items = [], catalog = []) {
     { id: 'amco', title: 'AMCO', rows: [] },
     { id: 'electricity', title: 'ELEC', rows: [] },
     { id: 'coverings', title: 'MOQUETTE / EMPREINTE / COTON CLOISON', rows: technicalCoveringRows(items) },
-    { id: 'visuals', title: 'SIGNA / VISUELS', rows: technicalVisualRows(items, catalog) },
   ];
 
   (items || []).filter((item) => !item?.sourceOptions).forEach((item, index) => {
@@ -380,14 +398,102 @@ function technicalCoveringRows(items = []) {
   return rows;
 }
 
-function technicalVisualRows(items = [], catalog = []) {
-  const rows = [];
-  (items || []).forEach((item) => {
-    technicalItemVisuals(item, catalog.find((candidate) => candidate.type === item.type) || {}).forEach((visual) => {
-      rows.push(technicalSimpleRow(visual.label, visual.status, visual.imageUrl));
+function technicalPlanVisuals(items = [], catalog = [], width = 4, depth = 3) {
+  const visuals = [];
+  const drawable = items.filter((item) => item && !item.sourceOptions);
+  drawable.forEach((item, index) => {
+    const surface = objectWallSurfaceForTechnicalItem(item);
+    let position = [Number(item.x || 0), Number(item.y || 0), Number(item.z || 0)];
+    if (isWallItem(item)) {
+      if (surface) position = surface.orientation === 'z'
+        ? [surface.normalAxis, 0, Number(item.x ?? surface.centerAxis)]
+        : [Number(item.x ?? surface.centerAxis), 0, surface.normalAxis];
+      else if (item.wall === 'back') position = [Number(item.x || 0), 0, -depth / 2];
+      else position = [item.wall === 'left' ? -width / 2 : width / 2, 0, Number(item.x || 0)];
+    }
+    technicalItemVisuals(item, catalog.find((candidate) => candidate.type === item.type) || {}).forEach((visual, slotIndex) => {
+      visuals.push({ ...visual, position, slotIndex, placement: `Objet n° ${index + 1} - ${item.groupLabel || item.label || item.type}${item.options?.variantLabel ? ` (${item.options.variantLabel})` : ''}` });
     });
   });
-  return rows;
+  const marker = items.find((item) => item?.sourceOptions);
+  (marker?.sourceVisualSurfaces || []).forEach((surface) => {
+    visuals.push({
+      label: `Bâche - ${surface.label}`,
+      placement: `${surface.label || 'Cloison'} - ${formatNumber(Number(surface.width || 0))} x ${formatNumber(Number(surface.height || fixedWallHeight))} m`,
+      position: surface.position,
+      imageUrl: validTechnicalImageUrl(surface.previewUrl),
+      status: technicalVisualStatus(surface.visualPending, surface.previewUrl, surface.previewName),
+    });
+  });
+  // Some older scenes keep the head artwork only in the scene-level options.
+  Object.entries(marker?.sourceOptions?.partitionHeadVisuals || {}).forEach(([side, value]) => {
+    if (!['left', 'right'].includes(side) || (!value?.headMainImageUrl && !value?.visualPending)) return;
+    const head = drawable.find((item) => {
+      const label = normalizeTechnicalText(`${item.label || ''} ${item.type || ''}`);
+      return label.includes('tete') && (item.options?.partitionHeadSide === side || item.dimensions?.smclHeadSide === side || label.includes(side === 'left' ? 'gauche' : 'droite'));
+    });
+    if (head && technicalItemVisuals(head).some((visual) => visual.imageUrl === value.headMainImageUrl || visual.status.includes('En attente'))) return;
+    if (marker.sourceOptions[side === 'left' ? 'partitionHeadLeftEnabled' : 'partitionHeadRightEnabled'] === false) return;
+    const label = `Tête de cloison ${side === 'left' ? 'gauche' : 'droite'}`;
+    visuals.push({ label, placement: label, position: head ? [head.x || 0, 0, head.z || 0] : [side === 'left' ? -width / 2 : width / 2, 0, depth / 2], imageUrl: validTechnicalImageUrl(value.headMainImageUrl), status: technicalVisualStatus(value.visualPending, value.headMainImageUrl, value.headMainImageName) });
+  });
+  return visuals.map((visual, index) => ({ ...visual, reference: `S${index + 1}` }));
+}
+
+function drawVisualGallery(ctx, visuals, imageMap, y) {
+  if (!visuals.length) return;
+  const x = sheet.left + 18;
+  const w = sheet.width - sheet.margin - x - 18;
+  drawText(ctx, 'SIGNALETIQUE / VISUELS', x + 16, y + 24, 22, technicalColors.blue, 'bold');
+  drawText(ctx, 'Aperçus enregistrés - emplacements repérés S1, S2… sur le plan', x + 16, y + 46, 14, '#555555');
+  const cardWidth = (w - 18) / 2;
+  visuals.forEach((visual, index) => {
+    const cx = x + (index % 2) * (cardWidth + 18);
+    const cy = y + 64 + Math.floor(index / 2) * 240;
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cx, cy, cardWidth, 222);
+    ctx.fillStyle = technicalColors.soft;
+    ctx.fillRect(cx + 12, cy + 12, 190, 198);
+    const image = imageMap.get(visual.imageUrl);
+    if (image) drawContainedImage(ctx, image, cx + 18, cy + 18, 178, 186);
+    else drawText(ctx, visual.imageUrl ? 'Aperçu indisponible' : 'En attente de visuel', cx + 107, cy + 111, 13, '#777777', 'normal', 'center');
+    const textX = cx + 218;
+    const textWidth = cardWidth - 232;
+    let textY = cy + 28;
+    const fields = [
+      { text: `${visual.reference} - ${visual.label}`, size: 16, color: technicalColors.blue, weight: 'bold', maxLines: 2 },
+      { text: `Emplacement : ${visual.placement}`, size: 14, color: technicalColors.ink, maxLines: 3 },
+      { text: visual.status, size: 13, color: visual.imageUrl ? '#267346' : '#956200', maxLines: 3 },
+    ];
+    fields.forEach((field) => {
+      const lines = wrappedTechnicalText(ctx, field.text, textWidth, field.size, field.weight, field.maxLines);
+      lines.forEach((text) => {
+        drawText(ctx, text, textX, textY, field.size, field.color, field.weight || 'normal');
+        textY += 18;
+      });
+      textY += 8;
+    });
+  });
+}
+
+function wrappedTechnicalText(ctx, text, width, size, weight = 'normal', maxLines = 3) {
+  ctx.font = `${weight || 'normal'} ${size}px Arial`;
+  const lines = [];
+  let line = '';
+  for (const character of String(text || '')) {
+    if (line && ctx.measureText(line + character).width > width) {
+      lines.push(line.trim());
+      line = '';
+    }
+    line += character;
+  }
+  if (line) lines.push(line.trim());
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+    lines[maxLines - 1] = `${lines[maxLines - 1].slice(0, -2)}…`;
+  }
+  return lines;
 }
 
 function technicalSimpleRow(label, detail = '', imageUrl = '') {
@@ -1047,6 +1153,7 @@ function technicalChildOptions(childOptions = {}, parentOptions = {}, parentDime
   const parentOptionReferences = Array.isArray(parentOptions.optionReferences) ? parentOptions.optionReferences : [];
   const childOptionReferences = Array.isArray(childOptions.optionReferences) ? childOptions.optionReferences : [];
   const inheritedVisuals = index === 0 ? {
+    ...Object.fromEntries(['headMainImageUrl', 'headMainImageName', 'visualPending', 'posterImageUrl', 'posterImageName', 'posterVisualPending'].filter((key) => hasTechnicalValue(parentOptions[key])).map((key) => [key, parentOptions[key]])),
     ...(hasTechnicalValue(parentOptions.binary3ImageUrl) ? { binary3ImageUrl: parentOptions.binary3ImageUrl } : {}),
     ...(hasTechnicalValue(parentOptions.binary3ImageName) ? { binary3ImageName: parentOptions.binary3ImageName } : {}),
     ...(hasTechnicalValue(parentOptions.binary3VisualPending) ? { binary3VisualPending: parentOptions.binary3VisualPending } : {}),
@@ -1092,7 +1199,7 @@ function legendSwatch(ctx, x, y, color, label) {
 }
 
 function flattenTechnicalItems(items, catalog) {
-  return (items || []).flatMap((item) => {
+  return (items || []).filter(Boolean).flatMap((item) => {
     if (!item.isGroup || !item.children?.length) return [item];
     const parentRotation = Number(item.rotation || 0);
     const radians = (parentRotation * Math.PI) / 180;
