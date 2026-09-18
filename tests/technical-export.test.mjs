@@ -8,15 +8,17 @@ const source = readFileSync(new URL('../src/technicalExport.js', import.meta.url
 function runtime() {
   const text = [];
   const images = [];
+  const rectangles = [];
   const ctx = new Proxy({
     fillText(value, x, y) { text.push({ value, x, y }); },
     drawImage(...args) { images.push(args); },
+    fillRect(x, y, width, height) { rectangles.push({ x, y, width, height, color: ctx.fillStyle }); },
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx };
   const api = vm.createContext({ document: { createElement: () => canvas }, console });
   vm.runInContext(source, api);
-  return { api, canvas, text, images };
+  return { api, canvas, text, images, rectangles, ctx };
 }
 
 const imageUrl = 'https://storage.example/scene-options/counter-preview.jpg';
@@ -130,4 +132,64 @@ test('a long BAT includes all gallery images below the details without clipping'
   assert.equal(images.length, 24);
   assert.ok(text.every(({ y }) => y < canvas.height - 34));
   assert.ok(images.every(([, , y, , height]) => y + height < canvas.height - 34));
+});
+
+test('stand reinforcement replaces the existing panel containing the TV, without adding a centred panel', () => {
+  const { api } = runtime();
+  const panels = api.wallPanelSegments(api.wallDescriptor('back', 4, 3, [{ type: 'screen', wall: 'back', x: -1.2 }]));
+  assert.equal(panels.length, 4);
+  assert.equal(panels[0].kind, 'reinforcement');
+  assert.ok(panels.every((panel) => panel.mm === 1000));
+  const last = api.reinforcementPanelForAxis(2.3, 0, 2.4);
+  assert.equal(last.start, 2);
+  assert.equal(last.end, 2.4);
+  assert.equal(api.screenReinforcements('back', 4, 3, [{ type: 'tv-on-stand', label: 'TV sur pied', x: 0 }], 4).length, 0);
+});
+
+test('reserve TV reinforcement stays on the selected lateral face and does not affect stand walls', () => {
+  const { api, ctx, rectangles } = runtime();
+  const tv = { type: 'screen', x: -1.455, wall: 'object-wall:auto-reserve-medium:merged-1-0', wallSurface: { orientation: 'z', centerAxis: -0.99, normalAxis: -0.02, length: 1.9 } };
+  api.drawObjectWallReinforcements(ctx, [tv], 100, 6, (x) => x * 100, (z) => z * 100);
+  assert.equal(rectangles.length, 1);
+  assert.equal(rectangles[0].x, -5);
+  assert.ok(Math.abs(rectangles[0].y + 194) < 0.000001);
+  assert.equal(rectangles[0].width, 6);
+  assert.equal(rectangles[0].height, 100);
+  assert.equal(api.screenReinforcements('back', 6, 4, [tv], 6).length, 0);
+  assert.equal(api.screenReinforcements('right', 6, 4, [tv], 4).length, 0);
+});
+
+test('a missing reserve surface cannot create reinforcement at the scene origin', () => {
+  const { api, ctx, rectangles } = runtime();
+  api.drawObjectWallReinforcements(ctx, [{ type: 'screen', wall: 'object-wall:reserve', wallSurface: { orientation: 'x', length: 2 } }], 100, 6, (x) => x, (z) => z);
+  assert.equal(rectangles.length, 0);
+});
+
+test('the BAT uses the moved reserve and refreshes the TV surface from its current walls', () => {
+  const { api } = runtime();
+  const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  for (const name of ['sceneAllAdminItems', 'resolveTechnicalWallSurfaces', 'isObjectWallId', 'serializeObjectWallSurface', 'safeObjectWallSide', 'protectedObjectOutsideSide']) {
+    const start = appSource.indexOf(`function ${name}(`);
+    const end = appSource.indexOf('\n}\n', start) + 2;
+    vm.runInContext(appSource.slice(start, end), api);
+  }
+  Object.assign(api, {
+    sceneAdminItems: (scene) => scene.items,
+    normalizeSalonTitle: (value) => value,
+    sceneReserveRules: () => [], activeReserveRule: () => ({}),
+    scenePartitionHeadRules: () => [], activePartitionHeadRule: () => null,
+    partitionHeadEnabledSides: () => ({}), hasOwn: (value, key) => Object.hasOwn(value, key),
+    ledRailCatalogEntries: () => [], makeAutomaticPartitionHeadItems: () => [],
+    makeAutomaticReserveItems: () => [{ id: 'auto-reserve-medium', x: 0 }],
+    applyReserveItemOverride: (item, overrides) => ({ ...item, x: overrides[item.id]?.x ?? item.x }),
+    objectWallSurfaces: (items) => [{ id: 'object-wall:auto-reserve-medium:merged-1-0', orientation: 'z', centerAxis: -0.99, normalAxis: items.find((item) => item.id === 'auto-reserve-medium').x - 0.5, length: 1.9, protectedBounds: { minX: -0.05, maxX: 1.01 } }],
+  });
+  const tv = { id: 'tv', type: 'screen', x: -1.455, wall: 'object-wall:auto-reserve-medium:merged-1-0', wallSurface: { orientation: 'z', centerAxis: -0.99, normalAxis: -0.5, length: 1.9 }, wallSide: -1 };
+  const items = api.sceneAllAdminItems({ dimensions: { width: 6, depth: 4 }, layout: 'u', items: [tv], options: { ledRailsEnabled: false, reserveItemOverrides: { 'auto-reserve-medium': { x: 0.48 } } } });
+  assert.equal(items.find((item) => item.id === 'auto-reserve-medium').x, 0.48);
+  assert.ok(Math.abs(items[0].wallSurface.normalAxis + 0.02) < 0.000001);
+  assert.equal(items[0].wall, tv.wall);
+  assert.equal(items[0].wallSide, -1);
+  assert.equal(items[0].x, tv.x);
+  assert.equal(tv.wallSurface.normalAxis, -0.5);
 });

@@ -12771,7 +12771,8 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   });
   const ledEntries = ledRailCatalogEntries(catalogEntries);
   const autoSpotsRule = options.autoSpotsRule || null;
-  const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, salonLabel, options.reserveOptions || {});
+  const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, salonLabel, options.reserveOptions || {})
+    .map((item) => applyReserveItemOverride(item, options.reserveItemOverrides || {}, width, depth, layout, options.carpetFootprintEnabled !== false));
   const ledItems = options.ledRailsEnabled === false
     ? []
     : hasAutoSpotsRule(autoSpotsRule)
@@ -12779,13 +12780,23 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
         .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout))
       : makeAutomaticLedRailItems(ledEntries, width, depth, layout, ledSpotCountForArea(area))
         .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout));
-  return [
+  return resolveTechnicalWallSurfaces([
     ...manualItems,
     ...automaticReserveItems,
     ...makeAutomaticPartitionHeadItems(partitionRule, partitionSides, catalogEntries, width, depth, layout, salonLabel)
       .map((item) => applyPartitionHeadVisualOptions(item, options.partitionHeadVisuals || {})),
     ...ledItems,
-  ];
+  ]);
+}
+
+function resolveTechnicalWallSurfaces(items = []) {
+  const surfaces = objectWallSurfaces(items);
+  return items.map((item) => {
+    if (!isObjectWallId(item.wall)) return item;
+    const surface = surfaces.find((candidate) => candidate.id === item.wall) || item.wallSurface;
+    if (!surface) return item;
+    return { ...item, wallSurface: serializeObjectWallSurface(surface), wallSide: safeObjectWallSide(surface, Number(item.x ?? surface.centerAxis ?? 0), item.wallSide) };
+  });
 }
 
 function scenePurchaseOrder(scene = {}, assets = []) {

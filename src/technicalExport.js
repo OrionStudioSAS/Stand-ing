@@ -829,12 +829,10 @@ function wallDescriptor(wall, width, depth, items = []) {
 
 function screenReinforcements(wall, width, depth, items, wallLength) {
   return (items || [])
-    .filter((item) => isTechnicalScreenItem(item) && (item.wall || 'back') === wall)
+    .filter((item) => isWallItem(item) && isTechnicalScreenItem(item) && !isObjectWallItem(item) && item.wall === wall)
     .map((item) => {
       const center = screenAxisOffset(item, wall, width, depth);
-      const start = clampValue(center - reinforcementWidth / 2, 0, Math.max(0, wallLength - reinforcementWidth));
-      const end = Math.min(wallLength, start + reinforcementWidth);
-      return { start, end };
+      return reinforcementPanelForAxis(center, 0, wallLength);
     })
     .sort((a, b) => a.start - b.start)
     .reduce((acc, reinforcement) => {
@@ -848,6 +846,14 @@ function screenReinforcements(wall, width, depth, items, wallLength) {
     }, []);
 }
 
+function reinforcementPanelForAxis(axis, min, max) {
+  // Replace the existing panel containing the TV, rather than adding a wall at its centre.
+  const center = clampValue(Number(axis), min, max);
+  const offset = Math.min(Math.max(0, center - min), Math.max(0, max - min - 0.000001));
+  const start = min + Math.floor(offset / wallPanelWidth) * wallPanelWidth;
+  return { start, end: Math.min(max, start + reinforcementWidth) };
+}
+
 function screenAxisOffset(item, wall, width, depth) {
   if (wall === 'back') return clampValue(Number(item.x || 0) + width / 2, 0, width);
   return clampValue(Number(item.x || 0) + depth / 2 - wallThicknessMeters, 0, sideWallLength(depth));
@@ -855,14 +861,15 @@ function screenAxisOffset(item, wall, width, depth) {
 
 function drawObjectWallReinforcements(ctx, items = [], scale, wallThickness, toX, toY) {
   (items || [])
-    .filter((item) => isTechnicalScreenItem(item) && isObjectWallItem(item))
+    .filter((item) => isWallItem(item) && isTechnicalScreenItem(item) && isObjectWallItem(item))
     .forEach((item) => {
       const surface = objectWallSurfaceForTechnicalItem(item);
       if (!surface) return;
       const halfSurface = Number(surface.length || 0) / 2;
-      const center = clampValue(Number(item.x ?? surface.centerAxis ?? 0), Number(surface.centerAxis || 0) - halfSurface, Number(surface.centerAxis || 0) + halfSurface);
-      const segmentLength = Math.min(reinforcementWidth, Number(surface.length || reinforcementWidth)) * scale;
-      const thickness = Math.max(10, wallThickness * 1.35);
+      const panel = reinforcementPanelForAxis(Number(item.x ?? surface.centerAxis), surface.centerAxis - halfSurface, surface.centerAxis + halfSurface);
+      const center = (panel.start + panel.end) / 2;
+      const segmentLength = (panel.end - panel.start) * scale;
+      const thickness = wallThickness;
       ctx.save();
       ctx.fillStyle = technicalColors.reinforcement;
       if (surface.orientation === 'x') {
@@ -1065,13 +1072,17 @@ function isObjectWallItem(item = {}) {
 
 function objectWallSurfaceForTechnicalItem(item = {}) {
   const surface = item.wallSurface || null;
-  if (!surface?.orientation) return null;
+  if (!['x', 'z'].includes(surface?.orientation)) return null;
+  const centerAxis = Number(surface.centerAxis ?? (surface.orientation === 'z' ? surface.centerZ : surface.centerX));
+  const normalAxis = Number(surface.normalAxis ?? (surface.orientation === 'z' ? surface.centerX : surface.centerZ));
+  const length = Number(surface.length);
+  if (![centerAxis, normalAxis, length].every(Number.isFinite) || length <= 0) return null;
   return {
     ...surface,
     orientation: surface.orientation === 'z' ? 'z' : 'x',
-    centerAxis: Number(surface.centerAxis ?? (surface.orientation === 'z' ? surface.centerZ : surface.centerX) ?? 0),
-    normalAxis: Number(surface.normalAxis ?? (surface.orientation === 'z' ? surface.centerX : surface.centerZ) ?? 0),
-    length: Math.max(0.1, Number(surface.length || 0.1)),
+    centerAxis,
+    normalAxis,
+    length,
   };
 }
 
