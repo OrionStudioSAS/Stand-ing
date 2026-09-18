@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizePackBenefits } from "../_shared/packBenefits.js";
 
 const mondayApiUrl = "https://api.monday.com/v2";
 const wallThickness = 0.06;
@@ -106,6 +107,7 @@ Deno.serve(async (req) => {
     }
     const resolvedSource = withResolvedMondayColumns(source, mondayColumns, warnings);
     const context = await ensureSourceContext(supabase, resolvedSource);
+    const packConfiguration = await fetchOfferPackConfiguration(supabase, context.offerId);
     if (!boardItems.has(resolvedSource.board_id)) boardItems.set(resolvedSource.board_id, await fetchMondayItems(mondayToken, resolvedSource.board_id));
     const items = filterMondaySourceItems(boardItems.get(resolvedSource.board_id) || [], { ...resolvedSource, salon: context.salonLabel });
     if (resolvedSource.mapping?.salon_from_group && !items.length) warnings.push(`Aucun stand dans un groupe nommé ${resolvedSource.salon} sur le tableau ${resolvedSource.board_id}.`);
@@ -113,7 +115,7 @@ Deno.serve(async (req) => {
     for (const item of items) {
       const { data: existingScene, error: existingSceneError } = await supabase
         .from("scenes")
-        .select("id, share_token, source_payload, width_m, depth_m, client_email, client_name, project_name, event_name, salon, offer")
+        .select("id, share_token, source_payload, width_m, depth_m, client_email, client_name, project_name, event_name, salon, offer, client_status")
         .eq("monday_item_id", item.id)
         .maybeSingle();
       if (existingSceneError) throw existingSceneError;
@@ -140,10 +142,14 @@ Deno.serve(async (req) => {
             sector: mappedLocation.sector || existingScene.source_payload?.sector || "",
             constraint,
             constraints,
+            ...(existingScene.client_status !== "configured" ? { packBenefits: packConfiguration.packBenefits, baseItems: packConfiguration.baseItems } : {}),
             poteau_1_text: mondayPoleRawText(item, resolvedSource, 1),
             poteau_2_text: mondayPoleRawText(item, resolvedSource, 2),
           },
         };
+        const packConfigurationChanged = existingScene.client_status !== "configured"
+          && (JSON.stringify(existingScene.source_payload?.packBenefits) !== JSON.stringify(packConfiguration.packBenefits)
+            || JSON.stringify(existingScene.source_payload?.baseItems) !== JSON.stringify(packConfiguration.baseItems));
         if (!clean(existingScene.client_email) && mappedClientEmail) scenePatch.client_email = mappedClientEmail;
         if (!clean(existingScene.client_name) && mappedClientName) scenePatch.client_name = mappedClientName;
         const hasLocationPatch = Boolean(mappedLocation.standNumber || mappedLocation.aisleNumber || mappedLocation.hall || mappedLocation.sector);
@@ -152,7 +158,7 @@ Deno.serve(async (req) => {
           || Boolean(constraint)
           || constraints.length > 0
           || hasLocationPatch;
-        if (hasScenePatch) {
+        if (hasScenePatch || packConfigurationChanged) {
           const { error: updateConstraintError } = await supabase
             .from("scenes")
             .update(scenePatch)
@@ -266,25 +272,29 @@ Deno.serve(async (req) => {
 
       const sceneDraft = mapMondayItemToScene(item, resolvedSource, savedClient?.id, savedProfile?.id, context, parsedLayout);
       const preset = await findActivePreset(supabase, context.offerId, context.salonId, sceneDraft.layout);
-      const baseItems = await fetchOfferBaseItems(supabase, context.offerId);
+      const { baseItems, packBenefits } = packConfiguration;
+      const hasAllowance = packBenefits.mode === "allowance";
       const defaultOptions = presetDefaultOptions(preset);
       const scene = {
         ...sceneDraft,
-        base_preset_id: preset?.id || null,
+        base_preset_id: hasAllowance ? null : preset?.id || null,
         source_payload: {
           ...(sceneDraft.source_payload || {}),
           options: {
             ...((sceneDraft.source_payload || {}).options || {}),
             ...defaultOptions,
+            ...(hasAllowance ? { autoSpotsRule: null, ledRailsEnabled: false } : {}),
           },
           baseItems,
-          reserveRules: presetReserveRules(preset),
-          partitionHeadRules: presetPartitionHeadRules(preset),
+          packBenefits,
+          reserveRules: hasAllowance ? {} : presetReserveRules(preset),
+          partitionHeadRules: hasAllowance ? {} : presetPartitionHeadRules(preset),
           pricing: {
             ...((sceneDraft.source_payload || {}).pricing || {}),
             baseItems,
-            reserveRules: presetReserveRules(preset),
-            partitionHeadRules: presetPartitionHeadRules(preset),
+            packBenefits,
+            reserveRules: hasAllowance ? {} : presetReserveRules(preset),
+            partitionHeadRules: hasAllowance ? {} : presetPartitionHeadRules(preset),
           },
         },
       };
@@ -313,7 +323,7 @@ Deno.serve(async (req) => {
       if (sftpFolderResult.created) sftpFoldersCreated += 1;
       if (sftpFolderResult.skipped) sftpFoldersSkipped += 1;
 
-      if (savedScene?.id && preset?.stand_preset_items?.length) {
+      if (!hasAllowance && savedScene?.id && preset?.stand_preset_items?.length) {
         const inserted = await applyPresetItems(supabase, savedScene.id, preset, scene);
         baseItemsApplied += inserted;
       }
@@ -1091,15 +1101,16 @@ async function findActivePreset(supabase: any, offerId?: string, salonId?: strin
   return data;
 }
 
-async function fetchOfferBaseItems(supabase: any, offerId?: string) {
-  if (!offerId) return [];
+async function fetchOfferPackConfiguration(supabase: any, offerId?: string) {
+  if (!offerId) return { baseItems: [], packBenefits: normalizePackBenefits() };
   const { data, error } = await supabase
     .from("salon_offers")
     .select("metadata")
     .eq("id", offerId)
     .maybeSingle();
   if (error) throw error;
-  return Array.isArray(data?.metadata?.baseItems) ? data.metadata.baseItems : [];
+  const packBenefits = normalizePackBenefits(data?.metadata?.packBenefits);
+  return { packBenefits, baseItems: packBenefits.mode === "allowance" ? [] : Array.isArray(data?.metadata?.baseItems) ? data.metadata.baseItems : [] };
 }
 
 function presetReserveRules(preset: any) {

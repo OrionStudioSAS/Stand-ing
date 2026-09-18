@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import { Euler, Vector3 } from 'three';
+import { scenePackBenefits } from '../supabase/functions/_shared/packBenefits.js';
 
 const source = readFileSync(new URL('../src/technicalExport.js', import.meta.url), 'utf8').replace(/^export /gm, '');
 
@@ -22,7 +23,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ document: { createElement: () => canvas }, console });
+  const api = vm.createContext({ document: { createElement: () => canvas }, console, scenePackBenefits });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }

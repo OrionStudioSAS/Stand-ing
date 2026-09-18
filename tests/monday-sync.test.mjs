@@ -3,12 +3,13 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import { transformSync } from 'esbuild';
+import { normalizePackBenefits } from '../supabase/functions/_shared/packBenefits.js';
 
 const edgeSource = readFileSync(new URL('../supabase/functions/monday-sync/index.ts', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '');
 const compiled = transformSync(edgeSource, { loader: 'ts', format: 'cjs' }).code;
 
 function runtime(fetch = () => { throw new Error('Unexpected network request'); }) {
-  const context = vm.createContext({ Deno: { serve() {} }, fetch, console });
+  const context = vm.createContext({ Deno: { serve() {} }, fetch, console, normalizePackBenefits });
   vm.runInContext(compiled, context);
   return context;
 }
@@ -22,6 +23,23 @@ const columns = [
   { id: 'texte38', title: 'RAISON SOCIALE', type: 'text' },
   { id: 'phone', title: 'TEL', type: 'phone' },
 ];
+
+test('Monday fetches the configurable allowance without base quotas; other packs keep their included objects', async () => {
+  const api = runtime();
+  for (const mode of ['allowance', 'included-items']) {
+    const database = { from(table) {
+      assert.equal(table, 'salon_offers');
+      return { select() { return this; }, eq() { return this; }, async maybeSingle() {
+        return { data: { metadata: { baseItems: [{ type: 'desk', quantity: 1 }], packBenefits: { mode, allowanceAmount: 1500 } } } };
+      } };
+    } };
+    const config = await api.fetchOfferPackConfiguration(database, 'offer');
+    assert.equal(config.packBenefits.allowanceAmount, 1500);
+    assert.equal(config.baseItems.length, mode === 'allowance' ? 0 : 1);
+  }
+  const withoutOffer = await api.fetchOfferPackConfiguration({}, null);
+  assert.equal(withoutOffer.packBenefits.mode, 'included-items');
+});
 
 test('a shared pack board only imports the groups of its configured salon', () => {
   const api = runtime();

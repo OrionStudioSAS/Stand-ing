@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { demoScenes } from './seed.js';
 import { supabase } from './supabaseClient.js';
 import { catalog, layouts } from '../config/catalog.js';
+import { normalizePackBenefits, scenePackBenefits } from '../../supabase/functions/_shared/packBenefits.js';
 
 const storageKey = 'standing-scenes-v1';
 const fixedWallHeight = 2.5;
@@ -192,6 +193,9 @@ function applyPresetDefaultColorOptions(row) {
     || row.stand_presets?.base_config?.options?.autoSpotsRule
     || null;
 
+  if (scenePackBenefits(row).mode === 'allowance') {
+    sourcePayload.options = { ...(sourcePayload.options || {}), autoSpotsRule: null, ledRailsEnabled: false };
+  }
   if ((!presetDefaults || typeof presetDefaults !== 'object') && !presetAutoSpotsRule) return sourcePayload;
 
   const currentOptions = { ...(sourcePayload.options || {}) };
@@ -203,7 +207,8 @@ function applyPresetDefaultColorOptions(row) {
     ? { ...currentOptions, ...defaultPayload }
     : mergePresetDefaultsIntoDraftOptions(currentOptions, presetDefaults);
 
-  if (presetAutoSpotsRule && !nextOptions.autoSpotsRule) nextOptions.autoSpotsRule = presetAutoSpotsRule;
+  if (scenePackBenefits(row).mode === 'allowance') nextOptions.autoSpotsRule = null;
+  else if (presetAutoSpotsRule && !nextOptions.autoSpotsRule) nextOptions.autoSpotsRule = presetAutoSpotsRule;
   sourcePayload.options = nextOptions;
 
   return sourcePayload;
@@ -923,9 +928,10 @@ export async function ensureSalonOffer(salon, packName) {
   return { offer: { ...offer, monday_source: mondaySource, presets }, preset: presets[0] || null };
 }
 
-export async function saveSalonOfferBaseItems(offer, baseItems = []) {
+export async function saveSalonOfferBaseItems(offer, baseItems = [], packBenefits = offer?.metadata?.packBenefits) {
   if (!offer?.id) throw new Error('Pack introuvable.');
-  const normalizedItems = normalizeBaseItems(baseItems);
+  const benefits = normalizePackBenefits(packBenefits);
+  const normalizedItems = benefits.mode === 'allowance' ? [] : normalizeBaseItems(baseItems);
 
   if (!supabase) {
     return {
@@ -933,6 +939,7 @@ export async function saveSalonOfferBaseItems(offer, baseItems = []) {
       metadata: {
         ...(offer.metadata || {}),
         baseItems: normalizedItems,
+        packBenefits: benefits,
       },
     };
   }
@@ -943,6 +950,7 @@ export async function saveSalonOfferBaseItems(offer, baseItems = []) {
       metadata: {
         ...(offer.metadata || {}),
         baseItems: normalizedItems,
+        packBenefits: benefits,
       },
       updated_at: new Date().toISOString(),
     })

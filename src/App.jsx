@@ -49,6 +49,7 @@ import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
 import { createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
 import { createTechnicalPlanBlob, exportTechnicalPng } from './technicalExport.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
@@ -1010,7 +1011,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [technicalFloorType, setTechnicalFloorType] = useState(initialOptions.technicalFloorType || '');
   const [technicalFloorTrimType, setTechnicalFloorTrimType] = useState(initialOptions.technicalFloorTrimType || 'straight');
   const [technicalFloorRampX, setTechnicalFloorRampX] = useState(Number(initialOptions.technicalFloorRampX || 0));
-  const [ledRailsEnabled, setLedRailsEnabled] = useState(initialOptions.ledRailsEnabled !== false);
+  const [ledRailsEnabled, setLedRailsEnabled] = useState(scenePackBenefits(initialScene).mode !== 'allowance' && initialOptions.ledRailsEnabled !== false);
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
   const [reserveItemOverrides, setReserveItemOverrides] = useState(initialOptions.reserveItemOverrides || {});
   const [reserveOptionType, setReserveOptionType] = useState(initialOptions.reserveOptionType || (initialOptions.reserveUpgradeEnabled ? '__legacy__' : ''));
@@ -1181,7 +1182,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     objectBankLoaded ? items.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)) : items
   ), [items, availableCatalog, objectBankLoaded]);
   const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item) && !isAutomaticReserveItem(item) && !isAutomaticPartitionHeadItem(item)), [hydratedItems]);
-  const ledRailEntries = useMemo(() => ledRailCatalogEntries(availableCatalog), [availableCatalog]);
+  const ledRailEntries = useMemo(() => scenePackBenefits(initialScene).mode === 'allowance' ? [] : ledRailCatalogEntries(availableCatalog), [availableCatalog, initialScene]);
   const ledSpotCount = ledSpotCountForArea(area);
   const reserveRules = useMemo(() => sceneReserveRules(initialScene), [initialScene]);
   const activeReserveRuleConfig = useMemo(() => activeReserveRule(reserveRules, area), [reserveRules, area]);
@@ -1411,6 +1412,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           baseUsage: scenePricing.baseUsage,
           baseItemsConfigured: scenePricing.baseItemsConfigured,
           itemsTotal: scenePricing.itemsTotal,
+          packBenefits: scenePricing.packBenefits,
+          allowanceApplied: scenePricing.allowanceApplied,
+          grossTotal: scenePricing.grossTotal,
           insuranceLine: scenePricing.insuranceLine,
           total: scenePricing.total,
           lines: scenePricing.lines,
@@ -2334,6 +2338,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             catalog={availableCatalog}
             selectedId={selectedId}
             total={scenePricing.total || 0}
+            pricing={scenePricing}
             salonLabel={salonLabel}
             readOnly={readOnly}
             onSelectItem={setSelectedId}
@@ -2575,6 +2580,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           />
         ) : (
           <OptionsStepPanel
+            hasIncludedObjects={scenePackBenefits(initialScene).mode !== 'allowance'}
             activeStep={activeStep}
             area={area}
             layout={layout}
@@ -4101,6 +4107,7 @@ function useSimulatorImageQualityCheck(imageUrl, recommendedSpec = null) {
 }
 
 function OptionsStepPanel({
+  hasIncludedObjects = true,
   activeStep,
   area,
   layout,
@@ -4267,14 +4274,14 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       )}
-      <OptionAccordion {...accordionScrollProps('led')} title={t('option_led')} icon={<ConfiguratorOptionIcon src="/icons/spots.svg" />} open={openOptions.led} onToggle={() => toggleOption('led')}>
+      {hasIncludedObjects && <OptionAccordion {...accordionScrollProps('led')} title={t('option_led')} icon={<ConfiguratorOptionIcon src="/icons/spots.svg" />} open={openOptions.led} onToggle={() => toggleOption('led')}>
         <LedRailOptionCard
           enabled={ledRailsEnabled}
           spotCount={ledSpotCount}
           disabled={readOnly}
           onEnabledChange={onLedRailsEnabled}
         />
-      </OptionAccordion>
+      </OptionAccordion>}
       <OptionAccordion {...accordionScrollProps('reserve')} title={t('option_reserve')} icon={<ConfiguratorOptionIcon src="/icons/reserve.svg" />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
         <ReserveOptionCard
           rule={reserveRule}
@@ -4486,7 +4493,18 @@ function PanelStepActions({ previousLabel, nextLabel, onPrevious, onNext }) {
   );
 }
 
-function HeaderCartMenu({ items, catalog, selectedId, total, salonLabel, readOnly, onSelectItem, onOpenItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onValidate }) {
+function PackAllowanceSummary({ pricing }) {
+  if (pricing?.packBenefits?.mode !== 'allowance') return null;
+  return <section className="pack-allowance-summary" aria-label="Forfait accessoires">
+    <div><span>Total avant forfait</span><b>{validationMoney(pricing.grossTotal || 0, true)} € HT</b></div>
+    <div><span>Forfait offert : {validationMoney(pricing.allowanceAmount || 0)} € HT</span><b>− {validationMoney(pricing.allowanceApplied || 0, true)} €</b></div>
+    <div><span>Solde disponible</span><b>{validationMoney(pricing.allowanceRemaining || 0, true)} € HT</b></div>
+    <div><span>Supplément à payer</span><b>{validationMoney(pricing.total || 0, true)} € HT</b></div>
+    <small>Objets et options inclus dans le forfait, hors assurance. Solde non remboursable.</small>
+  </section>;
+}
+
+function HeaderCartMenu({ items, catalog, selectedId, total, pricing, salonLabel, readOnly, onSelectItem, onOpenItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onValidate }) {
   const t = useT();
   const itemRefs = useRef(new Map());
   const [cartOpen, setCartOpen] = useState(false);
@@ -4585,6 +4603,7 @@ function HeaderCartMenu({ items, catalog, selectedId, total, salonLabel, readOnl
             })}
           </div>
 
+          <PackAllowanceSummary pricing={pricing} />
           <button type="button" className="cart-validate-button" onClick={() => { setCartOpen(false); onValidate?.(); }}>
             Valider le panier
           </button>
@@ -6659,6 +6678,8 @@ function ValidationStepPanel({
         <span>Total options et mobilier</span>
         <strong>{validationMoney(pricing?.total || 0, true)} € HT</strong>
       </section>
+
+      <PackAllowanceSummary pricing={pricing} />
 
       {insuranceLine && (
         <section className="validation-modern-insurance-card">
@@ -8941,12 +8962,12 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
     }
   };
 
-  const saveBasePack = async (offer, baseItems) => {
+  const saveBasePack = async (offer, baseItems, packBenefits) => {
     setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: offer?.name || '', deletingPresetId: '', message: '', error: '' });
     try {
-      const savedOffer = await saveSalonOfferBaseItems(offer, baseItems);
+      const savedOffer = await saveSalonOfferBaseItems(offer, baseItems, packBenefits);
       setBasePackEditor(null);
-      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Pack de base ${savedOffer.name} sauvegardé.`, error: '' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Avantages du pack ${savedOffer.name} sauvegardés.`, error: '' });
       await onSalonChanged?.();
     } catch (error) {
       setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible de sauvegarder le pack de base.' });
@@ -9052,6 +9073,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
                 Monday : {entry.source?.board_id ? `board ${entry.source.board_id}` : 'aucun board'}
                 {entry.source?.mapping?.salon_from_group && ` · Groupe : ${selectedSalon.name}`}
               </small>
+              {entry.offer?.metadata?.packBenefits?.mode === 'allowance' && <small className="preset-board-line">Forfait accessoires offert : {validationMoney(entry.offer.metadata.packBenefits.allowanceAmount || 0)} € HT</small>}
               <fieldset className="preset-pack-actions" disabled={Boolean(deletingGlobalPack)}>
                 {entry.active ? (
                   <>
@@ -9062,7 +9084,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
                       {entry.source?.board_id ? 'Modifier board' : 'Ajouter board ID'}
                     </button>
                     <button type="button" disabled={actionState.savingBasePack === entry.packName} onClick={() => openBasePackEditor(entry)}>
-                      Pack de base
+                      Objets inclus / forfait
                     </button>
                     <button className="danger" type="button" disabled={actionState.deletingPresetId === (entry.offer?.id || entry.source?.id || entry.packName)} onClick={() => removePreset(entry)}>
                       {actionState.deletingPresetId === (entry.offer?.id || entry.source?.id || entry.packName) ? 'Suppression...' : 'Retirer de ce salon'}
@@ -9077,7 +9099,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
                       {entry.source?.board_id ? 'Modifier board' : 'Ajouter board ID'}
                     </button>
                     <button type="button" disabled={actionState.loadingPack === entry.packName} onClick={() => openBasePackEditor(entry)}>
-                      Pack de base
+                      Objets inclus / forfait
                     </button>
                     {entry.source && (
                       <button className="danger" type="button" disabled={actionState.deletingPresetId === (entry.offer?.id || entry.source?.id || entry.packName)} onClick={() => removePreset(entry)}>
@@ -9137,7 +9159,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
           assets={assets}
           saving={actionState.savingBasePack === basePackEditor.offer?.name}
           onClose={() => setBasePackEditor(null)}
-          onSave={(baseItems) => saveBasePack(basePackEditor.offer, baseItems)}
+          onSave={(baseItems, benefits) => saveBasePack(basePackEditor.offer, baseItems, benefits)}
         />
       )}
     </section>
@@ -9214,9 +9236,11 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
     return sortCatalogEntries(uniqueCatalogEntries(all)).filter((entry) => isBasePackEligible(entry));
   }, [assets, salon?.name]);
   const [quantities, setQuantities] = useState(() => baseItemsToQuantityMap(offer?.metadata?.baseItems));
+  const [benefits, setBenefits] = useState(() => normalizePackBenefits(offer?.metadata?.packBenefits || { mode: /^signature$/i.test(offer?.name || '') ? 'allowance' : 'included-items' }));
 
   useEffect(() => {
     setQuantities(baseItemsToQuantityMap(offer?.metadata?.baseItems));
+    setBenefits(normalizePackBenefits(offer?.metadata?.packBenefits || { mode: /^signature$/i.test(offer?.name || '') ? 'allowance' : 'included-items' }));
   }, [offer?.id, offer?.metadata?.baseItems]);
 
   const updateQuantity = (type, nextQuantity) => {
@@ -9234,7 +9258,7 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
         quantity: Number(quantities[entry.type] || 0),
       }))
       .filter((item) => item.quantity > 0);
-    onSave(baseItems);
+    onSave(baseItems, benefits);
   };
 
   return (
@@ -9242,18 +9266,34 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
       <aside className="asset-drawer base-pack-drawer">
         <header>
           <div>
-            <h2>Pack de base</h2>
+            <h2>Objets inclus / forfait</h2>
             <span>{salon?.name} · {offer?.name}</span>
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
         </header>
 
-        <div className="base-pack-help">
-          Ces quantités sont incluses dans la formule, sans poser les objets sur la scène.
-          Elles sont communes à toutes les implantations du pack.
+        <div className="pack-benefits-settings">
+          <label>Fonctionnement du pack
+            <select value={benefits.mode} onChange={(event) => setBenefits((current) => ({ ...current, mode: event.target.value }))}>
+              <option value="included-items">Objets inclus</option>
+              <option value="allowance">Forfait accessoires offert</option>
+            </select>
+          </label>
+          {benefits.mode === 'allowance' && <>
+            <label>Montant offert (€ HT)
+              <input type="number" min="0" step="0.01" value={benefits.allowanceAmount} onChange={(event) => setBenefits((current) => ({ ...current, allowanceAmount: event.target.value }))} />
+            </label>
+            <p>Tous les objets et options sont couverts, hors assurance. Aucun objet du pack de base n’est placé automatiquement. Seul le dépassement est facturé ; le solde inutilisé n’est pas remboursé.</p>
+            <p>Après sauvegarde, synchronisez Monday pour appliquer ce fonctionnement aux scènes non confirmées. Les scènes déjà confirmées conservent leur forfait.</p>
+          </>}
         </div>
 
-        <div className="base-pack-list">
+        {benefits.mode === 'included-items' && <div className="base-pack-help">
+          Ces quantités sont incluses dans la formule, sans poser les objets sur la scène.
+          Elles sont communes à toutes les implantations du pack.
+        </div>}
+
+        {benefits.mode === 'included-items' && <div className="base-pack-list">
           {entries.map((entry) => {
             const Icon = entry.icon || Box;
             const quantity = Number(quantities[entry.type] || 0);
@@ -9276,12 +9316,12 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
               </article>
             );
           })}
-        </div>
+        </div>}
 
         <footer>
           <button type="button" className="asset-delete" onClick={onClose}>Annuler</button>
           <button type="button" className="asset-save" disabled={saving} onClick={save}>
-            {saving ? 'Sauvegarde...' : 'Sauvegarder le pack de base'}
+            {saving ? 'Sauvegarde...' : 'Sauvegarder'}
           </button>
         </footer>
       </aside>
@@ -12773,7 +12813,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const autoSpotsRule = options.autoSpotsRule || null;
   const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, salonLabel, options.reserveOptions || {})
     .map((item) => applyReserveItemOverride(item, options.reserveItemOverrides || {}, width, depth, layout, options.carpetFootprintEnabled !== false));
-  const ledItems = options.ledRailsEnabled === false
+  const ledItems = scenePackBenefits(scene).mode === 'allowance' || options.ledRailsEnabled === false
     ? []
     : hasAutoSpotsRule(autoSpotsRule)
       ? makeAutomaticSpotItems(autoSpotsRule, catalogEntries, width, depth, layout, [...automaticReserveItems, ...manualItems])
@@ -12811,7 +12851,7 @@ function scenePurchaseOrder(scene = {}, assets = []) {
   const sourceLines = savedLines.length
     ? enrichPurchaseOrderLinesWithFallback(savedLines, fallbackPricing.lines)
     : fallbackPricing.lines;
-  const lines = normalizePurchaseOrderLines(sourceLines, catalogEntries);
+  const lines = normalizePurchaseOrderLines(withPackAllowance(sourceLines, scenePackBenefits(scene)), catalogEntries);
   const total = lines.reduce((sum, line) => sum + line.total, 0);
   return { lines, total: roundCurrency(total), header: purchaseOrderHeaderInfo(scene) };
 }
@@ -12859,8 +12899,9 @@ function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
     .map((line) => {
       const entry = findCatalogEntry(catalogEntries, line.type);
       const quantity = Math.max(0, Number(line.quantity || line.qty || 0));
-      const total = Math.max(0, roundCurrency(line.total ?? line.price ?? 0));
-      const unitPrice = Math.max(0, roundCurrency(line.unitPrice ?? line.unit_price ?? (quantity ? total / quantity : 0)));
+      const isAllowance = line.type === packAllowanceLineType;
+      const total = (isAllowance ? Math.min : Math.max)(0, roundCurrency(line.total ?? line.price ?? 0));
+      const unitPrice = (isAllowance ? Math.min : Math.max)(0, roundCurrency(line.unitPrice ?? line.unit_price ?? (quantity ? total / quantity : 0)));
       const optionLines = uniqueTextValues(Array.isArray(line.optionLines) ? line.optionLines : []);
       const baseLabel = purchaseOrderBaseLabel(line.label || entry?.label || line.type || 'Lot AMCO');
       return {
@@ -12873,7 +12914,7 @@ function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
         total: total || unitPrice * quantity,
       };
     })
-    .filter((line) => line.quantity > 0 && line.total > 0);
+    .filter((line) => line.quantity > 0 && (line.total > 0 || (line.type === packAllowanceLineType && line.total < 0)));
 }
 
 function purchaseOrderBaseLabel(label = '') {
@@ -13105,8 +13146,18 @@ function wrapPdfText(text = '', maxWidth = 300, font, fontSize = 12) {
   return lines;
 }
 
+function purchaseOrderTemplateRows(lines = []) {
+  const allowanceLine = lines.find((line) => line.type === packAllowanceLineType);
+  if (!allowanceLine || lines.length <= 15) return lines;
+  const regularLines = lines.filter((line) => line.type !== packAllowanceLineType);
+  const remainingTotal = roundCurrency(regularLines.slice(13).reduce((sum, line) => sum + Number(line.total || 0), 0));
+  return [...regularLines.slice(0, 13), {
+    label: 'Autres accessoires et options', quantity: 1, unitPrice: remainingTotal, total: remainingTotal,
+  }, allowanceLine];
+}
+
 async function fillPurchaseOrderTemplate(order = {}) {
-  const rows = order.lines?.length ? order.lines : [];
+  const rows = purchaseOrderTemplateRows(order.lines || []);
   const response = await fetch('/templates/bon-commande-template.pdf');
   if (!response.ok) throw new Error('Template bon de commande introuvable.');
   const pdfDoc = await PDFDocument.load(await response.arrayBuffer());
@@ -13185,8 +13236,10 @@ function purchaseOrderTemplateFieldMap(form) {
       total: fields[3]?.name,
     }));
 
+  const rowYs = widgets.filter((widget) => rows.some((row) => row.description === widget.name)).map((widget) => widget.y);
+  const lastRowY = rowYs.length ? Math.min(...rowYs) : 380;
   const totals = widgets
-    .filter((widget) => widget.x > 450 && widget.y > 300 && widget.y < 380 && widget.width > 40)
+    .filter((widget) => widget.x > 450 && widget.y > lastRowY - 100 && widget.y < lastRowY - 3 && widget.width > 40)
     .sort((a, b) => b.y - a.y);
 
   return {
@@ -13928,6 +13981,7 @@ function isFurniturePanelType(item) {
 }
 
 function sceneBaseItems(scene) {
+  if (scenePackBenefits(scene).mode === 'allowance') return [];
   const baseItems = scene?.source_payload?.baseItems
     || scene?.source_payload?.base_items
     || scene?.source_payload?.pricing?.baseItems
@@ -13978,6 +14032,7 @@ function isBasePackEligible(entry) {
 }
 
 function sceneReserveRules(scene = {}) {
+  if (scenePackBenefits(scene).mode === 'allowance') return normalizeReserveRules({});
   return normalizeReserveRules(
     scene?.source_payload?.reserveRules
     || scene?.source_payload?.reserve_rules
@@ -14079,6 +14134,7 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
 }
 
 function scenePartitionHeadRules(scene = {}) {
+  if (scenePackBenefits(scene).mode === 'allowance') return normalizePartitionHeadRules({});
   return normalizePartitionHeadRules(
     scene?.source_payload?.partitionHeadRules
     || scene?.source_payload?.partition_head_rules
@@ -14398,6 +14454,12 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     }
   }
 
+  const allowance = packAllowanceBreakdown(itemsTotal, scenePackBenefits(scene));
+  const grossAccessoriesTotal = itemsTotal;
+  if (allowance.allowanceLine) {
+    itemsTotal -= allowance.allowanceApplied;
+    lines.push(allowance.allowanceLine);
+  }
   const insuranceLine = furnitureInsuranceLine(furnitureInsuranceBase);
   if (insuranceLine) {
     itemsTotal += insuranceLine.total;
@@ -14405,6 +14467,8 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
   }
 
   return {
+    ...allowance,
+    grossTotal: roundCurrency(basePrice + grossAccessoriesTotal + Number(insuranceLine?.total || 0)),
     basePrice,
     baseItems,
     baseUsage,
@@ -14427,6 +14491,7 @@ function pricingLineLabelForItems(items = [], entry = {}, fallbackType = '') {
 }
 
 function wallCoverIncludedLinearMeters(scene = {}) {
+  if (scenePackBenefits(scene).mode === 'allowance') return 0;
   const boardId = String(scene.source_payload?.board_id || scene.source_payload?.boardId || scene.monday_board_id || '');
   const key = normalizeTextValue([
     scene.offer,
