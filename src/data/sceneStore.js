@@ -192,9 +192,22 @@ function applyPresetDefaultColorOptions(row) {
   const presetAutoSpotsRule = row.stand_presets?.base_config?.autoSpotsRule
     || row.stand_presets?.base_config?.options?.autoSpotsRule
     || null;
+  const presetReserveRules = row.stand_presets?.base_config?.reserveRules
+    || row.stand_presets?.base_config?.options?.reserveRules
+    || null;
+  const currentReserveRules = sourcePayload.reserveRules || sourcePayload.pricing?.reserveRules || null;
+  const hasCurrentReserveRules = currentReserveRules && Object.values(currentReserveRules).some((rule) => (
+    rule?.includedType
+    || rule?.included_type
+    || (Array.isArray(rule?.options) && rule.options.some((option) => option?.type))
+  ));
 
   if (scenePackBenefits(row).mode === 'allowance') {
     sourcePayload.options = { ...(sourcePayload.options || {}), autoSpotsRule: null, ledRailsEnabled: false };
+    if (!hasCurrentReserveRules && presetReserveRules && typeof presetReserveRules === 'object') {
+      sourcePayload.reserveRules = presetReserveRules;
+      sourcePayload.pricing = { ...(sourcePayload.pricing || {}), reserveRules: presetReserveRules };
+    }
   }
   if ((!presetDefaults || typeof presetDefaults !== 'object') && !presetAutoSpotsRule) return sourcePayload;
 

@@ -7219,7 +7219,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
   const t = useT();
   const [formulaOpen, setFormulaOpen] = useState(false);
   const rows = reserveChoiceRows(rule, catalog, salonLabel);
-  const includedRow = rows.find((row) => row.included) || null;
+  const includedRow = rows.find((row) => row.included && !row.billable) || null;
   const noneSelected = selectedOptionType === '__none__';
 
   if (!rule?.includedType && !rows.length) {
@@ -7254,8 +7254,8 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
                 <strong>{row.sizeName} <b>{row.areaLabel}</b></strong>
                 <small>{row.description}</small>
               </span>
-              <span className={row.included ? 'reserve-choice-price included' : 'reserve-choice-price'}>
-                {row.included ? t('reserve_included') : `+ ${row.price.toLocaleString('fr-FR')} €`}
+              <span className={row.included && !row.billable ? 'reserve-choice-price included' : 'reserve-choice-price'}>
+                {row.included && !row.billable ? t('reserve_included') : `+ ${row.price.toLocaleString('fr-FR')} €`}
               </span>
             </button>
           );
@@ -7346,7 +7346,14 @@ function reserveChoiceRows(rule, catalog = [], salonLabel = '') {
   const rows = [];
   if (rule?.includedType) {
     const entry = findCatalogEntry(catalog, rule.includedType);
-    rows.push(reserveChoiceRow({ type: rule.includedType, label: rule.includedLabel, entry, included: true, price: 0 }));
+    rows.push(reserveChoiceRow({
+      type: rule.includedType,
+      label: rule.includedLabel,
+      entry,
+      included: true,
+      billable: Boolean(rule.chargeIncluded),
+      price: rule.chargeIncluded ? reserveOptionPrice({}, entry, salonLabel) : 0,
+    }));
   }
 
   normalizeComplementaryOptions(rule?.options || []).forEach((option) => {
@@ -7365,13 +7372,14 @@ function reserveChoiceRows(rule, catalog = [], salonLabel = '') {
     .sort((a, b) => a.area - b.area || Number(b.included) - Number(a.included));
 }
 
-function reserveChoiceRow({ type, label, entry, included = false, price = 0 }) {
+function reserveChoiceRow({ type, label, entry, included = false, billable = false, price = 0 }) {
   const fullLabel = label || entry?.label || 'Réserve';
   const area = reserveAreaFromText(`${fullLabel} ${type}`);
   return {
     key: included ? `included-${type}` : `option-${type}`,
     type,
     included,
+    billable,
     price: Math.max(0, Number(price || 0)),
     area,
     areaLabel: area ? `${formatAreaValue(area)} m²` : '',
@@ -9647,6 +9655,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           rules={reserveRules}
           entries={availableCatalog.filter(isReserveCatalogEntry)}
           salonLabel={salon.name}
+          allowanceMode={normalizePackBenefits(offer?.metadata?.packBenefits).mode === 'allowance'}
           onChange={setReserveRules}
         />
         <PresetPartitionHeadRulesEditor
@@ -9749,7 +9758,7 @@ function presetDefaultColorIds(preset = {}) {
   };
 }
 
-function PresetReserveRulesEditor({ rules, entries, salonLabel, onChange }) {
+function PresetReserveRulesEditor({ rules, entries, salonLabel, allowanceMode = false, onChange }) {
   const updateBand = (bandId, patch) => {
     onChange(normalizeReserveRules({
       ...(rules || {}),
@@ -9770,7 +9779,9 @@ function PresetReserveRulesEditor({ rules, entries, salonLabel, onChange }) {
   return (
     <section className="preset-reserve-rules">
       <h4>Réserves automatiques</h4>
-      <p>Ces règles sont propres à cette implantation. Les options complémentaires remplacent la réserve incluse et facturent le supplément indiqué.</p>
+      <p>{allowanceMode
+        ? 'Ces règles sont propres à cette implantation. La réserve proposée par défaut et ses alternatives sont déduites du forfait accessoires.'
+        : 'Ces règles sont propres à cette implantation. Les options complémentaires remplacent la réserve incluse et facturent le supplément indiqué.'}</p>
       {!entries.length && <div className="preset-reserve-empty">Aucun groupe/objet réserve disponible pour ce salon.</div>}
       {reserveRuleBands.map((band) => {
         const rule = rules?.[band.id] || {};
@@ -9778,7 +9789,7 @@ function PresetReserveRulesEditor({ rules, entries, salonLabel, onChange }) {
           <article key={band.id}>
             <strong>{band.label}</strong>
             <label>
-              Réserve incluse
+              {allowanceMode ? 'Réserve proposée par défaut' : 'Réserve incluse'}
               <select value={rule.includedType || ''} onChange={(event) => {
                 const entry = entries.find((item) => item.type === event.target.value);
                 updateBand(band.id, { includedType: event.target.value, includedLabel: entry?.label || band.includedLabel });
@@ -14045,8 +14056,7 @@ function isBasePackEligible(entry) {
 }
 
 function sceneReserveRules(scene = {}) {
-  if (scenePackBenefits(scene).mode === 'allowance') return normalizeReserveRules({});
-  return normalizeReserveRules(
+  const normalized = normalizeReserveRules(
     scene?.source_payload?.reserveRules
     || scene?.source_payload?.reserve_rules
     || scene?.source_payload?.pricing?.reserveRules
@@ -14054,6 +14064,8 @@ function sceneReserveRules(scene = {}) {
     || scene?.source_payload?.options?.reserveRules
     || {},
   );
+  if (scenePackBenefits(scene).mode !== 'allowance') return normalized;
+  return Object.fromEntries(Object.entries(normalized).map(([bandId, rule]) => [bandId, { ...rule, chargeIncluded: true }]));
 }
 
 function normalizeReserveRules(rules = {}, config = {}) {
@@ -14070,6 +14082,7 @@ function normalizeReserveRules(rules = {}, config = {}) {
       maxArea: band.maxArea,
       includedType: source.includedType || source.included_type || '',
       includedLabel: source.includedLabel || source.included_label || band.includedLabel,
+      chargeIncluded: Boolean(source.chargeIncluded || source.charge_included),
       options: normalizeComplementaryOptions(source.options || source.complementaryOptions || source.complementary_options || legacyOption, { keepEmpty: keepEmptyOptions }),
     };
     return acc;
@@ -14117,13 +14130,13 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
   const entry = findCatalogEntry(catalogEntries, type);
   if (!entry) return [];
 
-  const billable = Boolean(selectedOption);
-  const unitPrice = billable ? reserveOptionPrice(selectedOption, entry, salonLabel) : 0;
+  const billable = Boolean(selectedOption || rule.chargeIncluded);
+  const unitPrice = billable ? reserveOptionPrice(selectedOption || {}, entry, salonLabel) : 0;
   const base = makeItem(type, width, depth, layout, entry);
   const item = constrainItem({
     ...base,
     id: `auto-reserve-${rule.id}`,
-    label: billable
+    label: selectedOption
       ? (selectedOption.label || entry.label || 'Réserve complémentaire')
       : (rule.includedLabel || entry.label || 'Réserve incluse'),
     autoReserve: true,

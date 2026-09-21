@@ -277,7 +277,9 @@ Deno.serve(async (req) => {
       const defaultOptions = presetDefaultOptions(preset);
       const scene = {
         ...sceneDraft,
-        base_preset_id: hasAllowance ? null : preset?.id || null,
+        // Allowance packs still use the preset for automatic choices such as reserves;
+        // only the preset's included scene objects are skipped below.
+        base_preset_id: preset?.id || null,
         source_payload: {
           ...(sceneDraft.source_payload || {}),
           options: {
@@ -287,13 +289,13 @@ Deno.serve(async (req) => {
           },
           baseItems,
           packBenefits,
-          reserveRules: hasAllowance ? {} : presetReserveRules(preset),
+          reserveRules: presetReserveRules(preset),
           partitionHeadRules: hasAllowance ? {} : presetPartitionHeadRules(preset),
           pricing: {
             ...((sceneDraft.source_payload || {}).pricing || {}),
             baseItems,
             packBenefits,
-            reserveRules: hasAllowance ? {} : presetReserveRules(preset),
+            reserveRules: presetReserveRules(preset),
             partitionHeadRules: hasAllowance ? {} : presetPartitionHeadRules(preset),
           },
         },

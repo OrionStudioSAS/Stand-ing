@@ -41,6 +41,13 @@ test('Monday fetches the configurable allowance without base quotas; other packs
   assert.equal(withoutOffer.packBenefits.mode, 'included-items');
 });
 
+test('allowance scene creation keeps preset reserve rules without restoring included preset objects', () => {
+  assert.match(edgeSource, /base_preset_id:\s*preset\?\.id\s*\|\|\s*null/);
+  assert.match(edgeSource, /reserveRules:\s*presetReserveRules\(preset\)/);
+  assert.doesNotMatch(edgeSource, /reserveRules:\s*hasAllowance\s*\?\s*\{\}/);
+  assert.match(edgeSource, /if\s*\(!hasAllowance\s*&&\s*savedScene\?\.id\s*&&\s*preset\?\.stand_preset_items\?\.length\)/);
+});
+
 test('a shared pack board only imports the groups of its configured salon', () => {
   const api = runtime();
   const items = [

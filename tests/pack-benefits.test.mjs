@@ -140,6 +140,42 @@ test('allowance scenes cannot regain automatic pack LEDs from preset defaults on
   assert.equal(result.options.autoSpotsRule, null);
 });
 
+test('allowance scenes inherit automatic reserve rules and charge the default reserve against the allowance', () => {
+  const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
+  const presetReserveRules = { small: { includedType: 'reserve-2m2', includedLabel: 'Réserve 2 m²', options: [] } };
+  const storeApi = vm.createContext({ scenePackBenefits });
+  for (const name of ['applyPresetDefaultColorOptions', 'mergePresetDefaultsIntoDraftOptions']) loadFunction(storeApi, storeSource, name);
+  const sourcePayload = storeApi.applyPresetDefaultColorOptions({
+    client_status: 'draft',
+    source_payload: { packBenefits: { mode: 'allowance', allowanceAmount: 1600 }, reserveRules: {} },
+    stand_presets: { base_config: { reserveRules: presetReserveRules } },
+  });
+  assert.equal(sourcePayload.reserveRules.small.includedType, 'reserve-2m2');
+  assert.equal(sourcePayload.pricing.reserveRules.small.includedType, 'reserve-2m2');
+
+  const reserveRuleBands = [{ id: 'small', label: 'Petit stand', minArea: 0, maxArea: 20, includedLabel: 'Réserve' }];
+  const api = vm.createContext({ scenePackBenefits, reserveRuleBands });
+  for (const name of ['normalizeComplementaryOptions', 'normalizeReserveRules', 'sceneReserveRules']) loadFunction(api, appSource, name);
+  const rules = api.sceneReserveRules({
+    source_payload: { packBenefits: { mode: 'allowance', allowanceAmount: 1600 }, reserveRules: presetReserveRules },
+  });
+  assert.equal(rules.small.includedType, 'reserve-2m2');
+  assert.equal(rules.small.chargeIncluded, true);
+
+  const itemApi = vm.createContext({
+    normalizeComplementaryOptions: api.normalizeComplementaryOptions,
+    findCatalogEntry: (_catalog, type) => ({ type, label: 'Réserve 2 m²', price: 450 }),
+    reserveOptionPrice: (_option, entry) => entry.price,
+    makeItem: (type) => ({ type, options: {} }),
+    constrainItem: (item) => item,
+  });
+  loadFunction(itemApi, appSource, 'makeAutomaticReserveItems');
+  const [reserve] = itemApi.makeAutomaticReserveItems(rules.small, '', [], 5, 4, 'back', 'SITL 2027', {});
+  assert.equal(reserve.included, false);
+  assert.equal(reserve.priceMode, 'billable');
+  assert.equal(reserve.options.unitPrice, 450);
+});
+
 test('a full BDC still displays the allowance within its 15 template rows and retains the correct sum', () => {
   const api = vm.createContext({ packAllowanceLineType, roundCurrency: (value) => Math.round(value * 100) / 100 });
   loadFunction(api, appSource, 'purchaseOrderTemplateRows');
