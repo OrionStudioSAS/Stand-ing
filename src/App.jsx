@@ -51,6 +51,7 @@ import { carpetColors, wallFabricColors } from './config/colorOptions.js';
 import { createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
 import { createTechnicalPlanBlob, exportTechnicalPng } from './technicalExport.js';
+import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
 
@@ -4586,7 +4587,7 @@ function HeaderCartMenu({ items, catalog, selectedId, total, pricing, salonLabel
                   onClick={() => openCartItem(item)}
                 >
                   <button type="button" className="cart-item-main" onClick={(event) => { event.stopPropagation(); openCartItem(item); }}>
-                    <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
+                    <CartItemThumb item={item} entry={entry} catalog={catalog} />
                     <span className="cart-item-copy">
                       <strong>{itemCartLabel(item)}</strong>
                       <small>Quantité : {group.items.length}</small>
@@ -4706,7 +4707,7 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
                   onClick={() => openCartItem(item)}
                 >
                   <button type="button" className="cart-item-main" onClick={(event) => { event.stopPropagation(); openCartItem(item); }}>
-                    <span className="cart-item-thumb">{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Box size={22} />}</span>
+                    <CartItemThumb item={item} entry={entry} catalog={catalog} />
                     <span className="cart-item-copy">
                       <strong>{itemCartLabel(item)}</strong>
                       <small>Quantité : {group.items.length}</small>
@@ -4743,6 +4744,20 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
         </div>
       )}
     </div>
+  );
+}
+
+function CartItemThumb({ item = {}, entry = {}, catalog = [] }) {
+  const imageUrl = validationItemImage(item, entry, catalog);
+  const displayUrl = useRecoloredImageUrl(
+    imageUrl,
+    item?.options?.variantColorImageReplaceColor || '',
+    item?.options?.variantColorTargetHex || '',
+  );
+  return (
+    <span className="cart-item-thumb">
+      {displayUrl ? <img src={displayUrl} alt="" /> : <Box size={22} />}
+    </span>
   );
 }
 
@@ -4851,6 +4866,8 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     : null;
   const selectedBatColor = Object.values(resolvedColorSelections).find((color) => color?.batPictoUrl || color?.batPictoPath) || null;
   const selectedVariantMeta = variantGroupMetaForType(catalogEntry, selectedVariant?.assetType);
+  const selectedTemplateColor = Object.values(resolvedColorSelections).find((color) => normalizeHexColor(color?.hex || color?.color || color?.value));
+  const selectedTemplateColorHex = normalizeHexColor(selectedTemplateColor?.hex || selectedTemplateColor?.color || selectedTemplateColor?.value);
   const selectedOptionReferences = extraOptions
     .filter((option) => Boolean(selectedExtras[option.id]))
     .map((option) => ({
@@ -5018,10 +5035,13 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
         resolvedObjectReference: assetReference(resolvedEntry, salonLabel),
         variantImageUrl: selectedVariant?.imageUrl,
         variantAssetType: resolvedEntry?.type || selectedVariant?.assetType,
-        variantBatPictoUrl: selectedVariantColorMeta?.batPictoUrl || selectedTextureSlotColorMeta?.batPictoUrl || selectedCounterColorMeta?.batPictoUrl || selectedBatColor?.batPictoUrl || selectedVariantMeta?.batPictoUrl || '',
-        variantBatPictoPath: selectedVariantColorMeta?.batPictoPath || selectedTextureSlotColorMeta?.batPictoPath || selectedCounterColorMeta?.batPictoPath || selectedBatColor?.batPictoPath || selectedVariantMeta?.batPictoPath || '',
-        variantColorImageUrl: selectedVariantColorMeta?.itemImageUrl || '',
-        variantColorImagePath: selectedVariantColorMeta?.itemImagePath || '',
+        variantBatPictoUrl: selectedVariantMeta?.batPictoUrl || selectedVariantColorMeta?.batPictoUrl || selectedTextureSlotColorMeta?.batPictoUrl || selectedCounterColorMeta?.batPictoUrl || selectedBatColor?.batPictoUrl || '',
+        variantBatPictoPath: selectedVariantMeta?.batPictoPath || selectedVariantColorMeta?.batPictoPath || selectedTextureSlotColorMeta?.batPictoPath || selectedCounterColorMeta?.batPictoPath || selectedBatColor?.batPictoPath || '',
+        variantBatPictoReplaceColor: normalizeHexColor(selectedVariantMeta?.batPictoReplaceColor || ''),
+        variantColorImageUrl: selectedVariantMeta?.itemImageUrl || selectedVariantColorMeta?.itemImageUrl || '',
+        variantColorImagePath: selectedVariantMeta?.itemImagePath || selectedVariantColorMeta?.itemImagePath || '',
+        variantColorImageReplaceColor: normalizeHexColor(selectedVariantMeta?.itemImageReplaceColor || ''),
+        variantColorTargetHex: selectedTemplateColorHex,
         variantBatDescription: catalogEntry.dimensions?.batDescription || resolvedEntry?.dimensions?.batDescription || '',
         extraOptions: selectedExtras,
         globalExtraOptions,
@@ -6750,10 +6770,10 @@ function ValidationModernSection({ title, children }) {
   );
 }
 
-function ValidationModernRow({ label, detail, imageUrl, swatchColor, swatchImage, badge, badgeTone = 'included', visualStatus = null, option = false, onRemove = null, onOpen = null }) {
+function ValidationModernRow({ label, detail, imageUrl, imageReplaceColor, imageTargetColor, swatchColor, swatchImage, badge, badgeTone = 'included', visualStatus = null, option = false, onRemove = null, onOpen = null }) {
   return (
     <article className={`validation-modern-row ${option ? 'option' : ''} ${onOpen ? 'clickable' : ''}`} onClick={onOpen || undefined}>
-      {!option && <ValidationModernThumb imageUrl={imageUrl} color={swatchColor} image={swatchImage} />}
+      {!option && <ValidationModernThumb imageUrl={imageUrl} imageReplaceColor={imageReplaceColor} imageTargetColor={imageTargetColor} color={swatchColor} image={swatchImage} />}
       <div className="validation-modern-row-copy">
         <strong>{label}</strong>
         {detail && <span>{detail}</span>}
@@ -6769,10 +6789,27 @@ function ValidationModernRow({ label, detail, imageUrl, swatchColor, swatchImage
   );
 }
 
-function ValidationModernThumb({ imageUrl = '', color = '#bdbdbd', image = '' }) {
-  if (imageUrl) return <span className="validation-modern-thumb"><img src={imageUrl} alt="" /></span>;
+function ValidationModernThumb({ imageUrl = '', imageReplaceColor = '', imageTargetColor = '', color = '#bdbdbd', image = '' }) {
+  const recoloredUrl = useRecoloredImageUrl(imageUrl, imageReplaceColor, imageTargetColor);
+  if (recoloredUrl) return <span className="validation-modern-thumb"><img src={recoloredUrl} alt="" /></span>;
   if (image) return <span className="validation-modern-thumb"><img src={image} alt="" /></span>;
   return <span className="validation-modern-thumb" style={{ background: color || '#bdbdbd' }} />;
+}
+
+function useRecoloredImageUrl(imageUrl = '', sourceColor = '', targetColor = '') {
+  const [resolvedUrl, setResolvedUrl] = useState(imageUrl);
+
+  useEffect(() => {
+    let cancelled = false;
+    setResolvedUrl(imageUrl);
+    if (!imageUrl || !normalizeHexColor(sourceColor) || !normalizeHexColor(targetColor)) return () => { cancelled = true; };
+    recolorImageUrl(imageUrl, sourceColor, targetColor).then((url) => {
+      if (!cancelled) setResolvedUrl(url || imageUrl);
+    });
+    return () => { cancelled = true; };
+  }, [imageUrl, sourceColor, targetColor]);
+
+  return resolvedUrl;
 }
 
 function ValidationOptionLine({ label, value, tone = 'green' }) {
@@ -6933,6 +6970,8 @@ function validationRowFromItem({ item, entry, amount = 0, included = false, read
     label: itemCartLabel(item),
     detail: optionLines.slice(0, 2).join(' · '),
     imageUrl: validationItemImage(item, entry, catalog),
+    imageReplaceColor: item?.options?.variantColorImageReplaceColor || '',
+    imageTargetColor: item?.options?.variantColorTargetHex || '',
     badge: included ? 'Inclus' : validationBadgeText(amount),
     badgeTone: included ? 'included' : 'price',
     visualStatus: needsVisual ? validationVisualStatus(visualPending || missingTextureRequest?.pending, hasCustomImage || textureRequests.some((request) => request.hasImage)) : null,
@@ -10752,6 +10791,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   const draftDeleteLocked = Boolean(draft.dimensions?.deleteLocked);
   const draftRotationLocked = Boolean(draft.dimensions?.rotationLocked);
   const draftConfigOptions = normalizeAssetConfigOptions(draft.dimensions?.configOptions);
+  const variantColorTemplatesEnabled = draftConfigOptions.some((option) => option.type === 'color' && option.colorGroupType);
   const draftTextureSlots = normalizeTextureSlots(draft.dimensions?.textureSlots);
   const [variantAssetTypes, setVariantAssetTypes] = useState(() => variantPrimaryAssetTypes(draft));
   const [variantOptionLinks, setVariantOptionLinks] = useState(() => draft.dimensions?.variantOptionLinks || []);
@@ -11134,46 +11174,16 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     }
   };
 
-  const updateVariantColorMeta = (optionId, colorId, patch) => {
-    if (!optionId || !colorId) return;
-    const colorKey = normalizeColorId(colorId);
-    setVariantColorMeta((current) => ({
-      ...current,
-      [optionId]: {
-        ...(current[optionId] || {}),
-        [colorKey]: {
-          ...(current[optionId]?.[colorKey] || {}),
-          ...patch,
-        },
-      },
-    }));
-  };
-
-  const changeVariantColorBatPicto = async (optionId, colorId, file) => {
-    if (!optionId || !colorId || !file) return;
+  const changeVariantItemImage = async (assetType, file) => {
+    if (!assetType || !file) return;
     setBatPictoUploading(true);
     setBatPictoError('');
     try {
-      const scope = `variant-color-${slugForType(optionId)}-${slugForType(colorId)}`;
-      const updated = await uploadObjectAssetBatPicto(draft, file, scope);
-      updateVariantColorMeta(optionId, colorId, { batPictoUrl: updated.dimensions?.batPictoUrl || '', batPictoPath: updated.dimensions?.batPictoPath || '' });
-    } catch (error) {
-      setBatPictoError(error.message || 'Upload du picto couleur variante impossible.');
-    } finally {
-      setBatPictoUploading(false);
-    }
-  };
-
-  const changeVariantColorItemImage = async (optionId, colorId, file) => {
-    if (!optionId || !colorId || !file) return;
-    setBatPictoUploading(true);
-    setBatPictoError('');
-    try {
-      const scope = `variant-color-${slugForType(optionId)}-${slugForType(colorId)}`;
+      const scope = `variant-${slugForType(assetType)}`;
       const uploaded = await uploadObjectAssetScopedImage(draft, file, scope, 'recap-image');
-      updateVariantColorMeta(optionId, colorId, { itemImageUrl: uploaded.publicUrl || '', itemImagePath: uploaded.path || '' });
+      updateVariantMeta(assetType, { itemImageUrl: uploaded.publicUrl || '', itemImagePath: uploaded.path || '' });
     } catch (error) {
-      setBatPictoError(error.message || "Upload de l'image recap couleur impossible.");
+      setBatPictoError(error.message || "Upload de l'image récapitulative impossible.");
     } finally {
       setBatPictoUploading(false);
     }
@@ -11557,8 +11567,11 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
               rows={variantAssetTypes}
               sourceAssets={variantSourceAssetsList}
               variantMeta={variantMeta}
+              colorTemplatesEnabled={variantColorTemplatesEnabled}
               batPictoUploading={batPictoUploading}
               onBatPictoChange={changeVariantBatPicto}
+              onItemImageChange={changeVariantItemImage}
+              onMetaChange={updateVariantMeta}
               onChange={(index, type) => setVariantAssetTypes((current) => current.map((item, itemIndex) => (itemIndex === index ? type : item)))}
               onRemove={(index) => setVariantAssetTypes((current) => current.filter((_, itemIndex) => itemIndex !== index))}
               onReorder={(fromIndex, toIndex) => setVariantAssetTypes((current) => moveArrayItem(current, fromIndex, toIndex))}
@@ -11578,10 +11591,6 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
               colorGroups={assets.filter((asset) => asset.dimensions?.isColorGroup)}
               textureSlots={draftTextureSlots}
               links={variantOptionLinks}
-              variantColorMeta={variantColorMeta}
-              batPictoUploading={batPictoUploading}
-              onColorBatPictoChange={changeVariantColorBatPicto}
-              onColorItemImageChange={changeVariantColorItemImage}
               onChange={updateConfigOptionRow}
               onRemove={removeConfigOptionRow}
               onAddChoice={addConfigOptionChoice}
@@ -11720,7 +11729,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   );
 }
 
-function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroups = [], textureSlots = [], links = [], variantColorMeta = {}, batPictoUploading = false, onColorBatPictoChange, onColorItemImageChange, onChange, onRemove, onAddChoice, onUpdateChoice, onRemoveChoice, onSetLink }) {
+function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroups = [], textureSlots = [], links = [], onChange, onRemove, onAddChoice, onUpdateChoice, onRemoveChoice, onSetLink }) {
   if (!rows.length) return <p className="asset-variants-empty">{emptyLabel}</p>;
   const selectOption = rows.find((r) => r.type === 'select');
   const toggleRows = rows.filter((r) => !['select', 'color'].includes(r.type || 'toggle'));
@@ -11794,14 +11803,6 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
                     colorGroup={colorGroups.find((group) => group.type === row.colorGroupType)}
                     onChange={(includedColorIds) => onChange(index, { includedColorIds })}
                     onDefaultChange={(defaultColorId) => onChange(index, { defaultColorId })}
-                  />
-                  <VariantColorBatPictoRows
-                    option={row}
-                    colorGroup={colorGroups.find((group) => group.type === row.colorGroupType)}
-                    colorMeta={variantColorMeta[row.id] || {}}
-                    uploading={batPictoUploading}
-                    onChange={onColorBatPictoChange}
-                    onImageChange={onColorItemImageChange}
                   />
                 </>
               )}
@@ -11986,53 +11987,6 @@ function VariantColorIncludedRows({ option = {}, colorGroup = null, onChange, on
 }
 
 
-function VariantColorBatPictoRows({ option = {}, colorGroup = null, colors: providedColors = null, colorMeta = {}, uploading = false, onChange, onImageChange }) {
-  const colors = Array.isArray(providedColors) ? providedColors : normalizeColorGroupOptions(colorGroup || {});
-  if (!colors.length || !onChange) return null;
-  return (
-    <div className="variant-color-bat-picto-list">
-      <span className="option-variant-links-label">Pictos BAT et images recap par couleur pour ce groupe de variantes</span>
-      {colors.map((color) => {
-        const colorKey = normalizeColorId(color.id);
-        const meta = colorMeta[colorKey] || colorMeta[color.id] || {};
-        return (
-          <div key={color.id} className="variant-color-bat-picto-upload">
-            <i style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }} />
-            <strong>{color.name}</strong>
-            <label>
-              <span>{meta.batPictoUrl ? 'Picto BAT importé' : 'Picto BAT'}</span>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg"
-                disabled={uploading}
-                onChange={(event) => {
-                  onChange(option.id, color.id, event.target.files?.[0] || null);
-                  event.target.value = '';
-                }}
-              />
-            </label>
-            {onImageChange && (
-              <label>
-                <span>{meta.itemImageUrl ? 'Image recap importée' : 'Image recap/panier'}</span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg"
-                  disabled={uploading}
-                  onChange={(event) => {
-                    onImageChange(option.id, color.id, event.target.files?.[0] || null);
-                    event.target.value = '';
-                  }}
-                />
-              </label>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-
 function variantManagedAssetsForGroup(groupEntry = {}, assets = []) {
   const managedTypes = variantManagedAssetTypes(groupEntry);
   return managedTypes
@@ -12086,7 +12040,7 @@ function AssetTextureSlotRows({ rows, onChange, onRemove }) {
   );
 }
 
-function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, batPictoUploading = false, onBatPictoChange, onChange, onRemove, onReorder }) {
+function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, colorTemplatesEnabled = false, batPictoUploading = false, onBatPictoChange, onItemImageChange, onMetaChange, onChange, onRemove, onReorder }) {
   const [draggingIndex, setDraggingIndex] = useState(null);
   if (!sourceAssets.length) return <p className="asset-variants-empty">Aucun objet disponible pour créer des variantes.</p>;
   if (!rows.length) return <p className="asset-variants-empty">Aucun objet associé : ce groupe ne s'affichera pas encore dans la boutique.</p>;
@@ -12102,7 +12056,7 @@ function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, batPicto
         return (
           <article
             key={`${type}-${index}`}
-            className={`asset-variant-row source-row ${draggingIndex === index ? 'dragging' : ''}`}
+            className={`asset-variant-row source-row ${colorTemplatesEnabled ? 'has-color-templates' : ''} ${draggingIndex === index ? 'dragging' : ''}`}
             draggable={Boolean(onReorder)}
             onDragStart={() => setDraggingIndex(index)}
             onDragOver={(event) => event.preventDefault()}
@@ -12115,12 +12069,12 @@ function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, batPicto
                 {sourceAssets.map((source) => <option key={source.type} value={source.type}>{source.label}</option>)}
               </select>
             </label>
-            <div>
+            <div className="asset-variant-source-summary">
               <span>{selectedSource?.thumbnail_url ? <img src={selectedSource.thumbnail_url} alt="" /> : <Box size={20} />}</span>
               <strong>{selectedSource?.label || 'Objet'}</strong>
               <small>{assetCategoryLabel(selectedSource || {})} · {assetSizeLabel(selectedSource || {})}</small>
             </div>
-            {onBatPictoChange && (
+            {onBatPictoChange && !colorTemplatesEnabled && (
               <label className="variant-bat-picto-upload">
                 <FileImage size={13} />
                 <span>{meta.batPictoUrl ? 'Picto BAT variante importé' : 'Picto BAT variante'}</span>
@@ -12136,10 +12090,74 @@ function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, batPicto
               </label>
             )}
             <button type="button" onClick={() => onRemove(index)} aria-label="Retirer cet objet"><Trash2 size={14} /></button>
+            {colorTemplatesEnabled && (
+              <div className="variant-color-template-settings">
+                <p>
+                  <strong>Images dynamiques par couleur</strong>
+                  <span>Une seule image par variante : la couleur indiquée sera remplacée par celle choisie par l’exposant.</span>
+                </p>
+                <VariantColorTemplateCard
+                  title="Picto BAT"
+                  format="SVG"
+                  imageUrl={meta.batPictoUrl}
+                  sourceColor={meta.batPictoReplaceColor}
+                  uploading={batPictoUploading}
+                  onImageChange={(file) => onBatPictoChange?.(type, file)}
+                  onColorChange={(value) => onMetaChange?.(type, { batPictoReplaceColor: value })}
+                />
+                <VariantColorTemplateCard
+                  title="Image récap panier"
+                  format="PNG"
+                  imageUrl={meta.itemImageUrl}
+                  sourceColor={meta.itemImageReplaceColor}
+                  uploading={batPictoUploading}
+                  onImageChange={(file) => onItemImageChange?.(type, file)}
+                  onColorChange={(value) => onMetaChange?.(type, { itemImageReplaceColor: value })}
+                />
+              </div>
+            )}
           </article>
         );
       })}
     </div>
+  );
+}
+
+function VariantColorTemplateCard({ title, format, imageUrl = '', sourceColor = '', uploading = false, onImageChange, onColorChange }) {
+  const normalizedColor = normalizeHexColor(sourceColor);
+  return (
+    <section className="variant-color-template-card">
+      <header>
+        <span>{title}</span>
+        <b>{format}</b>
+      </header>
+      <label className="variant-color-template-upload">
+        <FileImage size={14} />
+        <span>{imageUrl ? 'Image importée — remplacer' : `Importer le ${format}`}</span>
+        <input
+          type="file"
+          accept={format === 'SVG' ? 'image/svg+xml,.svg' : 'image/png,.png'}
+          disabled={uploading}
+          onChange={(event) => {
+            onImageChange?.(event.target.files?.[0] || null);
+            event.target.value = '';
+          }}
+        />
+      </label>
+      <label className="variant-color-template-color">
+        <span>Couleur présente dans l’image à remplacer</span>
+        <div>
+          <i style={{ '--template-source-color': normalizedColor || 'transparent' }} />
+          <input
+            value={sourceColor || ''}
+            onChange={(event) => onColorChange?.(event.target.value)}
+            placeholder="#ff18ff"
+            spellCheck="false"
+          />
+        </div>
+        {sourceColor && !normalizedColor && <small>Utilise une couleur hexadécimale, par exemple #ff18ff.</small>}
+      </label>
+    </section>
   );
 }
 

@@ -4,8 +4,11 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { Euler, Vector3 } from 'three';
 import { scenePackBenefits } from '../supabase/functions/_shared/packBenefits.js';
+import { recoloredImageCacheKey, recolorImageUrl } from '../src/imageColorReplacement.js';
 
-const source = readFileSync(new URL('../src/technicalExport.js', import.meta.url), 'utf8').replace(/^export /gm, '');
+const source = readFileSync(new URL('../src/technicalExport.js', import.meta.url), 'utf8')
+  .replace(/^import .*;$/gm, '')
+  .replace(/^export /gm, '');
 
 function runtime() {
   const text = [];
@@ -23,7 +26,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ document: { createElement: () => canvas }, console, scenePackBenefits });
+  const api = vm.createContext({ document: { createElement: () => canvas }, console, scenePackBenefits, recoloredImageCacheKey, recolorImageUrl });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }
@@ -49,6 +52,32 @@ test('BAT furniture and SVG pictos turn in the same direction as the 3D scene', 
       assert.ok(Math.abs(Math.sin(angles[0]) - expected.z) < 1e-10);
     }
   }
+});
+
+test('variant BAT pictograms use one SVG template per variant and a cache entry per selected color', () => {
+  const { api } = runtime();
+  const templateUrl = 'https://storage.example/object-assets/bar-160.svg';
+  const catalog = [{
+    type: 'bar-group',
+    dimensions: {
+      isVariantGroup: true,
+      variantMeta: {
+        'bar-160': {
+          batPictoUrl: templateUrl,
+          batPictoPath: 'bar-160.svg',
+          batPictoReplaceColor: '#ff18ff',
+        },
+      },
+    },
+  }];
+  const descriptor = (targetColor) => api.technicalSvgPictoDescriptor({
+    type: 'bar-160',
+    options: { variantGroupType: 'bar-group', variantColorTargetHex: targetColor },
+  }, {}, catalog);
+
+  assert.equal(descriptor('#cc0000').sourceColor, '#ff18ff');
+  assert.equal(descriptor('#cc0000').targetColor, '#cc0000');
+  assert.notEqual(descriptor('#cc0000').key, descriptor('#0055aa').key);
 });
 
 test('rotated group child positions and orientations match Three parent transforms', () => {

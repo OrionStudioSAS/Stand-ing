@@ -1,3 +1,5 @@
+import { recoloredImageCacheKey, recolorImageUrl } from './imageColorReplacement.js';
+
 const sheet = {
   width: 1800,
   height: 1200,
@@ -74,25 +76,34 @@ function technicalItemsForPlan(items, width, depth, catalog) {
 }
 
 async function loadTechnicalPictoImages(items = [], catalog = []) {
-  const urls = new Set();
+  const imageRequests = new Map();
   (items || []).forEach((item) => {
     const entry = catalog.find((candidate) => candidate.type === item.type);
-    const url = technicalSvgPictoUrl(item, entry, catalog);
-    if (url) urls.add(url);
+    const descriptor = technicalSvgPictoDescriptor(item, entry, catalog);
+    if (descriptor) imageRequests.set(descriptor.key, descriptor);
   });
   technicalPlanVisuals(items, catalog).forEach((visual) => {
-    if (visual.imageUrl) urls.add(visual.imageUrl);
+    if (visual.imageUrl) imageRequests.set(visual.imageUrl, { key: visual.imageUrl, url: visual.imageUrl, sourceColor: '', targetColor: '' });
   });
-  const loaded = await Promise.all([...urls].map(async (url) => [url, await loadCanvasImage(url)]));
+  const loaded = await Promise.all([...imageRequests.values()].map(async (request) => {
+    const imageUrl = request.sourceColor && request.targetColor
+      ? await recolorImageUrl(request.url, request.sourceColor, request.targetColor)
+      : request.url;
+    return [request.key, await loadCanvasImage(imageUrl)];
+  }));
   return new Map(loaded.filter(([, image]) => image));
 }
 
 function technicalPictoImageForItem(item, entry, pictoImages, catalog = []) {
-  const url = technicalSvgPictoUrl(item, entry, catalog);
-  return url ? pictoImages.get(url) || null : null;
+  const descriptor = technicalSvgPictoDescriptor(item, entry, catalog);
+  return descriptor ? pictoImages.get(descriptor.key) || null : null;
 }
 
 function technicalSvgPictoUrl(item = {}, entry = {}, catalog = []) {
+  return technicalSvgPictoDescriptor(item, entry, catalog)?.url || '';
+}
+
+function technicalSvgPictoDescriptor(item = {}, entry = {}, catalog = []) {
   const groupEntry = technicalOverrideGroupEntry(item, catalog);
   const variantMeta = groupEntry?.dimensions?.variantMeta?.[item.type] || groupEntry?.dimensions?.variantBatPictos?.[item.type] || {};
   const url = item.options?.variantBatPictoUrl
@@ -107,8 +118,14 @@ function technicalSvgPictoUrl(item = {}, entry = {}, catalog = []) {
     || item.dimensions?.batPictoPath
     || entry?.dimensions?.batPictoPath
     || url;
-  if (!url || !/\.svg(?:$|[?#])/i.test(path)) return '';
-  return url;
+  if (!url || !/\.svg(?:$|[?#])/i.test(path)) return null;
+  const sourceColor = item.options?.variantBatPictoReplaceColor || variantMeta?.batPictoReplaceColor || '';
+  const selectedColors = Object.values(item.options?.variantColorSelections || {});
+  const targetColor = item.options?.variantColorTargetHex
+    || selectedColors.map((color) => color?.hex || color?.color || color?.value || '').find(Boolean)
+    || '';
+  const key = sourceColor && targetColor ? recoloredImageCacheKey(url, sourceColor, targetColor) : url;
+  return { key, url, sourceColor, targetColor };
 }
 
 function technicalOverrideGroupEntry(item = {}, catalog = []) {
@@ -1254,6 +1271,8 @@ function technicalChildOptions(childOptions = {}, parentOptions = {}, parentDime
     ...(parentOptions.variantBatPictoUrl || parentDimensions.batPictoUrl ? {
       variantBatPictoUrl: parentOptions.variantBatPictoUrl || parentDimensions.batPictoUrl || '',
       variantBatPictoPath: parentOptions.variantBatPictoPath || parentDimensions.batPictoPath || '',
+      variantBatPictoReplaceColor: parentOptions.variantBatPictoReplaceColor || '',
+      variantColorTargetHex: parentOptions.variantColorTargetHex || '',
     } : {}),
     ...(parentOptions.variantBatDescription || parentDimensions.batDescription ? {
       variantBatDescription: parentOptions.variantBatDescription || parentDimensions.batDescription || '',
