@@ -64,7 +64,7 @@ function catalogToObjectBankItem(item) {
     dimensions: {
       ...(item.modelSize ? { size: item.modelSize } : {}),
       category: objectCategory(item.type),
-      salons: ['SMCL'],
+      packs: ['Confort', 'Prestige'],
     },
     is_active: true,
     created_at: null,
@@ -1315,7 +1315,7 @@ export async function listObjectBank() {
 
 export async function saveObjectBankItem(asset) {
   if (!supabase) return asset;
-  const assignedSalons = Array.isArray(asset.dimensions?.salons) ? asset.dimensions.salons : null;
+  const assignedPacks = Array.isArray(asset.dimensions?.packs) ? asset.dimensions.packs : null;
 
   const payload = {
     type: asset.type,
@@ -1323,7 +1323,7 @@ export async function saveObjectBankItem(asset) {
     model_url: asset.model_url,
     thumbnail_url: asset.thumbnail_url,
     dimensions: asset.dimensions || {},
-    is_active: assignedSalons ? assignedSalons.length > 0 : asset.is_active !== false,
+    is_active: assignedPacks ? assignedPacks.length > 0 : asset.is_active !== false,
   };
   const { data, error } = await supabase
     .from('object_bank')
@@ -1449,10 +1449,11 @@ export async function uploadObjectAssetFolder(files, profileImageFile = null) {
     label: prettifyAssetLabel(baseName),
     model_url: modelPublic.publicUrl,
     thumbnail_url: thumbnail?.publicUrl || null,
-    is_active: true,
+    is_active: false,
     dimensions: {
       addedBy: 'Admin Stand-ING',
       category: 'Mobilier',
+      packs: [],
       fileSizeMb: Number((totalBytes / 1024 / 1024).toFixed(1)),
       format: modelFile.name.toLowerCase().endsWith('.obj') ? 'OBJ' : 'GLB',
       ...(modelSize ? { size: modelSize, sizeSource: 'obj-vertices' } : {}),
@@ -1566,6 +1567,7 @@ export async function uploadColorGroupFolder(files) {
     dimensions: {
       addedBy: 'Admin Stand-ING',
       category: 'Groupes de couleurs',
+      packs: [],
       isColorGroup: true,
       colorUsages: [],
       colorGroupPrice: 0,

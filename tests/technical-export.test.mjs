@@ -87,8 +87,8 @@ test('wall and reserve cover previews retain the exact surface location', () => 
 test('the admin/email marker exports enabled surfaces with database preview URLs, not HD originals', () => {
   const { api } = runtime();
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  api.normalizeSalonTitle = (value) => value;
-  api.assetReference = (entry, salon) => entry.dimensions?.salonPricing?.[salon]?.reference || '';
+  api.sceneOfferLabel = (scene) => scene.offer || '';
+  api.assetReference = (entry, pack) => entry.dimensions?.packPricing?.[pack.toLowerCase()]?.reference || '';
   api.technicalPartitionHeadInformation = () => [];
   api.sceneConstraintsFromPayload = () => [];
   for (const name of ['withTechnicalOptionsMarker', 'wallCoverPreviewsFromCovers', 'wallCoverPreviewForSurface', 'wallCoverEnabledForSurface']) {
@@ -100,7 +100,7 @@ test('the admin/email marker exports enabled surfaces with database preview URLs
     { id: 'reserve-1', sourceWall: 'reserve', label: 'Cloison réserve', position: [1, 1.25, -1], width: 2, height: 2.5 },
     { id: 'left', label: 'Cloison gauche' },
   ];
-  const items = api.withTechnicalOptionsMarker([], { salon: 'SMCL 2026', source_payload: { options: { wallCovers: { reserve: { enabled: true, previewUrl: imageUrl, previewName: 'Logo.jpg', originalUrl: 'https://storage.example/original-hd.pdf', visualPending: true }, left: { enabled: false } } } } }, [{ type: 'counter', dimensions: { salonPricing: { 'SMCL 2026': { reference: 'SMCL-COMPT01' } } } }]);
+  const items = api.withTechnicalOptionsMarker([], { offer: 'Confort', source_payload: { options: { wallCovers: { reserve: { enabled: true, previewUrl: imageUrl, previewName: 'Logo.jpg', originalUrl: 'https://storage.example/original-hd.pdf', visualPending: true }, left: { enabled: false } } } } }, [{ type: 'counter', dimensions: { packPricing: { confort: { reference: 'SMCL-COMPT01' } } } }]);
   assert.equal(items[0].sourceVisualSurfaces.length, 1);
   assert.equal(items[0].sourceProductReferences.counter, 'SMCL-COMPT01');
   const visuals = api.technicalPlanVisuals(items);
@@ -217,7 +217,7 @@ test('the BAT uses the moved reserve and refreshes the TV surface from its curre
   }
   Object.assign(api, {
     sceneAdminItems: (scene) => scene.items,
-    normalizeSalonTitle: (value) => value,
+    sceneOfferLabel: (scene) => scene.offer || '',
     sceneReserveRules: () => [], activeReserveRule: () => ({}),
     scenePartitionHeadRules: () => [], activePartitionHeadRule: () => null,
     partitionHeadEnabledSides: () => ({}), hasOwn: (value, key) => Object.hasOwn(value, key),

@@ -1084,13 +1084,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const area = width * depth;
   const salonLabel = initialScene.salon || clientInfo.event || 'SMCL 2026';
   const offerLabel = sceneOfferLabel(initialScene);
+  const assetPackLabel = offerLabel || initialOptions.includedPack || '';
   const standLabel = initialScene.project_name || clientInfo.project || 'Stand A-14';
   const clientLabel = clientInfo.client || contactDetails.company || 'Aerosys Industries';
-  const carpetPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'carpet', carpetColors), [objectBank, salonLabel]);
-  const footprintPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'footprint', carpetPalette), [objectBank, salonLabel, carpetPalette]);
-  const wallFabricPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'wallFabric', wallFabricColors), [objectBank, salonLabel]);
-  const counterPalette = useMemo(() => colorOptionsForUsage(objectBank, salonLabel, 'counter', []), [objectBank, salonLabel]);
-  const carpetGroupConfigOptionsList = useMemo(() => colorGroupConfigOptions(objectBank, salonLabel, 'carpet'), [objectBank, salonLabel]);
+  const carpetPalette = useMemo(() => colorOptionsForUsage(objectBank, assetPackLabel, 'carpet', carpetColors), [objectBank, assetPackLabel]);
+  const footprintPalette = useMemo(() => colorOptionsForUsage(objectBank, assetPackLabel, 'footprint', carpetPalette), [objectBank, assetPackLabel, carpetPalette]);
+  const wallFabricPalette = useMemo(() => colorOptionsForUsage(objectBank, assetPackLabel, 'wallFabric', wallFabricColors), [objectBank, assetPackLabel]);
+  const counterPalette = useMemo(() => colorOptionsForUsage(objectBank, assetPackLabel, 'counter', []), [objectBank, assetPackLabel]);
+  const carpetGroupConfigOptionsList = useMemo(() => colorGroupConfigOptions(objectBank, assetPackLabel, 'carpet'), [objectBank, assetPackLabel]);
   const groupDefaultColorOptions = useMemo(() => makePaletteDefaultColorOptions({
     carpetPalette,
     footprintPalette,
@@ -1168,12 +1169,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     const dynamicEntries = objectBank
       .filter((asset) => asset.is_active)
       .filter((asset) => !asset.dimensions?.isColorGroup)
-      .filter((asset) => assetMatchesSalon(asset, salonLabel))
+      .filter((asset) => assetMatchesPack(asset, assetPackLabel))
       .map((asset) => assetToCatalogEntry(asset, objectBank))
       .filter(Boolean);
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
     return sortCatalogEntries(uniqueCatalogEntries(entries));
-  }, [objectBank, salonLabel]);
+  }, [objectBank, assetPackLabel]);
   const placeableCatalog = useMemo(
     () => availableCatalog.filter((entry) => isAdminViewer || !entry.dimensions?.adminOnly),
     [availableCatalog, isAdminViewer],
@@ -1191,14 +1192,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const activePartitionHeadRuleConfig = useMemo(() => activePartitionHeadRule(partitionHeadRules, area, layout), [partitionHeadRules, area, layout]);
   const effectivePartitionHeadSides = useMemo(() => partitionHeadEnabledSides(activePartitionHeadRuleConfig, partitionHeadChoice), [activePartitionHeadRuleConfig, partitionHeadChoice]);
   const automaticReserveItems = useMemo(
-    () => makeAutomaticReserveItems(activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, salonLabel, reserveOptions)
+    () => makeAutomaticReserveItems(activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, reserveOptions)
       .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, effectiveCarpetFootprintEnabled)),
-    [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, salonLabel, reserveOptions, reserveItemOverrides, effectiveCarpetFootprintEnabled],
+    [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, reserveOptions, reserveItemOverrides, effectiveCarpetFootprintEnabled],
   );
   const automaticPartitionHeadItems = useMemo(
-    () => makeAutomaticPartitionHeadItems(activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, salonLabel)
+    () => makeAutomaticPartitionHeadItems(activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, assetPackLabel)
       .map((item) => applyPartitionHeadVisualOptions(item, partitionHeadVisuals)),
-    [activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, salonLabel, partitionHeadVisuals],
+    [activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, assetPackLabel, partitionHeadVisuals],
   );
   const autoSpotsBaseRule = useMemo(() => initialOptions.autoSpotsRule || null, [initialOptions]);
   const autoSpotsRule = autoSpotsBaseRule;
@@ -1304,7 +1305,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     area,
     catalog: availableCatalog,
     items: visibleSceneItems,
-    salonLabel,
+    salonLabel: assetPackLabel,
     scene: initialScene,
     width,
     depth,
@@ -1319,7 +1320,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     wallCoverSurfaces,
     ledRailsEnabled,
     expectedLedSpotCount: ledSpotCount,
-  }), [area, availableCatalog, visibleSceneItems, salonLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, thickCarpetEnabled, ledRailsEnabled, ledSpotCount]);
+  }), [area, availableCatalog, visibleSceneItems, assetPackLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, thickCarpetEnabled, ledRailsEnabled, ledSpotCount]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
@@ -1826,7 +1827,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (!selected || readOnly) return;
     if (openStepOptionForItem(selected)) return;
     const entry = itemConfiguratorEntry(selected);
-    if (!itemEditNeedsConfigurator(selected, entry, salonLabel)) return;
+    if (!itemEditNeedsConfigurator(selected, entry, assetPackLabel)) return;
     setItemConfigModal({ mode: 'edit', item: selected, entry });
   };
 
@@ -1862,7 +1863,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           current.map((sceneItem) => (sceneItem.id === item.id ? constrainItem({ ...sceneItem, options }, width, depth, layout, effectiveCarpetFootprintEnabled) : sceneItem)),
           options,
           availableCatalog,
-          salonLabel,
+          assetPackLabel,
         ));
       }
       setItemConfigModal(null);
@@ -1907,7 +1908,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         failedPlacement = true;
         return current;
       }
-      return syncSharedGlobalGroupOptions([...others, placed], options, availableCatalog, salonLabel);
+      return syncSharedGlobalGroupOptions([...others, placed], options, availableCatalog, assetPackLabel);
     });
     window.setTimeout(() => {
       if (failedPlacement) showPlacementMessage(placementErrorMessage(entry || item));
@@ -1956,7 +1957,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         lastPlacedId = placed.id;
         next = [...next, placed];
       }
-      return syncSharedGlobalGroupOptions(next, options, availableCatalog, salonLabel);
+      return syncSharedGlobalGroupOptions(next, options, availableCatalog, assetPackLabel);
     });
     window.setTimeout(() => {
       if (lastPlacedId) setSelectedId(lastPlacedId);
@@ -2021,7 +2022,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const restoreIncludedCounter = () => {
     if (readOnly || includedCounterItems.length) return;
-    const variants = counterVariantOptions(availableCatalog, salonLabel);
+    const variants = counterVariantOptions(availableCatalog, assetPackLabel);
     const variant = variants[0];
     const entry = variant?.entry || availableCatalog.find((catalogEntry) => isWoodReceptionDeskItem(catalogEntry));
     if (!entry) return;
@@ -2034,7 +2035,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       options: {
         variantId: variant?.id || entry.type,
         variantLabel: variant?.label || entry.label || '',
-        variantReference: variant?.reference || assetReference(entry, salonLabel),
+        variantReference: variant?.reference || assetReference(entry, assetPackLabel),
         variantAssetType: variant?.assetType || entry.type,
         variantUpgradePrice: 0,
         variantBasePrice: Number(variant?.price || 0),
@@ -2339,7 +2340,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             selectedId={selectedId}
             total={scenePricing.total || 0}
             pricing={scenePricing}
-            salonLabel={salonLabel}
+            salonLabel={assetPackLabel}
             readOnly={readOnly}
             onSelectItem={setSelectedId}
             onOpenItem={openCartItemConfigurator}
@@ -2448,7 +2449,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 selectedToolbar={selected && !readOnly && !itemConfigModal ? (
                   <div className={`view-toolbar selection-mode ${rotationPanelOpen && canRotateSceneItem(selected, isAdminViewer) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
                     <button type="button" disabled={!canRotateSceneItem(selected, isAdminViewer)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
-                    <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), salonLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Pencil size={15} /></button>
+                    <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), assetPackLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Pencil size={15} /></button>
                     <button
                       type="button"
                       className={`toolbar-lock-button ${itemUserLocked(selected) ? 'active' : ''} ${selectedMovementHardLocked ? 'admin-locked' : ''}`}
@@ -2530,7 +2531,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             items={visibleSceneItems}
             catalog={placeableCatalog}
             pricing={scenePricing}
-            salonLabel={salonLabel}
+            salonLabel={assetPackLabel}
             selectedId={selectedId}
             readOnly={readOnly}
             onAdd={openAddItemConfigurator}
@@ -2538,7 +2539,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onSelectItem={setSelectedId}
             onConfigureItem={(item) => {
             const entry = itemConfiguratorEntry(item);
-            if (itemEditNeedsConfigurator(item, entry, salonLabel)) setItemConfigModal({ mode: 'edit', item, entry });
+            if (itemEditNeedsConfigurator(item, entry, assetPackLabel)) setItemConfigModal({ mode: 'edit', item, entry });
           }}
             onNext={() => setActiveStep(4)}
           />
@@ -2626,7 +2627,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             prestigeSignageItems={visiblePrestigeSignageItems}
             prestigeSignageEnabled={prestigeSignageEnabled}
             prestigeSignageUploadState={itemOptionState}
-            salonLabel={salonLabel}
+            salonLabel={assetPackLabel}
             catalog={availableCatalog}
             readOnly={readOnly}
             carpetGroupConfigOptions={carpetGroupConfigOptionsList}
@@ -2716,7 +2717,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             scene={initialScene}
             entry={itemConfigModal.entry}
             item={modalItem}
-            salonLabel={salonLabel}
+            salonLabel={assetPackLabel}
             visualContext={sceneVisualContext}
             items={visibleSceneItems}
             width={width}
@@ -2740,7 +2741,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           catalog={availableCatalog}
           selectedId={selectedId}
           total={scenePricing.total || 0}
-          salonLabel={salonLabel}
+          salonLabel={assetPackLabel}
           readOnly={readOnly}
           nextLabel={tRaw(language, 'cart_next')}
           nextDetail={activeStep === 2 ? tRaw(language, 'cart_next_furniture') : tRaw(language, 'cart_next_detail')}
@@ -5466,7 +5467,7 @@ function itemConfigColorOptions(entry) {
 
 function colorGroupEntryForOption(option = {}, catalog = [], salonLabel = '') {
   const group = (catalog || []).find((entry) => entry?.type === option.colorGroupType && entry?.dimensions?.isColorGroup);
-  if (!group || !colorGroupMatchesSalon(group, salonLabel)) return null;
+  if (!group || !colorGroupMatchesPack(group, salonLabel)) return null;
   return group;
 }
 
@@ -6175,7 +6176,7 @@ function furnitureInsuranceLine(amount = 0) {
 function marketplaceStartingPrice(entry, catalog = [], salonLabel = '') {
   if (isVariantGroupEntry(entry)) {
     const prices = itemConfigVariants(entry, salonLabel)
-      .map((variant) => Number(variant.price || 0) || assetAnySalonUnitPrice(variant.entry))
+      .map((variant) => Number(variant.price || 0) || assetAnyPackUnitPrice(variant.entry))
       .filter((price) => price > 0);
     if (prices.length) return Math.min(...prices);
   }
@@ -8305,7 +8306,7 @@ function AdminDashboard({ user, adminProfile }) {
       setAssetCategory('Groupes de couleurs');
       setAssetUploadState({
         loading: false,
-        message: `${saved.label} ajouté. Configure les usages, salons, prix et référence du groupe.`,
+        message: `${saved.label} ajouté. Configure les usages, packs, prix et référence du groupe.`,
         error: '',
       });
     } catch (error) {
@@ -8644,12 +8645,13 @@ function normalizeSalonTitle(raw) {
 }
 
 
-function adminSalonAssignmentChoices(salons = [], scenes = []) {
-  const salonLabels = (salons || [])
-    .map((salon) => normalizeSalonTitle(salon?.name || salon?.title || salon?.salon || ''))
+function adminPackAssignmentChoices(salons = [], scenes = []) {
+  const offerLabels = (salons || [])
+    .flatMap((salon) => salon?.offers || [])
+    .map((offer) => String(offer?.name || '').trim())
     .filter(Boolean);
-  const sceneLabels = getSalonRows(scenes || []).map((salon) => salon.title);
-  return uniqueTextValues([...salonLabels, ...sceneLabels]).sort((a, b) => a.localeCompare(b, 'fr', { numeric: true, sensitivity: 'base' }));
+  const sceneLabels = (scenes || []).map((scene) => sceneOfferLabel(scene)).filter(Boolean);
+  return uniqueByNormalized([...offerLabels, ...sceneLabels]).sort(packNameSort);
 }
 
 function getSalonRows(scenes) {
@@ -9250,12 +9252,12 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
     const dynamicEntries = (assets || [])
       .filter((asset) => asset.is_active)
       .filter((asset) => !asset.dimensions?.isColorGroup)
-      .filter((asset) => assetMatchesSalon(asset, salon?.name))
+      .filter((asset) => assetMatchesPack(asset, offer?.name))
       .map((asset) => assetToCatalogEntry(asset, assets))
       .filter(Boolean);
     const all = [...dynamicEntries, ...nativeCatalogEntries()];
     return sortCatalogEntries(uniqueCatalogEntries(all)).filter((entry) => isBasePackEligible(entry));
-  }, [assets, salon?.name]);
+  }, [assets, offer?.name]);
   const [quantities, setQuantities] = useState(() => baseItemsToQuantityMap(offer?.metadata?.baseItems));
   const [benefits, setBenefits] = useState(() => normalizePackBenefits(offer?.metadata?.packBenefits || { mode: /^signature$/i.test(offer?.name || '') ? 'allowance' : 'included-items' }));
 
@@ -9323,7 +9325,7 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
                 <span>{entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Icon size={22} />}</span>
                 <div>
                   <strong>{entry.label}</strong>
-                  <small>{formatFurniturePrice(entry, salon?.name)} · {assetReference(entry, salon?.name) || 'Sans référence'}</small>
+                  <small>{formatFurniturePrice(entry, offer?.name)} · {assetReference(entry, offer?.name) || 'Sans référence'}</small>
                 </div>
                 <div className="quantity-control">
                   <button type="button" onClick={() => updateQuantity(entry.type, quantity - 1)} disabled={quantity <= 0}>−</button>
@@ -9443,12 +9445,12 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
     const dynamicEntries = (assets || [])
       .filter((asset) => asset.is_active)
       .filter((asset) => !asset.dimensions?.isColorGroup)
-      .filter((asset) => assetMatchesSalon(asset, salon.name))
+      .filter((asset) => assetMatchesPack(asset, offer?.name))
       .map((asset) => assetToCatalogEntry(asset, assets))
       .filter(Boolean);
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
     return sortCatalogEntries(uniqueCatalogEntries(entries));
-  }, [assets, salon.name]);
+  }, [assets, offer?.name]);
   const initialScene = useMemo(() => presetToEditableScene(preset, availableCatalog), [preset, availableCatalog]);
   const initialWidth = initialScene.dimensions.width;
   const initialDepth = initialScene.dimensions.depth;
@@ -9467,9 +9469,9 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
   const [autoSpotsRule, setAutoSpotsRule] = useState(() => preset.base_config?.autoSpotsRule || null);
   const [presetColorIds, setPresetColorIds] = useState(() => presetDefaultColorIds(preset));
-  const carpetPalette = useMemo(() => colorOptionsForUsage(assets, salon.name, 'carpet', carpetColors), [assets, salon.name]);
-  const footprintPalette = useMemo(() => colorOptionsForUsage(assets, salon.name, 'footprint', carpetPalette), [assets, salon.name, carpetPalette]);
-  const wallFabricPalette = useMemo(() => colorOptionsForUsage(assets, salon.name, 'wallFabric', wallFabricColors), [assets, salon.name]);
+  const carpetPalette = useMemo(() => colorOptionsForUsage(assets, offer?.name, 'carpet', carpetColors), [assets, offer?.name]);
+  const footprintPalette = useMemo(() => colorOptionsForUsage(assets, offer?.name, 'footprint', carpetPalette), [assets, offer?.name, carpetPalette]);
+  const wallFabricPalette = useMemo(() => colorOptionsForUsage(assets, offer?.name, 'wallFabric', wallFabricColors), [assets, offer?.name]);
   const selectedCarpetColor = findColorInPalette(carpetPalette, presetColorIds.carpetColorId) || defaultColorFromPalette(carpetPalette) || carpetPalette[0] || carpetColors[0];
   const selectedCarpetFootprintColor = findColorInPalette(footprintPalette, presetColorIds.carpetFootprintColorId) || defaultColorFromPalette(footprintPalette) || selectedCarpetColor;
   const selectedWallFabricColor = findColorInPalette(wallFabricPalette, presetColorIds.wallFabricColorId) || defaultColorFromPalette(wallFabricPalette) || wallFabricPalette[0] || wallFabricColors[0];
@@ -9654,14 +9656,14 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
         <PresetReserveRulesEditor
           rules={reserveRules}
           entries={availableCatalog.filter(isReserveCatalogEntry)}
-          salonLabel={salon.name}
+          salonLabel={offer?.name || ''}
           allowanceMode={normalizePackBenefits(offer?.metadata?.packBenefits).mode === 'allowance'}
           onChange={setReserveRules}
         />
         <PresetPartitionHeadRulesEditor
           rules={partitionHeadRules}
           entries={availableCatalog.filter(isPartitionHeadItem)}
-          salonLabel={salon.name}
+          salonLabel={offer?.name || ''}
           onChange={setPartitionHeadRules}
         />
         <PresetAutoSpotsEditor
@@ -10602,7 +10604,7 @@ function AdminObjectsView({ assets, scenes, salons, search, category, selectedAs
               <span>{assetAdminCardCategoryLabel(asset, assets)}</span>
               <em>{assetSizeLabel(asset)}</em>
               <div className="asset-tags">
-                {assetSalons(asset, scenes).slice(0, 2).map((salon) => <small key={salon}>{salonShortLabel(salon)}</small>)}
+                {assetPacks(asset, scenes).slice(0, 2).map((pack) => <small key={pack}>{pack}</small>)}
                 {asset.dimensions?.adminOnly && <small className="admin-only">Admin</small>}
                 {!asset.is_active && <small className="inactive">Inactif</small>}
               </div>
@@ -10729,8 +10731,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   const [groupRows, setGroupRows] = useState(() => assetToGroupRows(asset));
   const [selectedGroupRowUid, setSelectedGroupRowUid] = useState(null);
   const [draggingGroupRowUid, setDraggingGroupRowUid] = useState(null);
-  const salonChoices = adminSalonAssignmentChoices(adminSalons, scenes);
-  const assignedSalons = assetSalons(draft, scenes);
+  const packChoices = adminPackAssignmentChoices(adminSalons, scenes);
+  const assignedPacks = assetPacks(draft, scenes);
   const isColorGroup = Boolean(draft.dimensions?.isColorGroup);
   const isGroupAsset = Boolean(draft.dimensions?.isGroup);
   const isVariantGroup = Boolean(draft.dimensions?.isVariantGroup);
@@ -10782,17 +10784,17 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     });
   };
 
-  const toggleSalon = (salon) => {
-    const current = new Set(assetSalons(draft, scenes));
-    if (current.has(salon)) current.delete(salon);
-    else current.add(salon);
-    const nextSalons = [...current];
+  const togglePack = (pack) => {
+    const current = new Set(assetPacks(draft, scenes));
+    if (current.has(pack)) current.delete(pack);
+    else current.add(pack);
+    const nextPacks = [...current].sort(packNameSort);
     setDraft({
       ...draft,
-      is_active: nextSalons.length > 0,
+      is_active: nextPacks.length > 0,
       dimensions: {
         ...(draft.dimensions || {}),
-        salons: nextSalons,
+        packs: nextPacks,
       },
     });
   };
@@ -10972,19 +10974,19 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     });
   };
 
-  const updateSalonPricing = (salon, patch) => {
-    const key = salonPricingKey(salon);
-    const currentPricing = draft.dimensions?.salonPricing || {};
-    const currentSalonPricing = currentPricing[key] || { salon, price: '', reference: '' };
+  const updatePackPricing = (pack, patch) => {
+    const key = packPricingKey(pack);
+    const currentPricing = draft.dimensions?.packPricing || {};
+    const currentPackPricing = currentPricing[key] || { pack, price: '', reference: '' };
     setDraft({
       ...draft,
       dimensions: {
         ...(draft.dimensions || {}),
-        salonPricing: {
+        packPricing: {
           ...currentPricing,
           [key]: {
-            ...currentSalonPricing,
-            salon,
+            ...currentPackPricing,
+            pack,
             ...patch,
           },
         },
@@ -11015,7 +11017,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
       onSave({
         ...draft,
         label: draft.label?.trim() || 'Groupe de couleurs',
-        is_active: assignedSalons.length > 0,
+        is_active: assignedPacks.length > 0,
         dimensions: {
           ...(draft.dimensions || {}),
           isColorGroup: true,
@@ -11601,36 +11603,36 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
         </dl>
 
         <section className="asset-assignment">
-          <h3>Affectation par salon</h3>
-          {(salonChoices.length ? salonChoices : ['SMCL 2026']).map((salon) => {
-            const active = assignedSalons.includes(salon);
-            const salonPricing = getSalonPricing(draft, salon);
+          <h3>Affectation par pack</h3>
+          {(packChoices.length ? packChoices : ['Confort', 'Prestige', 'Signature']).map((pack) => {
+            const active = assignedPacks.includes(pack);
+            const packPricing = getPackPricing(draft, pack);
             return (
-              <div key={salon} className="asset-salon-pricing-row">
-                <button type="button" onClick={() => toggleSalon(salon)}>
-                  <strong>{salon}</strong>
+              <div key={pack} className="asset-salon-pricing-row">
+                <button type="button" onClick={() => togglePack(pack)}>
+                  <strong>{pack}</strong>
                   <span>{active ? 'Actif' : 'Inactif'}</span>
                   <i className={active ? 'active' : ''} />
                 </button>
                 {active && !isVariantGroup && !isColorGroup && (
                   <div className="asset-salon-pricing-fields">
                     <label>
-                      <span>Prix spécifique {salon}</span>
+                      <span>Prix spécifique {pack}</span>
                       <input
                         type="number"
                         min="0"
                         step="1"
-                        value={salonPricing.price ?? ''}
+                        value={packPricing.price ?? ''}
                         placeholder="—"
-                        onChange={(event) => updateSalonPricing(salon, { price: event.target.value })}
+                        onChange={(event) => updatePackPricing(pack, { price: event.target.value })}
                       />
                     </label>
                     <label>
                       <span>Référence</span>
                       <input
-                        value={salonPricing.reference || ''}
+                        value={packPricing.reference || ''}
                         placeholder="Ex : A4ENINJCSJKCSBJ"
-                        onChange={(event) => updateSalonPricing(salon, { reference: event.target.value })}
+                        onChange={(event) => updatePackPricing(pack, { reference: event.target.value })}
                       />
                     </label>
                   </div>
@@ -11702,10 +11704,10 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
 
         <small className="asset-price-note">
           {isColorGroup
-            ? 'Ce groupe alimente les couleurs disponibles dans le configurateur selon ses usages et salons actifs.'
+            ? 'Ce groupe alimente les couleurs disponibles dans le configurateur selon ses usages et packs actifs.'
             : isVariantGroup
               ? 'Le groupe sert uniquement de fiche boutique : les prix et références viennent des objets associés.'
-              : 'Les prix et références peuvent être différents pour chaque salon actif.'}
+              : 'Les prix et références peuvent être différents pour chaque pack actif.'}
         </small>
 
         <footer>
@@ -12151,16 +12153,16 @@ function AssetVariantGroupCreator({ assets, scenes, salons: adminSalons = [], on
   const [configOptions, setConfigOptions] = useState([]);
   const [variantOptionLinks, setVariantOptionLinks] = useState([]);
   const [batDescription, setBatDescription] = useState('');
-  const salonChoices = adminSalonAssignmentChoices(adminSalons, scenes);
-  const [assignedSalons, setAssignedSalons] = useState(() => salonChoices.slice(0, 1));
+  const packChoices = adminPackAssignmentChoices(adminSalons, scenes);
+  const [assignedPacks, setAssignedPacks] = useState(() => packChoices.slice(0, 1));
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setAssignedSalons((current) => current.length ? current.filter((salon) => salonChoices.includes(salon)) : salonChoices.slice(0, 1));
-  }, [salonChoices.join('|')]);
+    setAssignedPacks((current) => current.length ? current.filter((pack) => packChoices.includes(pack)) : packChoices.slice(0, 1));
+  }, [packChoices.join('|')]);
 
-  const toggleSalon = (salon) => {
-    setAssignedSalons((current) => (current.includes(salon) ? current.filter((item) => item !== salon) : [...current, salon]));
+  const togglePack = (pack) => {
+    setAssignedPacks((current) => (current.includes(pack) ? current.filter((item) => item !== pack) : [...current, pack]));
   };
 
   const updateConfigOptionRow = (index, patch) => {
@@ -12219,7 +12221,7 @@ function AssetVariantGroupCreator({ assets, scenes, salons: adminSalons = [], on
       label: name.trim() || 'Groupe de variantes',
       model_url: null,
       thumbnail_url: null,
-      is_active: assignedSalons.length > 0,
+      is_active: assignedPacks.length > 0,
       dimensions: {
         isVariantGroup: true,
         category,
@@ -12228,7 +12230,7 @@ function AssetVariantGroupCreator({ assets, scenes, salons: adminSalons = [], on
         configOptions,
         variantOptionLinks,
         batDescription,
-        salons: assignedSalons,
+        packs: assignedPacks,
         addedBy: 'Admin Stand-ING',
         format: 'Groupe de variantes',
       },
@@ -12312,12 +12314,12 @@ function AssetVariantGroupCreator({ assets, scenes, salons: adminSalons = [], on
         </section>
 
         <section className="asset-assignment">
-          <h3>Affectation par salon</h3>
-          {(salonChoices.length ? salonChoices : ['SMCL 2026']).map((salon) => {
-            const active = assignedSalons.includes(salon);
+          <h3>Affectation par pack</h3>
+          {(packChoices.length ? packChoices : ['Confort', 'Prestige', 'Signature']).map((pack) => {
+            const active = assignedPacks.includes(pack);
             return (
-              <button key={salon} type="button" onClick={() => toggleSalon(salon)}>
-                <strong>{salon}</strong>
+              <button key={pack} type="button" onClick={() => togglePack(pack)}>
+                <strong>{pack}</strong>
                 <span>{active ? 'Actif' : 'Inactif'}</span>
                 <i className={active ? 'active' : ''} />
               </button>
@@ -12349,14 +12351,14 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
   const [selectedRowUid, setSelectedRowUid] = useState(null);
   const [draggingRowUid, setDraggingRowUid] = useState(null);
   const activeRowUid = selectedRowUid || rows[0]?.uid || null;
-  const salonChoices = adminSalonAssignmentChoices(adminSalons, scenes);
-  const [assignedSalons, setAssignedSalons] = useState(() => salonChoices.slice(0, 1));
+  const packChoices = adminPackAssignmentChoices(adminSalons, scenes);
+  const [assignedPacks, setAssignedPacks] = useState(() => packChoices.slice(0, 1));
   const [placementRuleId, setPlacementRuleId] = useState('free');
   const [batDescription, setBatDescription] = useState('');
 
   useEffect(() => {
-    setAssignedSalons((current) => current.length ? current.filter((salon) => salonChoices.includes(salon)) : salonChoices.slice(0, 1));
-  }, [salonChoices.join('|')]);
+    setAssignedPacks((current) => current.length ? current.filter((pack) => packChoices.includes(pack)) : packChoices.slice(0, 1));
+  }, [packChoices.join('|')]);
 
   const updateRow = (uid, patch) => {
     setRows((current) => current.map((row) => (row.uid === uid ? { ...row, ...patch } : row)));
@@ -12376,8 +12378,8 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
     ));
   };
 
-  const toggleSalon = (salon) => {
-    setAssignedSalons((current) => (current.includes(salon) ? current.filter((item) => item !== salon) : [...current, salon]));
+  const togglePack = (pack) => {
+    setAssignedPacks((current) => (current.includes(pack) ? current.filter((item) => item !== pack) : [...current, pack]));
   };
 
   const saveGroup = async () => {
@@ -12390,7 +12392,7 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
       label: name.trim() || "Groupe d'objets",
       model_url: null,
       thumbnail_url: null,
-      is_active: true,
+      is_active: assignedPacks.length > 0,
       dimensions: {
         category,
         isGroup: true,
@@ -12398,7 +12400,7 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
         children,
         placementRule: placementRuleFromId(placementRuleId),
         batDescription,
-        salons: assignedSalons,
+        packs: assignedPacks,
         addedBy: 'Admin Stand-ING',
         format: 'Groupe',
       },
@@ -12500,12 +12502,12 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
         </section>
 
         <section className="asset-assignment">
-          <h3>Affectation par salon</h3>
-          {(salonChoices.length ? salonChoices : ['SMCL 2026']).map((salon) => {
-            const active = assignedSalons.includes(salon);
+          <h3>Affectation par pack</h3>
+          {(packChoices.length ? packChoices : ['Confort', 'Prestige', 'Signature']).map((pack) => {
+            const active = assignedPacks.includes(pack);
             return (
-              <button key={salon} type="button" onClick={() => toggleSalon(salon)}>
-                <strong>{salon}</strong>
+              <button key={pack} type="button" onClick={() => togglePack(pack)}>
+                <strong>{pack}</strong>
                 <span>{active ? 'Actif' : 'Inactif'}</span>
                 <i className={active ? 'active' : ''} />
               </button>
@@ -12801,11 +12803,11 @@ function businessDaysSince(value) {
 }
 
 function sceneAdminCatalog(assets = [], scene = {}) {
-  const salonLabel = normalizeSalonTitle(scene.event_name || scene.salon);
+  const packLabel = sceneOfferLabel(scene);
   const dynamicEntries = (assets || [])
     .filter((asset) => asset.is_active)
     .filter((asset) => !asset.dimensions?.isColorGroup)
-    .filter((asset) => assetMatchesSalon(asset, salonLabel))
+    .filter((asset) => assetMatchesPack(asset, packLabel))
     .map((asset) => assetToCatalogEntry(asset, assets))
     .filter(Boolean);
   const entries = [...dynamicEntries, ...nativeCatalogEntries()];
@@ -12821,7 +12823,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
   const layout = scene.layout || 'back';
   const area = width * depth;
-  const salonLabel = normalizeSalonTitle(scene.event_name || scene.salon);
+  const packLabel = sceneOfferLabel(scene);
   const options = scene.options || scene.source_payload?.options || {};
   const manualItems = sceneAdminItems(scene, catalogEntries);
   const reserveRule = activeReserveRule(sceneReserveRules(scene), area);
@@ -12835,7 +12837,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   });
   const ledEntries = ledRailCatalogEntries(catalogEntries);
   const autoSpotsRule = options.autoSpotsRule || null;
-  const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, salonLabel, options.reserveOptions || {})
+  const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, packLabel, options.reserveOptions || {})
     .map((item) => applyReserveItemOverride(item, options.reserveItemOverrides || {}, width, depth, layout, options.carpetFootprintEnabled !== false));
   const ledItems = scenePackBenefits(scene).mode === 'allowance' || options.ledRailsEnabled === false
     ? []
@@ -12847,7 +12849,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   return resolveTechnicalWallSurfaces([
     ...manualItems,
     ...automaticReserveItems,
-    ...makeAutomaticPartitionHeadItems(partitionRule, partitionSides, catalogEntries, width, depth, layout, salonLabel)
+    ...makeAutomaticPartitionHeadItems(partitionRule, partitionSides, catalogEntries, width, depth, layout, packLabel)
       .map((item) => applyPartitionHeadVisualOptions(item, options.partitionHeadVisuals || {})),
     ...ledItems,
   ]);
@@ -12869,7 +12871,7 @@ function scenePurchaseOrder(scene = {}, assets = []) {
   const fallbackPricing = calculateScenePricing({
     catalog: catalogEntries,
     items: sceneAllAdminItems(scene, catalogEntries),
-    salonLabel: normalizeSalonTitle(scene.event_name || scene.salon),
+    salonLabel: sceneOfferLabel(scene),
     scene,
   });
   const sourceLines = savedLines.length
@@ -13007,8 +13009,8 @@ async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = []) {
 
 function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = []) {
   const options = scene.options || scene.source_payload?.options || {};
-  const salonLabel = normalizeSalonTitle(scene.event_name || scene.salon);
-  const sourceProductReferences = Object.fromEntries(catalogEntries.map((entry) => [entry.type, assetReference(entry, salonLabel)]));
+  const packLabel = sceneOfferLabel(scene);
+  const sourceProductReferences = Object.fromEntries(catalogEntries.map((entry) => [entry.type, assetReference(entry, packLabel)]));
   const width = Number(scene.dimensions?.width || scene.width_m || 4);
   const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
   const covers = options.wallCovers || {};
@@ -13652,19 +13654,35 @@ function buildGroupChildren(rows, sourceAssets) {
     .filter(Boolean);
 }
 
-function assetSalons(asset, scenes = []) {
-  if (Array.isArray(asset.dimensions?.salons)) {
-    return uniqueTextValues(asset.dimensions.salons.map(normalizeSalonTitle).filter(Boolean));
+function assetPacks(asset, scenes = []) {
+  if (Array.isArray(asset.dimensions?.packs)) {
+    return uniqueByNormalized(asset.dimensions.packs.map((pack) => String(pack || '').trim()).filter(Boolean));
   }
-  const salons = uniqueTextValues(scenes.map((scene) => normalizeSalonTitle(scene.event_name || scene.salon)).filter(Boolean));
-  return asset.is_active ? salons.slice(0, 1) : [];
+
+  const legacySalons = [
+    ...(Array.isArray(asset.dimensions?.salons) ? asset.dimensions.salons : []),
+    ...Object.values(asset.dimensions?.salonPricing || {}).map((row) => row?.salon),
+  ];
+  const migratedPacks = legacySalons.flatMap(legacySalonPackNames);
+  if (migratedPacks.length) return uniqueByNormalized(migratedPacks).sort(packNameSort);
+
+  const scenePacks = uniqueByNormalized((scenes || []).map((scene) => sceneOfferLabel(scene)).filter(Boolean));
+  return asset.is_active ? scenePacks.slice(0, 1) : [];
+}
+
+function legacySalonPackNames(salonLabel = '') {
+  const normalized = normalizeTextValue(salonLabel);
+  if (normalized.includes('smcl')) return ['Confort', 'Prestige'];
+  if (normalized.includes('sitl')) return ['Signature'];
+  if (normalized.includes('siae')) return ['SIAE'];
+  return [];
 }
 
 function colorGroupAssets(assets = [], salonLabel = '', usage = '') {
   return (assets || [])
     .filter((asset) => asset?.dimensions?.isColorGroup)
     .filter((asset) => asset.is_active !== false)
-    .filter((asset) => colorGroupMatchesSalon(asset, salonLabel))
+    .filter((asset) => colorGroupMatchesPack(asset, salonLabel))
     .filter((asset) => colorGroupUsages(asset).includes(usage));
 }
 
@@ -13799,10 +13817,19 @@ function colorGroupUsages(asset = {}) {
   return Array.isArray(asset.dimensions?.colorUsages) ? asset.dimensions.colorUsages : [];
 }
 
-function colorGroupMatchesSalon(asset = {}, salonLabel = '') {
-  const salons = assetSalons(asset);
-  if (!salons.length) return false;
-  return salons.some((salon) => sameSalonLabel(salon, salonLabel));
+function colorGroupMatchesPack(asset = {}, packLabel = '') {
+  const packs = assetPacks(asset);
+  if (!packs.length) return false;
+  return packs.some((pack) => samePackLabel(pack, packLabel));
+}
+
+function samePackLabel(a = '', b = '') {
+  return normalizePackLabel(a) === normalizePackLabel(b);
+}
+
+function normalizePackLabel(value = '') {
+  const normalized = normalizeTextValue(value);
+  return normalized === 'business' ? 'signature' : normalized;
 }
 
 function sameSalonLabel(a = '', b = '') {
@@ -13836,10 +13863,10 @@ function assetToCatalogEntry(asset, allAssets = []) {
         }),
       };
     });
-    const salonLabel = assetSalons(asset)[0];
+    const salonLabel = assetPacks(asset)[0];
     const allEntryPrices = [
-      ...variantAssets.map((entry) => assetUnitPrice(entry, salonLabel) || assetAnySalonUnitPrice(entry)),
-      ...configOptions.filter((o) => o.type === 'select').flatMap((o) => (o.choices || []).map((c) => (c.entry ? assetUnitPrice(c.entry, salonLabel) || assetAnySalonUnitPrice(c.entry) : 0))),
+      ...variantAssets.map((entry) => assetUnitPrice(entry, salonLabel) || assetAnyPackUnitPrice(entry)),
+      ...configOptions.filter((o) => o.type === 'select').flatMap((o) => (o.choices || []).map((c) => (c.entry ? assetUnitPrice(c.entry, salonLabel) || assetAnyPackUnitPrice(c.entry) : 0))),
     ].filter((price) => price > 0);
     return {
       type: asset.type,
@@ -13965,15 +13992,11 @@ function dragCoordinate(value) {
   return Number(Number(value || 0).toFixed(2));
 }
 
-function assetMatchesSalon(asset, salonLabel = '') {
-  const salons = assetSalons(asset);
-  if (!salons.length) return true;
-  const currentSalon = normalizeSalonLabel(salonLabel);
-  if (!currentSalon) return true;
-  return salons.some((salon) => {
-    const assignedSalon = normalizeSalonLabel(salon);
-    return assignedSalon && (currentSalon.includes(assignedSalon) || assignedSalon.includes(currentSalon));
-  });
+function assetMatchesPack(asset, packLabel = '') {
+  const packs = assetPacks(asset);
+  if (!packs.length) return false;
+  if (!normalizeTextValue(packLabel)) return true;
+  return packs.some((pack) => samePackLabel(pack, packLabel));
 }
 
 function normalizeSalonLabel(value = '') {
@@ -15049,14 +15072,14 @@ function furniturePanelCategory(entry) {
   return 'furniture';
 }
 
-function formatFurniturePrice(entry, salonLabel) {
-  const price = assetUnitPrice(entry, salonLabel);
+function formatFurniturePrice(entry, packLabel) {
+  const price = assetUnitPrice(entry, packLabel);
   if (!price) return '+ 0 €';
   return `+ ${price.toLocaleString('fr-FR')} €`;
 }
 
-function assetUnitPrice(entry, salonLabel) {
-  const salonPricing = getSalonPricing(entry, salonLabel);
+function assetUnitPrice(entry, packLabel) {
+  const packPricing = getPackPricing(entry, packLabel);
   const defaultPrices = {
     chair: 72,
     table: 93,
@@ -15064,7 +15087,7 @@ function assetUnitPrice(entry, salonLabel) {
     screen: 450,
   };
   return firstPriceValue(
-    salonPricing.price,
+    packPricing.price,
     entry?.price,
     entry?.dimensions?.price,
     entry?.optionPrice,
@@ -15073,35 +15096,53 @@ function assetUnitPrice(entry, salonLabel) {
   );
 }
 
-function assetAnySalonUnitPrice(entry = {}) {
-  const pricing = entry?.dimensions?.salonPricing || entry?.salonPricing || {};
-  const salonPrices = Object.values(pricing)
+function assetAnyPackUnitPrice(entry = {}) {
+  const pricing = entry?.dimensions?.packPricing || entry?.packPricing || {};
+  const legacyPricing = entry?.dimensions?.salonPricing || entry?.salonPricing || {};
+  const packPrices = [...Object.values(pricing), ...Object.values(legacyPricing)]
     .map((row) => Number(row?.price || 0))
     .filter((price) => price > 0);
   return firstPriceValue(
     entry?.price,
     entry?.dimensions?.price,
     entry?.optionPrice,
-    salonPrices.length ? Math.min(...salonPrices) : 0,
+    packPrices.length ? Math.min(...packPrices) : 0,
     0,
   );
 }
 
-function assetReference(entry, salonLabel) {
-  return getSalonPricing(entry, salonLabel).reference || entry?.dimensions?.reference || '';
+function assetReference(entry, packLabel) {
+  return getPackPricing(entry, packLabel).reference || entry?.dimensions?.reference || '';
 }
 
-function getSalonPricing(assetOrEntry, salonLabel) {
-  const pricing = assetOrEntry?.dimensions?.salonPricing || assetOrEntry?.salonPricing || {};
-  const directKey = salonPricingKey(salonLabel);
+function getPackPricing(assetOrEntry, packLabel) {
+  const pricing = assetOrEntry?.dimensions?.packPricing || assetOrEntry?.packPricing || {};
+  const directKey = packPricingKey(packLabel);
   const direct = pricing[directKey];
   if (direct) return direct;
-  const normalized = normalizeSalonLabel(salonLabel);
-  return Object.entries(pricing).find(([, value]) => normalizeSalonLabel(value?.salon || '') === normalized)?.[1] || {};
+  const normalized = normalizePackLabel(packLabel);
+  const configured = Object.entries(pricing).find(([, value]) => normalizePackLabel(value?.pack || '') === normalized)?.[1];
+  if (configured) return configured;
+
+  const legacyPricing = assetOrEntry?.dimensions?.salonPricing || assetOrEntry?.salonPricing || {};
+  const legacySalon = legacySalonForPack(packLabel);
+  if (!legacySalon) return {};
+  const legacyDirect = legacyPricing[slugForType(legacySalon)];
+  if (legacyDirect) return legacyDirect;
+  const normalizedLegacySalon = normalizeSalonLabel(legacySalon);
+  return Object.entries(legacyPricing).find(([, value]) => normalizeSalonLabel(value?.salon || '') === normalizedLegacySalon)?.[1] || {};
 }
 
-function salonPricingKey(salonLabel) {
-  return slugForType(salonLabel || 'salon');
+function legacySalonForPack(packLabel = '') {
+  const normalized = normalizePackLabel(packLabel);
+  if (normalized === 'confort' || normalized === 'prestige') return 'SMCL 2026';
+  if (normalized === 'signature') return 'SITL 2027';
+  if (normalized === 'siae') return 'SIAE 2027';
+  return '';
+}
+
+function packPricingKey(packLabel) {
+  return slugForType(normalizePackLabel(packLabel) || 'pack');
 }
 
 function firstPriceValue(...values) {
