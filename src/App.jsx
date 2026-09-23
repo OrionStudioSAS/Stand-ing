@@ -48,7 +48,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
 import { createTechnicalPlanBlob, exportTechnicalPng } from './technicalExport.js';
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
@@ -8516,7 +8516,7 @@ function adminTitle(tab) {
 function adminSubtitle(tab) {
   if (tab === 'dashboard') return "Vue d'ensemble de l'activité Stand-ING";
   if (tab === 'salons') return 'Gestion des salons et de leurs configurations';
-  if (tab === 'presets') return 'Gestion des packs disponibles par salon';
+  if (tab === 'presets') return 'Gestion des packs globaux et de leur activation par salon';
   if (tab === 'clients') return 'Exposants synchronisés et configurations associées';
   if (tab === 'requests') return 'Demandes exposants à traiter avant validation finale';
   if (tab === 'users') return 'Comptes administrateurs et exposants';
@@ -8686,7 +8686,7 @@ function normalizeSalonTitle(raw) {
 
 function adminPackAssignmentChoices(salons = [], scenes = []) {
   const offerLabels = (salons || [])
-    .flatMap((salon) => salon?.offers || [])
+    .flatMap((salon) => [...(salon?.packDefinitions || []), ...(salon?.offers || [])])
     .map((offer) => String(offer?.name || '').trim())
     .filter(Boolean);
   const sceneLabels = (scenes || []).map((scene) => sceneOfferLabel(scene)).filter(Boolean);
@@ -9010,18 +9010,17 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
     setBoardEditor({ packName: entry.packName, value: entry.source?.board_id || '', salonFromGroup: Boolean(entry.source?.mapping?.salon_from_group) });
   };
 
-  const openBasePackEditor = async (entry) => {
+  const openBasePackEditor = (entry) => {
     if (!selectedSalon) return;
-    setActionState({ loadingPack: entry.packName, savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
-    try {
-      const { offer } = await ensureSalonOffer(selectedSalon, entry.packName);
-      const nextSalon = mergeSalonOffer(selectedSalon, offer);
-      setBasePackEditor({ ...entry, salon: nextSalon, offer, active: true });
-      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
-      await onSalonChanged?.();
-    } catch (error) {
-      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || "Impossible d'ouvrir le pack de base." });
-    }
+    const globalMetadata = entry.packDefinition?.metadata || entry.offer?.metadata || {};
+    const offer = {
+      ...(entry.offer || {}),
+      pack_id: entry.packDefinition?.id || entry.offer?.pack_id,
+      slug: entry.packDefinition?.slug || entry.offer?.slug || slugForType(entry.packName),
+      name: entry.packDefinition?.name || entry.packName,
+      metadata: globalMetadata,
+    };
+    setBasePackEditor({ ...entry, salon: selectedSalon, offer });
   };
 
   const saveBasePack = async (offer, baseItems, packBenefits) => {
@@ -9029,7 +9028,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
     try {
       const savedOffer = await saveSalonOfferBaseItems(offer, baseItems, packBenefits);
       setBasePackEditor(null);
-      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Avantages du pack ${savedOffer.name} sauvegardés.`, error: '' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Configuration globale du pack ${savedOffer.name} sauvegardée.`, error: '' });
       await onSalonChanged?.();
     } catch (error) {
       setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible de sauvegarder le pack de base.' });
@@ -9053,12 +9052,12 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
   const createPack = async (event) => {
     event.preventDefault();
     const packName = newPackName.trim();
-    if (!selectedSalon || !packName) return;
+    if (!packName) return;
     setActionState({ loadingPack: packName, savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
     try {
-      await ensureSalonOffer(selectedSalon, packName);
+      await createPackDefinition(packName);
       setNewPackName('');
-      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Pack ${packName} créé pour ${selectedSalon.name}.`, error: '' });
+      setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Pack global ${packName} créé. Tu peux maintenant l'activer dans les salons souhaités.`, error: '' });
       await onSalonChanged?.();
     } catch (error) {
       setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: error.message || 'Impossible de créer ce pack.' });
@@ -9083,8 +9082,9 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
   };
 
   const removeGlobalPack = async (entry) => {
-    const linkedSalons = salons.filter((salon) => salonPackCards(salon).some((pack) => normalizeTextValue(pack.packName) === normalizeTextValue(entry.packName)));
-    if (!window.confirm(`Supprimer définitivement le pack ${entry.packName} de TOUS les salons ?\n\nSalons concernés : ${linkedSalons.map((salon) => salon.name).join(', ')}.\n\nSes configurations de pack et ses liaisons Monday seront supprimées. Cette action est irréversible et refusée si des scènes utilisent ce pack.`)) return;
+    const linkedSalons = salons.filter((salon) => salonPackCards(salon).some((pack) => pack.active && normalizeTextValue(pack.packName) === normalizeTextValue(entry.packName)));
+    const linkedSalonNames = linkedSalons.map((salon) => salon.name).join(', ') || 'aucun salon actif';
+    if (!window.confirm(`Supprimer définitivement le pack ${entry.packName} de TOUS les salons ?\n\nSalons concernés : ${linkedSalonNames}.\n\nSes configurations de pack et ses liaisons Monday seront supprimées. Cette action est irréversible et refusée si des scènes utilisent ce pack.`)) return;
     setDeletingGlobalPack(entry.packName);
     setActionState((current) => ({ ...current, message: '', error: '' }));
     try {
@@ -9114,7 +9114,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
         </div>
         <form className="preset-create-pack-form" onSubmit={createPack}>
           <input value={newPackName} placeholder="Nom du pack" onChange={(event) => setNewPackName(event.target.value)} />
-          <button type="submit" disabled={!selectedSalon || !newPackName.trim() || actionState.loadingPack === newPackName.trim()}>
+          <button type="submit" disabled={!newPackName.trim() || actionState.loadingPack === newPackName.trim()}>
             {actionState.loadingPack === newPackName.trim() ? 'Création...' : 'Créer un pack'}
           </button>
         </form>
@@ -9129,13 +9129,13 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
             <button className="preset-card-menu" type="button" aria-label="Options pack">⋮</button>
             <div className="preset-card-preview">{entry.active ? presetReferenceLabel(entry.preset, entry.presets) : '—'}</div>
             <div className="preset-card-body">
-              <strong>{entry.salonShort} - {entry.packName}</strong>
+              <strong>{entry.packName}</strong>
               <span>{entry.active ? presetMetaLabel(entry.preset, entry.presets) : 'Pack non activé sur ce salon'}</span>
               <small className="preset-board-line">
                 Monday : {entry.source?.board_id ? `board ${entry.source.board_id}` : 'aucun board'}
                 {entry.source?.mapping?.salon_from_group && ` · Groupe : ${selectedSalon.name}`}
               </small>
-              {entry.offer?.metadata?.packBenefits?.mode === 'allowance' && <small className="preset-board-line">Forfait accessoires offert : {validationMoney(entry.offer.metadata.packBenefits.allowanceAmount || 0)} € HT</small>}
+              {(entry.packDefinition?.metadata?.packBenefits || entry.offer?.metadata?.packBenefits)?.mode === 'allowance' && <small className="preset-board-line">Forfait accessoires offert : {validationMoney((entry.packDefinition?.metadata?.packBenefits || entry.offer?.metadata?.packBenefits).allowanceAmount || 0)} € HT</small>}
               <fieldset className="preset-pack-actions" disabled={Boolean(deletingGlobalPack)}>
                 {entry.active ? (
                   <>
@@ -9198,7 +9198,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
             <i />
           </article>
         )) : (
-          <div className="admin-empty-row">Aucun pack configuré pour ce salon. Crée un pack avec le champ ci-dessus.</div>
+          <div className="admin-empty-row">Aucun pack global créé. Crée un pack avec le champ ci-dessus.</div>
         )}
       </div>
 
@@ -9230,11 +9230,13 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
 
 function salonPackCards(salon) {
   const packNames = uniqueByNormalized([
+    ...(salon.packDefinitions || []).map((pack) => pack.name),
     ...(salon.offers || []).map((offer) => offer.name),
     ...(salon.monday_sources || []).map((source) => source.offer),
   ].filter(Boolean)).sort(packNameSort);
 
   return packNames.map((packName) => {
+    const packDefinition = (salon.packDefinitions || []).find((item) => normalizeTextValue(item.name) === normalizeTextValue(packName)) || null;
     const offer = (salon.offers || []).find((item) => normalizeTextValue(item.name) === normalizeTextValue(packName)) || null;
     const presets = offer?.presets?.length ? offer.presets : (salon.presets || []).filter((item) => item.offer_id === offer?.id);
     const preset = presets.find((item) => item.layout === 'u') || presets[0] || null;
@@ -9246,8 +9248,9 @@ function salonPackCards(salon) {
       presets,
       preset,
       source,
+      packDefinition,
       packName,
-      active: Boolean(offer && presets.length),
+      active: Boolean(offer),
     };
   });
 }
@@ -9303,7 +9306,7 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
   useEffect(() => {
     setQuantities(baseItemsToQuantityMap(offer?.metadata?.baseItems));
     setBenefits(normalizePackBenefits(offer?.metadata?.packBenefits || { mode: /^signature$/i.test(offer?.name || '') ? 'allowance' : 'included-items' }));
-  }, [offer?.id, offer?.metadata?.baseItems]);
+  }, [offer?.id, offer?.metadata?.baseItems, offer?.metadata?.packBenefits]);
 
   const updateQuantity = (type, nextQuantity) => {
     setQuantities((current) => ({
@@ -9329,7 +9332,7 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
         <header>
           <div>
             <h2>Objets inclus / forfait</h2>
-            <span>{salon?.name} · {offer?.name}</span>
+            <span>Pack global · {offer?.name}</span>
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
         </header>
@@ -9434,8 +9437,8 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
         <header className="salon-preset-header">
           <div>
             <span>Configuration de base</span>
-            <h2>{localSalon.name}{selectedOffer ? ` · ${selectedOffer.name}` : ''}</h2>
-            <p>Les objets placés ici composent la scène de départ selon l'implantation. Les quotas gratuits se règlent dans “Pack de base”.</p>
+            <h2>{selectedOffer?.name || 'Pack'}</h2>
+            <p>Cette configuration est globale : toute modification est répercutée sur les salons où le pack est actif.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
         </header>
@@ -9672,8 +9675,8 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
       </section>
 
       <aside className="preset-side-panel">
-        <h3>{offer?.name || 'Pack'} · {salon.name}</h3>
-        <p>Cette base est spécifique à l'implantation {layoutLabel(layout)}. Change d'onglet pour configurer les autres murs.</p>
+        <h3>{offer?.name || 'Pack'} · {layoutLabel(layout)}</h3>
+        <p>Cette base est commune à tous les salons utilisant ce pack. Change d'onglet pour configurer les autres implantations.</p>
         <div className="preset-dimensions">
           <label>Largeur <span>{width} m</span><input type="range" min="2" max="12" step="0.5" value={width} onChange={(event) => setWidth(Number(event.target.value))} /></label>
           <label>Profondeur <span>{depth} m</span><input type="range" min="2" max="10" step="0.5" value={depth} onChange={(event) => setDepth(Number(event.target.value))} /></label>

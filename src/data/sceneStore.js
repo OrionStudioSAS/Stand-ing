@@ -895,7 +895,8 @@ export async function listSalons(filters = {}) {
     return filterSalons(groupLocalSalons((scenesData || []).map(dbSceneToScene)), filters);
   }
 
-  const [offersResult, presetsResult, presetItemsResult, scenesResult, sourcesResult] = await Promise.all([
+  const [packsResult, offersResult, presetsResult, presetItemsResult, scenesResult, sourcesResult] = await Promise.all([
+    safeSalonQuery(supabase.from('packs').select('*').order('display_order', { ascending: true }).order('name', { ascending: true }), 'packs'),
     safeSalonQuery(supabase.from('salon_offers').select('*').order('display_order', { ascending: true }).order('name', { ascending: true }), 'salon_offers'),
     safeSalonQuery(supabase.from('stand_presets').select('*').order('created_at', { ascending: true }), 'stand_presets'),
     safeSalonQuery(supabase.from('stand_preset_items').select('*'), 'stand_preset_items'),
@@ -908,27 +909,56 @@ export async function listSalons(filters = {}) {
     offersResult || [],
     attachPresetItems(presetsResult || [], presetItemsResult || []),
     scenesResult || [],
-    sourcesResult || []
+    sourcesResult || [],
+    packsResult || []
   ));
   return filterSalons(salons, filters);
+}
+
+export async function createPackDefinition(packName) {
+  const name = String(packName || '').trim();
+  if (!name) throw new Error('Ajoute un nom de pack.');
+  const slug = slugifyAsset(name);
+  if (!supabase) {
+    return { id: slug, slug, name, display_order: packDisplayOrder(name), metadata: {} };
+  }
+
+  const { data, error } = await supabase
+    .from('packs')
+    .upsert({
+      slug,
+      name,
+      display_order: packDisplayOrder(name),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'slug' })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 export async function ensureSalonOffer(salon, packName) {
   const slug = slugifyAsset(packName);
   if (!supabase) {
-    const offer = { id: `${salon.id}-${slug}`, salon_id: salon.id, slug, name: packName, presets: [], monday_source: null };
+    const offer = { id: `${salon.id}-${slug}`, pack_id: slug, salon_id: salon.id, slug, name: packName, presets: [], monday_source: null };
     const presets = makeLocalPreset(salon, offer);
     return { offer: { ...offer, presets }, preset: presets[0] || null };
   }
+
+  const pack = await createPackDefinition(packName);
+  const offerMetadata = packOfferMetadata(pack.metadata);
 
   const { data: offer, error: offerError } = await supabase
     .from('salon_offers')
     .upsert({
       salon_id: salon.id,
+      pack_id: pack.id,
       slug,
-      name: packName,
-      display_order: packDisplayOrder(packName),
-      included_description: `Pack ${packName} configure pour ${salon.name}`,
+      name: pack.name,
+      display_order: pack.display_order ?? packDisplayOrder(pack.name),
+      base_price: pack.base_price ?? null,
+      included_description: pack.included_description || `Pack ${pack.name}`,
+      metadata: offerMetadata,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'salon_id,slug' })
     .select('*')
@@ -936,13 +966,14 @@ export async function ensureSalonOffer(salon, packName) {
 
   if (offerError) throw offerError;
 
-  const presets = await ensurePresetForOffer(salon, offer);
+  let presets = await ensurePresetForOffer(salon, offer);
+  presets = await applyPackTemplatesToPresets(pack, presets);
   const mondaySource = await linkMondaySourceToOffer(salon, offer);
   return { offer: { ...offer, monday_source: mondaySource, presets }, preset: presets[0] || null };
 }
 
 export async function saveSalonOfferBaseItems(offer, baseItems = [], packBenefits = offer?.metadata?.packBenefits) {
-  if (!offer?.id) throw new Error('Pack introuvable.');
+  if (!offer?.id && !offer?.pack_id) throw new Error('Pack introuvable.');
   const benefits = normalizePackBenefits(packBenefits);
   const normalizedItems = benefits.mode === 'allowance' ? [] : normalizeBaseItems(baseItems);
 
@@ -957,20 +988,44 @@ export async function saveSalonOfferBaseItems(offer, baseItems = [], packBenefit
     };
   }
 
+  const pack = await findPackDefinition(offer);
+  if (!pack) return saveLegacySalonOfferBaseItems(offer, normalizedItems, benefits);
+
+  const metadata = {
+    ...(pack.metadata || {}),
+    baseItems: normalizedItems,
+    packBenefits: benefits,
+  };
+  const updatedAt = new Date().toISOString();
+  const { data: savedPack, error: packError } = await supabase
+    .from('packs')
+    .update({ metadata, updated_at: updatedAt })
+    .eq('id', pack.id)
+    .select('*')
+    .single();
+  if (packError) throw packError;
+
+  const offerMetadata = packOfferMetadata(metadata);
+  const { error: offersError } = await supabase
+    .from('salon_offers')
+    .update({ metadata: offerMetadata, updated_at: updatedAt })
+    .eq('pack_id', pack.id);
+  if (offersError) throw offersError;
+
+  return { ...offer, pack_id: pack.id, pack: savedPack, metadata: offerMetadata };
+}
+
+async function saveLegacySalonOfferBaseItems(offer, normalizedItems, benefits) {
+  if (!offer?.id) throw new Error('Pack introuvable.');
   const { data, error } = await supabase
     .from('salon_offers')
     .update({
-      metadata: {
-        ...(offer.metadata || {}),
-        baseItems: normalizedItems,
-        packBenefits: benefits,
-      },
+      metadata: { ...(offer.metadata || {}), baseItems: normalizedItems, packBenefits: benefits },
       updated_at: new Date().toISOString(),
     })
     .eq('id', offer.id)
     .select('*')
     .single();
-
   if (error) throw error;
   return data;
 }
@@ -1162,9 +1217,7 @@ export async function saveStandPresetConfig(preset, scene) {
   if (!supabase) return { ...preset, ...scene };
   const defaultColorOptions = scene.defaultColorOptions || scene.options?.defaultColorOptions || preset.base_config?.defaultColorOptions || {};
 
-  const payload = {
-    name: preset.name,
-    description: preset.description || `Scene de base ${preset.name}`,
+  const sharedPayload = {
     width_m: scene.dimensions.width,
     depth_m: scene.dimensions.depth,
     height_m: fixedWallHeight,
@@ -1182,54 +1235,127 @@ export async function saveStandPresetConfig(preset, scene) {
     updated_at: new Date().toISOString(),
   };
 
-  const { data: savedPreset, error: presetError } = await supabase
-    .from('stand_presets')
-    .update(payload)
-    .eq('id', preset.id)
-    .select('*')
-    .single();
+  const { data: sourceOffer, error: offerError } = await supabase
+    .from('salon_offers')
+    .select('id, pack_id, name')
+    .eq('id', preset.offer_id)
+    .maybeSingle();
+  if (offerError) throw offerError;
 
+  let targetPresets = [preset];
+  let pack = null;
+  if (sourceOffer?.pack_id) {
+    const { data: packData, error: packError } = await supabase.from('packs').select('*').eq('id', sourceOffer.pack_id).single();
+    if (packError) throw packError;
+    pack = packData;
+
+    const { data: offers, error: offersError } = await supabase
+      .from('salon_offers')
+      .select('id, salon_id, name')
+      .eq('pack_id', sourceOffer.pack_id);
+    if (offersError) throw offersError;
+    const offerIds = (offers || []).map((offer) => offer.id);
+    const { data: existingPresets, error: presetsError } = await supabase
+      .from('stand_presets')
+      .select('*')
+      .in('offer_id', offerIds)
+      .eq('layout', scene.layout)
+      .eq('is_active', true);
+    if (presetsError) throw presetsError;
+
+    targetPresets = [...(existingPresets || [])];
+    const existingOfferIds = new Set(targetPresets.map((item) => item.offer_id));
+    const missingOffers = (offers || []).filter((offer) => !existingOfferIds.has(offer.id));
+    if (missingOffers.length) {
+      const { data: createdPresets, error: createError } = await supabase
+        .from('stand_presets')
+        .insert(missingOffers.map((offer) => ({
+          salon_id: offer.salon_id,
+          offer_id: offer.id,
+          name: `Scene de base ${offer.name} - ${scene.layout}`,
+          description: preset.description || `Scene de base ${offer.name}`,
+          ...sharedPayload,
+        })))
+        .select('*');
+      if (createError) throw createError;
+      targetPresets.push(...(createdPresets || []));
+    }
+  }
+
+  const targetPresetIds = targetPresets.map((item) => item.id).filter(Boolean);
+  const { data: savedPresets, error: presetError } = await supabase
+    .from('stand_presets')
+    .update(sharedPayload)
+    .in('id', targetPresetIds)
+    .select('*');
   if (presetError) throw presetError;
 
-  const { error: deleteError } = await supabase.from('stand_preset_items').delete().eq('preset_id', preset.id);
+  const { error: deleteError } = await supabase.from('stand_preset_items').delete().in('preset_id', targetPresetIds);
   if (deleteError) throw deleteError;
 
-  if (scene.items?.length) {
-    const { error: itemError } = await supabase.from('stand_preset_items').insert(
-      scene.items.map((item) => ({
-        preset_id: preset.id,
-        item_uid: item.id,
-        type: item.type,
-        label: item.label || catalog.find((entry) => entry.type === item.type)?.label || item.type,
-        x: item.x,
-        y: item.y || 0,
-        z: item.z,
-        rotation: item.rotation || 0,
-        wall: item.wall,
-        config: { ...item, included: true, priceMode: 'included', basePresetId: preset.id },
-        included: true,
-        price_mode: 'included',
-      }))
-    );
+  const sceneItems = scene.items || [];
+  if (sceneItems.length) {
+    const rows = targetPresetIds.flatMap((presetId) => sceneItems.map((item) => sceneItemToPresetRow(item, presetId)));
+    const { error: itemError } = await supabase.from('stand_preset_items').insert(rows);
     if (itemError) throw itemError;
   }
 
+  if (pack) {
+    const templates = { ...(pack.metadata?.presetTemplates || {}) };
+    templates[scene.layout] = {
+      width_m: scene.dimensions.width,
+      depth_m: scene.dimensions.depth,
+      height_m: fixedWallHeight,
+      layout: scene.layout,
+      base_config: sharedPayload.base_config,
+      items: sceneItems.map(sceneItemToPackTemplateItem),
+    };
+    const { error: packError } = await supabase
+      .from('packs')
+      .update({ metadata: { ...(pack.metadata || {}), presetTemplates: templates }, updated_at: new Date().toISOString() })
+      .eq('id', pack.id);
+    if (packError) throw packError;
+  }
+
+  const savedPreset = (savedPresets || []).find((item) => item.id === preset.id) || { ...preset, ...sharedPayload };
+
   return {
     ...savedPreset,
-    stand_preset_items: (scene.items || []).map((item) => ({
-      preset_id: preset.id,
-      item_uid: item.id,
-      type: item.type,
-      label: item.label,
-      x: item.x,
-      y: item.y || 0,
-      z: item.z,
-      rotation: item.rotation || 0,
-      wall: item.wall,
-      config: item,
-      included: true,
-      price_mode: 'included',
-    })),
+    stand_preset_items: sceneItems.map((item) => sceneItemToPresetRow(item, preset.id)),
+  };
+}
+
+function sceneItemToPresetRow(item = {}, presetId) {
+  return {
+    preset_id: presetId,
+    item_uid: item.id,
+    type: item.type,
+    label: item.label || catalog.find((entry) => entry.type === item.type)?.label || item.type,
+    x: Number(item.x || 0),
+    y: Number(item.y || 0),
+    z: Number(item.z || 0),
+    rotation: Number(item.rotation || 0),
+    wall: item.wall || null,
+    config: { ...item, included: true, priceMode: 'included', basePresetId: presetId },
+    included: true,
+    price_mode: 'included',
+  };
+}
+
+function sceneItemToPackTemplateItem(item = {}) {
+  const { basePresetId: _basePresetId, ...config } = item;
+  return {
+    item_uid: item.id,
+    type: item.type,
+    label: item.label || item.type,
+    x: Number(item.x || 0),
+    y: Number(item.y || 0),
+    z: Number(item.z || 0),
+    rotation: Number(item.rotation || 0),
+    wall: item.wall || null,
+    config: { ...config, included: true, priceMode: 'included' },
+    included: true,
+    price_mode: 'included',
   };
 }
 
@@ -1959,7 +2085,7 @@ function dbClientToClient(row) {
   };
 }
 
-function dbSalonToSalon(row, offers = [], presets = [], scenes = [], sources = []) {
+function dbSalonToSalon(row, offers = [], presets = [], scenes = [], sources = [], packs = []) {
   const salonOffers = offers.filter((offer) => offer.salon_id === row.id);
   const salonPresets = presets.filter((preset) => preset.salon_id === row.id);
   const salonScenes = scenes.filter((scene) => scene.salon_id === row.id || scene.salon === row.name || scene.event_name === row.name);
@@ -1973,10 +2099,92 @@ function dbSalonToSalon(row, offers = [], presets = [], scenes = [], sources = [
     })),
     presets: salonPresets,
     monday_sources: salonSources,
+    packDefinitions: packs,
     scenes: salonScenes.map((scene) => ({
       ...scene,
       dimensions: { width: scene.width_m, depth: scene.depth_m, height: fixedWallHeight },
     })),
+  };
+}
+
+async function findPackDefinition(offer = {}) {
+  if (!supabase) return null;
+  if (offer.pack_id) {
+    const { data, error } = await supabase.from('packs').select('*').eq('id', offer.pack_id).maybeSingle();
+    if (error) throw error;
+    if (data) return data;
+  }
+  const slug = offer.slug || slugifyAsset(offer.name || '');
+  if (!slug) return null;
+  const { data, error } = await supabase.from('packs').select('*').eq('slug', slug).maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+function packOfferMetadata(metadata = {}) {
+  const { presetTemplates: _presetTemplates, ...offerMetadata } = metadata || {};
+  return offerMetadata;
+}
+
+async function applyPackTemplatesToPresets(pack = {}, presets = []) {
+  const templates = pack.metadata?.presetTemplates;
+  if (!templates || typeof templates !== 'object' || !Object.keys(templates).length) return presets;
+
+  const updatedPresets = [];
+  for (const preset of presets) {
+    const template = templates[preset.layout || 'u'];
+    if (!template) {
+      updatedPresets.push(preset);
+      continue;
+    }
+    const payload = {
+      width_m: Number(template.width_m || preset.width_m || 5),
+      depth_m: Number(template.depth_m || preset.depth_m || 5),
+      height_m: Number(template.height_m || preset.height_m || fixedWallHeight),
+      base_config: template.base_config || {},
+      updated_at: new Date().toISOString(),
+    };
+    const { data: savedPreset, error: presetError } = await supabase
+      .from('stand_presets')
+      .update(payload)
+      .eq('id', preset.id)
+      .select('*')
+      .single();
+    if (presetError) throw presetError;
+
+    const { error: deleteError } = await supabase.from('stand_preset_items').delete().eq('preset_id', preset.id);
+    if (deleteError) throw deleteError;
+    const items = normalizePackTemplateItems(template.items);
+    if (items.length) {
+      const { error: itemError } = await supabase.from('stand_preset_items').insert(
+        items.map((item) => packTemplateItemRow(item, preset.id)),
+      );
+      if (itemError) throw itemError;
+    }
+    updatedPresets.push({ ...savedPreset, stand_preset_items: items.map((item) => packTemplateItemRow(item, preset.id)) });
+  }
+  return updatedPresets;
+}
+
+function normalizePackTemplateItems(items = []) {
+  return Array.isArray(items) ? items.filter((item) => item?.type) : [];
+}
+
+function packTemplateItemRow(item = {}, presetId) {
+  const config = { ...(item.config || {}), included: true, priceMode: 'included', basePresetId: presetId };
+  return {
+    preset_id: presetId,
+    item_uid: item.item_uid || item.id,
+    type: item.type,
+    label: item.label || item.type,
+    x: Number(item.x || 0),
+    y: Number(item.y || 0),
+    z: Number(item.z || 0),
+    rotation: Number(item.rotation || 0),
+    wall: item.wall || null,
+    config,
+    included: true,
+    price_mode: 'included',
   };
 }
 
@@ -2145,7 +2353,11 @@ function groupLocalSalons(scenes) {
     current.scenes.push(scene);
     groups.set(key, current);
   });
-  return [...groups.values()];
+  const packDefinitions = [...new Map(scenes
+    .map((scene) => String(scene.offer || scene.options?.includedPack || '').trim())
+    .filter(Boolean)
+    .map((name) => [normalizeKey(name), { id: slugifyAsset(name), slug: slugifyAsset(name), name, metadata: {} }])).values()];
+  return [...groups.values()].map((salon) => ({ ...salon, packDefinitions }));
 }
 
 function filterSalons(salons, filters = {}) {
@@ -2158,6 +2370,7 @@ function filterSalons(salons, filters = {}) {
       salon.slug,
       salon.location,
       salon.status,
+      ...(salon.packDefinitions || []).map((pack) => pack.name),
       ...(salon.offers || []).map((offer) => offer.name),
       ...(salon.scenes || []).flatMap((scene) => [scene.client_name, scene.project_name, scene.salon, scene.offer]),
     ];

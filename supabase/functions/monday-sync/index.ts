@@ -661,13 +661,26 @@ async function ensureSourceContext(supabase: any, source: any) {
   if (salonError) throw salonError;
 
   const offerSlug = slugify(source.offer || "standard");
+  const { data: pack, error: packError } = await supabase
+    .from("packs")
+    .upsert({
+      slug: offerSlug,
+      name: source.offer || "Standard",
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "slug" })
+    .select("id, metadata")
+    .single();
+  if (packError) throw packError;
+  const { presetTemplates: _presetTemplates, ...packMetadata } = pack.metadata || {};
+
   const { data: offer, error: offerError } = await supabase
     .from("salon_offers")
     .upsert({
       salon_id: salon.id,
+      pack_id: pack.id,
       slug: offerSlug,
       name: source.offer || "Standard",
-      metadata: { source: "monday_sync_fallback" },
+      metadata: { ...packMetadata, source: "monday_sync_fallback" },
       updated_at: new Date().toISOString(),
     }, { onConflict: "salon_id,slug" })
     .select("id")
