@@ -13496,18 +13496,9 @@ function adminAssetMatchesCategory(asset = {}, category = 'Tout', allAssets = []
   if (category === 'Groupes de variantes') return Boolean(asset.dimensions?.isVariantGroup);
   if (category === 'Groupes de couleurs') return Boolean(asset.dimensions?.isColorGroup);
   if (assetCategoryOptions.includes(category)) {
-    if (adminGroupedMemberTypes(allAssets).has(asset.type) && !asset.dimensions?.isGroup && !asset.dimensions?.isVariantGroup) return false;
     return assetBusinessCategoryLabel(asset, allAssets) === category;
   }
   return assetCategoryLabel(asset) === category;
-}
-
-function adminGroupedMemberTypes(assets = []) {
-  return new Set((assets || []).flatMap((asset) => {
-    if (asset.dimensions?.isVariantGroup) return variantManagedAssetTypes(asset);
-    if (asset.dimensions?.isGroup) return (asset.dimensions?.children || []).map((child) => child?.type).filter(Boolean);
-    return [];
-  }));
 }
 
 function inferVariantGroupBusinessCategory(asset = {}, allAssets = []) {
