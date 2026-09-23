@@ -8145,12 +8145,13 @@ function AdminDashboard({ user, adminProfile }) {
   const [presetSalonId, setPresetSalonId] = useState('');
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [assetCategory, setAssetCategory] = useState('Tout');
-  const [filters, setFilters] = useState({ search: '', salon: '', status: '' });
+  const [filters, setFilters] = useState({ search: '', salon: '', pack: '', status: '' });
   const [tab, setTabState] = useState(initialAdminTab);
   const [accountOpen, setAccountOpen] = useState(false);
   const [syncState, setSyncState] = useState({ loading: false, message: '', error: '' });
   const [assetUploadState, setAssetUploadState] = useState({ loading: false, message: '', error: '' });
   const profile = getAdminProfile(user, adminProfile);
+  const packFilterChoices = useMemo(() => adminPackAssignmentChoices(salons), [salons]);
   const setTab = (nextTab) => {
     rememberAdminTab(nextTab);
     setTabState(nextTab);
@@ -8447,7 +8448,7 @@ function AdminDashboard({ user, adminProfile }) {
               onSalonChanged={refreshSalons}
             />
           )}
-          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} salonChoices={salonFilterChoices} updateFilter={updateFilter} onDeleteScene={deleteAdminScene} />}
+          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} salonChoices={salonFilterChoices} packChoices={packFilterChoices} updateFilter={updateFilter} onDeleteScene={deleteAdminScene} />}
           {tab === 'objects' && (
             <AdminObjectsView
               assets={assets}
@@ -10324,7 +10325,7 @@ function adminClientSalonChoices(baseChoices = [], currentSalon = '') {
   return [...choices].sort((a, b) => a.localeCompare(b, 'fr'));
 }
 
-function AdminClientsView({ clients, scenes = [], assets = [], filters, salonChoices = [], updateFilter, onDeleteScene }) {
+function AdminClientsView({ clients, scenes = [], assets = [], filters, salonChoices = [], packChoices = [], updateFilter, onDeleteScene }) {
   const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
   const [clientPage, setClientPage] = useState(1);
   const clientPageSize = 20;
@@ -10334,7 +10335,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
 
   useEffect(() => {
     setClientPage(1);
-  }, [filters.search, filters.salon, filters.status]);
+  }, [filters.search, filters.salon, filters.pack, filters.status]);
 
   useEffect(() => {
     if (clientPage > clientPageCount) setClientPage(clientPageCount);
@@ -10363,7 +10364,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
       <section className="admin-clients-search-card">
         <div>
           <Search size={16} />
-          <input value={filters.search} placeholder="Nom exposant, salon, numéro de stand, commercial..." onChange={(event) => updateFilter('search', event.target.value)} />
+          <input value={filters.search} placeholder="Nom exposant, salon, numéro de stand, pack..." onChange={(event) => updateFilter('search', event.target.value)} />
         </div>
         <button type="button">Rechercher</button>
       </section>
@@ -10377,6 +10378,13 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
             {adminClientSalonChoices(salonChoices, filters.salon).map((salon) => <option key={salon} value={salon}>{salon}</option>)}
           </select>
         </label>
+        <label>
+          Pack
+          <select value={filters.pack} onChange={(event) => updateFilter('pack', event.target.value)}>
+            <option value="">Tous les packs</option>
+            {packChoices.map((pack) => <option key={pack} value={pack}>{pack}</option>)}
+          </select>
+        </label>
         <label>Statut <select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}><option value="">Tous</option><option value="created">Créé</option><option value="configured">Configuré</option><option value="bat_pending">BAT à valider</option><option value="validated">Validé</option></select></label>
       </div>
 
@@ -10386,7 +10394,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
           <span>Exposant</span>
           <span>Salons</span>
           <span>Configurations</span>
-          <span>Commercial</span>
+          <span>Packs</span>
           <span>Actions</span>
         </header>
         {clients.length ? paginatedClients.map((client) => {
@@ -10401,7 +10409,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
                   </div>
                   <span>{clientSalonSummary(client)}</span>
                   <span>{clientConfigSummary(client)}</span>
-                  <span>{client.commercial_name || clientCommercialSummary(client) || '—'}</span>
+                  <span>{clientPackSummary(client)}</span>
                   <span className="client-scenes-summary">Scènes ({clientScenes.length}) <ChevronDown size={14} /></span>
                 </summary>
                 <div className="client-scenes-list">
@@ -10493,9 +10501,11 @@ function clientConfigSummary(client) {
   return scenes.length === 1 ? label : `${scenes.length} scènes · ${label}`;
 }
 
-function clientCommercialSummary(client) {
-  const commercials = [...new Set((client.scenes || []).map((scene) => scene.source_payload?.commercial_name || scene.source_payload?.commercial).filter(Boolean))];
-  return commercials[0] || '';
+function clientPackSummary(client) {
+  const packs = uniqueByNormalized((client.scenes || []).map((scene) => scene.offer).filter(Boolean)).sort(packNameSort);
+  if (!packs.length) return '—';
+  if (packs.length <= 2) return packs.join(', ');
+  return `${packs.slice(0, 2).join(', ')} +${packs.length - 2}`;
 }
 
 function clientSceneMeta(scene = {}) {
@@ -19430,16 +19440,23 @@ function cloneAndNormalizeMaterial(material) {
 
   cloned.side = DoubleSide;
   normalizeMaterialTexture(cloned.map);
+  const chrome = isChromeMaterial(cloned);
 
   if (cloned.map && cloned.color?.set) {
     // SketchUp MTL often combines map_Kd with a mid-grey Kd, which multiplies
     // the texture and makes aluminium assets almost black in Three.js.
     cloned.color.set('#ffffff');
+  } else if (chrome && cloned.color?.set) {
+    cloned.color.set('#d7dadd');
   } else if (isAluminiumMaterial(cloned) && cloned.color?.set) {
     cloned.color.set('#bfc5c8');
   }
 
-  if (isAluminiumMaterial(cloned)) {
+  if (chrome) {
+    // Keep chrome readable without brightening the whole scene or requiring an HDR environment.
+    if ('metalness' in cloned) cloned.metalness = 0.55;
+    if ('roughness' in cloned) cloned.roughness = 0.2;
+  } else if (isAluminiumMaterial(cloned)) {
     if ('metalness' in cloned) cloned.metalness = 0.35;
     if ('roughness' in cloned) cloned.roughness = 0.42;
     if ('shininess' in cloned) cloned.shininess = 55;
@@ -19460,6 +19477,10 @@ function normalizeMaterialTexture(texture) {
 
 function isAluminiumMaterial(material = {}) {
   return /alu|minium|metal|brushed/i.test(material.name || '');
+}
+
+function isChromeMaterial(material = {}) {
+  return /chrome|chrom[eé]|inox|stainless|acier poli/i.test(material.name || '');
 }
 
 function defaultModelColor(item) {

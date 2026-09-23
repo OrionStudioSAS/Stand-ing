@@ -596,7 +596,15 @@ function fileToDataUrl(file) {
   });
 }
 
-async function makeScenePreviewImage(file) {
+export async function makeScenePreviewImage(file) {
+  if (isPdfFile(file)) {
+    try {
+      return await makePdfPreviewImage(file);
+    } catch (error) {
+      console.warn('PDF preview rendering failed, using placeholder preview.', error);
+      return makeScenePlaceholderPreview(file);
+    }
+  }
   if (!isRasterImageFile(file)) return makeScenePlaceholderPreview(file);
   try {
     const bitmap = await imageBitmapFromFile(file);
@@ -619,6 +627,55 @@ async function makeScenePreviewImage(file) {
   } catch (error) {
     console.warn('Preview compression failed, using lightweight placeholder preview.', error);
     return makeScenePlaceholderPreview(file);
+  }
+}
+
+function isPdfFile(file) {
+  const name = String(file?.name || '').toLowerCase();
+  const type = String(file?.type || '').toLowerCase();
+  return type === 'application/pdf' || name.endsWith('.pdf');
+}
+
+let pdfRendererPromise = null;
+
+async function loadPdfRenderer() {
+  if (!pdfRendererPromise) {
+    pdfRendererPromise = Promise.all([
+      import('pdfjs-dist/legacy/build/pdf.mjs'),
+      import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'),
+    ]).then(([pdfjs, worker]) => {
+      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+      return pdfjs;
+    });
+  }
+  return pdfRendererPromise;
+}
+
+async function makePdfPreviewImage(file) {
+  const pdfjs = await loadPdfRenderer();
+  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  const pdfDocument = await loadingTask.promise;
+  try {
+    const page = await pdfDocument.getPage(1);
+    const originalViewport = page.getViewport({ scale: 1 });
+    const maxEdge = 1400;
+    const scale = Math.min(2, maxEdge / Math.max(originalViewport.width, originalViewport.height));
+    const viewport = page.getViewport({ scale: Math.max(0.5, scale) });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(viewport.width));
+    canvas.height = Math.max(1, Math.round(viewport.height));
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: context, viewport, background: '#ffffff' }).promise;
+    page.cleanup();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+    if (!blob) throw new Error('Aperçu PDF vide.');
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'preview';
+    return new File([blob], `${baseName}-preview.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+  } finally {
+    pdfDocument.cleanup();
+    await pdfDocument.destroy();
   }
 }
 
@@ -2405,9 +2462,11 @@ function groupScenesByClient(scenes) {
 
 function filterClients(clients, filters = {}) {
   const search = filters.search?.trim().toLowerCase();
+  const pack = filters.pack?.trim().toLowerCase();
   return clients.filter((client) => {
     const scenes = client.scenes || [];
     if (filters.salon && !scenes.some((scene) => [scene.salon, scene.event_name].filter(Boolean).some((value) => value.toLowerCase().includes(filters.salon.toLowerCase())))) return false;
+    if (pack && !scenes.some((scene) => String(scene.offer || '').toLowerCase() === pack)) return false;
     if (filters.status && !scenes.some((scene) => scene.status === filters.status || scene.client_status === filters.status)) return false;
     if (!search) return true;
 
@@ -2426,9 +2485,10 @@ function filterClients(clients, filters = {}) {
 
 function filterScenes(scenes, filters = {}) {
   const search = filters.search?.trim().toLowerCase();
+  const pack = String(filters.pack || filters.offer || '').trim().toLowerCase();
   return scenes.filter((scene) => {
     if (filters.salon && ![scene.salon, scene.event_name].filter(Boolean).some((value) => value.toLowerCase().includes(filters.salon.toLowerCase()))) return false;
-    if (filters.offer && !scene.offer?.toLowerCase().includes(filters.offer.toLowerCase())) return false;
+    if (pack && String(scene.offer || '').toLowerCase() !== pack) return false;
     if (filters.status && scene.status !== filters.status) return false;
     if (!search) return true;
 
