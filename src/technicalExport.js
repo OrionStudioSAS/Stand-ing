@@ -29,6 +29,9 @@ const reinforcementWidth = 1;
 const wallThicknessMeters = 0.06;
 const carpetFootprintOverflow = 0.2;
 const technicalTableY = 1040;
+// A 2.75x backing canvas produces roughly 300 dpi on an A3 landscape print
+// while preserving the existing logical layout dimensions.
+const technicalRenderScale = 2.75;
 
 export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems: providedTechnicalItems = null, pictoImages = new Map() }) {
   const technicalItems = providedTechnicalItems || technicalItemsForPlan(items, width, depth, catalog);
@@ -39,16 +42,18 @@ export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog
   const tableHeight = technicalTableHeight(sections);
   const galleryHeight = visuals.length ? 70 + Math.ceil(visuals.length / 2) * 240 : 0;
   const canvas = document.createElement('canvas');
-  canvas.width = sheet.width;
-  const ctx = canvas.getContext('2d');
+  const measureContext = canvas.getContext('2d');
   const sidebarWidth = sheet.left - sheet.margin - 28;
-  const breakdownRows = technicalWallBreakdownRows(ctx, sidebarWidth, width, depth, layout, drawableTechnicalItems);
+  const breakdownRows = technicalWallBreakdownRows(measureContext, sidebarWidth, width, depth, layout, drawableTechnicalItems);
   // Keep both the variable-length sidebar and the visual gallery inside the sheet.
   sheet.height = Math.max(1240, 1210 + technicalWallBreakdownHeight(breakdownRows), technicalTableY + tableHeight + galleryHeight + sheet.margin + 30);
-  canvas.height = sheet.height;
+  canvas.width = Math.round(sheet.width * technicalRenderScale);
+  canvas.height = Math.round(sheet.height * technicalRenderScale);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(technicalRenderScale, technicalRenderScale);
 
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, sheet.width, sheet.height);
   drawFrame(ctx);
   drawSidebar(ctx, width, depth, fixedWallHeight, layout, drawableTechnicalItems);
   drawPlan(ctx, width, depth, layout, drawableTechnicalItems, catalog, pictoImages, visuals, constraints);
@@ -994,9 +999,7 @@ function drawRotatedPictoObject(ctx, x, y, w, h, rotation, image, label) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(technicalPlanRotation(rotation));
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(-w / 2, -h / 2, w, h);
-  drawContainedImage(ctx, image, -w / 2 + 5, -h / 2 + 5, w - 10, h - 10);
+  drawContainedImage(ctx, image, -w / 2, -h / 2, w, h);
   ctx.restore();
   drawBadge(ctx, x, y, label);
 }
@@ -1005,14 +1008,16 @@ function drawCeilingObject(ctx, x, y, w, h, rotation, image, color, label) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(technicalPlanRotation(rotation));
-  ctx.fillStyle = image ? '#ffffff' : color;
+  ctx.fillStyle = color;
   ctx.strokeStyle = technicalColors.ink;
   ctx.lineWidth = 2;
   ctx.setLineDash([5, 3]);
-  ctx.fillRect(-w / 2, -h / 2, w, h);
-  if (!image) ctx.strokeRect(-w / 2, -h / 2, w, h);
+  if (!image) {
+    ctx.fillRect(-w / 2, -h / 2, w, h);
+    ctx.strokeRect(-w / 2, -h / 2, w, h);
+  }
   ctx.setLineDash([]);
-  if (image) drawContainedImage(ctx, image, -w / 2 + 4, -h / 2 + 4, w - 8, h - 8);
+  if (image) drawContainedImage(ctx, image, -w / 2, -h / 2, w, h);
   ctx.restore();
   drawBadge(ctx, x, y, label);
 }

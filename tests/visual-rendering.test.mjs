@@ -5,6 +5,7 @@ import vm from 'node:vm';
 
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
+const stylesSource = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 function loadFunction(source, api, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -31,4 +32,32 @@ test('chrome materials are detected for reflective furniture legs', () => {
   assert.equal(api.isChromeMaterial({ name: 'Acier poli' }), true);
   assert.equal(api.isChromeMaterial({ name: 'top' }), false);
   assert.match(appSource, /cloned\.metalness = 0\.55/);
+  assert.match(appSource, /itemText\.includes\('table'\).*itemText\.includes\('icare'\)/);
+  assert.match(appSource, /next\.metalness = 1/);
+  assert.match(appSource, /next\.roughness = 0\.07/);
+  assert.match(appSource, /next\.envMap = getIcareChromeEnvironment\(\)/);
+});
+
+test('admins can preview the actual exhibitor permissions without logging out', () => {
+  assert.match(appSource, /const effectiveAdminViewer = Boolean\(isAdminViewer && !adminExhibitorPreview\)/);
+  assert.match(appSource, /Voir comme l.exposant/);
+  assert.match(appSource, /Revenir à la vue admin/);
+  assert.match(appSource, /canEditLockedItems=\{effectiveAdminViewer\}/);
+});
+
+test('step 3 counter options show the logo before the finish and podium uses height', () => {
+  assert.match(stylesSource, /item-config-modal[\s\S]*item-counter-logo-card[\s\S]*order: 1/);
+  assert.match(stylesSource, /item-config-modal[\s\S]*item-counter-finish-card[\s\S]*order: 2/);
+  assert.match(appSource, /function PodiumVariantPicker[\s\S]*<strong>Hauteur<\/strong>/);
+});
+
+test('dragging preserves the pointer offset instead of snapping the object under the cursor', () => {
+  const api = vm.createContext({});
+  loadFunction(appSource, api, 'applyDragPointerOffset');
+  assert.deepEqual(
+    { ...api.applyDragPointerOffset({ x: 1.2, z: -0.4 }, { x: 0.3, z: -0.2 }) },
+    { x: 1.5, z: -0.6000000000000001 },
+  );
+  assert.match(appSource, /wallDragPointFromRay\(event\.ray, draggingItem/);
+  assert.match(appSource, /isWallItem\(item\) \|\| isLedRailEntry\(item\) \|\| isAutomaticSpotItem\(item\)/);
 });

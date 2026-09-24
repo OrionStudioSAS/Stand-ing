@@ -54,6 +54,18 @@ test('BAT furniture and SVG pictos turn in the same direction as the 3D scene', 
   }
 });
 
+test('BAT SVG pictograms keep their transparent background and the PNG is A3-ready', () => {
+  const { api, canvas, ctx, rectangles } = runtime();
+  const image = { width: 100, height: 50 };
+  api.drawRotatedPictoObject(ctx, 0, 0, 100, 50, 0, image, '1');
+  api.drawCeilingObject(ctx, 0, 0, 100, 50, 0, image, '#fff', '2');
+  assert.equal(rectangles.length, 0);
+
+  api.renderTechnicalPlanCanvas({ width: 4, depth: 3, layout: 'u', items: [], catalog: [] });
+  assert.equal(canvas.width, 4950);
+  assert.ok(canvas.height >= 3410);
+});
+
 test('variant BAT pictograms use one SVG template per variant and a cache entry per selected color', () => {
   const { api } = runtime();
   const templateUrl = 'https://storage.example/object-assets/bar-160.svg';

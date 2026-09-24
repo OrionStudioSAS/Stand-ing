@@ -1887,6 +1887,31 @@ select {
   cursor: grab;
 }
 
+.admin-view-toggle {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 7;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  border: 1px solid rgba(31, 67, 120, 0.2);
+  border-radius: 999px;
+  padding: 0 14px;
+  color: #fff;
+  background: #1f4378;
+  box-shadow: 0 10px 26px rgba(20, 32, 48, 0.2);
+  font-size: 0.76rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.admin-view-toggle.exhibitor {
+  color: #1f4378;
+  background: rgba(255, 255, 255, 0.96);
+}
+
 .intro-overlay {
   position: absolute;
   inset: 0;
@@ -8833,6 +8858,20 @@ img.asset-thumb {
 
 .item-config-modal .item-options-heading {
   display: none;
+}
+
+/* In the step 3 counter popup, configure the logo before choosing a finish. */
+.item-config-modal .item-visual-config > .item-counter-logo-card {
+  order: 1;
+}
+
+.item-config-modal .item-visual-config > .item-counter-finish-card {
+  order: 2;
+}
+
+.item-config-modal .item-visual-config > .item-options-status,
+.item-config-modal .item-visual-config > .item-options-error {
+  order: 3;
 }
 
 .item-config-modal .item-image-upload {

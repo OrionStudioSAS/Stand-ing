@@ -2,7 +2,7 @@ import React, { Suspense, createContext, useContext, useEffect, useMemo, useRef,
 import { createRoot } from 'react-dom/client';
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, BufferGeometry, Cache, CanvasTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MOUSE, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
+import { Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MOUSE, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -15,6 +15,7 @@ import {
   Copy,
   ChevronDown,
   ChevronUp,
+  Eye,
   FileImage,
   FileCheck2,
   Globe2,
@@ -956,6 +957,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   });
   const [fontRevision, setFontRevision] = useState(0);
   const [headerPanel, setHeaderPanel] = useState(null);
+  const [adminExhibitorPreview, setAdminExhibitorPreview] = useState(false);
   const introStorageKey = useMemo(() => `standing-config-intro:${initialScene.id || initialScene.share_token || initialScene.project_name || 'scene'}`, [initialScene.id, initialScene.share_token, initialScene.project_name]);
   const tutorialStorageKey = useMemo(() => `standing-config-tutorial:${initialScene.id || initialScene.share_token || initialScene.project_name || 'scene'}`, [initialScene.id, initialScene.share_token, initialScene.project_name]);
   const tutorialAutoOpened = useRef(false);
@@ -1115,7 +1117,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const effectiveCarpetFootprintEnabled = carpetFootprintEnabled && !selectedTechnicalFloor;
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
-  const readOnly = Boolean(forceReadOnly) || (!isAdminViewer && Boolean(initialScene.source_payload?.exhibitor_view_only));
+  const effectiveAdminViewer = Boolean(isAdminViewer && !adminExhibitorPreview);
+  const readOnly = Boolean(forceReadOnly) || (!effectiveAdminViewer && Boolean(initialScene.source_payload?.exhibitor_view_only));
   const sceneVisualContext = useMemo(() => ({
     fontRevision,
     language,
@@ -1177,8 +1180,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     return sortCatalogEntries(uniqueCatalogEntries(entries));
   }, [objectBank, assetPackLabel]);
   const placeableCatalog = useMemo(
-    () => availableCatalog.filter((entry) => isAdminViewer || !entry.dimensions?.adminOnly),
-    [availableCatalog, isAdminViewer],
+    () => availableCatalog.filter((entry) => effectiveAdminViewer || !entry.dimensions?.adminOnly),
+    [availableCatalog, effectiveAdminViewer],
   );
   const hydratedItems = useMemo(() => (
     objectBankLoaded ? items.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)) : items
@@ -1283,7 +1286,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   }, [sceneAssetsReady]);
 
   useEffect(() => {
-    if (tutorialAutoOpened.current || isAdminViewer || readOnly || !sceneHasRendered || activeStep <= 1) return;
+    if (tutorialAutoOpened.current || effectiveAdminViewer || readOnly || !sceneHasRendered || activeStep <= 1) return;
     tutorialAutoOpened.current = true;
     if (typeof window === 'undefined') return;
     try {
@@ -1295,7 +1298,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       setTutorialOpen(true);
       setTutorialStepAndFocus(0);
     }
-  }, [activeStep, isAdminViewer, readOnly, sceneHasRendered, tutorialStorageKey]);
+  }, [activeStep, effectiveAdminViewer, readOnly, sceneHasRendered, tutorialStorageKey]);
 
   useEffect(() => {
     if (!objectBank.length) return;
@@ -1596,7 +1599,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (readOnly) return;
     const currentItem = sceneItems.find((item) => item.id === id);
     if (isTransformPatch(patch) && itemSystemTransformLocked(currentItem) && !canApplyAutomaticReservePatch(currentItem, patch)) return;
-    if (!isAdminViewer && hasOwn(patch, 'rotation') && itemRotationLocked(currentItem)) return;
+    if (!effectiveAdminViewer && hasOwn(patch, 'rotation') && itemRotationLocked(currentItem)) return;
     const autoLedItem = sceneItems.find((item) => item.id === id && isAutomaticLedRailItem(item));
     if (autoLedItem) {
       const constrained = constrainItem({ ...autoLedItem, ...patch }, width, depth, layout, effectiveCarpetFootprintEnabled);
@@ -1896,7 +1899,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           ...(isWallItem(nextBase)
             ? { wall: item.wall, x: item.x, y: isTelevisionItem(nextBase) ? screenCenterHeight : item.y, z: item.z }
             : { x: item.x, z: item.z }),
-          ...((isAdminViewer || !itemRotationLocked(nextBase)) ? { rotation: preservedRotation } : {}),
+          ...((effectiveAdminViewer || !itemRotationLocked(nextBase)) ? { rotation: preservedRotation } : {}),
         }
         : {};
       const candidate = constrainItem({ ...nextBase, ...compatiblePosition }, width, depth, layout, effectiveCarpetFootprintEnabled);
@@ -1920,7 +1923,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (readOnly || !draggingId) return;
     const dragged = visibleSceneItems.find((item) => item.id === draggingId);
     if (!dragged) return;
-    if (!canDragSceneItem(dragged, isAdminViewer)) return;
+    if (!canDragSceneItem(dragged, effectiveAdminViewer)) return;
 
     if (isWallItem(dragged)) {
       updateItem(draggingId, wallDragPatch(point, dragged, visibleSceneItems, width, depth, layout));
@@ -1969,7 +1972,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const removeOptionalItem = (type) => {
     if (readOnly) return;
     setItems((current) => {
-      const index = [...current].reverse().findIndex((item) => item.type === type && !isIncludedSceneItem(item) && (isAdminViewer || !itemDeletionLocked(item)));
+      const index = [...current].reverse().findIndex((item) => item.type === type && !isIncludedSceneItem(item) && (effectiveAdminViewer || !itemDeletionLocked(item)));
       if (index < 0) return current;
       const removeIndex = current.length - 1 - index;
       const removedItem = current[removeIndex];
@@ -1988,7 +1991,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (readOnly || !itemId) return;
     setItems((current) => {
       const target = current.find((item) => item.id === itemId);
-      if (!target || !canDeleteSceneItem(target, isAdminViewer)) return current;
+      if (!target || !canDeleteSceneItem(target, effectiveAdminViewer)) return current;
       if (selectedId === target.id) setSelectedId(null);
       return current.filter((item) => item.id !== itemId);
     });
@@ -1998,9 +2001,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (readOnly || !itemIds.length) return;
     const ids = new Set(itemIds);
     setItems((current) => {
-      const removedSelected = current.some((item) => ids.has(item.id) && item.id === selectedId && canDeleteSceneItem(item, isAdminViewer));
+      const removedSelected = current.some((item) => ids.has(item.id) && item.id === selectedId && canDeleteSceneItem(item, effectiveAdminViewer));
       if (removedSelected) setSelectedId(null);
-      return current.filter((item) => !ids.has(item.id) || !canDeleteSceneItem(item, isAdminViewer));
+      return current.filter((item) => !ids.has(item.id) || !canDeleteSceneItem(item, effectiveAdminViewer));
     });
   };
 
@@ -2189,7 +2192,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const deleteSelectedItem = () => {
     if (readOnly || !selected) return;
-    if (!canDeleteSceneItem(selected, isAdminViewer)) return;
+    if (!canDeleteSceneItem(selected, effectiveAdminViewer)) return;
     if (isAutomaticLedRailItem(selected)) {
       setLedRailsEnabled(false);
       setSelectedId(null);
@@ -2348,7 +2351,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onIncrementItem={duplicateCartItem}
             onDecrementItem={removeSceneItemById}
             onDeleteItems={removeSceneItemsById}
-            canRemoveItem={(item) => canDeleteSceneItem(item, isAdminViewer)}
+            canRemoveItem={(item) => canDeleteSceneItem(item, effectiveAdminViewer)}
             onValidate={() => setActiveStep(4)}
           />
         )}
@@ -2398,6 +2401,22 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       )}
 
       <section className="configurator-stage">
+        {isAdminViewer && !headerPanel && (
+          <button
+            type="button"
+            className={`admin-view-toggle ${adminExhibitorPreview ? 'exhibitor' : 'admin'}`}
+            onClick={() => {
+              setAdminExhibitorPreview((current) => !current);
+              setSelectedId(null);
+              setDraggingId(null);
+              setItemConfigModal(null);
+              setRotationPanelOpen(false);
+            }}
+          >
+            {adminExhibitorPreview ? <Settings2 size={16} /> : <Eye size={16} />}
+            <span>{adminExhibitorPreview ? 'Revenir à la vue admin' : 'Voir comme l’exposant'}</span>
+          </button>
+        )}
         <Canvas
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
           dpr={[1, 1.5]}
@@ -2430,7 +2449,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 setDraggingId={setDraggingId}
                 interactive={!readOnly}
                 hoverEnabled={!orbitControlsActive}
-                canEditLockedItems={isAdminViewer}
+                canEditLockedItems={effectiveAdminViewer}
                 onDragMove={moveDraggedItem}
                 viewAngle={viewAngle}
                 carpetColor={selectedCarpetColor}
@@ -2448,8 +2467,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 visualContext={sceneVisualContext}
                 sceneConstraints={sceneConstraints}
                 selectedToolbar={selected && !readOnly && !itemConfigModal ? (
-                  <div className={`view-toolbar selection-mode ${rotationPanelOpen && canRotateSceneItem(selected, isAdminViewer) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
-                    <button type="button" disabled={!canRotateSceneItem(selected, isAdminViewer)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
+                  <div className={`view-toolbar selection-mode ${rotationPanelOpen && canRotateSceneItem(selected, effectiveAdminViewer) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
+                    <button type="button" disabled={!canRotateSceneItem(selected, effectiveAdminViewer)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
                     <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), assetPackLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Pencil size={15} /></button>
                     <button
                       type="button"
@@ -2460,8 +2479,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                     >
                       {itemUserLocked(selected) || selectedMovementHardLocked ? <Lock size={15} /> : <Unlock size={15} />}
                     </button>
-                    <button type="button" disabled={!canDeleteSceneItem(selected, isAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={15} /></button>
-                    {rotationPanelOpen && canRotateSceneItem(selected, isAdminViewer) && (
+                    <button type="button" disabled={!canDeleteSceneItem(selected, effectiveAdminViewer)} onClick={deleteSelectedItem} title={tRaw(language, 'toolbar_delete')}><Trash2 size={15} /></button>
+                    {rotationPanelOpen && canRotateSceneItem(selected, effectiveAdminViewer) && (
                       <RotationDial value={selected.rotation || 0} onChange={(nextRotation) => updateItem(selected.id, { rotation: nextRotation })} />
                     )}
                   </div>
@@ -2572,7 +2591,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             saveState={saveState}
             confirmState={confirmState}
             readOnly={readOnly}
-            isAdminViewer={isAdminViewer}
+            isAdminViewer={effectiveAdminViewer}
             specialRequest={specialRequest}
             specialRequestTags={specialRequestTags}
             onSpecialRequest={setSpecialRequest}
@@ -2683,7 +2702,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onPrestigeSignageVisualPending={updatePrestigeSignageVisualPending}
             onPrestigeSignageVisualEnabled={updatePrestigeSignageVisualEnabled}
             onSelectPrestigeItem={setSelectedId}
-            isAdminViewer={isAdminViewer}
+            isAdminViewer={effectiveAdminViewer}
           />
         )}
         </div>
@@ -2731,7 +2750,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onClose={closeItemConfigurator}
             onConfirm={confirmItemConfigurator}
             onDeleteItem={removeSceneItemById}
-            canDeleteItem={(sceneItem) => canDeleteSceneItem(sceneItem, isAdminViewer)}
+            canDeleteItem={(sceneItem) => canDeleteSceneItem(sceneItem, effectiveAdminViewer)}
           />
         );
       })()}
@@ -2751,7 +2770,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           onIncrementItem={duplicateCartItem}
           onDecrementItem={removeSceneItemById}
           onDeleteItems={removeSceneItemsById}
-          canRemoveItem={(item) => canDeleteSceneItem(item, isAdminViewer)}
+          canRemoveItem={(item) => canDeleteSceneItem(item, effectiveAdminViewer)}
           onPrevious={() => setActiveStep((step) => Math.max(1, step - 1))}
           onNext={() => setActiveStep(activeStep === 2 ? 3 : 4)}
         />
@@ -5249,7 +5268,7 @@ function PodiumVariantPicker({ choices = [], value, onChange }) {
         </div>
       </div>
       <section className="counter-size-card podium-size-card">
-        <strong>Taille</strong>
+        <strong>Hauteur</strong>
         <div>
           {sizes.map((choice) => (
             <button key={choice.id} type="button" className={choice.id === value ? 'active' : ''} onClick={() => onChange(choice.id)}>
@@ -17530,6 +17549,7 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
 
 function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
   const [hoveredId, setHoveredId] = useState(null);
+  const dragPointerOffset = useRef({ x: 0, z: 0 });
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedId) || null, [items, selectedId]);
   const cameraPivot = useMemo(() => {
@@ -17539,13 +17559,12 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
 
   const dragFromPointer = (event) => {
     if (!interactive || !draggingId) return;
-    const floorPoint = new Vector3();
-    event.ray.intersectPlane(floorPlane, floorPoint);
+    const projectedPoint = draggingItem && isWallItem(draggingItem)
+      ? wallDragPointFromRay(event.ray, draggingItem, items, width, depth, cameraPivot)
+      : floorDragPointFromRay(event.ray, cameraPivot);
+    if (!projectedPoint) return;
     event.stopPropagation();
-    onDragMove({
-      x: floorPoint.x - cameraPivot[0],
-      z: floorPoint.z - cameraPivot[2],
-    });
+    onDragMove(applyDragPointerOffset(projectedPoint, dragPointerOffset.current));
   };
 
   const setItemHover = (itemId, hovered) => {
@@ -17578,6 +17597,13 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
           if (!interactive) return;
           setSelectedId(item.id);
           if (!canDragSceneItem(item, canEditLockedItems)) return;
+          dragPointerOffset.current = sceneItemDragPointerOffset(
+            item,
+            { x: event.point.x - cameraPivot[0], z: event.point.z - cameraPivot[2] },
+            items,
+            width,
+            depth,
+          );
           event.target.setPointerCapture(event.pointerId);
           setDraggingId(item.id);
         }}
@@ -17586,7 +17612,10 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
           if (draggingId === item.id && event.target.hasPointerCapture?.(event.pointerId)) {
             event.target.releasePointerCapture(event.pointerId);
           }
-          if (draggingId === item.id) setDraggingId(null);
+          if (draggingId === item.id) {
+            dragPointerOffset.current = { x: 0, z: 0 };
+            setDraggingId(null);
+          }
         }}
         onDragMove={dragFromPointer}
         visualContext={visualContext}
@@ -17596,7 +17625,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
 
   return (
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
-      {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragMove={onDragMove} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
+      {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragMove={(point) => onDragMove(applyDragPointerOffset(point, dragPointerOffset.current))} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
       <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRampX={technicalFloorRampX} onTechnicalFloorRampX={onTechnicalFloorRampX} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
       <Walls width={width} depth={depth} height={height} layout={layout} items={items} wallFabricColor={wallFabricColor} reserveWallFabricColor={reserveWallFabricColor} wallCovers={wallCovers} onDeselect={clearSceneSelection} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
@@ -17615,6 +17644,55 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
       )}
     </group>
   );
+}
+
+function floorDragPointFromRay(ray, cameraPivot = [0, 0, 0]) {
+  const point = new Vector3();
+  if (!ray?.intersectPlane?.(floorPlane, point)) return null;
+  return { x: point.x - Number(cameraPivot[0] || 0), z: point.z - Number(cameraPivot[2] || 0) };
+}
+
+function wallDragPointFromRay(ray, item, items = [], width = 0, depth = 0, cameraPivot = [0, 0, 0]) {
+  const center = sceneItemDragCenter(item, items, width, depth);
+  const orientation = wallItemDragOrientation(item, items);
+  const normal = orientation === 'x' ? new Vector3(0, 0, 1) : new Vector3(1, 0, 0);
+  const plane = new Plane().setFromNormalAndCoplanarPoint(normal, new Vector3(
+    center.x + Number(cameraPivot[0] || 0),
+    fixedWallHeight / 2,
+    center.z + Number(cameraPivot[2] || 0),
+  ));
+  const point = new Vector3();
+  if (!ray?.intersectPlane?.(plane, point)) return null;
+  return { x: point.x - Number(cameraPivot[0] || 0), z: point.z - Number(cameraPivot[2] || 0) };
+}
+
+function sceneItemDragCenter(item = {}, items = [], width = 0, depth = 0) {
+  if (!isWallItem(item)) return { x: Number(item.x || 0), z: Number(item.z || 0) };
+  const [x, , z] = screenWorldPosition(item, width, depth, items);
+  return { x: Number(x || 0), z: Number(z || 0) };
+}
+
+function wallItemDragOrientation(item = {}, items = []) {
+  const objectSurface = objectWallSurfaceForItem(item, items);
+  if (objectSurface?.orientation) return objectSurface.orientation;
+  return item.wall === 'left' || item.wall === 'right' ? 'z' : 'x';
+}
+
+function sceneItemDragPointerOffset(item = {}, pointer = {}, items = [], width = 0, depth = 0) {
+  const center = sceneItemDragCenter(item, items, width, depth);
+  if (!isWallItem(item)) {
+    return { x: center.x - Number(pointer.x || 0), z: center.z - Number(pointer.z || 0) };
+  }
+  return wallItemDragOrientation(item, items) === 'x'
+    ? { x: center.x - Number(pointer.x || 0), z: 0 }
+    : { x: 0, z: center.z - Number(pointer.z || 0) };
+}
+
+function applyDragPointerOffset(point = {}, offset = {}) {
+  return {
+    x: Number(point.x || 0) + Number(offset.x || 0),
+    z: Number(point.z || 0) + Number(offset.z || 0),
+  };
 }
 
 function SceneItemToolbarAnchor({ item, items = [], width = 0, depth = 0, children }) {
@@ -18439,6 +18517,9 @@ function CeilingItemStrip({ item, selected, hovered, dragging }) {
 function SceneItemContent({ item, selected, hovered, dragging, visualContext }) {
   const bounds = itemGroupBounds(item);
   const centerY = isCenterAnchoredWallModel(item) ? 0 : null;
+  const hitboxMinimum = isWallItem(item) || isLedRailEntry(item) || isAutomaticSpotItem(item)
+    ? [0.3, 0.3, 0.3]
+    : null;
   if (isCeilingMountedItem(item) && !item.modelUrl) {
     return <CeilingItemStrip item={item} selected={selected} hovered={hovered} dragging={dragging} />;
   }
@@ -18449,7 +18530,7 @@ function SceneItemContent({ item, selected, hovered, dragging, visualContext }) 
       {item.type === 'counter' && <Counter selected={selected} hovered={hovered} dragging={dragging} />}
       {item.modelUrl && (
         <>
-          <ObjHitbox bounds={bounds} centerY={centerY} />
+          <ObjHitbox bounds={bounds} centerY={centerY} minSize={hitboxMinimum} />
           <Model3D item={item} selected={selected} hovered={hovered} dragging={dragging} visualContext={visualContext} />
           <ObjectBaseboards item={item} />
         </>
@@ -18503,7 +18584,7 @@ function SelectionFrame({ bounds = {}, centerY = null }) {
   );
 }
 
-function ObjHitbox({ bounds = null, size = [0.7, 0.7, 0.7], centerY = null }) {
+function ObjHitbox({ bounds = null, size = [0.7, 0.7, 0.7], centerY = null, minSize = null }) {
   const x = Number(bounds?.width || size[0] || 0.7);
   const y = Number(bounds?.height || size[1] || 0.7);
   const z = Number(bounds?.depth || size[2] || 0.7);
@@ -18511,9 +18592,12 @@ function ObjHitbox({ bounds = null, size = [0.7, 0.7, 0.7], centerY = null }) {
   const centerZ = Number(bounds?.centerZ || 0);
   const thinVerticalPanel = Number(y || 0) >= 1.5 && Math.min(Number(x || 0), Number(z || 0)) <= 0.18;
   const minFootprint = thinVerticalPanel ? 0.08 : 0.18;
+  const minX = Number(minSize?.[0] || minFootprint);
+  const minY = Number(minSize?.[1] || 0.35);
+  const minZ = Number(minSize?.[2] || minFootprint);
   return (
-    <mesh position={[centerX, centerY ?? Math.max(y, 0.35) / 2, centerZ]}>
-      <boxGeometry args={[Math.max(x, minFootprint), Math.max(y, 0.35), Math.max(z, minFootprint)]} />
+    <mesh position={[centerX, centerY ?? Math.max(y, minY) / 2, centerZ]}>
+      <boxGeometry args={[Math.max(x, minX), Math.max(y, minY), Math.max(z, minZ)]} />
       <meshBasicMaterial transparent opacity={0} depthWrite={false} />
     </mesh>
   );
@@ -18916,6 +19000,7 @@ function posterCoverTextureSize(region = null, maxLongEdge = 1600) {
 function applyItemOptionMaterials(material, item, textureOptions = {}, meshName = '') {
   if (Array.isArray(material)) return material.map((entry) => applyItemOptionMaterials(entry, item, textureOptions, meshName));
   if (!material) return material;
+  material = enhanceIcareChromeMaterial(material, item);
 
   const materialName = normalizeMaterialName(material.name);
   const textureSlotMaterial = applyTextureSlotMaterial(material, item, textureOptions, materialName);
@@ -19481,6 +19566,45 @@ function isAluminiumMaterial(material = {}) {
 
 function isChromeMaterial(material = {}) {
   return /chrome|chrom[eé]|inox|stainless|acier poli/i.test(material.name || '');
+}
+
+let icareChromeEnvironment = null;
+
+function enhanceIcareChromeMaterial(material, item = {}) {
+  const itemText = normalizedItemText(item);
+  if (!itemText.includes('table') || !itemText.includes('icare') || !isChromeMaterial(material)) return material;
+  const next = material.clone?.() || material;
+  if (next.color?.set) next.color.set('#f5f7f8');
+  if ('metalness' in next) next.metalness = 1;
+  if ('roughness' in next) next.roughness = 0.07;
+  if ('envMap' in next) next.envMap = getIcareChromeEnvironment();
+  if ('envMapIntensity' in next) next.envMapIntensity = 1.35;
+  next.needsUpdate = true;
+  return next;
+}
+
+function getIcareChromeEnvironment() {
+  if (icareChromeEnvironment || typeof document === 'undefined') return icareChromeEnvironment;
+  const faces = Array.from({ length: 6 }, (_, index) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createLinearGradient(index % 2 ? 0 : 128, 0, index % 2 ? 128 : 0, 128);
+    gradient.addColorStop(0, index === 2 ? '#ffffff' : '#3d4652');
+    gradient.addColorStop(0.42, '#f9fbfd');
+    gradient.addColorStop(0.56, '#ffffff');
+    gradient.addColorStop(1, index === 3 ? '#aeb6bf' : '#65707c');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 128, 128);
+    return canvas;
+  });
+  icareChromeEnvironment = new CubeTexture(faces);
+  icareChromeEnvironment.colorSpace = SRGBColorSpace;
+  icareChromeEnvironment.minFilter = LinearMipmapLinearFilter;
+  icareChromeEnvironment.magFilter = LinearFilter;
+  icareChromeEnvironment.needsUpdate = true;
+  return icareChromeEnvironment;
 }
 
 function defaultModelColor(item) {
