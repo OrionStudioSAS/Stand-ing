@@ -56,9 +56,9 @@ test('admins can preview the actual exhibitor permissions without logging out', 
   assert.match(appSource, /canEditLockedItems=\{effectiveAdminViewer\}/);
 });
 
-test('step 3 counter options show the logo before the finish and podium uses height', () => {
-  assert.match(stylesSource, /item-config-modal[\s\S]*item-counter-logo-card[\s\S]*order: 1/);
-  assert.match(stylesSource, /item-config-modal[\s\S]*item-counter-finish-card[\s\S]*order: 2/);
+test('step 3 counter options show the finish before the logo and podium uses height', () => {
+  assert.match(stylesSource, /item-config-modal[\s\S]*item-counter-finish-card[\s\S]*order: 1/);
+  assert.match(stylesSource, /item-config-modal[\s\S]*item-counter-logo-card[\s\S]*order: 2/);
   assert.match(appSource, /function PodiumVariantPicker[\s\S]*<strong>Hauteur<\/strong>/);
 });
 

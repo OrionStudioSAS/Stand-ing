@@ -9136,12 +9136,12 @@ img.asset-thumb {
   display: none;
 }
 
-/* In the step 3 counter popup, configure the logo before choosing a finish. */
-.item-config-modal .item-visual-config > .item-counter-logo-card {
+/* In the step 3 counter popup, choose the finish before configuring the logo. */
+.item-config-modal .item-visual-config > .item-counter-finish-card {
   order: 1;
 }
 
-.item-config-modal .item-visual-config > .item-counter-finish-card {
+.item-config-modal .item-visual-config > .item-counter-logo-card {
   order: 2;
 }
 
