@@ -43,6 +43,7 @@ test('chrome materials are detected for reflective furniture legs', () => {
 
 test('admin object associations use a searchable asset picker', () => {
   assert.match(appSource, /function AdminAssetPicker\(/);
+  assert.match(appSource, /open && createPortal\(/);
   assert.match(appSource, /Rechercher par nom, type, catégorie ou référence/);
   assert.match(appSource, /function AssetVariantSourceRows[\s\S]*<AdminAssetPicker assets=\{sourceAssets\} value=\{type\}/);
   assert.match(appSource, /function AssetConfigOptionRows[\s\S]*emptyLabel="Aucun objet lié"/);

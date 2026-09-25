@@ -1,4 +1,5 @@
 import React, { Suspense, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useFrame, useLoader } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
@@ -10179,7 +10180,7 @@ function AdminAssetPicker({ assets = [], value = '', onChange, label = '', place
         </span>
         <Search size={15} aria-hidden="true" />
       </button>
-      {open && (
+      {open && createPortal((
         <div className="admin-asset-picker-overlay" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setOpen(false);
         }}>
@@ -10227,7 +10228,7 @@ function AdminAssetPicker({ assets = [], value = '', onChange, label = '', place
             </div>
           </section>
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }
