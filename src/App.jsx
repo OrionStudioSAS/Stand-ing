@@ -11330,7 +11330,9 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   };
 
   return (
-    <div className="asset-drawer-layer">
+    <div className="asset-drawer-layer" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose?.();
+    }}>
       <aside className="asset-drawer">
         <header>
           <div>

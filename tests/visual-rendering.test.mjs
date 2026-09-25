@@ -50,6 +50,10 @@ test('admin object associations use a searchable asset picker', () => {
   assert.match(appSource, /function AssetGroupCreator[\s\S]*onChange=\{\(type\) => updateRow/);
 });
 
+test('the 3D asset drawer closes when its backdrop is clicked', () => {
+  assert.match(appSource, /function AssetDrawer\([\s\S]*className="asset-drawer-layer" onMouseDown=\{\(event\) => \{[\s\S]*event\.target === event\.currentTarget[\s\S]*onClose\?\.\(\)/);
+});
+
 test('admins can preview the actual exhibitor permissions without logging out', () => {
   assert.match(appSource, /const effectiveAdminViewer = Boolean\(isAdminViewer && !adminExhibitorPreview\)/);
   assert.match(appSource, /Voir comme l.exposant/);
