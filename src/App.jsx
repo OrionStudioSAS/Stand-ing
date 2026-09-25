@@ -10133,6 +10133,113 @@ function normalizeTextValue(value = '') {
     .toLowerCase();
 }
 
+function AdminAssetPicker({ assets = [], value = '', onChange, label = '', placeholder = 'Choisir un objet', allowEmpty = false, emptyLabel = 'Aucun objet' }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const searchRef = useRef(null);
+  const selectedAsset = assets.find((asset) => asset.type === value) || null;
+  const filteredAssets = useMemo(() => {
+    const query = normalizeTextValue(search);
+    if (!query) return assets;
+    return assets.filter((asset) => normalizeTextValue([
+      asset.label,
+      asset.type,
+      assetBusinessCategoryLabel(asset, assets),
+      asset.dimensions?.reference,
+    ].filter(Boolean).join(' ')).includes(query));
+  }, [assets, search]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    setSearch('');
+    const focusTimer = window.setTimeout(() => searchRef.current?.focus(), 0);
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  const choose = (nextValue) => {
+    onChange?.(nextValue);
+    setOpen(false);
+  };
+
+  return (
+    <div className="admin-asset-picker">
+      {label && <span className="admin-asset-picker-label">{label}</span>}
+      <button type="button" className="admin-asset-picker-trigger" onClick={() => setOpen(true)}>
+        <AdminAssetPickerThumb asset={selectedAsset} />
+        <span>
+          <strong>{selectedAsset?.label || (value ? value : placeholder)}</strong>
+          {selectedAsset && <small>{assetBusinessCategoryLabel(selectedAsset, assets)} · {selectedAsset.type}</small>}
+        </span>
+        <Search size={15} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="admin-asset-picker-overlay" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setOpen(false);
+        }}>
+          <section className="admin-asset-picker-dialog" role="dialog" aria-modal="true" aria-label={label || 'Choisir un objet'}>
+            <header>
+              <div>
+                <h3>Choisir un objet</h3>
+                <span>{assets.length} objet{assets.length > 1 ? 's' : ''} disponible{assets.length > 1 ? 's' : ''}</span>
+              </div>
+              <button type="button" onClick={() => setOpen(false)} aria-label="Fermer"><X size={20} /></button>
+            </header>
+            <label className="admin-asset-picker-search">
+              <Search size={17} aria-hidden="true" />
+              <input
+                ref={searchRef}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Rechercher par nom, type, catégorie ou référence..."
+              />
+            </label>
+            <div className="admin-asset-picker-results">
+              {allowEmpty && (
+                <button type="button" className={!value ? 'selected empty' : 'empty'} onClick={() => choose('')}>
+                  <span className="admin-asset-picker-empty"><Minus size={18} /></span>
+                  <span><strong>{emptyLabel}</strong><small>Ne rien associer</small></span>
+                  {!value && <Check size={17} />}
+                </button>
+              )}
+              {filteredAssets.map((asset) => (
+                <button
+                  type="button"
+                  key={asset.type}
+                  className={asset.type === value ? 'selected' : ''}
+                  onClick={() => choose(asset.type)}
+                >
+                  <AdminAssetPickerThumb asset={asset} />
+                  <span>
+                    <strong>{asset.label || asset.type}</strong>
+                    <small>{assetBusinessCategoryLabel(asset, assets)} · {asset.type}</small>
+                  </span>
+                  {asset.type === value && <Check size={17} />}
+                </button>
+              ))}
+              {!filteredAssets.length && <p>Aucun objet ne correspond à « {search} ».</p>}
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminAssetPickerThumb({ asset }) {
+  return (
+    <span className="admin-asset-picker-thumb">
+      {asset?.thumbnail_url ? <img src={asset.thumbnail_url} alt="" /> : <Box size={19} aria-hidden="true" />}
+    </span>
+  );
+}
+
 function presetArea(preset) {
   const width = Number(preset.width_m || preset.base_config?.width || 0);
   const depth = Number(preset.depth_m || preset.base_config?.depth || 0);
@@ -11714,12 +11821,14 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
                     onDragEnd={() => setDraggingGroupRowUid(null)}
                     onClick={() => setSelectedGroupRowUid(row.uid)}
                   >
-                    <label>
+                    <div className="asset-picker-field">
                       <span>Objet</span>
-                      <select value={row.type} onChange={(event) => updateGroupRow(row.uid, { type: event.target.value, label: '' })}>
-                        {sourceAssets.map((source) => <option key={source.type} value={source.type}>{source.label}</option>)}
-                      </select>
-                    </label>
+                      <AdminAssetPicker
+                        assets={sourceAssets}
+                        value={row.type}
+                        onChange={(type) => updateGroupRow(row.uid, { type, label: '' })}
+                      />
+                    </div>
                     <label>
                       <span>Libellé plan</span>
                       <input value={row.label || selectedSource?.label || ''} onChange={(event) => updateGroupRow(row.uid, { label: event.target.value })} />
@@ -11875,15 +11984,14 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
                       placeholder="Libellé (ex : 15&quot;)"
                       onChange={(event) => onUpdateChoice?.(index, choiceIndex, { label: event.target.value })}
                     />
-                    <select
+                    <AdminAssetPicker
+                      assets={sourceAssets}
                       value={choice.assetType || ''}
-                      onChange={(event) => onUpdateChoice?.(index, choiceIndex, { assetType: event.target.value })}
-                    >
-                      <option value="">— Objet lié —</option>
-                      {sourceAssets.map((source) => (
-                        <option key={source.type} value={source.type}>{source.label}</option>
-                      ))}
-                    </select>
+                      allowEmpty
+                      emptyLabel="Aucun objet lié"
+                      placeholder="Objet lié"
+                      onChange={(assetType) => onUpdateChoice?.(index, choiceIndex, { assetType })}
+                    />
                     <button type="button" onClick={() => onRemoveChoice?.(index, choiceIndex)} aria-label="Supprimer ce choix"><Trash2 size={12} /></button>
                   </div>
                 ))}
@@ -11898,18 +12006,17 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
                     (link) => link.selectOptionId === selectOption.id && link.choiceId === choice.id && optionLinkKey(optionLinkIds(link)) === optionLinkKey([row.id]),
                   );
                   return (
-                    <label key={choice.id} className="option-variant-link-row">
+                    <div key={choice.id} className="option-variant-link-row">
                       <span>{choice.label || choice.id}</span>
-                      <select
+                      <AdminAssetPicker
+                        assets={sourceAssets}
                         value={currentLink?.linkedType || ''}
-                        onChange={(event) => onSetLink?.(selectOption.id, choice.id, row.id, event.target.value)}
-                      >
-                        <option value="">— Aucun —</option>
-                        {sourceAssets.map((source) => (
-                          <option key={source.type} value={source.type}>{source.label}</option>
-                        ))}
-                      </select>
-                    </label>
+                        allowEmpty
+                        emptyLabel="Aucun objet"
+                        placeholder="Objet lié"
+                        onChange={(linkedType) => onSetLink?.(selectOption.id, choice.id, row.id, linkedType)}
+                      />
+                    </div>
                   );
                 })}
               </div>
@@ -11929,18 +12036,17 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
                         && optionLinkKey(optionLinkIds(link)) === comboKey
                       ));
                       return (
-                        <label key={`${choice.id}-${comboKey}`} className="option-variant-link-row">
+                        <div key={`${choice.id}-${comboKey}`} className="option-variant-link-row">
                           <span>{combo.label}</span>
-                          <select
+                          <AdminAssetPicker
+                            assets={sourceAssets}
                             value={currentLink?.linkedType || ''}
-                            onChange={(event) => onSetLink?.(row.id, choice.id, combo.ids, event.target.value)}
-                          >
-                            <option value="">— Aucun —</option>
-                            {sourceAssets.map((source) => (
-                              <option key={source.type} value={source.type}>{source.label}</option>
-                            ))}
-                          </select>
-                        </label>
+                            allowEmpty
+                            emptyLabel="Aucun objet"
+                            placeholder="Objet lié"
+                            onChange={(linkedType) => onSetLink?.(row.id, choice.id, combo.ids, linkedType)}
+                          />
+                        </div>
                       );
                     })}
                   </div>
@@ -12095,12 +12201,10 @@ function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, colorTem
             onDrop={() => dropOn(index)}
             onDragEnd={() => setDraggingIndex(null)}
           >
-            <label>
+            <div className="asset-picker-field">
               <span>Objet variante</span>
-              <select value={type} onChange={(event) => onChange(index, event.target.value)}>
-                {sourceAssets.map((source) => <option key={source.type} value={source.type}>{source.label}</option>)}
-              </select>
-            </label>
+              <AdminAssetPicker assets={sourceAssets} value={type} onChange={(nextType) => onChange(index, nextType)} />
+            </div>
             <div className="asset-variant-source-summary">
               <span>{selectedSource?.thumbnail_url ? <img src={selectedSource.thumbnail_url} alt="" /> : <Box size={20} />}</span>
               <strong>{selectedSource?.label || 'Objet'}</strong>
@@ -12525,12 +12629,14 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
                 onDragEnd={() => setDraggingRowUid(null)}
                 onClick={() => setSelectedRowUid(row.uid)}
               >
-                <label>
+                <div className="asset-picker-field">
                   <span>Objet</span>
-                  <select value={row.type} onChange={(event) => updateRow(row.uid, { type: event.target.value, label: '' })}>
-                    {sourceAssets.map((asset) => <option key={asset.type} value={asset.type}>{asset.label}</option>)}
-                  </select>
-                </label>
+                  <AdminAssetPicker
+                    assets={sourceAssets}
+                    value={row.type}
+                    onChange={(type) => updateRow(row.uid, { type, label: '' })}
+                  />
+                </div>
                 <label>
                   <span>Libellé plan</span>
                   <input value={row.label || selectedSource?.label || ''} onChange={(event) => updateRow(row.uid, { label: event.target.value })} />
@@ -19539,8 +19645,8 @@ function cloneAndNormalizeMaterial(material) {
 
   if (chrome) {
     // Keep chrome readable without brightening the whole scene or requiring an HDR environment.
-    if ('metalness' in cloned) cloned.metalness = 0.55;
-    if ('roughness' in cloned) cloned.roughness = 0.2;
+    if ('metalness' in cloned) cloned.metalness = 0.48;
+    if ('roughness' in cloned) cloned.roughness = 0.26;
   } else if (isAluminiumMaterial(cloned)) {
     if ('metalness' in cloned) cloned.metalness = 0.35;
     if ('roughness' in cloned) cloned.roughness = 0.42;
@@ -19578,11 +19684,11 @@ function enhanceIcareChromeMaterial(material, item = {}) {
   const itemText = normalizedItemText(item);
   if (!itemText.includes('table') || !itemText.includes('icare') || !isChromeMaterial(material)) return material;
   const next = material.clone?.() || material;
-  if (next.color?.set) next.color.set('#f5f7f8');
-  if ('metalness' in next) next.metalness = 1;
-  if ('roughness' in next) next.roughness = 0.07;
+  if (next.color?.set) next.color.set('#eef1f3');
+  if ('metalness' in next) next.metalness = 0.84;
+  if ('roughness' in next) next.roughness = 0.14;
   if ('envMap' in next) next.envMap = getIcareChromeEnvironment();
-  if ('envMapIntensity' in next) next.envMapIntensity = 1.35;
+  if ('envMapIntensity' in next) next.envMapIntensity = 1.05;
   next.needsUpdate = true;
   return next;
 }

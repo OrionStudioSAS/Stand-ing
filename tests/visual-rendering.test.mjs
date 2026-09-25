@@ -32,11 +32,21 @@ test('chrome materials are detected for reflective furniture legs', () => {
   assert.equal(api.isChromeMaterial({ name: 'Acier poli' }), true);
   assert.equal(api.isChromeMaterial({ name: 'Chrome_Black' }), false);
   assert.equal(api.isChromeMaterial({ name: 'top' }), false);
-  assert.match(appSource, /cloned\.metalness = 0\.55/);
+  assert.match(appSource, /cloned\.metalness = 0\.48/);
+  assert.match(appSource, /cloned\.roughness = 0\.26/);
   assert.match(appSource, /itemText\.includes\('table'\).*itemText\.includes\('icare'\)/);
-  assert.match(appSource, /next\.metalness = 1/);
-  assert.match(appSource, /next\.roughness = 0\.07/);
+  assert.match(appSource, /next\.metalness = 0\.84/);
+  assert.match(appSource, /next\.roughness = 0\.14/);
+  assert.match(appSource, /next\.envMapIntensity = 1\.05/);
   assert.match(appSource, /next\.envMap = getIcareChromeEnvironment\(\)/);
+});
+
+test('admin object associations use a searchable asset picker', () => {
+  assert.match(appSource, /function AdminAssetPicker\(/);
+  assert.match(appSource, /Rechercher par nom, type, catégorie ou référence/);
+  assert.match(appSource, /function AssetVariantSourceRows[\s\S]*<AdminAssetPicker assets=\{sourceAssets\} value=\{type\}/);
+  assert.match(appSource, /function AssetConfigOptionRows[\s\S]*emptyLabel="Aucun objet lié"/);
+  assert.match(appSource, /function AssetGroupCreator[\s\S]*onChange=\{\(type\) => updateRow/);
 });
 
 test('admins can preview the actual exhibitor permissions without logging out', () => {
