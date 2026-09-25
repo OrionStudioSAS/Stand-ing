@@ -1298,6 +1298,13 @@ select {
   text-align: center;
 }
 
+.flag-dot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .user-pill {
   border-radius: 50%;
   color: #111827;
@@ -1827,7 +1834,21 @@ select {
 }
 
 .language-flag {
-  font-size: 1.65rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  width: 30px;
+  height: 21px;
+  border-radius: 3px;
+  background: #eef1f5;
+  box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.12);
+}
+
+.language-flag img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .language-menu strong,

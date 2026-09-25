@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 40" role="img" aria-label="Drapeau britannique">
+  <path fill="#153f78" d="M0 0h60v40H0z"/>
+  <path stroke="#fff" stroke-width="9" d="m0 0 60 40M60 0 0 40"/>
+  <path stroke="#d6293e" stroke-width="4" d="m0 0 60 40M60 0 0 40"/>
+  <path fill="#fff" d="M0 14h60v12H0zM24 0h12v40H24z"/>
+  <path fill="#d6293e" d="M0 17h60v6H0zM27 0h6v40h-6z"/>
+</svg>

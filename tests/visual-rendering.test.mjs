@@ -25,6 +25,13 @@ test('the existing configurator lighting is preserved', () => {
   assert.doesNotMatch(appSource, /ConfiguratorLighting|RoomEnvironment|environmentIntensity/);
 });
 
+test('header language flags use browser-safe SVG assets instead of platform emoji', () => {
+  assert.match(appSource, /flagSrc: '\/icons\/flag-fr\.svg'/);
+  assert.match(appSource, /flagSrc: '\/icons\/flag-en\.svg'/);
+  assert.match(appSource, /<span className="flag-dot"><img src=\{selectedLanguage\.flagSrc\}/);
+  assert.doesNotMatch(appSource, /selectedLanguage\.flag\}/);
+});
+
 test('chrome materials are detected for reflective furniture legs', () => {
   const api = vm.createContext({});
   loadFunction(appSource, api, 'isChromeMaterial');

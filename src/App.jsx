@@ -234,8 +234,8 @@ const urgencyLevels = [
   { id: 'urgent', label: 'Urgent', delay: 'Réponse sous 4h', color: '#dc2430' },
 ];
 const languages = [
-  { id: 'fr', label: 'Français', sublabel: 'Interface en français', short: 'FR', flag: '🇫🇷' },
-  { id: 'en', label: 'English', sublabel: 'Interface in English', short: 'EN', flag: '🇬🇧' },
+  { id: 'fr', label: 'Français', sublabel: 'Interface en français', short: 'FR', flagSrc: '/icons/flag-fr.svg' },
+  { id: 'en', label: 'English', sublabel: 'Interface in English', short: 'EN', flagSrc: '/icons/flag-en.svg' },
 ];
 const reserveRuleBands = [
   { id: 'small', label: 'Moins de 18 m²', minArea: 0, maxArea: 17.999, includedLabel: 'Aucune réserve incluse' },
@@ -2325,7 +2325,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           ))}
         </nav>
         <button className={`language-pill ${headerPanel === 'language' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('language')} aria-label={tRaw(language, 'aria_language')}>
-          <span className="flag-dot">{selectedLanguage.flag}</span>
+          <span className="flag-dot"><img src={selectedLanguage.flagSrc} alt="" aria-hidden="true" /></span>
         </button>
         <button className={`user-pill ${headerPanel === 'client' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('client')} aria-label={tRaw(language, 'aria_client')}>
           <img className="topbar-tool-icon" src="/icons/account.svg" alt="" aria-hidden="true" />
@@ -3122,7 +3122,7 @@ function LanguageMenu({ language, onSelect }) {
       <h3>{t('lang_title')}</h3>
       {languages.map((entry) => (
         <button key={entry.id} className={language === entry.id ? 'active' : ''} type="button" onClick={() => onSelect(entry.id)}>
-          <span className="language-flag">{entry.flag}</span>
+          <span className="language-flag"><img src={entry.flagSrc} alt="" aria-hidden="true" /></span>
           <span>
             <strong>{entry.label}</strong>
             <small>{entry.sublabel}</small>
