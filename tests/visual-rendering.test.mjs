@@ -32,6 +32,14 @@ test('header language flags use browser-safe SVG assets instead of platform emoj
   assert.doesNotMatch(appSource, /selectedLanguage\.flag\}/);
 });
 
+test('the header cart only shows the HT price next to its icon', () => {
+  const start = appSource.indexOf('function HeaderCartMenu(');
+  const end = appSource.indexOf('\nfunction FurnitureCartBar(', start);
+  const source = appSource.slice(start, end);
+  assert.match(source, /className="topbar-cart-total">\s*<strong>\{total\.toLocaleString\('fr-FR'\)\} € HT<\/strong>\s*<\/div>/);
+  assert.doesNotMatch(source, /topbar-cart-total[\s\S]*total_ht_estimated/);
+});
+
 test('chrome materials are detected for reflective furniture legs', () => {
   const api = vm.createContext({});
   loadFunction(appSource, api, 'isChromeMaterial');

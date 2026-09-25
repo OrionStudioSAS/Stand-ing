@@ -4562,7 +4562,6 @@ function HeaderCartMenu({ items, catalog, selectedId, total, pricing, salonLabel
     <div className="topbar-cart">
       <div className="topbar-cart-total">
         <strong>{total.toLocaleString('fr-FR')} € HT</strong>
-        <span>{t('total_ht_estimated')}</span>
       </div>
       <button
         type="button"
