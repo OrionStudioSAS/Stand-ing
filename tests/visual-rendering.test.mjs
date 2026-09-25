@@ -30,6 +30,7 @@ test('chrome materials are detected for reflective furniture legs', () => {
   loadFunction(appSource, api, 'isChromeMaterial');
   assert.equal(api.isChromeMaterial({ name: 'chrome' }), true);
   assert.equal(api.isChromeMaterial({ name: 'Acier poli' }), true);
+  assert.equal(api.isChromeMaterial({ name: 'Chrome_Black' }), false);
   assert.equal(api.isChromeMaterial({ name: 'top' }), false);
   assert.match(appSource, /cloned\.metalness = 0\.55/);
   assert.match(appSource, /itemText\.includes\('table'\).*itemText\.includes\('icare'\)/);

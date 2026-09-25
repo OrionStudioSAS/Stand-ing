@@ -19565,7 +19565,11 @@ function isAluminiumMaterial(material = {}) {
 }
 
 function isChromeMaterial(material = {}) {
-  return /chrome|chrom[eé]|inox|stainless|acier poli/i.test(material.name || '');
+  const name = material.name || '';
+  // Some imported screens are named "Chrome_Black" even though they are the
+  // dark TV display. Treating them as polished chrome washes the display out.
+  return /chrome|chrom[eé]|inox|stainless|acier poli/i.test(name)
+    && !/black|noir/i.test(name);
 }
 
 let icareChromeEnvironment = null;
