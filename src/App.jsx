@@ -9296,9 +9296,12 @@ function salonDebitScenes(salon = {}, scenes = []) {
   const salonSceneIds = new Set((salon.scenes || []).map((scene) => scene.id));
   const salonName = normalizeTextValue(salon.name);
   return scenes.filter((scene) => (
-    (scene.salon_id && scene.salon_id === salon.id)
-    || salonSceneIds.has(scene.id)
-    || (!scene.salon_id && normalizeTextValue(normalizeSalonTitle(scene.event_name || scene.salon)) === salonName)
+    (scene.client_status
+      ? ['configured', 'bat_review', 'bat_validated'].includes(scene.client_status)
+      : ['configured', 'bat_pending', 'validated'].includes(scene.status))
+    && ((scene.salon_id && scene.salon_id === salon.id)
+      || salonSceneIds.has(scene.id)
+      || (!scene.salon_id && normalizeTextValue(normalizeSalonTitle(scene.event_name || scene.salon)) === salonName))
   ));
 }
 
@@ -9398,7 +9401,7 @@ function salonDebitCsv(salon = {}, scenes = [], assets = []) {
   const totalCloisons = details.filter((line) => line.cloison).reduce((total, line) => total + line.total, 0);
   const rows = [
     ['Salon', salon.name || 'Salon'],
-    ['Périmètre', 'Toutes les scènes créées, quel que soit leur statut'],
+    ['Périmètre', 'Scènes configurées par les exposants uniquement (brouillons exclus)'],
     ['Nombre de scènes', selectedScenes.length],
     ['Total cloisons (stand et groupes)', totalCloisons],
     ['Date export', new Date().toLocaleDateString('fr-FR')],
