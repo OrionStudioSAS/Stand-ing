@@ -19199,7 +19199,15 @@ function WallFabricSurface({ surface, color }) {
     <group position={position} rotation={[0, surface.rotation, 0]}>
       <mesh renderOrder={1} raycast={() => null}>
         <boxGeometry args={[surface.width, fabricHeight, 0.001]} />
-        <meshBasicMaterial color={texture ? '#ffffff' : colorHex(color, '#fffdf8')} map={texture || null} toneMapped={false} />
+        <meshStandardMaterial
+          color={texture ? '#ffffff' : colorHex(color, '#fffdf8')}
+          map={texture || null}
+          emissive={texture ? '#ffffff' : colorHex(color, '#fffdf8')}
+          emissiveMap={texture || null}
+          emissiveIntensity={0.16}
+          roughness={0.82}
+          metalness={0}
+        />
       </mesh>
     </group>
   );

@@ -35,13 +35,13 @@ test('configurator scene uses the dark stage backdrop without tinting the 3D sce
   assert.match(stylesSource, /\.configurator-stage\s*\{[^}]*radial-gradient\([^}]*linear-gradient\(/);
 });
 
-test('wall fabric displays its selected color without lighting darkening it', () => {
+test('wall fabric keeps scene shading with a restrained texture lift', () => {
   const start = appSource.indexOf('function WallFabricSurface(');
   const end = appSource.indexOf('\nfunction WallCoverSurfaces(', start);
   const source = appSource.slice(start, end);
   assert.ok(start >= 0);
-  assert.match(source, /<meshBasicMaterial color=\{texture \? '#ffffff' : colorHex\(color, '#fffdf8'\)\} map=\{texture \|\| null\} toneMapped=\{false\} \/>/);
-  assert.doesNotMatch(source, /meshStandardMaterial/);
+  assert.match(source, /<meshStandardMaterial[\s\S]*map=\{texture \|\| null\}[\s\S]*emissiveMap=\{texture \|\| null\}[\s\S]*emissiveIntensity=\{0\.16\}/);
+  assert.doesNotMatch(source, /meshBasicMaterial|toneMapped=\{false\}/);
 });
 
 test('header language flags use browser-safe SVG assets instead of platform emoji', () => {
