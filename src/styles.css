@@ -1898,8 +1898,8 @@ select {
   min-height: 0;
   overflow: hidden;
   background:
-    radial-gradient(ellipse 72% 52% at 50% 46%, rgba(142, 158, 177, 0.66), transparent 78%),
-    linear-gradient(155deg, #46566b 0%, #293a50 52%, #141e2e 100%);
+    radial-gradient(ellipse 72% 52% at 50% 46%, rgba(255, 252, 244, 0.86), transparent 78%),
+    linear-gradient(155deg, #f7f1e7 0%, #ebe2d6 52%, #d9cbb9 100%);
 }
 
 @media (max-width: 760px) {
