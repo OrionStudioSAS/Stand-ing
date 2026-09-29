@@ -25,6 +25,15 @@ test('the existing configurator lighting is preserved', () => {
   assert.doesNotMatch(appSource, /ConfiguratorLighting|RoomEnvironment|environmentIntensity/);
 });
 
+test('wall fabric displays its selected color without lighting darkening it', () => {
+  const start = appSource.indexOf('function WallFabricSurface(');
+  const end = appSource.indexOf('\nfunction WallCoverSurfaces(', start);
+  const source = appSource.slice(start, end);
+  assert.ok(start >= 0);
+  assert.match(source, /<meshBasicMaterial color=\{texture \? '#ffffff' : colorHex\(color, '#fffdf8'\)\} map=\{texture \|\| null\} toneMapped=\{false\} \/>/);
+  assert.doesNotMatch(source, /meshStandardMaterial/);
+});
+
 test('header language flags use browser-safe SVG assets instead of platform emoji', () => {
   assert.match(appSource, /flagSrc: '\/icons\/flag-fr\.svg'/);
   assert.match(appSource, /flagSrc: '\/icons\/flag-en\.svg'/);

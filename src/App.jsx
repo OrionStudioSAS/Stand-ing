@@ -19199,7 +19199,7 @@ function WallFabricSurface({ surface, color }) {
     <group position={position} rotation={[0, surface.rotation, 0]}>
       <mesh renderOrder={1} raycast={() => null}>
         <boxGeometry args={[surface.width, fabricHeight, 0.001]} />
-        <meshStandardMaterial color={texture ? '#ffffff' : colorHex(color, '#fffdf8')} map={texture || null} roughness={0.82} metalness={0} />
+        <meshBasicMaterial color={texture ? '#ffffff' : colorHex(color, '#fffdf8')} map={texture || null} toneMapped={false} />
       </mesh>
     </group>
   );
