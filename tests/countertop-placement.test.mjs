@@ -19,6 +19,7 @@ function placementContext() {
     isWallTopSnapItem: () => false,
     collidesWithReserveProtectedArea: () => false,
     itemCollisionEnabled: () => true,
+    isSignatureArchItem: () => false,
     hasOwn: (object, key) => Object.prototype.hasOwnProperty.call(object, key),
     stableCartValue: JSON.stringify,
     releasePlacementRuleForManualEdit: (item) => item,

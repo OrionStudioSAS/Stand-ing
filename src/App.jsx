@@ -106,6 +106,8 @@ const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
 const signatureArchFootprintOverflow = 0.5;
 const signatureArchCenterZ = signatureArchFootprintOverflow / 2;
+// Only the front totem occupies floor space; the remaining arch spans overhead.
+const signatureArchTotemDepth = 0.55;
 const signatureArchVisualSlots = [
   { id: 'signature-arch-led-5', label: 'Visuel LED #5', targetName: 'LED_5500k#5', kind: 'image', matchMode: 'exact' },
   { id: 'signature-arch-led-30', label: 'Visuel LED #30', targetName: 'LED_5500k#30', kind: 'image', matchMode: 'exact' },
@@ -17800,7 +17802,24 @@ function floorItemWallCollisionBox(item, wall, width, depth) {
 
 function itemCollisionBox(item) {
   if (!item || isWallItem(item) || !itemCollisionEnabled(item)) return null;
+  if (isSignatureArchItem(item)) return signatureArchTotemCollisionBox(item);
   return itemHardCollisionBox(item, collisionPadding);
+}
+
+function signatureArchTotemCollisionBox(item, padding = collisionPadding) {
+  const bounds = itemGroupBounds(item);
+  const frontZ = Number(bounds.maxZ || 0);
+  const backZ = Math.max(Number(bounds.minZ || 0), frontZ - signatureArchTotemDepth);
+  const corners = [
+    [bounds.minX, backZ], [bounds.minX, frontZ],
+    [bounds.maxX, backZ], [bounds.maxX, frontZ],
+  ].map(([x, z]) => rotatePoint(x, z, Number(item.rotation || 0)));
+  return {
+    minX: Number(item.x || 0) + Math.min(...corners.map((point) => point.x)) - padding,
+    maxX: Number(item.x || 0) + Math.max(...corners.map((point) => point.x)) + padding,
+    minZ: Number(item.z || 0) + Math.min(...corners.map((point) => point.z)) - padding,
+    maxZ: Number(item.z || 0) + Math.max(...corners.map((point) => point.z)) + padding,
+  };
 }
 
 function itemHardCollisionBox(item, padding = collisionPadding) {

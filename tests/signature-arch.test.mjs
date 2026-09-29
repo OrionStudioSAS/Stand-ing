@@ -53,6 +53,31 @@ test('Signature arch back touches the wall while its carpet strip spans the stan
   assert.match(appSource, /isSignatureArchItem\(dragged\)[\s\S]*updateItem\(draggingId, \{ x: dragCoordinate\(point\.x\) \}\)/);
 });
 
+test('Furniture fits under the Signature arch but cannot intersect its front totem', () => {
+  const context = vm.createContext({
+    collisionPadding: 0,
+    signatureArchTotemDepth: 0.55,
+    isSignatureArchItem: (item) => item.type === 'signature-arch',
+    isWallItem: () => false,
+    isCeilingMountedItem: () => false,
+    isCountertopAccessory: () => false,
+    collidesWithReserveProtectedArea: () => false,
+    itemCollisionEnabled: () => true,
+    itemGroupBounds: (item) => {
+      const [width, height, depth] = item.dimensions.size;
+      return { minX: -width / 2, maxX: width / 2, minZ: -depth / 2, maxZ: depth / 2, height };
+    },
+  });
+  context.itemPlacementBounds = context.itemGroupBounds;
+  for (const name of ['rotatePoint', 'itemHardCollisionBox', 'signatureArchTotemCollisionBox', 'itemCollisionBox', 'boxesOverlap', 'collidesWithScene']) loadFunction(name, context);
+  const arch = { id: 'arch', type: 'signature-arch', x: 0, z: 0, rotation: 0, dimensions: { size: [1.1, 3.64, 2.52] } };
+  const chair = { id: 'chair', type: 'chair', x: 0, z: 0, rotation: 0, dimensions: { size: [0.5, 0.8, 0.5] } };
+  assert.equal(context.collidesWithScene(chair, [arch]), false);
+  assert.equal(context.collidesWithScene(arch, [chair]), false);
+  assert.equal(context.collidesWithScene({ ...chair, z: 1.03 }, [arch]), true);
+  assert.equal(context.collidesWithScene(arch, [{ ...chair, z: 1.03 }]), true);
+});
+
 test('Signature arch image slots replace only their own material, including the literal *30 name', () => {
   const context = vm.createContext({
     signatureArchVisualSlots: [
