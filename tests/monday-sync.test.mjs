@@ -48,6 +48,21 @@ test('allowance scene creation keeps preset reserve rules without restoring incl
   assert.match(edgeSource, /if\s*\(!hasAllowance\s*&&\s*savedScene\?\.id\s*&&\s*preset\?\.stand_preset_items\?\.length\)/);
 });
 
+test('Signature scene creation includes both configured partition heads in every area band', () => {
+  const api = runtime();
+  const rules = api.signaturePartitionHeadRules({ base_config: { partitionHeadRules: {
+    small: { leftType: 'head-left', rightType: 'head-right', includedCount: 0 },
+    medium: { leftType: 'head-left', rightType: 'head-right', includedCount: 1 },
+    large: { leftType: 'head-left', rightType: 'head-right', includedCount: 2 },
+  } } });
+  for (const band of ['small', 'medium', 'large']) {
+    assert.equal(rules[band].includedCount, 2);
+    assert.equal(JSON.stringify(rules[band].includedSides), JSON.stringify(['left', 'right']));
+    assert.equal(rules[band].leftType, 'head-left');
+    assert.equal(rules[band].rightType, 'head-right');
+  }
+});
+
 test('a shared pack board only imports the groups of its configured salon', () => {
   const api = runtime();
   const items = [

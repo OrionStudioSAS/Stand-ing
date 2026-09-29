@@ -274,6 +274,10 @@ Deno.serve(async (req) => {
       const preset = await findActivePreset(supabase, context.offerId, context.salonId, sceneDraft.layout);
       const { baseItems, packBenefits } = packConfiguration;
       const hasAllowance = packBenefits.mode === "allowance";
+      const isSignatureOffer = /\bsignature\b/i.test(String(source.offer || ""));
+      const partitionHeadRules = hasAllowance && !isSignatureOffer ? {} : isSignatureOffer
+        ? signaturePartitionHeadRules(preset)
+        : presetPartitionHeadRules(preset);
       const defaultOptions = presetDefaultOptions(preset);
       const scene = {
         ...sceneDraft,
@@ -290,13 +294,13 @@ Deno.serve(async (req) => {
           baseItems,
           packBenefits,
           reserveRules: presetReserveRules(preset),
-          partitionHeadRules: hasAllowance ? {} : presetPartitionHeadRules(preset),
+          partitionHeadRules,
           pricing: {
             ...((sceneDraft.source_payload || {}).pricing || {}),
             baseItems,
             packBenefits,
             reserveRules: presetReserveRules(preset),
-            partitionHeadRules: hasAllowance ? {} : presetPartitionHeadRules(preset),
+            partitionHeadRules,
           },
         },
       };
@@ -1134,6 +1138,15 @@ function presetReserveRules(preset: any) {
 
 function presetPartitionHeadRules(preset: any) {
   return preset?.base_config?.partitionHeadRules || preset?.base_config?.options?.partitionHeadRules || {};
+}
+
+function signaturePartitionHeadRules(preset: any) {
+  const rules = presetPartitionHeadRules(preset);
+  return Object.fromEntries(["small", "medium", "large"].map((band) => [band, {
+    ...(rules?.[band] || {}),
+    includedCount: 2,
+    includedSides: ["left", "right"],
+  }]));
 }
 
 function presetAutoSpotsRule(preset: any) {

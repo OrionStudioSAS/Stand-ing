@@ -1211,7 +1211,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const effectiveReserveOptionType = reserveOptionType === '__legacy__' ? normalizeComplementaryOptions(activeReserveRuleConfig?.options)[0]?.type || '' : reserveOptionType;
   const partitionHeadRules = useMemo(() => scenePartitionHeadRules(initialScene), [initialScene]);
   const activePartitionHeadRuleConfig = useMemo(() => activePartitionHeadRule(partitionHeadRules, area, layout), [partitionHeadRules, area, layout]);
-  const effectivePartitionHeadSides = useMemo(() => partitionHeadEnabledSides(activePartitionHeadRuleConfig, partitionHeadChoice), [activePartitionHeadRuleConfig, partitionHeadChoice]);
+  const effectivePartitionHeadSides = useMemo(
+    () => isSignatureStand ? { left: true, right: true } : partitionHeadEnabledSides(activePartitionHeadRuleConfig, partitionHeadChoice),
+    [activePartitionHeadRuleConfig, partitionHeadChoice, isSignatureStand],
+  );
   const automaticReserveItems = useMemo(
     () => makeAutomaticReserveItems(activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, reserveOptions)
       .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, genericCarpetFootprintEnabled)),
@@ -2355,6 +2358,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       return;
     }
     if (isAutomaticPartitionHeadItem(selected)) {
+      if (isSignatureStand) return;
       const side = selected.options?.partitionHeadSide;
       if (side) setPartitionHeadChoice((current) => ({ ...current, [side]: false }));
       setSelectedId(null);
@@ -2736,6 +2740,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             wallCovers={wallCovers}
             wallCoverSurfaces={wallCoverSurfaces}
             partitionHeadVisuals={partitionHeadVisuals}
+            isSignatureStand={isSignatureStand}
             pricing={scenePricing}
             items={visibleSceneItems}
             catalog={availableCatalog}
@@ -2837,7 +2842,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
             onReserveOption={(type) => { if (!readOnly) { if (type === '__none__') { removeReserve(); } else { setReserveOptionType(type); } } }}
             onReserveOptions={(patch) => !readOnly && setReserveOptions((current) => ({ ...current, ...patch }))}
-            onPartitionHeadSide={(side, enabled) => !readOnly && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
+            onPartitionHeadSide={(side, enabled) => !readOnly && !isSignatureStand && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
             onPartitionHeadCompany={(value) => !readOnly && setPartitionHeadCompany(value)}
             onPartitionHeadImage={uploadPartitionHeadVisual}
             onPartitionHeadResetImage={resetPartitionHeadVisual}
@@ -4579,6 +4584,7 @@ function OptionsStepPanel({
         <PartitionHeadOptionCard
           rule={partitionHeadRule}
           sides={partitionHeadSides}
+          isSignatureStand={isSignatureStand}
           companyName={partitionHeadCompany}
           catalog={catalog}
           salonLabel={salonLabel}
@@ -6831,6 +6837,7 @@ function ValidationStepPanel({
   wallCovers = {},
   wallCoverSurfaces = [],
   partitionHeadVisuals = {},
+  isSignatureStand = false,
   pricing,
   items = [],
   catalog = [],
@@ -6856,7 +6863,7 @@ function ValidationStepPanel({
   const hasSpecialRequest = Boolean(specialRequestText.trim());
   const reserveOption = reserveOptionType ? normalizeComplementaryOptions(reserveRule?.options).find((option) => option.type === reserveOptionType) : null;
   const activeCovers = wallCoverSurfaces.filter((surface) => wallCoverEnabledForSurface(wallCovers, surface));
-  const pendingVisuals = validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals, wallCovers, wallCoverSurfaces, items: safeItems });
+  const pendingVisuals = validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals, isSignatureStand, wallCovers, wallCoverSurfaces, items: safeItems });
   const insuranceLine = pricing?.insuranceLine;
   const sectionRows = {
     personalization: [],
@@ -6982,7 +6989,9 @@ function ValidationStepPanel({
       imageUrl: validationPartitionHeadThumb(side, catalog),
       badge: validationBadgeText(sidePrice),
       badgeTone: sidePrice > 0 ? 'price' : 'included',
-      visualStatus: validationVisualStatus(visual.visualPending, visual.headMainImageUrl || visual.headMainImageName),
+      visualStatus: !isSignatureStand || visual.headMainImageUrl || visual.headMainImageName
+        ? validationVisualStatus(visual.visualPending, visual.headMainImageUrl || visual.headMainImageName)
+        : '',
     });
   });
 
@@ -7361,10 +7370,10 @@ function validationLineQuantitySuffix(line = {}) {
   return quantity > 1 ? ` × ${formatNumber(quantity)}` : '';
 }
 
-function validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals = {}, wallCovers = {}, wallCoverSurfaces = [], items = [] }) {
+function validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals = {}, isSignatureStand = false, wallCovers = {}, wallCoverSurfaces = [], items = [] }) {
   const rows = [];
   const headSides = partitionHeadSelectedSides(partitionHeadRule, partitionHeadSides);
-  headSides.forEach((side) => {
+  if (!isSignatureStand) headSides.forEach((side) => {
     const visual = partitionHeadVisuals?.[side] || {};
     if (visual.visualPending || (!visual.headMainImageUrl && !visual.headMainImageName)) rows.push(`Visuel haut de cloison ${side === 'left' ? 'gauche' : 'droite'} manquant`);
   });
@@ -7819,21 +7828,21 @@ function reserveSizeDescription(area = 0, label = '') {
   return label || 'Réserve complémentaire';
 }
 
-function PartitionHeadOptionCard({ rule, sides = {}, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions }) {
+function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions }) {
   const t = useT();
   const rows = [
-    { side: 'left', label: t('partition_left'), visualLabel: 'VISUEL LUMINEUX tête de cloison gauche', uploadSubtitle: 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.leftType, price: rule?.leftPrice },
-    { side: 'right', label: t('partition_right'), visualLabel: 'VISUEL LUMINEUX tête de cloison droite', uploadSubtitle: 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.rightType, price: rule?.rightPrice },
+    { side: 'left', label: t('partition_left'), visualLabel: 'VISUEL LUMINEUX tête de cloison gauche', uploadSubtitle: isSignatureStand ? 'Visuel LED · PNG, JPG ou PDF' : 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.leftType, price: rule?.leftPrice },
+    { side: 'right', label: t('partition_right'), visualLabel: 'VISUEL LUMINEUX tête de cloison droite', uploadSubtitle: isSignatureStand ? 'Visuel LED · PNG, JPG ou PDF' : 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.rightType, price: rule?.rightPrice },
   ];
   const selectedRows = rows.filter((row) => Boolean(sides?.[row.side]));
   const selectedCount = selectedRows.length;
 
   return (
     <div className="partition-head-panel partition-head-panel-v2">
-      <div className="partition-head-activity-info">
+      {!isSignatureStand && <div className="partition-head-activity-info">
         <b>i</b>
         <span>Le fond de couleur correspond à votre secteur d'activité et ne peut être modifié.</span>
-      </div>
+      </div>}
 
       <label className="partition-head-company-field">
         <span>{t('partition_head_company_field')}</span>
@@ -7845,7 +7854,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, companyName = '', catalog =
         />
       </label>
 
-      <div className="partition-head-choice-grid">
+      {!isSignatureStand && <div className="partition-head-choice-grid">
         {rows.map((row) => {
           const entry = findCatalogEntry(catalog, row.type);
           const selected = Boolean(sides?.[row.side]);
@@ -7870,7 +7879,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, companyName = '', catalog =
             </button>
           );
         })}
-      </div>
+      </div>}
 
       {selectedRows.length ? selectedRows.map((row) => (
         <PartitionHeadVisualUpload
@@ -7879,6 +7888,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, companyName = '', catalog =
           visual={visualOptions?.[row.side] || {}}
           uploading={uploadState?.uploading === row.side}
           disabled={disabled}
+          showPending={!isSignatureStand}
           onImage={(file) => onImage?.(row.side, file)}
           onReset={() => onResetImage?.(row.side)}
           onPending={(checked) => onVisualOptions?.(row.side, { visualPending: checked })}
@@ -7888,7 +7898,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, companyName = '', catalog =
       )}
       {uploadState?.error && <small className="partition-head-upload-error">{uploadState.error}</small>}
 
-      <button
+      {!isSignatureStand && <button
         type="button"
         className="partition-head-remove-button"
         disabled={disabled || !selectedCount}
@@ -7898,12 +7908,12 @@ function PartitionHeadOptionCard({ rule, sides = {}, companyName = '', catalog =
         }}
       >
         <X size={15} /> {t('partition_remove')}
-      </button>
+      </button>}
     </div>
   );
 }
 
-function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabled = false, onImage, onReset, onPending }) {
+function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabled = false, showPending = true, onImage, onReset, onPending }) {
   const t = useT();
   const hasImage = Boolean(visual.headMainImageUrl);
   const pending = Boolean(visual.visualPending);
@@ -7927,7 +7937,7 @@ function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabl
           }}
         />
       </label>
-      <label className="visual-pending-checkbox partition-head-pending-v2">
+      {showPending && <label className="visual-pending-checkbox partition-head-pending-v2">
         <input
           type="checkbox"
           disabled={disabled}
@@ -7935,7 +7945,7 @@ function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabl
           onChange={(event) => onPending?.(event.target.checked)}
         />
         <span>{t('visual_pending_label')}</span>
-      </label>
+      </label>}
       {visual.headMainImageName && <small className="partition-head-file-name">{visual.headMainImageName}</small>}
       {hasImage && onReset && (
         <button className="item-image-reset" type="button" disabled={disabled} onClick={onReset}>
@@ -9871,7 +9881,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const packReserveBands = reserveRuleBandsForPack(offer?.name);
   const isSignaturePack = packReserveBands === signatureReserveRuleBands;
   const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true, bands: packReserveBands }));
-  const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
+  const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules, { isSignaturePack }));
   const [autoSpotsRule, setAutoSpotsRule] = useState(() => preset.base_config?.autoSpotsRule || null);
   const [presetColorIds, setPresetColorIds] = useState(() => presetDefaultColorIds(preset));
   const carpetPalette = useMemo(() => packColorPalette(assets, offer?.name, 'carpet', carpetColors), [assets, offer?.name]);
@@ -9906,10 +9916,10 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
 
   useEffect(() => {
     setReserveRules(normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true, bands: packReserveBands }));
-    setPartitionHeadRules(normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
+    setPartitionHeadRules(normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules, { isSignaturePack }));
     setAutoSpotsRule(preset.base_config?.autoSpotsRule || null);
     setPresetColorIds(presetDefaultColorIds(preset));
-  }, [preset.id, preset.base_config, packReserveBands]);
+  }, [preset.id, preset.base_config, packReserveBands, isSignaturePack]);
 
   const updateItem = (id, patch) => {
     setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout));
@@ -10073,6 +10083,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           rules={partitionHeadRules}
           entries={availableCatalog.filter(isPartitionHeadItem)}
           salonLabel={offer?.name || ''}
+          isSignaturePack={isSignaturePack}
           onChange={setPartitionHeadRules}
         />
         <PresetAutoSpotsEditor
@@ -10253,7 +10264,7 @@ function PresetReserveRulesEditor({ rules, bands = reserveRuleBands, entries, sa
   );
 }
 
-function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, onChange }) {
+function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, isSignaturePack = false, onChange }) {
   const updateBand = (bandId, patch) => {
     onChange(normalizePartitionHeadRules({
       ...(rules || {}),
@@ -10261,8 +10272,43 @@ function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, onChange }
         ...(rules?.[bandId] || {}),
         ...patch,
       },
-    }));
+    }, { isSignaturePack }));
   };
+  const updateSignatureSide = (side, type) => {
+    const entry = entries.find((item) => item.type === type);
+    const typeKey = side === 'left' ? 'leftType' : 'rightType';
+    const labelKey = side === 'left' ? 'leftLabel' : 'rightLabel';
+    const label = side === 'left' ? 'Tête de cloison gauche' : 'Tête de cloison droite';
+    onChange(normalizePartitionHeadRules(Object.fromEntries(partitionHeadRuleBands.map((band) => [band.id, {
+      ...(rules?.[band.id] || {}),
+      [typeKey]: entry?.type || '',
+      [labelKey]: label,
+    }])), { isSignaturePack: true }));
+  };
+
+  if (isSignaturePack) {
+    const selectedRule = rules?.small || rules?.medium || rules?.large || {};
+    return (
+      <section className="preset-reserve-rules">
+        <h4>Têtes de cloison automatiques</h4>
+        <p>Associez une tête gauche et une tête droite. Les deux sont incluses et placées sur chaque stand Signature, quelle que soit sa surface.</p>
+        {!entries.length && <div className="preset-reserve-empty">Aucune tête de cloison disponible pour ce pack.</div>}
+        <article>
+          {['left', 'right'].map((side) => (
+            <div className="preset-head-rule-row" key={side}>
+              <label>
+                Tête {side === 'left' ? 'gauche' : 'droite'}
+                <select value={selectedRule[side === 'left' ? 'leftType' : 'rightType'] || ''} onChange={(event) => updateSignatureSide(side, event.target.value)}>
+                  <option value="">Aucune</option>
+                  {entries.map((entry) => <option key={entry.type} value={entry.type}>{entry.label}</option>)}
+                </select>
+              </label>
+            </div>
+          ))}
+        </article>
+      </section>
+    );
+  }
 
   return (
     <section className="preset-reserve-rules">
@@ -13344,7 +13390,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
     ? normalizeComplementaryOptions(reserveRule?.options)[0]?.type || ''
     : options.reserveOptionType || '';
   const partitionRule = activePartitionHeadRule(scenePartitionHeadRules(scene), area, layout);
-  const partitionSides = partitionHeadEnabledSides(partitionRule, {
+  const partitionSides = isSignatureScene(scene) ? { left: true, right: true } : partitionHeadEnabledSides(partitionRule, {
     left: hasOwn(options, 'partitionHeadLeftEnabled') ? Boolean(options.partitionHeadLeftEnabled) : null,
     right: hasOwn(options, 'partitionHeadRightEnabled') ? Boolean(options.partitionHeadRightEnabled) : null,
   });
@@ -14730,18 +14776,21 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
 }
 
 function scenePartitionHeadRules(scene = {}) {
-  if (scenePackBenefits(scene).mode === 'allowance') return normalizePartitionHeadRules({});
+  const isSignaturePack = isSignatureScene(scene);
+  if (scenePackBenefits(scene).mode === 'allowance' && !isSignaturePack) return normalizePartitionHeadRules({});
   return normalizePartitionHeadRules(
-    scene?.source_payload?.partitionHeadRules
+    (isSignaturePack && (scene?.stand_presets?.base_config?.partitionHeadRules || scene?.stand_presets?.base_config?.options?.partitionHeadRules))
+    || scene?.source_payload?.partitionHeadRules
     || scene?.source_payload?.partition_head_rules
     || scene?.source_payload?.pricing?.partitionHeadRules
     || scene?.options?.partitionHeadRules
     || scene?.source_payload?.options?.partitionHeadRules
     || {},
+    { isSignaturePack },
   );
 }
 
-function normalizePartitionHeadRules(rules = {}) {
+function normalizePartitionHeadRules(rules = {}, { isSignaturePack = false } = {}) {
   return partitionHeadRuleBands.reduce((acc, band) => {
     const source = rules?.[band.id] || {};
     acc[band.id] = {
@@ -14749,7 +14798,7 @@ function normalizePartitionHeadRules(rules = {}) {
       bandLabel: band.label,
       minArea: band.minArea,
       maxArea: band.maxArea,
-      includedCount: Number(source.includedCount ?? source.included_count ?? band.includedCount),
+      includedCount: isSignaturePack ? 2 : Number(source.includedCount ?? source.included_count ?? band.includedCount),
       includedSides: normalizePartitionHeadIncludedSides(source.includedSides || source.included_sides, source.includedSide || source.included_side),
       leftType: source.leftType || source.left_type || '',
       leftLabel: source.leftLabel || source.left_label || 'Tête de cloison gauche',
@@ -14838,7 +14887,7 @@ function makeAutomaticPartitionHeadItems(rule, sides = {}, catalogEntries = [], 
       ...base,
       id: `auto-partition-head-${rule.id}-${side}`,
       label: side === 'left' ? (rule.leftLabel || entry.label) : (rule.rightLabel || entry.label),
-      placementRule: isSmclHead ? placementRuleFromId(side === 'left' ? 'outer-left' : 'outer-right') : base.placementRule,
+      placementRule: isPartitionHeadItem(entry) ? placementRuleFromId(side === 'left' ? 'outer-left' : 'outer-right') : base.placementRule,
       dimensions: isSmclHead ? { ...(base.dimensions || {}), smclHeadSide: side } : base.dimensions,
       autoPartitionHead: true,
       included: !billable,
@@ -16605,6 +16654,13 @@ function isPosterBlockingItem(item = {}) {
 function isPartitionHeadItem(item = {}) {
   const text = `${item.type || ''} ${item.label || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   return text.includes('tete de cloison');
+}
+
+function isSignaturePartitionHeadItem(item = {}) {
+  return isPartitionHeadItem(item) && (
+    normalizedItemText(item).includes('signature')
+    || (Array.isArray(item?.dimensions?.packs) && item.dimensions.packs.some((pack) => isSignaturePackLabel(pack)))
+  );
 }
 
 function isSmclPartitionHeadItem(item = {}) {
@@ -19641,7 +19697,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
 
   if (!isPartitionHeadItem(item)) return material;
   if (textureOptions.mainImageTexture && isPartitionHeadMainImageMaterial(materialName, material, item)) {
-    return materialWithTexture(material, textureOptions.mainImageTexture);
+    return materialWithTexture(material, textureOptions.mainImageTexture, { luminous: isSignaturePartitionHeadItem(item) });
   }
   const smclExhibitorTexture = smclExhibitorTextureForMaterial(textureOptions.exhibitorTexture, materialName, material, item);
   if (smclExhibitorTexture) {
@@ -19776,15 +19832,18 @@ function isWoodReceptionDeskColorMaterial(materialName = '', material = null) {
 }
 
 function partitionHeadMainImageMaterial(item = {}) {
+  if (isSignaturePartitionHeadItem(item)) return 'led_5500k#4';
   return isSmclPartitionHeadItem(item) ? 'led_5500k_8' : 'led_5500k_1';
 }
 
 function partitionHeadMainImageCoverSize(item = {}) {
+  if (isSignaturePartitionHeadItem(item)) return [546, 2908];
   return isSmclPartitionHeadItem(item) ? [947, 593] : [474, 296];
 }
 
 function isPartitionHeadMainImageMaterial(materialName = '', material = null, item = {}) {
   const target = partitionHeadMainImageMaterial(item);
+  if (isSignaturePartitionHeadItem(item)) return materialMatchesTextureSlot(materialName, material, target, 'exact');
   return materialName.includes(target)
     || materialMatchesReference(materialName, material, target, `${target}.jpg`);
 }

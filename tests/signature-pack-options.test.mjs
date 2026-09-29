@@ -51,6 +51,97 @@ test('Signature reserve bands cover 14, 15, 23, 24, 35 and 36 square metres with
   assert.equal(context.reserveRuleBandsForPack('Confort').length, 3);
 });
 
+test('Signature includes both partition heads at every area, including existing scenes with old rule counts', () => {
+  const context = vm.createContext({
+    isSignatureScene: (scene) => scene.offer === 'Signature',
+    scenePackBenefits: () => ({ mode: 'allowance' }),
+  });
+  const start = source.indexOf('const partitionHeadRuleBands = [');
+  const end = source.indexOf('const placementRuleOptions = [', start);
+  vm.runInContext(source.slice(start, end), context);
+  for (const name of [
+    'scenePartitionHeadRules', 'normalizePartitionHeadRules', 'normalizePartitionHeadIncludedSides',
+    'activePartitionHeadRule', 'partitionHeadRuleIncludedSides', 'defaultIncludedPartitionHeadSides',
+    'partitionHeadEnabledSides',
+  ]) loadFunction(name, context);
+
+  const presetRules = Object.fromEntries(['small', 'medium', 'large'].map((band, index) => [band, {
+    includedCount: index,
+    leftType: 'signature-head',
+    rightType: 'signature-head',
+  }]));
+  const scene = {
+    offer: 'Signature',
+    source_payload: { partitionHeadRules: {}, options: { partitionHeadLeftEnabled: true, partitionHeadRightEnabled: false } },
+    stand_presets: { base_config: { partitionHeadRules: presetRules } },
+  };
+  const rules = context.scenePartitionHeadRules(scene);
+  for (const area of [9, 18, 30]) {
+    const rule = context.activePartitionHeadRule(rules, area, 'u');
+    assert.equal(rule.includedCount, 2);
+    assert.deepEqual(Array.from(rule.includedSides), ['left', 'right']);
+    assert.deepEqual(Object.values(context.partitionHeadEnabledSides(rule)), [true, true]);
+    assert.equal(rule.leftType, 'signature-head');
+    assert.equal(rule.rightType, 'signature-head');
+  }
+  assert.equal(context.scenePartitionHeadRules({ offer: 'Confort' }).small.includedCount, 0);
+});
+
+test('The same Signature head asset is assigned to opposite stand edges', () => {
+  const entry = { type: 'signature-head', label: 'Tête de cloison Signature' };
+  const context = vm.createContext({
+    findCatalogEntry: () => entry,
+    isSmclPartitionHeadItem: () => false,
+    isPartitionHeadItem: () => true,
+    assetUnitPrice: () => 0,
+    firstPriceValue: () => 0,
+    makeItem: () => ({ placementRule: null, dimensions: {} }),
+    placementRuleFromId: (id) => ({ id, locked: true }),
+    constrainItem: (item) => item,
+  });
+  for (const name of ['partitionHeadSelectedSides', 'partitionHeadBillableSides', 'makeAutomaticPartitionHeadItems']) loadFunction(name, context);
+  const items = context.makeAutomaticPartitionHeadItems({
+    id: 'small', includedSides: ['left', 'right'], includedCount: 2,
+    leftType: entry.type, rightType: entry.type,
+  }, { left: true, right: true }, [entry], 3, 3, 'u', 'Signature');
+  assert.equal(items.length, 2);
+  assert.deepEqual(Array.from(items, (item) => item.placementRule.id), ['outer-left', 'outer-right']);
+  assert.deepEqual(Array.from(items, (item) => item.options.partitionHeadSide), ['left', 'right']);
+  assert.ok(items.every((item) => item.included));
+});
+
+test('Signature heads use their LED material for each uploaded image, not the other materials', () => {
+  const context = vm.createContext({
+    normalizedItemText: (item) => `${item.label || ''}`.toLowerCase(),
+    isSignaturePackLabel: (pack) => String(pack).toLowerCase() === 'signature',
+    normalizeMaterialName: (name) => String(name).toLowerCase(),
+    materialMatchesTextureSlot: (name, _material, target) => name === target,
+  });
+  for (const name of [
+    'isPartitionHeadItem', 'isSignaturePartitionHeadItem', 'isSmclPartitionHeadItem',
+    'partitionHeadMainImageMaterial', 'partitionHeadMainImageCoverSize', 'isPartitionHeadMainImageMaterial',
+  ]) loadFunction(name, context);
+  const head = { label: 'Tête de cloison Signature', dimensions: { packs: ['Signature'] } };
+  assert.equal(context.partitionHeadMainImageMaterial(head), 'led_5500k#4');
+  assert.deepEqual(Array.from(context.partitionHeadMainImageCoverSize(head)), [546, 2908]);
+  assert.equal(context.isPartitionHeadMainImageMaterial('led_5500k#4', null, head), true);
+  assert.equal(context.isPartitionHeadMainImageMaterial('led_5500k#40', null, head), false);
+  assert.equal(context.isPartitionHeadMainImageMaterial('laminate_d02_120cm#2', null, head), false);
+  assert.equal(context.isPartitionHeadMainImageMaterial('*28', null, head), false);
+  assert.match(source, /!isSignatureStand && <div className="partition-head-choice-grid">/);
+  assert.match(source, /!isSignatureStand && <button[\s\S]*className="partition-head-remove-button"/);
+});
+
+test('Signature pack editor has one left and one right head selector instead of area bands', () => {
+  const start = source.indexOf('function PresetPartitionHeadRulesEditor(');
+  const end = source.indexOf('\nfunction PresetAutoSpotsEditor(', start);
+  const editor = source.slice(start, end);
+  assert.match(editor, /if \(isSignaturePack\) \{/);
+  assert.match(editor, /\['left', 'right'\]\.map/);
+  assert.match(editor, /updateSignatureSide\(side, event\.target\.value\)/);
+  assert.match(editor, /Object\.fromEntries\(partitionHeadRuleBands\.map/);
+});
+
 test('Existing Signature 2 and 3 square metre reserve choices survive the new bands', () => {
   const context = packContext();
   const rules = context.normalizeReserveRules({
