@@ -19694,7 +19694,7 @@ function prepareLoadedModel(source, item = null, textureOptions = {}) {
       child.castShadow = true;
       child.receiveShadow = true;
       child.renderOrder = modelRenderOrderForItem(item);
-      child.material = cloneMeshMaterial(child.material);
+      child.material = cloneMeshMaterial(child.material, item);
       child.material = applyItemOptionMaterials(child.material, item, textureOptions, child.name);
     }
   });
@@ -20377,18 +20377,19 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
-function cloneMeshMaterial(material) {
-  if (Array.isArray(material)) return material.map(cloneAndNormalizeMaterial);
-  return cloneAndNormalizeMaterial(material);
+function cloneMeshMaterial(material, item) {
+  if (Array.isArray(material)) return material.map((entry) => cloneAndNormalizeMaterial(entry, item));
+  return cloneAndNormalizeMaterial(material, item);
 }
 
-function cloneAndNormalizeMaterial(material) {
+function cloneAndNormalizeMaterial(material, item = {}) {
   const cloned = material?.clone?.() || material;
   if (!cloned) return cloned;
 
   cloned.side = DoubleSide;
   normalizeMaterialTexture(cloned.map);
   const chrome = isChromeMaterial(cloned);
+  const aluminium = isAluminiumMaterial(cloned);
 
   if (cloned.map && cloned.color?.set) {
     // SketchUp MTL often combines map_Kd with a mid-grey Kd, which multiplies
@@ -20396,7 +20397,7 @@ function cloneAndNormalizeMaterial(material) {
     cloned.color.set('#ffffff');
   } else if (chrome && cloned.color?.set) {
     cloned.color.set('#d7dadd');
-  } else if (isAluminiumMaterial(cloned) && cloned.color?.set) {
+  } else if (aluminium && cloned.color?.set) {
     cloned.color.set('#bfc5c8');
   }
 
@@ -20404,10 +20405,13 @@ function cloneAndNormalizeMaterial(material) {
     // Keep chrome readable without brightening the whole scene or requiring an HDR environment.
     if ('metalness' in cloned) cloned.metalness = 0.48;
     if ('roughness' in cloned) cloned.roughness = 0.26;
-  } else if (isAluminiumMaterial(cloned)) {
+  } else if (aluminium) {
     if ('metalness' in cloned) cloned.metalness = 0.35;
     if ('roughness' in cloned) cloned.roughness = 0.42;
     if ('shininess' in cloned) cloned.shininess = 55;
+  } else if (isImportedNonmetalFinish(cloned, item)) {
+    if ('metalness' in cloned) cloned.metalness = 0;
+    if ('roughness' in cloned) cloned.roughness = Math.max(0.42, Number(cloned.roughness || 0));
   }
 
   cloned.needsUpdate = true;
@@ -20425,6 +20429,17 @@ function normalizeMaterialTexture(texture) {
 
 function isAluminiumMaterial(material = {}) {
   return /alu|minium|metal|brushed/i.test(material.name || '');
+}
+
+function isImportedNonmetalFinish(material = {}, item = {}) {
+  if (!Number.isFinite(material.metalness) || material.metalness <= 0.2) return false;
+  const name = normalizeMaterialName(material.name);
+  if (/fabric|textile|tissu|cloth|cuir|leather|bois|wood|laminate|plastic|plastique/.test(name)) return true;
+  const itemText = normalizedItemText(item);
+  if (/frigo|refrigerat/.test(itemText)) return true;
+  if (!itemText.includes('blanc') || !material.color) return false;
+  const channels = [material.color.r, material.color.g, material.color.b];
+  return Math.min(...channels) >= 0.45 && Math.max(...channels) - Math.min(...channels) < 0.06;
 }
 
 function isChromeMaterial(material = {}) {

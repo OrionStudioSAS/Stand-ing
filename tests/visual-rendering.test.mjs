@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
+import { DoubleSide, MeshStandardMaterial } from 'three';
 
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
@@ -42,6 +43,30 @@ test('wall fabric keeps scene shading with a restrained texture lift', () => {
   assert.ok(start >= 0);
   assert.match(source, /<meshStandardMaterial[\s\S]*map=\{texture \|\| null\}[\s\S]*emissiveMap=\{texture \|\| null\}[\s\S]*emissiveIntensity=\{0\.16\}/);
   assert.doesNotMatch(source, /meshBasicMaterial|toneMapped=\{false\}/);
+});
+
+test('imported non-metal furniture finishes keep their colors without a false metallic cast', () => {
+  const api = vm.createContext({ DoubleSide });
+  for (const name of ['normalizeMaterialName', 'normalizedItemText', 'normalizeMaterialTexture', 'isChromeMaterial', 'isAluminiumMaterial', 'isImportedNonmetalFinish', 'cloneAndNormalizeMaterial', 'cloneMeshMaterial']) {
+    loadFunction(appSource, api, name);
+  }
+  const fridge = new MeshStandardMaterial({ name: 'frigo_140l', color: '#f2f2f2', metalness: 0.5, roughness: 0.5 });
+  const largeFridge = new MeshStandardMaterial({ name: 'ELECTROMENAGER', color: '#ffffff', metalness: 0.5, roughness: 0.5 });
+  const fabric = new MeshStandardMaterial({ name: 'Fabric_01', color: '#4477aa', metalness: 1, roughness: 1 });
+  const whiteChair = new MeshStandardMaterial({ name: 'Material.001', color: '#cccccc', metalness: 0.6 });
+  const chrome = new MeshStandardMaterial({ name: 'chrome', color: '#cccccc', metalness: 1 });
+  const genericColor = new MeshStandardMaterial({ name: 'Material.001', color: '#cc4433', metalness: 0.6 });
+
+  const [fixedFridge] = api.cloneMeshMaterial([fridge], { label: 'Frigo 140L' });
+  const fixedFabric = api.cloneMeshMaterial(fabric, { label: 'Canapé Charlotte Gris' });
+  assert.equal(fixedFridge.metalness, 0);
+  assert.equal(fixedFridge.color.getHexString(), fridge.color.getHexString());
+  assert.equal(api.cloneMeshMaterial(largeFridge, { label: 'Frigo 220L' }).metalness, 0);
+  assert.equal(fixedFabric.metalness, 0);
+  assert.equal(fridge.metalness, 0.5);
+  assert.equal(api.cloneMeshMaterial(whiteChair, { label: 'Chaise One Blanc' }).metalness, 0);
+  assert.equal(api.cloneMeshMaterial(chrome, { label: 'Table Icare Blanc' }).metalness, 0.48);
+  assert.equal(api.cloneMeshMaterial(genericColor, { label: 'Chaise One Rouge' }).metalness, 0.6);
 });
 
 test('header language flags use browser-safe SVG assets instead of platform emoji', () => {
