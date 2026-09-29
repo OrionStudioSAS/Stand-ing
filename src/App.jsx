@@ -50,9 +50,9 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
-import { createTechnicalPlanBlob, exportTechnicalPng } from './technicalExport.js';
+import { createTechnicalPlanBlob, exportTechnicalPng, standWallPanelRequirements } from './technicalExport.js';
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
@@ -8800,6 +8800,7 @@ function AdminDashboard({ user, adminProfile }) {
           {tab === 'salons' && (
             <AdminSalonsView
               salons={salons}
+              onDownloadDebit={(salon) => downloadSalonDebit(salon, assets)}
               onCreateSalon={createAdminSalon}
               onDeleteSalon={deleteAdminSalon}
               onOpenSalon={(salon) => {
@@ -9108,7 +9109,7 @@ function AdminSalonRow({ title, detail, status, muted }) {
   );
 }
 
-function AdminSalonsView({ salons, onCreateSalon, onDeleteSalon, onOpenSalon, onOpenPacks }) {
+function AdminSalonsView({ salons, onCreateSalon, onDeleteSalon, onOpenSalon, onOpenPacks, onDownloadDebit }) {
   const [statusFilter, setStatusFilter] = useState('');
   const [view, setView] = useState('salons');
   const [salonFilter, setSalonFilter] = useState('');
@@ -9118,6 +9119,8 @@ function AdminSalonsView({ salons, onCreateSalon, onDeleteSalon, onOpenSalon, on
   const [draft, setDraft] = useState(() => ({ name: '', year: new Date().getFullYear(), location: '', status: 'draft' }));
   const [creatorState, setCreatorState] = useState({ loading: false, message: '', error: '' });
   const [deletingSalonId, setDeletingSalonId] = useState('');
+  const [downloadingSalonId, setDownloadingSalonId] = useState('');
+  const [debitError, setDebitError] = useState('');
   const packChoices = [...new Map(salons.flatMap((salon) => adminSalonStandPacks(salon)).map((pack) => [pack.key, pack.name])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'fr'));
   const filteredSalons = salons.filter((salon) => (!statusFilter || salon.status === statusFilter) && (!salonFilter || String(salon.id || salon.name) === salonFilter));
   const visiblePacks = (salon) => adminSalonStandPacks(salon).filter((pack) => !packFilter || pack.key === packFilter).map((pack) => ({
@@ -9153,6 +9156,18 @@ function AdminSalonsView({ salons, onCreateSalon, onDeleteSalon, onOpenSalon, on
       setCreatorState({ loading: false, message: '', error: error.message || 'Impossible de supprimer ce salon.' });
     } finally {
       setDeletingSalonId('');
+    }
+  };
+
+  const downloadDebit = async (salon) => {
+    setDownloadingSalonId(salon.id);
+    setDebitError('');
+    try {
+      await onDownloadDebit?.(salon);
+    } catch (error) {
+      setDebitError(error.message || 'Impossible de générer le débit du salon.');
+    } finally {
+      setDownloadingSalonId('');
     }
   };
 
@@ -9212,6 +9227,7 @@ function AdminSalonsView({ salons, onCreateSalon, onDeleteSalon, onOpenSalon, on
       )}
       {creatorState.message && <div className="preset-library-feedback success">{creatorState.message}</div>}
       {creatorState.error && <div className="preset-library-feedback error">{creatorState.error}</div>}
+      {debitError && <div className="preset-library-feedback error" role="alert">{debitError}</div>}
 
       {view === 'packs' ? (
         <div className="admin-salon-card-grid">
@@ -9247,6 +9263,9 @@ function AdminSalonsView({ salons, onCreateSalon, onDeleteSalon, onOpenSalon, on
               <div className="salon-card-side">
                 <button type="button" onClick={() => onOpenSalon?.(salon)}>Voir exposants</button>
                 <button type="button" className="secondary" onClick={() => onOpenPacks?.(salon)}>Packs</button>
+                <button type="button" className="secondary" disabled={downloadingSalonId === salon.id} onClick={() => downloadDebit(salon)}>
+                  {downloadingSalonId === salon.id ? 'Préparation du débit...' : 'Télécharger le débit'}
+                </button>
                 <button type="button" className="danger" disabled={deletingSalonId === salon.id} onClick={() => removeSalon(salon)}>
                   {deletingSalonId === salon.id ? 'Suppression...' : 'Supprimer'}
                 </button>
@@ -9271,6 +9290,134 @@ function adminSalonStandPacks(salon) {
     groups.get(key).scenes.push(scene);
   });
   return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+}
+
+function salonDebitScenes(salon = {}, scenes = []) {
+  const salonSceneIds = new Set((salon.scenes || []).map((scene) => scene.id));
+  const salonName = normalizeTextValue(salon.name);
+  return scenes.filter((scene) => (
+    (scene.salon_id && scene.salon_id === salon.id)
+    || salonSceneIds.has(scene.id)
+    || (!scene.salon_id && normalizeTextValue(normalizeSalonTitle(scene.event_name || scene.salon)) === salonName)
+  ));
+}
+
+function salonDebitLeafItems(items = [], catalogEntries = [], assets = []) {
+  const assetsByType = new Map(assets.map((asset) => [asset.type, asset]));
+  const catalogByType = new Map(catalogEntries.map((entry) => [entry.type, entry]));
+  const leaves = [];
+  const visit = (item, group = '', depth = 0) => {
+    if (!item?.type) return;
+    const asset = assetsByType.get(item.type);
+    const entry = catalogByType.get(item.type) || (asset ? assetToCatalogEntry(asset, assets) : null) || item;
+    const isGroup = Boolean(item.isGroup || entry.isGroup || asset?.dimensions?.isGroup);
+    const children = item.children?.length ? item.children : isGroup ? (entry.children || asset?.dimensions?.children || []) : [];
+    if (isGroup && children.length && depth < 8) {
+      children.forEach((child) => visit(child, item.label || entry.label || group, depth + 1));
+      return;
+    }
+    leaves.push({ item, entry, group });
+  };
+  items.forEach((item) => visit(item));
+  return leaves;
+}
+
+function salonDebitCsv(salon = {}, scenes = [], assets = []) {
+  const selectedScenes = salonDebitScenes(salon, scenes);
+  const packNames = [...new Set(selectedScenes.map((scene) => sceneOfferLabel(scene) || 'Sans pack'))].sort((a, b) => a.localeCompare(b, 'fr'));
+  const lines = new Map();
+  const add = (detail, pack, quantity = 1) => {
+    const key = [detail.type, detail.reference, detail.finish, detail.unit].join('|');
+    if (!lines.has(key)) lines.set(key, { ...detail, total: 0, packs: new Map(), sources: new Set() });
+    const line = lines.get(key);
+    line.total += quantity;
+    line.packs.set(pack, (line.packs.get(pack) || 0) + quantity);
+    if (detail.source) line.sources.add(detail.source);
+  };
+
+  selectedScenes.forEach((scene) => {
+    const pack = sceneOfferLabel(scene) || 'Sans pack';
+    const catalogEntries = sceneAdminCatalog(assets, scene);
+    const options = scene.options || scene.source_payload?.options || {};
+    const prestigeState = {
+      isPrestigeStand: isPrestigeScene(scene),
+      archEnabled: options.prestigeArchEnabled !== false,
+      signageEnabled: options.prestigeSignageEnabled !== false,
+    };
+    const uniqueItems = new Map();
+    sceneAllAdminItems(scene, catalogEntries).forEach((item, index) => uniqueItems.set(item.id || `item-${index}`, item));
+    const visibleItems = [...uniqueItems.values()].filter((item) => (
+      !item.options?.prestigeHidden
+      && !item.options?.partitionHeadHidden
+      && !isHiddenIncludedCounterItem(item)
+      && !isHiddenPrestigeBaseItem(item, prestigeState)
+    ));
+
+    salonDebitLeafItems(visibleItems, catalogEntries, assets).forEach(({ item, entry, group }) => {
+      const asset = assets.find((candidate) => candidate.type === item.type) || entry;
+      const label = entry.label || item.label || item.type;
+      const normalized = normalizeTextValue(`${item.type} ${label}`);
+      const cloison = normalized.includes('cloison') && !normalized.includes('tete de cloison') && !normalized.includes('bache');
+      const finish = [...new Set([
+        item.options?.binary2ColorName,
+        item.options?.signatureArchColorName,
+        ...Object.values(item.options?.variantColorSelections || {}).map((value) => value?.name),
+        ...Object.values(item.options?.textureSlotValues || {}).map((value) => value?.colorName),
+      ].filter(Boolean))].join(' / ');
+      add({
+        type: item.type,
+        category: cloison ? 'Cloisons' : assetBusinessCategoryLabel(asset, assets),
+        reference: item.options?.variantReference || item.options?.baseObjectReference || assetReference(entry, pack),
+        label,
+        finish,
+        unit: 'pièce',
+        source: group || 'Objet de scène',
+        cloison,
+      }, pack, Math.max(1, Number(item.quantity) || 1));
+    });
+
+    const width = Number(scene.dimensions?.width || scene.width_m || 0);
+    const depth = Number(scene.dimensions?.depth || scene.depth_m || 0);
+    if (width <= 0 || depth <= 0) return;
+    standWallPanelRequirements({ width, depth, layout: scene.layout || 'back', items: visibleItems, catalog: catalogEntries }).forEach((panel) => {
+      if (panel.lengthMm <= 0) return;
+      add({
+        type: `stand-wall-${panel.reinforced ? 'reinforced' : 'standard'}-${panel.lengthMm}`,
+        category: 'Cloisons',
+        reference: '',
+        label: `${panel.reinforced ? 'Cloison renforcée TV' : 'Cloison stand'} ${panel.lengthMm} × 2500 mm`,
+        finish: '',
+        unit: 'pièce',
+        source: 'Structure du stand',
+        cloison: true,
+      }, pack);
+    });
+  });
+
+  const details = [...lines.values()].sort((a, b) => a.category.localeCompare(b.category, 'fr') || a.label.localeCompare(b.label, 'fr') || a.reference.localeCompare(b.reference, 'fr'));
+  const totalCloisons = details.filter((line) => line.cloison).reduce((total, line) => total + line.total, 0);
+  const rows = [
+    ['Salon', salon.name || 'Salon'],
+    ['Périmètre', 'Toutes les scènes créées, quel que soit leur statut'],
+    ['Nombre de scènes', selectedScenes.length],
+    ['Total cloisons (stand et groupes)', totalCloisons],
+    ['Date export', new Date().toLocaleDateString('fr-FR')],
+    [],
+    ['Catégorie', 'Référence', 'Produit', 'Finition', 'Unité', 'Quantité totale', ...packNames, 'Provenance'],
+    ...details.map((line) => [line.category, line.reference, line.label, line.finish, line.unit, line.total, ...packNames.map((pack) => line.packs.get(pack) || 0), [...line.sources].sort().join(' / ')]),
+  ];
+  const escape = (value) => {
+    const raw = String(value ?? '');
+    const safe = /^[\s]*[=+@-]/.test(raw) && !/^-?\d+(?:[.,]\d+)?$/.test(raw) ? `'${raw}` : raw;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
+  return `\uFEFF${rows.map((row) => row.map(escape).join(';')).join('\r\n')}`;
+}
+
+async function downloadSalonDebit(salon, assets = []) {
+  const scenes = await listScenesForSalonDebit();
+  const csv = salonDebitCsv(salon, scenes, assets);
+  downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `debit-${slugForType(salon.name || salon.id || 'salon')}.csv`);
 }
 
 function AdminStandGroup({ title, scenes }) {

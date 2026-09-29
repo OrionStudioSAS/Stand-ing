@@ -273,6 +273,24 @@ export async function listScenes(filters = {}) {
   return filterScenes(data.map(dbSceneToScene), { search: filters.search, salon: filters.salon });
 }
 
+export async function listScenesForSalonDebit() {
+  if (!supabase) return readLocalScenes();
+
+  const pageSize = 200;
+  const rows = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase
+      .from('scenes')
+      .select('*, scene_items(*), stand_presets(base_config), salon_offers(metadata)')
+      .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if ((data || []).length < pageSize) break;
+  }
+  return rows.map(dbSceneToScene);
+}
+
 export async function getSceneByToken(token) {
   if (!supabase) {
     const scene = readLocalScenes().find((item) => item.share_token === token || item.id === token) || readLocalScenes()[0];

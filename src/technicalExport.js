@@ -841,6 +841,16 @@ function wallRows(width, depth, layout, items) {
   return rows;
 }
 
+export function standWallPanelRequirements({ width, depth, layout, items = [], catalog = [] }) {
+  const technicalItems = technicalItemsForPlan(items, width, depth, catalog);
+  const walls = ['back', ...(layout === 'left' || layout === 'u' ? ['left'] : []), ...(layout === 'right' || layout === 'u' ? ['right'] : [])];
+  return walls.flatMap((wall) => wallPanelSegments(wallDescriptor(wall, width, depth, technicalItems)).map((panel) => ({
+    wall,
+    lengthMm: panel.mm,
+    reinforced: panel.kind === 'reinforcement',
+  })));
+}
+
 function wallSummaryRow(wall, label) {
   return {
     label: `${label} ${mm(wall.length)}mm`,
