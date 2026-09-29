@@ -2578,6 +2578,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
           dpr={[1, 1.5]}
           className={sceneCanvasClassName}
+          gl={{ alpha: true }}
           flat
           shadows
           onPointerUp={() => {
@@ -2589,7 +2590,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             }
           }}
         >
-          <color attach="background" args={['#eef0f4']} />
           <ambientLight intensity={1.42} />
           <directionalLight position={[3, 7, 4]} intensity={0.72} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>

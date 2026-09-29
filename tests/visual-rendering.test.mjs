@@ -25,6 +25,16 @@ test('the existing configurator lighting is preserved', () => {
   assert.doesNotMatch(appSource, /ConfiguratorLighting|RoomEnvironment|environmentIntensity/);
 });
 
+test('configurator scene uses the dark stage backdrop without tinting the 3D scene', () => {
+  const start = appSource.indexOf('className={sceneCanvasClassName}');
+  const end = appSource.indexOf('</Canvas>', start);
+  const canvas = appSource.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.match(canvas, /gl=\{\{ alpha: true \}\}/);
+  assert.doesNotMatch(canvas, /attach="background"/);
+  assert.match(stylesSource, /\.configurator-stage\s*\{[^}]*radial-gradient\([^}]*linear-gradient\(/);
+});
+
 test('wall fabric displays its selected color without lighting darkening it', () => {
   const start = appSource.indexOf('function WallFabricSurface(');
   const end = appSource.indexOf('\nfunction WallCoverSurfaces(', start);
