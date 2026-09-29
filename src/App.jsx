@@ -20868,7 +20868,7 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
 
 function wallMountedItemRotation(item, objectTransform = null) {
   const wallRotation = objectTransform?.rotation ?? (item.wall === 'left' ? Math.PI / 2 : item.wall === 'right' ? -Math.PI / 2 : 0);
-  return wallRotation + (isSignaturePartitionHeadItem(item) ? Math.PI / 2 : 0);
+  return wallRotation + (isSignaturePartitionHeadItem(item) ? -Math.PI / 2 : 0);
 }
 
 createRoot(document.getElementById('root')).render(<App />);

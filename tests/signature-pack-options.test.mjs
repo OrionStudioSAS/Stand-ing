@@ -151,10 +151,12 @@ test('Signature head follows each wall with its long model axis and correct wall
   for (const name of ['wallMountedItemRotation', 'wallItemAxisBounds', 'wallItemMetrics', 'wallMountedNormalOffset']) loadFunction(name, context);
   const signature = { type: 'signature-head', modelUrl: '/head.glb' };
   const smcl = { type: 'smcl-head', modelUrl: '/smcl.glb' };
-  assert.equal(context.wallMountedItemRotation({ ...signature, wall: 'back' }), Math.PI / 2);
-  assert.equal(context.wallMountedItemRotation({ ...signature, wall: 'left' }), Math.PI);
-  assert.equal(context.wallMountedItemRotation({ ...signature, wall: 'right' }), 0);
+  assert.equal(context.wallMountedItemRotation({ ...signature, wall: 'back' }), -Math.PI / 2);
+  assert.equal(context.wallMountedItemRotation({ ...signature, wall: 'left' }), 0);
+  assert.equal(context.wallMountedItemRotation({ ...signature, wall: 'right' }), -Math.PI);
   assert.equal(context.wallMountedItemRotation({ ...smcl, wall: 'back' }), 0);
+  assert.equal(context.wallMountedItemRotation({ ...smcl, wall: 'left' }), Math.PI / 2);
+  assert.equal(context.wallMountedItemRotation({ ...smcl, wall: 'right' }), -Math.PI / 2);
   assert.equal(context.wallItemAxisBounds(signature, 'back').max, 0.25);
   assert.equal(context.wallItemAxisBounds(signature, 'left').max, 0.25);
   assert.equal(context.wallItemMetrics(signature).width, 0.5);
