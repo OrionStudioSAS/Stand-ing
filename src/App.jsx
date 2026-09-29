@@ -106,6 +106,10 @@ const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
 const signatureArchFootprintOverflow = 0.05;
 const signatureArchCenterZ = signatureArchFootprintOverflow / 2;
+const signatureArchVisualSlots = [
+  { id: 'signature-arch-led-5', label: 'Visuel LED #5', targetName: 'LED_5500k#5', kind: 'image', matchMode: 'exact' },
+  { id: 'signature-arch-led-30', label: 'Visuel LED #30', targetName: 'LED_5500k#30', kind: 'image', matchMode: 'exact' },
+];
 const collisionPadding = 0;
 const partitionHeadEdgeInset = 0.02;
 const partitionHeadBackInset = 0.04;
@@ -1243,6 +1247,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand]);
   const signatureArchItems = useMemo(() => sceneItems.filter(isSignatureArchItem), [sceneItems]);
   const signatureArchItem = signatureArchItems[0] || null;
+  const signatureArchBackZ = signatureArchItem ? signatureArchBackWallZ(signatureArchItem, depth) : null;
   const signatureArchColor = useMemo(() => {
     const colorId = signatureArchItem?.options?.signatureArchColorId || selectedCarpetFootprintColor?.id;
     return findColorInPalette(footprintPalette, colorId)
@@ -1277,7 +1282,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       const next = current.map((item) => {
         if (!isSignatureArchItem(item)) return item;
         const hasColor = Boolean(item.options?.signatureArchColorId);
-        const alreadyNormalized = Number(item.z || 0) === signatureArchCenterZ
+        const alreadyNormalized = Math.abs(Number(item.z || 0) - signatureArchBackWallZ(item, depth)) < 0.001
           && Number(item.rotation || 0) === 0
           && item.rotationLocked === true
           && item.options?.signatureBaseKey === 'arche'
@@ -1286,7 +1291,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         changed = true;
         return {
           ...item,
-          z: signatureArchCenterZ,
+          z: signatureArchBackWallZ(item, depth),
           rotation: 0,
           rotationLocked: true,
           options: {
@@ -1301,7 +1306,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       });
       return changed ? next : current;
     });
-  }, [isSignatureStand, selectedCarpetFootprintColor?.id, selectedCarpetFootprintColor?.hex, selectedCarpetFootprintColor?.image]);
+  }, [isSignatureStand, depth, signatureArchBackZ, objectBankLoaded, selectedCarpetFootprintColor?.id, selectedCarpetFootprintColor?.hex, selectedCarpetFootprintColor?.image]);
 
   const cartItems = useMemo(() => visibleSceneItems.filter(shopCartItemVisible), [visibleSceneItems]);
   const showCartBar = false;
@@ -1651,14 +1656,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (!effectiveAdminViewer && hasOwn(patch, 'rotation') && itemRotationLocked(currentItem)) return;
     if (isSignatureStand && isSignatureArchItem(currentItem)) {
       const bounds = itemGroupBounds(currentItem);
-      const maxX = Math.max(0, width / 2 - Number(bounds.width || 0) / 2);
+      const minX = -width / 2 + wallThickness - Number(bounds.minX || 0);
+      const maxX = width / 2 - wallThickness - Number(bounds.maxX || 0);
       setItems((current) => current.map((item) => (
         item.id === id
           ? {
               ...item,
               ...patch,
-              x: clamp(Number(hasOwn(patch, 'x') ? patch.x : item.x || 0), -maxX, maxX),
-              z: signatureArchCenterZ,
+              x: minX <= maxX ? clamp(Number(hasOwn(patch, 'x') ? patch.x : item.x || 0), minX, maxX) : Number(item.x || 0),
+              z: signatureArchBackWallZ(item, depth),
               rotation: 0,
               rotationLocked: true,
             }
@@ -1995,6 +2001,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     setItems((current) => {
       const currentArch = current.find(isSignatureArchItem) || activeItem;
       const nextBase = makeItem(entry.type, width, depth, layout, entry);
+      const nextBounds = itemGroupBounds(nextBase);
+      const minX = -width / 2 + wallThickness - Number(nextBounds.minX || 0);
+      const maxX = width / 2 - wallThickness - Number(nextBounds.maxX || 0);
       const preservedOptions = { ...(currentArch?.options || {}) };
       delete preservedOptions.unitPrice;
       delete preservedOptions.billableUnitPrice;
@@ -2010,8 +2019,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       const nextItem = {
         ...nextBase,
         id: currentArch?.id || nextBase.id,
-        x: Number(currentArch?.x || 0),
-        z: signatureArchCenterZ,
+        x: minX <= maxX ? clamp(Number(currentArch?.x || 0), minX, maxX) : 0,
+        z: signatureArchBackWallZ(nextBase, depth),
         rotation: 0,
         rotationLocked: true,
         options: {
@@ -2043,6 +2052,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     )));
   };
 
+  const resetSignatureArchImage = (item, slot) => {
+    if (readOnly || !item || !slot) return;
+    updateItemOptions(item, textureSlotPatch(item, slot, { imageUrl: '', imageName: '', visualPending: false }));
+  };
+
   const moveDraggedItem = (point) => {
     if (readOnly || !draggingId) return;
     const dragged = visibleSceneItems.find((item) => item.id === draggingId);
@@ -2060,7 +2074,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }
 
     if (isSignatureArchItem(dragged)) {
-      updateItem(draggingId, { x: dragCoordinate(point.x), z: signatureArchCenterZ });
+      updateItem(draggingId, { x: dragCoordinate(point.x) });
       return;
     }
 
@@ -2774,6 +2788,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             signatureArchEntries={signatureArchEntries}
             signatureArchColor={signatureArchColor}
             signatureArchColors={footprintPalette}
+            signatureArchUploadState={itemOptionState}
             isPrestigeStand={isPrestigeStand}
             prestigeArchItems={visiblePrestigeArchItems}
             prestigeArchEnabled={prestigeArchEnabled}
@@ -2830,6 +2845,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onSelectCounter={setSelectedId}
             onSignatureArchVariant={selectSignatureArchVariant}
             onSignatureArchColor={updateSignatureArchColor}
+            onSignatureArchImage={(item, slot, file) => uploadItemImage(item, file, { textureSlot: slot })}
+            onSignatureArchResetImage={resetSignatureArchImage}
             onPrestigeArchToggle={setPrestigeArchPresence}
             onPrestigeArchTv={updatePrestigeArchTv}
             onPrestigeSignageToggle={setPrestigeSignagePresence}
@@ -3690,7 +3707,7 @@ function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = 
   );
 }
 
-function SignatureArchOptionCard({ items = [], entries = [], colors = [], selectedColor = null, disabled = false, onVariantChange, onColorChange }) {
+function SignatureArchOptionCard({ items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage }) {
   const selectedItem = items[0] || null;
   const selectedType = selectedItem?.options?.signatureArchVariantType || selectedItem?.type || '';
   const selectedColorId = selectedItem?.options?.signatureArchColorId || selectedColor?.id || '';
@@ -3746,6 +3763,32 @@ function SignatureArchOptionCard({ items = [], entries = [], colors = [], select
           ))}
         </div>
       </section>
+
+      {signatureArchVisualSlots.map((slot) => {
+        const value = selectedItem?.options?.textureSlotValues?.[slot.id] || {};
+        return (
+          <section key={slot.id} className="signature-arch-section signature-arch-visual-section">
+            <div className="signature-arch-section-head">
+              <strong>{slot.label}</strong>
+              <span>{slot.targetName}</span>
+            </div>
+            <VisualUploadDropzone
+              imageUrl={value.imageUrl || ''}
+              alt={slot.label}
+              disabled={disabled || !selectedItem}
+              uploading={Boolean(uploadState?.uploading)}
+              onImage={(file) => { if (file && selectedItem) onImage?.(selectedItem, slot, file); }}
+            />
+            {value.imageName && <small className="signature-arch-image-name">{value.imageName}</small>}
+            {value.imageUrl && (
+              <button type="button" className="item-image-reset" disabled={disabled || Boolean(uploadState?.uploading)} onClick={() => onResetImage?.(selectedItem, slot)}>
+                Réinitialiser
+              </button>
+            )}
+          </section>
+        );
+      })}
+      {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
     </div>
   );
 }
@@ -4367,6 +4410,7 @@ function OptionsStepPanel({
   signatureArchEntries = [],
   signatureArchColor = null,
   signatureArchColors = [],
+  signatureArchUploadState = {},
   isPrestigeStand = false,
   prestigeArchItems = [],
   prestigeArchEnabled = true,
@@ -4412,6 +4456,8 @@ function OptionsStepPanel({
   onSelectCounter,
   onSignatureArchVariant,
   onSignatureArchColor,
+  onSignatureArchImage,
+  onSignatureArchResetImage,
   onPrestigeArchToggle,
   onPrestigeArchTv,
   onPrestigeSignageToggle,
@@ -4545,9 +4591,12 @@ function OptionsStepPanel({
             entries={signatureArchEntries}
             colors={signatureArchColors}
             selectedColor={signatureArchColor}
+            uploadState={signatureArchUploadState}
             disabled={readOnly}
             onVariantChange={onSignatureArchVariant}
             onColorChange={onSignatureArchColor}
+            onImage={onSignatureArchImage}
+            onResetImage={onSignatureArchResetImage}
           />
         </OptionAccordion>
       )}
@@ -6102,6 +6151,25 @@ function signatureArchColorOptions(color = {}) {
     signatureArchColorImage: colorTextureUrl(color),
     signatureArchColorReference: color?.reference || '',
   };
+}
+
+function signatureArchBackWallZ(item = {}, standDepth = 0) {
+  const bounds = itemGroupBounds(item);
+  return -Number(standDepth || 0) / 2 + wallThickness - Number(bounds.minZ || 0);
+}
+
+function signatureArchFootprintLocalZ(item = {}) {
+  return signatureArchCenterZ - Number(item.z || 0);
+}
+
+function itemTextureSlots(item = {}) {
+  const configuredSlots = normalizeTextureSlots(item?.dimensions?.textureSlots);
+  return isSignatureArchItem(item) ? [...signatureArchVisualSlots, ...configuredSlots] : configuredSlots;
+}
+
+function signatureArchVisualMaterialMatches(materialName = '', slot = {}) {
+  if (slot.id !== 'signature-arch-led-30') return false;
+  return /^(?:led_5500k(?:#|\*|_)30|\*30)(?:\.\d+)?$/.test(materialName);
 }
 
 function isPrestigeArchItem(item = {}) {
@@ -18819,7 +18887,7 @@ function SignatureArchFootprint({ item, standDepth = 0 }) {
   const y = 0.014 - floorItemBaseY(item);
 
   return (
-    <mesh receiveShadow raycast={() => null} position={[Number(bounds.centerX || 0), y, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+    <mesh receiveShadow raycast={() => null} position={[Number(bounds.centerX || 0), y, signatureArchFootprintLocalZ(item)]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
       <planeGeometry args={[width, depth]} />
       <meshStandardMaterial color={texture ? '#ffffff' : color} map={texture || null} roughness={0.88} />
     </mesh>
@@ -19314,7 +19382,7 @@ function useExternalTexture(url, options = {}) {
 }
 
 function useTextureSlotImages(item = {}) {
-  const slots = normalizeTextureSlots(item?.dimensions?.textureSlots);
+  const slots = itemTextureSlots(item);
   const values = item?.options?.textureSlotValues || {};
   const imageEntries = slots
     .map((slot) => ({ slot, url: slot.kind === 'color' ? values?.[slot.id]?.colorImage : values?.[slot.id]?.imageUrl }))
@@ -19466,11 +19534,11 @@ function brightenElectricalMaterial(material) {
 }
 
 function applyTextureSlotMaterial(material, item = {}, textureOptions = {}, materialName = '') {
-  const slots = normalizeTextureSlots(item?.dimensions?.textureSlots);
+  const slots = itemTextureSlots(item);
   if (!slots.length) return material;
   const values = item?.options?.textureSlotValues || {};
   for (const slot of slots) {
-    if (!materialMatchesTextureSlot(materialName, material, slot.targetName, slot.matchMode)) continue;
+    if (!materialMatchesTextureSlot(materialName, material, slot.targetName, slot.matchMode) && !signatureArchVisualMaterialMatches(materialName, slot)) continue;
     const value = values[slot.id] || {};
     const image = textureOptions.textureSlotImages?.[slot.id];
     if (slot.kind === 'color') {

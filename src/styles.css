@@ -13269,6 +13269,22 @@ img.asset-thumb {
   padding-bottom: 0;
 }
 
+.signature-arch-visual-section .visual-upload-dropzone {
+  min-height: 102px;
+}
+
+.signature-arch-image-name {
+  overflow: hidden;
+  color: #6f7b8e;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signature-arch-visual-section .item-image-reset {
+  justify-self: start;
+}
+
 .prestige-base-card {
   display: grid;
   gap: 12px;

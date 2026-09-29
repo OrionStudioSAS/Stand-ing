@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import vm from 'node:vm';
 
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const stylesSource = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+function loadFunction(name, context) {
+  const start = appSource.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, name);
+  vm.runInContext(appSource.slice(start, appSource.indexOf('\n}\n', start) + 2), context);
+}
 
 test('Signature scenes expose their dedicated arch controls and hide the generic footprint control', () => {
   assert.match(appSource, /function isSignatureScene\(/);
@@ -30,8 +37,49 @@ test('Signature arch color targets the requested material and its attached carpe
   assert.match(appSource, /isSignatureArchItem\(item\) && <SignatureArchFootprint item=\{item\} standDepth=\{depth\}/);
 });
 
-test('Signature arch movement stays lateral so the strip keeps touching both stand edges', () => {
-  assert.match(appSource, /z: signatureArchCenterZ/);
-  assert.match(appSource, /rotation: 0,\s*rotationLocked: true/);
-  assert.match(appSource, /isSignatureArchItem\(dragged\)[\s\S]*x: dragCoordinate\(point\.x\), z: signatureArchCenterZ/);
+test('Signature arch back touches the wall while its carpet strip spans the stand and 5 cm outside', () => {
+  const context = vm.createContext({
+    itemGroupBounds: () => ({ minZ: -0.6 }),
+    wallThickness: 0.06,
+    signatureArchCenterZ: 0.025,
+  });
+  loadFunction('signatureArchBackWallZ', context);
+  loadFunction('signatureArchFootprintLocalZ', context);
+  const arch = { z: context.signatureArchBackWallZ({}, 4) };
+  assert.ok(Math.abs(arch.z - 0.6 - (-2 + 0.06)) < 1e-9);
+  assert.ok(Math.abs(arch.z + context.signatureArchFootprintLocalZ(arch) - 0.025) < 1e-9);
+  assert.ok(Math.abs(0.025 - 4.05 / 2 - (-2)) < 1e-9);
+  assert.ok(Math.abs(0.025 + 4.05 / 2 - 2.05) < 1e-9);
+  assert.match(appSource, /isSignatureArchItem\(dragged\)[\s\S]*updateItem\(draggingId, \{ x: dragCoordinate\(point\.x\) \}\)/);
+});
+
+test('Signature arch image slots replace only their own material, including the literal *30 name', () => {
+  const context = vm.createContext({
+    signatureArchVisualSlots: [
+      { id: 'signature-arch-led-5', targetName: 'LED_5500k#5', kind: 'image', matchMode: 'exact' },
+      { id: 'signature-arch-led-30', targetName: 'LED_5500k#30', kind: 'image', matchMode: 'exact' },
+    ],
+    normalizeTextureSlots: () => [],
+    isSignatureArchItem: () => true,
+    materialMatchesTextureSlot: (name, material, target) => name === target.toLowerCase(),
+    textureSlotHasLogoGate: () => false,
+    materialTextureCanvasSize: () => [100, 100],
+    createCoverImageTexture: (image) => image,
+    materialWithTexture: (material, map) => ({ ...material, map }),
+  });
+  loadFunction('itemTextureSlots', context);
+  loadFunction('signatureArchVisualMaterialMatches', context);
+  loadFunction('applyTextureSlotMaterial', context);
+  const item = { options: { textureSlotValues: {
+    'signature-arch-led-5': { imageUrl: 'first' },
+    'signature-arch-led-30': { imageUrl: 'second' },
+  } } };
+  const images = { textureSlotImages: {
+    'signature-arch-led-5': { id: 'first' },
+    'signature-arch-led-30': { id: 'second' },
+  } };
+  assert.equal(context.applyTextureSlotMaterial({ name: 'LED_5500k#5' }, item, images, 'led_5500k#5').map.id, 'first');
+  assert.equal(context.applyTextureSlotMaterial({ name: '*30' }, item, images, '*30').map.id, 'second');
+  assert.equal(context.applyTextureSlotMaterial({ name: 'LED_5500k#50' }, item, images, 'led_5500k#50').map, undefined);
+  assert.match(appSource, /onSignatureArchImage=\{\(item, slot, file\) => uploadItemImage\(item, file, \{ textureSlot: slot \}\)\}/);
 });
