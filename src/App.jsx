@@ -14883,11 +14883,14 @@ function makeAutomaticPartitionHeadItems(rule, sides = {}, catalogEntries = [], 
     const unitPrice = billable ? firstPriceValue(assetUnitPrice(entry, salonLabel), price, 0) : 0;
     const base = makeItem(type, width, depth, layout, entry);
     const isSmclHead = isSmclPartitionHeadItem(entry);
+    const isSignatureHead = isSignaturePartitionHeadItem(entry);
     return constrainItem({
       ...base,
       id: `auto-partition-head-${rule.id}-${side}`,
       label: side === 'left' ? (rule.leftLabel || entry.label) : (rule.rightLabel || entry.label),
       placementRule: isPartitionHeadItem(entry) ? placementRuleFromId(side === 'left' ? 'outer-left' : 'outer-right') : base.placementRule,
+      isWallItem: isSignatureHead || base.isWallItem,
+      wall: isSignatureHead ? (side === 'left' ? 'left' : 'right') : base.wall,
       dimensions: isSmclHead ? { ...(base.dimensions || {}), smclHeadSide: side } : base.dimensions,
       autoPartitionHead: true,
       included: !billable,

@@ -92,6 +92,7 @@ test('The same Signature head asset is assigned to opposite stand edges', () => 
   const context = vm.createContext({
     findCatalogEntry: () => entry,
     isSmclPartitionHeadItem: () => false,
+    isSignaturePartitionHeadItem: () => true,
     isPartitionHeadItem: () => true,
     assetUnitPrice: () => 0,
     firstPriceValue: () => 0,
@@ -107,7 +108,34 @@ test('The same Signature head asset is assigned to opposite stand edges', () => 
   assert.equal(items.length, 2);
   assert.deepEqual(Array.from(items, (item) => item.placementRule.id), ['outer-left', 'outer-right']);
   assert.deepEqual(Array.from(items, (item) => item.options.partitionHeadSide), ['left', 'right']);
+  assert.deepEqual(Array.from(items, (item) => item.wall), ['left', 'right']);
+  assert.ok(items.every((item) => item.isWallItem));
   assert.ok(items.every((item) => item.included));
+});
+
+test('Signature heads attach to side-wall fronts or back-wall ends, never rear corners', () => {
+  const context = vm.createContext({
+    availableWalls: (layout) => layout === 'u'
+      ? [{ id: 'back' }, { id: 'left' }, { id: 'right' }]
+      : [{ id: 'back' }, ...(layout === 'back' ? [] : [{ id: layout }])],
+    normalizePlacementRule: (rule) => rule,
+    wallItemAxisRange: (_item, wall, width, depth) => wall === 'back'
+      ? { min: -width / 2 + 0.1, max: width / 2 - 0.1 }
+      : { min: -depth / 2 + 0.1, max: depth / 2 - 0.1 },
+    smclPartitionHeadWallAxis: (_item, _wall, axis) => axis,
+    wallItemCenterY: () => 0,
+    wallThickness: 0.06,
+  });
+  loadFunction('applyWallPlacementRule', context);
+  const head = (side) => ({ placementRule: { id: `outer-${side}`, locked: true } });
+  for (const layout of ['u', 'left', 'right', 'back']) {
+    const left = context.applyWallPlacementRule(head('left'), 4, 3, layout);
+    const right = context.applyWallPlacementRule(head('right'), 4, 3, layout);
+    assert.equal(left.wall, layout === 'u' || layout === 'left' ? 'left' : 'back');
+    assert.equal(right.wall, layout === 'u' || layout === 'right' ? 'right' : 'back');
+    assert.ok(left.wall === 'left' ? left.z > 0 : left.x < 0, layout);
+    assert.ok(right.wall === 'right' ? right.z > 0 : right.x > 0, layout);
+  }
 });
 
 test('Signature heads use their LED material for each uploaded image, not the other materials', () => {
