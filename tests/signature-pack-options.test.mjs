@@ -138,6 +138,29 @@ test('Signature heads attach to side-wall fronts or back-wall ends, never rear c
   }
 });
 
+test('Signature head follows each wall with its long model axis and correct wall gap', () => {
+  const context = vm.createContext({
+    isSignaturePartitionHeadItem: (item) => item.type === 'signature-head',
+    isPartitionHeadItem: () => true,
+    isPosterItem: () => false,
+    itemGroupBounds: () => ({ minX: -0.08, maxX: 0.08, minZ: -0.25, maxZ: 0.25 }),
+    itemGroupSize: () => ({ width: 0.16, height: 2.5, depth: 0.5 }),
+    wallThickness: 0.06,
+    partitionHeadWallGap: 0.01,
+  });
+  for (const name of ['wallMountedItemRotation', 'wallItemAxisBounds', 'wallItemMetrics', 'wallMountedNormalOffset']) loadFunction(name, context);
+  const signature = { type: 'signature-head', modelUrl: '/head.glb' };
+  const smcl = { type: 'smcl-head', modelUrl: '/smcl.glb' };
+  assert.equal(context.wallMountedItemRotation({ ...signature, wall: 'back' }), Math.PI / 2);
+  assert.equal(context.wallMountedItemRotation({ ...signature, wall: 'left' }), Math.PI);
+  assert.equal(context.wallMountedItemRotation({ ...signature, wall: 'right' }), 0);
+  assert.equal(context.wallMountedItemRotation({ ...smcl, wall: 'back' }), 0);
+  assert.equal(context.wallItemAxisBounds(signature, 'back').max, 0.25);
+  assert.equal(context.wallItemAxisBounds(signature, 'left').max, 0.25);
+  assert.equal(context.wallItemMetrics(signature).width, 0.5);
+  assert.equal(context.wallMountedNormalOffset(signature), 0.15);
+});
+
 test('Signature heads use their LED material for each uploaded image, not the other materials', () => {
   const context = vm.createContext({
     normalizedItemText: (item) => `${item.label || ''}`.toLowerCase(),

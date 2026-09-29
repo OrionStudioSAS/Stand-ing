@@ -17112,6 +17112,11 @@ function wallAxisLimits(wall, width, depth) {
 function wallItemAxisBounds(item, wall = 'back') {
   if (item?.type === 'poster') return { min: -0.5, max: 0.5 };
   const bounds = itemGroupBounds(item);
+  if (isSignaturePartitionHeadItem(item)) {
+    return wall === 'left'
+      ? { min: -Number(bounds.maxZ || 0), max: -Number(bounds.minZ || 0) }
+      : { min: Number(bounds.minZ || 0), max: Number(bounds.maxZ || 0) };
+  }
   if (wall === 'left') {
     return { min: -Number(bounds.maxX || 0), max: -Number(bounds.minX || 0) };
   }
@@ -17766,7 +17771,7 @@ function wallItemMetrics(item, items, width, depth) {
   if (item.modelUrl) {
     const size = itemGroupSize(item);
     return {
-      width: Number(size.width || 0.95),
+      width: Number((isSignaturePartitionHeadItem(item) ? size.depth : size.width) || 0.95),
       height: Number(size.height || 0.58),
     };
   }
@@ -18030,6 +18035,7 @@ function wallMountedNormalOffset(item, objectSurface = false) {
   if (item?.type === 'screen') return wallFaceOffset + screenDepth / 2;
   if (isPartitionHeadItem(item)) {
     const bounds = itemGroupBounds(item);
+    if (isSignaturePartitionHeadItem(item)) return wallFaceOffset + partitionHeadWallGap - Number(bounds.minX || 0);
     return wallFaceOffset + partitionHeadWallGap - Number(bounds.minZ || 0);
   }
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
@@ -20644,7 +20650,7 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
   const posterCoverSize = posterCoverTextureSize(posterRegion);
   const posterTexture = useExternalTexture(isPoster ? item.options?.posterImageUrl : '', { coverSize: posterCoverSize, fit: 'contain', backgroundColor: '#ffffff' });
   const objectTransform = objectWallTransform(item, items);
-  const rotation = objectTransform?.rotation ?? (item.wall === 'left' ? Math.PI / 2 : item.wall === 'right' ? -Math.PI / 2 : 0);
+  const rotation = wallMountedItemRotation(item, objectTransform);
   const offset = objectTransform?.position ?? screenWorldPosition(item, width, depth, items);
   const isCustomModel = Boolean(item.modelUrl);
   const posterWidth = posterRegion?.width || 0.95;
@@ -20692,6 +20698,11 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
       )}
     </group>
   );
+}
+
+function wallMountedItemRotation(item, objectTransform = null) {
+  const wallRotation = objectTransform?.rotation ?? (item.wall === 'left' ? Math.PI / 2 : item.wall === 'right' ? -Math.PI / 2 : 0);
+  return wallRotation + (isSignaturePartitionHeadItem(item) ? Math.PI / 2 : 0);
 }
 
 createRoot(document.getElementById('root')).render(<App />);
