@@ -1192,8 +1192,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     () => availableCatalog.filter((entry) => effectiveAdminViewer || !entry.dimensions?.adminOnly),
     [availableCatalog, effectiveAdminViewer],
   );
-  const hydratedItems = useMemo(() => (
-    objectBankLoaded ? items.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)) : items
+  const hydratedItems = useMemo(() => resolveSurfaceAttachments(
+    objectBankLoaded ? items.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)) : items,
   ), [items, availableCatalog, objectBankLoaded]);
   const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item) && !isAutomaticReserveItem(item) && !isAutomaticPartitionHeadItem(item)), [hydratedItems]);
   const ledRailEntries = useMemo(() => scenePackBenefits(initialScene).mode === 'allowance' ? [] : ledRailCatalogEntries(availableCatalog), [availableCatalog, initialScene]);
@@ -15812,6 +15812,7 @@ function isWallTopSnapItem(item = {}, entry = null) {
 }
 
 function floorItemBaseY(item = {}, entry = null) {
+  if (isCountertopAccessory(item) && item.surfaceHostId) return Number(item.y || 0);
   if (isWallTopSnapItem(item, entry)) {
     const h = wallTopSnapItemHeight(item, entry);
     return h > 0 ? Math.max(0, fixedWallHeight - wallTopSnapInset - h) : 0;
@@ -17405,16 +17406,20 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
 }
 
 function updateSceneItemWithCollision(items, id, patch, width, depth, layout, carpetFootprintEnabled = true) {
-  const currentItem = items.find((item) => item.id === id);
+  const resolvedItems = resolveSurfaceAttachments(items);
+  const currentItem = resolvedItems.find((item) => item.id === id);
   if (!currentItem) return items;
 
   const editableItem = releasePlacementRuleForManualEdit(currentItem, patch);
-  const candidate = constrainItem({ ...editableItem, ...patch }, width, depth, layout, carpetFootprintEnabled);
+  const constrained = constrainItem({ ...editableItem, ...patch }, width, depth, layout, carpetFootprintEnabled);
   const positionKeys = ['x', 'z', 'wall', 'wallSide', 'wallSurface', 'rotation'];
   const isPositionPatch = positionKeys.some((key) => hasOwn(patch, key));
-  if (isPositionPatch && collidesWithScene(candidate, items, id, width, depth)) return items;
+  const candidate = isPositionPatch && isCountertopAccessory(constrained)
+    ? placeCountertopAccessory(constrained, resolvedItems)
+    : constrained;
+  if (isPositionPatch && collidesWithScene(candidate, resolvedItems, id, width, depth)) return items;
   if (isPositionPatch && isSameSceneTransform(currentItem, candidate)) return items;
-  return items.map((item) => (item.id === id ? candidate : item));
+  return resolveSurfaceAttachments(resolvedItems.map((item) => (item.id === id ? candidate : item)));
 }
 
 function isSameSceneTransform(a = {}, b = {}) {
@@ -17422,6 +17427,7 @@ function isSameSceneTransform(a = {}, b = {}) {
   return sameNumber(a.x, b.x)
     && sameNumber(a.y, b.y)
     && sameNumber(a.z, b.z)
+    && String(a.surfaceHostId || '') === String(b.surfaceHostId || '')
     && sameNumber(a.rotation, b.rotation)
     && String(a.wall || '') === String(b.wall || '')
     && String(a.wallSide || '') === String(b.wallSide || '')
@@ -17436,6 +17442,73 @@ function releasePlacementRuleForManualEdit(item = {}, patch = {}) {
   if (!isTransformEdit || itemMovementLocked(item)) return item;
   if (!item.placementRule && !item.lockedPlacement) return item;
   return { ...item, placementRule: null, lockedPlacement: false };
+}
+
+function isCountertopAccessory(item = {}) {
+  return /\bnespresso\b|\bmachine\s+(?:a\s+)?cafe\b/.test(normalizedItemText(item));
+}
+
+function canSupportCountertopAccessory(item = {}) {
+  if (!item || item.isGroup || isWallItem(item) || isCeilingMountedItem(item)) return false;
+  const label = normalizedItemText(item);
+  return item.dimensions?.canSupportObjects === true
+    || /\btable\b|\bcomptoir\b|\bbanque\s+(?:d\s+)?accueil\b/.test(label);
+}
+
+function accessoryFitsSurface(accessory, support, inset = 0.02) {
+  const accessoryBounds = itemPlacementBounds(accessory);
+  const supportBounds = itemGroupBounds(support);
+  const corners = [
+    [accessoryBounds.minX, accessoryBounds.minZ],
+    [accessoryBounds.minX, accessoryBounds.maxZ],
+    [accessoryBounds.maxX, accessoryBounds.minZ],
+    [accessoryBounds.maxX, accessoryBounds.maxZ],
+  ];
+  return corners.every(([x, z]) => {
+    const local = rotatePoint(
+      Number(accessory.x || 0) + x - Number(support.x || 0),
+      Number(accessory.z || 0) + z - Number(support.z || 0),
+      -Number(support.rotation || 0),
+    );
+    return local.x >= supportBounds.minX + inset && local.x <= supportBounds.maxX - inset
+      && local.z >= supportBounds.minZ + inset && local.z <= supportBounds.maxZ - inset;
+  });
+}
+
+function detachCountertopAccessory(item) {
+  return { ...item, surfaceHostId: null, surfaceOffsetX: null, surfaceOffsetZ: null, y: 0 };
+}
+
+function placeCountertopAccessory(item, items = []) {
+  const support = items
+    .filter((candidate) => candidate.id !== item.id && canSupportCountertopAccessory(candidate) && accessoryFitsSurface(item, candidate))
+    .sort((left, right) => itemGroupBounds(right).height - itemGroupBounds(left).height)[0];
+  if (!support) return detachCountertopAccessory(item);
+  const offset = rotatePoint(Number(item.x || 0) - Number(support.x || 0), Number(item.z || 0) - Number(support.z || 0), -Number(support.rotation || 0));
+  return {
+    ...item,
+    surfaceHostId: support.id,
+    surfaceOffsetX: offset.x,
+    surfaceOffsetZ: offset.z,
+    y: floorItemBaseY(support) + Number(itemGroupBounds(support).height || 0),
+  };
+}
+
+function resolveSurfaceAttachments(items = []) {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  return items.map((item) => {
+    if (!isCountertopAccessory(item) || !item.surfaceHostId) return item;
+    const support = byId.get(item.surfaceHostId);
+    if (!canSupportCountertopAccessory(support)) return detachCountertopAccessory(item);
+    const offset = rotatePoint(Number(item.surfaceOffsetX || 0), Number(item.surfaceOffsetZ || 0), Number(support.rotation || 0));
+    const attached = {
+      ...item,
+      x: Number(support.x || 0) + offset.x,
+      z: Number(support.z || 0) + offset.z,
+      y: floorItemBaseY(support) + Number(itemGroupBounds(support).height || 0),
+    };
+    return accessoryFitsSurface(attached, support) ? attached : detachCountertopAccessory(attached);
+  });
 }
 
 function placeItemInFreeSpot(item, items, width, depth, layout, carpetFootprintEnabled = true) {
@@ -17506,6 +17579,8 @@ function collidesWithScene(candidate, items, ignoreId = null, width = 0, depth =
 
   return (items || []).some((item) => {
     if (!item || item.id === ignoreId || isWallItem(item) || !itemCollisionEnabled(item)) return false;
+    if (candidate.surfaceHostId === item.id && isCountertopAccessory(candidate)) return false;
+    if (item.surfaceHostId === candidate.id && isCountertopAccessory(item)) return false;
     if (isCeilingMountedItem(candidate) !== isCeilingMountedItem(item)) return false;
     const itemBox = itemCollisionBox(item);
     return itemBox ? boxesOverlap(candidateBox, itemBox) : false;
