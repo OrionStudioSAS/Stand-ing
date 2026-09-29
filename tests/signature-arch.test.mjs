@@ -33,23 +33,23 @@ test('Signature arch color targets the requested material and its attached carpe
   assert.match(appSource, /signatureArchColorTexture/);
   assert.match(appSource, /function SignatureArchFootprint\(/);
   assert.match(appSource, /Number\(standDepth \|\| 0\) \+ signatureArchFootprintOverflow/);
-  assert.match(appSource, /const signatureArchFootprintOverflow = 0\.05/);
+  assert.match(appSource, /const signatureArchFootprintOverflow = 0\.5/);
   assert.match(appSource, /isSignatureArchItem\(item\) && <SignatureArchFootprint item=\{item\} standDepth=\{depth\}/);
 });
 
-test('Signature arch back touches the wall while its carpet strip spans the stand and 5 cm outside', () => {
+test('Signature arch back touches the wall while its carpet strip spans the stand and 50 cm outside', () => {
   const context = vm.createContext({
     itemGroupBounds: () => ({ minZ: -0.6 }),
     wallThickness: 0.06,
-    signatureArchCenterZ: 0.025,
+    signatureArchCenterZ: 0.25,
   });
   loadFunction('signatureArchBackWallZ', context);
   loadFunction('signatureArchFootprintLocalZ', context);
   const arch = { z: context.signatureArchBackWallZ({}, 4) };
   assert.ok(Math.abs(arch.z - 0.6 - (-2 + 0.06)) < 1e-9);
-  assert.ok(Math.abs(arch.z + context.signatureArchFootprintLocalZ(arch) - 0.025) < 1e-9);
-  assert.ok(Math.abs(0.025 - 4.05 / 2 - (-2)) < 1e-9);
-  assert.ok(Math.abs(0.025 + 4.05 / 2 - 2.05) < 1e-9);
+  assert.ok(Math.abs(arch.z + context.signatureArchFootprintLocalZ(arch) - 0.25) < 1e-9);
+  assert.ok(Math.abs(0.25 - 4.5 / 2 - (-2)) < 1e-9);
+  assert.ok(Math.abs(0.25 + 4.5 / 2 - 2.5) < 1e-9);
   assert.match(appSource, /isSignatureArchItem\(dragged\)[\s\S]*updateItem\(draggingId, \{ x: dragCoordinate\(point\.x\) \}\)/);
 });
 

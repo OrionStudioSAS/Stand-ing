@@ -104,7 +104,7 @@ const screenCenterHeight = 1.6;
 const wallItemSnap = 0.1;
 const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
-const signatureArchFootprintOverflow = 0.05;
+const signatureArchFootprintOverflow = 0.5;
 const signatureArchCenterZ = signatureArchFootprintOverflow / 2;
 const signatureArchVisualSlots = [
   { id: 'signature-arch-led-5', label: 'Visuel LED #5', targetName: 'LED_5500k#5', kind: 'image', matchMode: 'exact' },
@@ -247,6 +247,12 @@ const reserveRuleBands = [
   { id: 'small', label: 'Moins de 18 m²', minArea: 0, maxArea: 17.999, includedLabel: 'Aucune réserve incluse' },
   { id: 'medium', label: '18 à 24 m²', minArea: 18, maxArea: 24.999, includedLabel: 'Réserve 2 m²' },
   { id: 'large', label: '25 m² et plus', minArea: 25, maxArea: null, includedLabel: 'Réserve 3 m²' },
+];
+const signatureReserveRuleBands = [
+  { id: 'signature-none', label: 'Moins de 15 m²', minArea: 0, maxArea: 14.999, includedLabel: 'Aucune réserve' },
+  { id: 'signature-1m2', label: '15 à 23 m²', minArea: 15, maxArea: 23.999, includedLabel: 'Réserve 1 m²' },
+  { id: 'signature-2m2', label: '24 à 35 m²', minArea: 24, maxArea: 35.999, includedLabel: 'Réserve 2 m²' },
+  { id: 'signature-3m2', label: 'Plus de 35 m²', minArea: 36, maxArea: null, includedLabel: 'Réserve 3 m²' },
 ];
 const partitionHeadRuleBands = [
   { id: 'small', label: 'Moins de 12 m²', minArea: 0, maxArea: 11.999, includedCount: 0 },
@@ -1098,9 +1104,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const isSignatureStand = useMemo(() => isSignatureScene(initialScene), [initialScene]);
   const standLabel = initialScene.project_name || clientInfo.project || 'Stand A-14';
   const clientLabel = clientInfo.client || contactDetails.company || 'Aerosys Industries';
-  const carpetPalette = useMemo(() => colorOptionsForUsage(objectBank, assetPackLabel, 'carpet', carpetColors), [objectBank, assetPackLabel]);
-  const footprintPalette = useMemo(() => colorOptionsForUsage(objectBank, assetPackLabel, 'footprint', carpetPalette), [objectBank, assetPackLabel, carpetPalette]);
-  const wallFabricPalette = useMemo(() => colorOptionsForUsage(objectBank, assetPackLabel, 'wallFabric', wallFabricColors), [objectBank, assetPackLabel]);
+  const carpetPalette = useMemo(() => packColorPalette(objectBank, assetPackLabel, 'carpet', carpetColors), [objectBank, assetPackLabel]);
+  const footprintPalette = useMemo(() => packColorPalette(objectBank, assetPackLabel, 'footprint', carpetPalette), [objectBank, assetPackLabel, carpetPalette]);
+  const wallFabricPalette = useMemo(() => packColorPalette(objectBank, assetPackLabel, 'wallFabric', wallFabricColors), [objectBank, assetPackLabel]);
   const counterPalette = useMemo(() => colorOptionsForUsage(objectBank, assetPackLabel, 'counter', []), [objectBank, assetPackLabel]);
   const carpetGroupConfigOptionsList = useMemo(() => colorGroupConfigOptions(objectBank, assetPackLabel, 'carpet'), [objectBank, assetPackLabel]);
   const groupDefaultColorOptions = useMemo(() => makePaletteDefaultColorOptions({
@@ -1116,7 +1122,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const rawSelectedCarpetColor = findColorInPalette(carpetPalette, selectedCarpetId) || defaultColorFromPalette(carpetPalette) || carpetPalette[0] || carpetColors[0];
   const rawSelectedCarpetFootprintColor = findColorInPalette(footprintPalette, selectedCarpetFootprintId) || defaultColorFromPalette(footprintPalette) || rawSelectedCarpetColor;
   const rawSelectedWallFabricColor = findColorInPalette(wallFabricPalette, selectedWallFabricId) || defaultColorFromPalette(wallFabricPalette) || wallFabricPalette[0] || wallFabricColors[0];
-  const rawReserveWallFabricColor = findColorInPalette(wallFabricPalette, effectiveDefaultColorOptions.reserveWallFabricColorId) || rawSelectedWallFabricColor;
+  const rawReserveWallFabricColor = isSignatureStand
+    ? signatureReserveWallFabricColor()
+    : findColorInPalette(wallFabricPalette, effectiveDefaultColorOptions.reserveWallFabricColorId) || rawSelectedWallFabricColor;
   const selectedCarpetColor = colorWithDefaultIncluded(rawSelectedCarpetColor, effectiveDefaultColorOptions.carpetColorId);
   const selectedCarpetFootprintColor = colorWithDefaultIncluded(rawSelectedCarpetFootprintColor, effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId);
   const selectedWallFabricColor = colorWithDefaultIncluded(rawSelectedWallFabricColor, effectiveDefaultColorOptions.wallFabricColorId);
@@ -1199,7 +1207,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const ledRailEntries = useMemo(() => scenePackBenefits(initialScene).mode === 'allowance' ? [] : ledRailCatalogEntries(availableCatalog), [availableCatalog, initialScene]);
   const ledSpotCount = ledSpotCountForArea(area);
   const reserveRules = useMemo(() => sceneReserveRules(initialScene), [initialScene]);
-  const activeReserveRuleConfig = useMemo(() => activeReserveRule(reserveRules, area), [reserveRules, area]);
+  const activeReserveRuleConfig = useMemo(() => activeReserveRule(reserveRules, area, isSignatureStand ? signatureReserveRuleBands : reserveRuleBands), [reserveRules, area, isSignatureStand]);
   const effectiveReserveOptionType = reserveOptionType === '__legacy__' ? normalizeComplementaryOptions(activeReserveRuleConfig?.options)[0]?.type || '' : reserveOptionType;
   const partitionHeadRules = useMemo(() => scenePartitionHeadRules(initialScene), [initialScene]);
   const activePartitionHeadRuleConfig = useMemo(() => activePartitionHeadRule(partitionHeadRules, area, layout), [partitionHeadRules, area, layout]);
@@ -7988,7 +7996,7 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
         <button
           type="button"
           className={selectedId === normalizeColorId(mainIncludedColor.id) ? 'ground-main-swatch active' : 'ground-main-swatch'}
-          style={{ '--swatch-color': mainIncludedColor.hex, '--swatch-image': `url("${mainIncludedColor.image}")` }}
+          style={{ '--swatch-color': mainIncludedColor.hex, '--swatch-image': swatchImage(mainIncludedColor) }}
           aria-label={`Sélectionner ${mainIncludedColor.name}`}
           disabled={disabled}
           onClick={() => selectColor(mainIncludedColor.id)}
@@ -8003,7 +8011,7 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
               key={color.id}
               className={selectedId === normalizeColorId(color.id) ? 'active' : ''}
               type="button"
-              style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+              style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
               title={`${color.name} (${color.code}) · ${includedLabel}`}
               disabled={disabled}
               onClick={() => selectColor(color.id)}
@@ -8025,7 +8033,7 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
                 key={color.id}
                 className={selectedId === normalizeColorId(color.id) ? 'active' : ''}
                 type="button"
-                style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+                style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
                 title={`${color.name} (${color.code}) · ${colorOptionLabel(color, optionLabel, area)}`}
                 disabled={disabled}
                 onClick={() => selectColor(color.id)}
@@ -8156,7 +8164,7 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '' }) {
         <div className="ground-main-choice">
           <span
             className="ground-main-swatch active"
-            style={{ '--swatch-color': displayColor?.hex, '--swatch-image': `url("${displayColor?.image || ''}")` }}
+            style={{ '--swatch-color': displayColor?.hex, '--swatch-image': swatchImage(displayColor) }}
             aria-hidden="true"
           />
           <strong>{displayColor?.name || selectedDisplayColor.name} ({displayColor?.code || selectedDisplayColor.code})</strong>
@@ -8210,7 +8218,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
                   key={color.id}
                   type="button"
                   className={selectedDisplayColor.id === color.id ? 'active' : ''}
-                  style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+                  style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
                   title={`${color.name} (${color.code})`}
                   disabled={disabled || !enabled}
                   onClick={() => selectColor(color.id)}
@@ -8228,7 +8236,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
                       key={color.id}
                       type="button"
                       className={selectedDisplayColor.id === color.id ? 'active' : ''}
-                      style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+                      style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
                       title={`${color.name} (${color.code}) · ${colorOptionLabel(color, 'Option')}`}
                       disabled={disabled || !enabled}
                       onClick={() => selectColor(color.id)}
@@ -8276,7 +8284,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
                   key={color.id}
                   type="button"
                   className={selectedDisplayColor.id === color.id ? 'active' : ''}
-                  style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }}
+                  style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
                   title={`${color.name} (${color.code}) · ${colorOptionLabel(color, 'Option')}`}
                   disabled={disabled || !enabled}
                   onClick={() => selectColor(color.id)}
@@ -9860,17 +9868,21 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [orbitControlsActive, setOrbitControlsActive] = useState(false);
   const [cameraControlMode, setCameraControlMode] = useState('orbit');
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
-  const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true }));
+  const packReserveBands = reserveRuleBandsForPack(offer?.name);
+  const isSignaturePack = packReserveBands === signatureReserveRuleBands;
+  const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true, bands: packReserveBands }));
   const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
   const [autoSpotsRule, setAutoSpotsRule] = useState(() => preset.base_config?.autoSpotsRule || null);
   const [presetColorIds, setPresetColorIds] = useState(() => presetDefaultColorIds(preset));
-  const carpetPalette = useMemo(() => colorOptionsForUsage(assets, offer?.name, 'carpet', carpetColors), [assets, offer?.name]);
-  const footprintPalette = useMemo(() => colorOptionsForUsage(assets, offer?.name, 'footprint', carpetPalette), [assets, offer?.name, carpetPalette]);
-  const wallFabricPalette = useMemo(() => colorOptionsForUsage(assets, offer?.name, 'wallFabric', wallFabricColors), [assets, offer?.name]);
+  const carpetPalette = useMemo(() => packColorPalette(assets, offer?.name, 'carpet', carpetColors), [assets, offer?.name]);
+  const footprintPalette = useMemo(() => packColorPalette(assets, offer?.name, 'footprint', carpetPalette), [assets, offer?.name, carpetPalette]);
+  const wallFabricPalette = useMemo(() => packColorPalette(assets, offer?.name, 'wallFabric', wallFabricColors), [assets, offer?.name]);
   const selectedCarpetColor = findColorInPalette(carpetPalette, presetColorIds.carpetColorId) || defaultColorFromPalette(carpetPalette) || carpetPalette[0] || carpetColors[0];
   const selectedCarpetFootprintColor = findColorInPalette(footprintPalette, presetColorIds.carpetFootprintColorId) || defaultColorFromPalette(footprintPalette) || selectedCarpetColor;
   const selectedWallFabricColor = findColorInPalette(wallFabricPalette, presetColorIds.wallFabricColorId) || defaultColorFromPalette(wallFabricPalette) || wallFabricPalette[0] || wallFabricColors[0];
-  const selectedReserveWallFabricColor = findColorInPalette(wallFabricPalette, presetColorIds.reserveWallFabricColorId) || selectedWallFabricColor;
+  const selectedReserveWallFabricColor = isSignaturePack
+    ? signatureReserveWallFabricColor()
+    : findColorInPalette(wallFabricPalette, presetColorIds.reserveWallFabricColorId) || selectedWallFabricColor;
   const selectedDefaultColorOptions = useMemo(() => defaultColorOptionsFromColors({
     carpetColor: selectedCarpetColor,
     carpetFootprintColor: selectedCarpetFootprintColor,
@@ -9893,11 +9905,11 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   }, [width, depth, layout, availableCatalog]);
 
   useEffect(() => {
-    setReserveRules(normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true }));
+    setReserveRules(normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true, bands: packReserveBands }));
     setPartitionHeadRules(normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules));
     setAutoSpotsRule(preset.base_config?.autoSpotsRule || null);
     setPresetColorIds(presetDefaultColorIds(preset));
-  }, [preset.id, preset.base_config]);
+  }, [preset.id, preset.base_config, packReserveBands]);
 
   const updateItem = (id, patch) => {
     setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout));
@@ -9934,7 +9946,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   };
 
   const save = () => {
-    const cleanedReserveRules = normalizeReserveRules(reserveRules);
+    const cleanedReserveRules = normalizeReserveRules(reserveRules, { bands: packReserveBands });
     onSave({
       dimensions: { width, depth, height: fixedWallHeight },
       layout,
@@ -10047,9 +10059,11 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           wallFabricColors={wallFabricPalette}
           selectedIds={presetColorIds}
           onChange={setPresetColorIds}
+          isSignaturePack={isSignaturePack}
         />
         <PresetReserveRulesEditor
           rules={reserveRules}
+          bands={packReserveBands}
           entries={availableCatalog.filter(isReserveCatalogEntry)}
           salonLabel={offer?.name || ''}
           allowanceMode={normalizePackBenefits(offer?.metadata?.packBenefits).mode === 'allowance'}
@@ -10090,7 +10104,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   );
 }
 
-function PresetDefaultColorsEditor({ carpetColors = [], footprintColors = [], wallFabricColors = [], selectedIds = {}, onChange }) {
+function PresetDefaultColorsEditor({ carpetColors = [], footprintColors = [], wallFabricColors = [], selectedIds = {}, onChange, isSignaturePack = false }) {
   const update = (key, value) => onChange((current) => ({ ...(current || {}), [key]: value }));
   return (
     <section className="preset-default-colors">
@@ -10117,13 +10131,15 @@ function PresetDefaultColorsEditor({ carpetColors = [], footprintColors = [], wa
         value={selectedIds.wallFabricColorId}
         onChange={(value) => update('wallFabricColorId', value)}
       />
-      <PresetColorSelect
-        label="Cloisons de la réserve"
-        colors={wallFabricColors}
-        value={selectedIds.reserveWallFabricColorId}
-        fallbackValue={selectedIds.wallFabricColorId}
-        onChange={(value) => update('reserveWallFabricColorId', value)}
-      />
+      {isSignaturePack
+        ? <p className="preset-reserve-empty">Cloisons de la réserve : gris anthracite (fixe pour Signature).</p>
+        : <PresetColorSelect
+            label="Cloisons de la réserve"
+            colors={wallFabricColors}
+            value={selectedIds.reserveWallFabricColorId}
+            fallbackValue={selectedIds.wallFabricColorId}
+            onChange={(value) => update('reserveWallFabricColorId', value)}
+          />}
     </section>
   );
 }
@@ -10140,7 +10156,7 @@ function PresetColorSelect({ label, colors = [], value = '', fallbackValue = '',
           </option>
         ))}
       </select>
-      <i style={{ '--swatch-color': colorHex(findColorInPalette(colors, selectedValue), '#d9dde5'), '--swatch-image': `url("${colorTextureUrl(findColorInPalette(colors, selectedValue))}")` }} />
+      <i style={{ '--swatch-color': colorHex(findColorInPalette(colors, selectedValue), '#d9dde5'), '--swatch-image': swatchImage(findColorInPalette(colors, selectedValue)) }} />
     </label>
   );
 }
@@ -10155,7 +10171,7 @@ function presetDefaultColorIds(preset = {}) {
   };
 }
 
-function PresetReserveRulesEditor({ rules, entries, salonLabel, allowanceMode = false, onChange }) {
+function PresetReserveRulesEditor({ rules, bands = reserveRuleBands, entries, salonLabel, allowanceMode = false, onChange }) {
   const updateBand = (bandId, patch) => {
     onChange(normalizeReserveRules({
       ...(rules || {}),
@@ -10163,7 +10179,7 @@ function PresetReserveRulesEditor({ rules, entries, salonLabel, allowanceMode = 
         ...(rules?.[bandId] || {}),
         ...patch,
       },
-    }, { keepEmptyOptions: true }));
+    }, { keepEmptyOptions: true, bands }));
   };
   const updateOption = (bandId, index, patch) => {
     const currentOptions = normalizeComplementaryOptions(rules?.[bandId]?.options, { keepEmpty: true });
@@ -10180,8 +10196,14 @@ function PresetReserveRulesEditor({ rules, entries, salonLabel, allowanceMode = 
         ? 'Ces règles sont propres à cette implantation. La réserve proposée par défaut et ses alternatives sont déduites du forfait accessoires.'
         : 'Ces règles sont propres à cette implantation. Les options complémentaires remplacent la réserve incluse et facturent le supplément indiqué.'}</p>
       {!entries.length && <div className="preset-reserve-empty">Aucun groupe/objet réserve disponible pour ce salon.</div>}
-      {reserveRuleBands.map((band) => {
+      {bands.map((band) => {
         const rule = rules?.[band.id] || {};
+        if (band.id === 'signature-none') return (
+          <article key={band.id}>
+            <strong>{band.label}</strong>
+            <p className="preset-reserve-empty">Aucune réserve automatique pour cette surface.</p>
+          </article>
+        );
         return (
           <article key={band.id}>
             <strong>{band.label}</strong>
@@ -13317,7 +13339,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const packLabel = sceneOfferLabel(scene);
   const options = scene.options || scene.source_payload?.options || {};
   const manualItems = sceneAdminItems(scene, catalogEntries);
-  const reserveRule = activeReserveRule(sceneReserveRules(scene), area);
+  const reserveRule = activeReserveRule(sceneReserveRules(scene), area, isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands);
   const reserveOption = options.reserveOptionType === '__legacy__'
     ? normalizeComplementaryOptions(reserveRule?.options)[0]?.type || ''
     : options.reserveOptionType || '';
@@ -14193,6 +14215,42 @@ function colorOptionsForUsage(assets = [], salonLabel = '', usage = '', fallback
   });
 }
 
+function packColorPalette(assets = [], packLabel = '', usage = '', fallbackColors = []) {
+  const palette = colorOptionsForUsage(assets, packLabel, usage, fallbackColors);
+  if (!isSignaturePackLabel(packLabel)) return palette;
+  const definitions = usage === 'carpet' || usage === 'footprint' ? [
+    { name: 'Gris clair', codes: ['0939', '1893'] },
+    { name: 'Bleu marine', codes: ['0809', '1390'], aliases: ['marine', 'bleu amiral'] },
+    { name: 'Rouge', codes: ['0713', '1964'] },
+  ] : usage === 'wallFabric' ? [
+    { name: 'Blanc', codes: ['303'] },
+    { name: 'Rouge', codes: ['470'] },
+    { name: 'Gris clair', codes: [], fallback: { id: 'signature-wall-light-gray', code: '', name: 'Gris clair', hex: '#c8c8c8', image: '', included: true } },
+    { name: 'Bleu', codes: ['180'], aliases: ['drapeau'] },
+  ] : [];
+  if (!definitions.length) return palette;
+  const baseColors = usage === 'wallFabric' ? wallFabricColors : carpetColors;
+  return definitions.map((definition) => {
+    const matches = (color) => definition.codes.includes(String(color.code || color.id || ''))
+      || [definition.name, ...(definition.aliases || [])].some((name) => normalizeTextValue(color.name) === normalizeTextValue(name));
+    const selected = palette.find(matches) || baseColors.find(matches) || definition.fallback;
+    return selected ? { ...selected, name: definition.name, included: selected.included || !Number(selected.price || 0) } : null;
+  }).filter(Boolean);
+}
+
+function signatureReserveWallFabricColor() {
+  return wallFabricColors.find((color) => color.code === '3026');
+}
+
+function isSignaturePackLabel(packLabel = '') {
+  return /\bsignature\b/.test(normalizePackLabel(packLabel));
+}
+
+function swatchImage(color) {
+  const url = colorTextureUrl(color);
+  return url ? `url("${url}")` : 'none';
+}
+
 function colorWithDefaultIncluded(color = {}, defaultColorId = '') {
   if (!defaultColorId || normalizeColorId(color.id) !== normalizeColorId(defaultColorId)) return color;
   return { ...color, included: true, defaultIncluded: true };
@@ -14561,6 +14619,7 @@ function isBasePackEligible(entry) {
 }
 
 function sceneReserveRules(scene = {}) {
+  const bands = isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands;
   const normalized = normalizeReserveRules(
     scene?.source_payload?.reserveRules
     || scene?.source_payload?.reserve_rules
@@ -14568,15 +14627,21 @@ function sceneReserveRules(scene = {}) {
     || scene?.options?.reserveRules
     || scene?.source_payload?.options?.reserveRules
     || {},
+    { bands },
   );
   if (scenePackBenefits(scene).mode !== 'allowance') return normalized;
   return Object.fromEntries(Object.entries(normalized).map(([bandId, rule]) => [bandId, { ...rule, chargeIncluded: true }]));
 }
 
+function reserveRuleBandsForPack(packLabel = '') {
+  return isSignaturePackLabel(packLabel) ? signatureReserveRuleBands : reserveRuleBands;
+}
+
 function normalizeReserveRules(rules = {}, config = {}) {
   const keepEmptyOptions = Boolean(config.keepEmptyOptions);
-  return reserveRuleBands.reduce((acc, band) => {
-    const source = rules?.[band.id] || {};
+  return (config.bands || reserveRuleBands).reduce((acc, band) => {
+    const legacyBandId = band.id === 'signature-2m2' ? 'medium' : band.id === 'signature-3m2' ? 'large' : '';
+    const source = rules?.[band.id] || (legacyBandId ? rules?.[legacyBandId] : null) || {};
     const legacyOption = source.upgradeType || source.upgrade_type
       ? [{ type: source.upgradeType || source.upgrade_type, label: source.upgradeLabel || source.upgrade_label || '', price: source.upgradePrice ?? source.upgrade_price ?? '' }]
       : [];
@@ -14585,22 +14650,22 @@ function normalizeReserveRules(rules = {}, config = {}) {
       bandLabel: band.label,
       minArea: band.minArea,
       maxArea: band.maxArea,
-      includedType: source.includedType || source.included_type || '',
+      includedType: band.id === 'signature-none' ? '' : source.includedType || source.included_type || '',
       includedLabel: source.includedLabel || source.included_label || band.includedLabel,
       chargeIncluded: Boolean(source.chargeIncluded || source.charge_included),
-      options: normalizeComplementaryOptions(source.options || source.complementaryOptions || source.complementary_options || legacyOption, { keepEmpty: keepEmptyOptions }),
+      options: band.id === 'signature-none' ? [] : normalizeComplementaryOptions(source.options || source.complementaryOptions || source.complementary_options || legacyOption, { keepEmpty: keepEmptyOptions }),
     };
     return acc;
   }, {});
 }
 
-function activeReserveRule(rules = {}, area = 0) {
+function activeReserveRule(rules = {}, area = 0, bands = reserveRuleBands) {
   const numericArea = Number(area || 0);
-  const band = reserveRuleBands.find((entry) => (
+  const band = bands.find((entry) => (
     numericArea >= entry.minArea
     && (entry.maxArea === null || numericArea <= entry.maxArea)
   ));
-  return band ? normalizeReserveRules(rules)[band.id] : null;
+  return band ? normalizeReserveRules(rules, { bands })[band.id] : null;
 }
 
 function normalizeComplementaryOptions(options = [], config = {}) {
@@ -15182,7 +15247,7 @@ function looseBasePackKey(item = {}) {
 function automaticBaseUsageRows(items = [], scene = {}, catalogEntries = [], config = {}) {
   const rows = [];
   const area = Number(scene?.dimensions?.width || scene?.width_m || 0) * Number(scene?.dimensions?.depth || scene?.depth_m || 0);
-  const reserveRule = activeReserveRule(sceneReserveRules(scene), area);
+  const reserveRule = activeReserveRule(sceneReserveRules(scene), area, isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands);
   if (reserveRule?.includedType) {
     const reserveUsed = items.some((item) => isAutomaticReserveItem(item));
     rows.push({
