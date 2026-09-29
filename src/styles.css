@@ -13152,6 +13152,123 @@ img.asset-thumb {
 }
 
 /* Prestige step-2 included modules */
+.signature-arch-card {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  background: #fff;
+}
+
+.signature-arch-section {
+  display: grid;
+  gap: 11px;
+  border: 1px solid #dbe4f0;
+  border-radius: 10px;
+  padding: 13px;
+  background: #fff;
+}
+
+.signature-arch-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.signature-arch-section-head strong {
+  color: #2c3340;
+  font-size: 0.88rem;
+  font-weight: 950;
+}
+
+.signature-arch-section-head span {
+  max-width: 58%;
+  color: #2e61aa;
+  font-size: 0.76rem;
+  font-weight: 900;
+  line-height: 1.25;
+  text-align: right;
+}
+
+.signature-arch-variants {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.signature-arch-variants > button {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid #d8e1ed;
+  border-radius: 9px;
+  padding: 9px;
+  color: #29313f;
+  background: #fff;
+  cursor: pointer;
+}
+
+.signature-arch-variants > button.active {
+  border-color: #2f64ad;
+  box-shadow: inset 0 0 0 1px #2f64ad;
+  background: #f5f8fe;
+}
+
+.signature-arch-variants > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.signature-arch-variants > button > strong {
+  overflow: hidden;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1.25;
+  text-align: left;
+}
+
+.signature-arch-variant-image {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 76px;
+  overflow: hidden;
+  border-radius: 7px;
+  color: #8090a7;
+  background: #f2f5f9;
+}
+
+.signature-arch-variant-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.signature-arch-variant-image > svg:last-child:not(:first-child) {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  padding: 4px;
+  color: #fff;
+  background: #2f64ad;
+}
+
+.signature-arch-color-section > small,
+.signature-arch-empty {
+  margin: 0;
+  color: #929baa;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.signature-arch-swatches {
+  padding-bottom: 0;
+}
+
 .prestige-base-card {
   display: grid;
   gap: 12px;

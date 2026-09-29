@@ -104,6 +104,8 @@ const screenCenterHeight = 1.6;
 const wallItemSnap = 0.1;
 const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
+const signatureArchFootprintOverflow = 0.05;
+const signatureArchCenterZ = signatureArchFootprintOverflow / 2;
 const collisionPadding = 0;
 const partitionHeadEdgeInset = 0.02;
 const partitionHeadBackInset = 0.04;
@@ -1089,6 +1091,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const salonLabel = initialScene.salon || clientInfo.event || 'SMCL 2026';
   const offerLabel = sceneOfferLabel(initialScene);
   const assetPackLabel = offerLabel || initialOptions.includedPack || '';
+  const isSignatureStand = useMemo(() => isSignatureScene(initialScene), [initialScene]);
   const standLabel = initialScene.project_name || clientInfo.project || 'Stand A-14';
   const clientLabel = clientInfo.client || contactDetails.company || 'Aerosys Industries';
   const carpetPalette = useMemo(() => colorOptionsForUsage(objectBank, assetPackLabel, 'carpet', carpetColors), [objectBank, assetPackLabel]);
@@ -1116,6 +1119,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const selectedReserveWallFabricColor = colorWithDefaultIncluded(rawReserveWallFabricColor, effectiveDefaultColorOptions.reserveWallFabricColorId || effectiveDefaultColorOptions.wallFabricColorId);
   const selectedTechnicalFloor = technicalFloorOptions.find((option) => option.id === technicalFloorType) || null;
   const effectiveCarpetFootprintEnabled = carpetFootprintEnabled && !selectedTechnicalFloor;
+  const genericCarpetFootprintEnabled = effectiveCarpetFootprintEnabled && !isSignatureStand;
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
   const effectiveAdminViewer = Boolean(isAdminViewer && !adminExhibitorPreview);
@@ -1149,8 +1153,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   }, []);
 
   useEffect(() => {
-    setItems((current) => current.map((item) => constrainItem(item, width, depth, layout, effectiveCarpetFootprintEnabled)));
-  }, [width, depth, layout, effectiveCarpetFootprintEnabled]);
+    setItems((current) => current.map((item) => constrainItem(item, width, depth, layout, genericCarpetFootprintEnabled)));
+  }, [width, depth, layout, genericCarpetFootprintEnabled]);
 
   useEffect(() => {
     if (!selectedTechnicalFloor) return;
@@ -1198,8 +1202,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const effectivePartitionHeadSides = useMemo(() => partitionHeadEnabledSides(activePartitionHeadRuleConfig, partitionHeadChoice), [activePartitionHeadRuleConfig, partitionHeadChoice]);
   const automaticReserveItems = useMemo(
     () => makeAutomaticReserveItems(activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, reserveOptions)
-      .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, effectiveCarpetFootprintEnabled)),
-    [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, reserveOptions, reserveItemOverrides, effectiveCarpetFootprintEnabled],
+      .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, genericCarpetFootprintEnabled)),
+    [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, reserveOptions, reserveItemOverrides, genericCarpetFootprintEnabled],
   );
   const automaticPartitionHeadItems = useMemo(
     () => makeAutomaticPartitionHeadItems(activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, assetPackLabel)
@@ -1228,6 +1232,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       : 0
   ), [ledRailsEnabled, automaticLedItems, automaticSpotItems, availableCatalog]);
   const isPrestigeStand = useMemo(() => isPrestigeScene(initialScene), [initialScene]);
+  const signatureArchEntries = useMemo(() => signatureArchCatalogEntries(availableCatalog), [availableCatalog]);
   const prestigeBaseHidden = (item) => isHiddenPrestigeBaseItem(item, { archEnabled: prestigeArchEnabled, signageEnabled: prestigeSignageEnabled, isPrestigeStand });
   const manualVisibleItems = useMemo(() => manualHydratedItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [manualHydratedItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand]);
   const wallCoverSurfaces = useMemo(
@@ -1236,6 +1241,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   );
   const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems]);
   const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand]);
+  const signatureArchItems = useMemo(() => sceneItems.filter(isSignatureArchItem), [sceneItems]);
+  const signatureArchItem = signatureArchItems[0] || null;
+  const signatureArchColor = useMemo(() => {
+    const colorId = signatureArchItem?.options?.signatureArchColorId || selectedCarpetFootprintColor?.id;
+    return findColorInPalette(footprintPalette, colorId)
+      || selectedCarpetFootprintColor
+      || defaultColorFromPalette(footprintPalette)
+      || footprintPalette[0];
+  }, [signatureArchItem, selectedCarpetFootprintColor, footprintPalette]);
   const includedCounterItems = useMemo(() => sceneItems.filter((item) => isWoodReceptionDeskItem(item) && isIncludedSceneItem(item)), [sceneItems]);
   const includedPrestigeArchItems = useMemo(() => sceneItems.filter((item) => isPrestigeArchControlItem(item, isPrestigeStand)), [sceneItems, isPrestigeStand]);
   const includedPrestigeSignageItems = useMemo(() => sceneItems.filter((item) => isPrestigeHighSignControlItem(item, isPrestigeStand)), [sceneItems, isPrestigeStand]);
@@ -1255,11 +1269,45 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }));
   }, [isPrestigeStand, prestigeArchEnabled, prestigeSignageEnabled]);
 
+  useEffect(() => {
+    if (!isSignatureStand) return;
+    const defaultColorOptions = signatureArchColorOptions(selectedCarpetFootprintColor);
+    setItems((current) => {
+      let changed = false;
+      const next = current.map((item) => {
+        if (!isSignatureArchItem(item)) return item;
+        const hasColor = Boolean(item.options?.signatureArchColorId);
+        const alreadyNormalized = Number(item.z || 0) === signatureArchCenterZ
+          && Number(item.rotation || 0) === 0
+          && item.rotationLocked === true
+          && item.options?.signatureBaseKey === 'arche'
+          && hasColor;
+        if (alreadyNormalized) return item;
+        changed = true;
+        return {
+          ...item,
+          z: signatureArchCenterZ,
+          rotation: 0,
+          rotationLocked: true,
+          options: {
+            ...(hasColor ? defaultColorOptions : {}),
+            ...(item.options || {}),
+            signatureBaseKey: 'arche',
+            signatureArchVariantType: item.options?.signatureArchVariantType || item.type,
+            signatureArchVariantLabel: item.options?.signatureArchVariantLabel || item.label || '',
+            ...(!hasColor ? defaultColorOptions : {}),
+          },
+        };
+      });
+      return changed ? next : current;
+    });
+  }, [isSignatureStand, selectedCarpetFootprintColor?.id, selectedCarpetFootprintColor?.hex, selectedCarpetFootprintColor?.image]);
+
   const cartItems = useMemo(() => visibleSceneItems.filter(shopCartItemVisible), [visibleSceneItems]);
   const showCartBar = false;
   const sceneTextureLoad = useSceneTexturePreload(visibleSceneItems, [
     selectedCarpetColor.image,
-    effectiveCarpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
+    genericCarpetFootprintEnabled ? selectedCarpetFootprintColor.image : '',
     selectedWallFabricColor.image,
     selectedReserveWallFabricColor.image,
   ]);
@@ -1318,14 +1366,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     technicalFloor: selectedTechnicalFloor ? { ...selectedTechnicalFloor, area } : null,
     colorSelections: [
       { usage: 'Moquette', color: selectedCarpetColor, defaultColorId: effectiveDefaultColorOptions.carpetColorId, quantityM2: area, configOptions: [...carpetGroupConfigOptionsList, { id: '__carpet-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { ...carpetConfigOptions, '__carpet-thick__': thickCarpetEnabled } },
-      effectiveCarpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor, defaultColorId: effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId, quantityM2: carpetFootprintAreaM2(), configOptions: [{ id: '__footprint-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { '__footprint-thick__': thickCarpetEnabled } } : null,
+      genericCarpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor, defaultColorId: effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId, quantityM2: carpetFootprintAreaM2(), configOptions: [{ id: '__footprint-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { '__footprint-thick__': thickCarpetEnabled } } : null,
       { usage: 'Coton cloison', color: selectedWallFabricColor, defaultColorId: effectiveDefaultColorOptions.wallFabricColorId, quantityM2: Math.max(0, sceneWallFabricArea(width, depth, layout) - activeWallCoverFabricArea(wallCoverSurfaces, wallCovers)) },
     ],
     wallCovers,
     wallCoverSurfaces,
     ledRailsEnabled,
     expectedLedSpotCount: ledSpotCount,
-  }), [area, availableCatalog, visibleSceneItems, assetPackLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, thickCarpetEnabled, ledRailsEnabled, ledSpotCount]);
+  }), [area, availableCatalog, visibleSceneItems, assetPackLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, thickCarpetEnabled, ledRailsEnabled, ledSpotCount]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
@@ -1344,7 +1392,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       carpetFootprintColorHex: selectedCarpetFootprintColor.hex,
       carpetFootprintColorPrice: Number(selectedCarpetFootprintColor.price || 0),
       carpetFootprintColorReference: selectedCarpetFootprintColor.reference || '',
-      carpetFootprintEnabled: effectiveCarpetFootprintEnabled,
+      carpetFootprintEnabled: genericCarpetFootprintEnabled,
       carpetConfigOptions: Object.keys(carpetConfigOptions).length ? carpetConfigOptions : undefined,
       carpetThick: thickCarpetEnabled || undefined,
       footprintThick: thickCarpetEnabled || undefined,
@@ -1447,7 +1495,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, effectiveCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly]);
 
   const persistWallCoversNow = (nextWallCovers) => {
     if (readOnly) return;
@@ -1601,9 +1649,26 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     const currentItem = sceneItems.find((item) => item.id === id);
     if (isTransformPatch(patch) && itemSystemTransformLocked(currentItem) && !canApplyAutomaticReservePatch(currentItem, patch)) return;
     if (!effectiveAdminViewer && hasOwn(patch, 'rotation') && itemRotationLocked(currentItem)) return;
+    if (isSignatureStand && isSignatureArchItem(currentItem)) {
+      const bounds = itemGroupBounds(currentItem);
+      const maxX = Math.max(0, width / 2 - Number(bounds.width || 0) / 2);
+      setItems((current) => current.map((item) => (
+        item.id === id
+          ? {
+              ...item,
+              ...patch,
+              x: clamp(Number(hasOwn(patch, 'x') ? patch.x : item.x || 0), -maxX, maxX),
+              z: signatureArchCenterZ,
+              rotation: 0,
+              rotationLocked: true,
+            }
+          : item
+      )));
+      return;
+    }
     const autoLedItem = sceneItems.find((item) => item.id === id && isAutomaticLedRailItem(item));
     if (autoLedItem) {
-      const constrained = constrainItem({ ...autoLedItem, ...patch }, width, depth, layout, effectiveCarpetFootprintEnabled);
+      const constrained = constrainItem({ ...autoLedItem, ...patch }, width, depth, layout, genericCarpetFootprintEnabled);
       setLedRailOverrides((current) => ({
         ...current,
         [id]: pickLedRailOverride(constrained),
@@ -1625,7 +1690,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     setItems((current) => {
       const visibleCurrent = current.filter((item) => item.id === id || !isHiddenIncludedCounterItem(item));
       const blockers = [...automaticReserveItems, ...automaticPartitionHeadItems].filter((item) => item.id !== id);
-      const updated = updateSceneItemWithCollision([...visibleCurrent, ...blockers], id, patch, width, depth, layout, effectiveCarpetFootprintEnabled);
+      const updated = updateSceneItemWithCollision([...visibleCurrent, ...blockers], id, patch, width, depth, layout, genericCarpetFootprintEnabled);
       const updatedItem = updated.find((item) => item.id === id);
       if (!updatedItem) return current;
       return current.map((item) => (item.id === id ? updatedItem : item));
@@ -1865,7 +1930,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         replaceItemWithEntry(item, entry, options);
       } else {
         setItems((current) => syncSharedGlobalGroupOptions(
-          current.map((sceneItem) => (sceneItem.id === item.id ? constrainItem({ ...sceneItem, options }, width, depth, layout, effectiveCarpetFootprintEnabled) : sceneItem)),
+          current.map((sceneItem) => (sceneItem.id === item.id ? constrainItem({ ...sceneItem, options }, width, depth, layout, genericCarpetFootprintEnabled) : sceneItem)),
           options,
           availableCatalog,
           assetPackLabel,
@@ -1903,11 +1968,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           ...((effectiveAdminViewer || !itemRotationLocked(nextBase)) ? { rotation: preservedRotation } : {}),
         }
         : {};
-      const candidate = constrainItem({ ...nextBase, ...compatiblePosition }, width, depth, layout, effectiveCarpetFootprintEnabled);
+      const candidate = constrainItem({ ...nextBase, ...compatiblePosition }, width, depth, layout, genericCarpetFootprintEnabled);
       const others = current.filter((sceneItem) => sceneItem.id !== item.id);
       const blockers = [...others, ...automaticReserveItems, ...automaticPartitionHeadItems];
       const placed = collidesWithScene(candidate, blockers, candidate.id, width, depth)
-        ? placeItemInFreeSpot(candidate, blockers, width, depth, layout, effectiveCarpetFootprintEnabled)
+        ? placeItemInFreeSpot(candidate, blockers, width, depth, layout, genericCarpetFootprintEnabled)
         : candidate;
       if (!placed) {
         failedPlacement = true;
@@ -1918,6 +1983,64 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     window.setTimeout(() => {
       if (failedPlacement) showPlacementMessage(placementErrorMessage(entry || item));
     }, 0);
+  };
+
+  const selectSignatureArchVariant = (entry) => {
+    if (readOnly || !isSignatureStand || !entry) return;
+    const activeItem = signatureArchItem;
+    const color = signatureArchColor || selectedCarpetFootprintColor;
+    const colorOptions = signatureArchColorOptions(color);
+    let selectedArchId = activeItem?.id || '';
+
+    setItems((current) => {
+      const currentArch = current.find(isSignatureArchItem) || activeItem;
+      const nextBase = makeItem(entry.type, width, depth, layout, entry);
+      const preservedOptions = { ...(currentArch?.options || {}) };
+      delete preservedOptions.unitPrice;
+      delete preservedOptions.billableUnitPrice;
+      delete preservedOptions.variantBasePrice;
+      delete preservedOptions.variantUpgradePrice;
+      delete preservedOptions.variantReference;
+      delete preservedOptions.variantId;
+      delete preservedOptions.variantLabel;
+      delete preservedOptions.variantAssetType;
+      delete preservedOptions.variantGroupType;
+      delete preservedOptions.variantGroupLabel;
+      delete preservedOptions.variantImageUrl;
+      const nextItem = {
+        ...nextBase,
+        id: currentArch?.id || nextBase.id,
+        x: Number(currentArch?.x || 0),
+        z: signatureArchCenterZ,
+        rotation: 0,
+        rotationLocked: true,
+        options: {
+          ...preservedOptions,
+          ...colorOptions,
+          signatureBaseKey: 'arche',
+          signatureArchVariantType: entry.type,
+          signatureArchVariantLabel: entry.label || '',
+        },
+      };
+      selectedArchId = nextItem.id;
+      const withoutArches = current.filter((item) => !isSignatureArchItem(item));
+      return [...withoutArches, nextItem];
+    });
+
+    window.setTimeout(() => setSelectedId(selectedArchId), 0);
+  };
+
+  const updateSignatureArchColor = (colorId) => {
+    if (readOnly || !isSignatureStand) return;
+    const color = findColorInPalette(footprintPalette, colorId);
+    if (!color) return;
+    setSelectedCarpetFootprintId(color.id);
+    const colorOptions = signatureArchColorOptions(color);
+    setItems((current) => current.map((item) => (
+      isSignatureArchItem(item)
+        ? { ...item, options: { ...(item.options || {}), ...colorOptions, signatureBaseKey: 'arche' } }
+        : item
+    )));
   };
 
   const moveDraggedItem = (point) => {
@@ -1933,6 +2056,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
     if (isAutomaticReserveItem(dragged)) {
       updateItem(draggingId, { x: dragCoordinate(point.x) });
+      return;
+    }
+
+    if (isSignatureArchItem(dragged)) {
+      updateItem(draggingId, { x: dragCoordinate(point.x), z: signatureArchCenterZ });
       return;
     }
 
@@ -1956,7 +2084,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           ...makeItem(entry.type, width, depth, layout, entry),
           options: { ...(options || {}) },
         };
-        const placed = placeItemInFreeSpot(item, [...next, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth, layout, effectiveCarpetFootprintEnabled);
+        const placed = placeItemInFreeSpot(item, [...next, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth, layout, genericCarpetFootprintEnabled);
         if (!placed) break;
         placedCount += 1;
         lastPlacedId = placed.id;
@@ -2011,7 +2139,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const chooseLayout = (nextLayout) => {
     if (readOnly) return;
     setLayout(nextLayout);
-    setItems((current) => current.map((item) => constrainItem(item, width, depth, nextLayout, effectiveCarpetFootprintEnabled)));
+    setItems((current) => current.map((item) => constrainItem(item, width, depth, nextLayout, genericCarpetFootprintEnabled)));
   };
 
   const removeReserve = () => {
@@ -2048,7 +2176,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       },
     };
     setItems((current) => {
-      const placed = placeItemInFreeSpot(item, [...current, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth, layout, effectiveCarpetFootprintEnabled) || constrainItem(item, width, depth, layout, effectiveCarpetFootprintEnabled);
+      const placed = placeItemInFreeSpot(item, [...current, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth, layout, genericCarpetFootprintEnabled) || constrainItem(item, width, depth, layout, genericCarpetFootprintEnabled);
       setSelectedId(placed.id);
       return [...current, placed];
     });
@@ -2069,8 +2197,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     };
     let placedItem = null;
     setItems((current) => {
-      const placed = placeItemInFreeSpot(item, [...current, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth, layout, effectiveCarpetFootprintEnabled)
-        || constrainItem(item, width, depth, layout, effectiveCarpetFootprintEnabled);
+      const placed = placeItemInFreeSpot(item, [...current, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth, layout, genericCarpetFootprintEnabled)
+        || constrainItem(item, width, depth, layout, genericCarpetFootprintEnabled);
       placedItem = placed;
       return [...current, placed];
     });
@@ -2455,7 +2583,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 viewAngle={viewAngle}
                 carpetColor={selectedCarpetColor}
                 carpetFootprintColor={selectedCarpetFootprintColor}
-                carpetFootprintEnabled={effectiveCarpetFootprintEnabled}
+                carpetFootprintEnabled={genericCarpetFootprintEnabled}
                 wallFabricColor={selectedWallFabricColor}
                 reserveWallFabricColor={selectedReserveWallFabricColor}
                 wallCovers={wallCovers}
@@ -2571,7 +2699,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             standLabel={initialScene.project_name || 'Stand A-14'}
             carpetColor={selectedCarpetColor}
             carpetFootprintColor={selectedCarpetFootprintColor}
-            carpetFootprintEnabled={effectiveCarpetFootprintEnabled}
+            carpetFootprintEnabled={genericCarpetFootprintEnabled}
             wallFabricColor={selectedWallFabricColor}
             technicalFloor={selectedTechnicalFloor}
             technicalFloorTrimType={technicalFloorTrimType}
@@ -2616,7 +2744,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             selectedCarpetFootprintColor={selectedCarpetFootprintColor}
             carpetColors={carpetPalette}
             footprintColors={footprintPalette}
-            carpetFootprintEnabled={effectiveCarpetFootprintEnabled}
+            carpetFootprintEnabled={genericCarpetFootprintEnabled}
             selectedWallFabricColor={selectedWallFabricColor}
             wallFabricColors={wallFabricPalette}
             wallCovers={wallCovers}
@@ -2641,6 +2769,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             counterItems={includedCounterItems}
             counterColors={counterPalette}
             counterUploadState={itemOptionState}
+            isSignatureStand={isSignatureStand}
+            signatureArchItems={signatureArchItems}
+            signatureArchEntries={signatureArchEntries}
+            signatureArchColor={signatureArchColor}
+            signatureArchColors={footprintPalette}
             isPrestigeStand={isPrestigeStand}
             prestigeArchItems={visiblePrestigeArchItems}
             prestigeArchEnabled={prestigeArchEnabled}
@@ -2656,7 +2789,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             carpetThick={thickCarpetEnabled}
             footprintThick={thickCarpetEnabled}
             carpetArea={area}
-            footprintArea={effectiveCarpetFootprintEnabled ? carpetFootprintAreaM2() : 0}
+            footprintArea={genericCarpetFootprintEnabled ? carpetFootprintAreaM2() : 0}
             onCarpetColor={(colorId) => !readOnly && setSelectedCarpetId(colorId)}
             onCarpetConfigOption={(optionId, checked) => !readOnly && setCarpetConfigOptions((current) => ({ ...current, [optionId]: checked }))}
             onCarpetThick={(v) => {
@@ -2695,6 +2828,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onCounterRestore={restoreIncludedCounter}
             onCounterVariant={updateIncludedCounterVariant}
             onSelectCounter={setSelectedId}
+            onSignatureArchVariant={selectSignatureArchVariant}
+            onSignatureArchColor={updateSignatureArchColor}
             onPrestigeArchToggle={setPrestigeArchPresence}
             onPrestigeArchTv={updatePrestigeArchTv}
             onPrestigeSignageToggle={setPrestigeSignagePresence}
@@ -3555,6 +3690,66 @@ function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = 
   );
 }
 
+function SignatureArchOptionCard({ items = [], entries = [], colors = [], selectedColor = null, disabled = false, onVariantChange, onColorChange }) {
+  const selectedItem = items[0] || null;
+  const selectedType = selectedItem?.options?.signatureArchVariantType || selectedItem?.type || '';
+  const selectedColorId = selectedItem?.options?.signatureArchColorId || selectedColor?.id || '';
+
+  return (
+    <div className="signature-arch-card">
+      <section className="signature-arch-section">
+        <div className="signature-arch-section-head">
+          <strong>Modèle d'arche</strong>
+          <span>{selectedItem?.label || 'Choisissez une option'}</span>
+        </div>
+        {entries.length ? (
+          <div className="signature-arch-variants">
+            {entries.map((entry) => {
+              const active = entry.type === selectedType;
+              return (
+                <button
+                  key={entry.type}
+                  type="button"
+                  className={active ? 'active' : ''}
+                  disabled={disabled}
+                  onClick={() => onVariantChange?.(entry)}
+                >
+                  <span className="signature-arch-variant-image">
+                    {entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Layers size={28} />}
+                    {active && <Check size={14} />}
+                  </span>
+                  <strong>{entry.label}</strong>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="signature-arch-empty">Aucune arche Signature n'est encore associée à ce pack.</p>
+        )}
+      </section>
+
+      <section className="signature-arch-section signature-arch-color-section">
+        <div className="signature-arch-section-head">
+          <strong>Couleur</strong>
+          <span>{selectedColor?.name || ''}{selectedColor?.code ? ` (${selectedColor.code})` : ''}</span>
+        </div>
+        <small>La couleur choisie s'applique à l'arche et à son empreinte moquette.</small>
+        <div className="counter-finish-swatches signature-arch-swatches">
+          {colors.map((color) => (
+            <CounterFinishSwatch
+              key={color.id}
+              finish={color}
+              active={normalizeColorId(color.id) === normalizeColorId(selectedColorId)}
+              disabled={disabled || !selectedItem}
+              onClick={() => onColorChange?.(color.id)}
+            />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = {}, disabled = false, onEnabledChange, onImage, onResetImage, onVisualPending, onVisualEnabled, onSelect }) {
   const item = items[0] || null;
   const slot = firstImageTextureSlot(item);
@@ -4167,6 +4362,11 @@ function OptionsStepPanel({
   counterItems = [],
   counterColors = [],
   counterUploadState = {},
+  isSignatureStand = false,
+  signatureArchItems = [],
+  signatureArchEntries = [],
+  signatureArchColor = null,
+  signatureArchColors = [],
   isPrestigeStand = false,
   prestigeArchItems = [],
   prestigeArchEnabled = true,
@@ -4210,6 +4410,8 @@ function OptionsStepPanel({
   onCounterRestore,
   onCounterVariant,
   onSelectCounter,
+  onSignatureArchVariant,
+  onSignatureArchColor,
   onPrestigeArchToggle,
   onPrestigeArchTv,
   onPrestigeSignageToggle,
@@ -4229,7 +4431,7 @@ function OptionsStepPanel({
   return (
     <>
       <PanelHead title={t('panel_options_title')} step={activeStep} />
-      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle="Moquette · Empreinte" icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle={isSignatureStand ? 'Moquette' : 'Moquette · Empreinte'} icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
           colors={carpetColors}
           selectedColor={selectedCarpetColor}
@@ -4245,20 +4447,22 @@ function OptionsStepPanel({
           onOptionToggle={onCarpetConfigOption}
           onThickChange={onCarpetThick}
         />
-        <FootprintColorOptionCard
-          enabled={carpetFootprintEnabled}
-          colors={footprintColors}
-          selectedColor={selectedCarpetFootprintColor}
-          defaultColorId={defaultColorOptions.carpetFootprintColorId || defaultColorOptions.carpetColorId}
-          area={carpetFootprintAreaM2()}
-          disabled={readOnly || Boolean(technicalFloorType)}
-          disabledReason={technicalFloorType ? t('floor_warning') : ''}
-          thick={footprintThick}
-          carpetArea={carpetArea}
-          onEnabledChange={onCarpetFootprintEnabled}
-          onSelect={onCarpetFootprintColor}
-          onThickChange={onFootprintThick}
-        />
+        {!isSignatureStand && (
+          <FootprintColorOptionCard
+            enabled={carpetFootprintEnabled}
+            colors={footprintColors}
+            selectedColor={selectedCarpetFootprintColor}
+            defaultColorId={defaultColorOptions.carpetFootprintColorId || defaultColorOptions.carpetColorId}
+            area={carpetFootprintAreaM2()}
+            disabled={readOnly || Boolean(technicalFloorType)}
+            disabledReason={technicalFloorType ? t('floor_warning') : ''}
+            thick={footprintThick}
+            carpetArea={carpetArea}
+            onEnabledChange={onCarpetFootprintEnabled}
+            onSelect={onCarpetFootprintColor}
+            onThickChange={onFootprintThick}
+          />
+        )}
       </OptionAccordion>
       <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} subtitle="Coton gratté · Bâche imprimée" icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
         <ColorOptionCard
@@ -4334,6 +4538,19 @@ function OptionsStepPanel({
           onVisualOptions={onPartitionHeadVisualOptions}
         />
       </OptionAccordion>
+      {isSignatureStand && (
+        <OptionAccordion {...accordionScrollProps('arche')} title="Arche" subtitle="Modèle · Couleur" icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
+          <SignatureArchOptionCard
+            items={signatureArchItems}
+            entries={signatureArchEntries}
+            colors={signatureArchColors}
+            selectedColor={signatureArchColor}
+            disabled={readOnly}
+            onVariantChange={onSignatureArchVariant}
+            onColorChange={onSignatureArchColor}
+          />
+        </OptionAccordion>
+      )}
       {isPrestigeStand && (
         <OptionAccordion {...accordionScrollProps('arche')} title="Arche" subtitle="TV · Présence" icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
           <PrestigeArchOptionCard
@@ -5840,6 +6057,53 @@ function isPrestigeScene(scene = {}) {
   return boardId === '18395912050' || signature.includes('prestige');
 }
 
+function isSignatureScene(scene = {}) {
+  const labels = [
+    sceneOfferLabel(scene),
+    scene.pack,
+    scene.pack_name,
+    scene.offer,
+    scene.offer_name,
+    scene.formula,
+    scene.source_payload?.pack,
+    scene.source_payload?.offer,
+    scene.source_payload?.offerName,
+  ].filter(Boolean);
+  return labels.some((label) => {
+    const normalized = normalizePackLabel(label);
+    return normalized === 'signature' || normalized.includes('signature');
+  });
+}
+
+function isSignatureArchItem(item = {}) {
+  if (item?.options?.signatureBaseKey === 'arche') return true;
+  const text = normalizedItemText(item);
+  return text.includes('arche') && text.includes('totem') && text.includes('plafond');
+}
+
+function signatureArchCatalogEntries(entries = []) {
+  return (entries || [])
+    .filter((entry) => !isVariantGroupEntry(entry) && isSignatureArchItem(entry))
+    .sort((left, right) => {
+      const leftText = normalizedItemText(left);
+      const rightText = normalizedItemText(right);
+      const leftOrder = leftText.includes('spot') ? 0 : leftText.includes('suspension') ? 1 : 2;
+      const rightOrder = rightText.includes('spot') ? 0 : rightText.includes('suspension') ? 1 : 2;
+      return leftOrder - rightOrder || String(left.label || '').localeCompare(String(right.label || ''), 'fr');
+    });
+}
+
+function signatureArchColorOptions(color = {}) {
+  return {
+    signatureArchColorId: color?.id || '',
+    signatureArchColorName: color?.name || '',
+    signatureArchColorCode: color?.code || '',
+    signatureArchColorHex: colorHex(color, '#bebebe'),
+    signatureArchColorImage: colorTextureUrl(color),
+    signatureArchColorReference: color?.reference || '',
+  };
+}
+
 function isPrestigeArchItem(item = {}) {
   return normalizedItemText(item).includes('arche');
 }
@@ -5914,6 +6178,7 @@ function firstImageTextureSlot(item = {}) {
 function step2OptionKeyForItem(item = {}) {
   if (!item) return '';
   if (isPartitionHeadItem(item) || isAutomaticPartitionHeadItem(item)) return 'tete';
+  if (isSignatureArchItem(item)) return 'arche';
   if (isPrestigeArchControlItem(item, false)) return 'arche';
   if (isPrestigeHighSignControlItem(item, false)) return 'enseigne';
   if (isReserveSceneItem(item) || isAutomaticReserveItem(item)) return 'reserve';
@@ -15028,6 +15293,7 @@ function collectSceneTextureUrls(items = [], extraUrls = []) {
     if (item.options?.headMainImageUrl) urls.add(item.options.headMainImageUrl);
     if (item.options?.posterImageUrl) urls.add(item.options.posterImageUrl);
     if (item.options?.binary3ImageUrl) urls.add(item.options.binary3ImageUrl);
+    if (item.options?.signatureArchColorImage) urls.add(item.options.signatureArchColorImage);
     Object.values(item.options?.textureSlotValues || {}).forEach((value) => {
       if (value?.imageUrl) urls.add(value.imageUrl);
       if (value?.colorImage) urls.add(value.colorImage);
@@ -18543,12 +18809,29 @@ function Baseboard({ position, size }) {
   );
 }
 
+function SignatureArchFootprint({ item, standDepth = 0 }) {
+  const bounds = itemGroupBounds(item);
+  const width = Math.max(0.1, Number(bounds.width || itemDefaultSize(item)?.[0] || 1));
+  const depth = Math.max(0.1, Number(standDepth || 0) + signatureArchFootprintOverflow);
+  const imageUrl = item?.options?.signatureArchColorImage || '';
+  const texture = useRepeatedTexture(imageUrl, width, depth);
+  const color = item?.options?.signatureArchColorHex || '#bebebe';
+  const y = 0.014 - floorItemBaseY(item);
+
+  return (
+    <mesh receiveShadow raycast={() => null} position={[Number(bounds.centerX || 0), y, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+      <planeGeometry args={[width, depth]} />
+      <meshStandardMaterial color={texture ? '#ffffff' : color} map={texture || null} roughness={0.88} />
+    </mesh>
+  );
+}
+
 function SceneItem({ item, items = [], selected, hovered, dragging, width, depth, onSelect, onHover, onDragStart, onDragEnd, onDragMove, visualContext }) {
   const rotationY = (item.rotation * Math.PI) / 180;
   const spinning = itemTurntableActive(item);
   const rotationRef = useTurntableRotation(rotationY, spinning);
   if (isWallItem(item)) return <WallMountedItem item={item} items={items} width={width} depth={depth} selected={selected} hovered={hovered} dragging={dragging} onSelect={onSelect} onHover={onHover} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} visualContext={visualContext} />;
-  if (item.isGroup) return <GroupedSceneItem item={item} selected={selected} hovered={hovered} dragging={dragging} rotationY={rotationY} onSelect={onSelect} onHover={onHover} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} visualContext={visualContext} />;
+  if (item.isGroup) return <GroupedSceneItem item={item} selected={selected} hovered={hovered} dragging={dragging} rotationY={rotationY} standDepth={depth} onSelect={onSelect} onHover={onHover} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragMove={onDragMove} visualContext={visualContext} />;
   return (
     <group
       ref={rotationRef}
@@ -18563,12 +18846,13 @@ function SceneItem({ item, items = [], selected, hovered, dragging, width, depth
         if (dragging) onDragMove(event);
       }}
     >
+      {isSignatureArchItem(item) && <SignatureArchFootprint item={item} standDepth={depth} />}
       <SceneItemContent item={item} selected={selected} hovered={hovered} dragging={dragging} visualContext={visualContext} />
     </group>
   );
 }
 
-function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, onSelect, onHover, onDragStart, onDragEnd, onDragMove, visualContext }) {
+function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, standDepth = 0, onSelect, onHover, onDragStart, onDragEnd, onDragMove, visualContext }) {
   const groupBounds = itemGroupBounds(item);
   const spinning = itemTurntableActive(item);
   const rotationRef = useTurntableRotation(rotationY, spinning);
@@ -18586,6 +18870,7 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, onSele
         if (dragging) onDragMove(event);
       }}
     >
+      {isSignatureArchItem(item) && <SignatureArchFootprint item={item} standDepth={standDepth} />}
       {item.children?.map((child) => (
         <group key={child.id} position={[child.x || 0, groupChildRenderY(child), child.z || 0]} rotation={[0, ((child.rotation || 0) * Math.PI) / 180, 0]}>
           <SceneItemContent item={child} selected={false} hovered={hovered} dragging={dragging} visualContext={visualContext} />
@@ -18757,6 +19042,7 @@ function GlbModel({ item, selected, hovered, visualContext }) {
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff' });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '', { flipY: false });
   const textureSlotImages = useTextureSlotImages(item);
+  const signatureArchColorTexture = useExternalTexture(isSignatureArchItem(item) ? item.options?.signatureArchColorImage : '', { flipY: false });
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff' });
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item, { flipY: false }) : null
@@ -18765,11 +19051,12 @@ function GlbModel({ item, selected, hovered, visualContext }) {
     isGlb: true,
     customImageTexture,
     counterColorTexture,
+    signatureArchColorTexture,
     textureSlotImages,
     textureSlotFlipY: false,
     mainImageTexture,
     exhibitorTexture,
-  }) : null), [gltf, item, customImageTexture, counterColorTexture, textureSlotImages, mainImageTexture, exhibitorTexture]);
+  }) : null), [gltf, item, customImageTexture, counterColorTexture, signatureArchColorTexture, textureSlotImages, mainImageTexture, exhibitorTexture]);
   return model ? <primitive object={model} dispose={null} /> : <MissingModelFallback item={item} selected={selected} hovered={hovered} />;
 }
 
@@ -18799,6 +19086,7 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff' });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '');
   const textureSlotImages = useTextureSlotImages(item);
+  const signatureArchColorTexture = useExternalTexture(isSignatureArchItem(item) ? item.options?.signatureArchColorImage : '');
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item) : null
   ), [item.type, item.label, item.modelUrl, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
@@ -18814,6 +19102,7 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
       mainImageTexture={mainImageTexture}
       customImageTexture={customImageTexture}
       counterColorTexture={counterColorTexture}
+      signatureArchColorTexture={signatureArchColorTexture}
       textureSlotImages={textureSlotImages}
       exhibitorTexture={exhibitorTexture}
       selected={selected}
@@ -18822,16 +19111,17 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   );
 }
 
-function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, customImageTexture, counterColorTexture, textureSlotImages, exhibitorTexture, selected, hovered }) {
+function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, customImageTexture, counterColorTexture, signatureArchColorTexture, textureSlotImages, exhibitorTexture, selected, hovered }) {
   const obj = useObjModel(item.modelUrl, materials);
   const model = useMemo(() => (obj ? prepareLoadedModel(obj, item, {
     mainImageTexture,
     customImageTexture,
     counterColorTexture,
+    signatureArchColorTexture,
     textureSlotImages,
     textureSlotFlipY: true,
     exhibitorTexture,
-  }) : null), [obj, item, mainImageTexture, customImageTexture, counterColorTexture, textureSlotImages, exhibitorTexture]);
+  }) : null), [obj, item, mainImageTexture, customImageTexture, counterColorTexture, signatureArchColorTexture, textureSlotImages, exhibitorTexture]);
 
   return model ? <primitive object={model} dispose={null} /> : <MissingModelFallback item={item} selected={selected} hovered={hovered} />;
 }
@@ -19111,6 +19401,14 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   material = enhanceIcareChromeMaterial(material, item);
 
   const materialName = normalizeMaterialName(material.name);
+  if (isSignatureArchItem(item) && isSignatureArchColorMaterial(materialName, material)) {
+    if (textureOptions.signatureArchColorTexture) {
+      return materialWithTexture(material, textureOptions.signatureArchColorTexture);
+    }
+    if (item?.options?.signatureArchColorHex) {
+      return materialWithColor(material, item.options.signatureArchColorHex);
+    }
+  }
   const textureSlotMaterial = applyTextureSlotMaterial(material, item, textureOptions, materialName);
   if (textureSlotMaterial !== material) return textureSlotMaterial;
 
@@ -19145,6 +19443,10 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
     return materialWithTexture(material, textureOptions.exhibitorTexture);
   }
   return material;
+}
+
+function isSignatureArchColorMaterial(materialName = '', material = null) {
+  return materialMatchesTextureSlot(materialName, material, 'Laminate_D02_120cm#1', 'exact');
 }
 
 function isElectricalWhiteItem(item = {}) {
