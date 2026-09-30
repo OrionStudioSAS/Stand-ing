@@ -51,7 +51,7 @@ import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
 import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
-import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
+import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, signatureAllowancePerSquareMeter, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
 import { createTechnicalPlanBlob, exportTechnicalPng, standWallPanelRequirements } from './technicalExport.js';
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
 import { t as tRaw } from './i18n.js';
@@ -1377,7 +1377,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     catalog: availableCatalog,
     items: visibleSceneItems,
     salonLabel: assetPackLabel,
-    scene: initialScene,
+    scene: { ...initialScene, dimensions: { ...(initialScene.dimensions || {}), width, depth } },
     width,
     depth,
     layout,
@@ -1474,6 +1474,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       options,
       source_payload: {
         ...(initialScene.source_payload || {}),
+        packBenefits: scenePricing.packBenefits,
         contactDetails: nextContactDetails,
         partitionHeadCompany,
         specialRequest: options.specialRequest,
@@ -9697,7 +9698,9 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
                 Monday : {entry.source?.board_id ? `board ${entry.source.board_id}` : 'aucun board'}
                 {entry.source?.mapping?.salon_from_group && ` · Groupe : ${selectedSalon.name}`}
               </small>
-              {(entry.packDefinition?.metadata?.packBenefits || entry.offer?.metadata?.packBenefits)?.mode === 'allowance' && <small className="preset-board-line">Forfait accessoires offert : {validationMoney((entry.packDefinition?.metadata?.packBenefits || entry.offer?.metadata?.packBenefits).allowanceAmount || 0)} € HT</small>}
+              {isSignaturePackLabel(entry.packName)
+                ? <small className="preset-board-line">Forfait accessoires offert : {signatureAllowancePerSquareMeter} € HT/m² de stand</small>
+                : (entry.packDefinition?.metadata?.packBenefits || entry.offer?.metadata?.packBenefits)?.mode === 'allowance' && <small className="preset-board-line">Forfait accessoires offert : {validationMoney((entry.packDefinition?.metadata?.packBenefits || entry.offer?.metadata?.packBenefits).allowanceAmount || 0)} € HT</small>}
               <fieldset className="preset-pack-actions" disabled={Boolean(deletingGlobalPack)}>
                 {entry.active ? (
                   <>
@@ -9852,6 +9855,7 @@ function mergeSalonOffer(salon, offer) {
 }
 
 function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) {
+  const isSignaturePack = isSignaturePackLabel(offer?.name);
   const entries = useMemo(() => {
     const dynamicEntries = (assets || [])
       .filter((asset) => asset.is_active)
@@ -9885,7 +9889,7 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
         quantity: Number(quantities[entry.type] || 0),
       }))
       .filter((item) => item.quantity > 0);
-    onSave(baseItems, benefits);
+    onSave(baseItems, isSignaturePack ? { mode: 'allowance', allowanceAmount: 0 } : benefits);
   };
 
   return (
@@ -9900,27 +9904,27 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
         </header>
 
         <div className="pack-benefits-settings">
-          <label>Fonctionnement du pack
+          {isSignaturePack ? <p><strong>Forfait accessoires offert : {signatureAllowancePerSquareMeter} € HT/m² de stand.</strong> Le montant est calculé automatiquement pour chaque scène Signature, y compris celles déjà créées.</p> : <label>Fonctionnement du pack
             <select value={benefits.mode} onChange={(event) => setBenefits((current) => ({ ...current, mode: event.target.value }))}>
               <option value="included-items">Objets inclus</option>
               <option value="allowance">Forfait accessoires offert</option>
             </select>
-          </label>
-          {benefits.mode === 'allowance' && <>
-            <label>Montant offert (€ HT)
+          </label>}
+          {(isSignaturePack || benefits.mode === 'allowance') && <>
+            {!isSignaturePack && <label>Montant offert (€ HT)
               <input type="number" min="0" step="0.01" value={benefits.allowanceAmount} onChange={(event) => setBenefits((current) => ({ ...current, allowanceAmount: event.target.value }))} />
-            </label>
+            </label>}
             <p>Tous les objets et options sont couverts, hors assurance. Aucun objet du pack de base n’est placé automatiquement. Seul le dépassement est facturé ; le solde inutilisé n’est pas remboursé.</p>
-            <p>Ce fonctionnement s’applique au chargement des scènes non confirmées. Les scènes déjà confirmées conservent leur forfait.</p>
+            {!isSignaturePack && <p>Ce fonctionnement s’applique au chargement des scènes non confirmées. Les scènes déjà confirmées conservent leur forfait.</p>}
           </>}
         </div>
 
-        {benefits.mode === 'included-items' && <div className="base-pack-help">
+        {!isSignaturePack && benefits.mode === 'included-items' && <div className="base-pack-help">
           Ces quantités sont incluses dans la formule, sans poser les objets sur la scène.
           Elles sont communes à toutes les implantations du pack.
         </div>}
 
-        {benefits.mode === 'included-items' && <div className="base-pack-list">
+        {!isSignaturePack && benefits.mode === 'included-items' && <div className="base-pack-list">
           {entries.map((entry) => {
             const Icon = entry.icon || Box;
             const quantity = Number(quantities[entry.type] || 0);
@@ -10267,7 +10271,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           bands={packReserveBands}
           entries={availableCatalog.filter(isReserveCatalogEntry)}
           salonLabel={offer?.name || ''}
-          allowanceMode={normalizePackBenefits(offer?.metadata?.packBenefits).mode === 'allowance'}
+          allowanceMode={isSignaturePack || normalizePackBenefits(offer?.metadata?.packBenefits).mode === 'allowance'}
           onChange={setReserveRules}
         />
         <PresetPartitionHeadRulesEditor

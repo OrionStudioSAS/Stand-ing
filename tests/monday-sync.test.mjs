@@ -3,13 +3,13 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import { transformSync } from 'esbuild';
-import { normalizePackBenefits } from '../supabase/functions/_shared/packBenefits.js';
+import { normalizePackBenefits, packBenefitsForScene, isSignaturePackScene } from '../supabase/functions/_shared/packBenefits.js';
 
 const edgeSource = readFileSync(new URL('../supabase/functions/monday-sync/index.ts', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '');
 const compiled = transformSync(edgeSource, { loader: 'ts', format: 'cjs' }).code;
 
 function runtime(fetch = () => { throw new Error('Unexpected network request'); }) {
-  const context = vm.createContext({ Deno: { serve() {} }, fetch, console, normalizePackBenefits });
+  const context = vm.createContext({ Deno: { serve() {} }, fetch, console, normalizePackBenefits, packBenefitsForScene, isSignaturePackScene });
   vm.runInContext(compiled, context);
   return context;
 }
@@ -39,6 +39,18 @@ test('Monday fetches the configurable allowance without base quotas; other packs
   }
   const withoutOffer = await api.fetchOfferPackConfiguration({}, null);
   assert.equal(withoutOffer.packBenefits.mode, 'included-items');
+});
+
+test('Monday Signature scene dimensions determine the allowance even when the pack still stores 1600 euros', () => {
+  const api = runtime();
+  const scene = api.mapMondayItemToScene({ id: 'signature-stand', name: 'Exposant', column_values: [] },
+    { board_id: 'board', salon: 'SITL', offer: 'Signature', mapping: {} }, null, null,
+    { salonLabel: 'SITL', salonId: 'salon', offerId: 'offer' });
+  assert.equal(scene.offer, 'Signature');
+  const benefits = packBenefitsForScene({ ...scene, width_m: 5, depth_m: 4 }, { mode: 'allowance', allowanceAmount: 1600 });
+  assert.equal(benefits.allowanceAmount, 800);
+  assert.match(edgeSource, /const packBenefits = packBenefitsForScene\(sceneDraft, packConfiguration\.packBenefits\)/);
+  assert.match(edgeSource, /const currentPackBenefits = packBenefitsForScene\(/);
 });
 
 test('allowance scene creation keeps preset reserve rules without restoring included preset objects', () => {

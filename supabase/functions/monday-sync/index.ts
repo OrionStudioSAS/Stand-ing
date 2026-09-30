@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { normalizePackBenefits } from "../_shared/packBenefits.js";
+import { normalizePackBenefits, packBenefitsForScene, isSignaturePackScene } from "../_shared/packBenefits.js";
 
 const mondayApiUrl = "https://api.monday.com/v2";
 const wallThickness = 0.06;
@@ -128,6 +128,9 @@ Deno.serve(async (req) => {
       if (existingScene) {
         const existingWidth = Number(existingScene.width_m) || Number(readMappingValue(item, resolvedSource.mapping?.width_m)) || 4;
         const existingDepth = Number(existingScene.depth_m) || Number(readMappingValue(item, resolvedSource.mapping?.depth_m)) || 3;
+        const currentPackBenefits = packBenefitsForScene({ offer: existingScene.offer || resolvedSource.offer, width_m: existingWidth, depth_m: existingDepth }, packConfiguration.packBenefits);
+        const currentBaseItems = currentPackBenefits.mode === "allowance" ? [] : packConfiguration.baseItems;
+        const updatePackBenefits = existingScene.client_status !== "configured" || isSignaturePackScene({ offer: existingScene.offer || resolvedSource.offer });
         const constraints = mondayConstraintsForItem(item, resolvedSource, existingWidth, existingDepth);
         const constraint = constraints[0] || null;
         const mappedClientEmail = readMappingValue(item, resolvedSource.mapping?.client_email);
@@ -142,14 +145,14 @@ Deno.serve(async (req) => {
             sector: mappedLocation.sector || existingScene.source_payload?.sector || "",
             constraint,
             constraints,
-            ...(existingScene.client_status !== "configured" ? { packBenefits: packConfiguration.packBenefits, baseItems: packConfiguration.baseItems } : {}),
+            ...(updatePackBenefits ? { packBenefits: currentPackBenefits, baseItems: currentBaseItems } : {}),
             poteau_1_text: mondayPoleRawText(item, resolvedSource, 1),
             poteau_2_text: mondayPoleRawText(item, resolvedSource, 2),
           },
         };
-        const packConfigurationChanged = existingScene.client_status !== "configured"
-          && (JSON.stringify(existingScene.source_payload?.packBenefits) !== JSON.stringify(packConfiguration.packBenefits)
-            || JSON.stringify(existingScene.source_payload?.baseItems) !== JSON.stringify(packConfiguration.baseItems));
+        const packConfigurationChanged = updatePackBenefits
+          && (JSON.stringify(existingScene.source_payload?.packBenefits) !== JSON.stringify(currentPackBenefits)
+            || JSON.stringify(existingScene.source_payload?.baseItems) !== JSON.stringify(currentBaseItems));
         if (!clean(existingScene.client_email) && mappedClientEmail) scenePatch.client_email = mappedClientEmail;
         if (!clean(existingScene.client_name) && mappedClientName) scenePatch.client_name = mappedClientName;
         const hasLocationPatch = Boolean(mappedLocation.standNumber || mappedLocation.aisleNumber || mappedLocation.hall || mappedLocation.sector);
@@ -272,7 +275,8 @@ Deno.serve(async (req) => {
 
       const sceneDraft = mapMondayItemToScene(item, resolvedSource, savedClient?.id, savedProfile?.id, context, parsedLayout);
       const preset = await findActivePreset(supabase, context.offerId, context.salonId, sceneDraft.layout);
-      const { baseItems, packBenefits } = packConfiguration;
+      const packBenefits = packBenefitsForScene(sceneDraft, packConfiguration.packBenefits);
+      const baseItems = packBenefits.mode === "allowance" ? [] : packConfiguration.baseItems;
       const hasAllowance = packBenefits.mode === "allowance";
       const isSignatureOffer = /\bsignature\b/i.test(String(source.offer || ""));
       const partitionHeadRules = hasAllowance && !isSignatureOffer ? {} : isSignatureOffer

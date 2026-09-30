@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { demoScenes } from './seed.js';
 import { supabase } from './supabaseClient.js';
 import { catalog, layouts } from '../config/catalog.js';
-import { normalizePackBenefits, scenePackBenefits, inheritCurrentPackBenefits } from '../../supabase/functions/_shared/packBenefits.js';
+import { normalizePackBenefits, scenePackBenefits, inheritCurrentPackBenefits, isSignaturePackScene } from '../../supabase/functions/_shared/packBenefits.js';
 
 const storageKey = 'standing-scenes-v1';
 const fixedWallHeight = 2.5;
@@ -1049,7 +1049,9 @@ export async function ensureSalonOffer(salon, packName) {
 
 export async function saveSalonOfferBaseItems(offer, baseItems = [], packBenefits = offer?.metadata?.packBenefits) {
   if (!offer?.id && !offer?.pack_id) throw new Error('Pack introuvable.');
-  const benefits = normalizePackBenefits(packBenefits);
+  const benefits = isSignaturePackScene({ offer: offer?.name })
+    ? { mode: 'allowance', allowanceAmount: 0 }
+    : normalizePackBenefits(packBenefits);
   const normalizedItems = benefits.mode === 'allowance' ? [] : normalizeBaseItems(baseItems);
 
   if (!supabase) {

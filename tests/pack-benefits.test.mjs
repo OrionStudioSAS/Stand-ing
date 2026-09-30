@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance, inheritCurrentPackBenefits } from '../supabase/functions/_shared/packBenefits.js';
+import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance, inheritCurrentPackBenefits, isSignaturePackScene, packBenefitsForScene } from '../supabase/functions/_shared/packBenefits.js';
 
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 function loadFunction(api, source, name) {
@@ -43,6 +43,31 @@ test('an existing SITL scene inherits its current 1600 euro pack without Monday 
   assert.equal(inheritCurrentPackBenefits({ client_status: 'draft' }).source_payload, undefined);
 });
 
+test('Signature allowance is always 40 euros per square meter, including existing and confirmed scenes', () => {
+  for (const [width, depth, expected] of [[5, 5, 1000], [8, 5, 1600], [3.5, 7, 980]]) {
+    for (const client_status of ['draft', 'configured']) {
+      const scene = {
+        offer: 'Signature', client_status, width_m: width, depth_m: depth,
+        source_payload: {
+          packBenefits: { mode: 'allowance', allowanceAmount: 1600 },
+          baseItems: [{ type: 'desk', quantity: 1 }],
+          pricing: { packBenefits: { mode: 'allowance', allowanceAmount: 1600 } },
+        },
+      };
+      assert.deepEqual(scenePackBenefits(scene), { mode: 'allowance', allowanceAmount: expected });
+      const inherited = inheritCurrentPackBenefits(scene);
+      assert.equal(inherited.source_payload.packBenefits.allowanceAmount, expected);
+      assert.equal(inherited.source_payload.pricing.packBenefits.allowanceAmount, expected);
+      assert.deepEqual(inherited.source_payload.baseItems, []);
+      assert.equal(packAllowanceBreakdown(1200, scenePackBenefits(scene)).accessoriesSupplement, Math.max(0, 1200 - expected));
+    }
+  }
+  assert.equal(scenePackBenefits({ offer: 'Signature', dimensions: { width: 4, depth: 6 } }).allowanceAmount, 960);
+  assert.equal(scenePackBenefits({ offer: 'Signature', width_m: 0, depth_m: 6 }).allowanceAmount, 0);
+  assert.equal(isSignaturePackScene({ salon: 'SIGNATURE 2027', offer: 'Confort' }), false);
+  assert.equal(packBenefitsForScene({ offer: 'Confort', width_m: 8, depth_m: 5 }, { mode: 'allowance', allowanceAmount: 1600 }).allowanceAmount, 1600);
+});
+
 test('scene loading resolves pack benefits before automatic objects and preset defaults', () => {
   const store = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
   const api = vm.createContext({ inheritCurrentPackBenefits, scenePackBenefits,
@@ -58,6 +83,13 @@ test('scene loading resolves pack benefits before automatic objects and preset d
   assert.equal(result.source_payload.packBenefits.allowanceAmount, 1600);
   assert.equal(result.source_payload.options.ledRailsEnabled, false);
   assert.equal(result.source_payload.options.autoSpotsRule, null);
+  const signature = api.dbSceneToScene({
+    offer: 'Signature', width_m: 5, depth_m: 4, client_status: 'configured',
+    source_payload: { packBenefits: { mode: 'allowance', allowanceAmount: 1600 }, pricing: { packBenefits: { mode: 'allowance', allowanceAmount: 1600 } } },
+    scene_items: [], stand_presets: { base_config: {} },
+  });
+  assert.equal(signature.source_payload.packBenefits.allowanceAmount, 800);
+  assert.equal(signature.source_payload.pricing.packBenefits.allowanceAmount, 800);
 });
 
 test('all objects and options consume one allowance; insurance is separate and recalculation is idempotent', () => {
@@ -208,7 +240,7 @@ test('the actual BDC template stores a negative allowance and net HT/VAT/TTC tot
 
 test('pack settings preserve unrelated metadata and clear base quotas only in allowance mode', async () => {
   const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
-  const api = vm.createContext({ normalizePackBenefits, supabase: null });
+  const api = vm.createContext({ normalizePackBenefits, isSignaturePackScene, supabase: null });
   for (const name of ['saveSalonOfferBaseItems', 'normalizeBaseItems']) loadFunction(api, storeSource, name);
   const offer = { id: 'offer', metadata: { custom: 'keep' } };
   const result = await api.saveSalonOfferBaseItems(offer, [{ type: 'desk', quantity: 1 }], { mode: 'allowance', allowanceAmount: '1200' });
@@ -217,4 +249,8 @@ test('pack settings preserve unrelated metadata and clear base quotas only in al
   assert.equal(result.metadata.packBenefits.allowanceAmount, 1200);
   const legacy = await api.saveSalonOfferBaseItems(offer, [{ type: 'desk', quantity: 1 }]);
   assert.equal(legacy.metadata.baseItems.length, 1);
+  const signature = await api.saveSalonOfferBaseItems({ ...offer, name: 'Signature' }, [{ type: 'desk', quantity: 1 }], { mode: 'included-items', allowanceAmount: 1600 });
+  assert.equal(signature.metadata.packBenefits.mode, 'allowance');
+  assert.equal(signature.metadata.packBenefits.allowanceAmount, 0);
+  assert.equal(signature.metadata.baseItems.length, 0);
 });
