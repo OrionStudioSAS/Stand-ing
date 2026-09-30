@@ -20468,6 +20468,11 @@ function cloneAndNormalizeMaterial(material, item = {}) {
   } else if (isImportedNonmetalFinish(cloned, item)) {
     if ('metalness' in cloned) cloned.metalness = 0;
     if ('roughness' in cloned) cloned.roughness = Math.max(0.42, Number(cloned.roughness || 0));
+    if (isBrightFridgeFinish(cloned, item) && cloned.emissive?.set) {
+      cloned.emissive.set('#ffffff');
+      if (cloned.map) cloned.emissiveMap = cloned.map;
+      cloned.emissiveIntensity = 0.16;
+    }
   }
 
   cloned.needsUpdate = true;
@@ -20505,6 +20510,11 @@ function isImportedNonmetalFinish(material = {}, item = {}) {
   if (!itemText.includes('blanc') || !material.color) return false;
   const channels = [material.color.r, material.color.g, material.color.b];
   return Math.min(...channels) >= 0.45 && Math.max(...channels) - Math.min(...channels) < 0.06;
+}
+
+function isBrightFridgeFinish(material = {}, item = {}) {
+  if (!/frigo|refrigerat/.test(normalizedItemText(item)) || !material.color) return false;
+  return Math.min(material.color.r, material.color.g, material.color.b) >= 0.75;
 }
 
 function isChromeMaterial(material = {}) {

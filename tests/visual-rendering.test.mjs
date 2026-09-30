@@ -67,7 +67,7 @@ test('carpet selector exposes the configured free and paid colors', () => {
 
 test('imported non-metal furniture finishes keep their colors without a false metallic cast', () => {
   const api = vm.createContext({ DoubleSide, isSignaturePrintedSurface: () => false });
-  for (const name of ['normalizeMaterialName', 'normalizedItemText', 'normalizeMaterialTexture', 'isChromeMaterial', 'isAluminiumMaterial', 'isImportedNonmetalFinish', 'cloneAndNormalizeMaterial', 'cloneMeshMaterial']) {
+  for (const name of ['normalizeMaterialName', 'normalizedItemText', 'normalizeMaterialTexture', 'isChromeMaterial', 'isAluminiumMaterial', 'isImportedNonmetalFinish', 'isBrightFridgeFinish', 'cloneAndNormalizeMaterial', 'cloneMeshMaterial']) {
     loadFunction(appSource, api, name);
   }
   const fridge = new MeshStandardMaterial({ name: 'frigo_140l', color: '#f2f2f2', metalness: 0.5, roughness: 0.5 });
@@ -80,13 +80,18 @@ test('imported non-metal furniture finishes keep their colors without a false me
   const [fixedFridge] = api.cloneMeshMaterial([fridge], { label: 'Frigo 140L' });
   const fixedFabric = api.cloneMeshMaterial(fabric, { label: 'Canapé Charlotte Gris' });
   assert.equal(fixedFridge.metalness, 0);
+  assert.equal(fixedFridge.emissiveIntensity, 0.16);
   assert.equal(fixedFridge.color.getHexString(), fridge.color.getHexString());
-  assert.equal(api.cloneMeshMaterial(largeFridge, { label: 'Frigo 220L' }).metalness, 0);
+  const fixedLargeFridge = api.cloneMeshMaterial(largeFridge, { label: 'Frigo 220L' });
+  assert.equal(fixedLargeFridge.metalness, 0);
+  assert.equal(fixedLargeFridge.emissiveIntensity, 0.16);
   assert.equal(fixedFabric.metalness, 0);
   assert.equal(fridge.metalness, 0.5);
   assert.equal(api.cloneMeshMaterial(whiteChair, { label: 'Chaise One Blanc' }).metalness, 0);
   assert.equal(api.cloneMeshMaterial(chrome, { label: 'Table Icare Blanc' }).metalness, 0.48);
   assert.equal(api.cloneMeshMaterial(genericColor, { label: 'Chaise One Rouge' }).metalness, 0.6);
+  const darkFridgePart = new MeshStandardMaterial({ name: 'Dark plastic', color: '#333333', metalness: 0.5 });
+  assert.equal(api.cloneMeshMaterial(darkFridgePart, { label: 'Frigo 220L' }).emissiveIntensity, 1);
 });
 
 test('Signature printed panels stay white without metallic gray, including uploaded image margins', () => {
