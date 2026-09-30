@@ -8159,29 +8159,68 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
   );
 }
 
-function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '' }) {
+function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect }) {
   const t = useT();
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
   const includedColors = displayColors.filter((color) => color.included);
-  const defaultColor = displayColors.find((color) => normalizeColorId(color.id) === normalizeColorId(defaultColorId))
-    || includedColors[0]
-    || selectedDisplayColor;
-  const displayColor = defaultColor || selectedDisplayColor;
+  const paidColors = displayColors.filter((color) => !color.included);
+  const selectedPrice = selectedDisplayColor.included ? 0 : Math.round(Number(selectedDisplayColor.price || 0) * Number(area || 0));
+  const minPaidPrice = minColorPrice(paidColors);
+  const selectColor = (color) => {
+    if (!disabled) onSelect?.(color.id);
+  };
 
   return (
     <div className="carpet-choice-card ground-choice-card ground-carpet-card">
       <section className="carpet-choice-section ground-section">
         <GroundOptionHeading title="MOQUETTE" iconSrc="/icons/moquette_icon.svg" />
         <div className="ground-main-choice">
-          <span
+          <button
+            type="button"
             className="ground-main-swatch active"
-            style={{ '--swatch-color': displayColor?.hex, '--swatch-image': swatchImage(displayColor) }}
-            aria-hidden="true"
+            style={{ '--swatch-color': selectedDisplayColor.hex, '--swatch-image': swatchImage(selectedDisplayColor) }}
+            aria-label={`${selectedDisplayColor.name} (${selectedDisplayColor.code})`}
+            disabled={disabled}
+            onClick={() => selectColor(selectedDisplayColor)}
           />
-          <strong>{displayColor?.name || selectedDisplayColor.name} ({displayColor?.code || selectedDisplayColor.code})</strong>
-          <b>{t('color_included')}</b>
+          <strong>{selectedDisplayColor.name} ({selectedDisplayColor.code})</strong>
+          {selectedDisplayColor.included ? <b>{t('color_included')}</b> : <em className="ground-price-pill">+ {formatNumber(selectedPrice)} €</em>}
         </div>
+        {includedColors.length > 1 && (
+          <>
+            <small>{`${includedColors.length} couleurs incluses`}</small>
+            <div className="carpet-swatch-row" role="group" aria-label="Couleurs de moquette incluses">
+              {includedColors.map((color) => (
+                <button key={color.id} type="button" className={selectedDisplayColor.id === color.id ? 'active' : ''}
+                  style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
+                  title={`${color.name} (${color.code})`} aria-label={`${color.name} (${color.code})`}
+                  aria-pressed={selectedDisplayColor.id === color.id} disabled={disabled} onClick={() => selectColor(color)}>
+                  <span>{color.name}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        {!!paidColors.length && (
+          <>
+            <div className="wall-fabric-option-line">
+              <small>{`${paidColors.length} couleurs en option`}</small>
+              <em>+ {formatNumber(minPaidPrice)} €/m²</em>
+            </div>
+            <div className="carpet-swatch-row premium" role="group" aria-label="Couleurs de moquette en option">
+              {paidColors.map((color) => (
+                <button key={color.id} type="button" className={selectedDisplayColor.id === color.id ? 'active' : ''}
+                  style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
+                  title={`${color.name} (${color.code}) · ${colorOptionLabel(color, 'Option', area)}`}
+                  aria-label={`${color.name} (${color.code})`} aria-pressed={selectedDisplayColor.id === color.id}
+                  disabled={disabled} onClick={() => selectColor(color)}>
+                  <span>{color.name}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </section>
     </div>
   );
@@ -14416,6 +14455,12 @@ function colorOptionsForUsage(assets = [], salonLabel = '', usage = '', fallback
 function packColorPalette(assets = [], packLabel = '', usage = '', fallbackColors = []) {
   const palette = colorOptionsForUsage(assets, packLabel, usage, fallbackColors);
   if (!isSignaturePackLabel(packLabel)) return palette;
+  if (colorGroupAssets(assets, packLabel, usage).length && palette.length) {
+    if (usage === 'wallFabric' && !palette.some((color) => color.isDefault)) {
+      return palette.map((color) => color.code === '303' ? { ...color, isDefault: true, included: true } : color);
+    }
+    return palette;
+  }
   const definitions = usage === 'carpet' || usage === 'footprint' ? [
     { name: 'Gris clair', codes: ['0939', '1893'] },
     { name: 'Bleu marine', codes: ['0809', '1390'], aliases: ['marine', 'bleu amiral'] },
@@ -14423,7 +14468,7 @@ function packColorPalette(assets = [], packLabel = '', usage = '', fallbackColor
   ] : usage === 'wallFabric' ? [
     { name: 'Blanc', codes: ['303'] },
     { name: 'Rouge', codes: ['470'] },
-    { name: 'Gris clair', codes: [], fallback: { id: 'signature-wall-light-gray', code: '', name: 'Gris clair', hex: '#c8c8c8', image: '', included: true } },
+    { name: 'Gris clair', codes: [], fallback: { id: 'signature-wall-light-gray', code: '319', name: 'Gris clair', hex: '#c8c8c8', image: '', included: true } },
     { name: 'Bleu', codes: ['180'], aliases: ['drapeau'] },
   ] : [];
   if (!definitions.length) return palette;
@@ -14467,6 +14512,7 @@ function findColorInPalette(colors = [], value = '') {
   if (!normalizedValue) return null;
   return colors.find((color) => normalizeColorId(color.id) === normalizedValue)
     || colors.find((color) => normalizeColorId(color.code) === normalizedValue)
+    || (normalizedValue === 'signature-wall-light-gray' ? colors.find((color) => color.code === '319') : null)
     || null;
 }
 
@@ -18822,9 +18868,10 @@ function colorTextureUrl(color) {
 }
 
 function useRepeatedTexture(url, width, depth, tileSize = 1) {
-  const [texture, setTexture] = useState(() => {
+  const textureKey = `${url}|${width}|${depth}|${tileSize}`;
+  const [textureState, setTextureState] = useState(() => {
     const cachedImage = url ? Cache.get(`image:${url}`) : null;
-    return cachedImage ? createRepeatedTextureFromImage(cachedImage, width, depth, tileSize, url) : null;
+    return { key: textureKey, texture: cachedImage ? createRepeatedTextureFromImage(cachedImage, width, depth, tileSize, url) : null };
   });
 
   useEffect(() => {
@@ -18832,9 +18879,9 @@ function useRepeatedTexture(url, width, depth, tileSize = 1) {
     let currentTexture = null;
 
     if (!url) {
-      setTexture((previous) => {
-        previous?.dispose?.();
-        return null;
+      setTextureState((previous) => {
+        previous.texture?.dispose?.();
+        return { key: textureKey, texture: null };
       });
       return undefined;
     }
@@ -18844,13 +18891,13 @@ function useRepeatedTexture(url, width, depth, tileSize = 1) {
       const seamlessTexture = createRepeatedTextureFromImage(image, width, depth, tileSize, url);
       if (seamlessTexture) {
         currentTexture = seamlessTexture;
-        setTexture((previous) => {
-          if (previous && previous !== seamlessTexture) previous.dispose?.();
-          return seamlessTexture;
+        setTextureState((previous) => {
+          if (previous.texture && previous.texture !== seamlessTexture) previous.texture.dispose?.();
+          return { key: textureKey, texture: seamlessTexture };
         });
       } else {
         logTextureDiagnostic('Repeated floor texture ignored after decode issue', { url });
-        setTexture(null);
+        setTextureState({ key: textureKey, texture: null });
       }
     };
 
@@ -18858,9 +18905,9 @@ function useRepeatedTexture(url, width, depth, tileSize = 1) {
     if (cachedImage) {
       applyImage(cachedImage);
     } else {
-      setTexture((previous) => {
-        previous?.dispose?.();
-        return null;
+      setTextureState((previous) => {
+        previous.texture?.dispose?.();
+        return { key: textureKey, texture: null };
       });
       loadDecodedImage(url).then(({ ok, image }) => {
         if (!disposed && ok) applyImage(image);
@@ -18871,9 +18918,9 @@ function useRepeatedTexture(url, width, depth, tileSize = 1) {
       disposed = true;
       currentTexture?.dispose?.();
     };
-  }, [url, width, depth, tileSize]);
+  }, [url, width, depth, tileSize, textureKey]);
 
-  return texture;
+  return textureState.key === textureKey ? textureState.texture : null;
 }
 
 function createRepeatedTextureFromImage(image, width, depth, tileSize = 1, url = '') {

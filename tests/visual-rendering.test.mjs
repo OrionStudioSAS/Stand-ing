@@ -46,6 +46,25 @@ test('wall fabric keeps scene shading with a restrained texture lift', () => {
   assert.doesNotMatch(source, /meshBasicMaterial|toneMapped=\{false\}/);
 });
 
+test('wall and floor textures cannot reuse the previous color while a new image loads', () => {
+  const start = appSource.indexOf('function useRepeatedTexture(');
+  const end = appSource.indexOf('\nfunction createRepeatedTextureFromImage(', start);
+  const source = appSource.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.match(source, /textureState\.key === textureKey \? textureState\.texture : null/);
+  assert.match(source, /if \(!url\)[\s\S]*texture: null/);
+});
+
+test('carpet selector exposes the configured free and paid colors', () => {
+  const start = appSource.indexOf('function CarpetColorOptionCard(');
+  const end = appSource.indexOf('\nfunction GroundOptionHeading(', start);
+  const source = appSource.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.match(source, /includedColors\.map\(/);
+  assert.match(source, /paidColors\.map\(/);
+  assert.match(source, /onSelect\?\.\(color\.id\)/);
+});
+
 test('imported non-metal furniture finishes keep their colors without a false metallic cast', () => {
   const api = vm.createContext({ DoubleSide });
   for (const name of ['normalizeMaterialName', 'normalizedItemText', 'normalizeMaterialTexture', 'isChromeMaterial', 'isAluminiumMaterial', 'isImportedNonmetalFinish', 'cloneAndNormalizeMaterial', 'cloneMeshMaterial']) {

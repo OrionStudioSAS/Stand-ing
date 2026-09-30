@@ -17,6 +17,7 @@ function packContext() {
     carpetColors,
     wallFabricColors,
     colorOptionsForUsage: (_assets, _pack, _usage, fallback) => fallback,
+    colorGroupAssets: () => [],
     normalizePackLabel: (label) => String(label || '').toLowerCase(),
     normalizeTextValue: (label) => String(label || '').toLowerCase(),
   });
@@ -206,7 +207,7 @@ test('Existing Signature 2 and 3 square metre reserve choices survive the new ba
   assert.equal(rules['signature-1m2'].includedType, '');
 });
 
-test('Signature palettes are restricted and its reserve fabric is anthracite', () => {
+test('Signature fallback palettes remain restricted and its reserve fabric is anthracite', () => {
   const context = packContext();
   const carpet = context.packColorPalette([], 'Signature', 'carpet', carpetColors);
   const footprint = context.packColorPalette([], 'Signature', 'footprint', carpetColors);
@@ -232,4 +233,47 @@ test('Signature keeps the actual Rewind carpet textures and pricing for codes 09
   assert.deepEqual(Array.from(colors, (color) => color.code), ['0939', '0809', '0713']);
   assert.deepEqual(Array.from(colors, (color) => color.image), ['/gris.jpg', '/marine.jpg', '/rouge.jpg']);
   assert.equal(colors[1].price, 12);
+});
+
+test('Signature uses every configured carpet and wall color instead of the legacy restricted palette', () => {
+  const context = packContext();
+  for (const name of ['normalizeColorGroupOptions', 'colorOptionsForUsage']) loadFunction(name, context);
+  context.colorGroupAssets = (assets, pack, usage) => assets.filter((asset) => asset.dimensions?.packs?.includes(pack) && asset.dimensions?.colorUsages?.includes(usage));
+  const assets = [
+    {
+      type: 'signature-rewind', label: 'Moquette SIGNATURE (Rewind)',
+      dimensions: {
+        packs: ['Signature'], colorUsages: ['carpet'], colorGroupPrice: 36,
+        colorOptions: [
+          { id: '0939', code: '0939', name: 'Gris clair', image: '/gray.jpg', isDefault: true, isFree: true },
+          { id: '0809', code: '0809', name: 'Marine', image: '/blue.jpg', isFree: true },
+          { id: '0713', code: '0713', name: 'Rouge', image: '/red.jpg', isFree: true },
+          { id: '0400', code: '0400', name: 'Jaune', image: '/yellow.jpg' },
+        ],
+      },
+    },
+    {
+      type: 'signature-cotton', label: 'Coton SIGNATURE',
+      dimensions: {
+        packs: ['Signature'], colorUsages: ['wallFabric'], colorGroupPrice: 11,
+        colorOptions: [
+          { id: '303', code: '303', name: 'Blanc', image: '/white.jpg', isFree: true },
+          { id: '470', code: '470', name: 'Rouge', image: '/red-wall.jpg', isFree: true },
+          { id: '319', code: '319', name: 'Gris moyen', image: '/gray-wall.jpg', isFree: true },
+        ],
+      },
+    },
+  ];
+  const carpet = context.packColorPalette(assets, 'Signature', 'carpet', carpetColors);
+  const walls = context.packColorPalette(assets, 'Signature', 'wallFabric', wallFabricColors);
+  assert.deepEqual(Array.from(carpet, (color) => color.code), ['0939', '0809', '0713', '0400']);
+  assert.equal(carpet[3].price, 36);
+  assert.equal(carpet[3].included, false);
+  assert.deepEqual(Array.from(walls, (color) => color.code), ['303', '470', '319']);
+  assert.equal(walls[0].isDefault, true);
+  assert.equal(walls[2].image, '/gray-wall.jpg');
+  assert.equal(walls[2].included, true);
+  loadFunction('findColorInPalette', context);
+  context.normalizeColorId = (value) => String(value || '').toLowerCase();
+  assert.equal(context.findColorInPalette(walls, 'signature-wall-light-gray').code, '319');
 });

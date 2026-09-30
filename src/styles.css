@@ -3063,11 +3063,24 @@ select {
   font-weight: 950;
 }
 
+.ground-main-choice > .ground-price-pill {
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #1f5db4;
+  background: #e9f2ff;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
 .ground-main-swatch {
   display: block;
   width: 34px;
   height: 34px;
+  border: 0;
   border-radius: 999px;
+  padding: 0;
   background-color: var(--swatch-color);
   background-image: var(--swatch-image);
   background-position: center;
