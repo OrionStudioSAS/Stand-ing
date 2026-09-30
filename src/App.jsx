@@ -20136,6 +20136,7 @@ function materialMapFileName(material = null) {
 function materialWithTexture(material, texture, options = {}) {
   const next = material.clone?.() || material;
   next.map = texture;
+  if (next.emissiveMap) next.emissiveMap = texture;
   next.transparent = false;
   if (next.color?.set) next.color.set('#ffffff');
   if (options.luminous) {
@@ -20456,6 +20457,14 @@ function cloneAndNormalizeMaterial(material, item = {}) {
     if ('metalness' in cloned) cloned.metalness = 0.35;
     if ('roughness' in cloned) cloned.roughness = 0.42;
     if ('shininess' in cloned) cloned.shininess = 55;
+  } else if (isSignaturePrintedSurface(cloned, item)) {
+    if ('metalness' in cloned) cloned.metalness = 0;
+    if ('roughness' in cloned) cloned.roughness = 0.82;
+    if (cloned.map && cloned.emissive?.set) {
+      cloned.emissive.set('#ffffff');
+      cloned.emissiveMap = cloned.map;
+      cloned.emissiveIntensity = 0.16;
+    }
   } else if (isImportedNonmetalFinish(cloned, item)) {
     if ('metalness' in cloned) cloned.metalness = 0;
     if ('roughness' in cloned) cloned.roughness = Math.max(0.42, Number(cloned.roughness || 0));
@@ -20476,6 +20485,15 @@ function normalizeMaterialTexture(texture) {
 
 function isAluminiumMaterial(material = {}) {
   return /alu|minium|metal|brushed/i.test(material.name || '');
+}
+
+function isSignaturePrintedSurface(material = {}, item = {}) {
+  const name = normalizeMaterialName(material.name);
+  if (isSignatureArchItem(item)) {
+    return /^(?:led_5500k#5|\*30|laminate_d02_120cm#2)(?:\.\d+)?$/.test(name);
+  }
+  return isSignaturePartitionHeadItem(item)
+    && /^(?:led_5500k#4|\*28|laminate_d02_120cm#2)(?:\.\d+)?$/.test(name);
 }
 
 function isImportedNonmetalFinish(material = {}, item = {}) {

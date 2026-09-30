@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
-import { DoubleSide, MeshStandardMaterial } from 'three';
+import { DoubleSide, LinearFilter, LinearMipmapLinearFilter, MeshStandardMaterial, SRGBColorSpace, Texture } from 'three';
 
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
@@ -66,7 +66,7 @@ test('carpet selector exposes the configured free and paid colors', () => {
 });
 
 test('imported non-metal furniture finishes keep their colors without a false metallic cast', () => {
-  const api = vm.createContext({ DoubleSide });
+  const api = vm.createContext({ DoubleSide, isSignaturePrintedSurface: () => false });
   for (const name of ['normalizeMaterialName', 'normalizedItemText', 'normalizeMaterialTexture', 'isChromeMaterial', 'isAluminiumMaterial', 'isImportedNonmetalFinish', 'cloneAndNormalizeMaterial', 'cloneMeshMaterial']) {
     loadFunction(appSource, api, name);
   }
@@ -87,6 +87,32 @@ test('imported non-metal furniture finishes keep their colors without a false me
   assert.equal(api.cloneMeshMaterial(whiteChair, { label: 'Chaise One Blanc' }).metalness, 0);
   assert.equal(api.cloneMeshMaterial(chrome, { label: 'Table Icare Blanc' }).metalness, 0.48);
   assert.equal(api.cloneMeshMaterial(genericColor, { label: 'Chaise One Rouge' }).metalness, 0.6);
+});
+
+test('Signature printed panels stay white without metallic gray, including uploaded image margins', () => {
+  const api = vm.createContext({ DoubleSide, LinearFilter, LinearMipmapLinearFilter, SRGBColorSpace });
+  api.isSignaturePackLabel = (label) => label === 'Signature';
+  for (const name of [
+    'normalizeMaterialName', 'normalizedItemText', 'normalizeMaterialTexture',
+    'isChromeMaterial', 'isAluminiumMaterial', 'isPartitionHeadItem',
+    'isSignaturePartitionHeadItem', 'isSignatureArchItem', 'isSignaturePrintedSurface',
+    'isImportedNonmetalFinish', 'cloneAndNormalizeMaterial', 'materialWithTexture',
+  ]) loadFunction(appSource, api, name);
+
+  const arch = { label: 'Arche Totem + Plafond Spot' };
+  const head = { label: 'Tete De Cloison - Signature', dimensions: { packs: ['Signature'] } };
+  const whitePanel = (name) => new MeshStandardMaterial({ name, color: '#ffffff', metalness: 0.5, roughness: 0.5, map: new Texture() });
+  const archVisual = api.cloneAndNormalizeMaterial(whitePanel('LED_5500k#5'), arch);
+  const headTop = api.cloneAndNormalizeMaterial(whitePanel('*28'), head);
+  const uploaded = new Texture();
+  const archWithImage = api.materialWithTexture(archVisual, uploaded);
+
+  assert.equal(archVisual.metalness, 0);
+  assert.equal(headTop.metalness, 0);
+  assert.equal(headTop.emissiveMap, headTop.map);
+  assert.equal(archWithImage.emissiveMap, uploaded);
+  assert.equal(archWithImage.emissiveIntensity, 0.16);
+  assert.equal(api.cloneAndNormalizeMaterial(whitePanel('LED_5500k#5'), { label: 'Other stand' }).metalness, 0.5);
 });
 
 test('header language flags use browser-safe SVG assets instead of platform emoji', () => {
