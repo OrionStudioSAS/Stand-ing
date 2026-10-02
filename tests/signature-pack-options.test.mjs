@@ -91,6 +91,7 @@ test('Signature includes both partition heads at every area, including existing 
 test('The same Signature head asset is assigned to opposite stand edges', () => {
   const entry = { type: 'signature-head', label: 'Tête de cloison Signature' };
   const context = vm.createContext({
+    isSignaturePackLabel: (label) => String(label || '').toLowerCase() === 'signature',
     findCatalogEntry: () => entry,
     isSmclPartitionHeadItem: () => false,
     isSignaturePartitionHeadItem: () => true,
@@ -111,7 +112,7 @@ test('The same Signature head asset is assigned to opposite stand edges', () => 
   assert.deepEqual(Array.from(items, (item) => item.options.partitionHeadSide), ['left', 'right']);
   assert.deepEqual(Array.from(items, (item) => item.wall), ['left', 'right']);
   assert.ok(items.every((item) => item.isWallItem));
-  assert.ok(items.every((item) => item.included));
+  assert.ok(items.every((item) => !item.included && item.priceMode === 'billable'));
 });
 
 test('Signature heads attach to side-wall fronts or back-wall ends, never rear corners', () => {

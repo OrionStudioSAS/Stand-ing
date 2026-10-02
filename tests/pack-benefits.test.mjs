@@ -108,7 +108,7 @@ test('all objects and options consume one allowance; insurance is separate and r
 });
 
 test('scene pricing deducts the allowance after objects, shared options, covers, floor and colours, before insurance', () => {
-  const api = vm.createContext({ normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown,
+  const api = vm.createContext({ normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, isSignatureScene: () => false,
     roundCurrency: (value) => Math.round(value * 100) / 100,
     normalizeBaseItemsForUi: (value) => value,
     baseItemsToCountMap: () => new Map(),
@@ -141,6 +141,14 @@ test('scene pricing deducts the allowance after objects, shared options, covers,
   assert.equal(pricing.lines.reduce((sum, line) => sum + line.total, 0), pricing.total);
   assert.equal(pricing.baseItems.length, 0);
   assert.equal(pricing.billableCounts.get('tv'), 1);
+  api.isSignatureScene = (current) => current.offer === 'Signature';
+  const signature = api.calculateScenePricing({ catalog: [], items: [{ id: 'tv', type: 'tv', included: true }],
+    scene: { offer: 'Signature', dimensions: { width: 5, depth: 5 }, source_payload: { baseItems: [] } },
+  });
+  assert.equal(signature.lines.find((line) => line.type === 'tv').total, 600);
+  assert.equal(signature.allowanceAmount, 1000);
+  assert.equal(signature.allowanceApplied, 700);
+  assert.equal(signature.total, 25);
 });
 
 test('BDC keeps the negative allowance, including fully covered orders, without accepting arbitrary negative prices', () => {
@@ -195,6 +203,7 @@ test('allowance scenes inherit automatic reserve rules and charge the default re
   assert.equal(rules.small.chargeIncluded, true);
 
   const itemApi = vm.createContext({
+    isSignaturePackLabel: () => false,
     normalizeComplementaryOptions: api.normalizeComplementaryOptions,
     findCatalogEntry: (_catalog, type) => ({ type, label: 'Réserve 2 m²', price: 450 }),
     reserveOptionPrice: (_option, entry) => entry.price,

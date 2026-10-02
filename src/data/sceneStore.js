@@ -324,6 +324,35 @@ export async function saveScene(scene) {
   }
 }
 
+export async function saveSceneManualOrderLines(scene, lines = []) {
+  if (!supabase) return saveScene({ ...scene, source_payload: { ...(scene.source_payload || {}), manualPurchaseOrderLines: lines } });
+  const { data: current, error: readError } = await supabase.from('scenes')
+    .select('source_payload').eq('id', scene.id).single();
+  if (readError) throw readError;
+  const sourcePayload = { ...(current.source_payload || {}), manualPurchaseOrderLines: lines };
+  const { error } = await supabase.from('scenes')
+    .update({ source_payload: sourcePayload, updated_at: new Date().toISOString() })
+    .eq('id', scene.id);
+  if (error) throw error;
+  return { ...scene, source_payload: sourcePayload };
+}
+
+export async function markSceneSpecialRequestResolved(scene) {
+  const resolvedAt = new Date().toISOString();
+  const resolvedRequest = (value) => ({ ...(typeof value === 'string' ? { text: value } : value || {}), status: 'resolved', resolvedAt });
+  if (!supabase) {
+    const sourcePayload = { ...(scene.source_payload || {}), specialRequest: resolvedRequest(scene.source_payload?.specialRequest) };
+    return saveScene({ ...scene, status: 'configured', client_status: 'configured', source_payload: sourcePayload });
+  }
+  const { data: current, error: readError } = await supabase.from('scenes')
+    .select('source_payload').eq('id', scene.id).single();
+  if (readError) throw readError;
+  const sourcePayload = { ...(current.source_payload || {}), specialRequest: resolvedRequest(current.source_payload?.specialRequest) };
+  const { error } = await supabase.from('scenes').update({ status: 'configured', client_status: 'configured', source_payload: sourcePayload, updated_at: resolvedAt }).eq('id', scene.id);
+  if (error) throw error;
+  return { ...scene, status: 'configured', client_status: 'configured', source_payload: sourcePayload };
+}
+
 async function persistScene(scene) {
   if (!supabase) {
     const scenes = readLocalScenes();

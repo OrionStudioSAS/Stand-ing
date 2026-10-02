@@ -49,17 +49,17 @@ Deno.serve(async (req) => {
   if (!isAdmin && !isSceneOwner && !hasShareToken) return json({ error: "Forbidden" }, 403);
 
   const toEmail = clean(scene.client_email).toLowerCase();
-  if (!toEmail) return json({ sent: false, reason: "Scene has no client email" }, 200);
+  if (!toEmail && mode !== 'special_request_received') return json({ sent: false, reason: "Scene has no client email" }, 200);
 
   const sceneUrl = `${publicAppUrl.replace(/\/$/, "")}/?scene=${encodeURIComponent(scene.share_token)}`;
   const clientName = contactFullName(scene) || clean(scene.client_name) || clean(scene.source_payload?.exhibitor_name) || "client";
   const standName = clean(scene.project_name) || "votre stand";
   const eventName = clean(scene.event_name) || clean(scene.salon) || "Stand-ING";
   const offerName = standOfferLabel(scene);
-  const specialRequest = requestedSpecialText || clean(scene.source_payload?.specialRequest?.text);
+  const specialRequest = clean(scene.source_payload?.specialRequest?.text) || requestedSpecialText;
   const emailContent = buildEmailContent({ mode, clientName, standName, eventName, offerName, sceneUrl, hasPurchaseOrder: Boolean(purchaseOrder), specialRequest });
 
-  const notifyAdmin = mode === 'completed' || mode === 'special_request_completed';
+  const notifyAdmin = mode === 'completed' || mode === 'special_request_completed' || mode === 'special_request_received';
   const payload = {
     from: fromEmail,
     to: [toEmail],
@@ -69,38 +69,53 @@ Deno.serve(async (req) => {
     ...(purchaseOrder ? { attachments: [purchaseOrder] } : {}),
   };
 
-  const response = await sendResendEmail(resendApiKey, payload);
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) return json({ error: result?.message || "Email sending failed", details: result }, 502);
+  let response: Response | null = null;
+  let result: Record<string, unknown> = {};
+  try {
+    response = toEmail ? await sendResendEmail(resendApiKey, payload) : null;
+    result = response ? await response.json().catch(() => ({})) : {};
+  } catch (error) {
+    if (mode !== 'special_request_received') throw error;
+    console.error('Client request email failed', error);
+  }
+  const clientSent = Boolean(response?.ok);
+  if (response && !response.ok && mode !== 'special_request_received') {
+    return json({ error: result?.message || "Email sending failed", details: result }, 502);
+  }
 
   let adminResult: Record<string, unknown> | null = null;
+  let adminSent = notifyAdmin && completionNotifyTo === toEmail ? clientSent : !notifyAdmin;
   if (notifyAdmin && completionNotifyTo && completionNotifyTo !== toEmail) {
     const adminPayload = {
       from: fromEmail,
       to: [completionNotifyTo],
-      subject: `[BAT + BDC${offerName ? ` ${offerName}` : ""}] Configuration ${standName} confirmée`,
-      html: adminNotificationEmailHtml({ clientName, toEmail, standName, eventName, offerName, sceneUrl, mode, hasTechnicalPlan: Boolean(technicalPlan), hasPurchaseOrder: Boolean(purchaseOrder) }),
-      text: `Configuration confirmée\n\nExposant : ${clientName}\nEmail : ${toEmail}\nStand : ${standName}\nSalon : ${eventName}${offerName ? `\nFormule : Stand ${offerName}` : ""}\nLien : ${sceneUrl}\n\nPièces jointes :${technicalPlan ? "\n- BAT" : "\n- BAT non généré"}${purchaseOrder ? "\n- Bon de commande" : "\n- Bon de commande non généré"}`,
+      subject: mode === 'special_request_received'
+        ? `[Demande${offerName ? ` ${offerName}` : ''}] ${standName}`
+        : `[BAT${purchaseOrder ? ' + BDC' : ''}${offerName ? ` ${offerName}` : ""}] Configuration ${standName} confirmée`,
+      html: adminNotificationEmailHtml({ clientName, toEmail, standName, eventName, offerName, sceneUrl, mode, specialRequest, hasTechnicalPlan: Boolean(technicalPlan), hasPurchaseOrder: Boolean(purchaseOrder) }),
+      text: `${mode === 'special_request_received' ? 'Nouvelle demande particulière' : 'Configuration confirmée'}\n\nExposant : ${clientName}\nEmail : ${toEmail || 'Non renseigné'}\nStand : ${standName}\nSalon : ${eventName}${offerName ? `\nFormule : Stand ${offerName}` : ""}${specialRequest ? `\nDemande : ${specialRequest}` : ''}\nLien : ${sceneUrl}\n\nPièces jointes :${technicalPlan ? "\n- BAT" : "\n- BAT non généré"}${purchaseOrder ? "\n- Bon de commande" : "\n- Aucun bon de commande (aucun lot AMCO)"}`,
       ...((technicalPlan || purchaseOrder) ? { attachments: [technicalPlan, purchaseOrder].filter(Boolean) } : {}),
     };
     const adminResponse = await sendResendEmail(resendApiKey, adminPayload);
+    adminSent = adminResponse.ok;
     adminResult = await adminResponse.json().catch(() => ({}));
     if (!adminResponse.ok) {
       console.error("Admin completion email failed", adminResult);
     }
   }
 
-  await supabase.from("scenes").update({
-    source_payload: {
-      ...(scene.source_payload || {}),
-      completion_email_sent_at: new Date().toISOString(),
-      completion_email_to: toEmail,
-      completion_email_admin_copy_to: notifyAdmin ? completionNotifyTo : "",
-      last_completion_email_mode: mode,
-    },
-  }).eq("id", scene.id);
+  if (clientSent || adminSent) {
+    await supabase.from("scenes").update({
+      source_payload: {
+        ...(scene.source_payload || {}),
+        ...(clientSent ? { completion_email_sent_at: new Date().toISOString(), completion_email_to: toEmail } : {}),
+        completion_email_admin_copy_to: adminSent && notifyAdmin ? completionNotifyTo : "",
+        last_completion_email_mode: mode,
+      },
+    }).eq("id", scene.id);
+  }
 
-  return json({ sent: true, to: maskEmail(toEmail), admin_to: notifyAdmin && completionNotifyTo ? maskEmail(completionNotifyTo) : null, provider_id: result?.id || null, admin_provider_id: adminResult?.id || null });
+  return json({ sent: toEmail ? clientSent : adminSent, admin_sent: adminSent, to: toEmail ? maskEmail(toEmail) : null, admin_to: notifyAdmin && completionNotifyTo ? maskEmail(completionNotifyTo) : null, provider_id: result?.id || null, admin_provider_id: adminResult?.id || null });
 });
 
 function sendResendEmail(resendApiKey: string, payload: Record<string, unknown>) {
@@ -118,8 +133,8 @@ function buildEmailContent({ mode, clientName, standName, eventName, offerName, 
   if (mode === "special_request_received") {
     return {
       subject: `Demande spécifique reçue pour ${standName}`,
-      html: specialRequestReceivedEmailHtml({ clientName, standName, eventName, sceneUrl, specialRequest }),
-      text: `Bonjour ${clientName},\n\nVotre configuration ${standName} pour ${eventName} a bien été sauvegardée.\nNous allons prendre en compte votre demande : ${specialRequest}\n\nNotre équipe revient vers vous sous 2 jours ouvrés avec les modifications réalisées sur votre scène.\nLien de votre scène : ${sceneUrl}\n\nL'équipe Stand-ING`,
+      html: specialRequestReceivedEmailHtml({ clientName, standName, eventName, sceneUrl, specialRequest, hasPurchaseOrder }),
+      text: `Bonjour ${clientName},\n\nVotre configuration ${standName} pour ${eventName} a bien été sauvegardée.\nNous allons prendre en compte votre demande : ${specialRequest}${hasPurchaseOrder ? '\n\nVotre bon de commande est joint à cet email.' : ''}\n\nNotre équipe revient vers vous sous 2 jours ouvrés avec les modifications réalisées sur votre scène.\nLien de votre scène : ${sceneUrl}\n\nL'équipe Stand-ING`,
     };
   }
   if (mode === "special_request_completed") {
@@ -136,7 +151,7 @@ function buildEmailContent({ mode, clientName, standName, eventName, offerName, 
   };
 }
 
-function specialRequestReceivedEmailHtml({ clientName, standName, eventName, sceneUrl, specialRequest }: { clientName: string; standName: string; eventName: string; sceneUrl: string; specialRequest: string }) {
+function specialRequestReceivedEmailHtml({ clientName, standName, eventName, sceneUrl, specialRequest, hasPurchaseOrder }: { clientName: string; standName: string; eventName: string; sceneUrl: string; specialRequest: string; hasPurchaseOrder: boolean }) {
   return `
   <div style="font-family:Arial,sans-serif;color:#172033;line-height:1.5">
     <h2 style="color:#1f4378;margin:0 0 12px">Votre configuration Stand-ING est sauvegardée</h2>
@@ -144,6 +159,7 @@ function specialRequestReceivedEmailHtml({ clientName, standName, eventName, sce
     <p>Votre configuration <strong>${escapeHtml(standName)}</strong> pour <strong>${escapeHtml(eventName)}</strong> a bien été sauvegardée.</p>
     <p>Nous allons prendre en compte votre demande :</p>
     <p style="background:#fff7df;border:1px solid #f5b42c;border-radius:10px;padding:12px;color:#8a5a00"><strong>${escapeHtml(specialRequest)}</strong></p>
+    ${hasPurchaseOrder ? '<p>Votre bon de commande est joint à cet email.</p>' : ''}
     <p>Notre équipe revient vers vous sous <strong>2 jours ouvrés</strong> avec les modifications réalisées sur votre scène.</p>
     <p><a href="${sceneUrl}" style="display:inline-block;background:#1f4378;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:bold">Voir ma configuration</a></p>
     ${emailSignatureHtml()}
@@ -215,12 +231,13 @@ Thank you and see you soon.
 ${emailSignatureText()}`;
 }
 
-function adminNotificationEmailHtml({ clientName, toEmail, standName, eventName, offerName, sceneUrl, mode, hasTechnicalPlan, hasPurchaseOrder }: { clientName: string; toEmail: string; standName: string; eventName: string; offerName: string; sceneUrl: string; mode: string; hasTechnicalPlan: boolean; hasPurchaseOrder: boolean }) {
-  const title = mode === "special_request_completed" ? "Demande spécifique traitée" : "Configuration exposant confirmée";
+function adminNotificationEmailHtml({ clientName, toEmail, standName, eventName, offerName, sceneUrl, mode, specialRequest, hasTechnicalPlan, hasPurchaseOrder }: { clientName: string; toEmail: string; standName: string; eventName: string; offerName: string; sceneUrl: string; mode: string; specialRequest: string; hasTechnicalPlan: boolean; hasPurchaseOrder: boolean }) {
+  const title = mode === 'special_request_received' ? 'Nouvelle demande particulière' : mode === "special_request_completed" ? "Demande spécifique traitée" : "Configuration exposant confirmée";
   return `
   <div style="font-family:Arial,sans-serif;color:#172033;line-height:1.5">
     <h2 style="color:#1f4378;margin:0 0 12px">${escapeHtml(title)}</h2>
-    <p>L'exposant vient de terminer sa configuration.</p>
+    <p>${mode === 'special_request_received' ? "L'exposant a envoyé une demande depuis l'étape 4." : "L'exposant vient de terminer sa configuration."}</p>
+    ${specialRequest && mode === 'special_request_received' ? `<p style="background:#fff7df;border:1px solid #f5b42c;border-radius:10px;padding:12px">${escapeHtml(specialRequest)}</p>` : ''}
     <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:14px 0;background:#f4f7fb;border-radius:10px;overflow:hidden">
       <tr><td style="padding:8px 12px;color:#687386">Exposant</td><td style="padding:8px 12px;font-weight:bold">${escapeHtml(clientName)}</td></tr>
       <tr><td style="padding:8px 12px;color:#687386">Email</td><td style="padding:8px 12px;font-weight:bold">${escapeHtml(toEmail)}</td></tr>

@@ -11411,6 +11411,61 @@ img.asset-thumb {
   border-left: 5px solid #f08420;
 }
 
+.request-order-editor {
+  grid-column: 1 / -1;
+  border-top: 1px solid #d9e1ed;
+  padding-top: 10px;
+}
+
+.request-order-editor summary {
+  color: #1f4378;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.request-order-editor > p {
+  margin: 9px 0;
+  color: #667084;
+  font-size: 0.82rem;
+}
+
+.request-order-line {
+  display: grid;
+  grid-template-columns: minmax(150px, 2fr) minmax(110px, 1fr) 80px 130px auto;
+  align-items: end;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.request-order-line label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.request-order-line input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #cdd6e4;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.request-order-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+@media (max-width: 850px) {
+  .request-order-line {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .special-request-row.pending {
   background: #fff8ed;
   border-left-color: #f08420;

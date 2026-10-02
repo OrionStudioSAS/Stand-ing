@@ -321,7 +321,7 @@ test('head information uses the scene renderer even with no uploaded image, incl
   assert.equal(information.length, 2);
   assert.equal(disposed, 4);
   assert.ok(text.some(({ value }) => value === 'NOM PERSONNALISÉ'));
-  assert.ok(text.some(({ value }) => value === '25A'));
+  assert.ok(text.some(({ value }) => value === 'A25'));
   assert.ok(text.some(({ value }) => value === 'PAVILLON 6'));
   assert.ok(rectangles.some(({ color }) => color === '#E20519'));
   const visuals = api.technicalPlanVisuals([...heads, { sourceOptions: {}, sourceHeadInformation: information }]);

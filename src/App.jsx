@@ -50,7 +50,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, markSceneSpecialRequestResolved, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveSceneManualOrderLines, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, signatureAllowancePerSquareMeter, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
 import { createTechnicalPlanBlob, exportTechnicalPng, standWallPanelRequirements } from './technicalExport.js';
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
@@ -1561,12 +1561,36 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       if (hasSpecialRequest) {
         let emailMessage = 'Un email de prise en compte vient d’être envoyé à l’adresse de contact de la scène.';
         try {
+          const directPurchaseOrder = purchaseOrderFromPricingLines(scenePricing.lines || [], availableCatalog);
+          let purchaseOrder = null;
+          let technicalPlan = null;
+          let attachmentIssue = false;
+          if (hasAmcoOrderLines(directPurchaseOrder)) {
+            try {
+              purchaseOrder = await scenePurchaseOrderEmailAttachment(confirmedScene, objectBank, directPurchaseOrder);
+            } catch (error) {
+              attachmentIssue = true;
+              console.warn('Special request BDC generation failed', error);
+            }
+          }
+          try {
+            technicalPlan = await sceneTechnicalPlanEmailAttachment(confirmedScene, objectBank);
+          } catch (error) {
+            attachmentIssue = true;
+            console.warn('Special request BAT generation failed', error);
+          }
           const emailResult = await sendSceneCompletionEmail(confirmedScene, {
             mode: 'special_request_received',
             specialRequest: requestText,
+            purchaseOrder,
+            technicalPlan,
           });
           if (emailResult?.sent === false) {
             emailMessage = 'La demande est enregistrée, mais l’email de prise en compte n’a pas pu être envoyé automatiquement.';
+          } else if (emailResult?.admin_sent === false) {
+            emailMessage = 'Votre demande est enregistrée, mais la notification à notre équipe n’a pas pu être envoyée automatiquement.';
+          } else if (attachmentIssue) {
+            emailMessage = 'Votre demande a bien été transmise, mais une pièce jointe n’a pas pu être générée. Notre équipe va la vérifier.';
           } else if (emailResult?.to) {
             emailMessage = `Un email de prise en compte vient d’être envoyé à ${emailResult.to}.`;
           }
@@ -1592,7 +1616,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           },
         };
         const directPurchaseOrder = purchaseOrderFromPricingLines(scenePricing.lines || [], availableCatalog);
-        const purchaseOrder = await scenePurchaseOrderEmailAttachment(purchaseOrderScene, objectBank, directPurchaseOrder);
+        const purchaseOrder = hasAmcoOrderLines(directPurchaseOrder)
+          ? await scenePurchaseOrderEmailAttachment(purchaseOrderScene, objectBank, directPurchaseOrder)
+          : null;
         const technicalPlan = await sceneTechnicalPlanEmailAttachment(purchaseOrderScene, objectBank);
         const emailResult = await sendSceneCompletionEmail(purchaseOrderScene, { purchaseOrder, technicalPlan });
         if (emailResult?.sent === false) {
@@ -4645,7 +4671,7 @@ function OptionsStepPanel({
           />
         </OptionAccordion>
       )}
-      <OptionAccordion {...accordionScrollProps('comptoir')} title={t('option_counter')} subtitle="Taille · Couleur · Logo" icon={<ConfiguratorOptionIcon src="/icons/comptoir_accueil.svg" />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
+      {!isSignatureStand && <OptionAccordion {...accordionScrollProps('comptoir')} title={t('option_counter')} subtitle="Taille · Couleur · Logo" icon={<ConfiguratorOptionIcon src="/icons/comptoir_accueil.svg" />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
         <CounterOptionCard
           items={counterItems}
           colors={counterColors}
@@ -4660,7 +4686,7 @@ function OptionsStepPanel({
           onVariant={onCounterVariant}
           onSelect={onSelectCounter}
         />
-      </OptionAccordion>
+      </OptionAccordion>}
 
     </>
   );
@@ -6868,6 +6894,7 @@ function ValidationStepPanel({
   const activeCovers = wallCoverSurfaces.filter((surface) => wallCoverEnabledForSurface(wallCovers, surface));
   const pendingVisuals = validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals, isSignatureStand, wallCovers, wallCoverSurfaces, items: safeItems });
   const insuranceLine = pricing?.insuranceLine;
+  const priceBadge = (amount) => validationBadgeText(amount, isSignatureStand);
   const sectionRows = {
     personalization: [],
     furniture: [],
@@ -6915,8 +6942,8 @@ function ValidationStepPanel({
         ...billableItems.flatMap((item) => itemOptionLines(item)),
       ]).slice(0, 2).join(' · '),
       imageUrl: isCounterLogo ? validationCounterLogoImage(sourceItem, entry, catalog) : validationItemImage(sourceItem, entry, catalog),
-      badge: validationBadgeText(line.total),
-      badgeTone: Number(line.total || 0) > 0 ? 'price' : 'included',
+      badge: priceBadge(line.total),
+      badgeTone: isSignatureStand || Number(line.total || 0) > 0 ? 'price' : 'included',
       visualStatus: isCounterLogo ? validationCounterLogoVisualStatus(sourceItem) : null,
       onOpen: sourceItem ? () => onOpenItem?.(sourceItem) : null,
       option: !isCounterLogo && Boolean(associatedItem || String(line.type || '').startsWith('global-option-')),
@@ -6940,24 +6967,24 @@ function ValidationStepPanel({
     detail: validationColorLabel(carpetColor),
     swatchColor: colorHex(carpetColor, '#b8b8b8'),
     swatchImage: colorTextureUrl(carpetColor),
-    badge: validationBadgeText(carpetSupplement),
-    badgeTone: carpetSupplement > 0 ? 'price' : 'included',
+    badge: priceBadge(carpetSupplement),
+    badgeTone: isSignatureStand || carpetSupplement > 0 ? 'price' : 'included',
   });
-  pushRow('personalization', {
+  if (!isSignatureStand) pushRow('personalization', {
     id: 'footprint',
     label: 'Empreinte moquette',
     detail: carpetFootprintEnabled ? validationColorLabel(carpetFootprintColor) : 'Non sélectionnée',
     swatchColor: colorHex(carpetFootprintColor, '#b8b8b8'),
     swatchImage: carpetFootprintEnabled ? colorTextureUrl(carpetFootprintColor) : '',
-    badge: validationBadgeText(footprintSupplement),
-    badgeTone: footprintSupplement > 0 ? 'price' : 'included',
+    badge: priceBadge(footprintSupplement),
+    badgeTone: isSignatureStand || footprintSupplement > 0 ? 'price' : 'included',
   });
   if (thickCarpetSupplement > 0) {
     pushRow('personalization', {
       id: 'thick-carpet',
       label: 'Option Moquette Épaisse',
       detail: 'S’applique à la moquette et à l’empreinte moquette',
-      badge: validationBadgeText(thickCarpetSupplement),
+      badge: priceBadge(thickCarpetSupplement),
       badgeTone: 'price',
       option: true,
     });
@@ -6968,8 +6995,8 @@ function ValidationStepPanel({
     detail: validationColorLabel(wallFabricColor),
     swatchColor: colorHex(wallFabricColor, '#b8b8b8'),
     swatchImage: colorTextureUrl(wallFabricColor),
-    badge: validationBadgeText(wallFabricSupplement),
-    badgeTone: wallFabricSupplement > 0 ? 'price' : 'included',
+    badge: priceBadge(wallFabricSupplement),
+    badgeTone: isSignatureStand || wallFabricSupplement > 0 ? 'price' : 'included',
   });
   pushRow('personalization', {
     id: 'reserve',
@@ -6977,21 +7004,23 @@ function ValidationStepPanel({
     detail: [reserveOptionType === '__none__' ? 'Non sélectionnée' : (reserveOption?.label || reserveRule?.includedLabel || 'Non configurée'), reserveOptionDetails].filter(Boolean).join(' · '),
     imageUrl: validationItemImage(null, reserveEntry, catalog),
     swatchColor: '#bdbdbd',
-    badge: validationBadgeText(reserveSupplement),
-    badgeTone: reserveSupplement > 0 ? 'price' : 'included',
+    badge: priceBadge(isSignatureStand ? Number(safeItems.find(isAutomaticReserveItem)?.options?.unitPrice || 0) : reserveSupplement),
+    badgeTone: isSignatureStand || reserveSupplement > 0 ? 'price' : 'included',
   });
 
   partitionHeadSelectedSides(partitionHeadRule, partitionHeadSides).forEach((side) => {
     const visual = partitionHeadVisuals?.[side] || {};
     const billable = partitionHeadBillableSides(partitionHeadRule, partitionHeadSides).has(side);
-    const sidePrice = billable ? Math.max(0, partitionHeadSupplement / Math.max(1, partitionHeadBillableSides(partitionHeadRule, partitionHeadSides).size)) : 0;
+    const sidePrice = isSignatureStand
+      ? Number(safeItems.find((item) => isAutomaticPartitionHeadItem(item) && item.options?.partitionHeadSide === side)?.options?.unitPrice || 0)
+      : billable ? Math.max(0, partitionHeadSupplement / Math.max(1, partitionHeadBillableSides(partitionHeadRule, partitionHeadSides).size)) : 0;
     pushRow('signage', {
       id: `partition-head-${side}`,
       label: 'Tête de cloison',
       detail: side === 'left' ? 'Gauche' : 'Droite',
       imageUrl: validationPartitionHeadThumb(side, catalog),
-      badge: validationBadgeText(sidePrice),
-      badgeTone: sidePrice > 0 ? 'price' : 'included',
+      badge: priceBadge(sidePrice),
+      badgeTone: isSignatureStand || sidePrice > 0 ? 'price' : 'included',
       visualStatus: !isSignatureStand || visual.headMainImageUrl || visual.headMainImageName
         ? validationVisualStatus(visual.visualPending, visual.headMainImageUrl || visual.headMainImageName)
         : '',
@@ -7007,8 +7036,8 @@ function ValidationStepPanel({
       detail: validationWallCoverDetail(surface, includedMl, billableMl),
       imageUrl: preview?.url || '',
       swatchColor: '#dfe5ee',
-      badge: validationBadgeText(total),
-      badgeTone: total > 0 ? 'price' : 'included',
+      badge: priceBadge(total),
+      badgeTone: isSignatureStand || total > 0 ? 'price' : 'included',
       visualStatus: validationVisualStatus(cover.visualPending, preview?.url || cover.previewUrl),
     });
   });
@@ -7024,7 +7053,7 @@ function ValidationStepPanel({
     });
   }
 
-  safeItems.filter(shopCartItemVisible).filter(isIncludedSceneItem).forEach((item) => {
+  safeItems.filter(shopCartItemVisible).filter((item) => !isSignatureStand && isIncludedSceneItem(item)).forEach((item) => {
     const entry = findCatalogEntry(catalog, item.type) || item;
     const section = validationCategoryFromEntry(entry, item);
     const mergedCounterSizeLine = isWoodReceptionDeskItem(item) ? counterSizeSupplementByItemId.get(item.id) : null;
@@ -7117,7 +7146,7 @@ function ValidationStepPanel({
         {hasSpecialRequest && (
           <div className="validation-warning-note">
             <strong>Demande détectée</strong>
-            <span>Votre bon de commande ne sera pas envoyé automatiquement. Stand-ING reviendra vers vous après traitement.</span>
+            <span>Votre demande sera transmise à Stand-ING. Si votre commande contient des éléments AMCO, votre bon de commande sera joint à l’e-mail de confirmation.</span>
           </div>
         )}
       </section>
@@ -7200,9 +7229,9 @@ function validationMoney(value = 0, cents = false) {
   });
 }
 
-function validationBadgeText(amount = 0) {
+function validationBadgeText(amount = 0, showZeroPrice = false) {
   const safeAmount = Number(amount || 0);
-  return safeAmount > 0 ? `+ ${validationMoney(safeAmount)}€` : 'Inclus';
+  return safeAmount > 0 || showZeroPrice ? `+ ${validationMoney(safeAmount)}€` : 'Inclus';
 }
 
 function wallCoverValidationRows(surfaces = [], includedMl = 0) {
@@ -8887,22 +8916,14 @@ function AdminDashboard({ user, adminProfile }) {
             <AdminSpecialRequestsView
               scenes={scenes}
               assets={assets}
-              onResolve={async (scene) => {
-                const updatedSource = {
-                  ...(scene.source_payload || {}),
-                  specialRequest: {
-                    ...sceneSpecialRequest(scene),
-                    status: 'resolved',
-                    resolvedAt: new Date().toISOString(),
-                  },
-                };
-                const updatedScene = { ...scene, status: 'configured', client_status: 'configured', source_payload: updatedSource };
-                await saveScene(updatedScene);
-                await syncSceneConfigToMonday(updatedScene);
-                const purchaseOrder = await scenePurchaseOrderEmailAttachment(updatedScene, assets);
-                const technicalPlan = await sceneTechnicalPlanEmailAttachment(updatedScene, assets);
-                await sendSceneCompletionEmail(updatedScene, { purchaseOrder, technicalPlan, mode: 'special_request_completed' });
+              onSaveManualLines={async (scene, lines) => {
+                const updatedScene = await saveSceneManualOrderLines(scene, lines);
                 setScenes((current) => current.map((item) => (item.id === scene.id ? updatedScene : item)));
+              }}
+              onResolve={async (scene) => {
+                const updatedScene = await markSceneSpecialRequestResolved(scene);
+                setScenes((current) => current.map((item) => (item.id === scene.id ? updatedScene : item)));
+                await syncSceneConfigToMonday(updatedScene);
               }}
             />
           )}
@@ -13427,7 +13448,7 @@ function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
 }
 
 
-function AdminSpecialRequestsView({ scenes, assets = [], onResolve }) {
+function AdminSpecialRequestsView({ scenes, assets = [], onResolve, onSaveManualLines }) {
   const [actionState, setActionState] = useState({ sceneId: '', message: '', error: '' });
   const [statusFilter, setStatusFilter] = useState('');
   const rows = useMemo(() => {
@@ -13448,7 +13469,7 @@ function AdminSpecialRequestsView({ scenes, assets = [], onResolve }) {
       await onResolve?.(scene);
       setActionState({ sceneId: '', message: `Demande traitée pour ${scene.client_name || scene.project_name || 'la scène'}.`, error: '' });
     } catch (error) {
-      setActionState({ sceneId: '', message: '', error: error.message || 'Envoi impossible.' });
+      setActionState({ sceneId: '', message: '', error: error.message || 'Impossible de marquer la demande comme traitée.' });
     }
   };
 
@@ -13481,16 +13502,73 @@ function AdminSpecialRequestsView({ scenes, assets = [], onResolve }) {
             <div><span>Statut</span><strong className={`special-request-status ${status.id}`}>{status.label}</strong><small>{status.detail}</small></div>
             <div className="stand-actions">
               <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Modifier la scène</a>
+              {hasAmcoOrderLines(order) && <button type="button" onClick={() => downloadScenePurchaseOrder(scene, assets)}>Télécharger le BDC</button>}
+              {scene.client_email && <a href={requestReplyMailto(scene)}>Valider par e-mail</a>}
               <button type="button" disabled={status.id === 'resolved' || actionState.sceneId === scene.id} onClick={() => resolve(scene)}>
-                {actionState.sceneId === scene.id ? 'Envoi...' : 'Modifications réalisées + BDC'}
+                {actionState.sceneId === scene.id ? 'Enregistrement...' : 'Marquer traitée'}
               </button>
             </div>
+            <AdminRequestOrderEditor scene={scene} onSave={(lines) => onSaveManualLines?.(scene, lines)} />
           </article>
         );
       }) : <div className="admin-empty-row">Aucune demande spécifique avec ce filtre.</div>}
       </section>
     </section>
   );
+}
+
+function requestReplyMailto(scene = {}) {
+  const subject = `Votre demande pour ${scene.project_name || scene.client_name || 'votre stand'}`;
+  const recipient = encodeURIComponent(String(scene.client_email || '').trim()).replace(/%40/gi, '@');
+  return `mailto:${recipient}?subject=${encodeURIComponent(subject)}`;
+}
+
+function AdminRequestOrderEditor({ scene, onSave }) {
+  const [lines, setLines] = useState(() => scene.source_payload?.manualPurchaseOrderLines || []);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setLines(scene.source_payload?.manualPurchaseOrderLines || []);
+  }, [scene.source_payload?.manualPurchaseOrderLines]);
+
+  const updateLine = (id, patch) => setLines((current) => current.map((line) => line.id === id ? { ...line, ...patch } : line));
+  const save = async () => {
+    if (lines.some((line) => !String(line.label || '').trim() || !Number.isFinite(Number(line.quantity)) || Number(line.quantity) <= 0 || !Number.isFinite(Number(line.unitPrice)) || Number(line.unitPrice) < 0)) {
+      setError('Renseignez une désignation, une quantité positive et un prix HT valide pour chaque ligne.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      await onSave(lines.map((line) => ({ id: line.id, label: String(line.label).trim(), reference: String(line.reference || '').trim(), quantity: Number(line.quantity), unitPrice: Number(line.unitPrice) })));
+      setMessage('Lignes enregistrées sur le bon de commande. Aucun e-mail envoyé.');
+    } catch (saveError) {
+      setError(saveError.message || 'Impossible d’enregistrer les lignes.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <details className="request-order-editor">
+    <summary>Éléments manuels du bon de commande ({lines.length})</summary>
+    <p>Ajoutez les éléments convenus avec l’exposant. Téléchargez ensuite le BDC pour l’envoyer manuellement si besoin.</p>
+    {lines.map((line) => <div className="request-order-line" key={line.id}>
+      <label>Désignation<input value={line.label || ''} onChange={(event) => updateLine(line.id, { label: event.target.value })} placeholder="Ex : mobilier supplémentaire" /></label>
+      <label>Référence<input value={line.reference || ''} onChange={(event) => updateLine(line.id, { reference: event.target.value })} placeholder="Optionnel" /></label>
+      <label>Qté<input type="number" min="0.01" step="0.01" value={line.quantity} onChange={(event) => updateLine(line.id, { quantity: event.target.value })} /></label>
+      <label>Prix unitaire HT<input type="number" min="0" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(line.id, { unitPrice: event.target.value })} /></label>
+      <button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.id !== line.id))} aria-label={`Retirer ${line.label || 'la ligne'}`}>Retirer</button>
+    </div>)}
+    <div className="request-order-actions">
+      <button type="button" onClick={() => setLines((current) => [...current, { id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, label: '', reference: '', quantity: 1, unitPrice: 0 }])}>Ajouter une ligne</button>
+      <button type="button" disabled={saving} onClick={save}>{saving ? 'Enregistrement...' : 'Enregistrer les lignes'}</button>
+    </div>
+    {message && <p className="sync-result success">{message}</p>}
+    {error && <p className="sync-result error">{error}</p>}
+  </details>;
 }
 
 function sceneSpecialRequest(scene = {}) {
@@ -13631,9 +13709,34 @@ function scenePurchaseOrder(scene = {}, assets = []) {
   const sourceLines = savedLines.length
     ? enrichPurchaseOrderLinesWithFallback(savedLines, fallbackPricing.lines)
     : fallbackPricing.lines;
-  const lines = normalizePurchaseOrderLines(withPackAllowance(sourceLines, scenePackBenefits(scene)), catalogEntries);
+  const lines = normalizePurchaseOrderLines(withPackAllowance([...sourceLines, ...manualPurchaseOrderLines(scene)], scenePackBenefits(scene)), catalogEntries);
   const total = lines.reduce((sum, line) => sum + line.total, 0);
   return { lines, total: roundCurrency(total), header: purchaseOrderHeaderInfo(scene) };
+}
+
+function manualPurchaseOrderLines(scene = {}) {
+  const saved = scene.source_payload?.manualPurchaseOrderLines;
+  if (!Array.isArray(saved)) return [];
+  return saved.map((row, index) => {
+    const quantity = Number(row.quantity);
+    const unitPrice = Number(row.unitPrice);
+    return {
+      type: `admin-manual-${row.id || index}`,
+      label: String(row.label || '').trim(),
+      reference: String(row.reference || '').trim(),
+      quantity,
+      unitPrice,
+      total: roundCurrency(quantity * unitPrice),
+    };
+  }).filter((line) => line.label && Number.isFinite(line.quantity) && line.quantity > 0 && Number.isFinite(line.unitPrice) && line.unitPrice >= 0);
+}
+
+function hasAmcoOrderLines(order = {}) {
+  return (order.lines || []).some((line) => Number(line.quantity) > 0
+    && Number(line.total) > 0
+    && !line.mandatory
+    && line.type !== packAllowanceLineType
+    && line.type !== 'mandatory-furniture-insurance');
 }
 
 function enrichPurchaseOrderLinesWithFallback(lines = [], fallbackLines = []) {
@@ -13692,9 +13795,10 @@ function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
         quantity,
         unitPrice,
         total: total || unitPrice * quantity,
+        mandatory: Boolean(line.mandatory),
       };
     })
-    .filter((line) => line.quantity > 0 && (line.total > 0 || (line.type === packAllowanceLineType && line.total < 0)));
+    .filter((line) => line.quantity > 0 && (line.total > 0 || (line.type === packAllowanceLineType && line.total < 0) || line.type.startsWith('admin-manual-')));
 }
 
 function purchaseOrderBaseLabel(label = '') {
@@ -13928,12 +14032,13 @@ function wrapPdfText(text = '', maxWidth = 300, font, fontSize = 12) {
 
 function purchaseOrderTemplateRows(lines = []) {
   const allowanceLine = lines.find((line) => line.type === packAllowanceLineType);
-  if (!allowanceLine || lines.length <= 15) return lines;
+  if (lines.length <= 15) return lines;
   const regularLines = lines.filter((line) => line.type !== packAllowanceLineType);
-  const remainingTotal = roundCurrency(regularLines.slice(13).reduce((sum, line) => sum + Number(line.total || 0), 0));
-  return [...regularLines.slice(0, 13), {
+  const visibleCount = allowanceLine ? 13 : 14;
+  const remainingTotal = roundCurrency(regularLines.slice(visibleCount).reduce((sum, line) => sum + Number(line.total || 0), 0));
+  return [...regularLines.slice(0, visibleCount), {
     label: 'Autres accessoires et options', quantity: 1, unitPrice: remainingTotal, total: remainingTotal,
-  }, allowanceLine];
+  }, ...(allowanceLine ? [allowanceLine] : [])];
 }
 
 async function fillPurchaseOrderTemplate(order = {}) {
@@ -14948,7 +15053,7 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
   const entry = findCatalogEntry(catalogEntries, type);
   if (!entry) return [];
 
-  const billable = Boolean(selectedOption || rule.chargeIncluded);
+  const billable = Boolean(selectedOption || rule.chargeIncluded || isSignaturePackLabel(salonLabel));
   const unitPrice = billable ? reserveOptionPrice(selectedOption || {}, entry, salonLabel) : 0;
   const base = makeItem(type, width, depth, layout, entry);
   const item = constrainItem({
@@ -14956,7 +15061,7 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
     id: `auto-reserve-${rule.id}`,
     label: selectedOption
       ? (selectedOption.label || entry.label || 'Réserve complémentaire')
-      : (rule.includedLabel || entry.label || 'Réserve incluse'),
+      : (isSignaturePackLabel(salonLabel) ? entry.label || rule.includedLabel || 'Réserve' : rule.includedLabel || entry.label || 'Réserve incluse'),
     autoReserve: true,
     included: !billable,
     priceMode: billable ? 'billable' : 'included',
@@ -15080,9 +15185,11 @@ function makeAutomaticPartitionHeadItems(rule, sides = {}, catalogEntries = [], 
     const entry = matchingSmclEntry || configuredEntry;
     if (!entry) return null;
     const type = entry.type || configuredType;
-    const billable = billableSides.has(side);
+    const billable = billableSides.has(side) || isSignaturePackLabel(salonLabel);
     const price = side === 'left' ? rule.leftPrice : rule.rightPrice;
-    const unitPrice = billable ? firstPriceValue(assetUnitPrice(entry, salonLabel), price, 0) : 0;
+    const unitPrice = billable ? (isSignaturePackLabel(salonLabel)
+      ? assetUnitPrice(entry, salonLabel) || Number(price) || 0
+      : firstPriceValue(assetUnitPrice(entry, salonLabel), price, 0)) : 0;
     const base = makeItem(type, width, depth, layout, entry);
     const isSmclHead = isSmclPartitionHeadItem(entry);
     const isSignatureHead = isSignaturePartitionHeadItem(entry);
@@ -15140,7 +15247,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
   const basePrice = 0;
   const baseItems = sceneBaseItems(scene);
   const baseItemsConfigured = sceneHasBaseItems(scene);
-  const includedSceneCounts = countSceneItems(safeItems.filter(isIncludedSceneItem));
+  const includedSceneCounts = isSignatureScene(scene) ? new Map() : countSceneItems(safeItems.filter(isIncludedSceneItem));
   const baseItemCounts = baseItemsToCountMap(baseItems);
   const includedCounts = baseItemsConfigured
     ? mergeIncludedCountMaps(includedSceneCounts, baseItemCounts)
@@ -15341,6 +15448,14 @@ function pricingLineLabelForItems(items = [], entry = {}, fallbackType = '') {
 }
 
 function wallCoverIncludedLinearMeters(scene = {}) {
+  if (isSignatureScene(scene)) {
+    const area = Number(scene.dimensions?.width || scene.width_m || 0) * Number(scene.dimensions?.depth || scene.depth_m || 0);
+    if (area < 9) return 0;
+    if (area < 15) return 2;
+    if (area < 24) return 3;
+    if (area < 36) return 3.5;
+    return 4;
+  }
   if (scenePackBenefits(scene).mode === 'allowance') return 0;
   const boardId = String(scene.source_payload?.board_id || scene.source_payload?.boardId || scene.monday_board_id || '');
   const key = normalizeTextValue([
@@ -20305,9 +20420,10 @@ function normalizeSmclHallNumber(value = '') {
     .toUpperCase();
 }
 
-function smclStandCode(aisleNumber = '', standNumber = '') {
+function smclStandCode(standNumber = '', aisleNumber = '') {
   if (!aisleNumber && !standNumber) return '—';
   if (aisleNumber && standNumber && standNumber.startsWith(aisleNumber)) return standNumber;
+  if (aisleNumber && standNumber && standNumber.endsWith(aisleNumber)) return `${aisleNumber}${standNumber.slice(0, -aisleNumber.length)}`;
   return `${aisleNumber}${standNumber}` || '—';
 }
 
