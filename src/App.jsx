@@ -12039,6 +12039,18 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     if (activeGroupRowUid === uid) setSelectedGroupRowUid(groupRows.find((row) => row.uid !== uid)?.uid || null);
   };
 
+  const addGroupRowType = (type) => {
+    const last = [...groupRows].reverse().find((row) => row.type === type);
+    const uid = `group-row-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setGroupRows((current) => [...current, { uid, type, x: Number(last?.x || 0) + 0.2, z: Number(last?.z || 0) + 0.2, rotation: Number(last?.rotation || 0) }]);
+    setSelectedGroupRowUid(uid);
+  };
+
+  const removeGroupRowType = (type) => {
+    const row = [...groupRows].reverse().find((item) => item.type === type);
+    if (row && groupRows.length > 1) removeGroupRow(row.uid);
+  };
+
   const reorderGroupRow = (targetUid) => {
     if (!draggingGroupRowUid || draggingGroupRowUid === targetUid) return;
     setGroupRows((current) => moveArrayItem(
@@ -12189,12 +12201,13 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     <div className="asset-drawer-layer" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose?.();
     }}>
-      <aside className={`asset-drawer ${isSimpleAsset ? 'asset-drawer--simple' : ''}`} role="dialog" aria-modal="true" aria-label={`Modifier ${draft.label || 'un asset'}`}>
+      <aside className={`asset-drawer ${isSimpleAsset ? 'asset-drawer--simple' : ''} ${isGroupAsset || isVariantGroup ? 'asset-group-design asset-group-edit' : ''}`} role="dialog" aria-modal="true" aria-label={`Modifier ${draft.label || 'un asset'}`}>
         <header>
           {isSimpleAsset && <span className="asset-drawer-header-thumb">{draft.thumbnail_url ? <img src={draft.thumbnail_url} alt="" /> : null}</span>}
           <div className="asset-drawer-header-copy">
-            <div><h2>{draft.label}</h2><span>{isSimpleAsset ? assetBusinessCategoryLabel(draft, assets) : assetCategoryLabel(draft)}</span></div>
+            <div><h2>{draft.label}</h2>{!(isGroupAsset || isVariantGroup) && <span>{isSimpleAsset ? assetBusinessCategoryLabel(draft, assets) : assetCategoryLabel(draft)}</span>}</div>
             {isSimpleAsset && <small>Fichier {assetFormat(draft)}</small>}
+            {(isGroupAsset || isVariantGroup) && <small>{isVariantGroup ? 'Un objet décliné en plusieurs versions.' : 'Plusieurs objets ajoutés ensemble dans la scène.'}</small>}
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
         </header>
@@ -12571,14 +12584,13 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
         )}
 
         {isVariantGroup && (
-          <section className="asset-variants-settings">
+          <section className="asset-variants-settings asset-variant-main">
             <div className="asset-variants-head">
               <div>
-                <h3>Objets associés au groupe</h3>
-                <small>Sélectionne les vrais objets 3D qui deviendront les variantes proposées dans la boutique.</small>
+                <h3>Variantes · {variantAssetTypes.length}</h3>
               </div>
-              <button type="button" onClick={() => setVariantAssetTypes((current) => [...current, variantSourceAssetsList.find((asset) => !current.includes(asset.type))?.type || variantSourceAssetsList[0]?.type || ''])}>
-                <Plus size={14} /> Objet
+              <button type="button" disabled={variantAssetTypes.length >= variantSourceAssetsList.length} onClick={() => setVariantAssetTypes((current) => [...current, variantSourceAssetsList.find((asset) => !current.includes(asset.type))?.type || ''])}>
+                Ajouter une variante
               </button>
             </div>
             <AssetVariantSourceRows
@@ -12594,6 +12606,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
               onRemove={(index) => setVariantAssetTypes((current) => current.filter((_, itemIndex) => itemIndex !== index))}
               onReorder={(fromIndex, toIndex) => setVariantAssetTypes((current) => moveArrayItem(current, fromIndex, toIndex))}
             />
+            <div className="asset-group-composition-add"><Plus size={16} /><AdminAssetPicker assets={variantSourceAssetsList.filter((asset) => !variantAssetTypes.includes(asset.type))} value="" placeholder="Ajouter un objet" onChange={(type) => { if (type) setVariantAssetTypes((current) => [...current, type]); }} /></div>
 
             <div className="asset-variants-head compact">
               <div>
@@ -12629,8 +12642,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           <div><dt>Ajouté par</dt><dd>{draft.dimensions?.addedBy || 'Stand-ING'}</dd></div>
         </dl>}
 
-        <section className="asset-assignment" style={{ display: isSimpleAsset && activeTab !== 'packs' ? 'none' : undefined }}>
-          <h3>Affectation par pack</h3>
+        <section className={`asset-assignment ${isGroupAsset || isVariantGroup ? 'asset-assignment--pills' : ''}`} style={{ display: isSimpleAsset && activeTab !== 'packs' ? 'none' : undefined }}>
+          <h3>{isGroupAsset || isVariantGroup ? 'Visible dans les packs' : 'Affectation par pack'}</h3>
           {isSimpleAsset && <p>Activez l'objet pour chaque pack où il peut être posé. Prix et référence peuvent différer d'un pack à l'autre.</p>}
           {(packChoices.length ? packChoices : ['Confort', 'Prestige', 'Signature']).map((pack) => {
             const active = assignedPacks.includes(pack);
@@ -12638,10 +12651,9 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
             const packSalonLabels = adminSalons.filter((salon) => [...(salon.offers || []), ...(salon.packDefinitions || [])].some((offer) => samePackLabel(offer.name, pack))).map((salon) => salon.name.replace(/\s*20\d{2}.*/, '')).filter(Boolean);
             return (
               <div key={pack} className="asset-salon-pricing-row">
-                <button type="button" onClick={() => togglePack(pack)}>
+                <button type="button" className={active ? 'active' : ''} aria-pressed={active} onClick={() => togglePack(pack)}>
                   <strong>{pack} {isSimpleAsset && packSalonLabels.length > 0 && <small className="asset-pack-salon-badge">{[...new Set(packSalonLabels)].join(', ')}</small>}</strong>
-                  <span>{active ? 'Actif' : 'Inactif'}</span>
-                  <i className={active ? 'active' : ''} />
+                  {!(isGroupAsset || isVariantGroup) && <><span>{active ? 'Actif' : 'Inactif'}</span><i className={active ? 'active' : ''} /></>}
                 </button>
                 {active && !isVariantGroup && !isColorGroup && (
                   <div className="asset-salon-pricing-fields">
@@ -12680,7 +12692,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
         {isGroupAsset && (
           <>
             <section className="asset-group-builder">
-              <h3>Composition du groupe</h3>
+              <h3>Objets du groupe · {groupRows.length}</h3>
+              <AssetGroupCompositionSummary rows={groupRows} sourceAssets={sourceAssets} onAdd={addGroupRowType} onRemove={removeGroupRowType} />
               <p>Tu peux modifier les objets, leur position X/Z et les déplacer directement sur le mini-plan, avec un pas précis de 1 cm.</p>
               <MiniGroupPlan
                 rows={groupRows}
@@ -12689,6 +12702,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
                 onSelect={setSelectedGroupRowUid}
                 onMove={(uid, position) => updateGroupRow(uid, position)}
               />
+              <details className="asset-group-precise"><summary>Position et réglages précis de chaque objet</summary>
               {groupRows.map((row) => {
                 const selectedSource = sourceAssets.find((source) => source.type === row.type);
                 return (
@@ -12722,13 +12736,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
                   </article>
                 );
               })}
-              <button type="button" className="asset-group-add-row" onClick={() => {
-                const uid = `group-row-${Date.now()}`;
-                setGroupRows((current) => [...current, { uid, type: fallbackType, x: 0, z: 0, rotation: 0 }]);
-                setSelectedGroupRowUid(uid);
-              }}>
-                <Plus size={14} /> Ajouter un objet au groupe
-              </button>
+              </details>
             </section>
           </>
         )}
@@ -13062,36 +13070,32 @@ function AssetTextureSlotRows({ rows, onChange, onRemove }) {
 
 function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, colorTemplatesEnabled = false, batPictoUploading = false, onBatPictoChange, onItemImageChange, onMetaChange, onChange, onRemove, onReorder }) {
   const [draggingIndex, setDraggingIndex] = useState(null);
-  if (!sourceAssets.length) return <p className="asset-variants-empty">Aucun objet disponible pour créer des variantes.</p>;
+  if (!sourceAssets.length && !rows.length) return <p className="asset-variants-empty">Aucun objet disponible pour créer des variantes.</p>;
   if (!rows.length) return <p className="asset-variants-empty">Aucun objet associé : ce groupe ne s'affichera pas encore dans la boutique.</p>;
   const dropOn = (targetIndex) => {
     if (draggingIndex === null || draggingIndex === targetIndex) return;
     onReorder?.(draggingIndex, targetIndex);
   };
   return (
-    <div className="asset-variant-list">
+    <div className="asset-variant-list asset-variant-compact-list">
       {rows.map((type, index) => {
-        const selectedSource = sourceAssets.find((asset) => asset.type === type) || sourceAssets[0];
+        const selectedSource = sourceAssets.find((asset) => asset.type === type);
         const meta = variantMeta[type] || {};
         return (
           <article
             key={`${type}-${index}`}
             className={`asset-variant-row source-row ${colorTemplatesEnabled ? 'has-color-templates' : ''} ${draggingIndex === index ? 'dragging' : ''}`}
-            draggable={Boolean(onReorder)}
-            onDragStart={() => setDraggingIndex(index)}
             onDragOver={(event) => event.preventDefault()}
             onDrop={() => dropOn(index)}
-            onDragEnd={() => setDraggingIndex(null)}
           >
-            <div className="asset-picker-field">
-              <span>Objet variante</span>
-              <AdminAssetPicker assets={sourceAssets} value={type} onChange={(nextType) => onChange(index, nextType)} />
+            <div className="asset-variant-compact-head">
+              <span className="asset-variant-drag" draggable={Boolean(onReorder)} onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; setDraggingIndex(index); }} onDragEnd={() => setDraggingIndex(null)} aria-label="Déplacer la variante">⋮⋮</span>
+              <span className="asset-variant-compact-thumb">{selectedSource?.thumbnail_url ? <img src={selectedSource.thumbnail_url} alt="" /> : <Box size={17} />}</span>
+              <span className="asset-variant-compact-copy"><strong>{selectedSource?.label || type || 'Objet'}</strong><small>{selectedSource ? selectedSource.dimensions?.variantLabel || assetCategoryLabel(selectedSource) : 'Objet introuvable'}</small></span>
+              {index === 0 ? <span className="asset-variant-default">Par défaut</span> : <button type="button" className="asset-variant-set-default" onClick={() => onReorder?.(index, 0)}>Définir par défaut</button>}
+              <button type="button" className="asset-variant-remove" onClick={() => onRemove(index)} aria-label={`Retirer ${selectedSource?.label || 'cette variante'}`}><Trash2 size={15} /></button>
             </div>
-            <div className="asset-variant-source-summary">
-              <span>{selectedSource?.thumbnail_url ? <img src={selectedSource.thumbnail_url} alt="" /> : <Box size={20} />}</span>
-              <strong>{selectedSource?.label || 'Objet'}</strong>
-              <small>{assetCategoryLabel(selectedSource || {})} · {assetSizeLabel(selectedSource || {})}</small>
-            </div>
+            <details className="asset-variant-advanced"><summary>Choisir l'objet et régler la variante</summary><div className="asset-picker-field"><span>Objet variante</span><AdminAssetPicker assets={sourceAssets} value={type} onChange={(nextType) => onChange(index, nextType)} /></div>
             {onBatPictoChange && !colorTemplatesEnabled && (
               <label className="variant-bat-picto-upload">
                 <FileImage size={13} />
@@ -13107,7 +13111,6 @@ function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, colorTem
                 />
               </label>
             )}
-            <button type="button" onClick={() => onRemove(index)} aria-label="Retirer cet objet"><Trash2 size={14} /></button>
             {colorTemplatesEnabled && (
               <div className="variant-color-template-settings">
                 <p>
@@ -13134,11 +13137,31 @@ function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, colorTem
                 />
               </div>
             )}
+            </details>
           </article>
         );
       })}
     </div>
   );
+}
+
+function AssetGroupCompositionSummary({ rows = [], sourceAssets = [], onAdd, onRemove }) {
+  const counts = rows.reduce((result, row) => {
+    if (row.type) result.set(row.type, (result.get(row.type) || 0) + 1);
+    return result;
+  }, new Map());
+  return <div className="asset-group-composition-summary">
+    <div className="asset-group-composition-list">{[...counts].map(([type, quantity]) => {
+      const source = sourceAssets.find((asset) => asset.type === type);
+      return <div className="asset-group-composition-item" key={type}>
+        <span className="asset-group-composition-grip" aria-hidden="true">⋮⋮</span>
+        <AdminAssetPickerThumb asset={source} />
+        <span className="asset-group-composition-name"><strong>{source?.label || type}</strong><small>{source?.dimensions?.isVariantGroup ? 'Groupe de variantes' : 'Asset'}</small></span>
+        <span className="asset-group-quantity"><button type="button" disabled={rows.length <= 1} onClick={() => onRemove(type)} aria-label={`Retirer un ${source?.label || type}`}><Minus size={13} /></button><strong>{quantity}</strong><button type="button" onClick={() => onAdd(type)} aria-label={`Ajouter un ${source?.label || type}`}><Plus size={13} /></button></span>
+      </div>;
+    })}</div>
+    <div className="asset-group-composition-add"><Plus size={16} /><AdminAssetPicker assets={sourceAssets} value="" placeholder="Ajouter un objet" onChange={(type) => { if (type) onAdd(type); }} /></div>
+  </div>;
 }
 
 function VariantColorTemplateCard({ title, format, imageUrl = '', sourceColor = '', uploading = false, onImageChange, onColorChange }) {
@@ -13276,28 +13299,30 @@ function AssetVariantGroupCreator({ assets, scenes, salons: adminSalons = [], on
 
   return (
     <div className="asset-drawer-layer">
-      <aside className="asset-drawer asset-group-drawer">
+      <aside className="asset-drawer asset-group-drawer asset-group-design asset-variant-create" role="dialog" aria-modal="true" aria-label="Nouveau groupe de variantes">
         <header>
           <div>
-            <h2>Créer un groupe de variantes</h2>
-            <span>Une fiche boutique, plusieurs objets 3D réels.</span>
+            <h2>Nouveau groupe de variantes</h2>
+            <span>Un objet décliné en plusieurs versions (couleur, matière, taille).</span>
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
         </header>
 
-        <label className="asset-group-field">
+        <div className="asset-group-design-content">
+
+        <label className="asset-group-field asset-group-name-field">
           <span>Nom du groupe</span>
           <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex : Téléviseurs LCD" />
         </label>
 
-        <label className="asset-group-field">
-          <span>Catégorie boutique</span>
+        <label className="asset-group-field asset-group-category-field">
+          <span>Catégorie</span>
           <select value={category} onChange={(event) => setCategory(event.target.value)}>
             {assetCategoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
         </label>
 
-        <label className="asset-group-field">
+        <label className="asset-group-field asset-group-bat-field">
           <span>Descriptif BAT</span>
           <textarea
             value={batDescription}
@@ -13307,14 +13332,13 @@ function AssetVariantGroupCreator({ assets, scenes, salons: adminSalons = [], on
           />
         </label>
 
-        <section className="asset-variants-settings">
+        <section className="asset-variants-settings asset-variant-main">
           <div className="asset-variants-head">
             <div>
-              <h3>Objets variantes</h3>
-              <small>Exemple : TV 32, TV 43, TV 65. Ce sont ces objets qui seront réellement posés sur la scène.</small>
+              <h3>Variantes · {rows.length}</h3>
             </div>
-            <button type="button" onClick={() => setRows((current) => [...current, sourceAssets.find((asset) => !current.includes(asset.type))?.type || fallbackType])} disabled={!sourceAssets.length}>
-              <Plus size={14} /> Objet
+            <button type="button" onClick={() => setRows((current) => { const next = sourceAssets.find((asset) => !current.includes(asset.type)); return next ? [...current, next.type] : current; })} disabled={rows.length >= sourceAssets.length}>
+              Ajouter une variante
             </button>
           </div>
           <AssetVariantSourceRows
@@ -13324,9 +13348,10 @@ function AssetVariantGroupCreator({ assets, scenes, salons: adminSalons = [], on
             onRemove={(index) => setRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}
             onReorder={(fromIndex, toIndex) => setRows((current) => moveArrayItem(current, fromIndex, toIndex))}
           />
+          <div className="asset-group-composition-add"><Plus size={16} /><AdminAssetPicker assets={sourceAssets.filter((asset) => !rows.includes(asset.type))} value="" placeholder="Ajouter un objet" onChange={(type) => { if (type) setRows((current) => [...current, type]); }} /></div>
         </section>
 
-        <section className="asset-variants-settings">
+        <section className="asset-variants-settings asset-variant-options">
           <div className="asset-variants-head">
             <div>
               <h3>Options</h3>
@@ -13349,19 +13374,19 @@ function AssetVariantGroupCreator({ assets, scenes, salons: adminSalons = [], on
           />
         </section>
 
-        <section className="asset-assignment">
-          <h3>Affectation par pack</h3>
+        <section className="asset-assignment asset-assignment--pills">
+          <h3>Visible dans les packs</h3>
           {(packChoices.length ? packChoices : ['Confort', 'Prestige', 'Signature']).map((pack) => {
             const active = assignedPacks.includes(pack);
             return (
-              <button key={pack} type="button" onClick={() => togglePack(pack)}>
+              <button key={pack} type="button" className={active ? 'active' : ''} aria-pressed={active} onClick={() => togglePack(pack)}>
                 <strong>{pack}</strong>
-                <span>{active ? 'Actif' : 'Inactif'}</span>
-                <i className={active ? 'active' : ''} />
               </button>
             );
           })}
         </section>
+
+        </div>
 
         <footer>
           <button type="button" className="asset-delete" onClick={onClose}>Annuler</button>
@@ -13414,6 +13439,18 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
     ));
   };
 
+  const addRowType = (type) => {
+    const last = [...rows].reverse().find((row) => row.type === type);
+    const uid = `group-row-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setRows((current) => [...current, { uid, type, x: Number(last?.x || 0) + 0.2, z: Number(last?.z || 0) + 0.2, rotation: Number(last?.rotation || 0) }]);
+    setSelectedRowUid(uid);
+  };
+
+  const removeRowType = (type) => {
+    const row = [...rows].reverse().find((item) => item.type === type);
+    if (row) removeRow(row.uid);
+  };
+
   const togglePack = (pack) => {
     setAssignedPacks((current) => (current.includes(pack) ? current.filter((item) => item !== pack) : [...current, pack]));
   };
@@ -13446,28 +13483,30 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
 
   return (
     <div className="asset-drawer-layer">
-      <aside className="asset-drawer asset-group-drawer">
+      <aside className="asset-drawer asset-group-drawer asset-group-design asset-object-create" role="dialog" aria-modal="true" aria-label="Nouveau groupe d'objets">
         <header>
           <div>
-            <h2>Créer un groupe d'objets</h2>
-            <span>Groupe manipulable en un seul bloc</span>
+            <h2>Nouveau groupe d'objets</h2>
+            <span>Plusieurs objets ajoutés ensemble dans la scène.</span>
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
         </header>
 
-        <label className="asset-group-field">
+        <div className="asset-group-design-content">
+
+        <label className="asset-group-field asset-group-name-field">
           <span>Nom du groupe</span>
           <input value={name} onChange={(event) => setName(event.target.value)} />
         </label>
 
-        <label className="asset-group-field">
-          <span>Catégorie boutique</span>
+        <label className="asset-group-field asset-group-category-field">
+          <span>Catégorie</span>
           <select value={category} onChange={(event) => setCategory(event.target.value)}>
             {assetCategoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
         </label>
 
-        <label className="asset-group-field">
+        <label className="asset-group-field asset-group-bat-field">
           <span>Descriptif BAT</span>
           <textarea
             value={batDescription}
@@ -13489,8 +13528,9 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
         </section>
 
         <section className="asset-group-builder">
-          <h3>Objets du groupe</h3>
-          <p>Place les objets directement sur le plan en vue du dessus. Les champs X/Z restent disponibles pour l'ajustement précis au centimètre.</p>
+          <h3>Objets du groupe · {rows.length}</h3>
+          <AssetGroupCompositionSummary rows={rows} sourceAssets={sourceAssets} onAdd={addRowType} onRemove={removeRowType} />
+          <p>Place les objets sur le plan en vue du dessus ; les champs X/Z restent disponibles pour l'ajustement au centimètre.</p>
           <MiniGroupPlan
             rows={rows}
             sourceAssets={sourceAssets}
@@ -13498,6 +13538,7 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
             onSelect={setSelectedRowUid}
             onMove={(uid, position) => updateRow(uid, position)}
           />
+          <details className="asset-group-precise"><summary>Position et réglages précis de chaque objet</summary>
           {rows.map((row, index) => {
             const selectedSource = sourceAssets.find((asset) => asset.type === row.type);
             return (
@@ -13530,28 +13571,22 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
               </article>
             );
           })}
-          <button type="button" className="asset-group-add-row" onClick={() => {
-            const uid = `group-row-${Date.now()}`;
-            setRows((current) => [...current, { uid, type: fallbackType, x: 0, z: 0, rotation: 0 }]);
-            setSelectedRowUid(uid);
-          }}>
-            <Plus size={14} /> Ajouter un objet au groupe
-          </button>
+          </details>
         </section>
 
-        <section className="asset-assignment">
-          <h3>Affectation par pack</h3>
+        <section className="asset-assignment asset-assignment--pills">
+          <h3>Visible dans les packs</h3>
           {(packChoices.length ? packChoices : ['Confort', 'Prestige', 'Signature']).map((pack) => {
             const active = assignedPacks.includes(pack);
             return (
-              <button key={pack} type="button" onClick={() => togglePack(pack)}>
+              <button key={pack} type="button" className={active ? 'active' : ''} aria-pressed={active} onClick={() => togglePack(pack)}>
                 <strong>{pack}</strong>
-                <span>{active ? 'Actif' : 'Inactif'}</span>
-                <i className={active ? 'active' : ''} />
               </button>
             );
           })}
         </section>
+
+        </div>
 
         <footer>
           <button type="button" className="asset-delete" onClick={onClose}>Annuler</button>
