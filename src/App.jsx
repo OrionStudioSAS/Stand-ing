@@ -8873,7 +8873,7 @@ function AdminDashboard({ user, adminProfile }) {
             <h1>{tab === 'salons' && openSalonName ? openSalonName : adminTitle(tab)}</h1>
             <p>{tab === 'salons' && openSalonName ? <><button type="button" className="admin-breadcrumb-link" onClick={() => setOpenSalonName('')}>Salons</button> / {openSalonName}</> : adminSubtitle(tab)}</p>
           </div>
-          {(tab === 'salons' || tab === 'bat') && <label className="admin-global-search"><Search size={17} /><input aria-label="Rechercher" placeholder="Rechercher..." value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} /></label>}
+          {(tab === 'salons' || tab === 'bat' || tab === 'objects') && <label className="admin-global-search"><Search size={17} /><input aria-label="Rechercher" placeholder="Rechercher..." value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} /></label>}
         </header>
 
         <div className="admin-page-content">
@@ -8919,7 +8919,8 @@ function AdminDashboard({ user, adminProfile }) {
               assets={assets}
               scenes={scenes}
               salons={salons}
-              search={filters.search}
+              search={adminSearch}
+              onSearchChange={setAdminSearch}
               category={assetCategory}
               selectedAsset={selectedAsset}
               uploadState={assetUploadState}
@@ -8980,6 +8981,7 @@ function adminSubtitle(tab) {
   if (tab === 'requests') return 'Demandes exposants à traiter avant validation finale';
   if (tab === 'users') return 'Comptes administrateurs et exposants';
   if (tab === 'monday') return 'Synchronisation des tableaux salon';
+  if (tab === 'objects') return 'Assets, groupes d’objets, groupes de variantes et groupes de couleurs';
   return 'Vue en cours de préparation';
 }
 
@@ -11478,20 +11480,63 @@ function sceneStatusKind(scene = {}) {
   return 'neutral';
 }
 
-function AdminObjectsView({ assets, scenes, salons, search, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onDuplicateAsset, onReorderAssets, onUploadAssetFolder, onUploadColorGroup }) {
+function AdminObjectsView({ assets, scenes, salons, search, onSearchChange, category, selectedAsset, uploadState, onCategoryChange, onSelectAsset, onCloseAsset, onSaveAsset, onDeleteAsset, onDuplicateAsset, onReorderAssets, onUploadAssetFolder, onUploadColorGroup }) {
   const [groupCreatorOpen, setGroupCreatorOpen] = useState(false);
   const [variantGroupCreatorOpen, setVariantGroupCreatorOpen] = useState(false);
-  const [assetSearch, setAssetSearch] = useState(search || '');
+  const [assetSearch, setAssetSearch] = useState('');
   const [draggingAssetType, setDraggingAssetType] = useState('');
-  const categories = ['Tout', 'Groupes', 'Groupes de variantes', 'Groupes de couleurs', ...assetCategoryOptions];
-  const filteredAssets = sortAdminAssetsForCategory(assets.filter((asset) => {
-    const technicalCategory = assetCategoryLabel(asset);
-    const businessCategory = assetBusinessCategoryLabel(asset, assets);
-    const matchesCategory = adminAssetMatchesCategory(asset, category, assets);
-    const normalizedSearch = assetSearch.trim().toLowerCase();
-    const matchesSearch = !normalizedSearch || [asset.label, asset.type, technicalCategory, businessCategory].filter(Boolean).some((value) => value.toLowerCase().includes(normalizedSearch));
-    return matchesCategory && matchesSearch;
-  }), category, assets);
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [salonFilter, setSalonFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [formatFilter, setFormatFilter] = useState('');
+  const [visibilityFilter, setVisibilityFilter] = useState('');
+  const [packFilter, setPackFilter] = useState([]);
+  const [draftPacks, setDraftPacks] = useState([]);
+  const [packMenuOpen, setPackMenuOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [viewMode, setViewMode] = useState('grid');
+  const [sortMode, setSortMode] = useState('name-asc');
+  const [page, setPage] = useState(1);
+  const [feedbackVisible, setFeedbackVisible] = useState(true);
+  const addMenuRef = useRef(null);
+  const packMenuRef = useRef(null);
+  const objInputRef = useRef(null);
+  const glbInputRef = useRef(null);
+  const colorInputRef = useRef(null);
+  const tabs = ['Tout', 'Assets', 'Groupes d’objets', 'Groupes de variantes', 'Groupes de couleurs'];
+  const packChoices = useMemo(() => adminPackAssignmentChoices(salons, scenes), [salons, scenes]);
+  const packSalons = useMemo(() => new Map(packChoices.map((pack) => [pack, salons.filter((salon) => [...(salon.offers || []), ...(salon.packDefinitions || [])].some((offer) => samePackLabel(offer.name, pack))).map((salon) => salon.name)])), [packChoices, salons]);
+  const filteredAssets = useMemo(() => {
+    const matching = assets.filter((asset) => adminAssetMatchesLibraryFilters(asset, assets, scenes, {
+      tab: category, searches: [search, assetSearch], category: categoryFilter,
+      packs: packFilter, salon: salonFilter, status: statusFilter, format: formatFilter, visibility: visibilityFilter,
+    }, salons));
+    if (sortMode === 'manual') return sortAdminAssetsForCategory(matching, 'Tout', assets);
+    return [...matching].sort((a, b) => {
+      if (sortMode === 'recent') return new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0);
+      const compared = String(a.label || a.type).localeCompare(String(b.label || b.type), 'fr', { sensitivity: 'base' });
+      return sortMode === 'name-desc' ? -compared : compared;
+    });
+  }, [assets, scenes, salons, category, search, assetSearch, categoryFilter, packFilter, salonFilter, statusFilter, formatFilter, visibilityFilter, sortMode]);
+  const pageSize = 24;
+  const pageCount = Math.max(1, Math.ceil(filteredAssets.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const visibleAssets = filteredAssets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const hasFilters = Boolean(categoryFilter || salonFilter || statusFilter || formatFilter || visibilityFilter || packFilter.length || assetSearch || search);
+  const clearFilters = () => { setCategoryFilter(''); setSalonFilter(''); setStatusFilter(''); setFormatFilter(''); setVisibilityFilter(''); setPackFilter([]); setDraftPacks([]); setAssetSearch(''); onSearchChange?.(''); setPage(1); };
+
+  useEffect(() => { setFeedbackVisible(true); }, [uploadState?.message, uploadState?.error]);
+
+  useEffect(() => {
+    const closeMenus = (event) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(event.target)) setAddMenuOpen(false);
+      if (packMenuRef.current && !packMenuRef.current.contains(event.target)) setPackMenuOpen(false);
+    };
+    const closeOnEscape = (event) => { if (event.key === 'Escape') { setAddMenuOpen(false); setPackMenuOpen(false); } };
+    document.addEventListener('pointerdown', closeMenus);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => { document.removeEventListener('pointerdown', closeMenus); document.removeEventListener('keydown', closeOnEscape); };
+  }, []);
 
   const reorderVisibleAsset = (targetType) => {
     if (!draggingAssetType || draggingAssetType === targetType) return;
@@ -11505,88 +11550,50 @@ function AdminObjectsView({ assets, scenes, salons, search, category, selectedAs
   };
 
   return (
-    <section className="admin-assets-view">
-      <div className="asset-actions-row">
-        <label className="asset-upload-drop">
-          <Upload size={23} />
-          <span>Ajouter un dossier OBJ complet</span>
-          <strong>{uploadState?.loading ? 'Import en cours...' : 'Parcourir un dossier'}</strong>
-          <small>Le dossier doit contenir l'OBJ, son .MTL et les textures. Les chemins relatifs sont conservés.</small>
-          <input
-            type="file"
-            accept=".obj,.mtl,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tga,.tif,.tiff,.svg,image/svg+xml"
-            multiple
-            webkitdirectory=""
-            directory=""
-            disabled={uploadState?.loading}
-            onChange={(event) => {
-              onUploadAssetFolder(event.target.files);
-              event.target.value = '';
-            }}
-          />
-        </label>
-        <label className="asset-upload-drop asset-upload-file">
-          <Upload size={23} />
-          <span>Importer un fichier GLB</span>
-          <strong>{uploadState?.loading ? 'Import en cours...' : 'Choisir un .glb'}</strong>
-          <small>Format recommandé : un seul fichier .glb contenant géométrie, matériaux et textures.</small>
-          <input
-            type="file"
-            accept=".glb,model/gltf-binary"
-            disabled={uploadState?.loading}
-            onChange={(event) => {
-              onUploadAssetFolder(event.target.files);
-              event.target.value = '';
-            }}
-          />
-        </label>
-        <button className="asset-group-create-button" type="button" onClick={() => setGroupCreatorOpen(true)}>
-          <Layers size={18} />
-          Creer un groupe d'objets
-        </button>
-        <button className="asset-group-create-button" type="button" onClick={() => setVariantGroupCreatorOpen(true)}>
-          <Settings2 size={18} />
-          Creer un groupe de variantes
-        </button>
-        <label className="asset-group-create-button color-group-upload">
-          <FileImage size={18} />
-          Importer un groupe de couleurs
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg"
-            multiple
-            webkitdirectory=""
-            directory=""
-            disabled={uploadState?.loading}
-            onChange={(event) => {
-              onUploadColorGroup(event.target.files);
-              event.target.value = '';
-            }}
-          />
-        </label>
-      </div>
-      {(uploadState?.message || uploadState?.error) && (
-        <div className={`asset-upload-feedback ${uploadState.error ? 'error' : ''}`}>
-          {uploadState.error || uploadState.message}
+    <section className="admin-assets-view admin-assets-library">
+      <div className="asset-library-tabs-row">
+        <nav className="asset-library-tabs" aria-label="Types d'assets">
+          {tabs.map((item) => <button key={item} type="button" className={category === item ? 'active' : ''} onClick={() => { onCategoryChange(item); setPage(1); }}>{item}</button>)}
+        </nav>
+        <div className="asset-library-add" ref={addMenuRef}>
+          <button type="button" className="asset-library-add-trigger" aria-expanded={addMenuOpen} aria-haspopup="menu" onClick={() => { setAddMenuOpen(!addMenuOpen); setPackMenuOpen(false); }}>Ajouter <ChevronDown size={14} /></button>
+          {addMenuOpen && <div className="asset-library-add-menu" role="menu">
+            <small>Importer</small>
+            <button type="button" role="menuitem" disabled={uploadState?.loading} onClick={() => { objInputRef.current?.click(); setAddMenuOpen(false); }}><Layers size={17} /><span><strong>Dossier OBJ complet</strong><em>L’OBJ, son .MTL et les textures. Les chemins relatifs sont conservés.</em></span></button>
+            <button type="button" role="menuitem" disabled={uploadState?.loading} onClick={() => { glbInputRef.current?.click(); setAddMenuOpen(false); }}><Upload size={17} /><span><strong>Fichier GLB</strong><em>Un seul .glb avec géométrie, matériaux et textures.</em></span></button>
+            <div className="asset-library-menu-rule" />
+            <small>Créer</small>
+            <button type="button" role="menuitem" onClick={() => { setGroupCreatorOpen(true); setAddMenuOpen(false); }}><Layers size={17} /><span><strong>Groupe d’objets</strong><em>Plusieurs objets posés ensemble.</em></span></button>
+            <button type="button" role="menuitem" onClick={() => { setVariantGroupCreatorOpen(true); setAddMenuOpen(false); }}><Settings2 size={17} /><span><strong>Groupe de variantes</strong><em>Un objet décliné en plusieurs versions.</em></span></button>
+            <button type="button" role="menuitem" disabled={uploadState?.loading} onClick={() => { colorInputRef.current?.click(); setAddMenuOpen(false); }}><FileImage size={17} /><span><strong>Importer un groupe de couleurs</strong><em>Un jeu de finitions à partir d’un dossier.</em></span></button>
+          </div>}
         </div>
-      )}
-
-      <label className="asset-search-box">
-        <Search size={16} />
-        <input value={assetSearch} onChange={(event) => setAssetSearch(event.target.value)} placeholder="Rechercher un asset 3D..." />
-      </label>
-
-      <nav className="asset-category-tabs" aria-label="Categories assets">
-        {categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => onCategoryChange(item)}>{item}</button>)}
-      </nav>
-
-      <div className="asset-grid">
-        {filteredAssets.map((asset) => (
+        <input className="asset-library-hidden-input" ref={objInputRef} type="file" accept=".obj,.mtl,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tga,.tif,.tiff,.svg,image/svg+xml" multiple webkitdirectory="" directory="" disabled={uploadState?.loading} onChange={(event) => { onUploadAssetFolder(event.target.files); event.target.value = ''; }} />
+        <input className="asset-library-hidden-input" ref={glbInputRef} type="file" accept=".glb,model/gltf-binary" disabled={uploadState?.loading} onChange={(event) => { onUploadAssetFolder(event.target.files); event.target.value = ''; }} />
+        <input className="asset-library-hidden-input" ref={colorInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml,.svg" multiple webkitdirectory="" directory="" disabled={uploadState?.loading} onChange={(event) => { onUploadColorGroup(event.target.files); event.target.value = ''; }} />
+      </div>
+      {feedbackVisible && (uploadState?.message || uploadState?.error) && <div className={`asset-library-feedback ${uploadState.error ? 'error' : ''}`}><Check size={16} />{uploadState.error || uploadState.message}<button type="button" aria-label="Fermer le message" onClick={() => setFeedbackVisible(false)}><X size={16} /></button></div>}
+      <div className="asset-library-filters">
+        <label className="asset-library-search"><Search size={16} /><input value={assetSearch} onChange={(event) => { setAssetSearch(event.target.value); setPage(1); }} placeholder="Rechercher un asset 3D..." aria-label="Rechercher un asset 3D" /></label>
+        <select aria-label="Filtrer par catégorie" value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setPage(1); }}><option value="">Catégorie</option>{assetCategoryOptions.map((item) => <option key={item}>{item}</option>)}</select>
+        <div className="asset-library-pack-filter" ref={packMenuRef}>
+          <button type="button" className={packFilter.length ? 'active' : ''} aria-expanded={packMenuOpen} aria-haspopup="dialog" onClick={() => { setDraftPacks(packFilter); setPackMenuOpen(!packMenuOpen); setAddMenuOpen(false); }}>{packFilter.length === 1 ? `Pack : ${packFilter[0]}` : packFilter.length ? `Packs : ${packFilter.length}` : 'Pack'} <ChevronDown size={14} /></button>
+          {packMenuOpen && <div className="asset-library-pack-popover" role="dialog" aria-label="Filtrer par pack"><strong>Filtrer par pack</strong><p>Plusieurs packs possibles</p><div className="asset-library-pack-options">{packChoices.map((pack) => <label key={pack}><input type="checkbox" checked={draftPacks.includes(pack)} onChange={() => setDraftPacks((current) => current.includes(pack) ? current.filter((item) => item !== pack) : [...current, pack])} /><span>{pack}</span><small>{(packSalons.get(pack) || []).map((name) => name.replace(/\s*20\d{2}.*/, '')).join(', ') || '—'}</small></label>)}</div><div className="asset-library-pack-actions"><button type="button" onClick={() => { setDraftPacks([]); setPackFilter([]); setPackMenuOpen(false); setPage(1); }}>Effacer</button><button type="button" onClick={() => { setPackFilter(draftPacks); setPackMenuOpen(false); setPage(1); }}>Appliquer</button></div></div>}
+        </div>
+        <select aria-label="Filtrer par salon" value={salonFilter} onChange={(event) => { setSalonFilter(event.target.value); setPage(1); }}><option value="">Salon</option>{salons.map((salon) => <option key={salon.id || salon.name} value={salon.name}>{salon.name}</option>)}</select>
+        <select aria-label="Filtrer par statut" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}><option value="">Statut</option><option value="active">Actif</option><option value="inactive">Inactif</option><option value="processing">En cours</option></select>
+        <select aria-label="Filtrer par format" value={formatFilter} onChange={(event) => { setFormatFilter(event.target.value); setPage(1); }}><option value="">Format</option><option value="GLB">GLB</option><option value="OBJ">OBJ</option><option value="Natif">Natif</option></select>
+        <select aria-label="Filtrer par visibilité" value={visibilityFilter} onChange={(event) => { setVisibilityFilter(event.target.value); setPage(1); }}><option value="">Visibilité</option><option value="public">Exposant</option><option value="admin">Admin uniquement</option></select>
+        <select className="asset-library-sort" aria-label="Trier les assets" value={sortMode} onChange={(event) => { setSortMode(event.target.value); setPage(1); }}><option value="name-asc">Trier : nom A–Z</option><option value="name-desc">Trier : nom Z–A</option><option value="recent">Plus récents</option><option value="manual">Ordre manuel</option></select>
+      </div>
+      <div className="asset-library-meta"><div><strong>{filteredAssets.length} élément{filteredAssets.length > 1 ? 's' : ''}</strong>{packFilter.map((pack) => <button type="button" className="asset-library-chip" key={pack} onClick={() => { setPackFilter((current) => current.filter((item) => item !== pack)); setPage(1); }}>Pack : {pack} <X size={12} /></button>)}{hasFilters && <button type="button" className="asset-library-clear" onClick={clearFilters}>Tout effacer</button>}</div><div className="asset-library-view-switch"><button type="button" className={viewMode === 'grid' ? 'active' : ''} aria-label="Vue grille" aria-pressed={viewMode === 'grid'} onClick={() => setViewMode('grid')}>▦</button><button type="button" className={viewMode === 'list' ? 'active' : ''} aria-label="Vue liste" aria-pressed={viewMode === 'list'} onClick={() => setViewMode('list')}>☷</button></div></div>
+      <div className={`asset-grid asset-library-grid ${viewMode === 'list' ? 'list' : ''}`}>
+        {visibleAssets.map((asset) => (
           <button
             key={asset.type}
             className={`asset-card ${draggingAssetType === asset.type ? 'dragging' : ''}`}
             type="button"
-            draggable
+            draggable={sortMode === 'manual' && !hasFilters && !search}
             onClick={() => onSelectAsset(asset)}
             onDragStart={(event) => {
               setDraggingAssetType(asset.type);
@@ -11604,10 +11611,10 @@ function AdminObjectsView({ assets, scenes, salons, search, category, selectedAs
             onDragEnd={() => setDraggingAssetType('')}
           >
             <span className={`asset-status-dot ${assetStatus(asset)}`} />
-            <span className="asset-drag-handle" aria-hidden="true">⋮⋮</span>
+            {sortMode === 'manual' && !hasFilters && !search && <span className="asset-drag-handle" aria-hidden="true">⋮⋮</span>}
             <AssetPreview asset={asset} />
             <div className="asset-card-body">
-              <strong>{asset.label}</strong>
+              <strong>{asset.label || asset.type}</strong>
               <span>{assetAdminCardCategoryLabel(asset, assets)}</span>
               <em>{assetSizeLabel(asset)}</em>
               <div className="asset-tags">
@@ -11619,6 +11626,8 @@ function AdminObjectsView({ assets, scenes, salons, search, category, selectedAs
           </button>
         ))}
       </div>
+      {!filteredAssets.length && <p className="asset-library-empty">Aucun élément ne correspond aux filtres.</p>}
+      {pageCount > 1 && <div className="asset-library-pagination"><button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Précédent</button><span>Page {currentPage} / {pageCount}</span><button type="button" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</button></div>}
 
       {selectedAsset && (
         <AssetDrawer
@@ -14553,6 +14562,25 @@ function adminAssetMatchesCategory(asset = {}, category = 'Tout', allAssets = []
     return assetBusinessCategoryLabel(asset, allAssets) === category;
   }
   return assetCategoryLabel(asset) === category;
+}
+
+function adminAssetMatchesLibraryFilters(asset = {}, allAssets = [], scenes = [], filters = {}, salons = []) {
+  const dimensions = asset.dimensions || {};
+  const kind = dimensions.isColorGroup ? 'Groupes de couleurs' : dimensions.isVariantGroup ? 'Groupes de variantes' : dimensions.isGroup ? 'Groupes d’objets' : 'Assets';
+  if (filters.tab && filters.tab !== 'Tout' && filters.tab !== kind) return false;
+  if (filters.category && assetBusinessCategoryLabel(asset, allAssets) !== filters.category) return false;
+  const packs = assetPacks(asset, scenes);
+  if (filters.packs?.length && !filters.packs.some((pack) => packs.some((name) => samePackLabel(name, pack)))) return false;
+  if (filters.salon) {
+    const salon = salons.find((entry) => entry.name === filters.salon);
+    const salonPacks = [...(salon?.offers || []), ...(salon?.packDefinitions || [])].map((offer) => offer.name);
+    if (!salonPacks.some((pack) => packs.some((name) => samePackLabel(name, pack)))) return false;
+  }
+  if (filters.status && assetStatus(asset) !== filters.status) return false;
+  if (filters.format && assetFormat(asset) !== filters.format) return false;
+  if (filters.visibility && (dimensions.adminOnly ? 'admin' : 'public') !== filters.visibility) return false;
+  const searchText = normalizeTextValue([asset.label, asset.type, assetCategoryLabel(asset), assetBusinessCategoryLabel(asset, allAssets)].filter(Boolean).join(' '));
+  return (filters.searches || [filters.search]).filter(Boolean).every((query) => searchText.includes(normalizeTextValue(query)));
 }
 
 function inferVariantGroupBusinessCategory(asset = {}, allAssets = []) {
