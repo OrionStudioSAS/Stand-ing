@@ -11495,6 +11495,8 @@ function AdminObjectsView({ assets, scenes, salons, search, onSearchChange, cate
   const [packMenuOpen, setPackMenuOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [viewMode, setViewMode] = useState('grid');
+  const [selectedAssetTypes, setSelectedAssetTypes] = useState([]);
+  const [rowMenuType, setRowMenuType] = useState('');
   const [sortMode, setSortMode] = useState('name-asc');
   const [page, setPage] = useState(1);
   const [feedbackVisible, setFeedbackVisible] = useState(true);
@@ -11522,6 +11524,8 @@ function AdminObjectsView({ assets, scenes, salons, search, onSearchChange, cate
   const pageCount = Math.max(1, Math.ceil(filteredAssets.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const visibleAssets = filteredAssets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const selectedOnPage = visibleAssets.filter((asset) => selectedAssetTypes.includes(asset.type));
+  const toggleSelectedAsset = (type) => setSelectedAssetTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type]);
   const hasFilters = Boolean(categoryFilter || salonFilter || statusFilter || formatFilter || visibilityFilter || packFilter.length || assetSearch || search);
   const clearFilters = () => { setCategoryFilter(''); setSalonFilter(''); setStatusFilter(''); setFormatFilter(''); setVisibilityFilter(''); setPackFilter([]); setDraftPacks([]); setAssetSearch(''); onSearchChange?.(''); setPage(1); };
 
@@ -11531,6 +11535,7 @@ function AdminObjectsView({ assets, scenes, salons, search, onSearchChange, cate
     const closeMenus = (event) => {
       if (addMenuRef.current && !addMenuRef.current.contains(event.target)) setAddMenuOpen(false);
       if (packMenuRef.current && !packMenuRef.current.contains(event.target)) setPackMenuOpen(false);
+      if (!event.target.closest?.('.asset-library-row-actions')) setRowMenuType('');
     };
     const closeOnEscape = (event) => { if (event.key === 'Escape') { setAddMenuOpen(false); setPackMenuOpen(false); } };
     document.addEventListener('pointerdown', closeMenus);
@@ -11587,7 +11592,15 @@ function AdminObjectsView({ assets, scenes, salons, search, onSearchChange, cate
         <select className="asset-library-sort" aria-label="Trier les assets" value={sortMode} onChange={(event) => { setSortMode(event.target.value); setPage(1); }}><option value="name-asc">Trier : nom A–Z</option><option value="name-desc">Trier : nom Z–A</option><option value="recent">Plus récents</option><option value="manual">Ordre manuel</option></select>
       </div>
       <div className="asset-library-meta"><div><strong>{filteredAssets.length} élément{filteredAssets.length > 1 ? 's' : ''}</strong>{packFilter.map((pack) => <button type="button" className="asset-library-chip" key={pack} onClick={() => { setPackFilter((current) => current.filter((item) => item !== pack)); setPage(1); }}>Pack : {pack} <X size={12} /></button>)}{hasFilters && <button type="button" className="asset-library-clear" onClick={clearFilters}>Tout effacer</button>}</div><div className="asset-library-view-switch"><button type="button" className={viewMode === 'grid' ? 'active' : ''} aria-label="Vue grille" aria-pressed={viewMode === 'grid'} onClick={() => setViewMode('grid')}>▦</button><button type="button" className={viewMode === 'list' ? 'active' : ''} aria-label="Vue liste" aria-pressed={viewMode === 'list'} onClick={() => setViewMode('list')}>☷</button></div></div>
-      <div className={`asset-grid asset-library-grid ${viewMode === 'list' ? 'list' : ''}`}>
+      {viewMode === 'list' ? <div className="asset-library-table-wrap"><table className="asset-library-table"><thead><tr>
+        <th><input type="checkbox" aria-label="Sélectionner la page" checked={Boolean(visibleAssets.length) && selectedOnPage.length === visibleAssets.length} onChange={(event) => setSelectedAssetTypes((current) => event.target.checked ? [...new Set([...current, ...visibleAssets.map((asset) => asset.type)])] : current.filter((type) => !visibleAssets.some((asset) => asset.type === type)))} /></th>
+        <th><button type="button" onClick={() => setSortMode(sortMode === 'name-asc' ? 'name-desc' : 'name-asc')}>Nom {sortMode === 'name-asc' ? '↑' : sortMode === 'name-desc' ? '↓' : ''}</button></th><th>Catégorie</th><th>Packs</th><th>Format</th><th>Taille</th><th>Statut</th><th><span className="sr-only">Actions</span></th>
+      </tr></thead><tbody>{visibleAssets.map((asset) => <tr key={asset.type} tabIndex={0} onClick={() => onSelectAsset(asset)} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === 'Enter') onSelectAsset(asset); }}>
+        <td><input type="checkbox" aria-label={`Sélectionner ${asset.label || asset.type}`} checked={selectedAssetTypes.includes(asset.type)} onClick={(event) => event.stopPropagation()} onChange={() => toggleSelectedAsset(asset.type)} /></td>
+        <td><span className="asset-library-row-name"><span className="asset-library-row-thumb">{asset.thumbnail_url ? <img src={asset.thumbnail_url} alt="" /> : assetFormat(asset)}</span><strong>{asset.label || asset.type}</strong></span></td>
+        <td>{assetBusinessCategoryLabel(asset, assets)}</td><td><span className="asset-library-row-packs">{assetPacks(asset, scenes).map((pack) => <em key={pack}>{pack}</em>)}</span></td><td>{assetFormat(asset)}</td><td>{assetSizeLabel(asset)}</td><td><span className={`asset-library-row-status ${assetStatus(asset)}`}>{assetStatus(asset) === 'active' ? 'Actif' : assetStatus(asset) === 'processing' ? 'En cours' : 'Inactif'}</span></td>
+        <td className="asset-library-row-actions"><button type="button" aria-label={`Actions pour ${asset.label || asset.type}`} aria-expanded={rowMenuType === asset.type} onClick={(event) => { event.stopPropagation(); setRowMenuType(rowMenuType === asset.type ? '' : asset.type); }}>⋯</button>{rowMenuType === asset.type && <div className="asset-library-row-menu"><button type="button" onClick={(event) => { event.stopPropagation(); setRowMenuType(''); onSelectAsset(asset); }}>Modifier</button><button type="button" onClick={(event) => { event.stopPropagation(); setRowMenuType(''); onDuplicateAsset(asset); }}>Dupliquer</button><button type="button" onClick={(event) => { event.stopPropagation(); setRowMenuType(''); onDeleteAsset(asset); }}>Supprimer</button></div>}</td>
+      </tr>)}</tbody></table></div> : <div className="asset-grid asset-library-grid">
         {visibleAssets.map((asset) => (
           <button
             key={asset.type}
@@ -11625,7 +11638,8 @@ function AdminObjectsView({ assets, scenes, salons, search, onSearchChange, cate
             </div>
           </button>
         ))}
-      </div>
+      </div>}
+      {viewMode === 'list' && selectedAssetTypes.length > 0 && <div className="asset-library-selection"><span>{selectedAssetTypes.length} sélectionné{selectedAssetTypes.length > 1 ? 's' : ''}</span><button type="button" onClick={() => setSelectedAssetTypes([])}>Effacer la sélection</button></div>}
       {!filteredAssets.length && <p className="asset-library-empty">Aucun élément ne correspond aux filtres.</p>}
       {pageCount > 1 && <div className="asset-library-pagination"><button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Précédent</button><span>Page {currentPage} / {pageCount}</span><button type="button" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</button></div>}
 
@@ -11740,6 +11754,8 @@ function AssetPreview({ asset }) {
 
 function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose, onSave, onDelete, onDuplicate }) {
   const [draft, setDraft] = useState(asset);
+  const [activeTab, setActiveTab] = useState('general');
+  const contentRef = useRef(null);
   const [thumbnailUploading, setThumbnailUploading] = useState(false);
   const [thumbnailError, setThumbnailError] = useState('');
   const [batPictoUploading, setBatPictoUploading] = useState(false);
@@ -11752,6 +11768,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   const isColorGroup = Boolean(draft.dimensions?.isColorGroup);
   const isGroupAsset = Boolean(draft.dimensions?.isGroup);
   const isVariantGroup = Boolean(draft.dimensions?.isVariantGroup);
+  const isSimpleAsset = !isColorGroup && !isGroupAsset && !isVariantGroup;
   const sourceAssets = groupSourceAssets(assets, draft);
   const variantSourceAssetsList = variantSourceAssets(assets, draft.type);
   const variantManagedAssetsList = variantManagedAssetsForGroup(draft, assets);
@@ -11789,6 +11806,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     setVariantColorMeta(asset.dimensions?.variantColorMeta || {});
     setSelectedGroupRowUid(null);
   }, [asset]);
+
+  useEffect(() => { setActiveTab('general'); }, [asset.type]);
 
   const setVariantOptionLink = (selectOptionId, choiceId, toggleOptionId, linkedType) => {
     const toggleOptionIds = Array.isArray(toggleOptionId) ? toggleOptionId.map(String).filter(Boolean) : [toggleOptionId].filter(Boolean).map(String);
@@ -12170,17 +12189,26 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     <div className="asset-drawer-layer" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose?.();
     }}>
-      <aside className="asset-drawer">
+      <aside className={`asset-drawer ${isSimpleAsset ? 'asset-drawer--simple' : ''}`} role="dialog" aria-modal="true" aria-label={`Modifier ${draft.label || 'un asset'}`}>
         <header>
-          <div>
-            <h2>{draft.label}</h2>
-            <span>{assetCategoryLabel(draft)}</span>
+          {isSimpleAsset && <span className="asset-drawer-header-thumb">{draft.thumbnail_url ? <img src={draft.thumbnail_url} alt="" /> : null}</span>}
+          <div className="asset-drawer-header-copy">
+            <div><h2>{draft.label}</h2><span>{isSimpleAsset ? assetBusinessCategoryLabel(draft, assets) : assetCategoryLabel(draft)}</span></div>
+            {isSimpleAsset && <small>Fichier {assetFormat(draft)}</small>}
           </div>
           <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
         </header>
 
+        {isSimpleAsset && <nav className="asset-drawer-tabs" aria-label="Réglages de l'asset">{[
+          ['general', 'Général'], ['placement', 'Règles de placement'], ['textures', 'Textures'], ['packs', 'Packs'],
+        ].map(([id, label]) => <button key={id} type="button" className={activeTab === id ? 'active' : ''} aria-current={activeTab === id ? 'page' : undefined} onClick={() => { setActiveTab(id); contentRef.current?.scrollTo(0, 0); }}>{label}</button>)}</nav>}
+
+        <div className="asset-drawer-content" ref={contentRef}>
+        <div className="asset-drawer-general" style={{ display: isSimpleAsset && activeTab !== 'general' ? 'none' : undefined }}>
+
         <AssetPreview asset={draft} />
 
+        <div className="asset-drawer-upload-grid">
         <label className="asset-thumbnail-edit">
           <FileImage size={18} />
           <span>
@@ -12198,19 +12226,6 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
             }}
           />
         </label>
-
-
-        {!isColorGroup && (
-          <label className="asset-group-field">
-            <span>Descriptif BAT</span>
-            <textarea
-              value={draft.dimensions?.batDescription || ''}
-              placeholder="Texte affiché dans le tableau du BAT. Les sauts de ligne sont conservés."
-              rows={4}
-              onChange={(event) => updateAssetBehavior({ batDescription: event.target.value })}
-            />
-          </label>
-        )}
 
         {!isColorGroup && !isVariantGroup && (
         <label className="asset-thumbnail-edit">
@@ -12232,6 +12247,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           />
         </label>
         )}
+        </div>
+        <div className="asset-drawer-name-grid">
         <label className="asset-group-field">
           <span>Nom</span>
           <input value={draft.label || ''} onChange={(event) => setDraft({ ...draft, label: event.target.value })} />
@@ -12246,6 +12263,19 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
             onChange={(event) => setDraft({ ...draft, dimensions: { ...(draft.dimensions || {}), labelEn: event.target.value } })}
           />
         </label>
+        )}
+        </div>
+
+        {!isColorGroup && (
+          <label className="asset-group-field">
+            <span>Descriptif BAT</span>
+            <textarea
+              value={draft.dimensions?.batDescription || ''}
+              placeholder="Texte affiché dans le tableau du BAT. Les sauts de ligne sont conservés."
+              rows={4}
+              onChange={(event) => updateAssetBehavior({ batDescription: event.target.value })}
+            />
+          </label>
         )}
 
         {!isColorGroup && (
@@ -12285,6 +12315,9 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           </span>
         </label>
         )}
+
+        {isSimpleAsset && <dl className="asset-drawer-file-meta"><div><dt>Format</dt><dd>{assetFormat(draft)}</dd></div><div><dt>Taille</dt><dd>{assetSizeLabel(draft)}</dd></div><div><dt>Dimensions</dt><dd>{assetDimensionsLabel(draft)}</dd></div><div><dt>Ajouté le</dt><dd>{formatDate(draft.created_at)}</dd></div><div><dt>Ajouté par</dt><dd>{draft.dimensions?.addedBy || 'Stand-ING'}</dd></div></dl>}
+        </div>
 
         {isColorGroup && (
           <section className="asset-color-settings">
@@ -12374,8 +12407,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
         )}
 
         {!isVariantGroup && !isColorGroup && (
-        <section className="asset-behavior-settings">
-          <h3>Règles spécifiques</h3>
+        <section className="asset-behavior-settings" style={{ display: isSimpleAsset && activeTab !== 'placement' ? 'none' : undefined }}>
+          {!isSimpleAsset && <h3>Règles spécifiques</h3>}
           {!isGroupAsset && (
             <label>
               <span>Type de placement</span>
@@ -12385,6 +12418,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
               </select>
             </label>
           )}
+          {isSimpleAsset && <h4>Options de pose</h4>}
+          <div className="asset-drawer-option-list">
           {!isGroupAsset && (
             <label className="asset-toggle-row">
               <input
@@ -12445,6 +12480,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
               <small>Le haut de l'objet arrive en haut du mur (2,50 m). Nécessite que la hauteur de l'objet soit renseignée.</small>
             </span>
           </label>
+          </div>
           <label>
             <span>Position automatique</span>
             <select value={draftPlacementRuleId} onChange={(event) => updatePlacementRule(event.target.value)}>
@@ -12452,6 +12488,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
             </select>
           </label>
           <small>{placementRuleLabel(draftPlacementRuleId, true)}</small>
+          {isSimpleAsset && <h4>Restrictions</h4>}
+          <div className="asset-drawer-option-list">
           <label className="asset-toggle-row">
             <input
               type="checkbox"
@@ -12511,11 +12549,12 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
               </span>
             </label>
           )}
+          </div>
         </section>
         )}
 
         {!isGroupAsset && !isVariantGroup && !isColorGroup && (
-          <section className="asset-variants-settings asset-texture-slots-settings">
+          <section className="asset-variants-settings asset-texture-slots-settings" style={{ display: activeTab !== 'textures' ? 'none' : undefined }}>
             <div className="asset-variants-head">
               <div>
                 <h3>Textures personnalisables</h3>
@@ -12580,7 +12619,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           </section>
         )}
 
-        <dl className="asset-meta-card">
+        {!isSimpleAsset && <dl className="asset-meta-card">
           <div><dt>Nom</dt><dd>{draft.label}</dd></div>
           <div><dt>Catégorie</dt><dd>{assetCategoryLabel(draft)}</dd></div>
           <div><dt>Format</dt><dd>{assetFormat(draft)}{assetFormat(draft) === 'OBJ' ? ' (converti depuis OBJ)' : ''}</dd></div>
@@ -12588,17 +12627,19 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           <div><dt>Dimensions</dt><dd>{assetDimensionsLabel(draft)}</dd></div>
           <div><dt>Ajouté le</dt><dd>{formatDate(draft.created_at)}</dd></div>
           <div><dt>Ajouté par</dt><dd>{draft.dimensions?.addedBy || 'Stand-ING'}</dd></div>
-        </dl>
+        </dl>}
 
-        <section className="asset-assignment">
+        <section className="asset-assignment" style={{ display: isSimpleAsset && activeTab !== 'packs' ? 'none' : undefined }}>
           <h3>Affectation par pack</h3>
+          {isSimpleAsset && <p>Activez l'objet pour chaque pack où il peut être posé. Prix et référence peuvent différer d'un pack à l'autre.</p>}
           {(packChoices.length ? packChoices : ['Confort', 'Prestige', 'Signature']).map((pack) => {
             const active = assignedPacks.includes(pack);
             const packPricing = getPackPricing(draft, pack);
+            const packSalonLabels = adminSalons.filter((salon) => [...(salon.offers || []), ...(salon.packDefinitions || [])].some((offer) => samePackLabel(offer.name, pack))).map((salon) => salon.name.replace(/\s*20\d{2}.*/, '')).filter(Boolean);
             return (
               <div key={pack} className="asset-salon-pricing-row">
                 <button type="button" onClick={() => togglePack(pack)}>
-                  <strong>{pack}</strong>
+                  <strong>{pack} {isSimpleAsset && packSalonLabels.length > 0 && <small className="asset-pack-salon-badge">{[...new Set(packSalonLabels)].join(', ')}</small>}</strong>
                   <span>{active ? 'Actif' : 'Inactif'}</span>
                   <i className={active ? 'active' : ''} />
                 </button>
@@ -12692,18 +12733,19 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           </>
         )}
 
-        <small className="asset-price-note">
+        {!isSimpleAsset && <small className="asset-price-note">
           {isColorGroup
             ? 'Ce groupe alimente les couleurs disponibles dans le configurateur selon ses usages et packs actifs.'
             : isVariantGroup
               ? 'Le groupe sert uniquement de fiche boutique : les prix et références viennent des objets associés.'
               : 'Les prix et références peuvent être différents pour chaque pack actif.'}
-        </small>
+        </small>}
+        </div>
 
         <footer>
           <button type="button" className="asset-delete" onClick={onDelete}>Supprimer définitivement</button>
           <button type="button" className="asset-duplicate" onClick={onDuplicate}><Copy size={14} /> Dupliquer</button>
-          <button type="button" className="asset-save" onClick={saveDraft}>Enregistrer les modifications</button>
+          <button type="button" className="asset-save" onClick={saveDraft}>{isSimpleAsset ? 'Enregistrer' : 'Enregistrer les modifications'}</button>
         </footer>
       </aside>
     </div>
