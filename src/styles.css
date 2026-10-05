@@ -13829,3 +13829,190 @@ img.asset-thumb {
   overflow-wrap: anywhere;
   white-space: normal;
 }
+
+/* Admin salons and navigation refresh */
+.admin-dashboard-shell {
+  grid-template-columns: 232px minmax(0, 1fr);
+  color: #172033;
+  background: #f5f6f8;
+}
+
+.admin-dashboard-shell .admin-sidebar {
+  grid-template-rows: 106px 0 minmax(0, 1fr) auto;
+  color: #5c687d;
+  background: #fbfbfd;
+  border-color: #e1e5eb;
+}
+
+.admin-dashboard-shell .admin-sidebar-logo {
+  display: block;
+  min-height: 0;
+  padding: 19px 20px 0;
+  color: #667084;
+  text-decoration: none;
+  background: transparent;
+}
+
+.admin-dashboard-shell .admin-sidebar-logo img { display: block; width: 107px; max-height: 51px; object-fit: contain; object-position: left center; }
+.admin-dashboard-shell .admin-sidebar-logo .admin-logo-rule { display: block; width: 13px; height: 1px; margin: 2px 0 3px; background: #123878; }
+.admin-dashboard-shell .admin-sidebar-logo small { display: block; font-size: 12px; }
+.admin-dashboard-shell .admin-sidebar-product { min-height: 0; padding: 0; background: none; }
+.admin-dashboard-shell .admin-sidebar-nav { gap: 2px; padding: 11px 12px; overflow-y: auto; }
+.admin-dashboard-shell .admin-nav-group-label { display: block; margin: 18px 12px 7px; color: #a1aaba; font-size: 12px; }
+.admin-dashboard-shell .admin-sidebar-nav button { min-height: 38px; border-radius: 6px; padding: 0 12px; color: #556174; background: transparent; font-size: 13px; font-weight: 500; }
+.admin-dashboard-shell .admin-sidebar-nav button svg { flex: 0 0 auto; stroke-width: 1.7; }
+.admin-dashboard-shell .admin-sidebar-nav button.active { color: #123878; background: #eaf1fc; font-weight: 600; }
+.admin-dashboard-shell .admin-sidebar-nav button.active::before { display: none; }
+.admin-dashboard-shell .admin-sidebar-nav button:hover:not(.active) { color: #123878; background: #f0f3f8; }
+.admin-dashboard-shell .admin-sidebar-user-wrap { margin: 0 12px; border-color: #dfe4ea; }
+.admin-dashboard-shell .admin-sidebar-user { padding: 4px 8px; color: #172033; }
+.admin-dashboard-shell .admin-sidebar-user > span { color: #153775; background: #e1ebfc; }
+.admin-dashboard-shell .admin-sidebar-user strong { color: #172033; }
+.admin-dashboard-shell .admin-sidebar-user small { color: #8993a3; }
+.admin-dashboard-shell .admin-topbar-new { border-bottom: 1px solid #e0e5ec; box-shadow: none; }
+.admin-dashboard-shell .admin-topbar-new h1 { color: #101928; font-size: 19px; font-weight: 600; }
+.admin-dashboard-shell .admin-topbar-new p { color: #778194; font-size: 12px; }
+.admin-dashboard-shell .admin-page-content { padding: 32px; }
+.admin-breadcrumb-link { border: 0; padding: 0; color: #7b8594; background: none; cursor: pointer; font: inherit; }
+.admin-breadcrumb-link:hover { color: #163b7b; text-decoration: underline; }
+.admin-global-search, .admin-salon-exhibitors-tools label { display: flex; align-items: center; gap: 8px; width: 260px; height: 37px; border: 1px solid #dce2e9; border-radius: 6px; padding: 0 12px; color: #7d899b; background: #fff; }
+.admin-global-search input, .admin-salon-exhibitors-tools input { width: 100%; min-width: 0; border: 0; outline: 0; color: #1e2a3d; background: transparent; font-size: 13px; }
+.admin-global-search input::placeholder, .admin-salon-exhibitors-tools input::placeholder { color: #a2abbb; }
+
+.admin-salons-v2, .admin-salon-detail-v2 { display: grid; gap: 26px; }
+.admin-salons-v2-toolbar, .admin-salons-v2-tools, .admin-salons-v2-filters, .admin-salon-view-toggle { display: flex; align-items: center; }
+.admin-salons-v2-toolbar { justify-content: space-between; gap: 12px; }
+.admin-salons-v2-filters { flex-wrap: wrap; gap: 7px; }
+.admin-salons-v2-filters button, .admin-salon-exhibitors-filters button { min-height: 33px; border: 1px solid #dde3eb; border-radius: 99px; padding: 0 13px; color: #566274; background: #fff; font-size: 12px; cursor: pointer; }
+.admin-salons-v2-filters button[aria-pressed="true"], .admin-salon-exhibitors-filters button[aria-pressed="true"] { border-color: #d8e5fd; color: #123878; background: #eaf1fc; font-weight: 600; }
+.admin-salons-v2-tools { gap: 14px; }
+.admin-salon-view-toggle { gap: 3px; border: 1px solid #dde3eb; border-radius: 7px; padding: 3px; background: #fff; }
+.admin-salon-view-toggle button { min-height: 28px; border: 0; border-radius: 5px; padding: 0 10px; color: #667284; background: transparent; font-size: 12px; cursor: pointer; }
+.admin-salon-view-toggle button[aria-pressed="true"] { color: #123878; background: #eaf1fc; font-weight: 600; }
+.admin-primary-v2, .admin-outline-v2, .admin-danger-v2 { display: inline-flex; align-items: center; justify-content: center; min-height: 33px; border-radius: 6px; padding: 0 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.admin-primary-v2 { border: 1px solid #102e68; color: #fff; background: #102e68; }
+.admin-outline-v2 { border: 1px solid #dce2e9; color: #1c283a; background: #fff; }
+.admin-danger-v2 { border: 1px solid #f4c4c6; color: #c9343f; background: #fff; }
+.admin-primary-v2:hover { background: #1d4386; }
+.admin-outline-v2:hover { background: #f4f7fb; }
+.admin-salon-v2-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+.admin-salon-v2-card { display: flex; flex-direction: column; min-width: 0; min-height: 408px; border: 1px solid #dde3ea; border-radius: 10px; padding: 24px; background: #fff; }
+.admin-salon-v2-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.admin-salon-v2-card-head h2, .admin-salon-detail-title h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; color: #131c2b; font-size: 19px; font-weight: 600; line-height: 1.3; }
+.admin-salon-v2-card-head p, .admin-salon-detail-title p { margin: 3px 0 0; color: #7c8797; font-size: 12px; line-height: 1.5; }
+.admin-salon-v2-calendar { display: grid; flex: 0 0 49px; place-items: center; width: 49px; height: 49px; border-radius: 10px; color: #99a4b4; background: #eef0f3; }
+.admin-salon-v2-packs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 24px; color: #778292; font-size: 12px; }
+.admin-salon-v2-pack-pill { display: inline-flex; align-items: center; border-radius: 99px; padding: 3px 9px; color: #143873; background: #eaf1fc; font-size: 11px; line-height: 1.3; white-space: nowrap; }
+.admin-salon-v2-no-pack { color: #a2aaba; }
+.admin-salon-v2-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 24px; }
+.admin-salon-v2-metrics > div { display: grid; gap: 3px; }
+.admin-salon-v2-metrics strong { color: #121b2b; font-size: 19px; font-weight: 600; }
+.admin-salon-v2-metrics span { color: #7a8494; font-size: 12px; white-space: nowrap; }
+.admin-salon-v2-progress-list { display: grid; align-content: start; gap: 13px; min-height: 83px; margin-top: 25px; }
+.admin-salon-v2-progress { display: grid; gap: 5px; }
+.admin-salon-v2-progress > div { display: flex; justify-content: space-between; gap: 8px; color: #758092; font-size: 12px; }
+.admin-salon-v2-progress strong { color: #172033; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.admin-salon-v2-track { display: block; width: 100%; height: 6px; border-radius: 99px; overflow: hidden; background: #e9edf1; }
+.admin-salon-v2-track > span { display: block; height: 100%; border-radius: inherit; background: #142f6e; }
+.admin-salon-v2-track > span.warm { background: #f59a0c; }
+.admin-salon-v2-card-footer { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; min-height: 56px; margin-top: auto; border-top: 1px solid #e9edf1; padding-top: 16px; }
+.admin-salon-v2-card-footer > span { color: #909aab; font-size: 12px; }
+.admin-pack-v2-card { min-height: 408px; }
+.admin-pack-v2-card > .admin-salon-v2-progress { margin-top: 25px; }
+.admin-pack-v2-salons { display: grid; gap: 1px; margin: 15px 0 25px; }
+.admin-pack-v2-salons button { display: flex; align-items: center; gap: 10px; border: 0; border-bottom: 1px solid #eef0f3; padding: 9px 0; color: #1c2a3e; background: none; cursor: pointer; text-align: left; }
+.admin-pack-v2-salons button span { flex: 1; font-size: 13px; }
+.admin-pack-v2-salons button small { color: #929bab; }
+
+.admin-salon-detail-v2 { gap: 24px; }
+.admin-salon-detail-banner { display: flex; align-items: center; gap: 20px; min-height: 100px; border: 1px solid #dde3ea; border-radius: 10px; padding: 20px 24px; background: #fff; }
+.admin-salon-detail-title { flex: 1; min-width: 0; }
+.admin-salon-detail-progress { display: grid; gap: 10px; width: min(35%, 360px); border-left: 1px solid #dfe3e9; padding-left: 24px; }
+.admin-salon-detail-progress > div { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; color: #778293; font-size: 12px; }
+.admin-salon-detail-progress > div strong { color: #172033; font-size: 11px; font-weight: 600; }
+.admin-salon-detail-progress .admin-salon-v2-track { grid-column: 1 / -1; height: 4px; }
+.admin-salon-detail-tabs { display: flex; flex-wrap: wrap; gap: 25px; border-bottom: 1px solid #dee4ec; }
+.admin-salon-detail-tabs button { min-height: 39px; border: 0; border-bottom: 2px solid transparent; padding: 0 3px 10px; color: #788293; background: transparent; font-size: 13px; cursor: pointer; }
+.admin-salon-detail-tabs button[aria-current="page"] { border-bottom-color: #123878; color: #123878; font-weight: 600; }
+.admin-salon-detail-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; }
+.admin-salon-detail-stat { display: grid; align-content: start; gap: 8px; min-height: 127px; border: 1px solid #dde3ea; border-radius: 9px; padding: 20px; background: #fff; }
+.admin-salon-detail-stat > span:first-child { color: #778293; font-size: 12px; }
+.admin-salon-detail-stat strong { color: #121b2a; font-size: 28px; font-weight: 600; line-height: 1.2; }
+.admin-salon-detail-stat strong small { color: #9aa3b1; font-size: 15px; font-weight: 400; }
+.admin-salon-detail-stat .admin-salon-v2-track { width: 75%; height: 4px; }
+.admin-salon-detail-bat-card { border: 1px solid #dde3ea; border-radius: 9px; padding: 20px 24px; background: #fff; }
+.admin-salon-detail-bat-card h3 { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.admin-salon-detail-bat-card > div { margin: 14px 0; }
+.admin-salon-detail-bat-card small { display: block; margin-top: 6px; color: #7d8796; font-size: 11px; }
+.admin-salon-detail-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.admin-salon-detail-section-heading h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; color: #142033; font-size: 14px; font-weight: 600; }
+.admin-salon-detail-section-heading h3 span { border-radius: 99px; padding: 3px 8px; color: #697587; background: #e9edf2; font-size: 11px; }
+.admin-salon-detail-section-heading p { margin: 0; color: #778293; font-size: 12px; }
+.admin-salon-detail-list { display: grid; gap: 0; border: 1px solid #dde3ea; border-radius: 9px; padding: 20px 24px; background: #fff; }
+.admin-salon-detail-list > div:not(.admin-salon-detail-section-heading) { display: flex; align-items: center; gap: 10px; border-top: 1px solid #edf0f3; padding: 13px 0; font-size: 13px; }
+.admin-salon-detail-list > div:not(.admin-salon-detail-section-heading):first-of-type { margin-top: 15px; }
+.admin-salon-detail-list > div:not(.admin-salon-detail-section-heading) small { margin-left: auto; color: #8290a0; }
+.admin-salon-detail-admin-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.admin-salon-exhibitors { display: grid; gap: 18px; margin-top: 2px; }
+.admin-salon-exhibitors-tools { display: flex; gap: 8px; }
+.admin-salon-exhibitors-tools label { width: 240px; }
+.admin-salon-exhibitors-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.admin-salon-exhibitors-table-wrap { overflow-x: auto; border: 1px solid #dce2e9; border-radius: 9px; background: #fff; }
+.admin-salon-exhibitors-table-wrap table { width: 100%; border-collapse: collapse; white-space: nowrap; font-size: 12px; }
+.admin-salon-exhibitors-table-wrap th { padding: 13px 16px; color: #748092; background: #fafbfd; font-weight: 500; text-align: left; }
+.admin-salon-exhibitors-table-wrap td { height: 45px; border-top: 1px solid #e8ecf1; padding: 5px 16px; color: #1c2738; }
+.admin-salon-exhibitors-table-wrap td:first-child { display: flex; align-items: center; gap: 9px; }
+.admin-salon-exhibitors-table-wrap td strong { font-weight: 600; }
+.admin-salon-exhibitors-table-wrap td small { display: block; color: #8e99a8; }
+.admin-salon-exhibitors-table-wrap td a { color: #768394; }
+.admin-salon-exhibitor-avatar { display: grid; flex: 0 0 28px; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: #153775; background: #eaf0fb; font-size: 10px; }
+.admin-salon-config-pill { display: inline-block; border-radius: 99px; padding: 4px 8px; color: #6e7887; background: #eef0f3; font-size: 11px; }
+.admin-salon-config-pill.success { color: #087d58; background: #e5f5ed; }
+.admin-salon-config-pill.warning { color: #bb6810; background: #fff1de; }
+.admin-salon-config-pill.purple { color: #143873; background: #eaf1fc; }
+.admin-salon-exhibitors .admin-pagination { justify-content: flex-end; }
+
+@media (max-width: 1260px) {
+  .admin-salon-v2-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-salon-detail-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .admin-salon-v2-grid { grid-template-columns: 1fr; }
+  .admin-salon-detail-banner { flex-wrap: wrap; }
+  .admin-salon-detail-progress { flex: 1 1 100%; width: 100%; border-left: 0; border-top: 1px solid #dfe3e9; padding: 12px 0 0; }
+  .admin-salon-detail-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .admin-dashboard-shell { display: grid; grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); height: 100dvh; }
+  .admin-dashboard-shell .admin-sidebar { display: block; overflow: hidden; }
+  .admin-dashboard-shell .admin-sidebar-logo, .admin-dashboard-shell .admin-sidebar-product, .admin-dashboard-shell .admin-sidebar-user-wrap, .admin-dashboard-shell .admin-nav-group-label { display: none; }
+  .admin-dashboard-shell .admin-sidebar-nav { display: flex; gap: 4px; overflow-x: auto; padding: 7px 10px; }
+  .admin-dashboard-shell .admin-sidebar-nav button { width: auto; flex: 0 0 auto; min-height: 35px; padding: 0 10px; }
+  .admin-dashboard-shell .admin-main-panel { min-height: 0; }
+  .admin-dashboard-shell .admin-topbar-new { gap: 12px; padding: 13px 18px; }
+  .admin-dashboard-shell .admin-page-content { padding: 18px; }
+  .admin-global-search { width: min(100%, 280px); }
+  .admin-salons-v2-toolbar { align-items: stretch; flex-direction: column; }
+  .admin-salons-v2-tools { justify-content: space-between; }
+  .admin-salon-detail-tabs { gap: 15px; flex-wrap: nowrap; overflow-x: auto; }
+  .admin-salon-detail-tabs button { flex: 0 0 auto; }
+}
+@media (max-width: 520px) {
+  .admin-salon-v2-card { min-height: 390px; padding: 18px; }
+  .admin-salon-detail-stats { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .admin-salon-detail-stat { min-height: 105px; padding: 14px; }
+  .admin-salon-detail-stat strong { font-size: 21px; }
+  .admin-salon-detail-section-heading { align-items: flex-start; flex-direction: column; }
+  .admin-salon-exhibitors-tools { width: 100%; }
+  .admin-salon-exhibitors-tools label { flex: 1; width: auto; }
+}
+.admin-salon-detail-summary { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 16px; align-items: stretch; }
+.admin-salon-detail-summary .admin-salon-detail-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+.admin-salon-detail-summary .admin-salon-detail-bat-card { display: flex; flex-direction: column; }
+@media (max-width: 900px) { .admin-salon-detail-summary { grid-template-columns: 1fr; } }
+.admin-salon-v2-footer-meta { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.admin-salon-v2-footer-meta > div { display: grid; gap: 3px; }
+.admin-salon-v2-footer-meta small { color: #8994a4; font-size: 11px; }
+.admin-salon-v2-footer-meta strong { color: #152033; font-size: 12px; font-weight: 600; }
+.admin-salon-exhibitors-table-wrap .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.admin-salon-v2-pack-pill.muted { color: #5c6878; background: #edf0f3; }
