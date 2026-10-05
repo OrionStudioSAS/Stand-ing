@@ -8893,7 +8893,14 @@ function AdminDashboard({ user, adminProfile }) {
                 if (salon?.id) setPresetSalonId(salon.id);
                 setTab('presets');
               }}
-              onOpenAssets={() => setTab('objects')}
+              onActivatePack={async (salon, packName) => {
+                await ensureSalonOffer(salon, packName);
+                await refreshSalons();
+              }}
+              onOpenAssets={(asset) => {
+                if (asset) setSelectedAsset(asset);
+                setTab('objects');
+              }}
               onOpenMonday={() => setTab('monday')}
             />
           )}
@@ -9187,7 +9194,7 @@ function AdminSalonRow({ title, detail, status, muted }) {
   );
 }
 
-function AdminSalonsView({ salons, assets = [], search = '', selectedSalonName = '', onSelectedSalonName, onCreateSalon, onDeleteSalon, onOpenSalon, onOpenPacks, onOpenAssets, onOpenMonday, onDownloadDebit }) {
+function AdminSalonsView({ salons, assets = [], search = '', selectedSalonName = '', onSelectedSalonName, onCreateSalon, onDeleteSalon, onOpenSalon, onOpenPacks, onActivatePack, onOpenAssets, onOpenMonday, onDownloadDebit }) {
   const [statusFilter, setStatusFilter] = useState('');
   const [view, setView] = useState('salons');
   const [detailTab, setDetailTab] = useState('overview');
@@ -9254,7 +9261,7 @@ function AdminSalonsView({ salons, assets = [], search = '', selectedSalonName =
   if (selectedSalon) return <AdminSalonDetail
     salon={selectedSalon} assets={assets} search={search} detailTab={detailTab} onDetailTab={setDetailTab}
     standFilter={standFilter} onStandFilter={setStandFilter} standSearch={standSearch} onStandSearch={setStandSearch}
-    onOpenPacks={onOpenPacks} onOpenAssets={onOpenAssets} onOpenMonday={onOpenMonday}
+    onOpenPacks={onOpenPacks} onActivatePack={onActivatePack} onOpenAssets={onOpenAssets} onOpenMonday={onOpenMonday}
     onDownloadDebit={() => downloadDebit(selectedSalon)} downloadingDebit={downloadingSalonId === selectedSalon.id}
     onDelete={() => removeSalon(selectedSalon)} deleting={deletingSalonId === selectedSalon.id} error={debitError}
   />;
@@ -9348,7 +9355,7 @@ function AdminPackV2Card({ group, onOpenSalon, onOpenPacks }) {
   </article>;
 }
 
-function AdminSalonDetail({ salon, assets, search, detailTab, onDetailTab, standFilter, onStandFilter, standSearch, onStandSearch, onOpenPacks, onOpenAssets, onOpenMonday, onDownloadDebit, downloadingDebit, onDelete, deleting, error }) {
+function AdminSalonDetail({ salon, assets, search, detailTab, onDetailTab, standFilter, onStandFilter, standSearch, onStandSearch, onOpenPacks, onActivatePack, onOpenAssets, onOpenMonday, onDownloadDebit, downloadingDebit, onDelete, deleting, error }) {
   const packs = adminSalonStandPacks(salon);
   const scenes = salon.scenes || [];
   const complete = adminSalonCompletedScenes(salon);
@@ -9363,13 +9370,11 @@ function AdminSalonDetail({ salon, assets, search, detailTab, onDetailTab, stand
     const text = normalizeTextValue([scene.project_name, scene.client_name, scene.client_email, adminScenePackName(scene, salon), sceneHallLabel(scene), sceneStandNumber(scene), sceneAisleNumber(scene)].join(' '));
     return searchTerms.every((term) => text.includes(term));
   });
-  const activeAssets = assets.filter((asset) => (salon.offers || []).some((offer) => assetPacks(asset).some((pack) => samePackLabel(pack, offer.name))));
-
-  return <section className="admin-salon-detail-v2">
-    <div className="admin-salon-detail-banner"><span className="admin-salon-v2-calendar"><CalendarDays size={19} /></span><div className="admin-salon-detail-title"><h2>{salon.name} <span className={`salon-status-pill ${salonStatusKind(salon)}`}>{salonStatusLabel(salon.status)}</span></h2><p>{adminSalonMeta(salon)}</p></div><div className="admin-salon-detail-progress">{packs.map((pack, index) => { const progress = adminSalonPackProgress(pack); return <div key={pack.key}><span>{pack.name}</span><strong>{progress.percent} % · {progress.complete}/{progress.total}</strong><span className="admin-salon-v2-track"><span className={index % 2 ? 'warm' : ''} style={{ width: `${progress.percent}%` }} /></span></div>; })}</div></div>
+  return <section className={`admin-salon-detail-v2 ${detailTab === 'overview' ? '' : 'compact-heading'}`}>
+    <div className="admin-salon-detail-banner"><span className="admin-salon-v2-calendar"><CalendarDays size={19} /></span><div className="admin-salon-detail-title"><h2>{salon.name} <span className={`salon-status-pill ${salonStatusKind(salon)}`}>{salon.status === 'active' ? 'Ouvert aux configs' : salonStatusLabel(salon.status)}</span></h2><p>{adminSalonMeta(salon)}{detailTab !== 'overview' && packs.length ? ` · Packs ${packs.map((pack) => pack.name).join(' et ')}` : ''}</p></div>{detailTab === 'overview' && <div className="admin-salon-detail-progress">{packs.map((pack, index) => { const progress = adminSalonPackProgress(pack); return <div key={pack.key}><span>{pack.name}</span><strong>{progress.percent} % · {progress.complete}/{progress.total}</strong><span className="admin-salon-v2-track"><span className={index % 2 ? 'warm' : ''} style={{ width: `${progress.percent}%` }} /></span></div>; })}</div>}</div>
     <nav className="admin-salon-detail-tabs" aria-label="Sections du salon">
       {[
-        ['overview', "Vue d’ensemble"], ['bat', `Bon à tirer · ${pendingBat}`], ['assets', `Catalogue assets · ${activeAssets.length}`], ['packs', 'Packs'], ['monday', 'Synchro Monday'],
+        ['overview', "Vue d’ensemble"], ['bat', 'Bon à tirer'], ['assets', 'Catalogue'], ['packs', 'Packs'], ['monday', 'Synchro Monday'],
       ].map(([id, label]) => <button type="button" key={id} aria-current={detailTab === id ? 'page' : undefined} onClick={() => onDetailTab(id)}>{label}</button>)}
     </nav>
     {detailTab === 'overview' && <>
@@ -9377,13 +9382,138 @@ function AdminSalonDetail({ salon, assets, search, detailTab, onDetailTab, stand
       <div className="admin-salon-detail-bat-card"><h3>BAT par pack</h3>{packs.map((pack, index) => { const validated = pack.scenes.filter((scene) => scene.client_status === 'bat_validated' || scene.status === 'validated').length; const submitted = adminSalonCompletedScenes({ scenes: pack.scenes }).length; return <div key={pack.key}><div className="admin-salon-v2-progress"><div><span>{pack.name}</span><strong>{validated} / {submitted} validés</strong></div><span className="admin-salon-v2-track"><span className={index % 2 ? 'warm' : ''} style={{ width: `${submitted ? Math.round(validated / submitted * 100) : 0}%` }} /></span></div><small>{submitted} soumis · {validated} validés · {pendingBatForScenes(pack.scenes)} en attente</small></div>; })}</div></div>
       <AdminSalonExhibitorTable salon={salon} scenes={filteredScenes} allScenes={scenes} packs={packs} filter={standFilter} onFilter={onStandFilter} search={standSearch} onSearch={onStandSearch} />
     </>}
-    {detailTab === 'bat' && <><div className="admin-salon-detail-section-heading"><div><h3>Bon à tirer</h3><p>{pendingBat} en attente de validation</p></div></div><AdminBatView scenes={scenes.filter((scene) => !search || normalizeTextValue([scene.project_name, scene.client_name].join(' ')).includes(normalizeTextValue(search)))} assets={assets} /></>}
-    {detailTab === 'assets' && <div className="admin-salon-detail-list"><div className="admin-salon-detail-section-heading"><div><h3>Catalogue assets</h3><p>{activeAssets.length} asset{activeAssets.length > 1 ? 's' : ''} lié{activeAssets.length > 1 ? 's' : ''} aux packs de ce salon</p></div><button className="admin-outline-v2" type="button" onClick={onOpenAssets}>Gérer les assets</button></div>{activeAssets.slice(0, 30).map((asset) => <div key={asset.type}><Box size={15} /><strong>{asset.label}</strong><small>{assetPacks(asset).join(' · ')}</small></div>)}{!activeAssets.length && <p>Aucun asset associé aux packs de ce salon.</p>}</div>}
-    {detailTab === 'packs' && <div className="admin-salon-detail-list"><div className="admin-salon-detail-section-heading"><div><h3>Packs du salon</h3><p>Les configurations des packs sont partagées entre les salons.</p></div><button className="admin-outline-v2" type="button" onClick={() => onOpenPacks?.(salon)}>Gérer les packs</button></div>{packs.map((pack) => <div key={pack.key}><LayoutDashboard size={15} /><strong>{pack.name}</strong><small>{pack.scenes.length} stands</small></div>)}{!packs.length && <p>Aucun pack activé sur ce salon.</p>}</div>}
+    {detailTab === 'bat' && <AdminSalonBatTab salon={salon} search={search} />}
+    {detailTab === 'assets' && <AdminSalonCatalogTab salon={salon} assets={assets} search={search} onOpenAsset={onOpenAssets} />}
+    {detailTab === 'packs' && <AdminSalonPacksTab salon={salon} onOpenPacks={onOpenPacks} onActivatePack={onActivatePack} />}
     {detailTab === 'monday' && <div className="admin-salon-detail-list"><div className="admin-salon-detail-section-heading"><div><h3>Synchronisation Monday</h3><p>Sources reliées à {salon.name} : {(salon.monday_sources || []).length}</p></div><button className="admin-outline-v2" type="button" onClick={onOpenMonday}>Ouvrir Monday.com</button></div>{(salon.monday_sources || []).map((source) => <div key={source.id || source.board_id}><RotateCcw size={15} /><strong>{source.name || source.board_name || source.board_id || 'Source Monday'}</strong></div>)}{!(salon.monday_sources || []).length && <p>Aucune source Monday reliée.</p>}</div>}
     <div className="admin-salon-detail-admin-actions"><button type="button" className="admin-outline-v2" disabled={downloadingDebit} onClick={onDownloadDebit}>{downloadingDebit ? 'Préparation...' : 'Télécharger le débit'}</button><button type="button" className="admin-danger-v2" disabled={deleting} onClick={onDelete}>{deleting ? 'Suppression...' : 'Supprimer le salon'}</button></div>
     {error && <div className="preset-library-feedback error" role="alert">{error}</div>}
   </section>;
+}
+
+function adminSalonBatState(scene = {}) {
+  const details = scene.source_payload || {};
+  const explicit = normalizeTextValue(details.bat_status || details.batStatus || details.bat?.status || '');
+  if (scene.client_status === 'bat_validated' || scene.status === 'validated') return 'signed';
+  if (/(correction|retour|modification)/.test(explicit)) return 'correction';
+  if (/(signe|validated|valide)/.test(explicit)) return 'signed';
+  if (/(envoye|sent)/.test(explicit)) return 'sent';
+  if (scene.client_status === 'bat_review') return 'sent';
+  return 'waiting';
+}
+
+function adminSalonBatStateLabel(state) {
+  return { waiting: 'En attente Stand-ING', sent: 'Envoyé exposant', signed: 'Signé', correction: 'Correction demandée' }[state] || 'En attente Stand-ING';
+}
+
+function adminSalonBatRows(salon = {}) {
+  return adminSalonCompletedScenes(salon).map((scene) => ({ scene, batState: adminSalonBatState(scene) }));
+}
+
+function adminSalonBatMailto(scene = {}) {
+  const recipient = encodeURIComponent(String(scene.client_email || '').trim()).replace(/%40/gi, '@');
+  const subject = encodeURIComponent(`Bon à tirer de votre stand ${scene.project_name || scene.client_name || ''}`.trim());
+  return `mailto:${recipient}?subject=${subject}`;
+}
+
+function AdminSalonBatTab({ salon, search = '' }) {
+  const [filter, setFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const rows = adminSalonBatRows(salon);
+  const counts = Object.fromEntries(['waiting', 'sent', 'signed', 'correction'].map((state) => [state, rows.filter((row) => row.batState === state).length]));
+  const query = normalizeTextValue(search);
+  const filtered = rows.filter(({ scene, batState }) => (!filter || batState === filter)
+    && (!query || normalizeTextValue([scene.project_name, scene.client_name, scene.client_email, sceneStandNumber(scene), sceneAisleNumber(scene)].join(' ')).includes(query)));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / 15));
+  const currentPage = Math.min(page, pageCount);
+  useEffect(() => setPage(1), [filter, search, salon.id]);
+  const exportCsv = () => {
+    const csv = [['Exposant', 'Email', 'Stand', 'Soumise le', 'Statut BAT', 'Dernière mise à jour'], ...filtered.map(({ scene, batState }) => [scene.project_name || scene.client_name, scene.client_email, `${sceneAisleNumber(scene)}${sceneStandNumber(scene)}`, formatDate(scene.source_payload?.completion_email_sent_at || scene.updated_at), adminSalonBatStateLabel(batState), formatDate(scene.updated_at)])];
+    downloadBlob(new Blob([`\uFEFF${csv.map((row) => row.map(adminSalonCsvCell).join(';')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' }), `bat-${slugForType(salon.name)}.csv`);
+  };
+  return <div className="admin-salon-bat-tab">
+    <div className="admin-salon-bat-kpis">
+      {[['waiting', 'En attente Stand-ING'], ['sent', 'Envoyés exposant'], ['signed', 'Signés'], ['correction', 'Corrections']].map(([state, label]) => <article key={state} className={`admin-salon-bat-kpi ${state}`}><strong>{counts[state]}</strong><span>{label}</span></article>)}
+    </div>
+    <div className="admin-salon-bat-controls"><div className="admin-salon-exhibitors-filters" role="group" aria-label="Statut des BAT">{[['', `Tous · ${rows.length}`], ['waiting', `En attente · ${counts.waiting}`], ['sent', `Envoyés · ${counts.sent}`], ['signed', `Signés · ${counts.signed}`], ['correction', `Corrections · ${counts.correction}`]].map(([state, label]) => <button type="button" key={state} aria-pressed={filter === state} onClick={() => setFilter(state)}>{label}</button>)}</div><button className="admin-outline-v2" type="button" onClick={exportCsv}>Exporter CSV</button></div>
+    <div className="admin-salon-exhibitors-table-wrap"><table><thead><tr><th>Exposant</th><th>Stand</th><th>Config soumise</th><th>Statut BAT</th><th>Délai</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{filtered.slice((currentPage - 1) * 15, currentPage * 15).map(({ scene, batState }) => <tr key={scene.id}><td><strong>{scene.project_name || scene.client_name || 'Exposant'}</strong></td><td>{sceneAisleNumber(scene)}{sceneStandNumber(scene)}</td><td className="admin-salon-bat-muted">{formatDate(scene.source_payload?.completion_email_sent_at || scene.updated_at || scene.created_at)}</td><td><span className={`admin-salon-config-pill ${batState}`}>{adminSalonBatStateLabel(batState)}</span></td><td className="admin-salon-bat-muted">{relativeDays(scene.updated_at || scene.created_at)}</td><td><div className="admin-salon-bat-row-actions">{batState === 'sent' && scene.client_email && <a href={adminSalonBatMailto(scene)} title="Ouvre un brouillon d'e-mail ; joindre le BAT manuellement">Renvoyer</a>}<a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir</a></div></td></tr>)}</tbody></table>{!filtered.length && <p className="admin-empty-row">Aucun BAT avec ces filtres.</p>}</div>
+    {pageCount > 1 && <nav className="admin-pagination" aria-label="Pagination des BAT du salon"><span>Page {currentPage}/{pageCount}</span><div><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Précédent</button><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</button></div></nav>}
+  </div>;
+}
+
+function adminSalonCsvCell(value) {
+  const raw = String(value ?? '');
+  const safe = /^[\s]*[=+@-]/.test(raw) && !/^-?\d+(?:[.,]\d+)?$/.test(raw) ? `'${raw}` : raw;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
+function adminSalonPackModules(entry) {
+  const baseItems = entry.packDefinition?.metadata?.baseItems || entry.offer?.metadata?.baseItems;
+  if (Array.isArray(baseItems)) return baseItems.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0);
+  return Math.max(0, ...(entry.presets || []).map((preset) => (preset.stand_preset_items || []).length));
+}
+
+function AdminSalonPacksTab({ salon, onOpenPacks, onActivatePack }) {
+  const [showChoices, setShowChoices] = useState(false);
+  const [busyPack, setBusyPack] = useState('');
+  const [error, setError] = useState('');
+  const entries = salonPackCards(salon);
+  const active = entries.filter((entry) => entry.active);
+  const available = entries.filter((entry) => !entry.active);
+  const activate = async (entry) => {
+    setBusyPack(entry.packName);
+    setError('');
+    try {
+      await onActivatePack?.(salon, entry.packName);
+      setShowChoices(false);
+    } catch (activationError) {
+      setError(activationError.message || "Impossible d'activer ce pack.");
+    } finally {
+      setBusyPack('');
+    }
+  };
+  return <div className="admin-salon-packs-tab">
+    <h3>Packs activés sur {salon.name}</h3>
+    <div className="admin-salon-packs-grid">
+      {active.map((entry) => <article key={entry.packName} className="admin-salon-pack-tile"><header><h4>{entry.packName}</h4><span>Activé</span></header><div className="admin-salon-pack-tile-stats"><div><strong>{entry.presets?.length || 0}</strong><small>Implantations</small></div><div><strong>{adminSalonPackModules(entry)}</strong><small>Modules inclus</small></div></div><p>Board Monday · {entry.source?.board_id || entry.offer?.monday_source?.board_id || 'Non configuré'}</p><button className="admin-outline-v2" type="button" onClick={() => onOpenPacks?.(salon)}>Gérer dans Packs</button></article>)}
+      <div className="admin-salon-pack-activate"><button type="button" onClick={() => available.length ? setShowChoices((current) => !current) : onOpenPacks?.(salon)}><Plus size={17} /><strong>{available.length ? 'Activer un autre pack' : 'Créer ou gérer les packs'}</strong><span>{available.length ? available.map((entry) => entry.packName).join(' ou ') : 'Depuis la gestion des packs'}</span></button>{showChoices && available.length > 0 && <div className="admin-salon-pack-choices">{available.map((entry) => <button type="button" key={entry.packName} disabled={Boolean(busyPack)} onClick={() => activate(entry)}>{busyPack === entry.packName ? 'Activation...' : `Activer ${entry.packName}`}</button>)}</div>}</div>
+    </div>
+    {error && <div className="preset-library-feedback error" role="alert">{error}</div>}
+  </div>;
+}
+
+function AdminSalonAssetPreview({ url = '' }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [url]);
+  return <span className="admin-salon-catalog-card-image">{url && !failed ? <img src={url} alt="" loading="lazy" onError={() => setFailed(true)} /> : <Box size={22} />}</span>;
+}
+
+function AdminSalonCatalogTab({ salon, assets = [], search = '', onOpenAsset }) {
+  const [localSearch, setLocalSearch] = useState('');
+  const [category, setCategory] = useState('');
+  const [pack, setPack] = useState('');
+  const [page, setPage] = useState(1);
+  const offerNames = (salon.offers || []).map((offer) => offer.name);
+  const catalogAssets = assets.filter((asset) => offerNames.some((name) => assetPacks(asset).some((assigned) => samePackLabel(assigned, name))));
+  const categories = [...new Set(catalogAssets.map((asset) => assetBusinessCategoryLabel(asset, assets)))].sort((a, b) => a.localeCompare(b, 'fr'));
+  const searchTerms = [search, localSearch].map(normalizeTextValue).filter(Boolean);
+  const filtered = catalogAssets.filter((asset) => {
+    const assigned = assetPacks(asset).filter((name) => offerNames.some((offer) => samePackLabel(offer, name)));
+    if (category && assetBusinessCategoryLabel(asset, assets) !== category) return false;
+    if (pack && !assigned.some((name) => samePackLabel(name, pack))) return false;
+    const text = normalizeTextValue([asset.label, asset.type, assetReference(asset, ''), assetBusinessCategoryLabel(asset, assets)].join(' '));
+    return searchTerms.every((term) => text.includes(term));
+  });
+  const pageCount = Math.max(1, Math.ceil(filtered.length / 24));
+  const currentPage = Math.min(page, pageCount);
+  useEffect(() => setPage(1), [localSearch, category, pack, search, salon.id]);
+  return <div className="admin-salon-catalog-tab">
+    <div className="admin-salon-catalog-toolbar"><div className="admin-salon-catalog-filters"><label><Search size={16} /><input aria-label="Rechercher un asset" placeholder="Nom ou référence..." value={localSearch} onChange={(event) => setLocalSearch(event.target.value)} /></label><select aria-label="Filtrer par catégorie" value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Catégorie</option>{categories.map((name) => <option key={name}>{name}</option>)}</select><select aria-label="Filtrer par pack" value={pack} onChange={(event) => setPack(event.target.value)}><option value="">Pack</option>{offerNames.map((name) => <option key={name}>{name}</option>)}</select></div><button className="admin-outline-v2" type="button" onClick={() => onOpenAsset?.()}>Gérer dans Assets 3D</button></div>
+    <p className="admin-salon-catalog-caption">{catalogAssets.length} asset{catalogAssets.length > 1 ? 's' : ''} disponible{catalogAssets.length > 1 ? 's' : ''} pour ce salon, issu{catalogAssets.length > 1 ? 's' : ''} des packs {offerNames.join(' et ') || 'non configurés'}</p>
+    <div className="admin-salon-catalog-grid">{filtered.slice((currentPage - 1) * 24, currentPage * 24).map((asset) => <button className="admin-salon-catalog-card" type="button" key={asset.type} onClick={() => onOpenAsset?.(asset)}><AdminSalonAssetPreview url={asset.thumbnail_url} /><span className="admin-salon-catalog-card-copy"><strong>{asset.label || asset.type}</strong><small>{assetBusinessCategoryLabel(asset, assets)}</small><span>{assetPacks(asset).filter((name) => offerNames.some((offer) => samePackLabel(offer, name))).map((name) => <em key={name} className="admin-salon-v2-pack-pill">{name}</em>)}</span></span></button>)}</div>
+    {!filtered.length && <div className="admin-empty-row">Aucun asset avec ces filtres.</div>}
+    {pageCount > 1 && <nav className="admin-pagination" aria-label="Pagination du catalogue"><span>Page {currentPage}/{pageCount}</span><div><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Précédent</button><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</button></div></nav>}
+  </div>;
 }
 
 function pendingBatForScenes(scenes = []) {

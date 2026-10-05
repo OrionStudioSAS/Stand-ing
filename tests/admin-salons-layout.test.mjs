@@ -16,7 +16,7 @@ function load(name) {
   vm.runInContext(source.slice(start, source.indexOf('\n}\n', start) + 2), api);
 }
 
-for (const name of ['adminSalonCompletedScenes', 'adminSalonPackProgress', 'adminSalonMeta', 'adminScenePackName', 'adminSalonBatKind', 'adminSalonBatLabel']) load(name);
+for (const name of ['adminSalonCompletedScenes', 'adminSalonPackProgress', 'adminSalonMeta', 'adminScenePackName', 'adminSalonBatKind', 'adminSalonBatLabel', 'adminSalonBatState', 'adminSalonBatStateLabel', 'adminSalonBatRows', 'adminSalonPackModules']) load(name);
 
 test('salon and pack progress use actual configured scenes, not total created scenes', () => {
   const scenes = [
@@ -46,4 +46,29 @@ test('new admin navigation and salon details have functional tabs and responsive
   assert.match(source, /onClick=\{exportRows\}/);
   assert.match(css, /\.admin-salon-detail-summary/);
   assert.match(css, /@media \(max-width: 760px\)[\s\S]*?\.admin-dashboard-shell \.admin-sidebar-nav/);
+});
+
+test('BAT tab separates pending, sent, signed and explicit correction states', () => {
+  const scenes = [
+    { id: 'draft', client_status: 'draft' },
+    { id: 'pending', client_status: 'configured', status: 'bat_pending' },
+    { id: 'sent', client_status: 'bat_review' },
+    { id: 'signed', client_status: 'bat_validated' },
+    { id: 'correction', client_status: 'configured', source_payload: { bat_status: 'correction demandée' } },
+  ];
+  const states = Array.from(api.adminSalonBatRows({ scenes }), (row) => row.batState);
+  assert.deepEqual(states, ['waiting', 'sent', 'signed', 'correction']);
+  assert.equal(api.adminSalonBatStateLabel('correction'), 'Correction demandée');
+});
+
+test('pack cards count globally configured base modules without duplicating layouts', () => {
+  const entry = {
+    packDefinition: { metadata: { baseItems: [{ quantity: 1 }, { quantity: 3 }] } },
+    presets: [{ stand_preset_items: [1, 2, 3] }, { stand_preset_items: [1, 2] }],
+  };
+  assert.equal(api.adminSalonPackModules(entry), 4);
+  assert.equal(api.adminSalonPackModules({ presets: entry.presets }), 3);
+  assert.match(source, /onActivatePack=\{async \(salon, packName\)/);
+  assert.match(source, /onClick=\{exportCsv\}>Exporter CSV/);
+  assert.match(source, /Filtrer par catégorie/);
 });
