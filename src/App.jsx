@@ -1,13 +1,14 @@
-import React, { Suspense, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
-import { Canvas, useFrame, useLoader } from '@react-three/fiber';
+import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
 import { Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MOUSE, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { defaultImageFraming, framedImageRect, normalizeImageFraming } from './imageFraming.js';
+import { packEditorChanges, packEditorImpact } from './packEditor.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   AlertTriangle,
@@ -10217,6 +10218,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
       {editing && (
         <AdminSalonPresetConfigurator
           salon={editing.salon}
+          salons={salons}
           assets={assets}
           initialOfferId={editing.offer?.id}
           onClose={() => setEditing(null)}
@@ -10407,14 +10409,49 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
   );
 }
 
-function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onClose, onSaved }) {
+function AdminSalonPresetConfigurator({ salon, salons = [], assets, initialOfferId = '', onClose, onSaved }) {
   const initialOffer = (salon.offers || []).find((offer) => offer.id === initialOfferId) || salon.offers?.[0] || null;
   const [localSalon, setLocalSalon] = useState(salon);
   const [saveState, setSaveState] = useState({ loading: false, message: '', error: '' });
   const [selectedLayout, setSelectedLayout] = useState('u');
+  const [drafts, setDrafts] = useState({});
+  const [baselines, setBaselines] = useState({});
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const confirmRef = useRef(null);
   const selectedOffer = (localSalon.offers || []).find((offer) => offer.id === initialOfferId) || initialOffer || null;
   const offerPresets = selectedOffer?.presets?.length ? selectedOffer.presets : (localSalon.presets || []).filter((preset) => preset.offer_id === selectedOffer?.id);
   const activePreset = offerPresets.find((preset) => (preset.layout || 'u') === selectedLayout) || offerPresets[0] || null;
+  const changedPresetIds = Object.keys(drafts).filter((id) => baselines[id] && JSON.stringify(drafts[id]) !== baselines[id]);
+  const changeCount = changedPresetIds.reduce((count, id) => count + packEditorChanges(JSON.parse(baselines[id]), drafts[id]).length, 0);
+  const { salons: affectedSalons, sceneCount: affectedSceneCount } = packEditorImpact(salons.length ? salons : [salon], selectedOffer);
+  const closeEditor = () => {
+    if (!saveState.loading && (!changedPresetIds.length || window.confirm('Quitter sans enregistrer les modifications de ce pack ?'))) onClose();
+  };
+
+  const rememberDraft = useCallback((id, draft) => {
+    const serialized = JSON.stringify(draft);
+    setDrafts((current) => JSON.stringify(current[id]) === serialized ? current : { ...current, [id]: draft });
+    setBaselines((current) => current[id] ? current : { ...current, [id]: serialized });
+  }, []);
+
+  useEffect(() => {
+    if (!confirmOpen) return undefined;
+    const previousFocus = document.activeElement;
+    const dialog = confirmRef.current;
+    dialog?.focus();
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && !saveState.loading) { event.preventDefault(); setConfirmOpen(false); }
+      if (event.key !== 'Tab') return;
+      const buttons = [...dialog.querySelectorAll('button:not([disabled])')];
+      if (!buttons.length) { event.preventDefault(); return; }
+      const first = buttons[0];
+      const last = buttons[buttons.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog)) { event.preventDefault(); first.focus(); }
+    };
+    dialog?.addEventListener('keydown', onKeyDown);
+    return () => { dialog?.removeEventListener('keydown', onKeyDown); previousFocus?.focus(); };
+  }, [confirmOpen, saveState.loading]);
 
   useEffect(() => {
     setLocalSalon(salon);
@@ -10423,21 +10460,29 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
     setSelectedLayout(nextPresets.find((preset) => preset.layout === 'u')?.layout || nextPresets[0]?.layout || 'u');
   }, [salon, initialOfferId]);
 
-  const savePreset = async (sceneDraft) => {
-    if (!activePreset) return;
+  const savePreset = async () => {
+    if (!changedPresetIds.length) return;
     setSaveState({ loading: true, message: '', error: '' });
     try {
-      const savedPreset = await saveStandPresetConfig(activePreset, sceneDraft);
+      const saved = [];
+      for (const id of changedPresetIds) {
+        const source = offerPresets.find((preset) => String(preset.id) === id);
+        if (source) {
+          const reserveRules = normalizeReserveRules(drafts[id].reserveRules, { bands: reserveRuleBandsForPack(selectedOffer?.name) });
+          saved.push(await saveStandPresetConfig(source, { ...drafts[id], reserveRules, options: { ...drafts[id].options, reserveRules } }));
+          setBaselines((current) => ({ ...current, [id]: JSON.stringify(drafts[id]) }));
+        }
+      }
       setLocalSalon((current) => ({
         ...current,
-        presets: [...(current.presets || []).filter((item) => item.id !== savedPreset.id), savedPreset],
-        offers: (current.offers || []).map((offer) => (
-          offer.id === selectedOffer?.id
-            ? { ...offer, presets: [...(offer.presets || []).filter((item) => item.id !== savedPreset.id), savedPreset] }
-            : offer
-        )),
+        presets: (current.presets || []).map((item) => saved.find((entry) => entry.id === item.id) || item),
+        offers: (current.offers || []).map((offer) => ({
+          ...offer,
+          presets: (offer.presets || []).map((item) => saved.find((entry) => entry.id === item.id) || item),
+        })),
       }));
-      setSaveState({ loading: false, message: `Base ${layoutLabel(savedPreset.layout)} sauvegardée. Monday appliquera cette référence pour la même implantation.`, error: '' });
+      setConfirmOpen(false);
+      setSaveState({ loading: false, message: `${saved.length} implantation${saved.length > 1 ? 's' : ''} enregistrée${saved.length > 1 ? 's' : ''} pour tous les salons liés à ce pack.`, error: '' });
       await onSaved?.();
     } catch (error) {
       setSaveState({ loading: false, message: '', error: error.message || 'Sauvegarde impossible.' });
@@ -10448,12 +10493,10 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
     <div className="salon-preset-layer">
       <section className="salon-preset-modal">
         <header className="salon-preset-header">
-          <div>
-            <span>Configuration de base</span>
-            <h2>{selectedOffer?.name || 'Pack'}</h2>
-            <p>Cette configuration est globale : toute modification est répercutée sur les salons où le pack est actif.</p>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Fermer"><X size={22} /></button>
+          <button type="button" className="preset-back" onClick={closeEditor} disabled={saveState.loading} aria-label="Retour aux packs"><ChevronLeft size={20} /></button>
+          <div className="preset-header-title"><small>Packs / {selectedOffer?.name || 'Pack'}</small><h2>Configuration de base</h2></div>
+          <span className="preset-global-warning"><AlertTriangle size={15} /> Configuration globale · {affectedSalons.length ? `répercutée sur ${affectedSalons.map((entry) => entry.name).join(', ')}` : 'partagée entre salons'}</span>
+          <div className="preset-header-actions"><span>{changeCount} modification{changeCount > 1 ? 's' : ''} non enregistrée{changeCount > 1 ? 's' : ''}</span><button type="button" disabled={saveState.loading} onClick={closeEditor}>Annuler</button><button type="button" className="preset-header-save" disabled={!changedPresetIds.length || saveState.loading} onClick={() => setConfirmOpen(true)}>Enregistrer</button></div>
         </header>
 
         <div className="preset-save-feedback-slot">
@@ -10464,14 +10507,15 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
         {activePreset ? (
           <div className="preset-modal-body">
             <div className="preset-layout-reference-tabs">
-              <span>Base à configurer :</span>
+              <span>Implantation</span>
               {layouts.map((layoutOption) => {
                 const layoutPreset = offerPresets.find((preset) => (preset.layout || 'u') === layoutOption.id);
-                const itemCount = layoutPreset?.stand_preset_items?.length || 0;
+                const itemCount = drafts[layoutPreset?.id]?.items?.length ?? layoutPreset?.stand_preset_items?.length ?? 0;
                 return (
-                  <button key={layoutOption.id} type="button" className={selectedLayout === layoutOption.id ? 'active' : ''} onClick={() => setSelectedLayout(layoutOption.id)}>
-                    {layoutOption.label}
+                  <button key={layoutOption.id} type="button" disabled={!layoutPreset || saveState.loading} className={selectedLayout === layoutOption.id ? 'active' : ''} onClick={() => setSelectedLayout(layoutOption.id)}>
+                    <i className={`preset-layout-icon ${layoutOption.id}`} /> <strong>{layoutOption.label}</strong>
                     <small>{itemCount} objet{itemCount > 1 ? 's' : ''}</small>
+                    <em className={layoutPreset?.id && changedPresetIds.includes(String(layoutPreset.id)) ? 'dirty' : ''} />
                   </button>
                 );
               })}
@@ -10483,19 +10527,35 @@ function AdminSalonPresetConfigurator({ salon, assets, initialOfferId = '', onCl
               preset={activePreset}
               assets={assets}
               saving={saveState.loading}
-              onSave={savePreset}
-              onPresetLayoutChange={setSelectedLayout}
+              initialDraft={drafts[activePreset.id]}
+              onDraftChange={rememberDraft}
             />
           </div>
         ) : (
           <div className="admin-empty-row">Sélectionne ou ajoute un pack pour configurer sa scène de base.</div>
         )}
+        {confirmOpen && <div className="preset-confirm-layer" onMouseDown={(event) => { if (!saveState.loading && event.target === event.currentTarget) setConfirmOpen(false); }}>
+          <section ref={confirmRef} tabIndex={-1} className="preset-confirm-dialog" role="dialog" aria-modal="true" aria-label="Confirmer l'enregistrement global">
+            <h3>Enregistrer la configuration globale ?</h3>
+            <p>Cette configuration sera partagée par tous les salons où le pack {selectedOffer?.name} est actif.</p>
+            <div className="preset-impact"><div><strong>{affectedSalons.length}</strong><span>salon{affectedSalons.length > 1 ? 's' : ''} concerné{affectedSalons.length > 1 ? 's' : ''}</span></div><div><strong>{affectedSceneCount}</strong><span>scène{affectedSceneCount > 1 ? 's' : ''} liée{affectedSceneCount > 1 ? 's' : ''}</span></div></div>
+            <h4>Ce qui change</h4>
+            <div className="preset-changes">{changedPresetIds.map((id) => {
+              const draft = drafts[id];
+              const before = JSON.parse(baselines[id]);
+              return packEditorChanges(before, draft).map((change) => <div key={`${id}-${change.label}`}><small>{layoutLabel(draft.layout)} · {change.label}</small><span>{change.detail}</span></div>);
+            })}</div>
+            <p className="preset-confirm-note">Aucun e-mail n'est envoyé aux exposants. Les scènes déjà configurées ne sont pas modifiées automatiquement.</p>
+            {saveState.error && <p role="alert" className="preset-confirm-error">{saveState.error}</p>}
+            <footer><button type="button" disabled={saveState.loading} onClick={() => setConfirmOpen(false)}>Continuer à modifier</button><button type="button" className="preset-header-save" disabled={saveState.loading || !changedPresetIds.length} onClick={savePreset}>{saveState.loading ? 'Enregistrement...' : 'Enregistrer pour tous les salons'}</button></footer>
+          </section>
+        </div>}
       </section>
     </div>
   );
 }
 
-function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPresetLayoutChange }) {
+function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraftChange }) {
   const availableCatalog = useMemo(() => {
     const dynamicEntries = (assets || [])
       .filter((asset) => asset.is_active)
@@ -10506,14 +10566,14 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
     return sortCatalogEntries(uniqueCatalogEntries(entries));
   }, [assets, offer?.name]);
-  const initialScene = useMemo(() => presetToEditableScene(preset, availableCatalog), [preset, availableCatalog]);
+  const initialScene = useMemo(() => initialDraft || presetToEditableScene(preset, availableCatalog), []);
   const initialWidth = initialScene.dimensions.width;
   const initialDepth = initialScene.dimensions.depth;
   const initialLayout = initialScene.layout;
   const [width, setWidth] = useState(initialWidth);
   const [depth, setDepth] = useState(initialDepth);
   const height = fixedWallHeight;
-  const [layout, setLayout] = useState(initialLayout);
+  const layout = initialLayout;
   const [items, setItems] = useState(() => initialScene.items.map((item) => constrainItem(item, initialWidth, initialDepth, initialLayout)));
   const [selectedId, setSelectedId] = useState(initialScene.items[0]?.id || null);
   const [draggingId, setDraggingId] = useState(null);
@@ -10521,12 +10581,18 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const orbitControlsRef = useRef(null);
   const [cameraControlMode, setCameraControlMode] = useState('orbit');
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
+  const [editorTab, setEditorTab] = useState('base');
+  const [viewMode, setViewMode] = useState('3d');
+  const [objectSearch, setObjectSearch] = useState('');
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [objectFeedback, setObjectFeedback] = useState('');
+  const [draftReady, setDraftReady] = useState(false);
   const packReserveBands = reserveRuleBandsForPack(offer?.name);
   const isSignaturePack = packReserveBands === signatureReserveRuleBands;
-  const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true, bands: packReserveBands }));
-  const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules, { isSignaturePack }));
-  const [autoSpotsRule, setAutoSpotsRule] = useState(() => preset.base_config?.autoSpotsRule || null);
-  const [presetColorIds, setPresetColorIds] = useState(() => presetDefaultColorIds(preset));
+  const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(initialDraft?.reserveRules || preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true, bands: packReserveBands }));
+  const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(initialDraft?.partitionHeadRules || preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules, { isSignaturePack }));
+  const [autoSpotsRule, setAutoSpotsRule] = useState(() => initialDraft ? initialDraft.autoSpotsRule || null : preset.base_config?.autoSpotsRule || null);
+  const [presetColorIds, setPresetColorIds] = useState(() => initialDraft?.defaultColorOptions || presetDefaultColorIds(preset));
   const carpetPalette = useMemo(() => packColorPalette(assets, offer?.name, 'carpet', carpetColors), [assets, offer?.name]);
   const footprintPalette = useMemo(() => packColorPalette(assets, offer?.name, 'footprint', carpetPalette), [assets, offer?.name, carpetPalette]);
   const wallFabricPalette = useMemo(() => packColorPalette(assets, offer?.name, 'wallFabric', wallFabricColors), [assets, offer?.name]);
@@ -10542,27 +10608,30 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
     wallFabricColor: selectedWallFabricColor,
     reserveWallFabricColor: selectedReserveWallFabricColor,
   }), [selectedCarpetColor, selectedCarpetFootprintColor, selectedWallFabricColor, selectedReserveWallFabricColor]);
-  const presetTextureLoad = useSceneTexturePreload(items, [
+  const previewItems = useMemo(() => {
+    const area = width * depth;
+    const reserveRule = activeReserveRule(reserveRules, area, packReserveBands);
+    const automaticReserves = makeAutomaticReserveItems(reserveRule, '', availableCatalog, width, depth, layout, offer?.name);
+    const headRule = activePartitionHeadRule(partitionHeadRules, area, layout);
+    const automaticHeads = makeAutomaticPartitionHeadItems(headRule, partitionHeadEnabledSides(headRule), availableCatalog, width, depth, layout, offer?.name);
+    const automaticSpots = hasAutoSpotsRule(autoSpotsRule) ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...items, ...automaticReserves]) : [];
+    return [...items, ...automaticReserves, ...automaticHeads, ...automaticSpots];
+  }, [items, width, depth, layout, reserveRules, partitionHeadRules, autoSpotsRule, availableCatalog, packReserveBands, offer?.name]);
+  const presetTextureLoad = useSceneTexturePreload(previewItems, [
     selectedCarpetColor.image,
     selectedCarpetFootprintColor.image,
     selectedWallFabricColor.image,
     selectedReserveWallFabricColor.image,
   ]);
-  const presetSuspendLoad = useSceneSuspendPreload(items);
+  const presetSuspendLoad = useSceneSuspendPreload(previewItems);
   const presetAssetsReady = presetTextureLoad.ready && presetSuspendLoad.ready;
   const presetLoadProgress = combineLoadStates(presetTextureLoad, presetSuspendLoad);
   const selected = items.find((item) => item.id === selectedId);
 
   useEffect(() => {
     setItems((current) => current.map((item) => constrainItem(hydrateSceneItemFromCatalog(item, availableCatalog), width, depth, layout)));
+    setDraftReady(true);
   }, [width, depth, layout, availableCatalog]);
-
-  useEffect(() => {
-    setReserveRules(normalizeReserveRules(preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true, bands: packReserveBands }));
-    setPartitionHeadRules(normalizePartitionHeadRules(preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules, { isSignaturePack }));
-    setAutoSpotsRule(preset.base_config?.autoSpotsRule || null);
-    setPresetColorIds(presetDefaultColorIds(preset));
-  }, [preset.id, preset.base_config, packReserveBands, isSignaturePack]);
 
   const updateItem = (id, patch) => {
     setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout));
@@ -10581,30 +10650,19 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
 
   const addItem = (entry) => {
     const item = makeItem(entry.type, width, depth, layout, entry);
-    setItems((current) => {
-      const placed = placeItemInFreeSpot({ ...item, label: entry.label }, current, width, depth, layout);
-      if (!placed) return current;
-      return [...current, placed];
-    });
-    setSelectedId(item.id);
+    const placed = placeItemInFreeSpot({ ...item, label: entry.label }, items, width, depth, layout);
+    if (!placed) { setObjectFeedback('Pas de place disponible pour cet objet. Déplace les objets ou agrandis la scène.'); return; }
+    setObjectFeedback('');
+    setItems((current) => [...current, placed]);
+    setSelectedId(placed.id);
   };
 
-  const chooseLayout = (nextLayout) => {
-    if (onPresetLayoutChange && nextLayout !== layout) {
-      onPresetLayoutChange(nextLayout);
-      return;
-    }
-    setLayout(nextLayout);
-    setItems((current) => current.map((item) => constrainItem(item, width, depth, nextLayout)));
-  };
-
-  const save = () => {
-    const cleanedReserveRules = normalizeReserveRules(reserveRules, { bands: packReserveBands });
-    onSave({
+  const sceneDraft = useMemo(() => {
+    return {
       dimensions: { width, depth, height: fixedWallHeight },
       layout,
       items,
-      reserveRules: cleanedReserveRules,
+      reserveRules,
       partitionHeadRules,
       autoSpotsRule: autoSpotsRule || undefined,
       defaultColorOptions: selectedDefaultColorOptions,
@@ -10612,18 +10670,26 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
         presetMode: true,
         includedPack: offer?.name,
         salon: salon.name,
-        reserveRules: cleanedReserveRules,
+        reserveRules,
         partitionHeadRules,
         autoSpotsRule: autoSpotsRule || undefined,
         defaultColorOptions: selectedDefaultColorOptions,
         ...selectedDefaultColorOptions,
       },
-    });
+    };
+  }, [width, depth, layout, items, reserveRules, partitionHeadRules, autoSpotsRule, selectedDefaultColorOptions, packReserveBands, offer?.name, salon.name]);
+
+  useEffect(() => { if (draftReady) onDraftChange(preset.id, sceneDraft); }, [preset.id, sceneDraft, onDraftChange, draftReady]);
+  const removeItem = (id) => {
+    setItems((current) => current.filter((item) => item.id !== id));
+    if (selectedId === id) setSelectedId(null);
   };
 
   return (
     <div className="preset-editor-grid">
       <section className="preset-3d-stage">
+        <div className="preset-view-switch"><button type="button" className={viewMode === '3d' ? 'active' : ''} onClick={() => setViewMode('3d')}>3D</button><button type="button" className={viewMode === 'plan' ? 'active' : ''} onClick={() => setViewMode('plan')}>Plan</button></div>
+        <div className="preset-canvas-container" style={{ visibility: viewMode === 'plan' ? 'hidden' : 'visible' }}>
         <Canvas
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
           dpr={[1, 1.5]}
@@ -10644,7 +10710,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
               depth={depth}
               height={height}
               layout={layout}
-              items={items}
+              items={previewItems}
               selectedId={selectedId}
               setSelectedId={setSelectedId}
               draggingId={draggingId}
@@ -10655,6 +10721,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
               viewAngle={35}
               carpetColor={selectedCarpetColor}
               carpetFootprintColor={selectedCarpetFootprintColor}
+              carpetFootprintEnabled={!isSignaturePack}
               wallFabricColor={selectedWallFabricColor}
               reserveWallFabricColor={selectedReserveWallFabricColor}
               selectedToolbar={selected ? (
@@ -10677,7 +10744,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
             minPolarAngle={0.01}
             maxPolarAngle={sceneCameraMaxPolarAngle}
             minDistance={2.5}
-            maxDistance={11}
+            maxDistance={60}
             enableRotate={cameraControlMode === 'orbit'}
             enablePan={cameraControlMode === 'pan'}
             mouseButtons={cameraControlMode === 'pan' ? cameraPanMouseButtons : cameraOrbitMouseButtons}
@@ -10687,27 +10754,33 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
             onStart={() => setOrbitControlsActive(true)}
             onEnd={() => setOrbitControlsActive(false)}
           />
+          <PresetCameraFraming width={width} depth={depth} controlsRef={orbitControlsRef} />
         </Canvas>
+        </div>
+        {viewMode === 'plan' && <PresetPlanView width={width} depth={depth} layout={layout} items={previewItems} editableIds={items.map((item) => item.id)} selectedId={selectedId} onSelect={setSelectedId} carpetColor={selectedCarpetColor} footprintColor={selectedCarpetFootprintColor} footprintEnabled={!isSignaturePack} onMove={updateItem} />}
 
         {!presetAssetsReady && <SceneTextureLoaderOverlay loaded={presetLoadProgress.loaded} total={presetLoadProgress.total} />}
 
-        <CameraModeToolbar mode={cameraControlMode} onChange={setCameraControlMode} />
+        {viewMode === '3d' && <CameraModeToolbar mode={cameraControlMode} onChange={setCameraControlMode} />}
+        {viewMode === '3d' && <button type="button" className="preset-recenter" onClick={() => {
+          framePresetCamera(orbitControlsRef.current, width, depth);
+        }}><RotateCcw size={15} /> Recentrer</button>}
 
       </section>
 
       <aside className="preset-side-panel">
+        <header className="preset-panel-heading">
         <h3>{offer?.name || 'Pack'} · {layoutLabel(layout)}</h3>
-        <p>Cette base est commune à tous les salons utilisant ce pack. Change d'onglet pour configurer les autres implantations.</p>
+        <span className="preset-area-badge">{formatNumber(width * depth)} m²</span>
+        <p>Base commune à tous les salons utilisant ce pack</p>
+        </header>
+        <nav className="preset-panel-tabs" aria-label="Réglages du pack">{[['base', 'Base'], ['reserves', 'Réserves'], ['heads', 'Têtes'], ['spots', 'Spots'], ['objects', `Objets · ${items.length}`]].map(([id, label]) => <button type="button" key={id} className={editorTab === id ? 'active' : ''} onClick={() => setEditorTab(id)}>{label}</button>)}</nav>
+        <div className="preset-panel-content">
+        {editorTab === 'base' && <>
+        <h4>Dimensions</h4><p>Surface calculée automatiquement : {formatNumber(width * depth)} m²</p>
         <div className="preset-dimensions">
-          <label>Largeur <span>{width} m</span><input type="range" min="2" max="12" step="0.5" value={width} onChange={(event) => setWidth(Number(event.target.value))} /></label>
-          <label>Profondeur <span>{depth} m</span><input type="range" min="2" max="10" step="0.5" value={depth} onChange={(event) => setDepth(Number(event.target.value))} /></label>
-        </div>
-        <div className="preset-layouts">
-          {layouts.map((option) => (
-            <button key={option.id} className={layout === option.id ? 'active' : ''} type="button" onClick={() => chooseLayout(option.id)}>
-              {option.label}
-            </button>
-          ))}
+          <div><label htmlFor="preset-width-number">Largeur</label><span><input id="preset-width-number" aria-label="Largeur en mètres" type="number" min="2" max="12" step="0.5" value={width} onChange={(event) => { if (event.target.value) setWidth(clamp(Number(event.target.value), 2, 12)); }} /> m</span><input aria-label="Largeur" type="range" min="2" max="12" step="0.5" value={width} style={{ '--range-progress': `${(width - 2) * 10}%` }} onChange={(event) => setWidth(Number(event.target.value))} /><small>2 m <em>12 m</em></small></div>
+          <div><label htmlFor="preset-depth-number">Profondeur</label><span><input id="preset-depth-number" aria-label="Profondeur en mètres" type="number" min="2" max="10" step="0.5" value={depth} onChange={(event) => { if (event.target.value) setDepth(clamp(Number(event.target.value), 2, 10)); }} /> m</span><input aria-label="Profondeur" type="range" min="2" max="10" step="0.5" value={depth} style={{ '--range-progress': `${(depth - 2) * 12.5}%` }} onChange={(event) => setDepth(Number(event.target.value))} /><small>2 m <em>10 m</em></small></div>
         </div>
         <PresetDefaultColorsEditor
           carpetColors={carpetPalette}
@@ -10717,48 +10790,136 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           onChange={setPresetColorIds}
           isSignaturePack={isSignaturePack}
         />
-        <PresetReserveRulesEditor
+        </>}
+        {editorTab === 'reserves' && <PresetReserveRulesEditor
           rules={reserveRules}
           bands={packReserveBands}
           entries={availableCatalog.filter(isReserveCatalogEntry)}
           salonLabel={offer?.name || ''}
           allowanceMode={isSignaturePack || normalizePackBenefits(offer?.metadata?.packBenefits).mode === 'allowance'}
           onChange={setReserveRules}
-        />
-        <PresetPartitionHeadRulesEditor
+          area={width * depth}
+        />}
+        {editorTab === 'heads' && <PresetPartitionHeadRulesEditor
           rules={partitionHeadRules}
           entries={availableCatalog.filter(isPartitionHeadItem)}
           salonLabel={offer?.name || ''}
           isSignaturePack={isSignaturePack}
           onChange={setPartitionHeadRules}
-        />
-        <PresetAutoSpotsEditor
+          area={width * depth}
+        />}
+        {editorTab === 'spots' && <PresetAutoSpotsEditor
           rule={autoSpotsRule}
           entries={availableCatalog.filter((e) => !e.isGroup && !isVariantGroupEntry(e))}
           width={width}
           depth={depth}
           onChange={setAutoSpotsRule}
-        />
+        />}
+        {editorTab === 'objects' && <>
         <h4>Objets inclus</h4>
         <p className="preset-included-help">Chaque objet sauvegardé ici est inclus dans la formule. Le client ne paiera que les quantités ajoutées au-delà.</p>
-        <div className="preset-catalog">
-          {availableCatalog.filter((entry) => !isVariantGroupEntry(entry)).map((entry) => {
+        <div className="preset-object-search"><Search size={16} /><input value={objectSearch} placeholder="Rechercher un objet..." onChange={(event) => setObjectSearch(event.target.value)} /><button type="button" onClick={() => setCatalogOpen((open) => !open)}><Plus size={14} /> Ajouter</button></div>
+        {catalogOpen && <div className="preset-catalog">
+          {availableCatalog.filter((entry) => !isVariantGroupEntry(entry) && normalizeTextValue(entry.label).includes(normalizeTextValue(objectSearch))).map((entry) => {
             const Icon = entry.icon;
             return (
-              <button key={entry.type} type="button" onClick={() => addItem(entry)}>
+              <button key={entry.type} type="button" onClick={() => { addItem(entry); setCatalogOpen(false); }}>
                 <Icon size={16} />
                 <span>{entry.label}</span>
                 <Plus size={13} />
               </button>
             );
           })}
+        </div>}
+        {objectFeedback && <p role="status">{objectFeedback}</p>}
+        <div className="preset-included-list">{Array.from(new Set(items.map((item) => item.type))).map((type) => {
+          const copies = items.filter((item) => item.type === type);
+          const item = copies.find((copy) => copy.id === selectedId) || copies[0];
+          if (!normalizeTextValue(item.label).includes(normalizeTextValue(objectSearch))) return null;
+          return <article key={type} className={copies.some((copy) => copy.id === selectedId) ? 'active' : ''}>
+            <button type="button" className="preset-included-name" onClick={() => setSelectedId(item.id)}>{item.isGroup ? <Layers size={18} /> : <Box size={18} />}<span>{item.label}</span></button>
+            <div className="preset-included-quantity"><button type="button" aria-label={`Retirer un exemplaire de ${item.label}`} onClick={() => removeItem(copies[copies.length - 1].id)}><Minus size={12} /></button><span>{copies.length}</span><button type="button" aria-label={`Ajouter un exemplaire de ${item.label}`} onClick={() => addItem(findCatalogEntry(availableCatalog, type) || item)}><Plus size={12} /></button></div>
+            <button type="button" aria-label={`Retirer ${item.label}`} onClick={() => { setItems((current) => current.filter((copy) => copy.type !== type)); setSelectedId(null); }}><Trash2 size={15} /></button>
+          </article>;
+        })}</div>
+        {!items.length && <p>Aucun objet inclus. Ajoute un objet pour le placer dans cette implantation.</p>}
+        <p>{items.length} objet{items.length > 1 ? 's' : ''} inclus · sélectionne un objet pour le déplacer dans la scène</p>
+        </>}
         </div>
-        <button className="preset-save-button" type="button" disabled={saving} onClick={save}>
-          {saving ? 'Sauvegarde...' : 'Sauvegarder ce pack'}
-        </button>
       </aside>
     </div>
   );
+}
+
+function framePresetCamera(controls, width, depth) {
+  if (!controls) return;
+  const camera = controls.object;
+  const halfFov = camera.fov * Math.PI / 360;
+  const aspect = Math.max(0.1, Number(camera.aspect) || 1);
+  const limitingAngle = Math.min(halfFov, Math.atan(Math.tan(halfFov) * aspect));
+  const radius = Math.hypot(width + 1, depth + 1, fixedWallHeight) / 2;
+  const distance = radius / Math.sin(limitingAngle) * 1.05;
+  controls.target.set(0, 1, 0);
+  camera.position.copy(new Vector3(4.5, 3.5, 5.7).normalize().multiplyScalar(distance).add(controls.target));
+  controls.update();
+}
+
+function PresetCameraFraming({ width, depth, controlsRef }) {
+  const { size } = useThree();
+  useEffect(() => { framePresetCamera(controlsRef.current, width, depth); }, [width, depth, size.width, size.height, controlsRef]);
+  return null;
+}
+
+function PresetPlanView({ width, depth, layout, items, editableIds, selectedId, onSelect, carpetColor, footprintColor, footprintEnabled, onMove }) {
+  const svgRef = useRef(null);
+  const dragRef = useRef(null);
+  const scale = Math.min(560 / width, 420 / depth);
+  const left = (760 - width * scale) / 2;
+  const top = (600 - depth * scale) / 2;
+  const footprint = carpetFootprintBounds(width, depth, layout);
+  const pointInPlan = (event) => {
+    const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(svgRef.current.getScreenCTM().inverse());
+    return { x: (point.x - left) / scale - width / 2, z: (point.y - top) / scale - depth / 2 };
+  };
+  return <div className="preset-plan-view">
+    <svg ref={svgRef} viewBox="0 0 760 600" aria-label="Plan de l'implantation" onPointerMove={(event) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const point = pointInPlan(event);
+      onMove(drag.id, { x: dragCoordinate(point.x - drag.dx), z: dragCoordinate(point.z - drag.dz) });
+    }} onPointerUp={() => { dragRef.current = null; }} onPointerCancel={() => { dragRef.current = null; }}>
+      <rect x={left} y={top} width={width * scale} height={depth * scale} fill={colorHex(carpetColor, '#e2e5e9')} opacity="0.65" />
+      {footprintEnabled && <rect x={left + (footprint.minX + width / 2) * scale} y={top + (footprint.minZ + depth / 2) * scale} width={(footprint.maxX - footprint.minX) * scale} height={(footprint.maxZ - footprint.minZ) * scale} fill={colorHex(footprintColor)} />}
+      {availableWalls(layout).map((wall) => <line key={wall.id} x1={wall.id === 'right' ? left + width * scale : left} y1={top} x2={wall.id === 'back' || wall.id === 'right' ? left + width * scale : left} y2={wall.id === 'back' ? top : top + depth * scale} stroke="#9ca3af" strokeWidth="8" />)}
+      <line x1={left} y1={top - 20} x2={left + width * scale} y2={top - 20} stroke="#9ca3af" />
+      <text x="380" y={top - 27} textAnchor="middle">{formatNumber(width)} m</text>
+      <line x1={left + width * scale + 20} y1={top} x2={left + width * scale + 20} y2={top + depth * scale} stroke="#9ca3af" />
+      <text x={left + width * scale + 27} y="300">{formatNumber(depth)} m</text>
+      {items.map((item) => {
+        const bounds = itemGroupBounds(item);
+        const itemWidth = Math.max(6, bounds.width * scale);
+        const itemDepth = Math.max(6, bounds.depth * scale);
+        const position = isWallItem(item) ? screenWorldPosition(item, width, depth, items) : [Number(item.x || 0), 0, Number(item.z || 0)];
+        const rotation = isWallItem(item) ? wallMountedItemRotation(item, objectWallTransform(item, items)) * 180 / Math.PI : Number(item.rotation || 0);
+        const x = left + (position[0] + width / 2) * scale;
+        const y = top + (position[2] + depth / 2) * scale;
+        return <g key={item.id} transform={`translate(${x}, ${y}) rotate(${-rotation})`} tabIndex={0} role="button" aria-label={item.label} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(item.id); } }} onPointerDown={(event) => {
+          onSelect(item.id);
+          if (isWallItem(item) || !editableIds.includes(item.id)) return;
+          const point = pointInPlan(event);
+          dragRef.current = { id: item.id, dx: point.x - Number(item.x || 0), dz: point.z - Number(item.z || 0) };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}>
+          <title>{item.label}</title>{isLedRailEntry(item) ? <>
+            <line x1={-itemWidth / 2} y1="0" x2={itemWidth / 2} y2="0" stroke="#4b5563" strokeWidth="4" />
+            {Array.from({ length: ledSpotsPerRail(item) }, (_, spot) => <circle key={spot} cx={-itemWidth / 2 + itemWidth * (spot + 1) / (ledSpotsPerRail(item) + 1)} cy="6" r="4" fill="#f4b000" />)}
+          </> : <rect x={bounds.minX * scale} y={bounds.minZ * scale} width={itemWidth} height={itemDepth} rx="3" fill={selectedId === item.id ? '#0d2b70' : '#c6a575'} stroke={selectedId === item.id ? '#065dff' : '#fff'} strokeWidth="2" />}
+        </g>;
+      })}
+      <text x="380" y={top + depth * scale + 45} textAnchor="middle">{formatNumber(width * depth)} m²</text>
+    </svg>
+    <p>Sélectionne et fais glisser les objets pour les placer. Les objets liés aux murs se déplacent en vue 3D.</p>
+  </div>;
 }
 
 function PresetDefaultColorsEditor({ carpetColors = [], footprintColors = [], wallFabricColors = [], selectedIds = {}, onChange, isSignaturePack = false }) {
@@ -10828,7 +10989,7 @@ function presetDefaultColorIds(preset = {}) {
   };
 }
 
-function PresetReserveRulesEditor({ rules, bands = reserveRuleBands, entries, salonLabel, allowanceMode = false, onChange }) {
+function PresetReserveRulesEditor({ rules, bands = reserveRuleBands, entries, salonLabel, allowanceMode = false, area = 0, onChange }) {
   const updateBand = (bandId, patch) => {
     onChange(normalizeReserveRules({
       ...(rules || {}),
@@ -10856,14 +11017,14 @@ function PresetReserveRulesEditor({ rules, bands = reserveRuleBands, entries, sa
       {bands.map((band) => {
         const rule = rules?.[band.id] || {};
         if (band.id === 'signature-none') return (
-          <article key={band.id}>
-            <strong>{band.label}</strong>
+          <details key={band.id} className="preset-rule-card" open={area >= band.minArea && (band.maxArea == null || area <= band.maxArea)}>
+            <summary>{band.label}</summary>
             <p className="preset-reserve-empty">Aucune réserve automatique pour cette surface.</p>
-          </article>
+          </details>
         );
         return (
-          <article key={band.id}>
-            <strong>{band.label}</strong>
+          <details key={band.id} className="preset-rule-card" open={area >= band.minArea && (band.maxArea == null || area <= band.maxArea)}>
+            <summary>{band.label}{area >= band.minArea && (band.maxArea == null || area <= band.maxArea) && <span>Applicable · {formatNumber(area)} m²</span>}</summary>
             <label>
               {allowanceMode ? 'Réserve proposée par défaut' : 'Réserve incluse'}
               <select value={rule.includedType || ''} onChange={(event) => {
@@ -10875,7 +11036,8 @@ function PresetReserveRulesEditor({ rules, bands = reserveRuleBands, entries, sa
               </select>
             </label>
             <div className="preset-rule-options">
-              <span>Options complémentaires</span>
+              <span>Options complémentaires <em>Supplément HT</em></span>
+              {!normalizeComplementaryOptions(rule.options, { keepEmpty: true }).length && <div className="preset-empty-options">Aucune option complémentaire</div>}
               {normalizeComplementaryOptions(rule.options, { keepEmpty: true }).map((option, index) => {
                 const entry = findCatalogEntry(entries, option.type);
                 return (
@@ -10888,6 +11050,7 @@ function PresetReserveRulesEditor({ rules, bands = reserveRuleBands, entries, sa
                       {entries.map((entryOption) => <option key={entryOption.type} value={entryOption.type}>{entryOption.label}</option>)}
                     </select>
                     <input
+                      aria-label="Supplément HT"
                       type="number"
                       min="0"
                       step="1"
@@ -10895,7 +11058,7 @@ function PresetReserveRulesEditor({ rules, bands = reserveRuleBands, entries, sa
                       placeholder={String(reserveOptionPrice(option, entry, salonLabel) || 0)}
                       onChange={(event) => updateOption(band.id, index, { price: event.target.value })}
                     />
-                    <button type="button" onClick={() => removeOption(band.id, index)}><Trash2 size={13} /></button>
+                    <button type="button" aria-label="Supprimer cette option" onClick={() => removeOption(band.id, index)}><Trash2 size={13} /></button>
                   </div>
                 );
               })}
@@ -10903,14 +11066,14 @@ function PresetReserveRulesEditor({ rules, bands = reserveRuleBands, entries, sa
                 <Plus size={13} /> Ajouter une option
               </button>
             </div>
-          </article>
+          </details>
         );
       })}
     </section>
   );
 }
 
-function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, isSignaturePack = false, onChange }) {
+function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, isSignaturePack = false, area = 0, onChange }) {
   const updateBand = (bandId, patch) => {
     onChange(normalizePartitionHeadRules({
       ...(rules || {}),
@@ -10966,8 +11129,8 @@ function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, isSignatur
         const includedCount = Number(rule.includedCount ?? band.includedCount ?? 0);
         const includedSideValue = includedCount >= 2 ? 'both' : includedCount <= 0 ? 'none' : (rule.includedSides?.[0] || '');
         return (
-          <article key={band.id}>
-            <strong>{band.label} · {includedCount} incluse{includedCount > 1 ? 's' : ''}</strong>
+          <details key={band.id} className="preset-rule-card" open={area >= band.minArea && (band.maxArea == null || area <= band.maxArea)}>
+            <summary>{band.label} · {includedCount} incluse{includedCount > 1 ? 's' : ''}{area >= band.minArea && (band.maxArea == null || area <= band.maxArea) && <span>Applicable · {formatNumber(area)} m²</span>}</summary>
             {includedCount === 1 && (
               <label>
                 Placée d'office à la génération
@@ -11012,7 +11175,7 @@ function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, isSignatur
                 </div>
               );
             })}
-          </article>
+          </details>
         );
       })}
     </section>
@@ -11060,6 +11223,7 @@ function PresetAutoSpotsEditor({ rule, entries, width, depth, onChange }) {
         {area > 0 && (selectedTwo || selectedThree) && (
           <div className="preset-reserve-empty">
             Pour {width} × {depth} m ({area} m²) : {spotsNeeded} spots → {railPlan.length} rail{railPlan.length > 1 ? 's' : ''}
+            <div className="preset-rail-result">{railPlan.map((entry, index) => <span key={index}>{entry.label}<i>{Array.from({ length: ledSpotsPerRail(entry) }, (_, spot) => <b key={spot} />)}</i></span>)}</div>
           </div>
         )}
       </article>

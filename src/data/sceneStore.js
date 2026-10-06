@@ -1350,6 +1350,11 @@ export async function deleteSalon(salon) {
 export async function saveStandPresetConfig(preset, scene) {
   if (!supabase) return { ...preset, ...scene };
   const defaultColorOptions = scene.defaultColorOptions || scene.options?.defaultColorOptions || preset.base_config?.defaultColorOptions || {};
+  const autoSpotsRule = Object.prototype.hasOwnProperty.call(scene, 'autoSpotsRule')
+    ? scene.autoSpotsRule || null
+    : Object.prototype.hasOwnProperty.call(scene.options || {}, 'autoSpotsRule')
+      ? scene.options.autoSpotsRule || null
+      : preset.base_config?.autoSpotsRule || null;
 
   const sharedPayload = {
     width_m: scene.dimensions.width,
@@ -1361,7 +1366,7 @@ export async function saveStandPresetConfig(preset, scene) {
       options: scene.options || {},
       reserveRules: scene.reserveRules || scene.options?.reserveRules || preset.base_config?.reserveRules || {},
       partitionHeadRules: scene.partitionHeadRules || scene.options?.partitionHeadRules || preset.base_config?.partitionHeadRules || {},
-      autoSpotsRule: scene.autoSpotsRule || scene.options?.autoSpotsRule || preset.base_config?.autoSpotsRule || null,
+      autoSpotsRule,
       defaultColorOptions,
       price_mode: 'included',
     },
