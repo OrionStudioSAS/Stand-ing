@@ -11620,12 +11620,12 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
   }, [profileClient]);
 
   const exportCsv = () => {
-    const rows = [['Exposant', 'Email', 'Société', 'Salon', 'Pack', 'Statut', 'Stand', 'Scène']];
+    const rows = [['Exposant', 'Email', 'Société', 'Salon', 'Pack', 'Statut', 'Hall', 'Emplacement', 'Scène']];
     visibleRows.forEach(({ client, clientScenes }) => {
       (clientScenes.length ? clientScenes : [{}]).forEach((scene) => rows.push([
-        client.display_name || client.company_name || '', client.email || '', client.company_name || '',
+        client.display_name || client.company_name || '', client.email || '', adminClientCompanyName(client, clientScenes),
         normalizeSalonTitle(scene.event_name || scene.salon) || '', scene.offer || '',
-        scene.id ? adminClientSceneState(scene).label : '', scene.id ? sceneStandNumber(scene) : '', scene.project_name || '',
+        scene.id ? adminClientSceneState(scene).label : '', scene.id ? sceneHallLabel(scene, scene.source_payload?.contactDetails || {}) : '', scene.id ? clientSceneEmplacement(scene) : '', scene.project_name || '',
       ]));
     });
     downloadBlob(new Blob([`\uFEFF${rows.map((row) => row.map(adminSalonCsvCell).join(';')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' }), 'exposants.csv');
@@ -11663,19 +11663,20 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
         {paginatedClients.length ? paginatedClients.map(({ client, clientScenes }) => {
           const primary = clientScenes[0] || {};
           const name = client.display_name || client.company_name || 'Exposant sans nom';
+          const company = adminClientCompanyName(client, clientScenes);
           const status = clientScenes.length ? adminClientSceneState(primary) : { id: 'draft', label: 'Sans scène' };
           const initials = String(name).split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
           return <details className="admin-exhibitors-entry" key={client.id || client.client_key}>
-            <summary className="admin-exhibitors-row"><span className="admin-exhibitors-person"><i>{initials}</i><span><strong>{name}</strong><small>{client.email || 'E-mail non renseigné'}</small></span></span><span className="admin-exhibitors-company">{client.company_name || primary.project_name || '—'}</span><span>{clientSalonSummary(client)}</span><span><em className="admin-exhibitors-pack">{primary.offer || '—'}</em></span><span><em className={`admin-exhibitors-badge ${status.id}`}>{status.label}</em>{clientScenes.length > 1 && <small className="admin-exhibitors-more">+{clientScenes.length - 1}</small>}</span><span className="admin-exhibitors-expand">Scènes {clientScenes.length} <ChevronDown size={14} /></span></summary>
+            <summary className="admin-exhibitors-row"><span className="admin-exhibitors-person"><i>{initials}</i><span><strong>{name}</strong><small>{client.email || 'E-mail non renseigné'}</small></span></span><span className="admin-exhibitors-company">{company || '—'}</span><span>{clientSalonSummary(client)}</span><span><em className="admin-exhibitors-pack">{primary.offer || '—'}</em></span><span><em className={`admin-exhibitors-badge ${status.id}`}>{status.label}</em>{clientScenes.length > 1 && <small className="admin-exhibitors-more">+{clientScenes.length - 1}</small>}</span><span className="admin-exhibitors-expand">Scènes {clientScenes.length} <ChevronDown size={14} /></span></summary>
             <div className="admin-exhibitors-scenes"><div className="admin-exhibitors-scenes-head"><p>{clientScenes.length} scène{clientScenes.length > 1 ? 's' : ''} liée{clientScenes.length > 1 ? 's' : ''}</p><button type="button" onClick={() => setProfileClient(client)}>Ouvrir la fiche exposant</button></div>{clientScenes.length ? clientScenes.map((scene) => {
               const sceneStatus = adminClientSceneState(scene);
-              return <div className="admin-exhibitors-scene" key={scene.id || scene.share_token || scene.monday_item_id}><span className="admin-exhibitors-scene-icon"><Box size={16} /></span><span className="admin-exhibitors-scene-title"><strong>{scene.project_name || scene.client_name || 'Scène'}</strong><small>{clientSceneMeta(scene)}</small></span><em className={`admin-exhibitors-badge ${sceneStatus.id}`}>{sceneStatus.label}</em><div className="admin-exhibitors-scene-actions"><a className="admin-outline-v2" href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a><button type="button" onClick={async () => downloadSceneTechnicalPlan(await loadSceneForAdminAction(scene), assets)}>Télécharger BAT</button><button type="button" onClick={async () => downloadScenePurchaseOrder(await loadSceneForAdminAction(scene), assets)}>Bon de commande</button><button className="admin-exhibitors-delete" type="button" aria-label={`Supprimer la scène ${scene.project_name || ''}`} disabled={deleteState.loadingId === `scene:${scene.id}`} onClick={() => runDelete(`scene:${scene.id}`, () => onDeleteScene?.(scene))}><Trash2 size={16} /></button></div></div>;
+              return <div className="admin-exhibitors-scene" key={scene.id || scene.share_token || scene.monday_item_id}><span className="admin-exhibitors-scene-icon"><Box size={16} /></span><span className="admin-exhibitors-scene-title"><strong>{scene.project_name || scene.client_name || 'Scène'}</strong><small>{clientSceneMeta(scene)}</small><small className="admin-exhibitors-scene-location">{clientSceneLocationLabel(scene)}</small></span><em className={`admin-exhibitors-badge ${sceneStatus.id}`}>{sceneStatus.label}</em><div className="admin-exhibitors-scene-actions"><a className="admin-outline-v2" href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a><button type="button" onClick={async () => downloadSceneTechnicalPlan(await loadSceneForAdminAction(scene), assets)}>Télécharger BAT</button><button type="button" onClick={async () => downloadScenePurchaseOrder(await loadSceneForAdminAction(scene), assets)}>Bon de commande</button><button className="admin-exhibitors-delete" type="button" aria-label={`Supprimer la scène ${scene.project_name || ''}`} disabled={deleteState.loadingId === `scene:${scene.id}`} onClick={() => runDelete(`scene:${scene.id}`, () => onDeleteScene?.(scene))}><Trash2 size={16} /></button></div></div>;
             }) : <div className="admin-empty-row">Aucune scène associée.</div>}</div>
           </details>;
         }) : <div className="admin-empty-row">Aucun exposant trouvé avec les filtres actuels.</div>}
       </section></div>
       <nav className="admin-exhibitors-pagination" aria-label="Pagination exposants"><span>{visibleRows.length ? `${(safeClientPage - 1) * clientPageSize + 1}–${Math.min(safeClientPage * clientPageSize, visibleRows.length)}` : '0'} sur {visibleRows.length} exposants</span><label><span className="sr-only">Exposants par page</span><select value={clientPageSize} onChange={(event) => setClientPageSize(Number(event.target.value))}><option value={12}>12 par page</option><option value={24}>24 par page</option><option value={48}>48 par page</option></select></label><div><button type="button" aria-label="Page précédente" disabled={safeClientPage === 1} onClick={() => setClientPage((page) => page - 1)}>‹</button>{Array.from({ length: Math.min(5, clientPageCount) }, (_, index) => Math.max(1, Math.min(safeClientPage - 2, clientPageCount - 4)) + index).map((page) => <button type="button" key={page} aria-label={`Page ${page}`} aria-current={safeClientPage === page ? 'page' : undefined} onClick={() => setClientPage(page)}>{page}</button>)}{clientPageCount > 5 && <span>… {clientPageCount}</span>}<button type="button" aria-label="Page suivante" disabled={safeClientPage === clientPageCount} onClick={() => setClientPage((page) => page + 1)}>›</button></div></nav>
-      {profileClient && createPortal(<div className="admin-exhibitors-profile-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setProfileClient(null); }}><section className="admin-exhibitors-profile" role="dialog" aria-modal="true" aria-labelledby="admin-exhibitor-profile-title"><header><div><h2 id="admin-exhibitor-profile-title">{profileClient.display_name || profileClient.company_name || 'Exposant'}</h2><p>Fiche exposant</p></div><button type="button" aria-label="Fermer la fiche" autoFocus onClick={() => setProfileClient(null)}><X size={18} /></button></header><dl><div><dt>Société</dt><dd>{profileClient.company_name || '—'}</dd></div><div><dt>E-mail</dt><dd>{profileClient.email ? <a href={`mailto:${profileClient.email}`}>{profileClient.email}</a> : '—'}</dd></div><div><dt>Téléphone</dt><dd>{profileClient.phone || '—'}</dd></div><div><dt>Salon</dt><dd>{clientSalonSummary(profileClient)}</dd></div><div><dt>Pack</dt><dd>{clientPackSummary(profileClient)}</dd></div></dl><h3>Scènes liées</h3>{(profileClient.scenes || []).map((scene) => <a className="admin-exhibitors-profile-scene" key={scene.id || scene.share_token} href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">{scene.project_name || scene.client_name || 'Scène'} <ArrowRight size={15} /></a>)}</section></div>, document.body)}
+      {profileClient && createPortal(<div className="admin-exhibitors-profile-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setProfileClient(null); }}><section className="admin-exhibitors-profile" role="dialog" aria-modal="true" aria-labelledby="admin-exhibitor-profile-title"><header><div><h2 id="admin-exhibitor-profile-title">{profileClient.display_name || profileClient.company_name || 'Exposant'}</h2><p>Fiche exposant</p></div><button type="button" aria-label="Fermer la fiche" autoFocus onClick={() => setProfileClient(null)}><X size={18} /></button></header><dl><div><dt>Société</dt><dd>{adminClientCompanyName(profileClient, clientScenesWithFullData(profileClient, sceneLookup)) || '—'}</dd></div><div><dt>E-mail</dt><dd>{profileClient.email ? <a href={`mailto:${profileClient.email}`}>{profileClient.email}</a> : '—'}</dd></div><div><dt>Téléphone</dt><dd>{profileClient.phone || '—'}</dd></div><div><dt>Salon</dt><dd>{clientSalonSummary(profileClient)}</dd></div><div><dt>Pack</dt><dd>{clientPackSummary(profileClient)}</dd></div></dl><h3>Scènes liées</h3>{clientScenesWithFullData(profileClient, sceneLookup).map((scene) => <a className="admin-exhibitors-profile-scene" key={scene.id || scene.share_token} href={sceneShareUrl(scene)} target="_blank" rel="noreferrer"><span>{scene.project_name || scene.client_name || 'Scène'}<small>{clientSceneLocationLabel(scene)}</small></span><ArrowRight size={15} /></a>)}</section></div>, document.body)}
     </section>
   );
 }
@@ -11693,7 +11694,7 @@ function adminClientMatchesFilters(client, clientScenes, filters = {}, globalSea
   if (filters.salon && !clientScenes.some((scene) => normalizeTextValue([scene.salon, scene.event_name].join(' ')).includes(normalizeTextValue(filters.salon)))) return false;
   if (filters.pack && !clientScenes.some((scene) => normalizeTextValue(scene.offer) === normalizeTextValue(filters.pack))) return false;
   if (filters.status && !clientScenes.some((scene) => scene.status === filters.status || scene.client_status === filters.status || adminClientSceneState(scene).id === filters.status)) return false;
-  const haystack = normalizeTextValue([client.display_name, client.company_name, client.email, ...clientScenes.flatMap((scene) => [scene.client_name, scene.project_name, scene.salon, scene.event_name, scene.offer, scene.client_email, sceneStandNumber(scene)])].join(' '));
+  const haystack = normalizeTextValue([client.display_name, client.company_name, adminClientCompanyName(client, clientScenes), client.email, ...clientScenes.flatMap((scene) => [scene.client_name, scene.project_name, scene.salon, scene.event_name, scene.offer, scene.client_email, sceneHallLabel(scene, scene.source_payload?.contactDetails || {}), clientSceneEmplacement(scene)])].join(' '));
   return [filters.search, globalSearch].every((term) => !term || haystack.includes(normalizeTextValue(term)));
 }
 
@@ -11752,6 +11753,40 @@ function clientSceneMeta(scene = {}) {
   const offer = scene.offer ? ` · ${scene.offer}` : '';
   const dimensions = sceneArea(scene) ? ` · ${sceneArea(scene)} m²` : '';
   return `${salon}${offer}${dimensions}`;
+}
+
+function adminClientCompanyName(client = {}, scenes = []) {
+  const person = normalizeTextValue(client.display_name).replace(/\s+/g, ' ');
+  const recordedCompany = String(client.company_name || '').trim();
+  const candidates = [
+    ...scenes.flatMap((scene) => [
+      scene.source_payload?.contactDetails?.company,
+      scene.source_payload?.company_name,
+      scene.source_payload?.company,
+      mondayColumnTextByTitle(scene.source_payload, ['société', 'societe', 'raison sociale', 'nom société', 'nom societe', 'entreprise']),
+    ]),
+    normalizeTextValue(recordedCompany).replace(/\s+/g, ' ') !== person ? recordedCompany : '',
+    ...scenes.flatMap((scene) => [
+      scene.project_name,
+      scene.source_payload?.item?.name,
+      scene.source_payload?.name,
+    ]),
+  ];
+  return candidates.map((value) => String(value || '').trim())
+    .find((value) => value && normalizeTextValue(value).replace(/\s+/g, ' ') !== person) || '';
+}
+
+function clientSceneEmplacement(scene = {}) {
+  const contact = scene.source_payload?.contactDetails || {};
+  const stand = String(sceneStandNumber(scene, contact) || '').trim();
+  const aisle = String(sceneAisleNumber(scene, contact) || '').replace(/^all[ée]e\s*/i, '').trim();
+  if (!stand) return '';
+  return aisle && !normalizeTextValue(stand).startsWith(normalizeTextValue(aisle)) ? `${aisle}${stand}` : stand;
+}
+
+function clientSceneLocationLabel(scene = {}) {
+  const hall = sceneHallLabel(scene, scene.source_payload?.contactDetails || {});
+  return `Hall ${hall || 'à définir'} · Emplacement ${clientSceneEmplacement(scene) || 'à définir'}`;
 }
 
 function sceneStatusKind(scene = {}) {

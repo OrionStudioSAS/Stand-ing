@@ -14484,9 +14484,10 @@ img.asset-thumb {
 .admin-exhibitors-scenes-head button:hover { color: #123878; }
 .admin-exhibitors-scene { display: flex; align-items: center; gap: 12px; min-height: 72px; margin-top: 8px; border: 1px solid #dce2e9; border-radius: 9px; padding: 10px 12px; background: #fff; }
 .admin-exhibitors-scene-icon { display: grid; place-items: center; flex: 0 0 52px; height: 52px; border-radius: 6px; color: #9aa5b5; background: #eef0f3; }
-.admin-exhibitors-scene-title { display: grid; gap: 3px; min-width: 0; }
+.admin-exhibitors-scene-title { display: grid; flex: 1 1 210px; gap: 3px; min-width: 0; }
 .admin-exhibitors-scene-title strong { overflow: hidden; color: #172033; font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .admin-exhibitors-scene-title small { color: #778194; font-size: 11px; }
+.admin-exhibitors-scene-title .admin-exhibitors-scene-location { color: #52627a; white-space: normal; }
 .admin-exhibitors-scene > .admin-exhibitors-badge { margin-left: auto; }
 .admin-exhibitors-scene-actions { display: flex; align-items: center; gap: 8px; margin-left: 8px; }
 .admin-exhibitors-scene-actions > button:not(.admin-exhibitors-delete) { border: 0; padding: 8px; color: #667184; background: none; font-size: 11px; cursor: pointer; }
@@ -14512,6 +14513,7 @@ img.asset-thumb {
 .admin-exhibitors-profile dd a { color: #123878; }
 .admin-exhibitors-profile h3 { margin: 0 0 14px; color: #172033; font-size: 14px; }
 .admin-exhibitors-profile-scene { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #dce2e9; border-radius: 6px; margin-top: 8px; padding: 12px; color: #123878; font-size: 12px; text-decoration: none; }
+.admin-exhibitors-profile-scene small { display: block; margin-top: 4px; color: #667184; font-size: 11px; }
 @media (max-width: 760px) { .admin-exhibitors-toolbar .admin-exhibitors-search { max-width: none; flex-basis: 100%; } .admin-exhibitors-toolbar .admin-exhibitors-sync { margin-left: 0; } .admin-exhibitors-scene { flex-wrap: wrap; } .admin-exhibitors-scene-actions { flex: 1 1 100%; justify-content: flex-end; flex-wrap: wrap; margin-left: 0; } }
 @media (max-width: 520px) { .admin-exhibitors-pagination { flex-wrap: wrap; } .admin-exhibitors-pagination > div { width: 100%; justify-content: flex-end; } }
 
