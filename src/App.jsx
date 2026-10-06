@@ -9116,6 +9116,7 @@ function AdminDashboard({ user, adminProfile }) {
             <AdminSpecialRequestsView
               scenes={scenes}
               assets={assets}
+              search={adminSearch}
               onSaveManualLines={async (scene, lines) => {
                 const updatedScene = await saveSceneManualOrderLines(scene, lines);
                 setScenes((current) => current.map((item) => (item.id === scene.id ? updatedScene : item)));
@@ -9140,7 +9141,7 @@ function adminTitle(tab) {
     salons: 'Salons',
     clients: 'Exposants',
     bat: 'BAT',
-    requests: 'Demandes spécifiques',
+    requests: 'Demandes',
     objects: 'Assets 3D',
     presets: 'Packs',
     users: 'Utilisateurs et journal d’audit',
@@ -14067,20 +14068,37 @@ function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
 }
 
 
-function AdminSpecialRequestsView({ scenes, assets = [], onResolve, onSaveManualLines }) {
+function AdminSpecialRequestsView({ scenes, assets = [], search = '', onResolve, onSaveManualLines }) {
   const [actionState, setActionState] = useState({ sceneId: '', message: '', error: '' });
+  const [activeTab, setActiveTab] = useState('open');
   const [statusFilter, setStatusFilter] = useState('');
-  const rows = useMemo(() => {
-    return scenes
+  const [salonFilter, setSalonFilter] = useState('');
+  const [localSearch, setLocalSearch] = useState('');
+  const [sortOrder, setSortOrder] = useState('urgent');
+  const allRows = useMemo(() => scenes
       .filter(sceneHasSpecialRequest)
-      .map((scene) => ({ scene, status: sceneSpecialRequestStatus(scene) }))
-      .filter(({ status }) => !statusFilter || status.id === statusFilter)
-      .sort((a, b) => {
-        const order = { overdue: 0, pending: 1, resolved: 2 };
-        return (order[a.status.id] ?? 9) - (order[b.status.id] ?? 9)
-          || new Date(b.status.date || b.scene.updated_at || b.scene.created_at || 0) - new Date(a.status.date || a.scene.updated_at || a.scene.created_at || 0);
-      });
-  }, [scenes, statusFilter]);
+      .map((scene) => ({ scene, status: sceneSpecialRequestStatus(scene) })), [scenes]);
+  const counts = {
+    open: allRows.filter(({ status }) => status.id !== 'resolved').length,
+    overdue: allRows.filter(({ status }) => status.id === 'overdue').length,
+    pending: allRows.filter(({ status }) => status.id === 'pending').length,
+    resolved: allRows.filter(({ status }) => status.id === 'resolved').length,
+  };
+  const salonChoices = uniqueByNormalized(allRows.map(({ scene }) => normalizeSalonTitle(scene.event_name || scene.salon)).filter(Boolean)).sort((a, b) => a.localeCompare(b, 'fr'));
+  const rows = allRows.filter(({ scene, status }) => {
+    if (activeTab === 'open' ? status.id === 'resolved' : status.id !== activeTab) return false;
+    if (statusFilter && status.id !== statusFilter) return false;
+    if (salonFilter && normalizeSalonTitle(scene.event_name || scene.salon) !== salonFilter) return false;
+    const haystack = normalizeTextValue([adminRequestPersonName(scene), adminRequestCompanyName(scene), scene.project_name, scene.client_email, scene.event_name, scene.salon, sceneSpecialRequest(scene).text].join(' '));
+    return [search, localSearch].every((term) => !term || haystack.includes(normalizeTextValue(term)));
+  }).sort((a, b) => {
+    if (sortOrder === 'amount') return scenePurchaseOrder(b.scene, assets).total - scenePurchaseOrder(a.scene, assets).total;
+    const dateA = new Date(a.status.date || a.scene.created_at || 0).getTime();
+    const dateB = new Date(b.status.date || b.scene.created_at || 0).getTime();
+    if (sortOrder === 'recent') return dateB - dateA;
+    if (sortOrder === 'oldest') return dateA - dateB;
+    return (a.status.id === 'overdue' ? 0 : 1) - (b.status.id === 'overdue' ? 0 : 1) || dateA - dateB;
+  });
 
   const resolve = async (scene) => {
     setActionState({ sceneId: scene.id, message: '', error: '' });
@@ -14094,46 +14112,56 @@ function AdminSpecialRequestsView({ scenes, assets = [], onResolve, onSaveManual
 
   return (
     <section className="admin-special-requests-view">
-      <div className="admin-client-filter-line">
-        <span>Filtres actifs :</span>
-        <label>
-          Statut
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value="">Tous les statuts</option>
-            <option value="pending">À traiter</option>
-            <option value="overdue">En retard</option>
-            <option value="resolved">Traitées</option>
-          </select>
-        </label>
+      <div className="admin-requests-tabs" role="group" aria-label="Statut des demandes">
+        {[['open', 'Toutes'], ['overdue', 'En retard'], ['pending', 'À traiter'], ['resolved', 'Traitées']].map(([id, label]) => <button type="button" key={id} aria-pressed={activeTab === id} onClick={() => { setActiveTab(id); setStatusFilter(''); }}>{label} · {counts[id]}</button>)}
+      </div>
+      <div className="admin-requests-toolbar">
+        <label className="admin-requests-search"><Search size={16} /><input aria-label="Rechercher une demande" placeholder="Exposant, société, demande..." value={localSearch} onChange={(event) => setLocalSearch(event.target.value)} /></label>
+        <label><span className="sr-only">Salon</span><select value={salonFilter} onChange={(event) => setSalonFilter(event.target.value)}><option value="">Salon</option>{salonChoices.map((salon) => <option key={salon} value={salon}>{salon}</option>)}</select></label>
+        <label><span className="sr-only">Statut</span><select value={statusFilter} onChange={(event) => { const value = event.target.value; setStatusFilter(value); setActiveTab(value || 'open'); }}><option value="">Statut</option><option value="overdue">En retard</option><option value="pending">À traiter</option><option value="resolved">Traitées</option></select></label>
+        <label className="admin-requests-sort"><span className="sr-only">Trier les demandes</span><select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}><option value="urgent">Trier : plus urgentes</option><option value="recent">Trier : plus récentes</option><option value="oldest">Trier : plus anciennes</option><option value="amount">Trier : montant HT</option></select></label>
       </div>
       {actionState.message && <div className="sync-result success">{actionState.message}</div>}
       {actionState.error && <div className="sync-result error">{actionState.error}</div>}
-      <section className="admin-table modern special-requests-table">
-      {rows.length ? rows.map(({ scene, status }) => {
+      <section className="admin-requests-list">
+      {rows.length ? rows.map(({ scene, status }, index) => {
         const request = sceneSpecialRequest(scene);
         const order = scenePurchaseOrder(scene, assets);
+        const name = adminRequestPersonName(scene);
+        const company = adminRequestCompanyName(scene);
+        const initials = userInitials(scene.source_payload?.contactDetails?.firstName, scene.source_payload?.contactDetails?.lastName, name);
         return (
-          <article key={scene.id} className={`stand-row special-request-row ${status.id}`}>
-            <div><strong>{scene.client_name || 'Exposant sans nom'}</strong><span>{scene.project_name || sceneStandNumber(scene, {}, 'Stand')}</span></div>
-            <div><span>Salon</span><strong>{normalizeSalonTitle(scene.event_name || scene.salon) || 'À définir'}</strong></div>
-            <div className="special-request-copy"><span>Demande</span><p>{request.text}</p>{request.tags?.length ? <small>{request.tags.join(' · ')}</small> : null}</div>
-            <div><span>Estimation</span><strong>{order.total ? `${order.total.toLocaleString('fr-FR')} € HT` : 'Aucun lot payant'}</strong></div>
-            <div><span>Statut</span><strong className={`special-request-status ${status.id}`}>{status.label}</strong><small>{status.detail}</small></div>
-            <div className="stand-actions">
+          <article key={scene.id} className={`admin-request-card ${status.id}`}>
+            <div className="admin-request-card-main">
+              <div className="admin-request-person"><i>{initials}</i><div><strong>{name}</strong><small>{company || 'Société non renseignée'}</small><span>{normalizeSalonTitle(scene.event_name || scene.salon) || 'Salon à définir'}</span></div></div>
+              <div className="admin-request-message"><span>Demande</span><p>« {request.text} »</p>{request.tags?.length ? <small>{request.tags.join(' · ')}</small> : null}</div>
+              <div className="admin-request-estimate"><span>Estimation</span><strong>{order.total ? `${order.total.toLocaleString('fr-FR')} € HT` : 'Aucun lot payant'}</strong><em className={`admin-request-status ${status.id}`}>{status.label}</em><small>{status.id === 'resolved' ? status.detail : `Depuis ${businessDaysSince(status.date)} j ouvrés`}</small></div>
+              <div className="admin-request-actions">
               <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Modifier la scène</a>
               {hasAmcoOrderLines(order) && <button type="button" onClick={() => downloadScenePurchaseOrder(scene, assets)}>Télécharger le BDC</button>}
               {scene.client_email && <a href={requestReplyMailto(scene)}>Valider par e-mail</a>}
               <button type="button" disabled={status.id === 'resolved' || actionState.sceneId === scene.id} onClick={() => resolve(scene)}>
                 {actionState.sceneId === scene.id ? 'Enregistrement...' : 'Marquer traitée'}
               </button>
+              </div>
             </div>
-            <AdminRequestOrderEditor scene={scene} onSave={(lines) => onSaveManualLines?.(scene, lines)} />
+            <AdminRequestOrderEditor scene={scene} initiallyOpen={index === 0 && activeTab === 'open'} onSave={(lines) => onSaveManualLines?.(scene, lines)} />
           </article>
         );
-      }) : <div className="admin-empty-row">Aucune demande spécifique avec ce filtre.</div>}
+      }) : <div className="admin-empty-row">Aucune demande avec ces filtres.</div>}
       </section>
     </section>
   );
+}
+
+function adminRequestPersonName(scene = {}) {
+  const contact = scene.source_payload?.contactDetails || {};
+  return [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim()
+    || scene.client_name || 'Exposant sans nom';
+}
+
+function adminRequestCompanyName(scene = {}) {
+  return adminClientCompanyName({ display_name: adminRequestPersonName(scene) }, [scene]);
 }
 
 function requestReplyMailto(scene = {}) {
@@ -14142,19 +14170,27 @@ function requestReplyMailto(scene = {}) {
   return `mailto:${recipient}?subject=${encodeURIComponent(subject)}`;
 }
 
-function AdminRequestOrderEditor({ scene, onSave }) {
-  const [lines, setLines] = useState(() => scene.source_payload?.manualPurchaseOrderLines || []);
+function newRequestOrderLine() {
+  return { id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, label: '', reference: '', quantity: 1, unitPrice: '' };
+}
+
+function AdminRequestOrderEditor({ scene, initiallyOpen = false, onSave }) {
+  const [open, setOpen] = useState(initiallyOpen);
+  const [lines, setLines] = useState(() => scene.source_payload?.manualPurchaseOrderLines?.length ? scene.source_payload.manualPurchaseOrderLines : [newRequestOrderLine()]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
-    setLines(scene.source_payload?.manualPurchaseOrderLines || []);
+    setLines(scene.source_payload?.manualPurchaseOrderLines?.length ? scene.source_payload.manualPurchaseOrderLines : [newRequestOrderLine()]);
   }, [scene.source_payload?.manualPurchaseOrderLines]);
+  useEffect(() => setOpen(initiallyOpen), [scene.id, initiallyOpen]);
 
   const updateLine = (id, patch) => setLines((current) => current.map((line) => line.id === id ? { ...line, ...patch } : line));
+  const enteredLines = lines.filter((line) => String(line.label || '').trim() || String(line.reference || '').trim() || String(line.unitPrice ?? '') !== '' || Number(line.quantity) !== 1);
+  const total = enteredLines.reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0), 0);
   const save = async () => {
-    if (lines.some((line) => !String(line.label || '').trim() || !Number.isFinite(Number(line.quantity)) || Number(line.quantity) <= 0 || !Number.isFinite(Number(line.unitPrice)) || Number(line.unitPrice) < 0)) {
+    if (enteredLines.some((line) => !String(line.label || '').trim() || !Number.isFinite(Number(line.quantity)) || Number(line.quantity) <= 0 || String(line.unitPrice ?? '').trim() === '' || !Number.isFinite(Number(line.unitPrice)) || Number(line.unitPrice) < 0)) {
       setError('Renseignez une désignation, une quantité positive et un prix HT valide pour chaque ligne.');
       return;
     }
@@ -14162,7 +14198,7 @@ function AdminRequestOrderEditor({ scene, onSave }) {
     setError('');
     setMessage('');
     try {
-      await onSave(lines.map((line) => ({ id: line.id, label: String(line.label).trim(), reference: String(line.reference || '').trim(), quantity: Number(line.quantity), unitPrice: Number(line.unitPrice) })));
+      await onSave(enteredLines.map((line) => ({ id: line.id, label: String(line.label).trim(), reference: String(line.reference || '').trim(), quantity: Number(line.quantity), unitPrice: Number(line.unitPrice) })));
       setMessage('Lignes enregistrées sur le bon de commande. Aucun e-mail envoyé.');
     } catch (saveError) {
       setError(saveError.message || 'Impossible d’enregistrer les lignes.');
@@ -14171,19 +14207,18 @@ function AdminRequestOrderEditor({ scene, onSave }) {
     }
   };
 
-  return <details className="request-order-editor">
-    <summary>Éléments manuels du bon de commande ({lines.length})</summary>
+  return <details className="request-order-editor" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary><ChevronRight size={15} />Éléments manuels du bon de commande <span>{scene.source_payload?.manualPurchaseOrderLines?.length || 0}</span></summary>
     <p>Ajoutez les éléments convenus avec l’exposant. Téléchargez ensuite le BDC pour l’envoyer manuellement si besoin.</p>
     {lines.map((line) => <div className="request-order-line" key={line.id}>
-      <label>Désignation<input value={line.label || ''} onChange={(event) => updateLine(line.id, { label: event.target.value })} placeholder="Ex : mobilier supplémentaire" /></label>
-      <label>Référence<input value={line.reference || ''} onChange={(event) => updateLine(line.id, { reference: event.target.value })} placeholder="Optionnel" /></label>
-      <label>Qté<input type="number" min="0.01" step="0.01" value={line.quantity} onChange={(event) => updateLine(line.id, { quantity: event.target.value })} /></label>
-      <label>Prix unitaire HT<input type="number" min="0" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(line.id, { unitPrice: event.target.value })} /></label>
-      <button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.id !== line.id))} aria-label={`Retirer ${line.label || 'la ligne'}`}>Retirer</button>
+      <div className="request-order-description"><label>Désignation<input value={line.label || ''} onChange={(event) => updateLine(line.id, { label: event.target.value })} placeholder="Ex : Machine à café" /></label><input aria-label="Référence (optionnel)" value={line.reference || ''} onChange={(event) => updateLine(line.id, { reference: event.target.value })} placeholder="Référence (optionnel)" /></div>
+      <label>Quantité<input type="number" min="0.01" step="0.01" value={line.quantity} onChange={(event) => updateLine(line.id, { quantity: event.target.value })} /></label>
+      <label>Prix unitaire HT<input type="number" min="0" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(line.id, { unitPrice: event.target.value })} placeholder="—" /></label>
+      <button className="request-order-remove" type="button" onClick={() => setLines((current) => current.length > 1 ? current.filter((entry) => entry.id !== line.id) : [newRequestOrderLine()])} aria-label={`Retirer ${line.label || 'la ligne'}`}><Trash2 size={17} /></button>
     </div>)}
     <div className="request-order-actions">
-      <button type="button" onClick={() => setLines((current) => [...current, { id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, label: '', reference: '', quantity: 1, unitPrice: 0 }])}>Ajouter une ligne</button>
-      <button type="button" disabled={saving} onClick={save}>{saving ? 'Enregistrement...' : 'Enregistrer les lignes'}</button>
+      <button className="request-order-add" type="button" onClick={() => setLines((current) => [...current, newRequestOrderLine()])}><Plus size={16} />Ajouter une ligne</button>
+      <div className="request-order-footer"><span>{enteredLines.length} ligne{enteredLines.length > 1 ? 's' : ''} · {total.toLocaleString('fr-FR')} € HT</span><button type="button" disabled={saving} onClick={save}>{saving ? 'Enregistrement...' : 'Enregistrer les lignes'}</button></div>
     </div>
     {message && <p className="sync-result success">{message}</p>}
     {error && <p className="sync-result error">{error}</p>}
