@@ -9955,24 +9955,54 @@ function SalonPackStats({ salon }) {
 }
 
 function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
-  const [selectedSalonId, setSelectedSalonId] = useState(initialSalonId || salons[0]?.id || '');
+  const [selectedSalonId, setSelectedSalonId] = useState(initialSalonId || salons[0]?.id || null);
+  const pendingSalonId = useRef(initialSalonId);
   const [editing, setEditing] = useState(null);
   const [basePackEditor, setBasePackEditor] = useState(null);
   const [boardEditor, setBoardEditor] = useState(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [menuPackName, setMenuPackName] = useState('');
   const [newPackName, setNewPackName] = useState('');
   const [deletingGlobalPack, setDeletingGlobalPack] = useState('');
   const [actionState, setActionState] = useState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
-  const selectedSalon = salons.find((salon) => salon.id === selectedSalonId) || salons[0] || null;
+  const selectedSalon = salons.find((salon) => salon.id === selectedSalonId) || null;
 
   useEffect(() => {
-    if (initialSalonId && initialSalonId !== selectedSalonId && salons.some((salon) => salon.id === initialSalonId)) setSelectedSalonId(initialSalonId);
-    if (!selectedSalonId && salons[0]?.id) setSelectedSalonId(salons[0].id);
+    if (initialSalonId) pendingSalonId.current = initialSalonId;
+  }, [initialSalonId]);
+
+  useEffect(() => {
+    if (pendingSalonId.current && salons.some((salon) => salon.id === pendingSalonId.current)) {
+      setSelectedSalonId(pendingSalonId.current);
+      pendingSalonId.current = '';
+      return;
+    }
+    if (selectedSalonId === null && salons[0]?.id) setSelectedSalonId(salons[0].id);
     if (selectedSalonId && salons.length && !salons.some((salon) => salon.id === selectedSalonId)) {
       setSelectedSalonId(salons[0].id);
     }
   }, [salons, selectedSalonId, initialSalonId]);
 
-  const packCards = selectedSalon ? salonPackCards(selectedSalon) : [];
+  useEffect(() => {
+    if (!menuPackName) return undefined;
+    const closeMenu = (event) => {
+      if (event.key === 'Escape' || (event.type === 'pointerdown' && !event.target.closest('.preset-card-options'))) setMenuPackName('');
+    };
+    document.addEventListener('pointerdown', closeMenu);
+    document.addEventListener('keydown', closeMenu);
+    return () => {
+      document.removeEventListener('pointerdown', closeMenu);
+      document.removeEventListener('keydown', closeMenu);
+    };
+  }, [menuPackName]);
+
+  const packCards = selectedSalon ? salonPackCards(selectedSalon) : uniqueByNormalized(salons.flatMap((salon) => salonPackCards(salon).map((entry) => entry.packName)))
+    .sort(packNameSort)
+    .map((packName) => {
+      const entries = salons.map((salon) => salonPackCards(salon).find((entry) => normalizeTextValue(entry.packName) === normalizeTextValue(packName))).filter(Boolean);
+      return { ...(entries.find((entry) => entry.active) || entries[0]), activeSalonCount: entries.filter((entry) => entry.active).length };
+    });
+  const activePackCount = packCards.filter((entry) => entry.active).length;
 
   const activatePack = async (entry) => {
     if (!selectedSalon) return;
@@ -9996,11 +10026,12 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
   };
 
   const openPackEditor = async (entry) => {
-    if (!selectedSalon) return;
+    const targetSalon = selectedSalon || entry.salon;
+    if (!targetSalon) return;
     setActionState({ loadingPack: entry.packName, savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: '', error: '' });
     try {
-      const { offer } = await ensureSalonOffer(selectedSalon, entry.packName);
-      const nextSalon = mergeSalonOffer(selectedSalon, offer);
+      const { offer } = await ensureSalonOffer(targetSalon, entry.packName);
+      const nextSalon = mergeSalonOffer(targetSalon, offer);
       setEditing({
         ...entry,
         salon: nextSalon,
@@ -10018,11 +10049,11 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
   };
 
   const openBoardEditor = (entry) => {
-    setBoardEditor({ packName: entry.packName, value: entry.source?.board_id || '', salonFromGroup: Boolean(entry.source?.mapping?.salon_from_group) });
+    setBoardEditor({ packName: entry.packName, salon: selectedSalon || entry.salon, value: entry.source?.board_id || '', salonFromGroup: Boolean(entry.source?.mapping?.salon_from_group) });
   };
 
   const openBasePackEditor = (entry) => {
-    if (!selectedSalon) return;
+    if (!selectedSalon && !entry.salon) return;
     const globalMetadata = entry.packDefinition?.metadata || entry.offer?.metadata || {};
     const offer = {
       ...(entry.offer || {}),
@@ -10031,7 +10062,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
       name: entry.packDefinition?.name || entry.packName,
       metadata: globalMetadata,
     };
-    setBasePackEditor({ ...entry, salon: selectedSalon, offer });
+    setBasePackEditor({ ...entry, salon: selectedSalon || entry.salon, offer });
   };
 
   const saveBasePack = async (offer, baseItems, packBenefits) => {
@@ -10048,10 +10079,10 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
 
   const saveBoardId = async (event, entry) => {
     event.preventDefault();
-    if (!selectedSalon || !boardEditor) return;
+    if (!boardEditor?.salon) return;
     setActionState({ loadingPack: '', savingBoardPack: entry.packName, savingBasePack: '', deletingPresetId: '', message: '', error: '' });
     try {
-      await saveMondayBoardForPack(selectedSalon, entry.packName, boardEditor.value, { salonFromGroup: boardEditor.salonFromGroup });
+      await saveMondayBoardForPack(boardEditor.salon, entry.packName, boardEditor.value, { salonFromGroup: boardEditor.salonFromGroup });
       setBoardEditor(null);
       setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Board Monday enregistré pour ${entry.packName}.`, error: '' });
       await onSalonChanged?.();
@@ -10068,6 +10099,7 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
     try {
       await createPackDefinition(packName);
       setNewPackName('');
+      setCreateOpen(false);
       setActionState({ loadingPack: '', savingBoardPack: '', savingBasePack: '', deletingPresetId: '', message: `Pack global ${packName} créé. Tu peux maintenant l'activer dans les salons souhaités.`, error: '' });
       await onSalonChanged?.();
     } catch (error) {
@@ -10116,104 +10148,70 @@ function AdminPresetsView({ salons, assets, initialSalonId, onSalonChanged }) {
     <section className="admin-presets-view">
       <header className="presets-toolbar">
         <div className="preset-salon-tabs">
-          <span>Salon :</span>
+          <span>Salon</span>
+          <button type="button" className={!selectedSalon ? 'active' : ''} aria-pressed={!selectedSalon} onClick={() => { setSelectedSalonId(''); setMenuPackName(''); setBoardEditor(null); }}>Tous</button>
           {salons.map((salon) => (
-            <button key={salon.id} type="button" className={salon.id === selectedSalon?.id ? 'active' : ''} onClick={() => setSelectedSalonId(salon.id)}>
+            <button key={salon.id} type="button" className={salon.id === selectedSalon?.id ? 'active' : ''} aria-pressed={salon.id === selectedSalon?.id} onClick={() => { setSelectedSalonId(salon.id); setMenuPackName(''); setBoardEditor(null); }}>
               {salon.name}
             </button>
           ))}
         </div>
-        <form className="preset-create-pack-form" onSubmit={createPack}>
-          <input value={newPackName} placeholder="Nom du pack" onChange={(event) => setNewPackName(event.target.value)} />
-          <button type="submit" disabled={!newPackName.trim() || actionState.loadingPack === newPackName.trim()}>
-            {actionState.loadingPack === newPackName.trim() ? 'Création...' : 'Créer un pack'}
-          </button>
-        </form>
+        <button className="admin-primary-v2" type="button" onClick={() => setCreateOpen(true)}>Nouveau pack</button>
       </header>
 
-      {actionState.message && <div className="preset-library-feedback success">{actionState.message}</div>}
-      {actionState.error && <div className="preset-library-feedback error">{actionState.error}</div>}
+      <div className="preset-library-heading"><strong>{selectedSalon?.name || 'Tous les salons'}</strong><span>· {selectedSalon ? `${activePackCount} pack${activePackCount > 1 ? 's' : ''} activé${activePackCount > 1 ? 's' : ''} sur ${packCards.length}` : `${packCards.length} pack${packCards.length > 1 ? 's' : ''} globaux`}</span></div>
+      {actionState.message && <div className="preset-library-feedback success" role="status">{actionState.message}</div>}
+      {actionState.error && <div className="preset-library-feedback error" role="alert">{actionState.error}</div>}
 
       <div className="preset-library-grid">
-        {packCards.length ? packCards.map((entry) => (
-          <article aria-busy={deletingGlobalPack === entry.packName} className={`preset-library-card ${entry.active ? '' : 'inactive'}`} key={`${selectedSalon?.id || 'salon'}-${entry.packName}`}>
-            <button className="preset-card-menu" type="button" aria-label="Options pack">⋮</button>
-            <div className="preset-card-preview">{entry.active ? presetReferenceLabel(entry.preset, entry.presets) : '—'}</div>
-            <div className="preset-card-body">
-              <strong>{entry.packName}</strong>
-              <span>{entry.active ? presetMetaLabel(entry.preset, entry.presets) : 'Pack non activé sur ce salon'}</span>
-              <small className="preset-board-line">
-                Monday : {entry.source?.board_id ? `board ${entry.source.board_id}` : 'aucun board'}
-                {entry.source?.mapping?.salon_from_group && ` · Groupe : ${selectedSalon.name}`}
-              </small>
-              {isSignaturePackLabel(entry.packName)
-                ? <small className="preset-board-line">Forfait accessoires offert : {signatureAllowancePerSquareMeter} € HT/m² de stand</small>
-                : (entry.packDefinition?.metadata?.packBenefits || entry.offer?.metadata?.packBenefits)?.mode === 'allowance' && <small className="preset-board-line">Forfait accessoires offert : {validationMoney((entry.packDefinition?.metadata?.packBenefits || entry.offer?.metadata?.packBenefits).allowanceAmount || 0)} € HT</small>}
-              <fieldset className="preset-pack-actions" disabled={Boolean(deletingGlobalPack)}>
-                {entry.active ? (
-                  <>
-                    <button className="primary" type="button" disabled={actionState.loadingPack === entry.packName} onClick={() => openPackEditor(entry)}>
-                      {actionState.loadingPack === entry.packName ? 'Ouverture...' : 'Modifier'}
-                    </button>
-                    <button type="button" onClick={() => openBoardEditor(entry)}>
-                      {entry.source?.board_id ? 'Modifier board' : 'Ajouter board ID'}
-                    </button>
-                    <button type="button" disabled={actionState.savingBasePack === entry.packName} onClick={() => openBasePackEditor(entry)}>
-                      Objets inclus / forfait
-                    </button>
-                    <button className="danger" type="button" disabled={actionState.deletingPresetId === (entry.offer?.id || entry.source?.id || entry.packName)} onClick={() => removePreset(entry)}>
-                      {actionState.deletingPresetId === (entry.offer?.id || entry.source?.id || entry.packName) ? 'Suppression...' : 'Retirer de ce salon'}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button className="activate-pack" type="button" disabled={actionState.loadingPack === entry.packName} onClick={() => activatePack(entry)}>
-                      {actionState.loadingPack === entry.packName ? 'Activation...' : 'Activer ce pack sur ce salon'}
-                    </button>
-                    <button type="button" onClick={() => openBoardEditor(entry)}>
-                      {entry.source?.board_id ? 'Modifier board' : 'Ajouter board ID'}
-                    </button>
-                    <button type="button" disabled={actionState.loadingPack === entry.packName} onClick={() => openBasePackEditor(entry)}>
-                      Objets inclus / forfait
-                    </button>
-                    {entry.source && (
-                      <button className="danger" type="button" disabled={actionState.deletingPresetId === (entry.offer?.id || entry.source?.id || entry.packName)} onClick={() => removePreset(entry)}>
-                        {actionState.deletingPresetId === (entry.offer?.id || entry.source?.id || entry.packName) ? 'Suppression...' : 'Retirer de ce salon'}
-                      </button>
-                    )}
-                  </>
-                )}
-                <button className="danger" type="button" onClick={() => removeGlobalPack(entry)}>
-                  {deletingGlobalPack === entry.packName ? 'Suppression définitive...' : 'Supprimer définitivement · tous les salons'}
-                </button>
-              </fieldset>
-              {boardEditor?.packName === entry.packName && (
-                <form className="preset-board-editor" onSubmit={(event) => saveBoardId(event, entry)}>
-                  <input
-                    autoFocus
-                    value={boardEditor.value}
-                    inputMode="numeric"
-                    placeholder="Ex : 18395911999"
-                    onChange={(event) => setBoardEditor((current) => ({ ...current, value: event.target.value }))}
-                  />
-                  <label className="preset-board-group-mode">
-                    <input type="checkbox" checked={boardEditor.salonFromGroup} onChange={(event) => setBoardEditor((current) => ({ ...current, salonFromGroup: event.target.checked }))} />
-                    Tableau par pack, groupes par salon
-                  </label>
-                  {boardEditor.salonFromGroup && <p className="preset-board-group-hint">Seuls les groupes nommés « {selectedSalon.name} » seront synchronisés pour ce pack.</p>}
-                  <button type="submit" disabled={actionState.savingBoardPack === entry.packName}>
-                    {actionState.savingBoardPack === entry.packName ? '...' : 'OK'}
-                  </button>
-                  <button type="button" onClick={() => setBoardEditor(null)}>Annuler</button>
-                </form>
-              )}
+        {packCards.length ? packCards.map((entry) => {
+          const benefits = entry.packDefinition?.metadata?.packBenefits || entry.offer?.metadata?.packBenefits;
+          const allowance = isSignaturePackLabel(entry.packName) ? `${signatureAllowancePerSquareMeter} € HT/m²` : benefits?.mode === 'allowance' ? `${validationMoney(benefits.allowanceAmount || 0)} € HT` : '—';
+          const boardId = entry.source?.board_id || entry.offer?.monday_source?.board_id;
+          const isBusy = Boolean(deletingGlobalPack || actionState.loadingPack || actionState.deletingPresetId);
+          return <article aria-busy={deletingGlobalPack === entry.packName || actionState.loadingPack === entry.packName} className={`preset-library-card ${entry.active ? '' : 'inactive'}`} key={`${selectedSalon?.id || 'all'}-${entry.packName}`}>
+            <header className="preset-library-card-header">
+              <div><h3>{entry.packName}</h3><span className={`preset-status-pill ${entry.active ? 'active' : ''}`}>{selectedSalon ? entry.active ? 'Activé' : 'Non activé' : `${entry.activeSalonCount} salon${entry.activeSalonCount > 1 ? 's' : ''} actif${entry.activeSalonCount > 1 ? 's' : ''}`}</span></div>
+              <div className="preset-card-options">
+                <button className="preset-card-menu" type="button" aria-label={`Options du pack ${entry.packName}`} aria-expanded={menuPackName === entry.packName} onClick={() => setMenuPackName((current) => current === entry.packName ? '' : entry.packName)}>⋮</button>
+                {menuPackName === entry.packName && <div className="preset-card-dropdown" role="menu">
+                  {entry.active && <button type="button" role="menuitem" disabled={isBusy} onClick={() => { setMenuPackName(''); openPackEditor(entry); }}>Modifier le pack</button>}
+                  <button type="button" role="menuitem" onClick={() => { setMenuPackName(''); openBoardEditor(entry); }}>Modifier le board Monday</button>
+                  <button type="button" role="menuitem" onClick={() => { setMenuPackName(''); openBasePackEditor(entry); }}>Objets inclus / forfait</button>
+                  {selectedSalon && (entry.active || entry.source) && <button className="danger" type="button" role="menuitem" disabled={isBusy} onClick={() => { setMenuPackName(''); removePreset(entry); }}>Retirer de ce salon<span>Le pack reste disponible sur les autres salons.</span></button>}
+                  <button className="danger" type="button" role="menuitem" disabled={isBusy} onClick={() => { setMenuPackName(''); removeGlobalPack(entry); }}>Supprimer définitivement<span>Retire le pack de tous les salons.</span></button>
+                </div>}
+              </div>
+            </header>
+            <div className="preset-library-metrics">
+              <div><strong>{entry.active ? entry.presets?.length || 0 : '—'}</strong><span>Implantations</span></div>
+              <div><strong>{entry.active ? adminSalonPackModules(entry) : '—'}</strong><span>Modules inclus</span></div>
+              <div><strong>{allowance}</strong><span>Forfait accessoires offert</span></div>
             </div>
-            <i />
-          </article>
-        )) : (
-          <div className="admin-empty-row">Aucun pack global créé. Crée un pack avec le champ ci-dessus.</div>
-        )}
+            <div className="preset-library-board"><RotateCcw size={15} /><span>Board Monday{!selectedSalon && ` · ${entry.salon.name}`}</span><strong>{boardId || 'Aucun board'}</strong><button type="button" onClick={() => openBoardEditor(entry)}>{boardId ? 'Modifier' : 'Ajouter un board ID'}</button></div>
+            {boardEditor?.packName === entry.packName && <form className="preset-board-editor" onSubmit={(event) => saveBoardId(event, entry)}>
+              <input autoFocus aria-label="Identifiant du board Monday" value={boardEditor.value} inputMode="numeric" placeholder="Ex : 18395911999" onChange={(event) => setBoardEditor((current) => ({ ...current, value: event.target.value }))} />
+              <label className="preset-board-group-mode"><input type="checkbox" checked={boardEditor.salonFromGroup} onChange={(event) => setBoardEditor((current) => ({ ...current, salonFromGroup: event.target.checked }))} />Tableau par pack, groupes par salon</label>
+              {boardEditor.salonFromGroup && <p className="preset-board-group-hint">Seuls les groupes nommés « {boardEditor.salon?.name} » seront synchronisés pour ce pack.</p>}
+              <button type="submit" disabled={actionState.savingBoardPack === entry.packName}>{actionState.savingBoardPack === entry.packName ? '...' : 'OK'}</button>
+              <button type="button" onClick={() => setBoardEditor(null)}>Annuler</button>
+            </form>}
+            <footer className="preset-library-actions">
+              {selectedSalon && entry.active && <button type="button" disabled={isBusy} onClick={() => openPackEditor(entry)}>Modifier</button>}
+              {selectedSalon && !entry.active && <button type="button" disabled={isBusy} onClick={() => activatePack(entry)}>{actionState.loadingPack === entry.packName ? 'Activation...' : 'Activer sur ce salon'}</button>}
+              {!selectedSalon && <button type="button" onClick={() => setSelectedSalonId(entry.salon.id)}>Voir par salon</button>}
+              <button type="button" onClick={() => openBasePackEditor(entry)}>Objets inclus / forfait</button>
+            </footer>
+          </article>;
+        }) : <div className="admin-empty-row">Aucun pack global créé. Utilise « Nouveau pack » pour commencer.</div>}
       </div>
+
+      {createOpen && <div className="preset-create-layer" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreateOpen(false); }}><form className="preset-create-dialog" onSubmit={createPack}>
+        <header><h2>Nouveau pack</h2><button type="button" aria-label="Fermer" onClick={() => setCreateOpen(false)}><X size={19} /></button></header>
+        <p>Le pack sera disponible dans tous les salons ; tu pourras l’activer salon par salon.</p>
+        <label>Nom du pack<input autoFocus required value={newPackName} placeholder="Ex : Signature" onChange={(event) => setNewPackName(event.target.value)} /></label>
+        <footer><button type="button" onClick={() => setCreateOpen(false)}>Annuler</button><button className="admin-primary-v2" type="submit" disabled={!newPackName.trim() || actionState.loadingPack === newPackName.trim()}>{actionState.loadingPack === newPackName.trim() ? 'Création...' : 'Créer le pack'}</button></footer>
+      </form></div>}
 
       {editing && (
         <AdminSalonPresetConfigurator
