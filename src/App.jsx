@@ -7,6 +7,7 @@ import { Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Fl
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { defaultImageFraming, framedImageRect, normalizeImageFraming } from './imageFraming.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   AlertTriangle,
@@ -1793,7 +1794,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       const displayUrl = cacheBustedUrl(imageUrl);
       await preloadImage(displayUrl);
       if (optionKeys.textureSlot) {
-        updateItemOptions(targetItem, textureSlotPatch(targetItem, optionKeys.textureSlot, { imageUrl: displayUrl, imageName: file.name, visualPending: false }));
+        updateItemOptions(targetItem, textureSlotPatch(targetItem, optionKeys.textureSlot, { imageUrl: displayUrl, imageName: file.name, visualPending: false, ...defaultImageFraming }));
       } else {
         updateItemOptions(targetItem, { [urlKey]: displayUrl, [nameKey]: file.name, ...(optionKeys.extraPatch || {}) });
       }
@@ -2106,7 +2107,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const resetSignatureArchImage = (item, slot) => {
     if (readOnly || !item || !slot) return;
-    updateItemOptions(item, textureSlotPatch(item, slot, { imageUrl: '', imageName: '', visualPending: false }));
+    updateItemOptions(item, textureSlotPatch(item, slot, { imageUrl: '', imageName: '', visualPending: false, ...defaultImageFraming }));
   };
 
   const moveDraggedItem = (point) => {
@@ -2364,7 +2365,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const resetPrestigeSignageImage = (item, slot) => {
     if (!item) return;
     if (slot) {
-      updateItemOptions(item, textureSlotPatch(item, slot, { imageUrl: '', imageName: '' }));
+      updateItemOptions(item, textureSlotPatch(item, slot, { imageUrl: '', imageName: '', ...defaultImageFraming }));
       return;
     }
     updateItemOptions(item, { headMainImageUrl: '', headMainImageName: '' });
@@ -2377,7 +2378,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const updatePrestigeSignageVisualEnabled = (item, slot, checked) => {
     if (!item || !slot) return;
-    updateItemOptions(item, textureSlotPatch(item, slot, checked ? { visualEnabled: true } : { visualEnabled: false, imageUrl: '', imageName: '', visualPending: false }));
+    updateItemOptions(item, textureSlotPatch(item, slot, checked ? { visualEnabled: true } : { visualEnabled: false, imageUrl: '', imageName: '', visualPending: false, ...defaultImageFraming }));
   };
 
   const toggleSelectedItemLock = () => {
@@ -2912,6 +2913,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onPrestigeSignageResetImage={resetPrestigeSignageImage}
             onPrestigeSignageVisualPending={updatePrestigeSignageVisualPending}
             onPrestigeSignageVisualEnabled={updatePrestigeSignageVisualEnabled}
+            onPrestigeSignageFraming={(item, slot, framing) => updateItemOptions(item, textureSlotPatch(item, slot, framing))}
             onSelectPrestigeItem={setSelectedId}
             isAdminViewer={effectiveAdminViewer}
           />
@@ -3367,6 +3369,88 @@ function VisualUploadDropzone({ imageUrl = '', alt = '', disabled = false, uploa
   );
 }
 
+function ImageFramingControls({ imageUrl, value = {}, disabled = false, onChange }) {
+  const canvasRef = useRef(null);
+  const dragRef = useRef(null);
+  const [image, setImage] = useState(null);
+  const [framing, setFraming] = useState(() => normalizeImageFraming(value));
+  const framingRef = useRef(framing);
+
+  useEffect(() => {
+    const next = normalizeImageFraming(value);
+    framingRef.current = next;
+    setFraming(next);
+  }, [imageUrl, value.imageZoom, value.imageOffsetX, value.imageOffsetY]);
+
+  const previewFraming = (next) => {
+    const normalized = normalizeImageFraming(next);
+    framingRef.current = normalized;
+    setFraming(normalized);
+    return normalized;
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setImage(null);
+    loadDecodedImage(imageUrl).then(({ ok, image: loadedImage }) => {
+      if (!cancelled) setImage(ok ? loadedImage : null);
+    });
+    return () => { cancelled = true; };
+  }, [imageUrl]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    if (!image) return;
+    const rect = framedImageRect(image.naturalWidth || image.width, image.naturalHeight || image.height, canvas.width, canvas.height, { ...framing, fit: 'contain' });
+    context.drawImage(image, rect.x, rect.y, rect.width, rect.height);
+  }, [image, framing.imageZoom, framing.imageOffsetX, framing.imageOffsetY]);
+
+  const moveImage = (event) => {
+    if (!dragRef.current || disabled) return null;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    return previewFraming({
+      ...framingRef.current,
+      imageOffsetX: dragRef.current.x + (event.clientX - dragRef.current.pointerX) / bounds.width * 100,
+      imageOffsetY: dragRef.current.y + (event.clientY - dragRef.current.pointerY) / bounds.height * 100,
+    });
+  };
+
+  return (
+    <details className="image-framing-controls">
+      <summary>Recadrer l’image</summary>
+      <p>Glissez le visuel, puis ajustez sa taille (100 % = image entière). Le rendu exact est visible sur l’objet après avoir relâché.</p>
+      <canvas
+        ref={canvasRef}
+        width={420}
+        height={250}
+        aria-label="Aperçu du cadrage, faites glisser pour déplacer l’image"
+        onPointerDown={(event) => {
+          if (disabled) return;
+          dragRef.current = { pointerX: event.clientX, pointerY: event.clientY, x: framing.imageOffsetX, y: framing.imageOffsetY };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={moveImage}
+        onPointerUp={(event) => {
+          const next = moveImage(event) || framingRef.current;
+          dragRef.current = null;
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+          onChange?.(next);
+        }}
+        onPointerCancel={() => { dragRef.current = null; onChange?.(framingRef.current); }}
+      />
+      <label>
+        <span>Taille du visuel <strong>{Math.round(framing.imageZoom * 100)} %</strong></span>
+        <input type="range" min="50" max="300" step="5" value={Math.round(framing.imageZoom * 100)} disabled={disabled} onChange={(event) => previewFraming({ ...framingRef.current, imageZoom: Number(event.target.value) / 100 })} onPointerUp={() => onChange?.(framingRef.current)} onKeyUp={() => onChange?.(framingRef.current)} onBlur={() => onChange?.(framingRef.current)} />
+      </label>
+      <button type="button" disabled={disabled} onClick={() => { previewFraming(defaultImageFraming); onChange?.(defaultImageFraming); }}>Réinitialiser le cadrage</button>
+    </details>
+  );
+}
+
 function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageChange, onResetImage, embedded = false }) {
   const t = useT();
   return (
@@ -3464,11 +3548,13 @@ function LogoUploadCard({
   alt = 'Logo',
   spec = '',
   visualPending = false,
+  imageFraming = null,
   resetLabel = '',
   onEnabledChange,
   onImageChange,
   onVisualPendingChange,
   onResetImage,
+  onFramingChange,
   showSwitch = true,
   className = '',
 }) {
@@ -3502,6 +3588,7 @@ function LogoUploadCard({
             label=""
             browseLabel="Importer"
           />
+          {imageUrl && onFramingChange && <ImageFramingControls imageUrl={imageUrl} value={imageFraming || {}} disabled={disabled || uploading} onChange={onFramingChange} />}
           {spec && <small className="visual-upload-spec">{spec}</small>}
           <label className="visual-pending-checkbox">
             <input
@@ -3609,7 +3696,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
   );
 }
 
-function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadState, onImageChange, onResetImage, onImagePending, onImageEnabled, onColorChange, onResetColor, onLogoGateChange, logoGateControls = [], counterColors = [], embedded = false }) {
+function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadState, onImageChange, onResetImage, onImagePending, onImageEnabled, onFramingChange, onColorChange, onResetColor, onLogoGateChange, logoGateControls = [], counterColors = [], embedded = false }) {
   const t = useT();
   const slots = Array.isArray(providedSlots) ? providedSlots : normalizeTextureSlots(item?.dimensions?.textureSlots);
   const values = item?.options?.textureSlotValues || {};
@@ -3677,6 +3764,7 @@ function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadSta
               priceLabel={logoGate?.priceLabel || ''}
               priceTone={logoGate?.priceTone || 'included'}
               imageUrl={value.imageUrl}
+              imageFraming={value}
               alt={textureSlotDisplayLabel(slot, item)}
               visualPending={Boolean(value.visualPending)}
               onEnabledChange={logoGate
@@ -3685,6 +3773,7 @@ function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadSta
               onImageChange={(file) => onImageChange?.(slot, file)}
               onVisualPendingChange={(checked) => onImagePending?.(slot, checked)}
               onResetImage={() => onResetImage?.(slot)}
+              onFramingChange={(framing) => onFramingChange?.(slot, framing)}
               resetLabel={t('img_upload_reset')}
               showSwitch={Boolean(logoGate || isHighSignageVisual)}
             />
@@ -3703,6 +3792,7 @@ function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadSta
                   uploading={uploadState?.uploading}
                   onImage={(file) => onImageChange?.(slot, file)}
                 />
+                {value.imageUrl && <ImageFramingControls imageUrl={value.imageUrl} value={value} disabled={uploadState?.uploading} onChange={(framing) => onFramingChange?.(slot, framing)} />}
                 {isLightBridge && (
                   <label className="visual-pending-checkbox texture-slot-pending-checkbox">
                     <input
@@ -3851,7 +3941,7 @@ function SignatureArchOptionCard({ items = [], entries = [], colors = [], select
   );
 }
 
-function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = {}, disabled = false, onEnabledChange, onImage, onResetImage, onVisualPending, onVisualEnabled, onSelect }) {
+function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = {}, disabled = false, onEnabledChange, onImage, onResetImage, onVisualPending, onVisualEnabled, onFramingChange, onSelect }) {
   const item = items[0] || null;
   const slot = firstImageTextureSlot(item);
   const value = slot ? item?.options?.textureSlotValues?.[slot.id] || {} : {};
@@ -3874,12 +3964,14 @@ function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = 
           className="texture-slot-logo-card prestige-signage-upload"
           title="Logo"
           imageUrl={imageUrl}
+          imageFraming={value}
           alt={slot?.label || 'Logo enseigne haute'}
           visualPending={Boolean(value.visualPending)}
           onEnabledChange={(checked) => onVisualEnabled?.(item, slot, checked)}
           onImageChange={(file) => onImage?.(item, file, slot)}
           onVisualPendingChange={(checked) => onVisualPending?.(item, slot, checked)}
           onResetImage={() => onResetImage?.(item, slot)}
+          onFramingChange={slot ? (framing) => onFramingChange?.(item, slot, framing) : null}
           resetLabel="Retirer le visuel"
         />
       )}
@@ -4523,6 +4615,7 @@ function OptionsStepPanel({
   onPrestigeSignageResetImage,
   onPrestigeSignageVisualPending,
   onPrestigeSignageVisualEnabled,
+  onPrestigeSignageFraming,
   onSelectPrestigeItem,
   isAdminViewer = false,
 }) {
@@ -4683,6 +4776,7 @@ function OptionsStepPanel({
             onResetImage={onPrestigeSignageResetImage}
             onVisualPending={onPrestigeSignageVisualPending}
             onVisualEnabled={onPrestigeSignageVisualEnabled}
+            onFramingChange={onPrestigeSignageFraming}
             onSelect={onSelectPrestigeItem}
           />
         </OptionAccordion>
@@ -5115,6 +5209,9 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const isVariantGroup = isVariantGroupEntry(catalogEntry);
   const initialOptions = item?.options || {};
   const [draftVisualOptions, setDraftVisualOptions] = useState(initialOptions);
+  useEffect(() => {
+    if (item) setDraftVisualOptions(item.options || {});
+  }, [item?.options]);
   const variants = itemConfigVariants(catalogEntry, salonLabel);
   const extraOptions = itemConfigExtraOptions(catalogEntry);
   const colorOptions = itemConfigColorOptions(catalogEntry);
@@ -5319,7 +5416,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
       const imageUrl = cacheBustedUrl(uploadedUrl);
       await preloadImage(imageUrl);
       if (keys.textureSlot) {
-        updateDraftVisualOptions(textureSlotPatch(visualItem, keys.textureSlot, { imageUrl, imageName: file.name, visualPending: false }));
+        updateDraftVisualOptions(textureSlotPatch(visualItem, keys.textureSlot, { imageUrl, imageName: file.name, visualPending: false, ...defaultImageFraming }));
       } else {
         updateDraftVisualOptions({ [urlKey]: imageUrl, [nameKey]: file.name, ...(keys.extraPatch || {}) });
       }
@@ -5493,14 +5590,15 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             slots={textureSlots}
             uploadState={modalUploadState}
             onImageChange={(slot, file) => (item ? onImageChange?.(item, file, { textureSlot: slot }) : handleDraftImage(file, { urlKey: 'unused', nameKey: 'unused', textureSlot: slot }))}
-            onResetImage={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { imageUrl: '', imageName: '', visualPending: false }))}
+            onResetImage={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { imageUrl: '', imageName: '', visualPending: false, ...defaultImageFraming }))}
             onImagePending={(slot, checked) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { visualPending: checked }))}
-            onImageEnabled={(slot, checked) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, checked ? { visualEnabled: true } : { visualEnabled: false, imageUrl: '', imageName: '', visualPending: false }))}
+            onImageEnabled={(slot, checked) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, checked ? { visualEnabled: true } : { visualEnabled: false, imageUrl: '', imageName: '', visualPending: false, ...defaultImageFraming }))}
+            onFramingChange={(slot, framing) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, framing))}
             onColorChange={(slot, patch) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, patch))}
             onResetColor={(slot) => updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { color: '', colorImage: '', colorId: '', colorName: '', colorReference: '', colorPrice: 0, colorMode: '' }))}
             onLogoGateChange={(id, checked, slot) => {
               toggleExtra(id, checked);
-              if (!checked) updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { imageUrl: '', imageName: '', visualPending: false }));
+              if (!checked) updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { imageUrl: '', imageName: '', visualPending: false, ...defaultImageFraming }));
             }}
             logoGateControls={textureSlotLogoGateControls}
             counterColors={counterColors}
@@ -20368,16 +20466,10 @@ function createCoverImageTexture(image, targetWidth, targetHeight, options = {})
   const ctx = canvas.getContext('2d');
   const imageWidth = image.naturalWidth || image.videoWidth || image.width || targetWidth;
   const imageHeight = image.naturalHeight || image.videoHeight || image.height || targetHeight;
-  const scale = options.fit === 'contain'
-    ? Math.min(targetWidth / imageWidth, targetHeight / imageHeight)
-    : Math.max(targetWidth / imageWidth, targetHeight / imageHeight);
-  const drawWidth = imageWidth * scale;
-  const drawHeight = imageHeight * scale;
-  const dx = (targetWidth - drawWidth) / 2;
-  const dy = (targetHeight - drawHeight) / 2;
+  const rect = framedImageRect(imageWidth, imageHeight, targetWidth, targetHeight, options);
   ctx.fillStyle = options.backgroundColor || '#ffffff';
   ctx.fillRect(0, 0, targetWidth, targetHeight);
-  ctx.drawImage(image, dx, dy, drawWidth, drawHeight);
+  ctx.drawImage(image, rect.x, rect.y, rect.width, rect.height);
   return prepareDynamicTexture(new CanvasTexture(canvas), options);
 }
 
@@ -20479,7 +20571,7 @@ function applyTextureSlotMaterial(material, item = {}, textureOptions = {}, mate
         return materialWithColor(material, '#ffffff');
       }
       const [targetWidth, targetHeight] = materialTextureCanvasSize(material);
-      const texture = createCoverImageTexture(image, targetWidth, targetHeight, { flipY: textureOptions.textureSlotFlipY ?? true, fit: 'contain', backgroundColor: '#ffffff' });
+      const texture = createCoverImageTexture(image, targetWidth, targetHeight, { flipY: textureOptions.textureSlotFlipY ?? true, fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(value) });
       if (texture) return materialWithTexture(material, texture);
     }
     if (slot.kind === 'image' && textureSlotHasLogoGate(item, slot) && !textureSlotLogoGateActive(item, slot)) {

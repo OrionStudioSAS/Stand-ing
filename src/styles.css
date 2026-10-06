@@ -14366,3 +14366,14 @@ img.asset-thumb {
 .asset-group-design:not(.asset-group-edit) > footer .asset-delete { margin-left: auto; border: 1px solid #dce2ea; color: #172236; background: #fff; }
 .asset-group-design > footer .asset-save { color: #fff; background: #0e2d69; }
 @media (max-width: 600px) { .asset-group-design { width: 100%; } .asset-group-design-content, .asset-group-design.asset-group-edit .asset-drawer-content { padding: 17px; } .asset-group-design > footer { padding: 10px 17px; } .asset-variant-compact-head { grid-template-columns: 14px 34px minmax(0, 1fr) 22px; gap: 6px; } .asset-variant-set-default, .asset-variant-default { grid-column: 3; justify-self: start; } .asset-variant-remove { grid-column: 4; grid-row: 1; } }
+
+.image-framing-controls { display: grid; gap: 10px; border: 1px solid #dbe4f1; border-radius: 9px; padding: 12px; background: #f7f9fc; }
+.image-framing-controls summary { color: #24539d; font-size: 13px; font-weight: 700; cursor: pointer; }
+.image-framing-controls[open] { gap: 11px; }
+.image-framing-controls p { margin: 0; color: #68758a; font-size: 12px; line-height: 1.4; }
+.image-framing-controls canvas { display: block; width: 100%; max-width: 420px; height: auto; border: 1px solid #cbd5e3; border-radius: 6px; background: #fff; cursor: grab; touch-action: none; }
+.image-framing-controls canvas:active { cursor: grabbing; }
+.image-framing-controls label { display: grid; gap: 7px; color: #344054; font-size: 12px; }
+.image-framing-controls label span { display: flex; justify-content: space-between; }
+.image-framing-controls input[type="range"] { width: 100%; accent-color: #416bb0; cursor: pointer; }
+.image-framing-controls > button { justify-self: start; border: 0; padding: 2px 0; color: #416bb0; background: none; font-size: 12px; font-weight: 700; cursor: pointer; }

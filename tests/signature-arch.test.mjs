@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
+import { normalizeImageFraming } from '../src/imageFraming.js';
 
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const stylesSource = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -89,6 +90,7 @@ test('Signature arch image slots replace only their own material, including the 
     materialMatchesTextureSlot: (name, material, target) => name === target.toLowerCase(),
     textureSlotHasLogoGate: () => false,
     materialTextureCanvasSize: () => [100, 100],
+    normalizeImageFraming,
     createCoverImageTexture: (image) => image,
     materialWithTexture: (material, map) => ({ ...material, map }),
   });
