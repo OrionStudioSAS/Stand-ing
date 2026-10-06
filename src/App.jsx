@@ -8704,6 +8704,7 @@ function AdminDashboard({ user, adminProfile }) {
   const [adminAuditHasMore, setAdminAuditHasMore] = useState(false);
   const [adminAuditError, setAdminAuditError] = useState('');
   const [adminAuditLoading, setAdminAuditLoading] = useState(false);
+  const [adminAuditFilters, setAdminAuditFilters] = useState({ sceneId: '', actorId: '', salon: '' });
   const [salons, setSalons] = useState([]);
   const [salonFilterChoices, setSalonFilterChoices] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -8736,8 +8737,25 @@ function AdminDashboard({ user, adminProfile }) {
     listClients({}).then(setClients).catch((error) => console.error('Client list failed', error));
     listSalons({}).then(setSalons).catch((error) => console.error('Salon list failed', error));
     listAdminUsers().then((rows) => { setAdminUsers(rows); setAdminUsersError(''); }).catch((error) => setAdminUsersError(error.message || 'Liste des utilisateurs indisponible.'));
-    listAdminAuditEvents().then((result) => { setAdminAudit(result.events); setAdminAuditHasMore(result.hasMore); setAdminAuditError(''); }).catch((error) => setAdminAuditError(error.message || 'Journal d’audit indisponible.'));
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    setAdminAuditLoading(true);
+    setAdminAudit([]);
+    const timer = window.setTimeout(() => {
+      listAdminAuditEvents(0, { ...adminAuditFilters, search: adminSearch })
+        .then((result) => {
+          if (!active) return;
+          setAdminAudit(result.events);
+          setAdminAuditHasMore(result.hasMore);
+          setAdminAuditError('');
+        })
+        .catch((error) => { if (active) setAdminAuditError(error.message || 'Journal d’audit indisponible.'); })
+        .finally(() => { if (active) setAdminAuditLoading(false); });
+    }, adminSearch ? 250 : 0);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [adminAuditFilters, adminSearch]);
 
   useEffect(() => {
     listObjectBank().then(setAssets).catch((error) => console.error('Object bank list failed', error));
@@ -8757,14 +8775,14 @@ function AdminDashboard({ user, adminProfile }) {
   };
 
   const refreshAdminAudit = () => {
-    return listAdminAuditEvents().then((result) => { setAdminAudit(result.events); setAdminAuditHasMore(result.hasMore); setAdminAuditError(''); }).catch((error) => setAdminAuditError(error.message || 'Journal d’audit indisponible.'));
+    return listAdminAuditEvents(0, { ...adminAuditFilters, search: adminSearch }).then((result) => { setAdminAudit(result.events); setAdminAuditHasMore(result.hasMore); setAdminAuditError(''); }).catch((error) => setAdminAuditError(error.message || 'Journal d’audit indisponible.'));
   };
 
   const loadMoreAdminAudit = async () => {
     if (adminAuditLoading || !adminAuditHasMore) return;
     setAdminAuditLoading(true);
     try {
-      const result = await listAdminAuditEvents(adminAudit.length);
+      const result = await listAdminAuditEvents(adminAudit.length, { ...adminAuditFilters, search: adminSearch });
       setAdminAudit((current) => [...current, ...result.events.filter((event) => !current.some((item) => item.id === event.id))]);
       setAdminAuditHasMore(result.hasMore);
       setAdminAuditError('');
@@ -9109,7 +9127,7 @@ function AdminDashboard({ user, adminProfile }) {
               }}
             />
           )}
-          {tab === 'users' && <AdminUsersView users={adminUsers} usersError={adminUsersError} auditEvents={adminAudit} auditError={adminAuditError} auditHasMore={adminAuditHasMore} auditLoading={adminAuditLoading} onLoadMoreAudit={loadMoreAdminAudit} search={adminSearch} canManage={['admin', 'super admin', 'super administrateur'].includes(normalizeTextValue(adminProfile?.role_label))} currentUserId={user?.id} onSaveUser={saveAdminUserProfile} onDeleteUser={deleteAdminUser} />}
+          {tab === 'users' && <AdminUsersView users={adminUsers} usersError={adminUsersError} auditEvents={adminAudit} auditError={adminAuditError} auditHasMore={adminAuditHasMore} auditLoading={adminAuditLoading} auditFilters={adminAuditFilters} onAuditFiltersChange={setAdminAuditFilters} onLoadMoreAudit={loadMoreAdminAudit} search={adminSearch} canManage={['admin', 'super admin', 'super administrateur'].includes(normalizeTextValue(adminProfile?.role_label))} currentUserId={user?.id} onSaveUser={saveAdminUserProfile} onDeleteUser={deleteAdminUser} />}
         </div>
       </section>
     </main>
@@ -11299,29 +11317,42 @@ function presetMetaLabel(preset, presets = []) {
   return `${area ? `${area} m²` : 'Surface à définir'} · ${presetFaceCount(preset)} face${presetFaceCount(preset) > 1 ? 's' : ''} · ${modules} module${modules > 1 ? 's' : ''}`;
 }
 
-function AdminUsersView({ users = [], usersError = '', auditEvents = [], auditError = '', auditHasMore = false, auditLoading = false, onLoadMoreAudit, search = '', canManage = false, currentUserId, onSaveUser, onDeleteUser }) {
+function AdminUsersView({ users = [], usersError = '', auditEvents = [], auditError = '', auditHasMore = false, auditLoading = false, auditFilters = {}, onAuditFiltersChange, onLoadMoreAudit, search = '', canManage = false, currentUserId, onSaveUser, onDeleteUser }) {
   const [activeTab, setActiveTab] = useState('users');
   const [roleFilter, setRoleFilter] = useState('');
+  const [kindFilter, setKindFilter] = useState('all');
   const [editor, setEditor] = useState(null);
+  const [selectedExhibitor, setSelectedExhibitor] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [page, setPage] = useState(1);
-  const staff = users.filter((userRow) => userRow.kind === 'admin');
-  const filtered = staff.filter((userRow) => (!roleFilter || normalizeTextValue(userRow.role) === normalizeTextValue(roleFilter)) && (!search || normalizeTextValue([userRow.display_name, userRow.email, userRow.role, userRow.organization].join(' ')).includes(normalizeTextValue(search))));
+  const filtered = users.filter((userRow) => (kindFilter === 'all' || userRow.kind === kindFilter)
+    && (!roleFilter || normalizeTextValue(userRow.role) === normalizeTextValue(roleFilter))
+    && (!search || normalizeTextValue([userRow.display_name, userRow.email, userRow.role, userRow.organization, ...(userRow.salons || [])].join(' ')).includes(normalizeTextValue(search))));
   const pageCount = Math.max(1, Math.ceil(filtered.length / 12));
   const safePage = Math.min(page, pageCount);
   const visible = filtered.slice((safePage - 1) * 12, safePage * 12);
-  const visibleAudit = auditEvents.filter((event) => !search || normalizeTextValue([event.actor_name, event.action, event.detail, event.salon].join(' ')).includes(normalizeTextValue(search)));
+  const visibleAudit = auditEvents;
+  const sceneChoices = [...new Map(users.flatMap((userRow) => userRow.scenes || []).map((scene) => [scene.id, scene])).values()]
+    .sort((a, b) => String(a.client_name || a.project_name || a.id).localeCompare(String(b.client_name || b.project_name || b.id), 'fr'));
+  const actorChoices = users.filter((userRow) => userRow.auth_user_id).sort((a, b) => String(a.display_name || a.email).localeCompare(String(b.display_name || b.email), 'fr'));
+  const salonChoices = [...new Set(sceneChoices.map((scene) => scene.event_name || scene.salon).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr'));
 
-  useEffect(() => { setPage(1); }, [roleFilter, search]);
+  useEffect(() => { setPage(1); }, [kindFilter, roleFilter, search]);
   useEffect(() => { setPage((current) => Math.min(current, pageCount)); }, [pageCount]);
   useEffect(() => {
-    if (!editor) return undefined;
-    const closeOnEscape = (event) => { if (event.key === 'Escape') setEditor(null); };
+    if (!editor && !selectedExhibitor) return undefined;
+    const closeOnEscape = (event) => { if (event.key === 'Escape') { setEditor(null); setSelectedExhibitor(null); } };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [editor]);
+  }, [editor, selectedExhibitor]);
+
+  const showHistory = (filters) => {
+    onAuditFiltersChange({ sceneId: filters.sceneId || '', actorId: filters.actorId || '', salon: filters.salon || '' });
+    setSelectedExhibitor(null);
+    setActiveTab('audit');
+  };
 
   const openEditor = (userRow) => {
     setError('');
@@ -11374,29 +11405,84 @@ function AdminUsersView({ users = [], usersError = '', auditEvents = [], auditEr
   };
 
   return <section className="admin-users-v2">
-    <div className="admin-users-v2-tabs" role="tablist" aria-label="Utilisateurs et audit"><button role="tab" type="button" aria-selected={activeTab === 'users'} onClick={() => setActiveTab('users')}>Utilisateurs</button><button role="tab" type="button" aria-selected={activeTab === 'audit'} onClick={() => setActiveTab('audit')}>Journal d’audit</button></div>
+    <div className="admin-users-v2-tabs" role="tablist" aria-label="Utilisateurs et audit">
+      <button role="tab" type="button" aria-selected={activeTab === 'users'} onClick={() => setActiveTab('users')}>Utilisateurs</button>
+      <button role="tab" type="button" aria-selected={activeTab === 'audit'} onClick={() => setActiveTab('audit')}>Journal d’audit</button>
+    </div>
     {message && <div className="sync-result success" role="status">{message}</div>}
     {error && !editor && <div className="sync-result error" role="alert">{error}</div>}
     {usersError && <div className="sync-result error" role="alert">Utilisateurs : {usersError}</div>}
     {auditError && <div className="sync-result error" role="alert">Journal d’audit : {auditError}</div>}
     {activeTab === 'users' ? <>
-      <div className="admin-users-v2-toolbar"><label><span className="sr-only">Filtrer par rôle</span><select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}><option value="">Tous les rôles</option>{[...new Set(staff.map((row) => row.role).filter(Boolean))].sort().map((role) => <option key={role} value={role}>{role}</option>)}</select></label><button className="admin-primary-v2" type="button" disabled={!canManage} title={!canManage ? 'Réservé aux super admins' : undefined} onClick={() => openEditor(null)}>Ajouter un utilisateur</button></div>
-      <div className="admin-users-v2-table-scroll"><div className="admin-users-v2-table"><div className="admin-users-v2-head"><span>Utilisateur</span><span>E-mail</span><span>Rôle</span><span>Salons accessibles</span><span>Dernière connexion</span><span>Accès</span><span className="sr-only">Modifier</span></div>{visible.length ? visible.map((userRow) => {
-        const name = userRow.display_name || userRow.email || 'Utilisateur';
-        const initials = String(name).split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
-        const canChangeAccess = canManage && userRow.auth_user_id !== currentUserId && !saving;
-        return <div className="admin-users-v2-row" key={userRow.id}><span className="admin-users-v2-person"><i>{initials}</i><span><strong>{name}</strong><small>{adminUserOrganization(userRow)}</small></span></span><span className="admin-users-v2-email">{userRow.email || '—'}</span><span><em className={`admin-users-v2-role ${adminEditableRole(userRow.role) === 'Super admin' ? 'super' : ''}`}>{userRow.role || '—'}</em></span><span>Tous</span><span className="admin-users-v2-date">{adminUserDateTime(userRow.last_sign_in_at)}</span><span><button className="admin-users-v2-switch" type="button" role="switch" aria-checked={userRow.is_active !== false} aria-label={`Accès de ${name}`} disabled={!canChangeAccess} onClick={() => toggleAccess(userRow)}><span /></button></span><span><button className="admin-outline-v2" type="button" disabled={!canManage} onClick={() => openEditor(userRow)}>Modifier</button></span></div>;
-      }) : <div className="admin-empty-row">Aucun utilisateur pour ce filtre.</div>}</div></div>
+      <div className="admin-users-v2-toolbar">
+        <div className="admin-users-v2-directory-filters">
+          {[
+            ['all', `Tous · ${users.length}`],
+            ['admin', `Équipe · ${users.filter((row) => row.kind === 'admin').length}`],
+            ['exposant', `Exposants · ${users.filter((row) => row.kind === 'exposant').length}`],
+          ].map(([kind, label]) => <button key={kind} type="button" aria-pressed={kindFilter === kind} onClick={() => setKindFilter(kind)}>{label}</button>)}
+          <label><span className="sr-only">Filtrer par rôle</span><select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}><option value="">Tous les rôles</option>{[...new Set(users.map((row) => row.role).filter(Boolean))].sort().map((role) => <option key={role} value={role}>{role}</option>)}</select></label>
+        </div>
+        <button className="admin-primary-v2" type="button" disabled={!canManage} title={!canManage ? 'Réservé aux super admins' : undefined} onClick={() => openEditor(null)}>Ajouter un utilisateur</button>
+      </div>
+      <div className="admin-users-v2-table-scroll"><div className="admin-users-v2-table">
+        <div className="admin-users-v2-head"><span>Utilisateur</span><span>E-mail</span><span>Rôle</span><span>Salons</span><span>Dernière connexion</span><span>Accès</span><span className="sr-only">Actions</span></div>
+        {visible.length ? visible.map((userRow) => {
+          const name = userRow.display_name || userRow.email || 'Utilisateur';
+          const initials = String(name).split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+          const isStaff = userRow.kind === 'admin';
+          const canChangeAccess = isStaff && canManage && userRow.auth_user_id !== currentUserId && !saving;
+          const salonsLabel = isStaff ? 'Tous' : (userRow.salons || []).join(', ') || '—';
+          return <div className="admin-users-v2-row" key={userRow.id}>
+            <span className="admin-users-v2-person"><i>{initials}</i><span><strong>{name}</strong><small>{isStaff ? adminUserOrganization(userRow) : `${userRow.scenes_count || 0} scène${userRow.scenes_count > 1 ? 's' : ''}`}</small></span></span>
+            <span className="admin-users-v2-email" title={userRow.email || ''}>{userRow.email || '—'}</span>
+            <span><em className={`admin-users-v2-role ${adminEditableRole(userRow.role) === 'Super admin' ? 'super' : ''}`}>{userRow.role || 'Exposant'}</em></span>
+            <span title={salonsLabel}>{salonsLabel}</span>
+            <span className="admin-users-v2-date">{userRow.auth_user_id ? adminUserDateTime(userRow.last_sign_in_at) : '—'}</span>
+            <span>{isStaff ? <button className="admin-users-v2-switch" type="button" role="switch" aria-checked={userRow.is_active !== false} aria-label={`Accès de ${name}`} disabled={!canChangeAccess} onClick={() => toggleAccess(userRow)}><span /></button> : <em className="admin-users-v2-access">{userRow.auth_user_id ? 'Compte créé' : 'Sans compte'}</em>}</span>
+            <span className="admin-users-v2-actions">{isStaff ? <><button className="admin-outline-v2" type="button" disabled={!canManage} onClick={() => openEditor(userRow)}>Modifier</button><button type="button" onClick={() => showHistory({ actorId: userRow.auth_user_id })}>Historique</button></> : <button className="admin-outline-v2" type="button" onClick={() => setSelectedExhibitor(userRow)}>Voir scènes</button>}</span>
+          </div>;
+        }) : <div className="admin-empty-row">Aucun utilisateur pour ce filtre.</div>}
+      </div></div>
       {filtered.length > 12 && <nav className="admin-users-v2-pagination" aria-label="Pagination utilisateurs"><span>{filtered.length} utilisateurs · page {safePage}/{pageCount}</span><button type="button" disabled={safePage === 1} onClick={() => setPage((current) => current - 1)}>Précédent</button><button type="button" disabled={safePage === pageCount} onClick={() => setPage((current) => current + 1)}>Suivant</button></nav>}
-      <div className="admin-users-v2-audit-head"><h2>Aperçu du journal d’audit</h2><button type="button" onClick={() => setActiveTab('audit')}>Voir tout</button></div><AdminAuditTable events={visibleAudit.slice(0, 5)} users={users} />
-    </> : <><div className="admin-users-v2-audit-head"><h2>Journal d’audit</h2><span>{visibleAudit.length} action{visibleAudit.length > 1 ? 's' : ''} chargée{visibleAudit.length > 1 ? 's' : ''}</span></div><AdminAuditTable events={visibleAudit} users={users} />{auditHasMore && <button className="admin-outline-v2 admin-users-v2-more" type="button" disabled={auditLoading} onClick={onLoadMoreAudit}>{auditLoading ? 'Chargement...' : 'Charger plus d’actions'}</button>}</>}
+      <div className="admin-users-v2-audit-head"><h2>Dernières actions</h2><button type="button" onClick={() => setActiveTab('audit')}>Voir l’historique</button></div>
+      <AdminAuditTable events={visibleAudit.slice(0, 5)} users={users} onSceneFilter={(sceneId) => showHistory({ sceneId })} />
+    </> : <>
+      <div className="admin-users-v2-audit-head"><div><h2>Historique des actions</h2><p>Qui a modifié ou terminé une configuration, et quand. Les actions antérieures à l’activation de l’audit ne sont pas reconstituées.</p></div><span>{visibleAudit.length} action{visibleAudit.length > 1 ? 's' : ''} chargée{visibleAudit.length > 1 ? 's' : ''}</span></div>
+      <div className="admin-users-v2-audit-filters">
+        <label><span>Salon</span><select value={auditFilters.salon || ''} onChange={(event) => onAuditFiltersChange({ ...auditFilters, salon: event.target.value, sceneId: '' })}><option value="">Tous les salons</option>{salonChoices.map((salon) => <option key={salon} value={salon}>{salon}</option>)}</select></label>
+        <label><span>Scène</span><select value={auditFilters.sceneId || ''} onChange={(event) => onAuditFiltersChange({ ...auditFilters, sceneId: event.target.value, salon: '' })}><option value="">Toutes les scènes</option>{sceneChoices.filter((scene) => !auditFilters.salon || (scene.event_name || scene.salon) === auditFilters.salon).map((scene) => <option key={scene.id} value={scene.id}>{scene.client_name || scene.project_name || scene.id} · {scene.event_name || scene.salon}</option>)}</select></label>
+        <label><span>Auteur</span><select value={auditFilters.actorId || ''} onChange={(event) => onAuditFiltersChange({ ...auditFilters, actorId: event.target.value })}><option value="">Tous les auteurs</option>{actorChoices.map((userRow) => <option key={userRow.auth_user_id} value={userRow.auth_user_id}>{userRow.display_name || userRow.email} · {userRow.role}</option>)}<option value="system">Système</option></select></label>
+        {(auditFilters.sceneId || auditFilters.actorId || auditFilters.salon) && <button className="admin-outline-v2" type="button" onClick={() => onAuditFiltersChange({ sceneId: '', actorId: '', salon: '' })}>Effacer</button>}
+      </div>
+      {auditLoading && !auditEvents.length ? <div className="admin-empty-row">Chargement de l’historique…</div> : <AdminAuditTable events={visibleAudit} users={users} onSceneFilter={(sceneId) => onAuditFiltersChange({ ...auditFilters, sceneId, salon: '' })} />}
+      {auditHasMore && <button className="admin-outline-v2 admin-users-v2-more" type="button" disabled={auditLoading} onClick={onLoadMoreAudit}>{auditLoading ? 'Chargement...' : 'Charger plus d’actions'}</button>}
+    </>}
+    {selectedExhibitor && createPortal(<div className="admin-users-v2-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedExhibitor(null); }}><section className="admin-users-v2-editor admin-users-v2-scenes" role="dialog" aria-modal="true" aria-label={`Scènes de ${selectedExhibitor.display_name || selectedExhibitor.email}`}><header><div><h2>{selectedExhibitor.display_name || selectedExhibitor.email}</h2><p>{selectedExhibitor.email || 'Exposant'} · {selectedExhibitor.scenes_count || 0} scène(s)</p></div><button type="button" aria-label="Fermer" onClick={() => setSelectedExhibitor(null)}><X size={18} /></button></header><div className="admin-users-v2-scenes-list">{(selectedExhibitor.scenes || []).length ? selectedExhibitor.scenes.map((scene) => <article key={scene.id}><div><strong>{scene.client_name || scene.project_name || 'Scène'}</strong><small>{scene.event_name || scene.salon} · {clientStatusLabel(scene.client_status || scene.status)}</small></div><div><a className="admin-outline-v2" href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Ouvrir</a><button className="admin-primary-v2" type="button" onClick={() => showHistory({ sceneId: scene.id })}>Historique</button></div></article>) : <p>Aucune scène associée à cet exposant.</p>}</div></section></div>, document.body)}
     {editor && createPortal(<div className="admin-users-v2-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditor(null); }}><form className="admin-users-v2-editor" onSubmit={(event) => { event.preventDefault(); save(editor); }}><header><div><h2>{editor.userId ? 'Modifier l’utilisateur' : 'Ajouter un utilisateur'}</h2><p>{editor.userId ? 'Rôle et accès au back-office' : 'Une invitation sera envoyée par e-mail.'}</p></div><button type="button" aria-label="Fermer" onClick={() => setEditor(null)}><X size={18} /></button></header><div className="admin-users-v2-fields"><label>Nom complet<input required value={editor.fullName} onChange={(event) => setEditor((current) => ({ ...current, fullName: event.target.value }))} /></label><label>E-mail<input type="email" required disabled={Boolean(editor.userId)} value={editor.email} onChange={(event) => setEditor((current) => ({ ...current, email: event.target.value }))} /></label><label>Organisation<input value={editor.organization} onChange={(event) => setEditor((current) => ({ ...current, organization: event.target.value }))} /></label><label>Rôle<select required value={editor.role} onChange={(event) => setEditor((current) => ({ ...current, role: event.target.value }))}><option value="" disabled>Choisir un rôle</option><option value="Super admin">Super admin</option><option value="Prestataire">Prestataire</option><option value="Dessinateur">Dessinateur</option></select></label><label className="admin-users-v2-active"><input type="checkbox" checked={editor.isActive} disabled={editor.userId === currentUserId} onChange={(event) => setEditor((current) => ({ ...current, isActive: event.target.checked }))} /> Accès actif</label><p>Accès aux salons : tous les salons pour ce rôle.</p></div>{error && <div className="sync-result error" role="alert">{error}</div>}<footer>{editor.userId && editor.userId !== currentUserId && <button className="admin-danger-v2" type="button" disabled={saving} onClick={remove}>Supprimer</button>}<button className="admin-outline-v2" type="button" onClick={() => setEditor(null)}>Annuler</button><button className="admin-primary-v2" type="submit" disabled={saving}>{saving ? 'Enregistrement...' : editor.userId ? 'Enregistrer' : 'Envoyer l’invitation'}</button></footer></form></div>, document.body)}
   </section>;
 }
 
-function AdminAuditTable({ events = [], users = [] }) {
+function AdminAuditTable({ events = [], users = [], onSceneFilter }) {
+  const [expandedId, setExpandedId] = useState(null);
   const byId = new Map(users.map((userRow) => [userRow.auth_user_id, userRow]));
-  return <div className="admin-users-v2-audit-scroll"><div className="admin-users-v2-audit-table"><div className="admin-users-v2-audit-row head"><span>Utilisateur</span><span>Action</span><span>Détail</span><span>Date</span><span>Organisation</span></div>{events.length ? events.map((event) => <div className="admin-users-v2-audit-row" key={event.id}><span>{event.actor_name || 'Système'}</span><span className="action">{event.action}</span><span>{event.detail || '—'}</span><span>{adminUserDateTime(event.created_at)}</span><span><em>{adminUserOrganization(byId.get(event.actor_user_id) || {})}</em></span></div>) : <div className="admin-empty-row">Aucune action enregistrée pour le moment.</div>}</div></div>;
+  return <div className="admin-users-v2-audit-scroll"><div className="admin-users-v2-audit-table">
+    <div className="admin-users-v2-audit-row head"><span>Utilisateur</span><span>Action</span><span>Scène</span><span>Détail</span><span>Date</span><span className="sr-only">Détails</span></div>
+    {events.length ? events.map((event) => {
+      const differences = Array.isArray(event.changes) ? event.changes : [];
+      return <div className="admin-users-v2-audit-entry" key={event.id}>
+        <div className="admin-users-v2-audit-row">
+          <span className="admin-users-v2-audit-person"><strong title={event.actor_email || event.actor_name}>{event.actor_name || 'Système'}</strong><small>{event.actor_kind === 'admin' ? 'Équipe' : event.actor_kind === 'exposant' ? 'Exposant' : event.actor_kind === 'system' ? 'Système' : adminUserOrganization(byId.get(event.actor_user_id) || { email: event.actor_email })}</small></span>
+          <span className="action">{event.action}</span>
+          <span>{event.scene_id ? <button className="admin-users-v2-audit-scene" type="button" onClick={() => onSceneFilter?.(event.scene_id)} title="Voir l’historique de cette scène">{event.scene_name || event.scene_id}<small>{event.salon || ''}</small></button> : event.salon || '—'}</span>
+          <span className="admin-users-v2-audit-detail" title={event.detail || ''}>{event.detail || '—'}</span>
+          <span>{adminUserDateTime(event.created_at)}</span>
+          <span>{differences.length > 0 && <button className="admin-users-v2-audit-expand" type="button" aria-expanded={expandedId === event.id} aria-label={`Détails de ${event.action}`} onClick={() => setExpandedId((current) => current === event.id ? null : event.id)}>{expandedId === event.id ? 'Masquer' : 'Détails'}</button>}</span>
+        </div>
+        {expandedId === event.id && differences.length > 0 && <div className="admin-users-v2-audit-changes">{differences.map((change, index) => <div key={`${change.field}-${index}`}><strong>{change.field}</strong><span>{change.before == null || change.before === change.after ? 'Contenu modifié' : `${change.before} → ${change.after ?? '—'}`}</span></div>)}</div>}
+      </div>;
+    }) : <div className="admin-empty-row">Aucune action enregistrée pour ces filtres.</div>}
+  </div></div>;
 }
 
 function adminEditableRole(role = '') {

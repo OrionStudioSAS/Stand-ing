@@ -525,9 +525,11 @@ export async function listAdminUsers() {
   return data?.users || [];
 }
 
-export async function listAdminAuditEvents(offset = 0) {
+export async function listAdminAuditEvents(offset = 0, filters = {}) {
   if (!supabase) return { events: [], hasMore: false };
-  const { data, error } = await supabase.functions.invoke('admin-users', { body: { action: 'audit', offset } });
+  const { data, error } = await supabase.functions.invoke('admin-users', {
+    body: { action: 'audit', offset, sceneId: filters.sceneId || '', actorId: filters.actorId || '', salon: filters.salon || '', search: filters.search || '' },
+  });
   const functionError = await getFunctionError(error, data);
   if (functionError) throw functionError;
   return { events: data?.events || [], hasMore: Boolean(data?.hasMore) };

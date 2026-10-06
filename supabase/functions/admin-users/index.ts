@@ -39,10 +39,18 @@ Deno.serve(async (req) => {
     if (action === "audit") {
       const offset = Number(body.offset ?? 0);
       if (!Number.isInteger(offset) || offset < 0 || offset > 100000) return json({ error: "Offset invalide." }, 400);
-      const { data, error } = await admin.from("admin_audit_events")
-        .select("id, actor_user_id, actor_name, action, detail, salon, target_id, created_at")
-        .order("created_at", { ascending: false }).order("id", { ascending: false })
-        .range(offset, offset + 100);
+      const sceneId = clean(body.sceneId);
+      const actorId = clean(body.actorId);
+      const salon = clean(body.salon);
+      const search = clean(body.search).slice(0, 80).replace(/[^\p{L}\p{N}\s-]/gu, "").trim();
+      if (sceneId.length > 150 || salon.length > 150 || (actorId && actorId !== "system" && !/^[0-9a-f-]{36}$/i.test(actorId))) return json({ error: "Filtre invalide." }, 400);
+      let query = admin.from("admin_audit_events")
+        .select("id, actor_user_id, actor_name, actor_email, actor_kind, action, detail, salon, scene_id, scene_name, target_id, target_type, changes, created_at");
+      if (sceneId) query = query.eq("scene_id", sceneId);
+      if (actorId) query = actorId === "system" ? query.is("actor_user_id", null) : query.eq("actor_user_id", actorId);
+      if (salon) query = query.eq("salon", salon);
+      if (search) query = query.or(["actor_name", "actor_email", "action", "detail", "scene_name", "salon"].map((column) => `${column}.ilike.%${search}%`).join(","));
+      const { data, error } = await query.order("created_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + 100);
       if (error) throw error;
       return json({ events: (data || []).slice(0, 100), hasMore: (data || []).length > 100 });
     }
@@ -123,7 +131,7 @@ async function listUsers(admin: any, currentUserId: string, canManage: boolean) 
   const [authUsers, adminUsers, clients] = await Promise.all([
     listAuthUsers(admin),
     queryAll(admin.from("admin_users").select("user_id, full_name, role_label, avatar_url, profile_metadata, is_active, created_at")),
-    queryAll(admin.from("clients").select("id, display_name, company_name, email, created_at, updated_at, scenes(id, salon, event_name)")),
+    queryAll(admin.from("clients").select("id, display_name, company_name, email, created_at, updated_at, scenes(id, share_token, project_name, client_name, salon, event_name, status, client_status, updated_at)")),
   ]);
 
   const adminByUserId = new Map(adminUsers.map((row: any) => [row.user_id, row]));
@@ -137,8 +145,9 @@ async function listUsers(admin: any, currentUserId: string, canManage: boolean) 
   const rows: any[] = authUsers.map((user: any) => {
     const email = clean(user.email).toLowerCase();
     const linkedClients = clientsByEmail.get(email) || [];
+    const linkedScenes = linkedClients.flatMap((client: any) => client.scenes || []);
     const adminProfile = adminByUserId.get(user.id) || null;
-    const linkedSalons = unique(linkedClients.flatMap((client: any) => (client.scenes || []).map((scene: any) => clean(scene.event_name) || clean(scene.salon)).filter(Boolean)));
+    const linkedSalons = unique(linkedScenes.map((scene: any) => clean(scene.event_name) || clean(scene.salon)).filter(Boolean));
     return {
       id: `auth:${user.id}`,
       auth_user_id: user.id,
@@ -152,7 +161,8 @@ async function listUsers(admin: any, currentUserId: string, canManage: boolean) 
       is_active: adminProfile ? adminProfile.is_active !== false : true,
       last_sign_in_at: user.last_sign_in_at || null,
       created_at: user.created_at || linkedClients[0]?.created_at || null,
-      scenes_count: linkedClients.reduce((sum: number, client: any) => sum + (client.scenes?.length || 0), 0),
+      scenes_count: linkedScenes.length,
+      scenes: linkedScenes,
       salons: linkedSalons,
       can_delete: user.id !== currentUserId,
       can_manage: canManage,
@@ -176,6 +186,7 @@ async function listUsers(admin: any, currentUserId: string, canManage: boolean) 
       last_sign_in_at: null,
       created_at: client.created_at || null,
       scenes_count: client.scenes?.length || 0,
+      scenes: client.scenes || [],
       client_ids: [client.id].filter(Boolean),
       salons: unique((client.scenes || []).map((scene: any) => clean(scene.event_name) || clean(scene.salon)).filter(Boolean)),
       can_delete: true,
