@@ -17,6 +17,8 @@ import {
   Check,
   Copy,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Eye,
   FileImage,
@@ -8703,6 +8705,7 @@ function AdminDashboard({ user, adminProfile }) {
   const [filters, setFilters] = useState({ search: '', salon: '', pack: '', status: '' });
   const [tab, setTabState] = useState(initialAdminTab);
   const [adminSearch, setAdminSearch] = useState('');
+  const [dashboardYear, setDashboardYear] = useState(new Date().getFullYear());
   const [openSalonName, setOpenSalonName] = useState('');
   const [accountOpen, setAccountOpen] = useState(false);
   const [syncState, setSyncState] = useState({ loading: false, message: '', error: '' });
@@ -8986,11 +8989,14 @@ function AdminDashboard({ user, adminProfile }) {
             <h1>{tab === 'salons' && openSalonName ? openSalonName : adminTitle(tab)}</h1>
             <p>{tab === 'salons' && openSalonName ? <><button type="button" className="admin-breadcrumb-link" onClick={() => setOpenSalonName('')}>Salons</button> / {openSalonName}</> : adminSubtitle(tab)}</p>
           </div>
-          {(tab === 'salons' || tab === 'bat' || tab === 'objects') && <label className="admin-global-search"><Search size={17} /><input aria-label="Rechercher" placeholder="Rechercher..." value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} /></label>}
+          <div className="admin-topbar-actions">
+            {tab === 'dashboard' && <div className="admin-dashboard-year" aria-label="Année du dashboard"><button type="button" aria-label="Année précédente" onClick={() => setDashboardYear((year) => year - 1)}><ChevronLeft size={16} /></button><strong>{dashboardYear}</strong>{dashboardYear === new Date().getFullYear() && <span>En cours</span>}<button type="button" aria-label="Année suivante" onClick={() => setDashboardYear((year) => year + 1)}><ChevronRight size={16} /></button></div>}
+            {(tab === 'dashboard' || tab === 'salons' || tab === 'bat' || tab === 'objects') && <label className="admin-global-search"><Search size={17} /><input aria-label="Rechercher" placeholder="Rechercher..." value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} /></label>}
+          </div>
         </header>
 
         <div className="admin-page-content">
-          {tab === 'dashboard' && <AdminDashboardHome scenes={scenes} assets={assets} />}
+          {tab === 'dashboard' && <AdminDashboardHome scenes={scenes} salons={salons} year={dashboardYear} search={adminSearch} onOpenRequests={() => setTab('requests')} onOpenSalon={(salon) => { setTab('salons'); setOpenSalonName(salon.name); }} />}
           {tab === 'salons' && (
             <AdminSalonsView
               salons={salons}
@@ -9139,61 +9145,98 @@ function AdminAccountPanel({ profile, onLogout }) {
   );
 }
 
-function AdminDashboardHome({ scenes, assets }) {
-  const stats = getAdminStats(scenes, assets);
-  const batRows = getPendingBatRows(scenes);
-  const recentItems = getRecentActivityRows(scenes, assets);
-  const salonRows = getSalonRows(scenes);
+function AdminDashboardHome({ scenes, salons, year, search, onOpenRequests, onOpenSalon }) {
+  const yearSalons = salons.filter((salon) => Number(salon.year || String(salon.name).match(/\b20\d{2}\b/)?.[0]) === year);
+  const salonScenes = yearSalons.flatMap((salon) => (salon.scenes || []).map((scene) => ({ ...scene, dashboardSalon: salon })));
+  const uniqueScenes = [...new Map(salonScenes.map((scene) => [scene.id, scene])).values()];
+  const yearScenes = uniqueScenes.length ? uniqueScenes : (yearSalons.length ? [] : scenes.filter((scene) => Number(String(scene.event_name || scene.salon || '').match(/\b20\d{2}\b/)?.[0]) === year));
+  const isComplete = adminDashboardIsComplete;
+  const isStarted = adminDashboardIsStarted;
+  const batState = (scene) => adminSalonBatState(scene);
+  const hasPricing = yearScenes.some((scene) => isComplete(scene) && adminDashboardScenePrice(scene) !== null);
+  const revenue = yearScenes.filter(isComplete).reduce((sum, scene) => sum + (adminDashboardScenePrice(scene) || 0), 0);
+  const requestRows = yearScenes.filter((scene) => sceneHasSpecialRequest(scene) && sceneSpecialRequestStatus(scene).id !== 'resolved').sort((a, b) => new Date(sceneSpecialRequestStatus(a).date || 0) - new Date(sceneSpecialRequestStatus(b).date || 0));
+  const searched = normalizeTextValue(search || '');
+  const visibleRequests = requestRows.filter((scene) => !searched || normalizeTextValue([scene.client_name, scene.project_name, scene.salon, scene.event_name, sceneStandNumber(scene)].join(' ')).includes(searched)).slice(0, 4);
+  const activeSalons = yearSalons.filter((salon) => salon.status === 'active').filter((salon) => !searched || normalizeTextValue([salon.name, ...(salon.offers || []).map((offer) => offer.name)].join(' ')).includes(searched));
+  const series = yearSalons.map((salon) => {
+    const items = (salon.scenes || []).filter((scene, index, all) => all.findIndex((candidate) => candidate.id === scene.id) === index);
+    return {
+      name: salon.name,
+      shortName: salon.name.replace(/\b20\d{2}\b/, '').trim() || salon.name,
+      configs: items.filter(isComplete).length,
+      signed: items.filter((scene) => batState(scene) === 'signed').length,
+      revenue: items.filter(isComplete).reduce((sum, scene) => sum + (adminDashboardScenePrice(scene) || 0), 0),
+    };
+  });
+  const cards = [
+    { label: 'Configs terminées', key: 'configs', value: yearScenes.filter(isComplete).length },
+    { label: 'BAT signés', key: 'signed', value: yearScenes.filter((scene) => batState(scene) === 'signed').length },
+    { label: 'Stands livrés', key: null, value: '—', hint: 'Statut non suivi' },
+    { label: 'CA HT estimé', key: 'revenue', value: hasPricing ? `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(revenue)} €` : '—', hint: hasPricing ? null : 'Prix non renseignés' },
+  ];
+  const funnel = [
+    { label: 'Inscrits', count: yearScenes.length },
+    { label: 'Config démarrée', count: yearScenes.filter(isStarted).length },
+    { label: 'Config terminée', count: yearScenes.filter(isComplete).length, featured: true },
+    { label: 'BAT envoyé', count: yearScenes.filter((scene) => batState(scene) !== 'waiting').length },
+    { label: 'BAT signé', count: yearScenes.filter((scene) => batState(scene) === 'signed').length },
+    { label: 'Livré', count: null },
+  ];
 
-  return (
-    <>
-      <section className="admin-kpi-grid">
-        <AdminKpi icon={<Orbit size={22} />} value={stats.configs} label="Configs soumises" hint={`${stats.configuredThisMonth} ce mois`} color="blue" />
-        <AdminKpi icon={<FileCheck2 size={22} />} value={stats.pendingBat} label="BAT en attente" hint={stats.pendingBat ? '— à valider' : 'aucun en attente'} color="orange" />
-        <AdminKpi icon={<Check size={22} />} value={stats.signedBat} label="BAT signés" hint={`${stats.signedThisMonth} ce mois`} color="green" />
-        <AdminKpi icon={<span>€</span>} value={`${stats.revenue.toLocaleString('fr-FR')} €`} label="CA estimé" hint={`${stats.averageArea.toFixed(0)} m² moyen`} color="navy" />
-        <AdminKpi icon={<Globe2 size={22} />} value={stats.exhibitors} label="Exposants actifs" hint={`${assets.filter((asset) => asset.is_active).length} assets actifs`} color="purple" />
-      </section>
+  return <div className="admin-dashboard-v2">
+    <section className="admin-dashboard-v2-kpis" aria-label="Indicateurs clés">
+      {cards.map((card) => {
+        const total = card.key ? series.reduce((sum, salon) => sum + salon[card.key], 0) : 0;
+        return <article className="admin-dashboard-v2-card" key={card.label}>
+          <span className="admin-dashboard-v2-eyebrow">{card.label}</span>
+          <strong className="admin-dashboard-v2-value">{card.value}</strong>
+          {card.hint ? <p className="admin-dashboard-v2-hint">{card.hint}</p> : <>
+            <div className="admin-dashboard-v2-segments" aria-hidden="true">{series.map((salon, index) => salon[card.key] > 0 && <span key={salon.name} style={{ width: `${salon[card.key] / total * 100}%`, backgroundColor: ['#123878', '#5687ee', '#a9bfe2'][index % 3] }} />)}</div>
+            <div className="admin-dashboard-v2-legend">{series.map((salon, index) => <div key={salon.name}><span className="admin-dashboard-v2-dot" style={{ backgroundColor: ['#123878', '#5687ee', '#a9bfe2'][index % 3] }} /><span>{salon.shortName}</span><strong>{card.key === 'revenue' ? `${new Intl.NumberFormat('fr-FR', { notation: 'compact', maximumFractionDigits: 0 }).format(salon.revenue)} €` : salon[card.key]}</strong></div>)}</div>
+          </>}
+        </article>;
+      })}
+    </section>
 
-      <section className="admin-section-block">
-        <h2>▲ BAT en attente de validation</h2>
-        <div className="admin-bat-card">
-          {batRows.length ? batRows.map((row) => (
-            <div className="admin-bat-row" key={row.id}>
-              <span>{row.salon}</span>
-              <span>{row.client}</span>
-              <span>{row.stand}</span>
-              <span className="warning">{row.status}</span>
-              <span>{row.delay}</span>
-            </div>
-          )) : <div className="admin-empty-row">Aucun BAT en attente avec les données actuelles.</div>}
-        </div>
-      </section>
+    <section className="admin-dashboard-v2-panel">
+      <h2>Funnel de conversion</h2>
+      <div className="admin-dashboard-v2-funnel">{funnel.map((stage) => <article className={stage.featured ? 'featured' : ''} key={stage.label}><span>{stage.label}</span><strong>{stage.count ?? '—'}</strong><small>{stage.count === null ? 'non suivi' : 'exposants'}</small><div className="admin-dashboard-v2-progress"><span style={{ width: `${stage.count === null || !yearScenes.length ? 0 : stage.count / yearScenes.length * 100}%` }} /></div></article>)}</div>
+    </section>
 
-      <section className="admin-bottom-grid">
-        <div className="admin-section-block">
-          <h2>Activité récente</h2>
-          <div className="admin-activity-card">
-            {recentItems.length ? recentItems.map((item) => (
-              <div className="admin-activity-row" key={item.id}>
-                <span className={`activity-dot ${item.color}`} />
-                <div><strong>{item.title}</strong><small>{item.subtitle}</small></div>
-                <time>{item.time}</time>
-              </div>
-            )) : <div className="admin-empty-row">Aucune activité récente.</div>}
-          </div>
-        </div>
-        <div className="admin-section-block">
-          <h2>Salons actifs</h2>
-          <div className="admin-salon-card">
-            {salonRows.length ? salonRows.map((salon) => (
-              <AdminSalonRow key={salon.title} title={salon.title} detail={salon.detail} status={salon.status} muted={!salon.active} />
-            )) : <div className="admin-empty-row">Aucun salon synchronisé.</div>}
-          </div>
-        </div>
-      </section>
-    </>
-  );
+    <section className="admin-dashboard-v2-panel admin-dashboard-v2-requests">
+      <div className="admin-dashboard-v2-section-head"><h2>Demandes en attente de validation</h2><button className="admin-primary-v2" type="button" onClick={onOpenRequests}>Voir les demandes</button></div>
+      {visibleRequests.length ? visibleRequests.map((scene) => {
+        const requestTime = new Date(sceneSpecialRequestStatus(scene).date || Date.now()).getTime();
+        const age = Number.isFinite(requestTime) ? Math.max(0, Math.floor((Date.now() - requestTime) / 86400000)) : 0;
+        const name = scene.client_name || scene.project_name || 'Exposant';
+        return <button className="admin-dashboard-v2-request" type="button" key={scene.id} onClick={onOpenRequests}><span className="admin-dashboard-v2-avatar">{name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><span className="admin-dashboard-v2-request-name"><strong>{name}</strong><small>{normalizeSalonTitle(scene.event_name || scene.salon) || 'Salon'} · {sceneStandNumber(scene) || 'Stand à définir'}</small></span><span className={`admin-dashboard-v2-age ${age >= 5 ? 'late' : ''}`}>Depuis {age} j</span><ChevronRight size={16} /></button>;
+      }) : <p className="admin-dashboard-v2-empty">{searched ? 'Aucune demande ne correspond à la recherche.' : 'Aucune demande en attente pour cette année.'}</p>}
+    </section>
+
+    <section className="admin-dashboard-v2-panel admin-dashboard-v2-salons">
+      <h2>Salons en cours</h2><p>Packs et avancement par salon · {year}</p>
+      {activeSalons.length ? activeSalons.map((salon, index) => {
+        const total = (salon.scenes || []).length;
+        const complete = adminSalonCompletedScenes(salon).length;
+        const packs = adminSalonStandPacks(salon).map((pack) => pack.name).filter((name) => name !== 'Pack non renseigné');
+        return <button className="admin-dashboard-v2-salon" type="button" key={salon.id || salon.name} onClick={() => onOpenSalon(salon)}><span className="admin-dashboard-v2-salon-line"><span><i className="admin-dashboard-v2-dot" style={{ backgroundColor: ['#123878', '#5687ee', '#a9bfe2'][index % 3] }} /><strong>{salon.name}</strong>{packs.length > 0 && <em>{packs.join(' · ')}</em>}</span><small>{complete} / {total} configs</small></span><span className="admin-dashboard-v2-progress"><span style={{ width: `${total ? complete / total * 100 : 0}%`, backgroundColor: ['#123878', '#5687ee', '#a9bfe2'][index % 3] }} /></span></button>;
+      }) : <p className="admin-dashboard-v2-empty">{searched ? 'Aucun salon ne correspond à la recherche.' : 'Aucun salon actif pour cette année.'}</p>}
+    </section>
+  </div>;
+}
+
+function adminDashboardIsComplete(scene = {}) {
+  return ['configured', 'bat_review', 'bat_validated'].includes(scene.client_status) || ['configured', 'bat_pending', 'validated'].includes(scene.status);
+}
+
+function adminDashboardIsStarted(scene = {}) {
+  return adminDashboardIsComplete(scene) || ['draft', 'in_progress'].includes(scene.client_status) || ['draft', 'in_progress'].includes(scene.status);
+}
+
+function adminDashboardScenePrice(scene = {}) {
+  const total = scene.source_payload?.pricing?.total;
+  return total === null || total === undefined || total === '' || !Number.isFinite(Number(total)) ? null : Number(total);
 }
 
 function getAdminStats(scenes, assets) {
