@@ -8716,15 +8716,19 @@ function AdminDashboard({ user, adminProfile }) {
     rememberAdminTab(nextTab);
     setTabState(nextTab);
     setAdminSearch('');
+    if (nextTab !== 'clients') setFilters({ search: '', salon: '', pack: '', status: '' });
     if (nextTab !== 'salons') setOpenSalonName('');
   };
 
   useEffect(() => {
     listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error));
-    listClients(filters).then(setClients).catch((error) => console.error('Client list failed', error));
+  }, [filters]);
+
+  useEffect(() => {
+    listClients({}).then(setClients).catch((error) => console.error('Client list failed', error));
     listSalons({}).then(setSalons).catch((error) => console.error('Salon list failed', error));
     listAdminUsers().then(setAdminUsers).catch((error) => console.error('Admin users list failed', error));
-  }, [filters]);
+  }, []);
 
   useEffect(() => {
     listObjectBank().then(setAssets).catch((error) => console.error('Object bank list failed', error));
@@ -8736,7 +8740,7 @@ function AdminDashboard({ user, adminProfile }) {
   };
 
   const refreshClients = () => {
-    return listClients(filters).then(setClients).catch((error) => console.error('Client list failed', error));
+    return listClients({}).then(setClients).catch((error) => console.error('Client list failed', error));
   };
 
   const refreshAdminUsers = () => {
@@ -8991,7 +8995,7 @@ function AdminDashboard({ user, adminProfile }) {
           </div>
           <div className="admin-topbar-actions">
             {tab === 'dashboard' && <div className="admin-dashboard-year" aria-label="Année du dashboard"><button type="button" aria-label="Année précédente" onClick={() => setDashboardYear((year) => year - 1)}><ChevronLeft size={16} /></button><strong>{dashboardYear}</strong>{dashboardYear === new Date().getFullYear() && <span>En cours</span>}<button type="button" aria-label="Année suivante" onClick={() => setDashboardYear((year) => year + 1)}><ChevronRight size={16} /></button></div>}
-            {(tab === 'dashboard' || tab === 'salons' || tab === 'bat' || tab === 'objects') && <label className="admin-global-search"><Search size={17} /><input aria-label="Rechercher" placeholder="Rechercher..." value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} /></label>}
+            {(tab === 'dashboard' || tab === 'salons' || tab === 'clients' || tab === 'bat' || tab === 'objects') && <label className="admin-global-search"><Search size={17} /><input aria-label="Rechercher" placeholder="Rechercher..." value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} /></label>}
           </div>
         </header>
 
@@ -9031,7 +9035,7 @@ function AdminDashboard({ user, adminProfile }) {
               onSalonChanged={refreshSalons}
             />
           )}
-          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} salonChoices={salonFilterChoices} packChoices={packFilterChoices} updateFilter={updateFilter} onDeleteScene={deleteAdminScene} />}
+          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} salonChoices={salonFilterChoices} packChoices={packFilterChoices} updateFilter={updateFilter} search={adminSearch} syncState={syncState} onSyncMonday={runMondaySync} onDeleteScene={deleteAdminScene} />}
           {tab === 'bat' && <AdminBatView scenes={scenes.filter((scene) => !adminSearch || normalizeTextValue([scene.project_name, scene.client_name, scene.salon, scene.event_name].join(' ')).includes(normalizeTextValue(adminSearch)))} assets={assets} />}
           {tab === 'objects' && (
             <AdminObjectsView
@@ -11442,21 +11446,16 @@ function adminClientSalonChoices(baseChoices = [], currentSalon = '') {
   return [...choices].sort((a, b) => a.localeCompare(b, 'fr'));
 }
 
-function AdminClientsView({ clients, scenes = [], assets = [], filters, salonChoices = [], packChoices = [], updateFilter, onDeleteScene }) {
+function AdminClientsView({ clients, scenes = [], assets = [], filters, salonChoices = [], packChoices = [], updateFilter, search = '', syncState, onSyncMonday, onDeleteScene }) {
   const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
   const [clientPage, setClientPage] = useState(1);
-  const clientPageSize = 20;
-  const clientPageCount = Math.max(1, Math.ceil(clients.length / clientPageSize));
-  const safeClientPage = Math.min(clientPage, clientPageCount);
-  const paginatedClients = useMemo(() => clients.slice((safeClientPage - 1) * clientPageSize, safeClientPage * clientPageSize), [clients, safeClientPage]);
+  const [clientPageSize, setClientPageSize] = useState(12);
+  const [activeTab, setActiveTab] = useState('all');
+  const [profileClient, setProfileClient] = useState(null);
 
   useEffect(() => {
     setClientPage(1);
-  }, [filters.search, filters.salon, filters.pack, filters.status]);
-
-  useEffect(() => {
-    if (clientPage > clientPageCount) setClientPage(clientPageCount);
-  }, [clientPage, clientPageCount]);
+  }, [filters.search, filters.salon, filters.pack, filters.status, search, activeTab, clientPageSize]);
 
   const sceneLookup = useMemo(() => {
     const map = new Map();
@@ -11465,6 +11464,36 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
     });
     return map;
   }, [scenes]);
+  const clientRows = useMemo(() => clients.map((client) => ({ client, clientScenes: clientScenesWithFullData(client, sceneLookup) })), [clients, sceneLookup]);
+  const searchedRows = clientRows.filter(({ client, clientScenes }) => adminClientMatchesFilters(client, clientScenes, filters, search));
+  const tabCounts = Object.fromEntries(['all', 'draft', 'pending', 'signed'].map((tab) => [tab, searchedRows.filter(({ clientScenes }) => tab === 'all' || clientScenes.some((scene) => adminClientSceneState(scene).id === tab)).length]));
+  const visibleRows = searchedRows.filter(({ clientScenes }) => activeTab === 'all' || clientScenes.some((scene) => adminClientSceneState(scene).id === activeTab)).sort((a, b) => String(a.client.display_name || a.client.company_name || '').localeCompare(String(b.client.display_name || b.client.company_name || ''), 'fr', { sensitivity: 'base' }));
+  const clientPageCount = Math.max(1, Math.ceil(visibleRows.length / clientPageSize));
+  const safeClientPage = Math.min(clientPage, clientPageCount);
+  const paginatedClients = visibleRows.slice((safeClientPage - 1) * clientPageSize, safeClientPage * clientPageSize);
+
+  useEffect(() => {
+    setClientPage((page) => Math.min(page, clientPageCount));
+  }, [clientPageCount]);
+
+  useEffect(() => {
+    if (!profileClient) return undefined;
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setProfileClient(null); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [profileClient]);
+
+  const exportCsv = () => {
+    const rows = [['Exposant', 'Email', 'Société', 'Salon', 'Pack', 'Statut', 'Stand', 'Scène']];
+    visibleRows.forEach(({ client, clientScenes }) => {
+      (clientScenes.length ? clientScenes : [{}]).forEach((scene) => rows.push([
+        client.display_name || client.company_name || '', client.email || '', client.company_name || '',
+        normalizeSalonTitle(scene.event_name || scene.salon) || '', scene.offer || '',
+        scene.id ? adminClientSceneState(scene).label : '', scene.id ? sceneStandNumber(scene) : '', scene.project_name || '',
+      ]));
+    });
+    downloadBlob(new Blob([`\uFEFF${rows.map((row) => row.map(adminSalonCsvCell).join(';')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' }), 'exposants.csv');
+  };
 
   const runDelete = async (id, callback) => {
     setDeleteState({ loadingId: id, error: '' });
@@ -11477,102 +11506,59 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
   };
 
   return (
-    <section className="admin-clients-view">
-      <section className="admin-clients-search-card">
-        <div>
-          <Search size={16} />
-          <input value={filters.search} placeholder="Nom exposant, salon, numéro de stand, pack..." onChange={(event) => updateFilter('search', event.target.value)} />
-        </div>
-        <button type="button">Rechercher</button>
-      </section>
-
-      <div className="admin-client-filter-line">
-        <span>Filtres actifs :</span>
-        <label>
-          Salon
-          <select value={filters.salon} onChange={(event) => updateFilter('salon', event.target.value)}>
-            <option value="">Tous les salons</option>
-            {adminClientSalonChoices(salonChoices, filters.salon).map((salon) => <option key={salon} value={salon}>{salon}</option>)}
-          </select>
-        </label>
-        <label>
-          Pack
-          <select value={filters.pack} onChange={(event) => updateFilter('pack', event.target.value)}>
-            <option value="">Tous les packs</option>
-            {packChoices.map((pack) => <option key={pack} value={pack}>{pack}</option>)}
-          </select>
-        </label>
-        <label>Statut <select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}><option value="">Tous</option><option value="created">Créé</option><option value="configured">Configuré</option><option value="bat_pending">BAT à valider</option><option value="validated">Validé</option></select></label>
+    <section className="admin-exhibitors-v2">
+      <div className="admin-exhibitors-tabs" role="group" aria-label="Statut des exposants">
+        {[['all', 'Tous'], ['draft', 'Brouillons'], ['pending', 'BAT à valider'], ['signed', 'BAT signés']].map(([id, label]) => <button type="button" key={id} aria-pressed={activeTab === id} onClick={() => setActiveTab(id)}>{label} · {tabCounts[id]}</button>)}
       </div>
-
-      <section className="admin-clients-table">
-        {deleteState.error && <div className="sync-result error">{deleteState.error}</div>}
-        <header>
-          <span>Exposant</span>
-          <span>Salons</span>
-          <span>Configurations</span>
-          <span>Packs</span>
-          <span>Actions</span>
-        </header>
-        {clients.length ? paginatedClients.map((client) => {
-          const clientScenes = clientScenesWithFullData(client, sceneLookup);
-          return (
-            <article key={client.id || client.client_key} className="client-expanded-row">
-              <details>
-                <summary className="client-main-row">
-                  <div>
-                    <strong>{client.company_name || client.display_name || 'Exposant sans nom'}</strong>
-                    <small>{client.email || client.display_name || 'Email non renseigné'}</small>
-                  </div>
-                  <span>{clientSalonSummary(client)}</span>
-                  <span>{clientConfigSummary(client)}</span>
-                  <span>{clientPackSummary(client)}</span>
-                  <span className="client-scenes-summary">Scènes ({clientScenes.length}) <ChevronDown size={14} /></span>
-                </summary>
-                <div className="client-scenes-list">
-                  <div className="client-scenes-actions">
-                    <span>{clientScenes.length} scène{clientScenes.length > 1 ? 's' : ''} liée{clientScenes.length > 1 ? 's' : ''}</span>
-                  </div>
-                  {clientScenes.length ? clientScenes.map((scene) => (
-                    <div key={scene.id || scene.share_token || scene.monday_item_id} className="client-scene-card">
-                      <div>
-                        <strong>{scene.project_name || sceneStandNumber(scene, {}, 'Scène')}</strong>
-                        <small>{clientSceneMeta(scene)}</small>
-                      </div>
-                      <div><span>Surface</span><strong>{sceneArea(scene) ? `${sceneArea(scene)} m²` : '—'}</strong></div>
-                      <span><i className={`client-status-badge ${sceneStatusKind(scene)}`}>{clientStatusLabel(scene.client_status || scene.status)}</i></span>
-                      <div className="client-row-actions">
-                        <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a>
-                        <button type="button" onClick={async () => downloadSceneTechnicalPlan(await loadSceneForAdminAction(scene), assets)}>Télécharger BAT</button>
-                        <button type="button" onClick={async () => downloadScenePurchaseOrder(await loadSceneForAdminAction(scene), assets)}>Bon de commande</button>
-                        <button
-                          type="button"
-                          className="client-danger-button"
-                          disabled={deleteState.loadingId === `scene:${scene.id}`}
-                          onClick={() => runDelete(`scene:${scene.id}`, () => onDeleteScene?.(scene))}
-                        >
-                          {deleteState.loadingId === `scene:${scene.id}` ? 'Suppression...' : 'Supprimer'}
-                        </button>
-                      </div>
-                    </div>
-                  )) : <div className="admin-empty-row">Aucune scène associée.</div>}
-                </div>
-              </details>
-            </article>
-          );
+      <div className="admin-exhibitors-toolbar">
+        <label className="admin-exhibitors-search"><Search size={16} /><input aria-label="Rechercher un exposant" value={filters.search} placeholder="Exposant, société, e-mail, stand..." onChange={(event) => updateFilter('search', event.target.value)} /></label>
+        <label><span className="sr-only">Salon</span><select value={filters.salon} onChange={(event) => updateFilter('salon', event.target.value)}><option value="">Salon</option>{adminClientSalonChoices(salonChoices, filters.salon).map((salon) => <option key={salon} value={salon}>{salon}</option>)}</select></label>
+        <label><span className="sr-only">Pack</span><select value={filters.pack} onChange={(event) => updateFilter('pack', event.target.value)}><option value="">Pack</option>{packChoices.map((pack) => <option key={pack} value={pack}>{pack}</option>)}</select></label>
+        <label><span className="sr-only">Statut</span><select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}><option value="">Statut</option><option value="created">Créé</option><option value="draft">Brouillon</option><option value="configured">Configuré</option><option value="bat_pending">BAT à valider</option><option value="bat_review">BAT envoyé</option><option value="validated">BAT signé</option></select></label>
+        <button className="admin-exhibitors-sync" type="button" disabled={syncState?.loading} onClick={onSyncMonday}>{syncState?.loading ? 'Synchronisation...' : 'Synchroniser Monday'}</button>
+        <button className="admin-outline-v2" type="button" onClick={exportCsv}>Exporter</button>
+      </div>
+      {syncState?.error && <div className="sync-result error" role="alert">{syncState.error}</div>}
+      {syncState?.message && <div className="sync-result" role="status">{syncState.message}</div>}
+      {deleteState.error && <div className="sync-result error" role="alert">{deleteState.error}</div>}
+      <p className="admin-exhibitors-count"><strong>{visibleRows.length} exposant{visibleRows.length > 1 ? 's' : ''}</strong> · triés par nom</p>
+      <div className="admin-exhibitors-table-scroll"><section className="admin-exhibitors-table" aria-label="Liste des exposants">
+        <div className="admin-exhibitors-head"><span>Exposant ↑</span><span>Société</span><span>Salon</span><span>Pack</span><span>Statut</span><span className="sr-only">Actions</span></div>
+        {paginatedClients.length ? paginatedClients.map(({ client, clientScenes }) => {
+          const primary = clientScenes[0] || {};
+          const name = client.display_name || client.company_name || 'Exposant sans nom';
+          const status = clientScenes.length ? adminClientSceneState(primary) : { id: 'draft', label: 'Sans scène' };
+          const initials = String(name).split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+          return <details className="admin-exhibitors-entry" key={client.id || client.client_key}>
+            <summary className="admin-exhibitors-row"><span className="admin-exhibitors-person"><i>{initials}</i><span><strong>{name}</strong><small>{client.email || 'E-mail non renseigné'}</small></span></span><span className="admin-exhibitors-company">{client.company_name || primary.project_name || '—'}</span><span>{clientSalonSummary(client)}</span><span><em className="admin-exhibitors-pack">{primary.offer || '—'}</em></span><span><em className={`admin-exhibitors-badge ${status.id}`}>{status.label}</em>{clientScenes.length > 1 && <small className="admin-exhibitors-more">+{clientScenes.length - 1}</small>}</span><span className="admin-exhibitors-expand">Scènes {clientScenes.length} <ChevronDown size={14} /></span></summary>
+            <div className="admin-exhibitors-scenes"><div className="admin-exhibitors-scenes-head"><p>{clientScenes.length} scène{clientScenes.length > 1 ? 's' : ''} liée{clientScenes.length > 1 ? 's' : ''}</p><button type="button" onClick={() => setProfileClient(client)}>Ouvrir la fiche exposant</button></div>{clientScenes.length ? clientScenes.map((scene) => {
+              const sceneStatus = adminClientSceneState(scene);
+              return <div className="admin-exhibitors-scene" key={scene.id || scene.share_token || scene.monday_item_id}><span className="admin-exhibitors-scene-icon"><Box size={16} /></span><span className="admin-exhibitors-scene-title"><strong>{scene.project_name || scene.client_name || 'Scène'}</strong><small>{clientSceneMeta(scene)}</small></span><em className={`admin-exhibitors-badge ${sceneStatus.id}`}>{sceneStatus.label}</em><div className="admin-exhibitors-scene-actions"><a className="admin-outline-v2" href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a><button type="button" onClick={async () => downloadSceneTechnicalPlan(await loadSceneForAdminAction(scene), assets)}>Télécharger BAT</button><button type="button" onClick={async () => downloadScenePurchaseOrder(await loadSceneForAdminAction(scene), assets)}>Bon de commande</button><button className="admin-exhibitors-delete" type="button" aria-label={`Supprimer la scène ${scene.project_name || ''}`} disabled={deleteState.loadingId === `scene:${scene.id}`} onClick={() => runDelete(`scene:${scene.id}`, () => onDeleteScene?.(scene))}><Trash2 size={16} /></button></div></div>;
+            }) : <div className="admin-empty-row">Aucune scène associée.</div>}</div>
+          </details>;
         }) : <div className="admin-empty-row">Aucun exposant trouvé avec les filtres actuels.</div>}
-      </section>
-      {clients.length > clientPageSize && (
-        <nav className="admin-pagination" aria-label="Pagination exposants">
-          <span>{clients.length} exposant{clients.length > 1 ? 's' : ''} · page {safeClientPage}/{clientPageCount}</span>
-          <div>
-            <button type="button" disabled={safeClientPage <= 1} onClick={() => setClientPage((page) => Math.max(1, page - 1))}>Précédent</button>
-            <button type="button" disabled={safeClientPage >= clientPageCount} onClick={() => setClientPage((page) => Math.min(clientPageCount, page + 1))}>Suivant</button>
-          </div>
-        </nav>
-      )}
+      </section></div>
+      <nav className="admin-exhibitors-pagination" aria-label="Pagination exposants"><span>{visibleRows.length ? `${(safeClientPage - 1) * clientPageSize + 1}–${Math.min(safeClientPage * clientPageSize, visibleRows.length)}` : '0'} sur {visibleRows.length} exposants</span><label><span className="sr-only">Exposants par page</span><select value={clientPageSize} onChange={(event) => setClientPageSize(Number(event.target.value))}><option value={12}>12 par page</option><option value={24}>24 par page</option><option value={48}>48 par page</option></select></label><div><button type="button" aria-label="Page précédente" disabled={safeClientPage === 1} onClick={() => setClientPage((page) => page - 1)}>‹</button>{Array.from({ length: Math.min(5, clientPageCount) }, (_, index) => Math.max(1, Math.min(safeClientPage - 2, clientPageCount - 4)) + index).map((page) => <button type="button" key={page} aria-label={`Page ${page}`} aria-current={safeClientPage === page ? 'page' : undefined} onClick={() => setClientPage(page)}>{page}</button>)}{clientPageCount > 5 && <span>… {clientPageCount}</span>}<button type="button" aria-label="Page suivante" disabled={safeClientPage === clientPageCount} onClick={() => setClientPage((page) => page + 1)}>›</button></div></nav>
+      {profileClient && createPortal(<div className="admin-exhibitors-profile-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setProfileClient(null); }}><section className="admin-exhibitors-profile" role="dialog" aria-modal="true" aria-labelledby="admin-exhibitor-profile-title"><header><div><h2 id="admin-exhibitor-profile-title">{profileClient.display_name || profileClient.company_name || 'Exposant'}</h2><p>Fiche exposant</p></div><button type="button" aria-label="Fermer la fiche" autoFocus onClick={() => setProfileClient(null)}><X size={18} /></button></header><dl><div><dt>Société</dt><dd>{profileClient.company_name || '—'}</dd></div><div><dt>E-mail</dt><dd>{profileClient.email ? <a href={`mailto:${profileClient.email}`}>{profileClient.email}</a> : '—'}</dd></div><div><dt>Téléphone</dt><dd>{profileClient.phone || '—'}</dd></div><div><dt>Salon</dt><dd>{clientSalonSummary(profileClient)}</dd></div><div><dt>Pack</dt><dd>{clientPackSummary(profileClient)}</dd></div></dl><h3>Scènes liées</h3>{(profileClient.scenes || []).map((scene) => <a className="admin-exhibitors-profile-scene" key={scene.id || scene.share_token} href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">{scene.project_name || scene.client_name || 'Scène'} <ArrowRight size={15} /></a>)}</section></div>, document.body)}
     </section>
   );
+}
+
+function adminClientSceneState(scene = {}) {
+  const batState = adminSalonBatState(scene);
+  if (batState === 'signed') return { id: 'signed', label: 'BAT signé' };
+  if (batState === 'correction') return { id: 'correction', label: 'Correction' };
+  if (batState === 'sent') return { id: 'sent', label: 'Envoyé' };
+  if (adminDashboardIsComplete(scene)) return { id: 'pending', label: 'BAT à valider' };
+  return { id: 'draft', label: 'Brouillon' };
+}
+
+function adminClientMatchesFilters(client, clientScenes, filters = {}, globalSearch = '') {
+  if (filters.salon && !clientScenes.some((scene) => normalizeTextValue([scene.salon, scene.event_name].join(' ')).includes(normalizeTextValue(filters.salon)))) return false;
+  if (filters.pack && !clientScenes.some((scene) => normalizeTextValue(scene.offer) === normalizeTextValue(filters.pack))) return false;
+  if (filters.status && !clientScenes.some((scene) => scene.status === filters.status || scene.client_status === filters.status || adminClientSceneState(scene).id === filters.status)) return false;
+  const haystack = normalizeTextValue([client.display_name, client.company_name, client.email, ...clientScenes.flatMap((scene) => [scene.client_name, scene.project_name, scene.salon, scene.event_name, scene.offer, scene.client_email, sceneStandNumber(scene)])].join(' '));
+  return [filters.search, globalSearch].every((term) => !term || haystack.includes(normalizeTextValue(term)));
 }
 
 function clientScenesWithFullData(client, sceneLookup = new Map()) {
