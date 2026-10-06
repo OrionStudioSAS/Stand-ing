@@ -91,6 +91,16 @@ function sentenceCaseProductLabel(label = '') {
 }
 
 const floorPlane = new Plane(new Vector3(0, 1, 0), 0);
+const sceneCameraTargetMinY = 0.7;
+const sceneCameraMaxPolarAngle = Math.PI / 2 - 0.16;
+
+function keepSceneCameraAboveGround(controls) {
+  if (!controls || controls.target.y >= sceneCameraTargetMinY) return;
+  const correction = sceneCameraTargetMinY - controls.target.y;
+  controls.target.y += correction;
+  controls.object.position.y += correction;
+  controls.update();
+}
 const wallSwitchZone = 0.55;
 const wallSwitchHysteresis = 0.12;
 const objectWallSnapThreshold = 0.75;
@@ -963,6 +973,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [selectedId, setSelectedId] = useState(() => initialScene.items?.[0]?.id || null);
   const [draggingId, setDraggingId] = useState(null);
   const [orbitControlsActive, setOrbitControlsActive] = useState(false);
+  const orbitControlsRef = useRef(null);
   const [cameraControlMode, setCameraControlMode] = useState('orbit');
   const [technicalFloorRampDragging, setTechnicalFloorRampDragging] = useState(false);
   const [language, setLanguage] = useState(() => {
@@ -2618,9 +2629,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             }
           }}
         >
+          <color attach="background" args={['#050506']} />
           <ambientLight intensity={1.42} />
           <directionalLight position={[3, 7, 4]} intensity={0.72} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
+            <PresentationGround />
             {shouldRenderScene && (
               <StandScene
                 width={width}
@@ -2675,10 +2688,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             <ContactShadows opacity={0.07} scale={12} blur={3.2} far={5} position={[0, -0.01, 0]} />
           </Suspense>
           <OrbitControls
+            ref={orbitControlsRef}
             makeDefault
             target={[0, 0.7, 0]}
             minPolarAngle={0.01}
-            maxPolarAngle={Math.PI / 2.05}
+            maxPolarAngle={sceneCameraMaxPolarAngle}
             minDistance={2.5}
             maxDistance={11}
             enableRotate={cameraControlMode === 'orbit'}
@@ -2686,6 +2700,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             mouseButtons={cameraControlMode === 'pan' ? cameraPanMouseButtons : cameraOrbitMouseButtons}
             touches={cameraControlMode === 'pan' ? cameraPanTouches : cameraOrbitTouches}
             enabled={!draggingId && !technicalFloorRampDragging}
+            onChange={() => keepSceneCameraAboveGround(orbitControlsRef.current)}
             onStart={() => setOrbitControlsActive(true)}
             onEnd={() => setOrbitControlsActive(false)}
           />
@@ -10306,6 +10321,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
   const [selectedId, setSelectedId] = useState(initialScene.items[0]?.id || null);
   const [draggingId, setDraggingId] = useState(null);
   const [orbitControlsActive, setOrbitControlsActive] = useState(false);
+  const orbitControlsRef = useRef(null);
   const [cameraControlMode, setCameraControlMode] = useState('orbit');
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const packReserveBands = reserveRuleBandsForPack(offer?.name);
@@ -10420,10 +10436,11 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
           onPointerUp={() => setDraggingId(null)}
           onPointerLeave={() => setDraggingId(null)}
         >
-          <color attach="background" args={['#eef0f4']} />
+          <color attach="background" args={['#050506']} />
           <ambientLight intensity={1.42} />
           <directionalLight position={[3, 7, 4]} intensity={0.72} castShadow shadow-mapSize={[2048, 2048]} />
           <Suspense fallback={<Html center>Chargement</Html>}>
+            <PresentationGround />
             {presetAssetsReady && (
             <StandScene
               width={width}
@@ -10457,10 +10474,11 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
             <ContactShadows opacity={0.07} scale={12} blur={3.2} far={5} position={[0, -0.01, 0]} />
           </Suspense>
           <OrbitControls
+            ref={orbitControlsRef}
             makeDefault
             target={[0, 0.7, 0]}
             minPolarAngle={0.01}
-            maxPolarAngle={Math.PI / 2.05}
+            maxPolarAngle={sceneCameraMaxPolarAngle}
             minDistance={2.5}
             maxDistance={11}
             enableRotate={cameraControlMode === 'orbit'}
@@ -10468,6 +10486,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, saving, onSave, onPre
             mouseButtons={cameraControlMode === 'pan' ? cameraPanMouseButtons : cameraOrbitMouseButtons}
             touches={cameraControlMode === 'pan' ? cameraPanTouches : cameraOrbitTouches}
             enabled={!draggingId}
+            onChange={() => keepSceneCameraAboveGround(orbitControlsRef.current)}
             onStart={() => setOrbitControlsActive(true)}
             onEnd={() => setOrbitControlsActive(false)}
           />
@@ -18847,6 +18866,44 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
     min: clamp(blocker.min, limits.min, limits.max),
     max: clamp(blocker.max, limits.min, limits.max),
   };
+}
+
+function PresentationGround() {
+  const texture = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const context = canvas.getContext('2d');
+    const image = context.createImageData(canvas.width, canvas.height);
+    for (let y = 0; y < canvas.height; y += 1) {
+      for (let x = 0; x < canvas.width; x += 1) {
+        const index = (y * canvas.width + x) * 4;
+        const radius = Math.hypot((x / (canvas.width - 1)) * 2 - 1, (y / (canvas.height - 1)) * 2 - 1);
+        const fade = Math.max(0, Math.min(1, (0.98 - radius) / 0.53));
+        const seed = Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 668265263);
+        const grain = (Math.imul(seed ^ (seed >>> 13), 1274126177) >>> 0) % 19 - 9;
+        const shade = 58 + grain * 0.7;
+        image.data[index] = shade;
+        image.data[index + 1] = shade;
+        image.data[index + 2] = shade + 1;
+        image.data[index + 3] = Math.round(fade * fade * (3 - 2 * fade) * 255);
+      }
+    }
+    context.putImageData(image, 0, 0);
+    const result = new CanvasTexture(canvas);
+    result.colorSpace = SRGBColorSpace;
+    result.minFilter = LinearMipmapLinearFilter;
+    return result;
+  }, []);
+
+  useEffect(() => () => texture.dispose(), [texture]);
+
+  return (
+    <mesh position={[0, -0.035, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
+      <planeGeometry args={[40, 40]} />
+      <meshBasicMaterial map={texture} transparent depthWrite={false} />
+    </mesh>
+  );
 }
 
 function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {

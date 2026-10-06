@@ -26,15 +26,30 @@ test('the existing configurator lighting is preserved', () => {
   assert.doesNotMatch(appSource, /ConfiguratorLighting|RoomEnvironment|environmentIntensity/);
 });
 
-test('configurator scene uses a cream stage backdrop without tinting the 3D scene', () => {
+test('configurator scene uses a black backdrop and textured ground without changing its lighting', () => {
   const start = appSource.indexOf('className={sceneCanvasClassName}');
   const end = appSource.indexOf('</Canvas>', start);
   const canvas = appSource.slice(start, end);
   assert.ok(start >= 0 && end > start);
   assert.match(canvas, /gl=\{\{ alpha: true \}\}/);
-  assert.doesNotMatch(canvas, /attach="background"/);
-  assert.match(stylesSource, /\.configurator-stage\s*\{[^}]*radial-gradient\([^}]*linear-gradient\(/);
-  assert.match(stylesSource, /\.configurator-stage\s*\{[^}]*#f7f1e7[^}]*#d9cbb9/);
+  assert.match(canvas, /<color attach="background" args=\{\['#050506'\]\} \/>/);
+  assert.match(canvas, /<PresentationGround \/>/);
+  assert.match(stylesSource, /\.configurator-stage\s*\{[^}]*background: #050506/);
+  assert.match(appSource, /function PresentationGround\(\)[\s\S]*<planeGeometry args=\{\[40, 40\]\}/);
+});
+
+test('scene orbiting and panning cannot expose the underside of the ground', () => {
+  const api = vm.createContext({ sceneCameraTargetMinY: 0.7 });
+  loadFunction(appSource, api, 'keepSceneCameraAboveGround');
+  const controls = { target: { y: -0.3 }, object: { position: { y: 1 } }, updateCalls: 0, update() { this.updateCalls += 1; } };
+  api.keepSceneCameraAboveGround(controls);
+  assert.equal(controls.target.y, 0.7);
+  assert.equal(controls.object.position.y, 2);
+  assert.equal(controls.updateCalls, 1);
+  api.keepSceneCameraAboveGround(controls);
+  assert.equal(controls.updateCalls, 1);
+  assert.equal((appSource.match(/maxPolarAngle=\{sceneCameraMaxPolarAngle\}/g) || []).length, 2);
+  assert.equal((appSource.match(/onChange=\{\(\) => keepSceneCameraAboveGround\(orbitControlsRef\.current\)\}/g) || []).length, 2);
 });
 
 test('wall fabric keeps scene shading with a restrained texture lift', () => {
