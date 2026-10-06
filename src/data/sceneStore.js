@@ -525,6 +525,32 @@ export async function listAdminUsers() {
   return data?.users || [];
 }
 
+export async function listAdminAuditEvents(offset = 0) {
+  if (!supabase) return { events: [], hasMore: false };
+  const { data, error } = await supabase.functions.invoke('admin-users', { body: { action: 'audit', offset } });
+  const functionError = await getFunctionError(error, data);
+  if (functionError) throw functionError;
+  return { events: data?.events || [], hasMore: Boolean(data?.hasMore) };
+}
+
+export async function saveAdminUser(input = {}) {
+  if (!supabase) throw new Error('Supabase requis pour gérer les comptes.');
+  const { data, error } = await supabase.functions.invoke('admin-users', {
+    body: {
+      action: input.userId ? 'update' : 'create',
+      userId: input.userId || undefined,
+      email: input.email,
+      fullName: input.fullName,
+      organization: input.organization,
+      role: input.role,
+      isActive: input.isActive,
+    },
+  });
+  const functionError = await getFunctionError(error, data);
+  if (functionError) throw functionError;
+  return data;
+}
+
 export async function deleteAuthAdminUser(user) {
   if (!user?.auth_user_id) throw new Error('Utilisateur introuvable.');
   if (!supabase) return { deleted: true };

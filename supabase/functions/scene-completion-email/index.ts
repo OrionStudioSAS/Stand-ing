@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
   const userId = authData?.user?.id || "";
   const userEmail = clean(authData?.user?.email).toLowerCase();
   const { data: adminUser } = userId
-    ? await supabase.from("admin_users").select("user_id").eq("user_id", userId).maybeSingle()
+    ? await supabase.from("admin_users").select("user_id").eq("user_id", userId).eq("is_active", true).maybeSingle()
     : { data: null };
   const isAdmin = Boolean(adminUser);
   const isSceneOwner = userEmail && userEmail === clean(scene.client_email).toLowerCase();

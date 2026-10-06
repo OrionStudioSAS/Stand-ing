@@ -45,6 +45,7 @@ Deno.serve(async (req) => {
     .from("admin_users")
     .select("user_id")
     .eq("user_id", authData.user.id)
+    .eq("is_active", true)
     .maybeSingle();
   if (!adminUser) return json({ error: "Admin access required" }, 403);
 

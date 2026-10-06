@@ -54,7 +54,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, markSceneSpecialRequestResolved, publicConfiguratorUrl, requestSceneAccessCode, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveSceneManualOrderLines, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminAuditEvents, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, markSceneSpecialRequestResolved, publicConfiguratorUrl, requestSceneAccessCode, saveAdminUser, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveSceneManualOrderLines, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, signatureAllowancePerSquareMeter, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
 import { createTechnicalPlanBlob, exportTechnicalPng, standWallPanelRequirements } from './technicalExport.js';
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
@@ -505,6 +505,7 @@ function App() {
           .from('admin_users')
           .select('user_id, role_label')
           .eq('user_id', session.user.id)
+          .eq('is_active', true)
           .maybeSingle();
         const isDesignerViewer = isDesignerRole(adminUser?.role_label);
         if (mounted) {
@@ -608,6 +609,7 @@ function HomeGate() {
       .from('admin_users')
       .select('user_id')
       .eq('user_id', session.user.id)
+      .eq('is_active', true)
       .maybeSingle()
       .then(({ data }) => {
         setAdminUser(data);
@@ -678,6 +680,7 @@ function AdminGate() {
       .from('admin_users')
       .select('*')
       .eq('user_id', sessionUserId)
+      .eq('is_active', true)
       .maybeSingle()
       .then(({ data, error }) => {
         if (error) {
@@ -8696,6 +8699,11 @@ function AdminDashboard({ user, adminProfile }) {
   const [scenes, setScenes] = useState([]);
   const [clients, setClients] = useState([]);
   const [adminUsers, setAdminUsers] = useState([]);
+  const [adminUsersError, setAdminUsersError] = useState('');
+  const [adminAudit, setAdminAudit] = useState([]);
+  const [adminAuditHasMore, setAdminAuditHasMore] = useState(false);
+  const [adminAuditError, setAdminAuditError] = useState('');
+  const [adminAuditLoading, setAdminAuditLoading] = useState(false);
   const [salons, setSalons] = useState([]);
   const [salonFilterChoices, setSalonFilterChoices] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -8727,7 +8735,8 @@ function AdminDashboard({ user, adminProfile }) {
   useEffect(() => {
     listClients({}).then(setClients).catch((error) => console.error('Client list failed', error));
     listSalons({}).then(setSalons).catch((error) => console.error('Salon list failed', error));
-    listAdminUsers().then(setAdminUsers).catch((error) => console.error('Admin users list failed', error));
+    listAdminUsers().then((rows) => { setAdminUsers(rows); setAdminUsersError(''); }).catch((error) => setAdminUsersError(error.message || 'Liste des utilisateurs indisponible.'));
+    listAdminAuditEvents().then((result) => { setAdminAudit(result.events); setAdminAuditHasMore(result.hasMore); setAdminAuditError(''); }).catch((error) => setAdminAuditError(error.message || 'Journal d’audit indisponible.'));
   }, []);
 
   useEffect(() => {
@@ -8744,7 +8753,32 @@ function AdminDashboard({ user, adminProfile }) {
   };
 
   const refreshAdminUsers = () => {
-    return listAdminUsers().then(setAdminUsers).catch((error) => console.error('Admin users list failed', error));
+    return listAdminUsers().then((rows) => { setAdminUsers(rows); setAdminUsersError(''); }).catch((error) => setAdminUsersError(error.message || 'Liste des utilisateurs indisponible.'));
+  };
+
+  const refreshAdminAudit = () => {
+    return listAdminAuditEvents().then((result) => { setAdminAudit(result.events); setAdminAuditHasMore(result.hasMore); setAdminAuditError(''); }).catch((error) => setAdminAuditError(error.message || 'Journal d’audit indisponible.'));
+  };
+
+  const loadMoreAdminAudit = async () => {
+    if (adminAuditLoading || !adminAuditHasMore) return;
+    setAdminAuditLoading(true);
+    try {
+      const result = await listAdminAuditEvents(adminAudit.length);
+      setAdminAudit((current) => [...current, ...result.events.filter((event) => !current.some((item) => item.id === event.id))]);
+      setAdminAuditHasMore(result.hasMore);
+      setAdminAuditError('');
+    } catch (error) {
+      setAdminAuditError(error.message || 'Journal d’audit indisponible.');
+    } finally {
+      setAdminAuditLoading(false);
+    }
+  };
+
+  const saveAdminUserProfile = async (draft) => {
+    const result = await saveAdminUser(draft);
+    await Promise.all([refreshAdminUsers(), refreshAdminAudit()]);
+    return result;
   };
 
   const refreshSalonFilterChoices = () => {
@@ -8848,18 +8882,18 @@ function AdminDashboard({ user, adminProfile }) {
     const confirmed = window.confirm(`Supprimer définitivement ${label} ?\n\nLa ligne Monday liée sera également supprimée, ainsi que les fichiers d’aperçu stockés dans Supabase.`);
     if (!confirmed) return;
     await deleteSceneAndRemote(scene);
-    await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers(), refreshSalonFilterChoices()]);
+    await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers(), refreshAdminAudit(), refreshSalonFilterChoices()]);
   };
 
   const deleteAdminUser = async (userRow) => {
-    if (!userRow?.id) return;
+    if (!userRow?.id) return false;
     const label = userRow.display_name || userRow.email || 'cet utilisateur';
     const scenesCount = Number(userRow.scenes_count || 0);
     const warning = userRow.kind === 'admin'
       ? 'Ce compte admin sera supprimé de Supabase Auth.'
       : `${scenesCount} scène(s) liée(s) seront supprimée(s), avec leurs lignes Monday et leurs fichiers d’aperçu Supabase.`;
     const confirmed = window.confirm(`Supprimer définitivement ${label} ?\n\n${warning}`);
-    if (!confirmed) return;
+    if (!confirmed) return false;
     const clientIds = [...new Set([userRow.client_id, ...(userRow.client_ids || [])].filter(Boolean))];
     if (userRow.kind === 'admin' || !clientIds.length) {
       await deleteAuthAdminUser(userRow);
@@ -8868,7 +8902,8 @@ function AdminDashboard({ user, adminProfile }) {
         await deleteClientAndScenes({ id: clientId, scenes: Array.from({ length: scenesCount }) });
       }
     }
-    await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers(), refreshSalonFilterChoices()]);
+    await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers(), refreshAdminAudit(), refreshSalonFilterChoices()]);
+    return true;
   };
 
   const duplicateAsset = async (asset) => {
@@ -8995,7 +9030,7 @@ function AdminDashboard({ user, adminProfile }) {
           </div>
           <div className="admin-topbar-actions">
             {tab === 'dashboard' && <div className="admin-dashboard-year" aria-label="Année du dashboard"><button type="button" aria-label="Année précédente" onClick={() => setDashboardYear((year) => year - 1)}><ChevronLeft size={16} /></button><strong>{dashboardYear}</strong>{dashboardYear === new Date().getFullYear() && <span>En cours</span>}<button type="button" aria-label="Année suivante" onClick={() => setDashboardYear((year) => year + 1)}><ChevronRight size={16} /></button></div>}
-            {(tab === 'dashboard' || tab === 'salons' || tab === 'clients' || tab === 'bat' || tab === 'objects') && <label className="admin-global-search"><Search size={17} /><input aria-label="Rechercher" placeholder="Rechercher..." value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} /></label>}
+            {(tab === 'dashboard' || tab === 'salons' || tab === 'clients' || tab === 'bat' || tab === 'objects' || tab === 'users') && <label className="admin-global-search"><Search size={17} /><input aria-label="Rechercher" placeholder="Rechercher..." value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} /></label>}
           </div>
         </header>
 
@@ -9074,7 +9109,7 @@ function AdminDashboard({ user, adminProfile }) {
               }}
             />
           )}
-          {tab === 'users' && <AdminUsersView users={adminUsers} clients={clients} salonChoices={salonFilterChoices} onDeleteUser={deleteAdminUser} />}
+          {tab === 'users' && <AdminUsersView users={adminUsers} usersError={adminUsersError} auditEvents={adminAudit} auditError={adminAuditError} auditHasMore={adminAuditHasMore} auditLoading={adminAuditLoading} onLoadMoreAudit={loadMoreAdminAudit} search={adminSearch} canManage={['admin', 'super admin', 'super administrateur'].includes(normalizeTextValue(adminProfile?.role_label))} currentUserId={user?.id} onSaveUser={saveAdminUserProfile} onDeleteUser={deleteAdminUser} />}
         </div>
       </section>
     </main>
@@ -9090,7 +9125,7 @@ function adminTitle(tab) {
     requests: 'Demandes spécifiques',
     objects: 'Assets 3D',
     presets: 'Packs',
-    users: 'Utilisateurs',
+    users: 'Utilisateurs et journal d’audit',
     monday: 'Monday.com',
   };
   return labels[tab] || 'Dashboard';
@@ -9102,7 +9137,7 @@ function adminSubtitle(tab) {
   if (tab === 'presets') return 'Gestion des packs globaux et de leur activation par salon';
   if (tab === 'clients') return 'Exposants synchronisés et configurations associées';
   if (tab === 'requests') return 'Demandes exposants à traiter avant validation finale';
-  if (tab === 'users') return 'Comptes administrateurs et exposants';
+  if (tab === 'users') return 'Comptes, rôles et accès aux salons';
   if (tab === 'monday') return 'Synchronisation des tableaux salon';
   if (tab === 'objects') return 'Assets, groupes d’objets, groupes de variantes et groupes de couleurs';
   return 'Vue en cours de préparation';
@@ -11264,106 +11299,123 @@ function presetMetaLabel(preset, presets = []) {
   return `${area ? `${area} m²` : 'Surface à définir'} · ${presetFaceCount(preset)} face${presetFaceCount(preset) > 1 ? 's' : ''} · ${modules} module${modules > 1 ? 's' : ''}`;
 }
 
-function AdminUsersView({ users = [], clients = [], salonChoices = [], onDeleteUser }) {
-  const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
-  const [userFilters, setUserFilters] = useState({ search: '', salon: '' });
-  const [userPage, setUserPage] = useState(1);
-  const userSalonChoices = useMemo(() => adminUserSalonChoices(salonChoices, clients, users), [salonChoices, clients, users]);
-  const filteredUsers = useMemo(() => filterAdminUsers(users, clients, userFilters), [users, clients, userFilters]);
-  const userPageSize = 25;
-  const pageCount = Math.max(1, Math.ceil(filteredUsers.length / userPageSize));
-  const safePage = Math.min(userPage, pageCount);
-  const paginatedUsers = useMemo(() => filteredUsers.slice((safePage - 1) * userPageSize, safePage * userPageSize), [filteredUsers, safePage]);
+function AdminUsersView({ users = [], usersError = '', auditEvents = [], auditError = '', auditHasMore = false, auditLoading = false, onLoadMoreAudit, search = '', canManage = false, currentUserId, onSaveUser, onDeleteUser }) {
+  const [activeTab, setActiveTab] = useState('users');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [editor, setEditor] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [page, setPage] = useState(1);
+  const staff = users.filter((userRow) => userRow.kind === 'admin');
+  const filtered = staff.filter((userRow) => (!roleFilter || normalizeTextValue(userRow.role) === normalizeTextValue(roleFilter)) && (!search || normalizeTextValue([userRow.display_name, userRow.email, userRow.role, userRow.organization].join(' ')).includes(normalizeTextValue(search))));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / 12));
+  const safePage = Math.min(page, pageCount);
+  const visible = filtered.slice((safePage - 1) * 12, safePage * 12);
+  const visibleAudit = auditEvents.filter((event) => !search || normalizeTextValue([event.actor_name, event.action, event.detail, event.salon].join(' ')).includes(normalizeTextValue(search)));
 
+  useEffect(() => { setPage(1); }, [roleFilter, search]);
+  useEffect(() => { setPage((current) => Math.min(current, pageCount)); }, [pageCount]);
   useEffect(() => {
-    setUserPage(1);
-  }, [userFilters.search, userFilters.salon]);
+    if (!editor) return undefined;
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setEditor(null); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [editor]);
 
-  useEffect(() => {
-    if (userPage > pageCount) setUserPage(pageCount);
-  }, [userPage, pageCount]);
+  const openEditor = (userRow) => {
+    setError('');
+    setEditor(userRow ? {
+      userId: userRow.auth_user_id,
+      email: userRow.email || '',
+      fullName: userRow.display_name || '',
+      organization: userRow.organization || '',
+      role: adminEditableRole(userRow.role),
+      isActive: userRow.is_active !== false,
+      original: userRow,
+    } : { email: '', fullName: '', organization: '', role: 'Prestataire', isActive: true });
+  };
 
-  const runDelete = async (userRow) => {
-    if (!userRow?.id) return;
-    setDeleteState({ loadingId: userRow.id, error: '' });
+  const save = async (draft) => {
+    setSaving(true);
+    setError('');
     try {
-      await onDeleteUser?.(userRow);
-      setDeleteState({ loadingId: '', error: '' });
-    } catch (error) {
-      setDeleteState({ loadingId: '', error: error.message || 'Suppression impossible.' });
+      const result = await onSaveUser(draft);
+      setEditor(null);
+      setMessage(`${result?.invited ? 'Invitation envoyée et compte créé.' : 'Utilisateur enregistré.'}${result?.auditWarning ? ` ${result.auditWarning}` : ''}`);
+    } catch (saveError) {
+      setError(saveError.message || 'Enregistrement impossible.');
+    } finally {
+      setSaving(false);
     }
   };
 
-  return (
-    <section className="admin-users-view">
-      <section className="admin-clients-search-card">
-        <div>
-          <Search size={16} />
-          <input
-            value={userFilters.search}
-            placeholder="Nom, email, rôle..."
-            onChange={(event) => setUserFilters((current) => ({ ...current, search: event.target.value }))}
-          />
-        </div>
-        <button type="button">Rechercher</button>
-      </section>
+  const toggleAccess = (userRow) => save({
+    userId: userRow.auth_user_id,
+    email: userRow.email,
+    fullName: userRow.display_name,
+    organization: userRow.organization || '',
+    role: adminEditableRole(userRow.role),
+    isActive: userRow.is_active === false,
+  });
 
-      <div className="admin-client-filter-line">
-        <span>Filtres actifs :</span>
-        <label>
-          Salon
-          <select value={userFilters.salon} onChange={(event) => setUserFilters((current) => ({ ...current, salon: event.target.value }))}>
-            <option value="">Tous les salons</option>
-            {userSalonChoices.map((salon) => <option key={salon} value={salon}>{salon}</option>)}
-          </select>
-        </label>
-      </div>
+  const remove = async () => {
+    if (!editor?.original) return;
+    setSaving(true);
+    setError('');
+    try {
+      const deleted = await onDeleteUser(editor.original);
+      if (deleted) { setEditor(null); setMessage('Utilisateur supprimé.'); }
+    } catch (deleteError) {
+      setError(deleteError.message || 'Suppression impossible.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
-      {deleteState.error && <div className="sync-result error">{deleteState.error}</div>}
-      <section className="admin-users-table">
-        <header>
-          <span>Utilisateur</span>
-          <span>Date de création</span>
-          <span>Rôle</span>
-          <span>Scènes</span>
-          <span>Actions</span>
-        </header>
-        {filteredUsers.length ? paginatedUsers.map((userRow) => {
-          const scenesCount = Number(userRow.scenes_count || 0);
-          return (
-            <article key={userRow.id}>
-              <div>
-                <strong>{userRow.display_name || userRow.email || 'Utilisateur'}</strong>
-                <small>{userRow.email || 'Email non renseigné'}</small>
-              </div>
-              <span>{formatDate(userRow.created_at)}</span>
-              <span><i className={`client-status-badge ${userRow.kind === 'admin' ? 'purple' : 'neutral'}`}>{userRow.role || (userRow.kind === 'admin' ? 'Admin' : 'Exposant')}</i></span>
-              <span>{scenesCount} scène{scenesCount > 1 ? 's' : ''}</span>
-              <div className="client-row-actions">
-                <button
-                  type="button"
-                  className="client-danger-button"
-                  disabled={deleteState.loadingId === userRow.id || userRow.can_delete === false}
-                  onClick={() => runDelete(userRow)}
-                >
-                  {userRow.can_delete === false ? 'Compte actuel' : deleteState.loadingId === userRow.id ? 'Suppression...' : 'Supprimer'}
-                </button>
-              </div>
-            </article>
-          );
-        }) : <div className="admin-empty-row">Aucun utilisateur trouvé avec les filtres actuels.</div>}
-      </section>
-      {filteredUsers.length > userPageSize && (
-        <nav className="admin-pagination" aria-label="Pagination utilisateurs">
-          <span>{filteredUsers.length} utilisateur{filteredUsers.length > 1 ? 's' : ''} · page {safePage}/{pageCount}</span>
-          <div>
-            <button type="button" disabled={safePage <= 1} onClick={() => setUserPage((page) => Math.max(1, page - 1))}>Précédent</button>
-            <button type="button" disabled={safePage >= pageCount} onClick={() => setUserPage((page) => Math.min(pageCount, page + 1))}>Suivant</button>
-          </div>
-        </nav>
-      )}
-    </section>
-  );
+  return <section className="admin-users-v2">
+    <div className="admin-users-v2-tabs" role="tablist" aria-label="Utilisateurs et audit"><button role="tab" type="button" aria-selected={activeTab === 'users'} onClick={() => setActiveTab('users')}>Utilisateurs</button><button role="tab" type="button" aria-selected={activeTab === 'audit'} onClick={() => setActiveTab('audit')}>Journal d’audit</button></div>
+    {message && <div className="sync-result success" role="status">{message}</div>}
+    {error && !editor && <div className="sync-result error" role="alert">{error}</div>}
+    {usersError && <div className="sync-result error" role="alert">Utilisateurs : {usersError}</div>}
+    {auditError && <div className="sync-result error" role="alert">Journal d’audit : {auditError}</div>}
+    {activeTab === 'users' ? <>
+      <div className="admin-users-v2-toolbar"><label><span className="sr-only">Filtrer par rôle</span><select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}><option value="">Tous les rôles</option>{[...new Set(staff.map((row) => row.role).filter(Boolean))].sort().map((role) => <option key={role} value={role}>{role}</option>)}</select></label><button className="admin-primary-v2" type="button" disabled={!canManage} title={!canManage ? 'Réservé aux super admins' : undefined} onClick={() => openEditor(null)}>Ajouter un utilisateur</button></div>
+      <div className="admin-users-v2-table-scroll"><div className="admin-users-v2-table"><div className="admin-users-v2-head"><span>Utilisateur</span><span>E-mail</span><span>Rôle</span><span>Salons accessibles</span><span>Dernière connexion</span><span>Accès</span><span className="sr-only">Modifier</span></div>{visible.length ? visible.map((userRow) => {
+        const name = userRow.display_name || userRow.email || 'Utilisateur';
+        const initials = String(name).split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+        const canChangeAccess = canManage && userRow.auth_user_id !== currentUserId && !saving;
+        return <div className="admin-users-v2-row" key={userRow.id}><span className="admin-users-v2-person"><i>{initials}</i><span><strong>{name}</strong><small>{adminUserOrganization(userRow)}</small></span></span><span className="admin-users-v2-email">{userRow.email || '—'}</span><span><em className={`admin-users-v2-role ${adminEditableRole(userRow.role) === 'Super admin' ? 'super' : ''}`}>{userRow.role || '—'}</em></span><span>Tous</span><span className="admin-users-v2-date">{adminUserDateTime(userRow.last_sign_in_at)}</span><span><button className="admin-users-v2-switch" type="button" role="switch" aria-checked={userRow.is_active !== false} aria-label={`Accès de ${name}`} disabled={!canChangeAccess} onClick={() => toggleAccess(userRow)}><span /></button></span><span><button className="admin-outline-v2" type="button" disabled={!canManage} onClick={() => openEditor(userRow)}>Modifier</button></span></div>;
+      }) : <div className="admin-empty-row">Aucun utilisateur pour ce filtre.</div>}</div></div>
+      {filtered.length > 12 && <nav className="admin-users-v2-pagination" aria-label="Pagination utilisateurs"><span>{filtered.length} utilisateurs · page {safePage}/{pageCount}</span><button type="button" disabled={safePage === 1} onClick={() => setPage((current) => current - 1)}>Précédent</button><button type="button" disabled={safePage === pageCount} onClick={() => setPage((current) => current + 1)}>Suivant</button></nav>}
+      <div className="admin-users-v2-audit-head"><h2>Aperçu du journal d’audit</h2><button type="button" onClick={() => setActiveTab('audit')}>Voir tout</button></div><AdminAuditTable events={visibleAudit.slice(0, 5)} users={users} />
+    </> : <><div className="admin-users-v2-audit-head"><h2>Journal d’audit</h2><span>{visibleAudit.length} action{visibleAudit.length > 1 ? 's' : ''} chargée{visibleAudit.length > 1 ? 's' : ''}</span></div><AdminAuditTable events={visibleAudit} users={users} />{auditHasMore && <button className="admin-outline-v2 admin-users-v2-more" type="button" disabled={auditLoading} onClick={onLoadMoreAudit}>{auditLoading ? 'Chargement...' : 'Charger plus d’actions'}</button>}</>}
+    {editor && createPortal(<div className="admin-users-v2-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditor(null); }}><form className="admin-users-v2-editor" onSubmit={(event) => { event.preventDefault(); save(editor); }}><header><div><h2>{editor.userId ? 'Modifier l’utilisateur' : 'Ajouter un utilisateur'}</h2><p>{editor.userId ? 'Rôle et accès au back-office' : 'Une invitation sera envoyée par e-mail.'}</p></div><button type="button" aria-label="Fermer" onClick={() => setEditor(null)}><X size={18} /></button></header><div className="admin-users-v2-fields"><label>Nom complet<input required value={editor.fullName} onChange={(event) => setEditor((current) => ({ ...current, fullName: event.target.value }))} /></label><label>E-mail<input type="email" required disabled={Boolean(editor.userId)} value={editor.email} onChange={(event) => setEditor((current) => ({ ...current, email: event.target.value }))} /></label><label>Organisation<input value={editor.organization} onChange={(event) => setEditor((current) => ({ ...current, organization: event.target.value }))} /></label><label>Rôle<select required value={editor.role} onChange={(event) => setEditor((current) => ({ ...current, role: event.target.value }))}><option value="" disabled>Choisir un rôle</option><option value="Super admin">Super admin</option><option value="Prestataire">Prestataire</option><option value="Dessinateur">Dessinateur</option></select></label><label className="admin-users-v2-active"><input type="checkbox" checked={editor.isActive} disabled={editor.userId === currentUserId} onChange={(event) => setEditor((current) => ({ ...current, isActive: event.target.checked }))} /> Accès actif</label><p>Accès aux salons : tous les salons pour ce rôle.</p></div>{error && <div className="sync-result error" role="alert">{error}</div>}<footer>{editor.userId && editor.userId !== currentUserId && <button className="admin-danger-v2" type="button" disabled={saving} onClick={remove}>Supprimer</button>}<button className="admin-outline-v2" type="button" onClick={() => setEditor(null)}>Annuler</button><button className="admin-primary-v2" type="submit" disabled={saving}>{saving ? 'Enregistrement...' : editor.userId ? 'Enregistrer' : 'Envoyer l’invitation'}</button></footer></form></div>, document.body)}
+  </section>;
+}
+
+function AdminAuditTable({ events = [], users = [] }) {
+  const byId = new Map(users.map((userRow) => [userRow.auth_user_id, userRow]));
+  return <div className="admin-users-v2-audit-scroll"><div className="admin-users-v2-audit-table"><div className="admin-users-v2-audit-row head"><span>Utilisateur</span><span>Action</span><span>Détail</span><span>Date</span><span>Organisation</span></div>{events.length ? events.map((event) => <div className="admin-users-v2-audit-row" key={event.id}><span>{event.actor_name || 'Système'}</span><span className="action">{event.action}</span><span>{event.detail || '—'}</span><span>{adminUserDateTime(event.created_at)}</span><span><em>{adminUserOrganization(byId.get(event.actor_user_id) || {})}</em></span></div>) : <div className="admin-empty-row">Aucune action enregistrée pour le moment.</div>}</div></div>;
+}
+
+function adminEditableRole(role = '') {
+  if (['admin', 'super admin', 'super administrateur'].includes(normalizeTextValue(role))) return 'Super admin';
+  if (['prestataire', 'dessinateur'].includes(normalizeTextValue(role))) return role;
+  return '';
+}
+
+function adminUserOrganization(userRow = {}) {
+  if (userRow.organization) return userRow.organization;
+  const domain = String(userRow.email || '').split('@')[1]?.toLowerCase();
+  if (domain === 'stand-ing.com') return 'Stand-ING';
+  if (domain === 'orion-studio.io') return 'Orion Studio';
+  return domain || '—';
+}
+
+function adminUserDateTime(value) {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date) : 'Jamais';
 }
 
 function adminSceneSalonChoices(scenes = []) {

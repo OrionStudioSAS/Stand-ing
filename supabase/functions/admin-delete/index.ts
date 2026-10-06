@@ -27,6 +27,7 @@ Deno.serve(async (req) => {
     .from("admin_users")
     .select("user_id")
     .eq("user_id", authData.user.id)
+    .eq("is_active", true)
     .maybeSingle();
   if (adminError) return json({ error: adminError.message }, 500);
   if (!adminUser) return json({ error: "Forbidden" }, 403);
