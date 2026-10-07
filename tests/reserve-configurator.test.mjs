@@ -10,6 +10,7 @@ const {
   createReserveDraft, serializeReserveDraft, reserveCatalogEntries, reserveFrame, reserveSlots,
   moveReservePart, replaceReservePart, addReservePart, removeReservePart, rotateReservePart,
   validateReserveDraft, reserveChildrenFromDraft, reserveCustomizationPricingLines,
+  resizeReserveDraft, reserveDraftPlacementBounds,
 } = reserve;
 const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const wall = { type: 'wall', label: 'Cloison 1 m', modelSize: [1, 2.5, 0.06], modelUrl: '/wall.glb', price: 60 };
@@ -360,4 +361,168 @@ test('exhibitor entry points respect scene locking and reserve-only shop restric
     assert.doesNotMatch(guardedEntry, /entry\.dimensions\?\.adminOnly/);
   }
   assert.match(source, /options\.reserveOptions \|\| \{\}/);
+});
+
+test('growing the included reserve adds only the necessary partitions and preserves fixed stand edges', () => {
+  const draft = createReserveDraft(entry, null, catalog);
+  const { draft: grown, error } = resizeReserveDraft(draft, 3, 1, catalog);
+  assert.equal(error, '');
+  assert.equal(grown.frame.minX, draft.frame.minX);
+  assert.equal(grown.frame.minZ, draft.frame.minZ);
+  assert.equal(grown.frame.width * grown.frame.depth, 3);
+  assert.equal(grown.parts.length, 4);
+  assert.deepEqual(validateReserveDraft(grown, catalog), []);
+  assert.deepEqual(grown.requiredSlots.sort(), ['front-0', 'front-1', 'front-2', 'right-0']);
+  const lines = reserveCustomizationPricingLines(entry, grown, catalog);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].assetType, wall.type);
+  assert.equal(lines[0].quantity, 1);
+  assert.equal(lines[0].total, wall.price);
+  assert.equal(draft.parts.length, 3);
+});
+
+test('reducing from included 2 m2 to 1 m2 costs nothing, even after growing and reloading', () => {
+  let draft = resizeReserveDraft(createReserveDraft(entry, null, catalog), 3, 2, catalog).draft;
+  const saved = clone(serializeReserveDraft(draft));
+  assert.equal(saved.version, 2);
+  assert.deepEqual(saved.size, { width: 3, depth: 2 });
+  draft = createReserveDraft(entry, saved, catalog);
+  assert.deepEqual(validateReserveDraft(draft, catalog), []);
+  const reduced = resizeReserveDraft(draft, 1, 1, catalog);
+  assert.equal(reduced.error, '');
+  assert.equal(reduced.draft.parts.length, 2);
+  assert.deepEqual(reserveCustomizationPricingLines(entry, reduced.draft, catalog), []);
+  assert.equal(reduced.draft.baseline.length, 3);
+  const restored = createReserveDraft(entry, clone(serializeReserveDraft(reduced.draft)), catalog);
+  assert.deepEqual(validateReserveDraft(restored, catalog), []);
+  assert.equal(restored.frame.width * restored.frame.depth, 1);
+  assert.deepEqual(reserveCustomizationPricingLines(entry, restored, catalog), []);
+});
+
+test('reduction relocates a door on a cut-off module without dropping it or its variant', () => {
+  let draft = createReserveDraft(entry, null, catalog);
+  draft = moveReservePart(draft, 'entrance', { x: 0.5, z: 0 }, catalog).draft;
+  draft = replaceReservePart(draft, 'entrance', coded.type, catalog).draft;
+  const reduced = resizeReserveDraft(draft, 1, 1, catalog);
+  assert.equal(reduced.error, '');
+  assert.equal(reduced.draft.parts.find((part) => part.id === 'entrance').type, coded.type);
+  assert.equal(reduced.draft.parts.filter((part) => part.role === 'door').length, 1);
+  assert.deepEqual(validateReserveDraft(reduced.draft, catalog), []);
+  assert.equal(reserveCustomizationPricingLines(entry, reduced.draft, catalog)[0].total, 50);
+});
+
+test('resizing is atomic when equipment would be outside, obstruct a door or exceed stand limits', () => {
+  const draft = createReserveDraft(entry, null, catalog);
+  draft.parts.push({ id: 'coffee-right', type: coffee.type, role: 'furniture', x: 0.6, y: 1, z: -0.7, rotation: 0, slotId: '' });
+  const reduced = resizeReserveDraft(draft, 1, 1, catalog);
+  assert.ok(reduced.error);
+  assert.equal(reduced.draft, draft);
+  for (const [width, depth] of [[0, 1], [1.5, 1], [13, 1], [4, 1], [2, 3]]) {
+    const result = resizeReserveDraft(draft, width, depth, catalog, { width: 3, depth: 2 });
+    assert.ok(result.error);
+    assert.equal(result.draft, draft);
+  }
+});
+
+test('the resized collision footprint tracks all dimensions while retaining original thickness margins', () => {
+  const original = createReserveDraft(entry, null, catalog);
+  const grown = resizeReserveDraft(original, 3, 2, catalog).draft;
+  const bounds = { minX: -1.03, maxX: 1.125, minZ: -1, maxZ: 0.03, width: 2.155, depth: 1.03, height: 2.5 };
+  const changed = reserveDraftPlacementBounds(grown, bounds);
+  assert.equal(changed.minX, bounds.minX);
+  assert.equal(changed.minZ, bounds.minZ);
+  assert.equal(changed.maxX, bounds.maxX + 1);
+  assert.equal(changed.maxZ, bounds.maxZ + 1);
+  assert.equal(money(changed.width), money(bounds.width + 1));
+  assert.equal(money(changed.depth), money(bounds.depth + 1));
+  assert.equal(changed.height, 2.5);
+});
+
+test('resizing a centred reserve keeps the back wall fixed and charges both new side modules', () => {
+  const centre = { ...entry, children: [
+    { ...wall, id: 'l0', x: -0.5, z: -0.5, rotation: 90 }, { ...wall, id: 'l1', x: -0.5, z: -1.5, rotation: 90 },
+    { ...wall, id: 'r0', x: 0.5, z: -0.5, rotation: 90 }, { ...wall, id: 'r1', x: 0.5, z: -1.5, rotation: 90 },
+    { ...door, id: 'entrance', x: 0, z: 0, rotation: 0 },
+  ] };
+  const draft = createReserveDraft(centre, null, catalog);
+  const grown = resizeReserveDraft(draft, 1, 3, catalog);
+  assert.equal(grown.error, '');
+  assert.equal(grown.draft.frame.minZ, draft.frame.minZ);
+  assert.equal(reserveCustomizationPricingLines(centre, grown.draft, catalog)[0].quantity, 2);
+});
+
+test('client JSON cannot forge resize metadata, editable edges or included quotas', () => {
+  const grown = resizeReserveDraft(createReserveDraft(entry, null, catalog), 3, 1, catalog).draft;
+  const saved = serializeReserveDraft(grown);
+  for (const size of [{ width: 0, depth: 1 }, { width: 1000, depth: 1 }, { width: '3', depth: 1 }, null]) {
+    const draft = createReserveDraft(entry, { ...saved, size, baseline: [], requiredSlots: [], edges: ['back'] }, catalog);
+    assert.ok(validateReserveDraft(draft, catalog).some((error) => error.includes('dimensions')));
+    assert.equal(draft.baseline.length, 3);
+    assert.ok(!draft.edges.includes('back'));
+  }
+  const api = appApi({ firstPriceValue: (...values) => values.find((value) => value !== undefined && value !== '') });
+  const rule = { id: 'medium', includedType: entry.type };
+  for (const invalid of [{ ...saved, sourceType: 'other' }, { ...saved, version: 3 }, { version: 2, sourceType: entry.type }]) {
+    const items = api.makeAutomaticReserveItems(rule, '', [entry, ...catalog], 5, 4, 'left', 'Confort', { customizations: { [entry.type]: invalid } });
+    assert.equal(items[0].options.reserveCustomization, undefined);
+  }
+});
+
+test('nonrectangular groups cannot silently replace missing perimeter panels during resizing', () => {
+  const partial = { ...entry, children: [entry.children[0], entry.children[2]], dimensions: { reserveConfigurator: { width: 2, depth: 1 } } };
+  const draft = createReserveDraft(partial, null, catalog);
+  assert.equal(draft.canResize, false);
+  assert.equal(resizeReserveDraft(draft, 3, 1, catalog).draft, draft);
+  const saved = { ...serializeReserveDraft(draft), version: 2, size: { width: 3, depth: 1 } };
+  assert.ok(validateReserveDraft(createReserveDraft(partial, saved, catalog), catalog).length);
+});
+
+test('a legacy fixed upgrade switches to actual module prices and original stand entitlement on resize', () => {
+  const api = appApi({ firstPriceValue: (...values) => values.find((value) => value !== undefined && value !== '') });
+  const bigger = { ...entry, type: 'reserve-3', children: [
+    { ...wall, id: 'p0', x: -1, y: 0, z: 0, rotation: 0 },
+    { ...wall, id: 'p1', x: 0, y: 0, z: 0, rotation: 0 },
+    { ...wall, id: 'p2', x: 1, y: 0, z: 0, rotation: 0 },
+    { ...door, id: 'entrance', x: 1.5, y: 0, z: -0.5, rotation: -90 },
+  ] };
+  const all = [entry, bigger, ...catalog];
+  const rule = { id: 'medium', includedType: entry.type, options: [{ type: bigger.type, price: 111 }] };
+  const original = api.makeAutomaticReserveItems(rule, bigger.type, all, 5, 4, 'left', 'Confort')[0];
+  assert.equal(original.options.unitPrice, 111);
+  let draft = resizeReserveDraft(createReserveDraft(bigger, null, all, entry), 4, 1, catalog).draft;
+  let options = { customizations: { [bigger.type]: serializeReserveDraft(draft) } };
+  const grown = api.makeAutomaticReserveItems(rule, bigger.type, all, 5, 4, 'left', 'Confort', options)[0];
+  assert.equal(grown.options.unitPrice, 0);
+  assert.equal(grown.included, true);
+  let price = api.calculateScenePricing({ catalog: all, items: [grown], scene: { offer: 'Confort' } });
+  assert.equal(price.lines.find((row) => row.assetType === wall.type).quantity, 2);
+  assert.equal(price.total, 120);
+  draft = resizeReserveDraft(draft, 1, 1, catalog).draft;
+  options = { customizations: { [bigger.type]: serializeReserveDraft(draft) } };
+  const reduced = api.makeAutomaticReserveItems(rule, bigger.type, all, 5, 4, 'left', 'Confort', options)[0];
+  price = api.calculateScenePricing({ catalog: all, items: [reduced], scene: { offer: 'Confort' } });
+  assert.equal(price.total, 0);
+});
+
+test('a stand with no included reserve still pays its purchased base after resizing', () => {
+  const api = appApi({ firstPriceValue: (...values) => values.find((value) => value !== undefined && value !== '') });
+  const all = [entry, ...catalog];
+  const rule = { id: 'small', includedType: '', options: [{ type: entry.type, price: 170 }] };
+  const draft = resizeReserveDraft(createReserveDraft(entry, null, catalog), 1, 1, catalog).draft;
+  const item = api.makeAutomaticReserveItems(rule, entry.type, all, 5, 4, 'left', 'Confort', { customizations: { [entry.type]: serializeReserveDraft(draft) } })[0];
+  assert.equal(item.included, false);
+  assert.equal(item.options.unitPrice, 170);
+});
+
+test('the group equipment picker authorizes existing assets without exposing the whole ordinary shop', () => {
+  const socket = { type: 'socket', label: 'Multiprise', price: 20, modelSize: [0.2, 0.05, 0.1] };
+  const patere = { ...socket, type: 'coat', label: 'Patère' };
+  const configured = { ...entry, dimensions: { ...entry.dimensions, reserveConfigurator: { allowedTypes: [socket.type, patere.type] } } };
+  const pool = reserveCatalogEntries(configured, [...catalog, socket, patere, { type: 'chair', label: 'Chaise' }]);
+  assert.ok(pool.some((asset) => asset.type === socket.type && reserve.reserveComponentRole(asset) === 'furniture'));
+  assert.ok(pool.some((asset) => asset.type === patere.type));
+  assert.ok(!pool.some((asset) => asset.type === 'chair'));
+  const added = addReservePart(createReserveDraft(configured, null, pool), socket.type, pool);
+  assert.equal(added.error, '');
+  assert.equal(reserveCustomizationPricingLines(configured, added.draft, pool)[0].total, 20);
 });

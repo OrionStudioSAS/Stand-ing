@@ -19,17 +19,18 @@ function defaultChildren(entry = {}) {
   return entry.children || entry.dimensions?.children || [];
 }
 
-export function reserveCatalogEntries(entry = {}, catalog = []) {
-  const baseline = defaultChildren(entry);
+export function reserveCatalogEntries(entry = {}, catalog = [], includedEntry = entry) {
+  const baseline = [...defaultChildren(includedEntry), ...defaultChildren(entry)];
   const allowedTypes = entry.dimensions?.reserveConfigurator?.allowedTypes;
+  const allowed = Array.isArray(allowedTypes) ? new Set(allowedTypes) : null;
   const entries = new Map(baseline.map((child) => [child.type, catalog.find((asset) => asset.type === child.type) || child]));
   catalog.forEach((asset) => {
-    if (!asset.dimensions?.reserveComponentRole || asset.is_active === false) return;
-    if (Array.isArray(allowedTypes) && !allowedTypes.includes(asset.type)) return;
+    if ((!asset.dimensions?.reserveComponentRole && !allowed?.has(asset.type)) || asset.is_active === false) return;
+    if (allowed && !allowed.has(asset.type)) return;
     const variants = asset.dimensions?.isVariantGroup ? asset.dimensions.variantAssets || [] : [asset];
     variants.forEach((variant) => {
       if (variant.is_active === false || variant.isGroup || variant.dimensions?.isGroup) return;
-      const candidate = { ...variant, dimensions: { ...(variant.dimensions || {}), reserveComponentRole: asset.dimensions.reserveComponentRole } };
+      const candidate = { ...variant, dimensions: { ...(variant.dimensions || {}), reserveComponentRole: asset.dimensions?.reserveComponentRole || reserveComponentRole(variant) } };
       if (reserveComponentRole(candidate) !== 'furniture' && Math.abs(finite(candidate.modelSize?.[0] || candidate.dimensions?.size?.[0], 1) - 1) > 0.12) return;
       entries.set(candidate.type, candidate);
     });
@@ -89,11 +90,10 @@ function nearestSlot(slots, position) {
   return [...slots].sort((a, b) => Math.hypot(a.x - position.x, a.z - position.z) - Math.hypot(b.x - position.x, b.z - position.z))[0];
 }
 
-export function createReserveDraft(entry = {}, customization = null, catalog = []) {
-  const frame = reserveFrame(entry);
-  const slots = reserveSlots(frame);
+function initialReserveParts(entry) {
+  const slots = reserveSlots(reserveFrame(entry));
   const used = new Set();
-  const baseline = defaultChildren(entry).map((child, index) => {
+  return defaultChildren(entry).map((child, index) => {
     const part = clonePart({ ...child, id: child.id || `reserve-base-${index}`, role: reserveComponentRole(child) });
     if (structural(part)) {
       const slot = nearestSlot(slots.filter((candidate) => !used.has(candidate.id)), part);
@@ -102,18 +102,91 @@ export function createReserveDraft(entry = {}, customization = null, catalog = [
     }
     return part;
   });
-  const library = reserveCatalogEntries(entry, catalog);
+}
+
+function resizedFrame(base, width, depth, edges) {
+  const minX = !edges.includes('left') ? base.minX : !edges.includes('right') ? base.maxX - width : (base.minX + base.maxX - width) / 2;
+  const minZ = !edges.includes('back') ? base.minZ : !edges.includes('front') ? base.maxZ - depth : (base.minZ + base.maxZ - depth) / 2;
+  return { width, depth, minX, maxX: minX + width, minZ, maxZ: minZ + depth };
+}
+
+export function createReserveDraft(entry = {}, customization = null, catalog = [], includedEntry = entry) {
+  const baseFrame = reserveFrame(entry);
+  const originalParts = initialReserveParts(entry);
+  const originalSlots = originalParts.filter(structural).map((part) => part.slotId);
+  const edges = [...new Set(originalSlots.map((id) => id.split('-')[0]))];
+  const canResize = reserveSlots(baseFrame).filter((slot) => edges.includes(slot.edge)).every((slot) => originalSlots.includes(slot.id));
+  const library = reserveCatalogEntries(entry, catalog, includedEntry);
   const types = new Map(library.map((asset) => [asset.type, asset]));
-  const configured = customization?.version === 1 && customization.sourceType === entry.type && Array.isArray(customization.parts);
+  const configured = [1, 2].includes(customization?.version) && customization.sourceType === entry.type && Array.isArray(customization.parts);
+  const modular = configured && customization.version === 2;
+  const size = modular ? customization.size : baseFrame;
+  const validSize = size && [size.width, size.depth].every((value) => Number.isInteger(value) && value >= 1 && value <= 12)
+    && (canResize || (size.width === baseFrame.width && size.depth === baseFrame.depth));
+  const frame = modular && validSize ? resizedFrame(baseFrame, size.width, size.depth, edges) : baseFrame;
+  const includedBaseline = initialReserveParts(includedEntry);
+  const baseline = modular ? includedBaseline : originalParts;
   const parts = configured ? customization.parts.slice(0, 100).map((part, index) => clonePart({ ...part,
     id: part.id || `reserve-part-${index}`, role: reserveComponentRole(types.get(part.type) || baseline.find((child) => child.type === part.type) || part),
-  })) : baseline.map(clonePart);
+  })) : originalParts.map(clonePart);
   // Missing perimeter modules are existing stand walls, not editable reserve walls.
-  return { version: 1, sourceType: entry.type, frame, baseline, parts, requiredSlots: [...used] };
+  return { version: modular ? 2 : 1, sourceType: entry.type, frame, baseFrame, originalParts, includedBaseline,
+    baseline, parts, edges, canResize, invalidSize: !validSize,
+    requiredSlots: modular && validSize ? reserveSlots(frame).filter((slot) => edges.includes(slot.edge)).map((slot) => slot.id) : originalSlots };
 }
 
 export function serializeReserveDraft(draft) {
-  return { version: 1, sourceType: draft.sourceType, parts: draft.parts.map(clonePart) };
+  return { version: draft.version, sourceType: draft.sourceType,
+    ...(draft.version === 2 ? { size: { width: draft.frame.width, depth: draft.frame.depth } } : {}), parts: draft.parts.map(clonePart) };
+}
+
+export function reserveDraftPlacementBounds(draft, bounds) {
+  const minX = bounds.minX + (draft.frame.minX - draft.baseFrame.minX);
+  const maxX = bounds.maxX + (draft.frame.maxX - draft.baseFrame.maxX);
+  const minZ = bounds.minZ + (draft.frame.minZ - draft.baseFrame.minZ);
+  const maxZ = bounds.maxZ + (draft.frame.maxZ - draft.baseFrame.maxZ);
+  return { ...bounds, minX, maxX, minZ, maxZ, width: maxX - minX, depth: maxZ - minZ,
+    centerX: (minX + maxX) / 2, centerZ: (minZ + maxZ) / 2 };
+}
+
+export function resizeReserveDraft(draft, width, depth, catalog = [], limits = {}) {
+  if (!draft.canResize) return { draft, error: 'Cette structure doit être préparée avec des côtés complets de modules de 1 m avant de pouvoir être redimensionnée.' };
+  if (![width, depth].every((value) => Number.isInteger(value) && value >= 1 && value <= 12)
+    || width > (limits.width ?? 12) || depth > (limits.depth ?? 12)) return { draft, error: 'Cette taille dépasse les dimensions disponibles dans votre stand.' };
+  if (width === draft.frame.width && depth === draft.frame.depth) return { draft, error: '' };
+  const frame = resizedFrame(draft.baseFrame, width, depth, draft.edges);
+  const slots = reserveSlots(frame).filter((slot) => draft.edges.includes(slot.edge));
+  const oldSlots = reserveSlots(draft.frame);
+  const partition = catalog.find((asset) => reserveComponentRole(asset) === 'partition'
+    && draft.originalParts.some((part) => part.type === asset.type)) || catalog.find((asset) => reserveComponentRole(asset) === 'partition');
+  const parts = [];
+  const displacedDoors = [];
+  draft.parts.filter(structural).forEach((part) => {
+    const target = slots.find((slot) => slot.id === part.slotId);
+    const oldSlot = oldSlots.find((slot) => slot.id === part.slotId);
+    if (target) parts.push({ ...part, x: target.x, z: target.z, rotation: rotation(target.rotation + (oldSlot ? rotation(part.rotation - oldSlot.rotation) : 0)) });
+    else if (part.role === 'door') displacedDoors.push(part);
+  });
+  // Preserve doors cut off by a reduction, replacing the nearest remaining panel.
+  for (const door of displacedDoors) {
+    const targets = slots.filter((slot) => !parts.some((part) => part.slotId === slot.id && part.role === 'door'));
+    const target = nearestSlot(targets, door);
+    if (!target) return { draft, error: 'Cette réduction ne permet pas de conserver toutes les portes. Retirez une porte avant de réduire.' };
+    const occupant = parts.findIndex((part) => part.slotId === target.id);
+    if (occupant >= 0) parts.splice(occupant, 1);
+    const oldSlot = oldSlots.find((slot) => slot.id === door.slotId);
+    parts.push({ ...door, x: target.x, z: target.z, slotId: target.id, rotation: rotation(target.rotation + (oldSlot ? rotation(door.rotation - oldSlot.rotation) : 0)) });
+  }
+  for (const slot of slots) {
+    if (parts.some((part) => part.slotId === slot.id)) continue;
+    if (!partition) return { draft, error: 'Aucune cloison de 1 m disponible pour agrandir cette réserve.' };
+    parts.push({ id: `reserve-part-${globalThis.crypto.randomUUID()}`, type: partition.type, role: 'partition', x: slot.x, y: 0, z: slot.z, rotation: slot.rotation, slotId: slot.id });
+  }
+  const next = { ...draft, version: 2, frame, baseline: draft.includedBaseline,
+    parts: [...parts, ...draft.parts.filter((part) => !structural(part))], requiredSlots: slots.map((slot) => slot.id) };
+  // Never silently discard or move the client's equipment to make a reduction fit.
+  if (validateReserveDraft(next, catalog).length) return { draft, error: 'Déplacez ou retirez les équipements qui dépassent ou bloquent une porte avant de changer la taille.' };
+  return { draft: next, error: '' };
 }
 
 function furnitureBox(part, catalog) {
@@ -232,6 +305,7 @@ export function validateReserveDraft(draft, catalog = []) {
   const errors = new Set();
   const ids = new Set();
   const slots = reserveSlots(draft.frame);
+  if (draft.invalidSize) errors.add('Les dimensions de la réserve sont invalides.');
   if (!draft.parts.some((part) => part.role === 'door')) errors.add('Conservez au moins une porte pour accéder à la réserve.');
   draft.requiredSlots.forEach((id) => {
     if (draft.parts.filter((part) => part.slotId === id).length !== 1) errors.add('Chaque module de structure doit contenir une porte ou une cloison.');
@@ -243,16 +317,16 @@ export function validateReserveDraft(draft, catalog = []) {
     if (![part.x, part.y, part.z, part.rotation].every(Number.isFinite) || part.y < 0 || (!structural(part) && part.y + reservePartSize(part, catalog)[1] > 2.51)) errors.add('La position d’un objet est invalide.');
     if (structural(part)) {
       const slot = slots.find((candidate) => candidate.id === part.slotId);
-      const original = draft.baseline.find((candidate) => candidate.id === part.id);
+      const original = (draft.originalParts || draft.baseline).find((candidate) => candidate.id === part.id);
       const untouched = original && ['x', 'z', 'rotation', 'slotId'].every((key) => original[key] === part[key]);
       if (part.y !== (original?.y || 0)) errors.add('Les portes et cloisons doivent rester à la hauteur de la structure.');
       if (!slot || !draft.requiredSlots.includes(slot.id)) errors.add('Une porte ou une cloison est placée sur un mur du stand.');
       else if (!untouched && (Math.hypot(part.x - slot.x, part.z - slot.z) > 0.02 || rotation(part.rotation - slot.rotation) % 180 !== 0)) errors.add('Les portes et cloisons doivent respecter les modules de 1 m.');
     } else {
-      const original = draft.baseline.find((candidate) => candidate.id === part.id);
+      const original = (draft.originalParts || draft.baseline).find((candidate) => candidate.id === part.id);
       const untouched = original && ['type', 'x', 'y', 'z', 'rotation'].every((key) => original[key] === part[key]);
       // Existing fitted accessories retain the exact admin placement until edited.
-      if (untouched) return;
+      if (untouched && draft.frame.width === (draft.baseFrame || draft.frame).width && draft.frame.depth === (draft.baseFrame || draft.frame).depth) return;
       const point = furniturePosition(draft, part, part, catalog);
       if (!point || Math.abs(point.x - part.x) > 0.02 || Math.abs(point.z - part.z) > 0.02) errors.add('Tous les équipements doivent rester à l’intérieur de la réserve.');
       if (furnitureCollision(draft, part, catalog)) errors.add('Un équipement chevauche un objet ou bloque une porte.');

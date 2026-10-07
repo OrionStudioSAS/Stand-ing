@@ -10,7 +10,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { defaultImageFraming, framedImageRect, normalizeImageFraming } from './imageFraming.js';
 import { packEditorChanges, packEditorImpact } from './packEditor.js';
 import { manualOrderCategories, manualOrderRowsToPricingLines, normalizeManualOrderCategory, replaceManualOrderPricingLines } from './manualOrderLines.js';
-import { createReserveDraft, reserveFrame, reserveEditorAvailable, reserveCatalogEntries, reserveChildrenFromDraft, reserveCustomizationPricingLines, validateReserveDraft } from './reserveConfigurator.js';
+import { createReserveDraft, reserveFrame, reserveEditorAvailable, reserveCatalogEntries, reserveChildrenFromDraft, reserveCustomizationPricingLines, reserveDraftPlacementBounds, validateReserveDraft } from './reserveConfigurator.js';
 import ReserveConfiguratorModal from './ReserveConfiguratorModal.jsx';
 import { useSceneExhibitorReadOnly } from './useSceneExhibitorReadOnly.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
@@ -2998,10 +2998,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         return <ReserveConfiguratorModal
           key={reserveEditorType}
           entry={entry}
+          includedEntry={findCatalogEntry(availableCatalog, activeReserveRuleConfig?.includedType) || entry}
           catalog={availableCatalog}
+          maxWidth={Math.min(12, Math.floor(width))}
+          maxDepth={Math.min(12, Math.floor(depth))}
           customization={reserveOptions.customizations?.[reserveEditorType] || null}
           parentId={automaticReserveItems[0].id}
           basePrice={Number(automaticReserveItems[0].options?.unitPrice || 0)}
+          includedBasePrice={!activeReserveRuleConfig?.includedType ? Number(automaticReserveItems[0].options?.unitPrice || 0) : activeReserveRuleConfig?.chargeIncluded || isSignatureStand ? reserveOptionPrice({}, findCatalogEntry(availableCatalog, activeReserveRuleConfig.includedType) || entry, assetPackLabel) : 0}
           priceForEntry={(asset) => assetUnitPrice(asset, assetPackLabel)}
           referenceForEntry={(asset) => assetReference(asset, assetPackLabel)}
           onClose={() => setReserveEditorType('')}
@@ -3010,6 +3014,18 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             const nextOptions = { ...reserveOptions, customizations: { ...(reserveOptions.customizations || {}), [reserveEditorType]: customization } };
             const nextReserveItems = makeAutomaticReserveItems(activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, nextOptions)
               .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, genericCarpetFootprintEnabled));
+            const candidate = nextReserveItems[0];
+            if (!candidate?.options?.reserveCustomization) throw new Error('Cette configuration de réserve est invalide.');
+            const bounds = itemHardCollisionBox(candidate, 0);
+            if (!bounds || bounds.minX < -width / 2 - 0.01 || bounds.maxX > width / 2 + 0.01 || bounds.minZ < -depth / 2 - 0.01 || bounds.maxZ > depth / 2 + 0.01) {
+              throw new Error('Cette réserve est trop grande pour le stand. Réduisez sa largeur ou sa profondeur.');
+            }
+            const currentReserve = automaticReserveItems[0];
+            const grew = candidate.dimensions?.reservePlacementBounds?.width > itemGroupBounds(currentReserve).width + 0.01
+              || candidate.dimensions?.reservePlacementBounds?.depth > itemGroupBounds(currentReserve).depth + 0.01;
+            if (grew && collidesWithScene(candidate, visibleSceneItems, candidate.id, width, depth)) {
+              throw new Error('La réserve agrandie chevauche un objet ou une tête de cloison. Déplacez cet objet avant d’agrandir.');
+            }
             const nextItems = visibleSceneItems.map((item) => isAutomaticReserveItem(item) ? nextReserveItems.find((reserve) => reserve.id === item.id) || item : item);
             const pricing = calculateScenePricing({ ...scenePricingInput, items: nextItems });
             const configured = saveState === 'configured';
@@ -7059,6 +7075,7 @@ function itemOptionLines(item) {
   if (opts.reserveDoorOpening) result.push(`Ouverture de porte : ${reserveDoorOpeningLabel(opts.reserveDoorOpening)}`);
   if (opts.reserveHandleOrientation) result.push(`Orientation de la poignée : ${reserveHandleOrientationLabel(opts.reserveHandleOrientation)}`);
   if (opts.reserveCustomization && item.children?.length) {
+    if (opts.reserveCustomization.size) result.push(`Dimensions : ${opts.reserveCustomization.size.width} × ${opts.reserveCustomization.size.depth} m`);
     const composition = new Map();
     item.children.forEach((child) => composition.set(child.label || child.type, (composition.get(child.label || child.type) || 0) + 1));
     result.push(`Réserve personnalisée : ${[...composition].map(([label, count]) => `${count} × ${label}`).join(', ')}`);
@@ -7159,6 +7176,8 @@ function ValidationStepPanel({
   const reserveSupplement = optionSupplementTotal((line, label) => label.includes('reserve') && !String(line.type || '').startsWith('reserve-extra-'));
   const reserveOptionDetails = reserveOptionSummary(reserveOptions);
   const reserveEntry = findCatalogEntry(catalog, reserveOption?.type || reserveRule?.includedType) || null;
+  const configuredReserve = safeItems.find(isAutomaticReserveItem);
+  const reserveSize = configuredReserve?.options?.reserveCustomization?.size;
   const partitionHeadSupplement = optionSupplementTotal((line, label) => label.includes('tete de cloison'));
   const counterSizeSupplementByItemId = new Map(
     visibleSupplementLines
@@ -7250,7 +7269,7 @@ function ValidationStepPanel({
   pushRow('personalization', {
     id: 'reserve',
     label: 'Réserve',
-    detail: [reserveOptionType === '__none__' ? 'Non sélectionnée' : (reserveOption?.label || reserveRule?.includedLabel || 'Non configurée'), reserveOptionDetails, safeItems.find(isAutomaticReserveItem)?.options?.reserveCustomization ? 'Composition personnalisée' : ''].filter(Boolean).join(' · '),
+    detail: [reserveOptionType === '__none__' ? 'Non sélectionnée' : reserveSize ? `${reserveSize.width} × ${reserveSize.depth} m — ${reserveSize.width * reserveSize.depth} m²` : (reserveOption?.label || reserveRule?.includedLabel || 'Non configurée'), reserveOptionDetails, configuredReserve?.options?.reserveCustomization ? 'Composition personnalisée' : ''].filter(Boolean).join(' · '),
     imageUrl: validationItemImage(null, reserveEntry, catalog),
     swatchColor: '#bdbdbd',
     badge: priceBadge(isSignatureStand ? Number(safeItems.find(isAutomaticReserveItem)?.options?.unitPrice || 0) : reserveSupplement),
@@ -7932,7 +7951,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
   return (
     <div className="reserve-choice-panel reserve-choice-panel-v2">
       <FormulaIncludedBox open={formulaOpen} onToggle={() => setFormulaOpen((current) => !current)} includedRow={includedRow} compact />
-      <strong className="reserve-choice-title">Taille</strong>
+      {(!selectedEntry || !reserveEditorAvailable(selectedEntry)) && <><strong className="reserve-choice-title">Taille</strong>
       <div className="reserve-choice-list">
         {rows.map((row) => {
           const selected = !noneSelected && (row.included ? !selectedOptionType : selectedOptionType === row.type);
@@ -7955,11 +7974,11 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
             </button>
           );
         })}
-      </div>
+      </div></>}
 
       {!noneSelected && selectedEntry && <div className="reserve-customize-entry">
         <button type="button" className="reserve-customize-button" disabled={disabled || !reserveEditorAvailable(selectedEntry)} onClick={onCustomize}><Pencil size={15} /> Personnaliser ma réserve</button>
-        <small>{reserveEditorAvailable(selectedEntry) ? 'Portes et cloisons par modules de 1 m, équipements libres à l’intérieur. Les suppléments sont indiqués avant validation.' : 'Ce modèle doit être préparé avec des portes et cloisons séparées dans les assets 3D.'}</small>
+        <small>{reserveEditorAvailable(selectedEntry) ? 'Agrandissez ou réduisez directement la réserve par pas de 1 m. Modifiez les portes, puis ajoutez une cafetière, une multiprise ou une patère depuis les équipements autorisés. Les suppléments sont indiqués avant validation.' : 'Ce modèle doit être préparé avec des portes et cloisons séparées dans les assets 3D.'}</small>
       </div>}
 
       <button
@@ -13450,17 +13469,17 @@ function ReserveAssetSettings({ asset, assets = [], onChange }) {
   const config = dimensions.reserveConfigurator || {};
   const frame = isGroup ? reserveFrame(asset) : null;
   const updateConfig = (patch) => onChange({ reserveConfigurator: { ...config, ...patch } });
-  const available = assets.filter((candidate) => candidate.is_active && candidate.dimensions?.reserveComponentRole);
+  const available = assets.filter((candidate) => candidate.is_active !== false && !candidate.dimensions?.isGroup && !candidate.dimensions?.isColorGroup);
   return <section className="reserve-asset-settings">
     <h4>{isGroup ? 'Mini configurateur de réserve' : 'Catalogue du mini configurateur de réserve'}</h4>
     {isGroup ? <>
-      <label className="asset-toggle-row"><input type="checkbox" checked={config.enabled !== false} onChange={(event) => updateConfig({ enabled: event.target.checked })} /><span><strong>Autoriser la personnalisation</strong><small>Le placement et la taille restent ceux de la réserve automatique. Les enfants du groupe définissent les quantités incluses ; les ajouts et changements plus coûteux sont facturés aux prix du pack.</small></span></label>
+      <label className="asset-toggle-row"><input type="checkbox" checked={config.enabled !== false} onChange={(event) => updateConfig({ enabled: event.target.checked })} /><span><strong>Autoriser la personnalisation</strong><small>Le client peut agrandir ou réduire par pas de 1 m, modifier les portes et ajouter des équipements. Le groupe prévu par la surface du stand définit la dotation ; seuls les ajouts et changements plus coûteux sont facturés aux prix du pack.</small></span></label>
       <div className="asset-drawer-name-grid">
         <label className="asset-group-field"><span>Largeur intérieure (m)</span><input type="number" min="1" max="12" step="1" value={config.width ?? frame.width} onChange={(event) => updateConfig({ width: Math.min(12, Math.max(1, Math.round(Number(event.target.value) || 1))) })} /></label>
         <label className="asset-group-field"><span>Profondeur intérieure (m)</span><input type="number" min="1" max="12" step="1" value={config.depth ?? frame.depth} onChange={(event) => updateConfig({ depth: Math.min(12, Math.max(1, Math.round(Number(event.target.value) || 1))) })} /></label>
       </div>
       <small>Dimensions déduites des cloisons, pas de l’encombrement du modèle. Les murs du stand ne sont pas modifiables. Préparez un groupe avec des portes et cloisons séparées de 1 m.</small>
-      <label className="asset-toggle-row"><input type="checkbox" checked={Array.isArray(config.allowedTypes)} onChange={(event) => updateConfig({ allowedTypes: event.target.checked ? [] : undefined })} /><span><strong>Limiter les objets proposés à cette réserve</strong><small>Sinon, tous les objets marqués pour la réserve et actifs sur son pack sont proposés. Les objets déjà inclus restent disponibles.</small></span></label>
+      <label className="asset-toggle-row"><input type="checkbox" checked={Array.isArray(config.allowedTypes)} onChange={(event) => updateConfig({ allowedTypes: event.target.checked ? [] : undefined })} /><span><strong>Choisir les objets proposés à cette réserve</strong><small>Sélectionnez directement une multiprise, une cafetière, une patère, etc. Sinon, les objets marqués pour la réserve sont proposés. Les objets doivent être actifs sur le pack ; ceux déjà inclus restent disponibles.</small></span></label>
       {Array.isArray(config.allowedTypes) && <div className="reserve-asset-allowed-list">{available.map((candidate) => <label key={candidate.type}><input type="checkbox" checked={config.allowedTypes.includes(candidate.type)} onChange={(event) => updateConfig({ allowedTypes: event.target.checked ? [...config.allowedTypes, candidate.type] : config.allowedTypes.filter((type) => type !== candidate.type) })} /><span>{candidate.label}</span></label>)}</div>}
     </> : <>
       <label className="asset-group-field"><span>Disponible dans la réserve comme</span><select value={dimensions.reserveComponentRole || ''} onChange={(event) => onChange({ reserveComponentRole: event.target.value || undefined, ...(event.target.value && !dimensions.reserveComponentRole ? { reserveOnly: true } : {}) })}>
@@ -16224,6 +16243,7 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
       ...(base.options || {}),
       unitPrice,
       reserveRuleId: rule.id,
+      reserveIncludedType: rule.includedType || type,
       reserveUpgrade: billable,
       reserveOptionType: selectedOption?.type || '',
       reserveDoorOpening: reserveOptions.doorOpening || '',
@@ -16232,16 +16252,27 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
   }, width, depth, layout);
 
   const customization = reserveOptions.customizations?.[type];
-  return [customization ? applyReserveCustomization(item, entry, customization, catalogEntries) : item];
+  if (!customization) return [item];
+  const includedEntry = findCatalogEntry(catalogEntries, rule.includedType) || entry;
+  const customized = applyReserveCustomization(item, entry, customization, catalogEntries, includedEntry);
+  if (customized.options?.reserveCustomization?.version !== 2) return [customized];
+  const includedBillable = Boolean(!rule.includedType || rule.chargeIncluded || isSignaturePackLabel(salonLabel));
+  return [constrainItem({ ...customized,
+    label: `${includedEntry.label || 'Réserve'} — ${customization.size.width * customization.size.depth} m² personnalisés`,
+    included: !includedBillable, priceMode: includedBillable ? 'billable' : 'included',
+    options: { ...customized.options, unitPrice: includedBillable ? rule.includedType ? reserveOptionPrice({}, includedEntry, salonLabel) : unitPrice : 0,
+      reserveUpgrade: false },
+  }, width, depth, layout)];
 }
 
-function applyReserveCustomization(item, entry, customization, catalogEntries = []) {
+function applyReserveCustomization(item, entry, customization, catalogEntries = [], includedEntry = entry) {
   if (!reserveEditorAvailable(entry)) return item;
-  const library = reserveCatalogEntries(entry, catalogEntries);
-  const draft = createReserveDraft(entry, customization, catalogEntries);
+  if (![1, 2].includes(customization?.version) || customization.sourceType !== entry.type || !Array.isArray(customization.parts)) return item;
+  const library = reserveCatalogEntries(entry, catalogEntries, includedEntry);
+  const draft = createReserveDraft(entry, customization, catalogEntries, includedEntry);
   if (validateReserveDraft(draft, library).length) return item;
-  // Swapping door geometry must not shift automatic placement or the outer footprint.
-  const placementBounds = itemGroupBounds(item);
+  // Keep panel/door thickness margins, but resize the actual collision footprint.
+  const placementBounds = reserveDraftPlacementBounds(draft, itemGroupBounds(item));
   return {
     ...item,
     children: reserveChildrenFromDraft(entry, draft, library),
@@ -16477,8 +16508,9 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
   safeItems.forEach((item, index) => {
     const entry = findCatalogEntry(catalog, item.type) || item;
     if (item.options?.reserveCustomization) {
-      const library = reserveCatalogEntries(entry, catalog);
-      const draft = createReserveDraft(entry, item.options.reserveCustomization, catalog);
+      const includedEntry = findCatalogEntry(catalog, item.options.reserveIncludedType) || entry;
+      const library = reserveCatalogEntries(entry, catalog, includedEntry);
+      const draft = createReserveDraft(entry, item.options.reserveCustomization, catalog, includedEntry);
       if (!validateReserveDraft(draft, library).length) {
         reserveCustomizationPricingLines(entry, draft, library, {
           parentId: item.id,

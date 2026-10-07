@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Armchair, Check, DoorOpen, LockKeyhole, Move, Plus, RotateCw, Search, Square, Trash2, X } from 'lucide-react';
+import { Armchair, Check, DoorOpen, LockKeyhole, Minus, Move, Plus, RotateCw, Search, Square, Trash2, X } from 'lucide-react';
 import {
   addReservePart,
   createReserveDraft,
@@ -10,8 +10,10 @@ import {
   reserveCatalogEntries,
   reserveComponentRole,
   reserveCustomizationPricingLines,
+  reserveFrame,
   reservePartSize,
   reserveSlots,
+  resizeReserveDraft,
   rotateReservePart,
   serializeReserveDraft,
   validateReserveDraft,
@@ -37,19 +39,24 @@ function AssetThumbnail({ asset, role }) {
 
 export default function ReserveConfiguratorModal({
   entry,
+  includedEntry = entry,
   catalog = EMPTY_CATALOG,
+  maxWidth = 12,
+  maxDepth = 12,
   customization = null,
   parentId = '',
   basePrice = 0,
+  includedBasePrice = basePrice,
   priceForEntry,
   referenceForEntry,
   onClose,
   onApply,
   readOnly = false,
 }) {
-  const editorCatalog = useMemo(() => reserveCatalogEntries(entry, catalog), [entry, catalog]);
+  const editorCatalog = useMemo(() => reserveCatalogEntries(entry, catalog, includedEntry), [entry, catalog, includedEntry]);
+  const includedFrame = useMemo(() => reserveFrame(includedEntry), [includedEntry]);
   // Initialize once: opening/selection alone must never normalize saved transforms.
-  const [draft, setDraft] = useState(() => createReserveDraft(entry, customization, editorCatalog));
+  const [draft, setDraft] = useState(() => createReserveDraft(entry, customization, editorCatalog, includedEntry));
   const [originalSerialization] = useState(() => JSON.stringify(serializeReserveDraft(draft)));
   const draftRef = useRef(draft);
   const baselineTypes = useRef(new Set((draft.baseline || draft.parts).map((part) => part.type)));
@@ -93,6 +100,7 @@ export default function ReserveConfiguratorModal({
   const lines = useMemo(() => reserveCustomizationPricingLines(entry, draft, editorCatalog, { priceForEntry, referenceForEntry, parentId }), [entry, draft, editorCatalog, priceForEntry, referenceForEntry, parentId]);
   const unchanged = useMemo(() => JSON.stringify(serializeReserveDraft(draft)) === originalSerialization, [draft, originalSerialization]);
   const extraTotal = lines.reduce((sum, line) => sum + finite(line.total), 0);
+  const effectiveBasePrice = finite(draft.version === 2 ? includedBasePrice : basePrice);
   const disabled = readOnly || applying;
   const isImmutable = (part) => part.role !== 'furniture' && !required.has(part.slotId);
   const selectedAsset = selected && assetsByType.get(selected.type);
@@ -188,6 +196,17 @@ export default function ReserveConfiguratorModal({
     setTab(next);
     setLibraryRole(next === 'structure' ? 'partition' : 'furniture');
     setCategory('all');
+  }
+
+  function resize(axis, delta) {
+    if (disabled || !commitHeightEdit()) return;
+    const current = draftRef.current;
+    const result = resizeReserveDraft(current, current.frame.width + (axis === 'width' ? delta : 0), current.frame.depth + (axis === 'depth' ? delta : 0), editorCatalog, { width: maxWidth, depth: maxDepth });
+    if (commit(result, 'Dimensions et cloisons mises à jour.')) {
+      dragRef.current = null;
+      setPreview(null);
+      if (!result.draft.parts.some((part) => part.id === selectedId)) setSelectedId(null);
+    }
   }
 
   function closestSlot(position) {
@@ -363,7 +382,7 @@ export default function ReserveConfiguratorModal({
           <span className="reserve-config-heading-icon"><DoorOpen size={23} aria-hidden="true" /></span>
           <div className="reserve-config-heading">
             <span className="reserve-config-eyebrow">Mini configurateur / Réserve</span>
-            <h2 id={titleId}>{nameOf(entry)}</h2>
+            <h2 id={titleId}>Réserve personnalisée</h2>
             <p>{metric.format(draft.frame.width)}{' \u00d7 '}{metric.format(draft.frame.depth)} m <span aria-hidden="true">/</span> {metric.format(draft.frame.width * draft.frame.depth)} m<sup>2</sup></p>
           </div>
           <span className="reserve-config-draft-badge">{readOnly ? 'Lecture seule' : 'Brouillon'}</span>
@@ -385,6 +404,14 @@ export default function ReserveConfiguratorModal({
         <div className="reserve-config-body" id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-tab-${tab}`}>
           <div className="reserve-config-workspace">
             <div className="reserve-config-plan-heading"><div><h3>Plan de la réserve</h3><p>Vue de dessus <span aria-hidden="true">/</span> dimensions en mètres</p></div><span className="reserve-config-plan-tag">2D</span></div>
+            <section className="reserve-config-size" aria-label="Dimensions de la réserve">
+              <div className="reserve-config-section-heading"><h3>Agrandir ou réduire</h3><span>Pas de 1 m</span></div>
+              <div className="reserve-config-size-controls">{[['width', 'Largeur', maxWidth], ['depth', 'Profondeur', maxDepth]].map(([axis, label, maximum]) => <div key={axis}>
+                <span>{label}</span><div><button type="button" disabled={disabled || !draft.canResize || draft.frame[axis] <= 1} aria-label={`Réduire la ${label.toLowerCase()} de 1 m`} onClick={() => resize(axis, -1)}><Minus size={16} /></button><output aria-label={label}>{draft.frame[axis]} m</output><button type="button" disabled={disabled || !draft.canResize || draft.frame[axis] + 1 > maximum} aria-label={`Augmenter la ${label.toLowerCase()} de 1 m`} onClick={() => resize(axis, 1)}><Plus size={16} /></button></div>
+              </div>)}</div>
+              <p>{draft.canResize ? 'Les cloisons nécessaires sont ajoutées automatiquement et facturées au-delà de la dotation du pack. Réduire la réserve n’ajoute aucun supplément et ne donne pas lieu à un remboursement.' : 'Ce modèle doit être préparé avec des côtés complets avant de pouvoir changer sa taille.'}</p>
+              <small>Dotation du pack : {metric.format(includedFrame.width * includedFrame.depth)} m². Les équipements inclus restent disponibles.</small>
+            </section>
             <div className={`reserve-config-plan${preview ? ' is-dragging' : ''}`}>
               <svg ref={svgRef} viewBox={`0 0 ${viewWidth} ${viewDepth}`} role="group" aria-label="Plan interactif de la réserve" aria-describedby={hintId} onPointerMove={updateDrag} onPointerUp={(event) => endDrag(event)} onPointerCancel={(event) => endDrag(event, true)} onLostPointerCapture={(event) => endDrag(event, true)}>
                 <defs><pattern id={`${id}-grid`} width="25" height="25" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.7" fill="#dce3ed" /></pattern></defs>
@@ -433,11 +460,11 @@ export default function ReserveConfiguratorModal({
               <div className="reserve-config-parts-list">{displayedParts.length ? displayedParts.map((part) => <button key={part.id} type="button" className={selectedId === part.id ? 'is-selected' : ''} aria-pressed={selectedId === part.id} onClick={() => selectPart(part)}><AssetThumbnail asset={assetsByType.get(part.type)} role={part.role} /><span>{nameOf(assetsByType.get(part.type) || part)}<small>{isImmutable(part) ? 'Mur du stand / fixe' : part.role === 'furniture' ? 'Placement libre' : 'Emplacement de 1 m'}</small></span></button>) : <p className="reserve-config-empty">Aucun objet dans cette section. Ajoutez-en depuis la bibliothèque.</p>}</div>
             </section>
             <details className="reserve-config-pricing">
-              <summary><span>Détail du prix <small>{lines.length} ligne{lines.length !== 1 ? 's' : ''}</small></span><strong>{currency.format(finite(basePrice) + extraTotal)}</strong></summary>
-              <div className="reserve-config-price-line"><span>Réserve de base</span><strong>{currency.format(finite(basePrice))}</strong></div>
+              <summary><span>Détail du prix <small>{lines.length} ligne{lines.length !== 1 ? 's' : ''}</small></span><strong>{currency.format(effectiveBasePrice + extraTotal)}</strong></summary>
+              <div className="reserve-config-price-line"><span>Réserve de base</span><strong>{currency.format(effectiveBasePrice)}</strong></div>
               {lines.map((line, index) => <div className="reserve-config-price-line" key={`${line.type}-${line.reference}-${index}`}><span>{line.label}<small>{line.reference && `${line.reference} / `}{metric.format(line.quantity)}{' \u00d7 '}{currency.format(finite(line.unitPrice))}</small></span><strong>{currency.format(finite(line.total))}</strong></div>)}
               {!lines.length && <p>Aucun supplément.</p>}
-              <div className="reserve-config-price-line is-total"><span>Réserve + options HT</span><strong>{currency.format(finite(basePrice) + extraTotal)}</strong></div>
+              <div className="reserve-config-price-line is-total"><span>Réserve + options HT</span><strong>{currency.format(effectiveBasePrice + extraTotal)}</strong></div>
             </details>
           </div>
 
@@ -464,15 +491,16 @@ export default function ReserveConfiguratorModal({
             </section>
 
             <section className="reserve-config-library" aria-label="Bibliothèque disponible">
-              <div className="reserve-config-section-heading"><h3>Bibliothèque</h3><span>{filteredLibrary.length} modèle{filteredLibrary.length !== 1 ? 's' : ''}</span></div>
+              <div className="reserve-config-section-heading"><h3>{tab === 'equipment' ? 'Ajouter un équipement' : 'Bibliothèque'}</h3><span>{filteredLibrary.length} modèle{filteredLibrary.length !== 1 ? 's' : ''}</span></div>
+              {tab === 'equipment' && <p className="reserve-config-note">Choisissez un équipement puis cliquez sur + pour l’ajouter. Vous pouvez ensuite le déplacer sur le plan et régler sa hauteur.</p>}
               <label className="reserve-config-search"><Search size={16} aria-hidden="true" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un objet..." aria-label="Rechercher dans la bibliothèque de la reserve" /></label>
               <div className="reserve-config-library-filters"><label>Type<select value={libraryRole} aria-label="Filtrer les objets par rôle" onChange={(event) => { setLibraryRole(event.target.value); setCategory('all'); }}>
                 {Object.entries(ROLE_LABELS).filter(([role]) => tab === 'equipment' ? role === 'furniture' : role !== 'furniture').map(([role, label]) => <option key={role} value={role}>{label}</option>)}
               </select></label><label>Catégorie<select value={category} aria-label="Filtrer la bibliothèque par catégorie" onChange={(event) => setCategory(event.target.value)}><option value="all">Toutes</option>{categories.map((value) => <option value={value} key={value}>{value}</option>)}</select></label></div>
               <div className="reserve-config-library-list">{filteredLibrary.length ? filteredLibrary.map(({ asset, role }) => <article key={asset.type}>
-                <AssetThumbnail asset={asset} role={role} /><div><strong>{nameOf(asset)}</strong><small>{baselineTypes.current.has(asset.type) ? 'Modèle de la composition initiale' : categoryOf(asset)}</small></div>
+                <AssetThumbnail asset={asset} role={role} /><div><strong>{nameOf(asset)}</strong><small>{baselineTypes.current.has(asset.type) ? 'Modèle de la composition initiale' : categoryOf(asset)}</small><small>{currency.format(finite(priceForEntry?.(asset) ?? asset.price))} HT / unité supplémentaire</small></div>
                 <button type="button" className="reserve-config-add" disabled={disabled} aria-label={role !== 'furniture' && replaceStructure ? `Utiliser ${nameOf(asset)} pour le module sélectionné` : `Ajouter ${nameOf(asset)} à la réserve`} onClick={() => addPart(asset)}>{role !== 'furniture' && replaceStructure ? <Check size={17} aria-hidden="true" /> : <Plus size={17} aria-hidden="true" />}</button>
-              </article>) : <p className="reserve-config-empty">Aucun modèle disponible pour ces filtres.</p>}</div>
+              </article>) : <p className="reserve-config-empty">{tab === 'equipment' && !library.some(({ role }) => role === 'furniture') ? 'Aucun équipement autorisé pour cette réserve. Dans Assets 3D, ajoutez les équipements à la liste du groupe de réserve, ou marquez chaque objet comme « Équipement intérieur » dans le catalogue de réserve et activez-le sur ce pack.' : 'Aucun modèle disponible pour ces filtres.'}</p>}</div>
             </section>
           </aside>
         </div>
@@ -480,7 +508,7 @@ export default function ReserveConfiguratorModal({
         {(error || validation.length > 0) && <div className="reserve-config-errors" role="alert">{error && <p>{error}</p>}{validation.length > 0 && <ul>{validation.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ul>}</div>}
         <span className="reserve-config-sr-only" role="status" aria-live="polite">{announcement}</span>
         <footer className="reserve-config-footer">
-          <div className="reserve-config-footer-price"><span>Réserve + options HT</span><strong>{currency.format(finite(basePrice) + extraTotal)}</strong><small>{readOnly ? 'Consultation uniquement' : "Avant forfait du pack et éventuelle assurance."}</small></div>
+          <div className="reserve-config-footer-price"><span>Réserve + options HT</span><strong>{currency.format(effectiveBasePrice + extraTotal)}</strong><small>{readOnly ? 'Consultation uniquement' : "Avant forfait du pack et éventuelle assurance."}</small></div>
           <div className="reserve-config-footer-actions"><button type="button" className="reserve-config-cancel" disabled={applying} onClick={() => onClose?.()} aria-label="Annuler et fermer sans enregistrer">{readOnly ? 'Fermer' : 'Annuler'}</button>{!readOnly && <button type="button" className="reserve-config-apply" onClick={apply} disabled={applying || Boolean(preview) || (!unchanged && (validation.length > 0 || typeof onApply !== 'function'))} aria-label="Enregistrer et appliquer la configuration de la réserve">{applying ? 'Application...' : 'Enregistrer et appliquer'}</button>}</div>
         </footer>
       </section>
