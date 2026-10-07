@@ -55,6 +55,6 @@ test('duplicate numbers retain their input order and sorting applies before pagi
   assert.match(app, /Stand : décroissant/);
   assert.match(app, /sortedScenes\.slice\(\(currentPage - 1\) \* 12/);
   assert.match(app, /\.\.\.sortedScenes\.map\(\(scene\)/);
-  assert.match(app, /\[filter, search, salon\.id, standSort\]/);
-  assert.doesNotMatch(app, /admin-salon-hall-filter/);
+  assert.match(app, /\[filter, search, salon\.id, standSort, effectiveHall\]/);
+  assert.match(app, /admin-salon-hall-filter/);
 });

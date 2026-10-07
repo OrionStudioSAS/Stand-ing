@@ -9667,7 +9667,7 @@ function AdminSalonDetail({ salon, assets, search, detailTab, onDetailTab, stand
     if (standFilter === 'complete' && !complete.includes(scene)) return false;
     if (standFilter === 'progress' && complete.includes(scene)) return false;
     if (standFilter && !['complete', 'progress'].includes(standFilter) && normalizeTextValue(adminScenePackName(scene, salon)) !== standFilter) return false;
-    const text = normalizeTextValue([scene.project_name, scene.client_name, scene.client_email, adminScenePackName(scene, salon), sceneHallLabel(scene), sceneStandNumber(scene), sceneAisleNumber(scene)].join(' '));
+    const text = normalizeTextValue([scene.project_name, scene.client_name, scene.client_email, adminScenePackName(scene, salon), sceneHallLabel(scene, scene.source_payload?.contactDetails || {}), sceneStandNumber(scene), sceneAisleNumber(scene)].join(' '));
     return searchTerms.every((term) => text.includes(term));
   });
   return <section className={`admin-salon-detail-v2 ${detailTab === 'overview' ? '' : 'compact-heading'}`}>
@@ -9841,23 +9841,46 @@ function adminSalonSortScenesByStand(scenes = [], order = 'default') {
   }).map((row) => row.scene);
 }
 
+function adminSalonHallValue(scene = {}) {
+  const hall = String(sceneHallLabel(scene, scene.source_payload?.contactDetails || {}) || '').trim()
+    .replace(/^(?:hall|pavillon)(?:\s*[:#-]\s*|\s+|(?=\d))/i, '').trim();
+  const normalized = normalizeTextValue(hall);
+  return !normalized || ['a definir', 'non renseigne', '-', '—'].includes(normalized) ? '__undefined__' : normalized;
+}
+
+function adminSalonHallOptions(scenes = []) {
+  const values = [...new Set(scenes.map(adminSalonHallValue))];
+  return values.sort((a, b) => {
+    if (a === '__undefined__' || b === '__undefined__') return Number(a === '__undefined__') - Number(b === '__undefined__');
+    return a.localeCompare(b, 'fr', { numeric: true, sensitivity: 'base' });
+  }).map((value) => ({ value, label: value === '__undefined__' ? 'Hall non renseigné' : `Hall ${value.toUpperCase()}` }));
+}
+
+function adminSalonFilterScenesByHall(scenes = [], hall = '') {
+  return hall ? scenes.filter((scene) => adminSalonHallValue(scene) === hall) : scenes;
+}
+
 function AdminSalonExhibitorTable({ salon, scenes, allScenes, packs, filter, onFilter, search, onSearch }) {
   const [page, setPage] = useState(1);
   const [standSort, setStandSort] = useState('default');
-  const sortedScenes = adminSalonSortScenesByStand(scenes, standSort);
-  const pageCount = Math.max(1, Math.ceil(scenes.length / 12));
+  const [hallFilter, setHallFilter] = useState('');
+  const hallOptions = adminSalonHallOptions(allScenes);
+  const effectiveHall = hallOptions.some((option) => option.value === hallFilter) ? hallFilter : '';
+  const sortedScenes = adminSalonSortScenesByStand(adminSalonFilterScenesByHall(scenes, effectiveHall), standSort);
+  const pageCount = Math.max(1, Math.ceil(sortedScenes.length / 12));
   const currentPage = Math.min(page, pageCount);
-  useEffect(() => setPage(1), [filter, search, salon.id, standSort]);
+  useEffect(() => setPage(1), [filter, search, salon.id, standSort, effectiveHall]);
+  useEffect(() => setHallFilter(''), [salon.id]);
   const exportRows = () => {
     const csvCell = (value) => {
       const raw = String(value ?? '');
       const safe = /^[\s]*[=+@-]/.test(raw) && !/^-?\d+(?:[.,]\d+)?$/.test(raw) ? `'${raw}` : raw;
       return `"${safe.replace(/"/g, '""')}"`;
     };
-    const rows = [['Exposant', 'Email', 'Hall', 'Allée', 'Stand', 'Pack', 'Surface m²', 'Configuration', 'BAT'], ...sortedScenes.map((scene) => [scene.project_name || scene.client_name, scene.client_email, sceneHallLabel(scene), sceneAisleNumber(scene), sceneStandNumber(scene, scene.source_payload?.contactDetails || {}), adminScenePackName(scene, salon), sceneArea(scene), clientStatusLabel(scene.client_status || scene.status), adminSalonBatLabel(scene)])];
+    const rows = [['Exposant', 'Email', 'Hall', 'Allée', 'Stand', 'Pack', 'Surface m²', 'Configuration', 'BAT'], ...sortedScenes.map((scene) => [scene.project_name || scene.client_name, scene.client_email, sceneHallLabel(scene, scene.source_payload?.contactDetails || {}), sceneAisleNumber(scene), sceneStandNumber(scene, scene.source_payload?.contactDetails || {}), adminScenePackName(scene, salon), sceneArea(scene), clientStatusLabel(scene.client_status || scene.status), adminSalonBatLabel(scene)])];
     downloadBlob(new Blob([`\uFEFF${rows.map((row) => row.map(csvCell).join(';')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' }), `exposants-${slugForType(salon.name)}.csv`);
   };
-  return <div className="admin-salon-exhibitors"><div className="admin-salon-detail-section-heading"><div><h3>Exposants inscrits <span>{allScenes.length}</span></h3><p>Liste complète des configurations avec leur statut</p></div><div className="admin-salon-exhibitors-tools"><select className="admin-salon-stand-sort" aria-label="Trier par numéro de stand" value={standSort} onChange={(event) => setStandSort(event.target.value)}><option value="default">Ordre actuel</option><option value="stand-asc">Stand : croissant</option><option value="stand-desc">Stand : décroissant</option></select><label><Search size={15} /><input aria-label="Rechercher un exposant" placeholder="Rechercher un exposant..." value={search} onChange={(event) => onSearch(event.target.value)} /></label><button type="button" className="admin-outline-v2" onClick={exportRows}>Exporter</button></div></div><div className="admin-salon-exhibitors-filters">{[['', `Tous · ${allScenes.length}`], ...packs.map((pack) => [pack.key, `${pack.name} · ${pack.scenes.length}`]), ['progress', `En cours · ${allScenes.length - adminSalonCompletedScenes({ scenes: allScenes }).length}`], ['complete', `Terminé · ${adminSalonCompletedScenes({ scenes: allScenes }).length}`]].map(([id, label]) => <button type="button" key={id} aria-pressed={filter === id} onClick={() => onFilter(id)}>{label}</button>)}</div><div className="admin-salon-exhibitors-table-wrap"><table><thead><tr><th>Exposant</th><th>Hall · stand</th><th>Type</th><th>Surface</th><th>Config</th><th>BAT</th><th>Mise à jour</th><th><span className="sr-only">Ouvrir</span></th></tr></thead><tbody>{sortedScenes.slice((currentPage - 1) * 12, currentPage * 12).map((scene) => <tr key={scene.id}><td><span className="admin-salon-exhibitor-avatar">{String(scene.project_name || scene.client_name || '?').trim().slice(0, 2).toUpperCase()}</span><strong>{scene.project_name || scene.client_name || 'Exposant'}</strong></td><td><strong>{sceneHallLabel(scene)}</strong><small>Stand {clientSceneEmplacement(scene) || 'à définir'}</small></td><td><span className="admin-salon-v2-pack-pill">{adminScenePackName(scene, salon)}</span></td><td>{sceneArea(scene) || '—'} m²</td><td><span className={`admin-salon-config-pill ${sceneStatusKind(scene)}`}>{clientStatusLabel(scene.client_status || scene.status)}</span></td><td><span className={`admin-salon-config-pill ${adminSalonBatKind(scene)}`}>{adminSalonBatLabel(scene)}</span></td><td>{scene.updated_at ? formatDate(scene.updated_at) : '—'}</td><td><a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer" aria-label={`Ouvrir ${scene.project_name || scene.client_name || 'la scène'}`}><ArrowRight size={16} /></a></td></tr>)}</tbody></table>{!scenes.length && <p className="admin-empty-row">Aucun exposant avec ces filtres.</p>}</div>{pageCount > 1 && <nav className="admin-pagination" aria-label="Pagination des exposants"><span>Page {currentPage}/{pageCount}</span><div><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Précédent</button><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</button></div></nav>}</div>;
+  return <div className="admin-salon-exhibitors"><div className="admin-salon-detail-section-heading"><div><h3>Exposants inscrits <span>{allScenes.length}</span></h3><p>Liste complète des configurations avec leur statut</p></div><div className="admin-salon-exhibitors-tools"><select className="admin-salon-hall-filter" aria-label="Filtrer par numéro de hall" value={effectiveHall} onChange={(event) => setHallFilter(event.target.value)}><option value="">Tous les halls</option>{hallOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><select className="admin-salon-stand-sort" aria-label="Trier par numéro de stand" value={standSort} onChange={(event) => setStandSort(event.target.value)}><option value="default">Ordre actuel</option><option value="stand-asc">Stand : croissant</option><option value="stand-desc">Stand : décroissant</option></select><label><Search size={15} /><input aria-label="Rechercher un exposant" placeholder="Rechercher un exposant..." value={search} onChange={(event) => onSearch(event.target.value)} /></label><button type="button" className="admin-outline-v2" onClick={exportRows}>Exporter</button></div></div><div className="admin-salon-exhibitors-filters">{[['', `Tous · ${allScenes.length}`], ...packs.map((pack) => [pack.key, `${pack.name} · ${pack.scenes.length}`]), ['progress', `En cours · ${allScenes.length - adminSalonCompletedScenes({ scenes: allScenes }).length}`], ['complete', `Terminé · ${adminSalonCompletedScenes({ scenes: allScenes }).length}`]].map(([id, label]) => <button type="button" key={id} aria-pressed={filter === id} onClick={() => onFilter(id)}>{label}</button>)}</div><div className="admin-salon-exhibitors-table-wrap"><table><thead><tr><th>Exposant</th><th>Hall · stand</th><th>Type</th><th>Surface</th><th>Config</th><th>BAT</th><th>Mise à jour</th><th><span className="sr-only">Ouvrir</span></th></tr></thead><tbody>{sortedScenes.slice((currentPage - 1) * 12, currentPage * 12).map((scene) => <tr key={scene.id}><td><span className="admin-salon-exhibitor-avatar">{String(scene.project_name || scene.client_name || '?').trim().slice(0, 2).toUpperCase()}</span><strong>{scene.project_name || scene.client_name || 'Exposant'}</strong></td><td><strong>{sceneHallLabel(scene, scene.source_payload?.contactDetails || {})}</strong><small>Stand {clientSceneEmplacement(scene) || 'à définir'}</small></td><td><span className="admin-salon-v2-pack-pill">{adminScenePackName(scene, salon)}</span></td><td>{sceneArea(scene) || '—'} m²</td><td><span className={`admin-salon-config-pill ${sceneStatusKind(scene)}`}>{clientStatusLabel(scene.client_status || scene.status)}</span></td><td><span className={`admin-salon-config-pill ${adminSalonBatKind(scene)}`}>{adminSalonBatLabel(scene)}</span></td><td>{scene.updated_at ? formatDate(scene.updated_at) : '—'}</td><td><a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer" aria-label={`Ouvrir ${scene.project_name || scene.client_name || 'la scène'}`}><ArrowRight size={16} /></a></td></tr>)}</tbody></table>{!sortedScenes.length && <p className="admin-empty-row">Aucun exposant avec ces filtres.</p>}</div>{pageCount > 1 && <nav className="admin-pagination" aria-label="Pagination des exposants"><span>Page {currentPage}/{pageCount}</span><div><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Précédent</button><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</button></div></nav>}</div>;
 }
 
 function adminSalonBatKind(scene) {
