@@ -93,7 +93,7 @@ test('scene loading resolves pack benefits before automatic objects and preset d
   assert.equal(signature.source_payload.pricing.packBenefits.allowanceAmount, 800);
 });
 
-test('all objects and options consume one allowance; insurance is separate and recalculation is idempotent', () => {
+test('objects, options and furniture insurance consume one allowance and recalculation is idempotent', () => {
   const lines = [
     { type: 'desk', total: 753 }, { type: 'logo', total: 279 }, { type: 'color', total: 79 },
     { type: 'electricity', total: 49 }, { type: 'wall-cover', total: 288 },
@@ -104,11 +104,11 @@ test('all objects and options consume one allowance; insurance is separate and r
   assert.ok(Math.abs(result.reduce((sum, line) => sum + line.total, 0) - 508.21) < 1e-10);
   assert.deepEqual(withPackAllowance(result, benefits), result);
   const covered = withPackAllowance(lines, { mode: 'allowance', allowanceAmount: 5000 });
-  assert.ok(Math.abs(covered.reduce((sum, line) => sum + line.total, 0) - 60.21) < 1e-10);
+  assert.equal(covered.reduce((sum, line) => sum + line.total, 0), 0);
   assert.deepEqual(withPackAllowance(result, { mode: 'included-items' }), lines);
 });
 
-test('scene pricing deducts the allowance after objects, shared options, covers, floor and colours, before insurance', () => {
+test('scene pricing deducts the allowance after objects, shared options, covers, floor, colours and insurance', () => {
   const api = vm.createContext({ normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, isSignatureScene: () => false,
     manualPurchaseOrderLines: (scene) => manualOrderRowsToPricingLines(scene?.source_payload?.manualPurchaseOrderLines),
     roundCurrency: (value) => Math.round(value * 100) / 100,
@@ -149,8 +149,8 @@ test('scene pricing deducts the allowance after objects, shared options, covers,
   });
   assert.equal(signature.lines.find((line) => line.type === 'tv').total, 600);
   assert.equal(signature.allowanceAmount, 1000);
-  assert.equal(signature.allowanceApplied, 700);
-  assert.equal(signature.total, 25);
+  assert.equal(signature.allowanceApplied, 725);
+  assert.equal(signature.total, 0);
 });
 
 test('BDC keeps the negative allowance, including fully covered orders, without accepting arbitrary negative prices', () => {

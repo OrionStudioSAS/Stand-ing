@@ -4987,7 +4987,7 @@ function PackAllowanceSummary({ pricing }) {
     <div><span>Forfait offert : {validationMoney(pricing.allowanceAmount || 0)} € HT</span><b>− {validationMoney(pricing.allowanceApplied || 0, true)} €</b></div>
     <div><span>Solde disponible</span><b>{validationMoney(pricing.allowanceRemaining || 0, true)} € HT</b></div>
     <div><span>Supplément à payer</span><b>{validationMoney(pricing.total || 0, true)} € HT</b></div>
-    <small>Objets et options inclus dans le forfait, hors assurance. Solde non remboursable.</small>
+    <small>Objets, options et assurance mobilier compris dans le forfait. Solde non remboursable.</small>
   </section>;
 }
 
@@ -7303,10 +7303,10 @@ function ValidationStepPanel({
       {insuranceLine && (
         <section className="validation-modern-insurance-card">
           <div>
-            <strong><HelpCircle size={14} /> Assurance mobilier obligatoire incluse</strong>
-            <span>Calculée sur {validationMoney(insuranceLine.insuranceBase || pricing?.furnitureInsuranceBase || 0)} € HT de mobilier</span>
+            <strong><HelpCircle size={14} /> Assurance mobilier obligatoire</strong>
+            <span>{pricing?.packBenefits?.mode === 'allowance' ? 'Prise en compte dans le forfait accessoires. ' : ''}Calculée sur {validationMoney(insuranceLine.insuranceBase || pricing?.furnitureInsuranceBase || 0)} € HT de mobilier</span>
           </div>
-          <b>+ {validationMoney(insuranceLine.total || 0, true)} €</b>
+          <b>{pricing?.packBenefits?.mode === 'allowance' ? '' : '+ '}{validationMoney(insuranceLine.total || 0, true)} €</b>
         </section>
       )}
 
@@ -10465,7 +10465,7 @@ function BasePackEditorModal({ salon, offer, assets, saving, onClose, onSave }) 
             {!isSignaturePack && <label>Montant offert (€ HT)
               <input type="number" min="0" step="0.01" value={benefits.allowanceAmount} onChange={(event) => setBenefits((current) => ({ ...current, allowanceAmount: event.target.value }))} />
             </label>}
-            <p>Tous les objets et options sont couverts, hors assurance. Aucun objet du pack de base n’est placé automatiquement. Seul le dépassement est facturé ; le solde inutilisé n’est pas remboursé.</p>
+            <p>Tous les objets, options et l’assurance mobilier sont compris dans le forfait. Aucun objet du pack de base n’est placé automatiquement. Seul le dépassement est facturé ; le solde inutilisé n’est pas remboursé.</p>
             {!isSignaturePack && <p>Ce fonctionnement s’applique au chargement des scènes non confirmées. Les scènes déjà confirmées conservent leur forfait.</p>}
           </>}
         </div>
@@ -16465,21 +16465,21 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     itemsTotal += line.total;
     lines.push(line);
   });
+  const insuranceLine = furnitureInsuranceLine(furnitureInsuranceBase);
+  if (insuranceLine) {
+    itemsTotal += insuranceLine.total;
+    lines.push(insuranceLine);
+  }
   const allowance = packAllowanceBreakdown(itemsTotal, scenePackBenefits(scene));
   const grossAccessoriesTotal = itemsTotal;
   if (allowance.allowanceLine) {
     itemsTotal -= allowance.allowanceApplied;
     lines.push(allowance.allowanceLine);
   }
-  const insuranceLine = furnitureInsuranceLine(furnitureInsuranceBase);
-  if (insuranceLine) {
-    itemsTotal += insuranceLine.total;
-    lines.push(insuranceLine);
-  }
 
   return {
     ...allowance,
-    grossTotal: roundCurrency(basePrice + grossAccessoriesTotal + Number(insuranceLine?.total || 0)),
+    grossTotal: roundCurrency(basePrice + grossAccessoriesTotal),
     basePrice,
     baseItems,
     baseUsage,

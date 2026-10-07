@@ -43,7 +43,7 @@ export function replaceManualOrderPricingLines(lines = [], rows = []) {
 
 export function mergeManualOrderPricing(pricing = {}, rows = [], benefits = {}) {
   const lines = withPackAllowance(replaceManualOrderPricingLines(pricing.lines || [], rows), benefits);
-  const eligibleTotal = lines.reduce((sum, line) => sum + (line.type === packAllowanceLineType || line.type === 'mandatory-furniture-insurance' ? 0 : Number(line.total || 0)), 0);
+  const eligibleTotal = lines.reduce((sum, line) => sum + (line.type === packAllowanceLineType ? 0 : Number(line.total || 0)), 0);
   const allowance = packAllowanceBreakdown(eligibleTotal, benefits);
   const itemsTotal = money(lines.reduce((sum, line) => sum + Number(line.total || 0), 0));
   const basePrice = Number(pricing.basePrice || 0);

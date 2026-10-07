@@ -78,7 +78,7 @@ export function packAllowanceBreakdown(eligibleTotal, benefits = {}) {
 
 export function withPackAllowance(lines = [], benefits = {}) {
   const accessories = lines.filter((line) => line?.type !== packAllowanceLineType);
-  const eligibleTotal = accessories.reduce((sum, line) => sum + (line.type === 'mandatory-furniture-insurance' ? 0 : Math.max(0, Number(line.total || 0))), 0);
+  const eligibleTotal = accessories.reduce((sum, line) => sum + Math.max(0, Number(line.total || 0)), 0);
   const { allowanceLine } = packAllowanceBreakdown(eligibleTotal, benefits);
   return allowanceLine ? [...accessories, allowanceLine] : accessories;
 }
