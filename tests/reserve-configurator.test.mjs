@@ -103,6 +103,50 @@ test('monolithic reserves and old half-metre modules cannot be edited as 1 m str
   assert.equal(reserve.reserveEditorAvailable({ ...entry, children: [{ type: 'single-model', label: 'Réserve complète' }] }), false);
 });
 
+test('LABOSPORT reserve opens the mini editor from the scene pencil, header basket and recap', () => {
+  const labosport = { ...entry, type: 'group-reserve-2m2-arriere-droite-mqrsqnfd', label: 'Réserve 2m² arrière droite', children: [
+    { ...door, id: 'entrance', x: -0.88, z: -0.5, rotation: -90 },
+    { ...wall, id: 'front-left', x: -0.33, z: 0, rotation: 0 },
+    { ...wall, id: 'front-right', x: 0.6, z: 0, rotation: 0 },
+  ] };
+  const selected = { ...labosport, id: 'auto-reserve-medium', autoReserve: true };
+  const events = [];
+  const api = vm.createContext({
+    selected, readOnly: false, availableCatalog: [labosport], assetPackLabel: 'Prestige',
+    reserveEditorAvailable: reserve.reserveEditorAvailable,
+    isAutomaticReserveItem: (item) => Boolean(item.autoReserve),
+    step2OptionKeyForItem: () => 'reserve',
+    findCatalogEntry: (list, type) => list.find((asset) => asset.type === type),
+    setReserveEditorType: (type) => events.push(['editor', type]),
+    setActiveStep: (step) => events.push(['step', step]),
+    openOnlyStepOption: (key) => events.push(['option', key]),
+    setHeaderPanel: () => {}, setSelectedId: () => {},
+    itemConfiguratorEntry: () => labosport, itemEditNeedsConfigurator: () => true,
+    setItemConfigModal: () => events.push(['generic-editor']),
+  });
+  for (const name of ['openStepOptionForItem', 'openSelectedItemConfigurator', 'openCartItemConfigurator', 'openValidationItemConfigurator']) {
+    const start = source.indexOf(`  const ${name} =`);
+    assert.ok(start >= 0, name);
+    vm.runInContext(`${source.slice(start, source.indexOf('\n  };', start) + 5)}\nglobalThis.${name} = ${name};`, api);
+  }
+  for (const name of ['openSelectedItemConfigurator', 'openCartItemConfigurator', 'openValidationItemConfigurator']) {
+    events.length = 0;
+    api[name](selected);
+    assert.deepEqual(events, [['editor', labosport.type]], name);
+  }
+  api.readOnly = true;
+  for (const name of ['openSelectedItemConfigurator', 'openCartItemConfigurator', 'openValidationItemConfigurator']) {
+    events.length = 0;
+    api[name](selected);
+    assert.ok(!events.some(([event]) => event === 'editor' || event === 'generic-editor'), name);
+  }
+  api.readOnly = false;
+  api.availableCatalog = [{ ...labosport, dimensions: { reserveConfigurator: { enabled: false } } }];
+  events.length = 0;
+  api.openValidationItemConfigurator(selected);
+  assert.deepEqual(events, [['step', 2], ['option', 'reserve']]);
+});
+
 test('door swaps with a partition on a 1 m slot and leaves inherited stand walls locked', () => {
   const draft = createReserveDraft(entry, null, catalog);
   const swap = moveReservePart(draft, 'entrance', { x: -0.5, z: 0.1 }, catalog);

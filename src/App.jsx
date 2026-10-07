@@ -1693,6 +1693,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const openStepOptionForItem = (item) => {
     const optionKey = step2OptionKeyForItem(item);
     if (!optionKey) return false;
+    if (optionKey === 'reserve' && !readOnly && isAutomaticReserveItem(item)
+      && reserveEditorAvailable(findCatalogEntry(availableCatalog, item.type) || {})) {
+      setReserveEditorType(item.type);
+      setHeaderPanel(null);
+      return true;
+    }
     setActiveStep(2);
     openOnlyStepOption(optionKey, true);
     setHeaderPanel(null);
@@ -1988,10 +1994,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const openSelectedItemConfigurator = () => {
     if (!selected || readOnly) return;
-    if (isAutomaticReserveItem(selected) && reserveEditorAvailable(findCatalogEntry(availableCatalog, selected.type) || {})) {
-      setReserveEditorType(selected.type);
-      return;
-    }
     if (openStepOptionForItem(selected)) return;
     const entry = itemConfiguratorEntry(selected);
     if (!itemEditNeedsConfigurator(selected, entry, assetPackLabel)) return;
@@ -2012,7 +2014,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const openValidationItemConfigurator = (item) => {
     if (!item || readOnly) return;
-    if (isAutomaticReserveItem(item)) { setReserveEditorType(item.type); return; }
+    if (isAutomaticReserveItem(item) && openStepOptionForItem(item)) return;
     setSelectedId(item.id);
     setHeaderPanel(null);
     const entry = itemConfiguratorEntry(item);
