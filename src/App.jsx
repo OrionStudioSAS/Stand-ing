@@ -10,6 +10,8 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { defaultImageFraming, framedImageRect, normalizeImageFraming } from './imageFraming.js';
 import { packEditorChanges, packEditorImpact } from './packEditor.js';
 import { manualOrderCategories, manualOrderRowsToPricingLines, normalizeManualOrderCategory, replaceManualOrderPricingLines } from './manualOrderLines.js';
+import { createReserveDraft, reserveFrame, reserveEditorAvailable, reserveCatalogEntries, reserveChildrenFromDraft, reserveCustomizationPricingLines, validateReserveDraft } from './reserveConfigurator.js';
+import ReserveConfiguratorModal from './ReserveConfiguratorModal.jsx';
 import { useSceneExhibitorReadOnly } from './useSceneExhibitorReadOnly.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
@@ -1060,9 +1062,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [reserveItemOverrides, setReserveItemOverrides] = useState(initialOptions.reserveItemOverrides || {});
   const [reserveOptionType, setReserveOptionType] = useState(initialOptions.reserveOptionType || (initialOptions.reserveUpgradeEnabled ? '__legacy__' : ''));
   const [reserveOptions, setReserveOptions] = useState(() => ({
+    ...(initialOptions.reserveOptions || {}),
     doorOpening: initialOptions.reserveOptions?.doorOpening || '',
     handleOrientation: initialOptions.reserveOptions?.handleOrientation || '',
   }));
+  const [reserveEditorType, setReserveEditorType] = useState('');
+  const reserveCommitInFlight = useRef(false);
   const [partitionHeadChoice, setPartitionHeadChoice] = useState({
     left: hasOwn(initialOptions, 'partitionHeadLeftEnabled') ? Boolean(initialOptions.partitionHeadLeftEnabled) : null,
     right: hasOwn(initialOptions, 'partitionHeadRightEnabled') ? Boolean(initialOptions.partitionHeadRightEnabled) : null,
@@ -1207,6 +1212,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       setSelectedId(null);
       setRotationPanelOpen(false);
       setItemConfigModal(null);
+      setReserveEditorType('');
     }
   }, [readOnly]);
 
@@ -1224,9 +1230,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
     return sortCatalogEntries(uniqueCatalogEntries(entries));
   }, [objectBank, assetPackLabel]);
+  const reserveOnlyTypes = useMemo(() => new Set(availableCatalog
+    .filter((entry) => entry.dimensions?.reserveOnly)
+    .flatMap((entry) => [entry.type, ...(entry.dimensions?.isVariantGroup ? variantManagedAssetTypes(entry) : [])])), [availableCatalog]);
   const placeableCatalog = useMemo(
-    () => availableCatalog.filter((entry) => effectiveAdminViewer || !entry.dimensions?.adminOnly),
-    [availableCatalog, effectiveAdminViewer],
+    () => availableCatalog.filter((entry) => effectiveAdminViewer || (!entry.dimensions?.adminOnly && !entry.dimensions?.reserveOnly && !reserveOnlyTypes.has(entry.type))),
+    [availableCatalog, effectiveAdminViewer, reserveOnlyTypes],
   );
   const hydratedItems = useMemo(() => resolveSurfaceAttachments(
     objectBankLoaded ? items.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)) : items,
@@ -1398,7 +1407,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     setItems((current) => current.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)));
   }, [objectBank, availableCatalog]);
 
-  const scenePricing = useMemo(() => calculateScenePricing({
+  const scenePricingInput = useMemo(() => ({
     area,
     catalog: availableCatalog,
     items: visibleSceneItems,
@@ -1418,11 +1427,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     ledRailsEnabled,
     expectedLedSpotCount: ledSpotCount,
   }), [area, availableCatalog, visibleSceneItems, assetPackLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, thickCarpetEnabled, ledRailsEnabled, ledSpotCount]);
+  const scenePricing = useMemo(() => calculateScenePricing(scenePricingInput), [scenePricingInput]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
     const nextContactDetails = overrides.contactDetails || contactDetails;
     const nextClientInfo = overrides.clientInfo || clientInfo;
+    const payloadPricing = overrides.pricing || scenePricing;
     const options = {
       carpetColorId: selectedCarpetColor.id,
       carpetColorName: selectedCarpetColor.name,
@@ -1469,7 +1480,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       ledSpotCount,
       ledRailOverrides,
       reserveOptionType: effectiveReserveOptionType,
-      reserveOptions,
+      reserveOptions: overrides.reserveOptions || reserveOptions,
       reserveItemOverrides,
       partitionHeadLeftEnabled: effectivePartitionHeadSides.left,
       partitionHeadRightEnabled: effectivePartitionHeadSides.right,
@@ -1500,23 +1511,23 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       options,
       source_payload: {
         ...(initialScene.source_payload || {}),
-        packBenefits: scenePricing.packBenefits,
+        packBenefits: payloadPricing.packBenefits,
         contactDetails: nextContactDetails,
         partitionHeadCompany,
         specialRequest: options.specialRequest,
         options,
         pricing: {
-          basePrice: scenePricing.basePrice,
-          baseItems: scenePricing.baseItems,
-          baseUsage: scenePricing.baseUsage,
-          baseItemsConfigured: scenePricing.baseItemsConfigured,
-          itemsTotal: scenePricing.itemsTotal,
-          packBenefits: scenePricing.packBenefits,
-          allowanceApplied: scenePricing.allowanceApplied,
-          grossTotal: scenePricing.grossTotal,
-          insuranceLine: scenePricing.insuranceLine,
-          total: scenePricing.total,
-          lines: scenePricing.lines,
+          basePrice: payloadPricing.basePrice,
+          baseItems: payloadPricing.baseItems,
+          baseUsage: payloadPricing.baseUsage,
+          baseItemsConfigured: payloadPricing.baseItemsConfigured,
+          itemsTotal: payloadPricing.itemsTotal,
+          packBenefits: payloadPricing.packBenefits,
+          allowanceApplied: payloadPricing.allowanceApplied,
+          grossTotal: payloadPricing.grossTotal,
+          insuranceLine: payloadPricing.insuranceLine,
+          total: payloadPricing.total,
+          lines: payloadPricing.lines,
         },
       },
     };
@@ -1531,6 +1542,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (readOnly) return undefined;
 
     const timer = window.setTimeout(() => {
+      if (reserveCommitInFlight.current) return;
       const alreadyConfigured = saveState === 'configured';
       saveScene(currentScenePayload(alreadyConfigured ? 'configured' : 'created', alreadyConfigured ? 'configured' : 'draft'))
         .then(() => {
@@ -1962,6 +1974,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   };
   const openAddItemConfigurator = (entry) => {
     if (readOnly) return;
+    if (!effectiveAdminViewer && (entry.dimensions?.reserveOnly || reserveOnlyTypes.has(entry.type))) return;
     if (entryNeedsConfigurator(entry)) {
       setItemConfigModal({ mode: 'add', entry });
     } else {
@@ -1975,6 +1988,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const openSelectedItemConfigurator = () => {
     if (!selected || readOnly) return;
+    if (isAutomaticReserveItem(selected) && reserveEditorAvailable(findCatalogEntry(availableCatalog, selected.type) || {})) {
+      setReserveEditorType(selected.type);
+      return;
+    }
     if (openStepOptionForItem(selected)) return;
     const entry = itemConfiguratorEntry(selected);
     if (!itemEditNeedsConfigurator(selected, entry, assetPackLabel)) return;
@@ -1995,6 +2012,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const openValidationItemConfigurator = (item) => {
     if (!item || readOnly) return;
+    if (isAutomaticReserveItem(item)) { setReserveEditorType(item.type); return; }
     setSelectedId(item.id);
     setHeaderPanel(null);
     const entry = itemConfiguratorEntry(item);
@@ -2166,6 +2184,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const addItem = (entry, options = {}, quantity = 1) => {
     if (readOnly) return;
+    if (!effectiveAdminViewer && (entry.dimensions?.reserveOnly || reserveOnlyTypes.has(entry.type))) return;
     const duplicateHeadSide = duplicatePartitionHeadSide(entry, [...visibleSceneItems, ...automaticPartitionHeadItems]);
     if (duplicateHeadSide) {
       showPlacementMessage(`Une tête de cloison ${duplicateHeadSide === 'left' ? 'gauche' : 'droite'} est déjà présente dans la scène et ne peut donc être ajoutée`);
@@ -2918,6 +2937,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
             onReserveOption={(type) => { if (!readOnly) { if (type === '__none__') { removeReserve(); } else { setReserveOptionType(type); } } }}
             onReserveOptions={(patch) => !readOnly && setReserveOptions((current) => ({ ...current, ...patch }))}
+            onCustomizeReserve={() => { if (!readOnly && automaticReserveItems[0]) setReserveEditorType(automaticReserveItems[0].type); }}
             onPartitionHeadSide={(side, enabled) => !readOnly && !isSignatureStand && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
             onPartitionHeadCompany={(value) => !readOnly && setPartitionHeadCompany(value)}
             onPartitionHeadImage={uploadPartitionHeadVisual}
@@ -2969,6 +2989,40 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           onSkip={() => closeTutorial(true)}
         />
       )}
+
+      {reserveEditorType && !readOnly && automaticReserveItems[0]?.type === reserveEditorType && (() => {
+        const entry = findCatalogEntry(availableCatalog, reserveEditorType);
+        if (!entry || !reserveEditorAvailable(entry)) return null;
+        return <ReserveConfiguratorModal
+          key={reserveEditorType}
+          entry={entry}
+          catalog={availableCatalog}
+          customization={reserveOptions.customizations?.[reserveEditorType] || null}
+          parentId={automaticReserveItems[0].id}
+          basePrice={Number(automaticReserveItems[0].options?.unitPrice || 0)}
+          priceForEntry={(asset) => assetUnitPrice(asset, assetPackLabel)}
+          referenceForEntry={(asset) => assetReference(asset, assetPackLabel)}
+          onClose={() => setReserveEditorType('')}
+          onApply={async (customization) => {
+            if (readOnly) return;
+            const nextOptions = { ...reserveOptions, customizations: { ...(reserveOptions.customizations || {}), [reserveEditorType]: customization } };
+            const nextReserveItems = makeAutomaticReserveItems(activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, nextOptions)
+              .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, genericCarpetFootprintEnabled));
+            const nextItems = visibleSceneItems.map((item) => isAutomaticReserveItem(item) ? nextReserveItems.find((reserve) => reserve.id === item.id) || item : item);
+            const pricing = calculateScenePricing({ ...scenePricingInput, items: nextItems });
+            const configured = saveState === 'configured';
+            reserveCommitInFlight.current = true;
+            try {
+              await saveScene(currentScenePayload(configured ? 'configured' : 'created', configured ? 'configured' : 'draft', { reserveOptions: nextOptions, pricing }));
+              setReserveOptions(nextOptions);
+              if (!configured) setSaveState('draft');
+              setReserveEditorType('');
+            } finally {
+              reserveCommitInFlight.current = false;
+            }
+          }}
+        />;
+      })()}
 
       {itemConfigModal && (() => {
         const modalItem = itemConfigModal.item
@@ -4626,6 +4680,7 @@ function OptionsStepPanel({
   onLedRailsEnabled,
   onReserveOption,
   onReserveOptions,
+  onCustomizeReserve,
   onPartitionHeadSide,
   onPartitionHeadCompany,
   onPartitionHeadImage,
@@ -4749,6 +4804,7 @@ function OptionsStepPanel({
           disabled={readOnly}
           onChange={onReserveOption}
           onOptions={onReserveOptions}
+          onCustomize={onCustomizeReserve}
         />
       </OptionAccordion>
       <OptionAccordion {...accordionScrollProps('tete')} title={t('option_partition_head')} icon={<ConfiguratorOptionIcon src="/icons/tete_de_cloison.svg" />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
@@ -7000,6 +7056,11 @@ function itemOptionLines(item) {
   }
   if (opts.reserveDoorOpening) result.push(`Ouverture de porte : ${reserveDoorOpeningLabel(opts.reserveDoorOpening)}`);
   if (opts.reserveHandleOrientation) result.push(`Orientation de la poignée : ${reserveHandleOrientationLabel(opts.reserveHandleOrientation)}`);
+  if (opts.reserveCustomization && item.children?.length) {
+    const composition = new Map();
+    item.children.forEach((child) => composition.set(child.label || child.type, (composition.get(child.label || child.type) || 0) + 1));
+    result.push(`Réserve personnalisée : ${[...composition].map(([label, count]) => `${count} × ${label}`).join(', ')}`);
+  }
   if (opts.variantLabel && !shouldHideVariantLabelInSummary(item, opts.variantLabel)) result.push(opts.variantLabel);
   if (opts.posterImageName) result.push(opts.posterImageName);
   if (opts.headMainImageName && !opts.headMainImageName.startsWith('Texture originale')) result.push(opts.headMainImageName);
@@ -7093,7 +7154,7 @@ function ValidationStepPanel({
   const footprintSupplement = optionSupplementTotal((line, label) => label.startsWith('empreinte moquette'));
   const thickCarpetSupplement = optionSupplementTotal((line, label) => label.includes('moquette epaisse'));
   const wallFabricSupplement = optionSupplementTotal((line, label) => label.startsWith('coton') || label.includes('coton cloison'));
-  const reserveSupplement = optionSupplementTotal((line, label) => label.includes('reserve'));
+  const reserveSupplement = optionSupplementTotal((line, label) => label.includes('reserve') && !String(line.type || '').startsWith('reserve-extra-'));
   const reserveOptionDetails = reserveOptionSummary(reserveOptions);
   const reserveEntry = findCatalogEntry(catalog, reserveOption?.type || reserveRule?.includedType) || null;
   const partitionHeadSupplement = optionSupplementTotal((line, label) => label.includes('tete de cloison'));
@@ -7117,15 +7178,17 @@ function ValidationStepPanel({
     const sourceItem = billableItems[0] || associatedItem;
     const isCounterLogo = validationIsCounterLogoLine(line);
     const isManual = String(line.type || '').startsWith('admin-manual-');
+    const isReserveExtra = String(line.type || '').startsWith('reserve-extra-');
+    const reserveAsset = isReserveExtra ? findCatalogEntry(catalog, line.assetType) || sourceItem?.children?.find((child) => child.type === line.assetType) : null;
     return {
       id: `line-${line.type}-${index}`,
       label: isCounterLogo ? 'Logo comptoir accueil' : line.label,
       detail: isCounterLogo ? '' : uniqueTextValues([
-        ...(isManual ? [`${formatNumber(line.quantity)} × ${validationMoney(line.unitPrice, true)} € HT`, line.reference ? `Réf. ${line.reference}` : '', 'Ajouté par Stand-ING'] : []),
+        ...(isManual || isReserveExtra ? [`${formatNumber(line.quantity)} × ${validationMoney(line.unitPrice, true)} € HT`, line.reference ? `Réf. ${line.reference}` : '', isManual ? 'Ajouté par Stand-ING' : 'Dans votre réserve'] : []),
         ...(Array.isArray(line.optionLines) ? line.optionLines : []),
-        ...billableItems.flatMap((item) => itemOptionLines(item)),
+        ...(isReserveExtra ? [] : billableItems.flatMap((item) => itemOptionLines(item))),
       ]).slice(0, isManual ? 3 : 2).join(' · '),
-      imageUrl: isManual ? validDisplayImageUrl(line.thumbnailUrl) || validationItemImage(null, entry, catalog) : isCounterLogo ? validationCounterLogoImage(sourceItem, entry, catalog) : validationItemImage(sourceItem, entry, catalog),
+      imageUrl: isManual || isReserveExtra ? validDisplayImageUrl(line.thumbnailUrl) || validationItemImage(null, reserveAsset || entry, catalog) : isCounterLogo ? validationCounterLogoImage(sourceItem, entry, catalog) : validationItemImage(sourceItem, entry, catalog),
       badge: priceBadge(line.total),
       badgeTone: isSignatureStand || Number(line.total || 0) > 0 ? 'price' : 'included',
       visualStatus: isCounterLogo ? validationCounterLogoVisualStatus(sourceItem) : null,
@@ -7185,11 +7248,12 @@ function ValidationStepPanel({
   pushRow('personalization', {
     id: 'reserve',
     label: 'Réserve',
-    detail: [reserveOptionType === '__none__' ? 'Non sélectionnée' : (reserveOption?.label || reserveRule?.includedLabel || 'Non configurée'), reserveOptionDetails].filter(Boolean).join(' · '),
+    detail: [reserveOptionType === '__none__' ? 'Non sélectionnée' : (reserveOption?.label || reserveRule?.includedLabel || 'Non configurée'), reserveOptionDetails, safeItems.find(isAutomaticReserveItem)?.options?.reserveCustomization ? 'Composition personnalisée' : ''].filter(Boolean).join(' · '),
     imageUrl: validationItemImage(null, reserveEntry, catalog),
     swatchColor: '#bdbdbd',
     badge: priceBadge(isSignatureStand ? Number(safeItems.find(isAutomaticReserveItem)?.options?.unitPrice || 0) : reserveSupplement),
     badgeTone: isSignatureStand || reserveSupplement > 0 ? 'price' : 'included',
+    onOpen: safeItems.find(isAutomaticReserveItem) ? () => onOpenItem?.(safeItems.find(isAutomaticReserveItem)) : null,
   });
 
   partitionHeadSelectedSides(partitionHeadRule, partitionHeadSides).forEach((side) => {
@@ -7458,7 +7522,7 @@ function validationVisualStatus(pending = false, hasImage = false) {
 
 function validationLineHandledByOptions(line = {}) {
   const type = String(line.type || '');
-  if (type.startsWith('admin-manual-')) return false;
+  if (type.startsWith('admin-manual-') || type.startsWith('reserve-extra-')) return false;
   const label = normalizeTextValue(line.label || '');
   if (type === 'wall-cover') return true;
   if (type.startsWith('color-')) return true;
@@ -7492,7 +7556,7 @@ function validationCategoryFromEntry(entry = {}, item = {}) {
 
 function validationCategoryFromLine(line = {}, entry = {}, item = null) {
   const type = String(line.type || '');
-  if (type.startsWith('admin-manual-')) return normalizeManualOrderCategory(line.category) || 'furniture';
+  if (type.startsWith('admin-manual-') || type.startsWith('reserve-extra-')) return normalizeManualOrderCategory(line.category) || 'furniture';
   const label = normalizeTextValue(`${line.label || ''} ${entry?.label || ''} ${entry?.type || ''}`);
   if (type.startsWith('counter-logo-') || label.includes('signaletique comptoir')) return 'signage';
   if (label.includes('tv') || label.includes('ecran') || label.includes('televiseur') || label.includes('multimedia') || label.includes('comptoir numerique')) return 'multimedia';
@@ -7843,12 +7907,13 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
   );
 }
 
-function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalog = [], salonLabel = '', disabled = false, onChange, onOptions }) {
+function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalog = [], salonLabel = '', disabled = false, onChange, onOptions, onCustomize }) {
   const t = useT();
   const [formulaOpen, setFormulaOpen] = useState(false);
   const rows = reserveChoiceRows(rule, catalog, salonLabel);
   const includedRow = rows.find((row) => row.included && !row.billable) || null;
   const noneSelected = selectedOptionType === '__none__';
+  const selectedEntry = findCatalogEntry(catalog, selectedOptionType && !noneSelected ? selectedOptionType : rule?.includedType);
 
   if (!rule?.includedType && !rows.length) {
     return (
@@ -7889,6 +7954,11 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
           );
         })}
       </div>
+
+      {!noneSelected && selectedEntry && <div className="reserve-customize-entry">
+        <button type="button" className="reserve-customize-button" disabled={disabled || !reserveEditorAvailable(selectedEntry)} onClick={onCustomize}><Pencil size={15} /> Personnaliser ma réserve</button>
+        <small>{reserveEditorAvailable(selectedEntry) ? 'Portes et cloisons par modules de 1 m, équipements libres à l’intérieur. Les suppléments sont indiqués avant validation.' : 'Ce modèle doit être préparé avec des portes et cloisons séparées dans les assets 3D.'}</small>
+      </div>}
 
       <button
         type="button"
@@ -12944,6 +13014,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           </label>
         )}
 
+        {!isColorGroup && <ReserveAssetSettings asset={draft} assets={assets} onChange={updateAssetBehavior} />}
+
         {!isColorGroup && (
         <label className="asset-toggle-row">
           <input
@@ -12953,7 +13025,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           />
           <span>
             <strong>Admin seulement</strong>
-            <small>Si activé, seuls les admins peuvent poser cet objet dans une scène.</small>
+            <small>{draft.dimensions?.reserveComponentRole ? 'Cet objet reste disponible dans l’éditeur de réserve. Hors réserve, seuls les admins peuvent le poser.' : 'Si activé, seuls les admins peuvent poser cet objet dans une scène.'}</small>
           </span>
         </label>
         )}
@@ -13367,6 +13439,34 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
       </aside>
     </div>
   );
+}
+
+function ReserveAssetSettings({ asset, assets = [], onChange }) {
+  const dimensions = asset.dimensions || {};
+  const isGroup = Boolean(dimensions.isGroup);
+  if (isGroup && !isReserveCatalogEntry(asset)) return null;
+  const config = dimensions.reserveConfigurator || {};
+  const frame = isGroup ? reserveFrame(asset) : null;
+  const updateConfig = (patch) => onChange({ reserveConfigurator: { ...config, ...patch } });
+  const available = assets.filter((candidate) => candidate.is_active && candidate.dimensions?.reserveComponentRole);
+  return <section className="reserve-asset-settings">
+    <h4>{isGroup ? 'Mini configurateur de réserve' : 'Catalogue du mini configurateur de réserve'}</h4>
+    {isGroup ? <>
+      <label className="asset-toggle-row"><input type="checkbox" checked={config.enabled !== false} onChange={(event) => updateConfig({ enabled: event.target.checked })} /><span><strong>Autoriser la personnalisation</strong><small>Le placement et la taille restent ceux de la réserve automatique. Les enfants du groupe définissent les quantités incluses ; les ajouts et changements plus coûteux sont facturés aux prix du pack.</small></span></label>
+      <div className="asset-drawer-name-grid">
+        <label className="asset-group-field"><span>Largeur intérieure (m)</span><input type="number" min="1" max="12" step="1" value={config.width ?? frame.width} onChange={(event) => updateConfig({ width: Math.min(12, Math.max(1, Math.round(Number(event.target.value) || 1))) })} /></label>
+        <label className="asset-group-field"><span>Profondeur intérieure (m)</span><input type="number" min="1" max="12" step="1" value={config.depth ?? frame.depth} onChange={(event) => updateConfig({ depth: Math.min(12, Math.max(1, Math.round(Number(event.target.value) || 1))) })} /></label>
+      </div>
+      <small>Dimensions déduites des cloisons, pas de l’encombrement du modèle. Les murs du stand ne sont pas modifiables. Préparez un groupe avec des portes et cloisons séparées de 1 m.</small>
+      <label className="asset-toggle-row"><input type="checkbox" checked={Array.isArray(config.allowedTypes)} onChange={(event) => updateConfig({ allowedTypes: event.target.checked ? [] : undefined })} /><span><strong>Limiter les objets proposés à cette réserve</strong><small>Sinon, tous les objets marqués pour la réserve et actifs sur son pack sont proposés. Les objets déjà inclus restent disponibles.</small></span></label>
+      {Array.isArray(config.allowedTypes) && <div className="reserve-asset-allowed-list">{available.map((candidate) => <label key={candidate.type}><input type="checkbox" checked={config.allowedTypes.includes(candidate.type)} onChange={(event) => updateConfig({ allowedTypes: event.target.checked ? [...config.allowedTypes, candidate.type] : config.allowedTypes.filter((type) => type !== candidate.type) })} /><span>{candidate.label}</span></label>)}</div>}
+    </> : <>
+      <label className="asset-group-field"><span>Disponible dans la réserve comme</span><select value={dimensions.reserveComponentRole || ''} onChange={(event) => onChange({ reserveComponentRole: event.target.value || undefined, ...(event.target.value && !dimensions.reserveComponentRole ? { reserveOnly: true } : {}) })}>
+        <option value="">Non proposé (sauf déjà inclus dans le groupe)</option><option value="door">Porte — module de 1 m</option><option value="partition">Cloison — module de 1 m</option><option value="furniture">Équipement intérieur — placement libre</option>
+      </select></label>
+      <label className="asset-toggle-row"><input type="checkbox" checked={Boolean(dimensions.reserveOnly)} onChange={(event) => onChange({ reserveOnly: event.target.checked })} /><span><strong>Réservé au mini configurateur</strong><small>Masque cet objet dans la boutique normale de l’exposant. Les prix et références restent ceux définis dans l’onglet Packs.</small></span></label>
+    </>}
+  </section>;
 }
 
 function ColorGroupColorsEditor({ colors = [], groupType = '', onReorder, onDefaultChange, onFreeChange }) {
@@ -16129,7 +16229,23 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
     },
   }, width, depth, layout);
 
-  return [item];
+  const customization = reserveOptions.customizations?.[type];
+  return [customization ? applyReserveCustomization(item, entry, customization, catalogEntries) : item];
+}
+
+function applyReserveCustomization(item, entry, customization, catalogEntries = []) {
+  if (!reserveEditorAvailable(entry)) return item;
+  const library = reserveCatalogEntries(entry, catalogEntries);
+  const draft = createReserveDraft(entry, customization, catalogEntries);
+  if (validateReserveDraft(draft, library).length) return item;
+  // Swapping door geometry must not shift automatic placement or the outer footprint.
+  const placementBounds = itemGroupBounds(item);
+  return {
+    ...item,
+    children: reserveChildrenFromDraft(entry, draft, library),
+    dimensions: { ...(item.dimensions || {}), reservePlacementBounds: placementBounds },
+    options: { ...(item.options || {}), reserveCustomization: customization },
+  };
 }
 
 function scenePartitionHeadRules(scene = {}) {
@@ -16358,6 +16474,23 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
 
   safeItems.forEach((item, index) => {
     const entry = findCatalogEntry(catalog, item.type) || item;
+    if (item.options?.reserveCustomization) {
+      const library = reserveCatalogEntries(entry, catalog);
+      const draft = createReserveDraft(entry, item.options.reserveCustomization, catalog);
+      if (!validateReserveDraft(draft, library).length) {
+        reserveCustomizationPricingLines(entry, draft, library, {
+          parentId: item.id,
+          priceForEntry: (asset) => assetUnitPrice(asset, salonLabel),
+          referenceForEntry: (asset) => assetReference(asset, salonLabel),
+          categoryForEntry: (asset, role) => role === 'furniture' ? validationCategoryFromEntry(asset, asset) : 'personalization',
+        }).forEach((line) => {
+          itemsTotal += line.total;
+          const asset = library.find((candidate) => candidate.type === line.assetType);
+          if (asset && isFurnitureInsuranceEligible(asset, asset)) furnitureInsuranceBase += line.total;
+          lines.push(line);
+        });
+      }
+    }
     const sizeLine = counterVariantUpgradeOptionLine(item, entry, salonLabel, index);
     if (sizeLine) {
       itemsTotal += sizeLine.total;
@@ -19286,6 +19419,7 @@ function itemGroupSize(item) {
 }
 
 function itemGroupBounds(item) {
+  if (item?.options?.reserveCustomization && item.dimensions?.reservePlacementBounds) return item.dimensions.reservePlacementBounds;
   const centeredBounds = (size = [0.7, 0.7, 0.7]) => {
     const width = Number(size[0]) || 0.7;
     const height = Number(size[1]) || 0.7;

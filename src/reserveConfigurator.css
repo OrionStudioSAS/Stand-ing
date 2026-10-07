@@ -1,0 +1,247 @@
+.reserve-config-layer {
+  --reserve-navy: #102e68;
+  --reserve-ink: #172033;
+  --reserve-muted: #737e92;
+  --reserve-line: #dce2e9;
+  --reserve-tint: #eef4ff;
+  --reserve-danger: #b53640;
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--reserve-ink);
+  background: rgb(13 29 53 / 48%);
+  backdrop-filter: blur(5px);
+  font-family: "Aptos", "Segoe UI", sans-serif;
+  line-height: 1.45;
+}
+
+.reserve-config-layer *,
+.reserve-config-layer *::before,
+.reserve-config-layer *::after { box-sizing: border-box; }
+
+.reserve-config-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(1060px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow: hidden;
+  border: 1px solid var(--reserve-line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 28px 90px rgb(7 22 49 / 24%);
+  animation: reserve-config-enter 180ms ease-out;
+}
+
+.reserve-config-modal button,
+.reserve-config-modal input,
+.reserve-config-modal select { font: inherit; }
+
+.reserve-config-modal button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  border: 1px solid var(--reserve-line);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--reserve-ink);
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reserve-config-modal button:hover:not(:disabled) { border-color: #a9bbd5; background: #f5f8fc; }
+.reserve-config-modal button:disabled { opacity: .45; cursor: not-allowed; }
+.reserve-config-modal :focus-visible { outline: 2px solid #065dff; outline-offset: 3px; }
+.reserve-config-modal h2,
+.reserve-config-modal h3,
+.reserve-config-modal p { margin: 0; }
+.reserve-config-modal h3 { font-size: 13px; font-weight: 700; }
+.reserve-config-modal small { color: var(--reserve-muted); font-size: 11px; font-weight: 400; }
+
+.reserve-config-header { display: flex; align-items: center; gap: 14px; flex-shrink: 0; padding: 22px 24px; border-bottom: 1px solid var(--reserve-line); }
+.reserve-config-heading-icon { display: grid; place-items: center; flex-shrink: 0; width: 46px; height: 46px; border: 1px solid #cfdaeb; border-radius: 10px; color: var(--reserve-navy); background: var(--reserve-tint); }
+.reserve-config-heading { flex: 1; min-width: 0; }
+.reserve-config-eyebrow { display: block; margin-bottom: 4px; color: var(--reserve-muted); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+.reserve-config-heading h2 { overflow-wrap: anywhere; color: var(--reserve-navy); font-size: clamp(18px, 2.1vw, 24px); font-weight: 650; line-height: 1.2; }
+.reserve-config-heading p { margin-top: 5px; color: var(--reserve-muted); font-size: 12px; }
+.reserve-config-heading p span { padding: 0 7px; color: #c4ccd7; }
+.reserve-config-draft-badge { flex-shrink: 0; padding: 4px 9px; border: 1px solid #d7e1ef; border-radius: 20px; color: var(--reserve-navy); background: #f7f9fd; font-size: 11px; }
+.reserve-config-modal .reserve-config-icon-button { flex-shrink: 0; width: 38px; padding: 0; border-color: transparent; color: var(--reserve-muted); }
+
+.reserve-config-tabs { display: flex; gap: 22px; flex-shrink: 0; padding: 0 24px; border-bottom: 1px solid var(--reserve-line); }
+.reserve-config-tabs button { min-height: 48px; padding: 0 2px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--reserve-muted); background: transparent; }
+.reserve-config-tabs button[aria-selected="true"] { border-bottom-color: var(--reserve-navy); color: var(--reserve-navy); }
+.reserve-config-tabs button span { min-width: 20px; border-radius: 12px; padding: 1px 6px; background: #f0f3f7; font-size: 10px; }
+.reserve-config-tabs button[aria-selected="true"] span { background: var(--reserve-tint); }
+
+.reserve-config-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.reserve-config-workspace { min-width: 0; padding: 22px 24px; background: linear-gradient(155deg, #f9fbfe, #fff 60%); }
+.reserve-config-plan-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+.reserve-config-plan-heading p { margin-top: 3px; color: var(--reserve-muted); font-size: 11px; }
+.reserve-config-plan-heading p span { padding: 0 4px; }
+.reserve-config-plan-tag { border: 1px solid var(--reserve-line); border-radius: 4px; padding: 3px 7px; color: var(--reserve-muted); background: #fff; font-size: 10px; font-weight: 700; }
+.reserve-config-plan { display: grid; place-items: center; height: clamp(250px, 39vh, 390px); overflow: hidden; border: 1px solid var(--reserve-line); border-radius: 10px; background: #f6f8fb; }
+.reserve-config-plan svg { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; }
+.reserve-config-floor { fill: #fff; stroke: #cbd5e2; stroke-width: 1; }
+.reserve-config-dimension { fill: var(--reserve-muted); font-size: 11px; letter-spacing: .04em; }
+.reserve-config-dimension path { fill: none; stroke: #b5c0d0; stroke-width: 1; }
+.reserve-config-slot rect { fill: #fff; stroke: #9cabc1; stroke-dasharray: 4 3; stroke-width: 1; }
+.reserve-config-slot text { fill: var(--reserve-muted); font-size: 9px; }
+.reserve-config-slot.is-fixed rect { fill: #c5cbd4; stroke: #adb5c1; stroke-dasharray: none; }
+.reserve-config-slot.is-target rect { fill: #d6e6ff; stroke: #065dff; stroke-width: 2; stroke-dasharray: none; }
+.reserve-config-part { cursor: grab; outline: none; }
+.reserve-config-part.is-locked { cursor: pointer; }
+.reserve-config-part-hit { fill: transparent; stroke: none; }
+.reserve-config-part-shape { fill: var(--reserve-navy); stroke: #fff; stroke-width: 1.5; }
+.reserve-config-part.is-door .reserve-config-part-shape { fill: #3776b4; }
+.reserve-config-part.is-furniture .reserve-config-part-shape { fill: #e8f0fb; stroke: #6886af; stroke-width: 1.5; }
+.reserve-config-part.is-locked .reserve-config-part-shape { fill: #c5cbd4; stroke: #adb5c1; }
+.reserve-config-part text { fill: var(--reserve-navy); font-size: 12px; font-weight: 700; pointer-events: none; }
+.reserve-config-part.is-selected .reserve-config-part-shape,
+.reserve-config-part:focus-visible .reserve-config-part-shape { stroke: #065dff; stroke-width: 3; filter: drop-shadow(0 0 3px rgb(6 93 255 / 24%)); }
+.reserve-config-door-swing { fill: none; stroke: #3776b4; stroke-width: 1.5; stroke-dasharray: 4 3; pointer-events: none; }
+.reserve-config-part.is-origin { opacity: .32; }
+.reserve-config-preview { pointer-events: none; }
+.reserve-config-preview rect { fill: rgb(6 93 255 / 16%); stroke: #065dff; stroke-width: 2; stroke-dasharray: 5 3; }
+.reserve-config-preview.is-blocked rect { fill: rgb(181 54 64 / 12%); stroke: var(--reserve-danger); }
+.reserve-config-plan.is-dragging,
+.reserve-config-plan.is-dragging .reserve-config-part { cursor: grabbing; }
+
+.reserve-config-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: 12px; color: var(--reserve-muted); font-size: 10px; }
+.reserve-config-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.reserve-config-legend i { display: inline-block; width: 13px; height: 7px; border-radius: 2px; background: var(--reserve-navy); }
+.reserve-config-legend i.is-furniture { height: 10px; border: 1px solid #6886af; background: #e8f0fb; }
+.reserve-config-legend i.is-fixed { background: #c5cbd4; }
+.reserve-config-modal .reserve-config-hint { display: flex; align-items: flex-start; gap: 7px; margin-top: 12px; color: var(--reserve-muted); font-size: 11px; line-height: 1.6; }
+.reserve-config-hint svg { flex-shrink: 0; margin-top: 2px; }
+.reserve-config-composition { margin-top: 22px; }
+.reserve-config-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+.reserve-config-section-heading > span { flex-shrink: 0; color: var(--reserve-muted); font-size: 10px; }
+.reserve-config-parts-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.reserve-config-parts-list > button { justify-content: flex-start; min-width: 0; padding: 8px; text-align: left; }
+.reserve-config-parts-list > button.is-selected { border-color: #a9c4ed; background: var(--reserve-tint); }
+.reserve-config-parts-list button > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.reserve-config-parts-list small { display: block; margin-top: 2px; font-size: 10px; }
+.reserve-config-thumbnail { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; overflow: hidden; border: 1px solid #e3e8f0; border-radius: 7px; color: #647eaa; background: #f6f8fb; }
+.reserve-config-thumbnail img { width: 100%; height: 100%; object-fit: contain; }
+.reserve-config-modal .reserve-config-empty { grid-column: 1 / -1; border: 1px dashed #d3dce9; border-radius: 6px; padding: 14px; color: var(--reserve-muted); font-size: 12px; line-height: 1.65; }
+
+.reserve-config-sidebar { min-width: 0; border-left: 1px solid var(--reserve-line); background: #fff; }
+.reserve-config-inspector,
+.reserve-config-library { padding: 22px 20px; }
+.reserve-config-inspector { border-bottom: 1px solid var(--reserve-line); }
+.reserve-config-selected-name { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 13px; }
+.reserve-config-selected-name strong { min-width: 0; overflow-wrap: anywhere; }
+.reserve-config-modal label { display: grid; gap: 6px; color: var(--reserve-ink); font-size: 11px; font-weight: 600; }
+.reserve-config-modal select,
+.reserve-config-modal input { width: 100%; min-width: 0; min-height: 38px; border: 1px solid var(--reserve-line); border-radius: 5px; padding: 0 9px; color: var(--reserve-ink); background: #fff; font-size: 12px; font-weight: 400; }
+.reserve-config-modal select:disabled { color: var(--reserve-muted); background: #f6f8fb; }
+.reserve-config-transform-readout { display: flex; justify-content: space-between; gap: 10px; margin: 13px 0; color: var(--reserve-muted); font-size: 10px; }
+.reserve-config-transform-readout strong { display: block; margin-top: 3px; color: var(--reserve-ink); font-size: 11px; font-weight: 500; }
+.reserve-config-modal .reserve-config-height { margin-bottom: 14px; }
+.reserve-config-height input[aria-invalid="true"] { border-color: var(--reserve-danger); }
+.reserve-config-inspector-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.reserve-config-modal button.is-danger { color: var(--reserve-danger); }
+.reserve-config-modal button.is-danger:hover:not(:disabled) { border-color: #e4b8bf; background: #fff5f5; }
+.reserve-config-modal .reserve-config-note { margin-top: 10px; color: var(--reserve-muted); font-size: 11px; }
+.reserve-config-modal .reserve-config-search { position: relative; display: block; margin-bottom: 10px; }
+.reserve-config-search svg { position: absolute; top: 11px; left: 10px; color: #8793a5; pointer-events: none; }
+.reserve-config-modal .reserve-config-search input { padding-left: 33px; }
+.reserve-config-library-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.reserve-config-library-list { display: grid; gap: 7px; }
+.reserve-config-library-list article { display: flex; align-items: center; gap: 9px; min-width: 0; border: 1px solid var(--reserve-line); border-radius: 7px; padding: 8px; }
+.reserve-config-library-list article > div { flex: 1; min-width: 0; }
+.reserve-config-library-list article strong { display: block; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; }
+.reserve-config-library-list article small { display: block; margin-top: 3px; font-size: 10px; }
+.reserve-config-modal .reserve-config-add { flex-shrink: 0; width: 34px; min-height: 34px; padding: 0; border-color: #d2deee; color: var(--reserve-navy); background: var(--reserve-tint); }
+
+.reserve-config-pricing { margin-top: 20px; border: 1px solid var(--reserve-line); border-radius: 7px; padding: 0 13px; background: #fff; }
+.reserve-config-pricing summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 46px; color: var(--reserve-navy); font-size: 12px; cursor: pointer; }
+.reserve-config-pricing summary::after { display: block; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); content: ''; }
+.reserve-config-pricing[open] summary::after { transform: rotate(225deg); }
+.reserve-config-pricing summary::-webkit-details-marker { display: none; }
+.reserve-config-pricing summary > span { flex: 1; }
+.reserve-config-pricing summary small { display: inline-block; margin-left: 6px; font-size: 10px; }
+.reserve-config-price-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid #edf0f4; font-size: 12px; }
+.reserve-config-price-line > span { min-width: 0; overflow-wrap: anywhere; }
+.reserve-config-price-line small { display: block; margin-top: 3px; }
+.reserve-config-price-line strong { flex-shrink: 0; font-weight: 600; }
+.reserve-config-price-line.is-total { color: var(--reserve-navy); font-weight: 700; }
+.reserve-config-pricing > p { padding: 10px 0; color: var(--reserve-muted); font-size: 11px; }
+
+.reserve-config-errors { flex-shrink: 0; max-height: 100px; overflow-y: auto; border-top: 1px solid #eec8cd; padding: 10px 24px; color: var(--reserve-danger); background: #fff5f5; font-size: 12px; }
+.reserve-config-errors ul { margin: 3px 0; padding-left: 18px; }
+.reserve-config-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-shrink: 0; padding: 16px 24px; border-top: 1px solid var(--reserve-line); background: #fff; }
+.reserve-config-footer-price { display: grid; grid-template-columns: auto auto; align-items: baseline; column-gap: 12px; }
+.reserve-config-footer-price > span { color: var(--reserve-muted); font-size: 11px; }
+.reserve-config-footer-price > strong { color: var(--reserve-navy); font-size: 22px; font-weight: 700; white-space: nowrap; }
+.reserve-config-footer-price > small { grid-column: 1 / -1; font-size: 10px; }
+.reserve-config-footer-actions { display: flex; align-items: center; gap: 8px; }
+.reserve-config-modal .reserve-config-footer-actions button { min-height: 40px; padding: 8px 16px; }
+.reserve-config-modal .reserve-config-apply { border-color: var(--reserve-navy); color: #fff; background: var(--reserve-navy); }
+.reserve-config-modal .reserve-config-apply:hover:not(:disabled) { border-color: #1d4386; background: #1d4386; }
+.reserve-config-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+@keyframes reserve-config-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (max-width: 800px) {
+  .reserve-config-layer { padding: 14px; }
+  .reserve-config-modal { max-height: calc(100dvh - 28px); }
+  .reserve-config-body { grid-template-columns: minmax(0, 1fr) 290px; }
+  .reserve-config-workspace { padding: 18px; }
+  .reserve-config-inspector,
+  .reserve-config-library { padding: 18px 14px; }
+  .reserve-config-parts-list { grid-template-columns: 1fr; }
+  .reserve-config-footer { gap: 12px; padding: 14px 18px; }
+  .reserve-config-footer-price { grid-template-columns: 1fr; }
+  .reserve-config-footer-price > strong { font-size: 20px; }
+}
+
+@media (max-width: 640px) {
+  .reserve-config-layer { padding: 0; }
+  .reserve-config-modal { width: 100%; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }
+  .reserve-config-header { gap: 10px; padding: max(15px, env(safe-area-inset-top)) 16px 15px; }
+  .reserve-config-heading-icon { width: 36px; height: 40px; }
+  .reserve-config-eyebrow { font-size: 9px; letter-spacing: .06em; }
+  .reserve-config-heading h2 { font-size: 18px; }
+  .reserve-config-draft-badge { display: none; }
+  .reserve-config-tabs { gap: 20px; padding: 0 16px; }
+  .reserve-config-tabs button { min-height: 48px; }
+  .reserve-config-body { display: block; flex: 1; }
+  .reserve-config-workspace { padding: 18px 16px; }
+  .reserve-config-plan { height: clamp(235px, 37dvh, 350px); }
+  .reserve-config-parts-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reserve-config-sidebar { border-top: 1px solid var(--reserve-line); border-left: 0; }
+  .reserve-config-inspector,
+  .reserve-config-library { padding: 18px 16px; }
+  .reserve-config-modal button,
+  .reserve-config-modal select,
+  .reserve-config-modal input { min-height: 44px; }
+  .reserve-config-modal input,
+  .reserve-config-modal select { font-size: 16px; }
+  .reserve-config-modal .reserve-config-add { width: 44px; min-height: 44px; }
+  .reserve-config-modal .reserve-config-icon-button { width: 44px; min-height: 44px; }
+  .reserve-config-footer { flex-wrap: wrap; gap: 10px; padding: 12px 16px max(14px, env(safe-area-inset-bottom)); box-shadow: 0 -5px 20px rgb(16 46 104 / 4%); }
+  .reserve-config-footer-price { flex: 1; grid-template-columns: auto auto; justify-content: space-between; width: 100%; }
+  .reserve-config-footer-actions { width: 100%; }
+  .reserve-config-modal .reserve-config-footer-actions button { min-height: 44px; }
+  .reserve-config-cancel { flex: 1; }
+  .reserve-config-apply { flex: 2; }
+  .reserve-config-errors { max-height: 80px; padding: 8px 16px; }
+}
+
+@media (max-width: 360px) {
+  .reserve-config-heading-icon { display: none; }
+  .reserve-config-parts-list { grid-template-columns: 1fr; }
+  .reserve-config-legend { gap: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reserve-config-modal { animation: none; }
+}
