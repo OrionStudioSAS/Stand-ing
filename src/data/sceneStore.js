@@ -2268,6 +2268,13 @@ export function sceneShareUrl(scene) {
   return `${publicConfiguratorUrl()}/?scene=${encodeURIComponent(scene.share_token)}`;
 }
 
+export function sceneEditorUrl(scene) {
+  // Admin navigation stays on the current build; client emails keep the public URL.
+  const origin = typeof window !== 'undefined' ? window.location?.origin : '';
+  if (!origin || origin === 'null') return sceneShareUrl(scene);
+  return `${origin.replace(/\/+$/g, '')}/?scene=${encodeURIComponent(scene.share_token)}`;
+}
+
 function dbClientToClient(row) {
   return {
     ...row,
