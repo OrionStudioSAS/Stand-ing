@@ -20705,7 +20705,6 @@ function GlbModel({ item, selected, hovered, visualContext }) {
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff' });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '', { flipY: false });
   const textureSlotImages = useTextureSlotImages(item);
-  const signatureArchColorTexture = useExternalTexture(isSignatureArchItem(item) ? item.options?.signatureArchColorImage : '', { flipY: false });
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff' });
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item, { flipY: false }) : null
@@ -20714,12 +20713,11 @@ function GlbModel({ item, selected, hovered, visualContext }) {
     isGlb: true,
     customImageTexture,
     counterColorTexture,
-    signatureArchColorTexture,
     textureSlotImages,
     textureSlotFlipY: false,
     mainImageTexture,
     exhibitorTexture,
-  }) : null), [gltf, item, customImageTexture, counterColorTexture, signatureArchColorTexture, textureSlotImages, mainImageTexture, exhibitorTexture]);
+  }) : null), [gltf, item, customImageTexture, counterColorTexture, textureSlotImages, mainImageTexture, exhibitorTexture]);
   return model ? <primitive object={model} dispose={null} /> : <MissingModelFallback item={item} selected={selected} hovered={hovered} />;
 }
 
@@ -20749,7 +20747,6 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff' });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '');
   const textureSlotImages = useTextureSlotImages(item);
-  const signatureArchColorTexture = useExternalTexture(isSignatureArchItem(item) ? item.options?.signatureArchColorImage : '');
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item) : null
   ), [item.type, item.label, item.modelUrl, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
@@ -20765,7 +20762,6 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
       mainImageTexture={mainImageTexture}
       customImageTexture={customImageTexture}
       counterColorTexture={counterColorTexture}
-      signatureArchColorTexture={signatureArchColorTexture}
       textureSlotImages={textureSlotImages}
       exhibitorTexture={exhibitorTexture}
       selected={selected}
@@ -20774,17 +20770,16 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   );
 }
 
-function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, customImageTexture, counterColorTexture, signatureArchColorTexture, textureSlotImages, exhibitorTexture, selected, hovered }) {
+function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, customImageTexture, counterColorTexture, textureSlotImages, exhibitorTexture, selected, hovered }) {
   const obj = useObjModel(item.modelUrl, materials);
   const model = useMemo(() => (obj ? prepareLoadedModel(obj, item, {
     mainImageTexture,
     customImageTexture,
     counterColorTexture,
-    signatureArchColorTexture,
     textureSlotImages,
     textureSlotFlipY: true,
     exhibitorTexture,
-  }) : null), [obj, item, mainImageTexture, customImageTexture, counterColorTexture, signatureArchColorTexture, textureSlotImages, exhibitorTexture]);
+  }) : null), [obj, item, mainImageTexture, customImageTexture, counterColorTexture, textureSlotImages, exhibitorTexture]);
 
   return model ? <primitive object={model} dispose={null} /> : <MissingModelFallback item={item} selected={selected} hovered={hovered} />;
 }
@@ -21059,12 +21054,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
 
   const materialName = normalizeMaterialName(material.name);
   if (isSignatureArchItem(item) && isSignatureArchColorMaterial(materialName, material)) {
-    if (textureOptions.signatureArchColorTexture) {
-      return materialWithTexture(material, textureOptions.signatureArchColorTexture);
-    }
-    if (item?.options?.signatureArchColorHex) {
-      return materialWithColor(material, item.options.signatureArchColorHex);
-    }
+    return signatureArchPaintMaterial(material, item?.options?.signatureArchColorHex || '#bebebe');
   }
   const textureSlotMaterial = applyTextureSlotMaterial(material, item, textureOptions, materialName);
   if (textureSlotMaterial !== material) return textureSlotMaterial;
@@ -21104,6 +21094,21 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
 
 function isSignatureArchColorMaterial(materialName = '', material = null) {
   return materialMatchesTextureSlot(materialName, material, 'Laminate_D02_120cm#1', 'exact');
+}
+
+function signatureArchPaintMaterial(material, color) {
+  const painted = materialWithColor(material, color);
+  // Paint shares the carpet color, not its grain or the imported material's relief.
+  Object.keys(painted).forEach((key) => {
+    if (key.endsWith('Map') && key !== 'envMap') painted[key] = null;
+  });
+  if ('roughness' in painted) painted.roughness = 0.55;
+  if ('metalness' in painted) painted.metalness = 0;
+  if ('shininess' in painted) painted.shininess = 30;
+  if (painted.emissive?.set) painted.emissive.set('#000000');
+  if ('emissiveIntensity' in painted) painted.emissiveIntensity = 0;
+  painted.needsUpdate = true;
+  return painted;
 }
 
 function isElectricalWhiteItem(item = {}) {

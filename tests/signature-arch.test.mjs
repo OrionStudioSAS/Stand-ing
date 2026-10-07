@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
+import { MeshPhongMaterial, MeshStandardMaterial, Texture } from 'three';
 import { normalizeImageFraming } from '../src/imageFraming.js';
 
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
@@ -31,11 +32,81 @@ test('Signature arch variants replace one another and keep a single scene item',
 
 test('Signature arch color targets the requested material and its attached carpet strip', () => {
   assert.match(appSource, /Laminate_D02_120cm#1/);
-  assert.match(appSource, /signatureArchColorTexture/);
+  assert.match(appSource, /return signatureArchPaintMaterial\(material, item\?\.options\?\.signatureArchColorHex/);
+  assert.doesNotMatch(appSource, /signatureArchColorTexture/);
   assert.match(appSource, /function SignatureArchFootprint\(/);
   assert.match(appSource, /Number\(standDepth \|\| 0\) \+ signatureArchFootprintOverflow/);
   assert.match(appSource, /const signatureArchFootprintOverflow = 0\.5/);
   assert.match(appSource, /isSignatureArchItem\(item\) && <SignatureArchFootprint item=\{item\} standDepth=\{depth\}/);
+  const footprintStart = appSource.indexOf('function SignatureArchFootprint(');
+  const footprintEnd = appSource.indexOf('\nfunction SceneItem(', footprintStart);
+  const footprint = appSource.slice(footprintStart, footprintEnd);
+  assert.match(footprint, /signatureArchColorImage/);
+  assert.match(footprint, /useRepeatedTexture\(imageUrl, width, depth\)/);
+  assert.match(footprint, /map=\{texture \|\| null\}/);
+});
+
+function archMaterialContext() {
+  const context = vm.createContext({
+    enhanceIcareChromeMaterial: (material) => material,
+    applyTextureSlotMaterial: (material) => material,
+    isWoodReceptionDeskItem: () => false,
+    isElectricalWhiteItem: () => false,
+    isPartitionHeadItem: () => false,
+  });
+  for (const name of [
+    'normalizedItemText', 'isSignatureArchItem', 'normalizeMaterialName',
+    'escapeRegExp', 'materialMatchesTextureSlot', 'textureSlotNeedsExactMaterialMatch',
+    'isSignatureArchColorMaterial', 'materialWithColor', 'signatureArchPaintMaterial',
+    'applyItemOptionMaterials',
+  ]) loadFunction(name, context);
+  return context;
+}
+
+test('Signature arch paint uses a solid carpet color without grain, relief, or emission', () => {
+  const context = archMaterialContext();
+  const carpetTexture = new Texture();
+  let disposed = false;
+  carpetTexture.addEventListener('dispose', () => { disposed = true; });
+  const original = new MeshStandardMaterial({
+    name: 'Laminate_D02_120cm#1', color: '#ffffff', metalness: 0.8, roughness: 1,
+    map: carpetTexture, bumpMap: carpetTexture, normalMap: carpetTexture,
+    roughnessMap: carpetTexture, metalnessMap: carpetTexture, aoMap: carpetTexture,
+    displacementMap: carpetTexture, emissiveMap: carpetTexture, alphaMap: carpetTexture,
+    emissive: '#ffffff', emissiveIntensity: 0.72,
+  });
+  const item = { label: 'Arche Totem + Plafond Spot', options: { signatureArchColorHex: '#234567', signatureArchColorImage: 'carpet.jpg' } };
+  const painted = context.applyItemOptionMaterials(original, item);
+  assert.equal(painted.color.getHexString(), '234567');
+  for (const key of ['map', 'bumpMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'displacementMap', 'emissiveMap', 'alphaMap']) {
+    assert.equal(painted[key], null, key);
+    assert.equal(original[key], carpetTexture, 'Shared source material remains unchanged');
+  }
+  assert.equal(painted.roughness, 0.55);
+  assert.equal(painted.metalness, 0);
+  assert.equal(painted.emissive.getHexString(), '000000');
+  assert.equal(painted.emissiveIntensity, 0);
+  assert.equal(original.color.getHexString(), 'ffffff');
+  assert.equal(original.metalness, 0.8);
+  assert.equal(disposed, false, 'The carpet still uses the same texture');
+});
+
+test('OBJ paint supports Phong materials, color changes, and material arrays without touching other arch surfaces', () => {
+  const context = archMaterialContext();
+  const original = new MeshPhongMaterial({ name: 'Laminate_D02_120cm#1.001', map: new Texture(), bumpMap: new Texture(), shininess: 100 });
+  const visual = new MeshStandardMaterial({ name: 'LED_5500k#5', map: new Texture() });
+  const other = new MeshStandardMaterial({ name: 'Laminate_D02_120cm#10', map: new Texture() });
+  const item = { label: 'Arche Totem + Plafond Suspension', options: { signatureArchColorHex: '#bb2233' } };
+  const [painted, preservedVisual, preservedOther] = context.applyItemOptionMaterials([original, visual, other], item);
+  assert.equal(painted.color.getHexString(), 'bb2233');
+  assert.equal(painted.map, null);
+  assert.equal(painted.bumpMap, null);
+  assert.equal(painted.shininess, 30);
+  assert.equal(preservedVisual, visual);
+  assert.equal(preservedOther, other);
+  assert.equal(context.applyItemOptionMaterials(original, { ...item, options: { signatureArchColorHex: '#2244bb' } }).color.getHexString(), '2244bb');
+  assert.equal(context.applyItemOptionMaterials(original, { label: 'Other stand' }), original);
+  assert.equal(context.applyItemOptionMaterials(original, { ...item, options: {} }).color.getHexString(), 'bebebe');
 });
 
 test('Signature arch back touches the wall while its carpet strip spans the stand and 50 cm outside', () => {
