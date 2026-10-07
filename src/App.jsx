@@ -27,6 +27,7 @@ import {
   FileImage,
   FileCheck2,
   Globe2,
+  GripVertical,
   HelpCircle,
   KeyRound,
   Layers,
@@ -4414,7 +4415,10 @@ function counterFinishOptions(colors = []) {
         price: included ? 0 : (optionManaged ? rawPrice : counterOptionalColorPrice),
       };
     });
-  return [wood, white, ...paidColors];
+  const finishes = [wood, white, ...paidColors];
+  if (!colors.some((color) => color.groupId)) return finishes;
+  const order = new Map(colors.map((color, index) => [color.id, index]));
+  return finishes.sort((a, b) => (order.get(a.id) ?? colors.length) - (order.get(b.id) ?? colors.length));
 }
 
 function isHiddenCounterFinish(color = {}) {
@@ -6006,7 +6010,7 @@ function colorChoicesForConfigOption(option = {}, catalog = [], salonLabel = '')
       batPictoPath: color.batPictoPath || '',
       displayOrder: index,
     };
-  }).sort((a, b) => Number(b.optionDefault || b.isDefault) - Number(a.optionDefault || a.isDefault) || Number(b.included) - Number(a.included) || a.displayOrder - b.displayOrder);
+  });
 }
 
 function defaultColorChoiceForConfigOption(option = {}, catalog = [], salonLabel = '') {
@@ -12512,6 +12516,15 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     });
   };
 
+  const reorderColorGroupColor = (fromId, toId) => {
+    setDraft((current) => {
+      const colors = normalizeColorGroupOptions(current);
+      const reordered = moveArrayItem(colors, colors.findIndex((color) => color.id === fromId), colors.findIndex((color) => color.id === toId));
+      if (reordered === colors) return current;
+      return { ...current, dimensions: { ...(current.dimensions || {}), colorOptions: reordered } };
+    });
+  };
+
   const updateConfigOptionRow = (index, patch) => {
     const nextRows = draftConfigOptions.map((row, rowIndex) => {
       if (rowIndex !== index) return row;
@@ -12989,33 +13002,13 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
                 />
               </label>
             </div>
-            <div className="color-group-preview-list">
-              {normalizeColorGroupOptions(draft).map((color) => (
-                <span key={color.id} className={color.isDefault ? 'is-default' : ''}>
-                  <i style={{ '--swatch-color': color.hex, '--swatch-image': `url("${color.image}")` }} />
-                  <strong>{color.name}</strong>
-                  <small>{color.code}</small>
-                  <label>
-                    <input
-                      type="radio"
-                      name={`default-color-${draft.type}`}
-                      checked={color.isDefault}
-                      onChange={() => setColorGroupDefault(color.id)}
-                    />
-                    Base
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={color.isDefault || color.isFree}
-                      disabled={color.isDefault}
-                      onChange={(event) => toggleColorGroupFree(color.id, event.target.checked)}
-                    />
-                    Gratuite
-                  </label>
-                </span>
-              ))}
-            </div>
+            <ColorGroupColorsEditor
+              colors={normalizeColorGroupOptions(draft)}
+              groupType={draft.type}
+              onReorder={reorderColorGroupColor}
+              onDefaultChange={setColorGroupDefault}
+              onFreeChange={toggleColorGroupFree}
+            />
 
             <div className="asset-variants-head compact">
               <div>
@@ -13372,6 +13365,70 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           <button type="button" className="asset-save" onClick={saveDraft}>{isSimpleAsset ? 'Enregistrer' : 'Enregistrer les modifications'}</button>
         </footer>
       </aside>
+    </div>
+  );
+}
+
+function ColorGroupColorsEditor({ colors = [], groupType = '', onReorder, onDefaultChange, onFreeChange }) {
+  const [draggingId, setDraggingId] = useState('');
+  const [dropTargetId, setDropTargetId] = useState('');
+  const [announcement, setAnnouncement] = useState('');
+  const moveColor = (fromId, toId) => {
+    if (!fromId || fromId === toId) return;
+    const color = colors.find((entry) => entry.id === fromId);
+    const targetIndex = colors.findIndex((entry) => entry.id === toId);
+    if (!color || targetIndex < 0) return;
+    onReorder?.(fromId, toId);
+    setAnnouncement(`${color.name} déplacée en position ${targetIndex + 1}.`);
+  };
+  const endDrag = () => { setDraggingId(''); setDropTargetId(''); };
+  return (
+    <div className="color-group-order-editor">
+      <p className="color-group-order-help">Glissez la poignée pour changer l'ordre, puis enregistrez. Cet ordre est repris dans le configurateur, dans les rubriques couleurs incluses et payantes.</p>
+      <div className="color-group-preview-list" role="list" aria-label="Ordre des couleurs">
+        {colors.map((color, index) => (
+          <div
+            key={color.id}
+            role="listitem"
+            data-color-id={color.id}
+            className={`color-group-color-row ${color.isDefault ? 'is-default' : ''} ${draggingId === color.id ? 'dragging' : ''} ${dropTargetId === color.id && draggingId !== color.id ? 'drop-target' : ''}`.trim()}
+            onDragOver={(event) => {
+              if (!draggingId) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'move';
+              setDropTargetId(color.id);
+            }}
+            onDrop={(event) => { event.preventDefault(); moveColor(draggingId, color.id); endDrag(); }}
+          >
+            <button
+              type="button"
+              className="color-group-drag-handle"
+              draggable
+              aria-label={`Déplacer ${color.name}`}
+              title="Glisser pour déplacer, ou utiliser les flèches du clavier"
+              onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', color.id); setDraggingId(color.id); }}
+              onDragEnd={endDrag}
+              onKeyDown={(event) => {
+                if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+                event.preventDefault();
+                const target = colors[index + (event.key === 'ArrowUp' ? -1 : 1)];
+                if (target) moveColor(color.id, target.id);
+              }}
+            >
+              <GripVertical size={16} />
+            </button>
+            <i style={{ '--swatch-color': color.hex, '--swatch-image': color.image ? `url("${color.image}")` : 'none' }} />
+            <div className="color-group-color-copy"><strong>{color.name}</strong><small>{color.code}</small></div>
+            <label><input type="radio" name={`default-color-${groupType}`} checked={color.isDefault} onChange={() => onDefaultChange?.(color.id)} />Base</label>
+            <label><input type="checkbox" checked={color.isDefault || color.isFree} disabled={color.isDefault} onChange={(event) => onFreeChange?.(color.id, event.target.checked)} />Gratuite</label>
+            <div className="color-group-order-buttons">
+              <button type="button" disabled={index === 0} aria-label={`Monter ${color.name}`} onClick={() => moveColor(color.id, colors[index - 1]?.id)}><ChevronUp size={14} /></button>
+              <button type="button" disabled={index === colors.length - 1} aria-label={`Descendre ${color.name}`} onClick={() => moveColor(color.id, colors[index + 1]?.id)}><ChevronDown size={14} /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <span className="color-group-order-status" role="status">{announcement}</span>
     </div>
   );
 }
