@@ -13375,6 +13375,73 @@ img.asset-thumb {
   margin-top: 8px;
 }
 
+.surface-color-option-card {
+  display: grid;
+  gap: 20px;
+  padding: 18px 14px 20px;
+}
+
+.surface-color-option-card .ground-section-heading {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.surface-color-option-card .ground-section-heading > strong {
+  margin-left: auto;
+  padding-top: 4px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.surface-color-option-card .ground-section-icon {
+  padding: 3px;
+  border-radius: 4px;
+  background: #3b64a8;
+}
+
+.surface-color-group {
+  display: grid;
+  gap: 14px;
+}
+
+.surface-color-group small {
+  color: #8d939f;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.surface-color-group .wall-fabric-option-line {
+  margin: 0;
+}
+
+.surface-color-option-card .surface-color-swatches {
+  gap: 12px;
+  padding: 3px;
+}
+
+.surface-color-option-card .surface-color-swatches button {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d9dce2;
+  cursor: pointer;
+}
+
+.surface-color-option-card .surface-color-swatches button.active {
+  outline-color: #3b64a8;
+  outline-offset: 0;
+}
+
+.surface-color-option-card .surface-color-swatches button:focus-visible {
+  outline: 3px solid #3b64a8;
+  outline-offset: 3px;
+}
+
+.surface-color-option-card .surface-color-swatches button:disabled {
+  cursor: not-allowed;
+}
+
 /* Prestige step-2 included modules */
 .signature-arch-card {
   display: grid;

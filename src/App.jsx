@@ -4663,6 +4663,7 @@ function OptionsStepPanel({
       <PanelHead title={t('panel_options_title')} step={activeStep} />
       <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle={isSignatureStand ? 'Moquette' : 'Moquette · Empreinte'} icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
+          uniformLayout={isSignatureStand}
           colors={carpetColors}
           selectedColor={selectedCarpetColor}
           defaultColorId={defaultColorOptions.carpetColorId}
@@ -4696,6 +4697,7 @@ function OptionsStepPanel({
       </OptionAccordion>
       <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} subtitle="Coton gratté · Bâche imprimée" icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
         <ColorOptionCard
+          uniformLayout={isSignatureStand}
           title="COTON GRATTÉ"
           colors={wallFabricColors}
           selectedColor={selectedWallFabricColor}
@@ -8214,7 +8216,73 @@ function ToggleOptionCard({ enabled, enabledLabel, disabledLabel, disabled = fal
   );
 }
 
-function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', includedLabel = 'Inclus', optionLabel, area = 0, disabled = false, onSelect }) {
+function surfaceColorOptionGroups(colors = [], selectedColor = {}, defaultColorId = '', area = 0) {
+  const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
+  const selectedId = normalizeColorId(selectedColor?.id);
+  const selected = displayColors.find((color) => normalizeColorId(color.id) === selectedId)
+    || colorWithDefaultIncluded(selectedColor || {}, defaultColorId);
+  const includedColors = displayColors.filter((color) => color.included);
+  const optionalColors = displayColors.filter((color) => !color.included);
+  const optionalSelected = optionalColors.some((color) => normalizeColorId(color.id) === selectedId);
+  const prices = optionalColors.map((color) => Number(color.price || 0));
+  const optionPrice = optionalSelected ? Number(selected.price || 0) : (prices.length ? Math.min(...prices) : 0);
+  return {
+    selected,
+    includedColors,
+    optionalColors,
+    optionTotal: Math.round(optionPrice * Math.max(0, Number(area || 0))),
+    fromPrice: !optionalSelected && new Set(prices).size > 1,
+  };
+}
+
+function SurfaceColorOptionCard({ title, iconSrc, colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect }) {
+  const { selected, includedColors, optionalColors, optionTotal, fromPrice } = surfaceColorOptionGroups(colors, selectedColor, defaultColorId, area);
+  const selectedId = normalizeColorId(selected.id);
+  const colorLabel = (color) => `${color.name || ''}${color.code ? ` (${color.code})` : ''}`;
+  const swatches = (choices, included) => (
+    <div className="carpet-swatch-row surface-color-swatches" role="group" aria-label={`${title} : couleurs ${included ? 'incluses' : 'en option'}`}>
+      {choices.map((color) => (
+        <button
+          key={color.id}
+          type="button"
+          className={selectedId === normalizeColorId(color.id) ? 'active' : ''}
+          style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
+          title={`${colorLabel(color)} · ${included ? 'Inclus' : colorOptionLabel(color, 'En option', area)}`}
+          aria-label={colorLabel(color)}
+          aria-pressed={selectedId === normalizeColorId(color.id)}
+          disabled={disabled}
+          onClick={() => { if (!disabled) onSelect?.(color.id); }}
+        />
+      ))}
+    </div>
+  );
+
+  return (
+    <section className="surface-color-option-card">
+      <GroundOptionHeading title={title} value={colorLabel(selected)} iconSrc={iconSrc} />
+      {!!includedColors.length && (
+        <div className="surface-color-group">
+          <small>{`${includedColors.length} couleur${includedColors.length > 1 ? 's incluses' : ' incluse'}`}</small>
+          {swatches(includedColors, true)}
+        </div>
+      )}
+      {!!optionalColors.length && (
+        <div className="surface-color-group">
+          <div className="wall-fabric-option-line">
+            <small>{`${optionalColors.length} couleur${optionalColors.length > 1 ? 's' : ''} en option`}</small>
+            <em>{fromPrice ? 'Dès ' : ''}+ {formatNumber(optionTotal)} €</em>
+          </div>
+          {swatches(optionalColors, false)}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', includedLabel = 'Inclus', optionLabel, area = 0, disabled = false, onSelect, uniformLayout = false }) {
+  if (uniformLayout) {
+    return <SurfaceColorOptionCard title={title} iconSrc="/icons/cloison.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />;
+  }
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
   const explicitIncludedColors = displayColors.filter((color) => color.isDefault || color.isFree || (color.included && !color.defaultIncluded));
@@ -8392,8 +8460,11 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
   );
 }
 
-function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect }) {
+function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect, uniformLayout = false }) {
   const t = useT();
+  if (uniformLayout) {
+    return <SurfaceColorOptionCard title="MOQUETTE" iconSrc="/icons/moquette_icon.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />;
+  }
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
   const includedColors = displayColors.filter((color) => color.included);
