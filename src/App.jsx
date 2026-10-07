@@ -123,6 +123,7 @@ const carpetFootprintSizeMeters = 1;
 const carpetFootprintOverflow = 0.2;
 const signatureArchFootprintOverflow = 0.5;
 const signatureArchCenterZ = signatureArchFootprintOverflow / 2;
+const signatureArchPlacementStep = 0.25;
 // Only the front totem occupies floor space; the remaining arch spans overhead.
 const signatureArchTotemDepth = 0.55;
 const signatureArchVisualSlots = [
@@ -1710,15 +1711,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (isTransformPatch(patch) && itemSystemTransformLocked(currentItem) && !canApplyAutomaticReservePatch(currentItem, patch)) return;
     if (!effectiveAdminViewer && hasOwn(patch, 'rotation') && itemRotationLocked(currentItem)) return;
     if (isSignatureStand && isSignatureArchItem(currentItem)) {
-      const bounds = itemGroupBounds(currentItem);
-      const minX = -width / 2 + wallThickness - Number(bounds.minX || 0);
-      const maxX = width / 2 - wallThickness - Number(bounds.maxX || 0);
       setItems((current) => current.map((item) => (
         item.id === id
           ? {
               ...item,
               ...patch,
-              x: minX <= maxX ? clamp(Number(hasOwn(patch, 'x') ? patch.x : item.x || 0), minX, maxX) : Number(item.x || 0),
+              x: hasOwn(patch, 'x') ? signatureArchWallX(patch.x, item, width) : Number(item.x || 0),
               z: signatureArchBackWallZ(item, depth),
               rotation: 0,
               rotationLocked: true,
@@ -6315,6 +6313,15 @@ function signatureArchColorOptions(color = {}) {
 function signatureArchBackWallZ(item = {}, standDepth = 0) {
   const bounds = itemGroupBounds(item);
   return -Number(standDepth || 0) / 2 + wallThickness - Number(bounds.minZ || 0);
+}
+
+function signatureArchWallX(value, item = {}, standWidth = 0) {
+  const bounds = itemGroupBounds(item);
+  const minX = -Number(standWidth || 0) / 2 + wallThickness - Number(bounds.minX || 0);
+  const maxX = Number(standWidth || 0) / 2 - wallThickness - Number(bounds.maxX || 0);
+  if (minX > maxX) return Number(item.x || 0);
+  const snapped = Math.round(Number(value || 0) / signatureArchPlacementStep) * signatureArchPlacementStep;
+  return clamp(snapped, minX, maxX);
 }
 
 function signatureArchFootprintLocalZ(item = {}) {

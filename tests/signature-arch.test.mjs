@@ -54,6 +54,54 @@ test('Signature arch back touches the wall while its carpet strip spans the stan
   assert.match(appSource, /isSignatureArchItem\(dragged\)[\s\S]*updateItem\(draggingId, \{ x: dragCoordinate\(point\.x\) \}\)/);
 });
 
+test('Signature arch moves in 25 cm steps along the back wall without changing its visuals', () => {
+  const arch = { id: 'arch', x: 0.13, z: 0, options: { imageUrl: 'existing-visual' } };
+  let items = [arch, { id: 'chair', x: 0.18 }];
+  const context = vm.createContext({
+    signatureArchPlacementStep: 0.25,
+    wallThickness: 0.06,
+    itemGroupBounds: () => ({ minX: -0.5, maxX: 0.5, minZ: -0.6 }),
+    clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
+    hasOwn: (value, key) => Object.hasOwn(value, key),
+    readOnly: false,
+    effectiveAdminViewer: false,
+    isSignatureStand: true,
+    isSignatureArchItem: (item) => item.id === 'arch',
+    isTransformPatch: () => false,
+    itemRotationLocked: () => false,
+    sceneItems: items,
+    width: 4,
+    depth: 4,
+    setItems: (update) => { items = update(items); },
+  });
+  loadFunction('signatureArchWallX', context);
+  loadFunction('signatureArchBackWallZ', context);
+  for (const [input, expected] of [[0.11, 0], [0.14, 0.25], [0.39, 0.5], [-0.14, -0.25], [-0.39, -0.5]]) {
+    assert.ok(Math.abs(context.signatureArchWallX(input, arch, 4) - expected) < 1e-9);
+  }
+  assert.equal(context.signatureArchWallX(99, arch, 4), 1.44);
+  assert.equal(context.signatureArchWallX(-99, arch, 4), -1.44);
+  assert.equal(context.signatureArchWallX(0.5, arch, 0.8), arch.x);
+
+  const start = appSource.indexOf('  const updateItem = (id, patch) => {');
+  const end = appSource.indexOf('    const autoLedItem =', start);
+  vm.runInContext(`${appSource.slice(start, end)}\n};`, context);
+  vm.runInContext("updateItem('arch', { x: 0.39, z: 99 })", context);
+  assert.equal(items[0].x, 0.5);
+  assert.ok(Math.abs(items[0].z - (-2 + 0.06 + 0.6)) < 1e-9);
+  assert.equal(items[0].rotation, 0);
+  assert.equal(items[0].rotationLocked, true);
+  assert.equal(items[1].x, 0.18);
+  assert.equal(items[0].options.imageUrl, 'existing-visual');
+  items[0].x = 0.13;
+  vm.runInContext("updateItem('arch', { options: { imageUrl: 'new-visual' } })", context);
+  assert.equal(items[0].x, 0.13, 'A visual-only edit must not move an existing arch');
+  context.readOnly = true;
+  vm.runInContext("updateItem('arch', { x: 1 })", context);
+  assert.equal(items[0].x, 0.13);
+  assert.match(appSource, /const signatureArchPlacementStep = 0\.25/);
+});
+
 test('Furniture fits under the Signature arch but cannot intersect its front totem', () => {
   const context = vm.createContext({
     collisionPadding: 0,
