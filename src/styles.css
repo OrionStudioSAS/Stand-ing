@@ -13952,8 +13952,10 @@ img.asset-thumb {
 .admin-salon-detail-list > div:not(.admin-salon-detail-section-heading) small { margin-left: auto; color: #8290a0; }
 .admin-salon-detail-admin-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
 .admin-salon-exhibitors { display: grid; gap: 18px; margin-top: 2px; }
-.admin-salon-exhibitors-tools { display: flex; gap: 8px; }
+.admin-salon-exhibitors-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .admin-salon-exhibitors-tools label { width: 240px; }
+.admin-salon-stand-sort { max-width: 190px; min-height: 36px; border: 1px solid #dce2e9; border-radius: 6px; padding: 0 10px; color: #5f6d7f; background: #fff; font: inherit; font-size: 12px; }
+.admin-salon-stand-sort:focus-visible { outline: 2px solid #123878; outline-offset: 2px; }
 .admin-salon-exhibitors-filters { display: flex; flex-wrap: wrap; gap: 8px; }
 .admin-salon-exhibitors-table-wrap { overflow-x: auto; border: 1px solid #dce2e9; border-radius: 9px; background: #fff; }
 .admin-salon-exhibitors-table-wrap table { width: 100%; border-collapse: collapse; white-space: nowrap; font-size: 12px; }
