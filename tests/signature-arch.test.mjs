@@ -67,9 +67,13 @@ test('Signature arch moves in 25 cm steps along the back wall without changing i
     effectiveAdminViewer: false,
     isSignatureStand: true,
     isSignatureArchItem: (item) => item.id === 'arch',
-    isTransformPatch: () => false,
+    isTransformPatch: (patch) => ['x', 'z', 'rotation'].some((key) => Object.hasOwn(patch, key)),
+    itemSystemTransformLocked: () => false,
     itemRotationLocked: () => false,
     sceneItems: items,
+    automaticReserveItems: [],
+    automaticPartitionHeadItems: [],
+    collidesWithScene: () => false,
     width: 4,
     depth: 4,
     setItems: (update) => { items = update(items); },
@@ -111,6 +115,7 @@ test('Furniture fits under the Signature arch but cannot intersect its front tot
     isCeilingMountedItem: () => false,
     isCountertopAccessory: () => false,
     collidesWithReserveProtectedArea: () => false,
+    collidesWithPartitionHeads: () => false,
     itemCollisionEnabled: () => true,
     itemGroupBounds: (item) => {
       const [width, height, depth] = item.dimensions.size;

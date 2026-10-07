@@ -18,6 +18,7 @@ function placementContext() {
     isCeilingMountedItem: () => false,
     isWallTopSnapItem: () => false,
     collidesWithReserveProtectedArea: () => false,
+    collidesWithPartitionHeads: () => false,
     itemCollisionEnabled: () => true,
     isSignatureArchItem: () => false,
     hasOwn: (object, key) => Object.prototype.hasOwnProperty.call(object, key),

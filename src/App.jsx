@@ -1711,18 +1711,21 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (isTransformPatch(patch) && itemSystemTransformLocked(currentItem) && !canApplyAutomaticReservePatch(currentItem, patch)) return;
     if (!effectiveAdminViewer && hasOwn(patch, 'rotation') && itemRotationLocked(currentItem)) return;
     if (isSignatureStand && isSignatureArchItem(currentItem)) {
-      setItems((current) => current.map((item) => (
-        item.id === id
-          ? {
-              ...item,
-              ...patch,
-              x: hasOwn(patch, 'x') ? signatureArchWallX(patch.x, item, width) : Number(item.x || 0),
-              z: signatureArchBackWallZ(item, depth),
-              rotation: 0,
-              rotationLocked: true,
-            }
-          : item
-      )));
+      setItems((current) => {
+        const blockers = [...current, ...automaticReserveItems, ...automaticPartitionHeadItems];
+        return current.map((item) => {
+          if (item.id !== id) return item;
+          const candidate = {
+            ...item,
+            ...patch,
+            x: hasOwn(patch, 'x') ? signatureArchWallX(patch.x, item, width) : Number(item.x || 0),
+            z: signatureArchBackWallZ(item, depth),
+            rotation: 0,
+            rotationLocked: true,
+          };
+          return isTransformPatch(patch) && collidesWithScene(candidate, blockers, id, width, depth) ? item : candidate;
+        });
+      });
       return;
     }
     const autoLedItem = sceneItems.find((item) => item.id === id && isAutomaticLedRailItem(item));
@@ -2050,6 +2053,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     const color = signatureArchColor || selectedCarpetFootprintColor;
     const colorOptions = signatureArchColorOptions(color);
     let selectedArchId = activeItem?.id || '';
+    let failedPlacement = false;
 
     setItems((current) => {
       const currentArch = current.find(isSignatureArchItem) || activeItem;
@@ -2084,12 +2088,20 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           signatureArchVariantLabel: entry.label || '',
         },
       };
-      selectedArchId = nextItem.id;
       const withoutArches = current.filter((item) => !isSignatureArchItem(item));
-      return [...withoutArches, nextItem];
+      const placed = placeSignatureArchAgainstBackWall(nextItem, [...withoutArches, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth);
+      if (!placed) {
+        failedPlacement = true;
+        return current;
+      }
+      selectedArchId = placed.id;
+      return [...withoutArches, placed];
     });
 
-    window.setTimeout(() => setSelectedId(selectedArchId), 0);
+    window.setTimeout(() => {
+      if (failedPlacement) showPlacementMessage(placementErrorMessage(entry));
+      else setSelectedId(selectedArchId);
+    }, 0);
   };
 
   const updateSignatureArchColor = (colorId) => {
@@ -6326,6 +6338,25 @@ function signatureArchWallX(value, item = {}, standWidth = 0) {
 
 function signatureArchFootprintLocalZ(item = {}) {
   return signatureArchCenterZ - Number(item.z || 0);
+}
+
+function placeSignatureArchAgainstBackWall(item, items, width, depth) {
+  const bounds = itemGroupBounds(item);
+  const minX = -width / 2 + wallThickness - Number(bounds.minX || 0);
+  const maxX = width / 2 - wallThickness - Number(bounds.maxX || 0);
+  if (minX > maxX) return null;
+  const candidate = { ...item, x: clamp(Number(item.x || 0), minX, maxX), z: signatureArchBackWallZ(item, depth), rotation: 0, rotationLocked: true };
+  if (!collidesWithScene(candidate, items, candidate.id, width, depth)) return candidate;
+  const positions = [minX, maxX];
+  for (let x = Math.ceil(minX / signatureArchPlacementStep) * signatureArchPlacementStep; x <= maxX; x += signatureArchPlacementStep) {
+    positions.push(x);
+  }
+  positions.sort((a, b) => Math.abs(a - Number(item.x || 0)) - Math.abs(b - Number(item.x || 0)));
+  for (const x of positions) {
+    const placed = { ...candidate, x };
+    if (!collidesWithScene(placed, items, placed.id, width, depth)) return placed;
+  }
+  return null;
 }
 
 function itemTextureSlots(item = {}) {
@@ -18944,6 +18975,7 @@ function placeWallItemInFreeSpot(item, items, width, depth, layout) {
 }
 
 function collidesWithScene(candidate, items, ignoreId = null, width = 0, depth = 0) {
+  if (collidesWithPartitionHeads(candidate, items, ignoreId, width, depth)) return true;
   if (!isWallItem(candidate) && !isCeilingMountedItem(candidate) && collidesWithReserveProtectedArea(candidate, items, ignoreId)) return true;
   if (!itemCollisionEnabled(candidate)) return false;
   if (isWallItem(candidate)) return collidesWithWallItems(candidate, items, ignoreId, width, depth);
@@ -18958,6 +18990,56 @@ function collidesWithScene(candidate, items, ignoreId = null, width = 0, depth =
     const itemBox = itemCollisionBox(item);
     return itemBox ? boxesOverlap(candidateBox, itemBox) : false;
   });
+}
+
+function collidesWithPartitionHeads(candidate, items = [], ignoreId = null, width = 0, depth = 0) {
+  const isHead = (item) => isPartitionHeadItem(item) || isAutomaticPartitionHeadItem(item);
+  const isProtectedObject = (item) => isReserveSceneItem(item) || isPrestigeArchItem(item) || isSignatureArchItem(item);
+  const isHidden = (item) => item?.options?.partitionHeadHidden || item?.options?.prestigeHidden;
+  if (!candidate || isHidden(candidate) || (!isHead(candidate) && !isProtectedObject(candidate))) return false;
+  return (items || []).some((item) => {
+    if (!item || item.id === ignoreId || item.id === candidate.id || isHidden(item)) return false;
+    if (!(isHead(candidate) && isProtectedObject(item)) && !(isProtectedObject(candidate) && isHead(item))) return false;
+    const candidateBox = isHead(candidate) ? partitionHeadPhysicalBox(candidate, items, width, depth) : itemHardCollisionBox(candidate, 0);
+    const itemBox = isHead(item) ? partitionHeadPhysicalBox(item, items, width, depth) : itemHardCollisionBox(item, 0);
+    return candidateBox && itemBox ? boxesOverlap(candidateBox, itemBox) : false;
+  });
+}
+
+function partitionHeadPhysicalBox(item, items = [], width = 0, depth = 0) {
+  // Keep the 60 cm SMCL cover footprint separate from the complete model collision.
+  const bounds = partitionHeadModelBounds(item);
+  const wallTransform = isWallItem(item) ? objectWallTransform(item, items) : null;
+  const position = isWallItem(item) ? screenWorldPosition(item, width, depth, items) : [Number(item.x || 0), 0, Number(item.z || 0)];
+  const rotation = isWallItem(item) ? -wallMountedItemRotation(item, wallTransform) * 180 / Math.PI : -Number(item.rotation || 0);
+  const corners = [[bounds.minX, bounds.minZ], [bounds.minX, bounds.maxZ], [bounds.maxX, bounds.minZ], [bounds.maxX, bounds.maxZ]]
+    .map(([x, z]) => rotatePoint(x, z, rotation));
+  return {
+    minX: position[0] + Math.min(...corners.map((point) => point.x)),
+    maxX: position[0] + Math.max(...corners.map((point) => point.x)),
+    minZ: position[2] + Math.min(...corners.map((point) => point.z)),
+    maxZ: position[2] + Math.max(...corners.map((point) => point.z)),
+  };
+}
+
+function partitionHeadModelBounds(item) {
+  if (!item.isGroup || !item.children?.length) {
+    const [width, , depth] = itemDefaultSize(item);
+    return { minX: -width / 2, maxX: width / 2, minZ: -depth / 2, maxZ: depth / 2 };
+  }
+  const points = item.children.flatMap((child) => {
+    const bounds = partitionHeadModelBounds(child);
+    return [[bounds.minX, bounds.minZ], [bounds.minX, bounds.maxZ], [bounds.maxX, bounds.minZ], [bounds.maxX, bounds.maxZ]].map(([x, z]) => {
+      const point = rotatePoint(x, z, -Number(child.rotation || 0));
+      return { x: Number(child.x || 0) + point.x, z: Number(child.z || 0) + point.z };
+    });
+  });
+  return {
+    minX: Math.min(...points.map((point) => point.x)),
+    maxX: Math.max(...points.map((point) => point.x)),
+    minZ: Math.min(...points.map((point) => point.z)),
+    maxZ: Math.max(...points.map((point) => point.z)),
+  };
 }
 
 function collidesWithWallItems(candidate, items, ignoreId = null, width = 0, depth = 0) {
