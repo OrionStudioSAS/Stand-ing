@@ -127,7 +127,7 @@ function persistenceApi(remote = false) {
         update(payload) { return { async eq(column, id) { assert.equal(column, 'id'); scenes = scenes.map((scene) => scene.id === id ? { ...scene, ...payload } : scene); return { error: null }; } }; } };
     } } : null,
   });
-  for (const name of ['sceneWithManualOrderLines', 'saveSceneManualOrderLines', 'persistScene']) load(api, store, name);
+  for (const name of ['sceneWithManualOrderLines', 'saveSceneManualOrderLines', 'preserveSceneReadOnly', 'persistScene']) load(api, store, name);
   return { api, getScenes: () => scenes, failRead: (error) => { readError = error; } };
 }
 

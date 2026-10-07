@@ -10,6 +10,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { defaultImageFraming, framedImageRect, normalizeImageFraming } from './imageFraming.js';
 import { packEditorChanges, packEditorImpact } from './packEditor.js';
 import { manualOrderCategories, manualOrderRowsToPricingLines, normalizeManualOrderCategory, replaceManualOrderPricingLines } from './manualOrderLines.js';
+import { useSceneExhibitorReadOnly } from './useSceneExhibitorReadOnly.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   AlertTriangle,
@@ -1157,7 +1158,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
   const effectiveAdminViewer = Boolean(isAdminViewer && !adminExhibitorPreview);
-  const readOnly = Boolean(forceReadOnly) || (!effectiveAdminViewer && Boolean(initialScene.source_payload?.exhibitor_view_only));
+  const readOnly = useSceneExhibitorReadOnly(initialScene, effectiveAdminViewer, forceReadOnly);
   const sceneVisualContext = useMemo(() => ({
     fontRevision,
     language,
@@ -14269,7 +14270,7 @@ function AdminSpecialRequestsView({ scenes, assets = [], search = '', onResolve,
     setActionState({ sceneId: scene.id, message: '', error: '' });
     try {
       await onResolve?.(scene);
-      setActionState({ sceneId: '', message: `Demande traitée pour ${scene.client_name || scene.project_name || 'la scène'}.`, error: '' });
+      setActionState({ sceneId: '', message: `Demande traitée pour ${scene.client_name || scene.project_name || 'la scène'}. La scène est désormais en lecture seule pour l’exposant.`, error: '' });
     } catch (error) {
       setActionState({ sceneId: '', message: '', error: error.message || 'Impossible de marquer la demande comme traitée.' });
     }
@@ -14306,7 +14307,7 @@ function AdminSpecialRequestsView({ scenes, assets = [], search = '', onResolve,
               <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Modifier la scène</a>
               {hasAmcoOrderLines(order) && <button type="button" onClick={() => downloadScenePurchaseOrder(scene, assets)}>Télécharger le BDC</button>}
               {email && <a href={requestReplyMailto(scene)}>Valider par e-mail</a>}
-              <button type="button" disabled={status.id === 'resolved' || actionState.sceneId === scene.id} onClick={() => resolve(scene)}>
+              <button type="button" title="Marquer la demande traitée et bloquer les modifications de l’exposant" disabled={status.id === 'resolved' || actionState.sceneId === scene.id} onClick={() => resolve(scene)}>
                 {actionState.sceneId === scene.id ? 'Enregistrement...' : 'Marquer traitée'}
               </button>
               </div>

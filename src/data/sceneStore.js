@@ -355,17 +355,43 @@ function sceneWithManualOrderLines(scene, lines = []) {
 export async function markSceneSpecialRequestResolved(scene) {
   const resolvedAt = new Date().toISOString();
   const resolvedRequest = (value) => ({ ...(typeof value === 'string' ? { text: value } : value || {}), status: 'resolved', resolvedAt });
+  const resolvedPayload = (source = {}) => ({
+    ...source,
+    specialRequest: resolvedRequest(source.specialRequest || source.options?.specialRequest || scene.options?.specialRequest),
+    exhibitor_view_only: true,
+    exhibitor_view_only_updated_at: resolvedAt,
+  });
   if (!supabase) {
-    const sourcePayload = { ...(scene.source_payload || {}), specialRequest: resolvedRequest(scene.source_payload?.specialRequest) };
-    return saveScene({ ...scene, status: 'configured', client_status: 'configured', source_payload: sourcePayload });
+    const scenes = readLocalScenes();
+    const current = scenes.find((item) => item.id === scene.id) || scene;
+    const updated = { ...current, status: 'configured', client_status: 'configured', source_payload: resolvedPayload(current.source_payload) };
+    writeLocalScenes(scenes.some((item) => item.id === scene.id)
+      ? scenes.map((item) => item.id === scene.id ? updated : item)
+      : [updated, ...scenes]);
+    return updated;
   }
   const { data: current, error: readError } = await supabase.from('scenes')
     .select('source_payload').eq('id', scene.id).single();
   if (readError) throw readError;
-  const sourcePayload = { ...(current.source_payload || {}), specialRequest: resolvedRequest(current.source_payload?.specialRequest) };
+  const sourcePayload = resolvedPayload(current.source_payload);
   const { error } = await supabase.from('scenes').update({ status: 'configured', client_status: 'configured', source_payload: sourcePayload, updated_at: resolvedAt }).eq('id', scene.id);
   if (error) throw error;
   return { ...scene, status: 'configured', client_status: 'configured', source_payload: sourcePayload };
+}
+
+export async function getSceneExhibitorReadOnly(scene) {
+  if (!supabase) return Boolean(readLocalScenes().find((item) => item.id === scene.id)?.source_payload?.exhibitor_view_only);
+  const { data, error } = await supabase.from('scenes').select('source_payload->exhibitor_view_only').eq('id', scene.id).single();
+  if (error) throw error;
+  return Boolean(data.exhibitor_view_only);
+}
+
+function preserveSceneReadOnly(scene, current = {}) {
+  const sourcePayload = { ...(scene.source_payload || {}) };
+  for (const key of ['exhibitor_view_only', 'exhibitor_view_only_updated_at']) {
+    if (Object.hasOwn(current || {}, key)) sourcePayload[key] = current[key];
+  }
+  return { ...scene, source_payload: sourcePayload };
 }
 
 async function persistScene(scene) {
@@ -375,6 +401,7 @@ async function persistScene(scene) {
     if (Object.hasOwn(current?.source_payload || {}, 'manualPurchaseOrderLines')) {
       scene = sceneWithManualOrderLines(scene, current.source_payload.manualPurchaseOrderLines);
     }
+    scene = preserveSceneReadOnly(scene, current?.source_payload);
     const next = scenes.some((item) => item.id === scene.id)
       ? scenes.map((item) => (item.id === scene.id ? { ...item, ...scene } : item))
       : [scene, ...scenes];
@@ -388,6 +415,7 @@ async function persistScene(scene) {
   if (Object.hasOwn(current?.source_payload || {}, 'manualPurchaseOrderLines')) {
     scene = sceneWithManualOrderLines(scene, current.source_payload.manualPurchaseOrderLines);
   }
+  scene = preserveSceneReadOnly(scene, current?.source_payload);
 
   const payload = {
     id: scene.id,
