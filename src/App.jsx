@@ -14254,7 +14254,7 @@ function AdminSpecialRequestsView({ scenes, assets = [], search = '', onResolve,
     if (activeTab === 'open' ? status.id === 'resolved' : status.id !== activeTab) return false;
     if (statusFilter && status.id !== statusFilter) return false;
     if (salonFilter && normalizeSalonTitle(scene.event_name || scene.salon) !== salonFilter) return false;
-    const haystack = normalizeTextValue([adminRequestPersonName(scene), adminRequestCompanyName(scene), scene.project_name, scene.client_email, scene.event_name, scene.salon, sceneSpecialRequest(scene).text].join(' '));
+    const haystack = normalizeTextValue([adminRequestPersonName(scene), adminRequestCompanyName(scene), scene.project_name, adminRequestEmail(scene), scene.event_name, scene.salon, sceneSpecialRequest(scene).text].join(' '));
     return [search, localSearch].every((term) => !term || haystack.includes(normalizeTextValue(term)));
   }).sort((a, b) => {
     if (sortOrder === 'amount') return scenePurchaseOrder(b.scene, assets).total - scenePurchaseOrder(a.scene, assets).total;
@@ -14294,17 +14294,18 @@ function AdminSpecialRequestsView({ scenes, assets = [], search = '', onResolve,
         const order = scenePurchaseOrder(scene, assets);
         const name = adminRequestPersonName(scene);
         const company = adminRequestCompanyName(scene);
+        const email = adminRequestEmail(scene);
         const initials = userInitials(scene.source_payload?.contactDetails?.firstName, scene.source_payload?.contactDetails?.lastName, name);
         return (
           <article key={scene.id} className={`admin-request-card ${status.id}`}>
             <div className="admin-request-card-main">
-              <div className="admin-request-person"><i>{initials}</i><div><strong>{name}</strong><small>{company || 'Société non renseignée'}</small><span>{normalizeSalonTitle(scene.event_name || scene.salon) || 'Salon à définir'}</span></div></div>
+              <div className="admin-request-person"><i>{initials}</i><div><strong>{name}</strong><small>{company || 'Société non renseignée'}</small>{email ? <a className="admin-request-email" href={requestReplyMailto(scene)}>{email}</a> : <small>E-mail non renseigné</small>}<span>{normalizeSalonTitle(scene.event_name || scene.salon) || 'Salon à définir'}</span></div></div>
               <div className="admin-request-message"><span>Demande</span><p>« {request.text} »</p>{request.tags?.length ? <small>{request.tags.join(' · ')}</small> : null}</div>
               <div className="admin-request-estimate"><span>Estimation</span><strong>{order.total ? `${order.total.toLocaleString('fr-FR')} € HT` : 'Aucun lot payant'}</strong><em className={`admin-request-status ${status.id}`}>{status.label}</em><small>{status.id === 'resolved' ? status.detail : `Depuis ${businessDaysSince(status.date)} j ouvrés`}</small></div>
               <div className="admin-request-actions">
               <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Modifier la scène</a>
               {hasAmcoOrderLines(order) && <button type="button" onClick={() => downloadScenePurchaseOrder(scene, assets)}>Télécharger le BDC</button>}
-              {scene.client_email && <a href={requestReplyMailto(scene)}>Valider par e-mail</a>}
+              {email && <a href={requestReplyMailto(scene)}>Valider par e-mail</a>}
               <button type="button" disabled={status.id === 'resolved' || actionState.sceneId === scene.id} onClick={() => resolve(scene)}>
                 {actionState.sceneId === scene.id ? 'Enregistrement...' : 'Marquer traitée'}
               </button>
@@ -14329,10 +14330,17 @@ function adminRequestCompanyName(scene = {}) {
   return adminClientCompanyName({ display_name: adminRequestPersonName(scene) }, [scene]);
 }
 
+function adminRequestEmail(scene = {}) {
+  return String(scene.client_email || '').trim() || String(scene.source_payload?.contactDetails?.email || '').trim();
+}
+
 function requestReplyMailto(scene = {}) {
-  const subject = `Votre demande pour ${scene.project_name || scene.client_name || 'votre stand'}`;
-  const recipient = encodeURIComponent(String(scene.client_email || '').trim()).replace(/%40/gi, '@');
-  return `mailto:${recipient}?subject=${encodeURIComponent(subject)}`;
+  const salon = scene.event_name || scene.salon || '';
+  const subject = `Votre demande pour ${scene.project_name || scene.client_name || 'votre stand'}${salon ? ` — ${salon}` : ''}`;
+  const requestText = sceneSpecialRequest(scene).text.replace(/\r?\n/g, '\r\n');
+  const body = `Bonjour,\r\n\r\n${requestText ? `Votre demande :\r\n${requestText}\r\n\r\n` : ''}Cordialement,\r\nL’équipe Stand-ING`;
+  const recipient = encodeURIComponent(adminRequestEmail(scene)).replace(/%40/gi, '@');
+  return `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 function newRequestOrderLine() {

@@ -10,7 +10,7 @@ const api = vm.createContext({
   adminClientCompanyName: (client, scenes) => scenes[0]?.project_name === client.display_name ? '' : scenes[0]?.project_name || '',
 });
 
-for (const name of ['adminRequestPersonName', 'adminRequestCompanyName']) {
+for (const name of ['adminRequestPersonName', 'adminRequestCompanyName', 'adminRequestEmail']) {
   const start = source.indexOf(`function ${name}(`);
   vm.runInContext(source.slice(start, source.indexOf('\n}\n', start) + 2), api);
 }
@@ -19,6 +19,14 @@ test('requests keep the contact and company distinct', () => {
   const scene = { client_name: 'Ancien contact', project_name: 'Baywa R.E.', source_payload: { contactDetails: { firstName: 'Charisse', lastName: 'Titi' } } };
   assert.equal(api.adminRequestPersonName(scene), 'Charisse Titi');
   assert.equal(api.adminRequestCompanyName(scene), 'Baywa R.E.');
+});
+
+test('request email uses the scene recipient with a fallback to contact details', () => {
+  assert.equal(api.adminRequestEmail({ client_email: ' client@example.com ', source_payload: { contactDetails: { email: 'contact@example.com' } } }), 'client@example.com');
+  assert.equal(api.adminRequestEmail({ client_email: ' ', source_payload: { contactDetails: { email: ' contact@example.com ' } } }), 'contact@example.com');
+  assert.equal(api.adminRequestEmail({}), '');
+  assert.match(view, /className="admin-request-email" href=\{requestReplyMailto\(scene\)\}>\{email\}/);
+  assert.match(view, /adminRequestEmail\(scene\), scene\.event_name/);
 });
 
 test('new request view has active and treated tabs, search, salon and urgency sort', () => {

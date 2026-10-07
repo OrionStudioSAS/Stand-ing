@@ -14694,6 +14694,8 @@ img.asset-thumb {
 .admin-request-person strong, .admin-request-person small { overflow: hidden; max-width: 100%; text-overflow: ellipsis; white-space: nowrap; }
 .admin-request-person strong { color: #172033; font-size: 12px; font-weight: 600; }
 .admin-request-person small { color: #778194; font-size: 11px; }
+.admin-request-person .admin-request-email { max-width: 100%; color: #123878; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; text-decoration: none; }
+.admin-request-person .admin-request-email:hover { text-decoration: underline; }
 .admin-request-person span { border-radius: 99px; padding: 3px 9px; color: #536071; background: #edf0f3; font-size: 11px; white-space: nowrap; }
 .admin-request-message > span, .admin-request-estimate > span { color: #939dae; font-size: 11px; }
 .admin-request-message p { margin: 5px 0 0; border-radius: 5px; padding: 9px 11px; color: #6b7789; background: #f8f9fb; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }

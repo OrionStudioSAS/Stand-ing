@@ -71,10 +71,25 @@ test('manual admin lines are distinct BDC rows and Signature discount is recalcu
 
 test('admin request action opens a mail draft addressed to the exhibitor', () => {
   const api = vm.createContext({ encodeURIComponent });
-  loadFunction(api, 'requestReplyMailto');
+  for (const name of ['adminRequestEmail', 'sceneSpecialRequest', 'requestReplyMailto']) loadFunction(api, name);
   const url = api.requestReplyMailto({ client_email: 'client@example.com', project_name: 'Stand 12' });
   assert.match(url, /^mailto:client@example\.com\?subject=/);
   assert.match(decodeURIComponent(url), /Votre demande pour Stand 12/);
+  assert.match(new URL(url).searchParams.get('body'), /Bonjour,/);
+});
+
+test('request mailto preserves the full request, accents and reserved characters in its body', () => {
+  const api = vm.createContext({ encodeURIComponent });
+  for (const name of ['adminRequestEmail', 'sceneSpecialRequest', 'requestReplyMailto']) loadFunction(api, name);
+  const request = 'Une étagère & un frigo ?\nEmplacement #12 + café à 50 %.';
+  const scene = { project_name: 'Société & associés', event_name: 'SMCL 2026', source_payload: { contactDetails: { email: 'contact+salon@example.com' }, specialRequest: { text: request } } };
+  const url = new URL(api.requestReplyMailto(scene));
+  assert.equal(decodeURIComponent(url.pathname), 'contact+salon@example.com');
+  assert.equal(url.searchParams.get('subject'), 'Votre demande pour Société & associés — SMCL 2026');
+  assert.ok(url.searchParams.get('body').includes(request.replace(/\n/g, '\r\n')));
+  assert.equal([...url.searchParams.keys()].join(','), 'subject,body');
+  const legacy = new URL(api.requestReplyMailto({ ...scene, source_payload: { specialRequest: request }, client_email: 'client@example.com' }));
+  assert.ok(legacy.searchParams.get('body').includes(request.replace(/\n/g, '\r\n')));
 });
 
 test('the generated BDC contains each manual line and the recalculated Signature reduction', async () => {
