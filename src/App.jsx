@@ -130,6 +130,9 @@ const signatureArchVisualSlots = [
   { id: 'signature-arch-led-5', label: 'Visuel LED #5', targetName: 'LED_5500k#5', kind: 'image', matchMode: 'exact' },
   { id: 'signature-arch-led-30', label: 'Visuel LED #30', targetName: 'LED_5500k#30', kind: 'image', matchMode: 'exact' },
 ];
+const signaturePartitionHeadVisualSlots = [
+  { id: 'signature-head-top-28', label: 'Visuel haut de la tête de cloison', targetName: '*28', kind: 'image', matchMode: 'exact' },
+];
 const collisionPadding = 0;
 const partitionHeadEdgeInset = 0.02;
 const partitionHeadBackInset = 0.04;
@@ -1910,16 +1913,25 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   };
 
 
-  const uploadPartitionHeadVisual = async (side, file) => {
+  const uploadPartitionHeadVisual = async (side, file, slot = null) => {
     if (!side || !file || readOnly) return;
     setItemOptionState({ uploading: side, error: '' });
     try {
-      const uploadedUrl = await uploadSceneItemOptionImage(initialScene, { id: `partition-head-${side}`, type: 'partition-head' }, file);
+      const uploadedUrl = await uploadSceneItemOptionImage(initialScene, {
+        id: `partition-head-${side}${slot ? `-${slot.id}` : ''}`,
+        type: 'partition-head',
+        ...(slot ? { visualLabel: slot.label } : {}),
+      }, file);
       const imageUrl = cacheBustedUrl(uploadedUrl);
       await preloadImage(imageUrl);
       setPartitionHeadVisuals((current) => ({
         ...current,
-        [side]: { ...(current?.[side] || {}), headMainImageUrl: imageUrl, headMainImageName: file.name, visualPending: false },
+        [side]: {
+          ...(current?.[side] || {}),
+          ...(slot
+            ? textureSlotPatch({ options: current?.[side] || {} }, slot, { imageUrl, imageName: file.name, visualPending: false, ...defaultImageFraming })
+            : { headMainImageUrl: imageUrl, headMainImageName: file.name, visualPending: false }),
+        },
       }));
       setItemOptionState({ uploading: '', error: '' });
     } catch (error) {
@@ -1927,11 +1939,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }
   };
 
-  const resetPartitionHeadVisual = (side) => {
+  const resetPartitionHeadVisual = (side, slot = null) => {
     if (!side || readOnly) return;
     setPartitionHeadVisuals((current) => ({
       ...current,
-      [side]: { ...(current?.[side] || {}), headMainImageUrl: '', headMainImageName: '' },
+      [side]: {
+        ...(current?.[side] || {}),
+        ...(slot
+          ? textureSlotPatch({ options: current?.[side] || {} }, slot, { imageUrl: '', imageName: '', visualPending: false, ...defaultImageFraming })
+          : { headMainImageUrl: '', headMainImageName: '' }),
+      },
     }));
   };
 
@@ -5252,7 +5269,9 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const textureSourceEntry = isVariantGroup
     ? (resolvedEntry || selectedVariant?.entry || {})
     : (item || resolvedEntry || catalogEntry);
-  const rawTextureSlots = normalizeTextureSlots(textureSourceEntry?.dimensions?.textureSlots);
+  const rawTextureSlots = isSignaturePartitionHeadItem(textureSourceEntry)
+    ? itemTextureSlots(textureSourceEntry)
+    : normalizeTextureSlots(textureSourceEntry?.dimensions?.textureSlots);
   const colorOptionSlotIds = new Set(colorOptions.map((option) => option.textureSlotId).filter(Boolean));
   const colorOptionUsesDefaultSlot = colorOptions.some((option) => !option.textureSlotId);
   const colorOptionUsesCounterSlot = colorOptions.some((option) => colorConfigOptionUsesCounterPalette(option, catalog, salonLabel));
@@ -6361,7 +6380,11 @@ function placeSignatureArchAgainstBackWall(item, items, width, depth) {
 
 function itemTextureSlots(item = {}) {
   const configuredSlots = normalizeTextureSlots(item?.dimensions?.textureSlots);
-  return isSignatureArchItem(item) ? [...signatureArchVisualSlots, ...configuredSlots] : configuredSlots;
+  if (isSignatureArchItem(item)) return [...signatureArchVisualSlots, ...configuredSlots];
+  if (item && isSignaturePartitionHeadItem(item)) {
+    return [...signaturePartitionHeadVisualSlots, ...configuredSlots.filter((slot) => !signaturePartitionHeadVisualSlots.some((builtIn) => builtIn.id === slot.id))];
+  }
+  return configuredSlots;
 }
 
 function signatureArchVisualMaterialMatches(materialName = '', slot = {}) {
@@ -8074,17 +8097,33 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
       </div>}
 
       {selectedRows.length ? selectedRows.map((row) => (
-        <PartitionHeadVisualUpload
-          key={row.side}
-          row={row}
-          visual={visualOptions?.[row.side] || {}}
-          uploading={uploadState?.uploading === row.side}
-          disabled={disabled}
-          showPending={!isSignatureStand}
-          onImage={(file) => onImage?.(row.side, file)}
-          onReset={() => onResetImage?.(row.side)}
-          onPending={(checked) => onVisualOptions?.(row.side, { visualPending: checked })}
-        />
+        <React.Fragment key={row.side}>
+          <PartitionHeadVisualUpload
+            row={row}
+            visual={visualOptions?.[row.side] || {}}
+            uploading={uploadState?.uploading === row.side}
+            disabled={disabled}
+            showPending={!isSignatureStand}
+            onImage={(file) => onImage?.(row.side, file)}
+            onReset={() => onResetImage?.(row.side)}
+            onPending={(checked) => onVisualOptions?.(row.side, { visualPending: checked })}
+          />
+          {isSignatureStand && signaturePartitionHeadVisualSlots.map((slot) => {
+            const value = visualOptions?.[row.side]?.textureSlotValues?.[slot.id] || {};
+            return (
+              <PartitionHeadVisualUpload
+                key={slot.id}
+                row={{ ...row, visualLabel: `${slot.label} ${row.side === 'left' ? 'gauche' : 'droite'}`, uploadSubtitle: `${slot.targetName} · PNG, JPG ou PDF` }}
+                visual={{ headMainImageUrl: value.imageUrl, headMainImageName: value.imageName }}
+                uploading={uploadState?.uploading === row.side}
+                disabled={disabled}
+                showPending={false}
+                onImage={(file) => onImage?.(row.side, file, slot)}
+                onReset={() => onResetImage?.(row.side, slot)}
+              />
+            );
+          })}
+        </React.Fragment>
       )) : (
         <div className="partition-head-empty">{t('partition_select_visual')}</div>
       )}
