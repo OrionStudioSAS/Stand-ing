@@ -14214,6 +14214,19 @@ img.asset-thumb {
 .asset-library-grid .asset-card-body strong { color: #172236; font-size: 13px; font-weight: 600; }
 .asset-library-grid .asset-card-body > span { color: #738094; font-size: 12px; }
 .asset-library-grid .asset-card-body em { color: #9aa5b5; font-size: 11px; }
+.asset-bat-picto-field { display: grid; align-content: start; gap: 9px; min-width: 0; }
+.asset-drawer-upload-grid > .asset-thumbnail-edit { align-self: start; }
+.asset-thumbnail-edit .bat-picto-ok { color: #087653; }
+.bat-picto-preview { display: grid; gap: 7px; min-width: 0; border: 1px solid #dce2ea; border-radius: 7px; padding: 9px; background: #fff; }
+.bat-picto-preview-image { position: relative; display: grid; place-items: center; height: 100px; min-width: 0; overflow: hidden; border-radius: 4px; color: #738094; background-color: #fff; background-image: conic-gradient(#edf0f4 25%, transparent 0 50%, #edf0f4 0 75%, transparent 0); background-size: 16px 16px; }
+.bat-picto-preview-image img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: contain; }
+.bat-picto-preview > a { justify-self: start; color: #0e2d69; font-size: 11px; text-decoration: underline; text-underline-offset: 2px; }
+.bat-picto-preview > a:focus-visible { outline: 2px solid #0e2d69; outline-offset: 3px; }
+.bat-picto-preview > small { color: #738094; font-size: 11px; line-height: 1.4; }
+.bat-picto-preview--compact { display: inline-flex; align-items: center; gap: 6px; width: fit-content; max-width: 100%; border-color: #d5e4fa; padding: 3px 7px 3px 3px; color: #0e2d69; background: #eef4ff; font-size: 11px; white-space: nowrap; }
+.bat-picto-preview--compact .bat-picto-preview-image { flex: 0 0 24px; width: 24px; height: 24px; background-size: 8px 8px; }
+.asset-library-grid .asset-card-body > .bat-picto-preview--compact { margin-top: 6px; color: #0e2d69; font-size: 11px; }
+.asset-variant-compact-copy .bat-picto-preview--compact { margin-top: 6px; }
 .asset-library-grid .asset-tags { flex-wrap: wrap; }
 .asset-library-grid .asset-tags small { color: #0e2d69; background: #eaf1fd; font-size: 11px; font-weight: 500; }
 .asset-library-grid .asset-drag-handle { top: 10px; left: 10px; width: 18px; height: 26px; border: 1px solid #e0e5ec; color: #929eaf; box-shadow: none; }

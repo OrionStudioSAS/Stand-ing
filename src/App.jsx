@@ -12085,11 +12085,12 @@ function AdminObjectsView({ assets, scenes, salons, search, onSearchChange, cate
       <div className="asset-library-meta"><div><strong>{filteredAssets.length} élément{filteredAssets.length > 1 ? 's' : ''}</strong>{packFilter.map((pack) => <button type="button" className="asset-library-chip" key={pack} onClick={() => { setPackFilter((current) => current.filter((item) => item !== pack)); setPage(1); }}>Pack : {pack} <X size={12} /></button>)}{hasFilters && <button type="button" className="asset-library-clear" onClick={clearFilters}>Tout effacer</button>}</div><div className="asset-library-view-switch"><button type="button" className={viewMode === 'grid' ? 'active' : ''} aria-label="Vue grille" aria-pressed={viewMode === 'grid'} onClick={() => setViewMode('grid')}>▦</button><button type="button" className={viewMode === 'list' ? 'active' : ''} aria-label="Vue liste" aria-pressed={viewMode === 'list'} onClick={() => setViewMode('list')}>☷</button></div></div>
       {viewMode === 'list' ? <div className="asset-library-table-wrap"><table className="asset-library-table"><thead><tr>
         <th><input type="checkbox" aria-label="Sélectionner la page" checked={Boolean(visibleAssets.length) && selectedOnPage.length === visibleAssets.length} onChange={(event) => setSelectedAssetTypes((current) => event.target.checked ? [...new Set([...current, ...visibleAssets.map((asset) => asset.type)])] : current.filter((type) => !visibleAssets.some((asset) => asset.type === type)))} /></th>
-        <th><button type="button" onClick={() => setSortMode(sortMode === 'name-asc' ? 'name-desc' : 'name-asc')}>Nom {sortMode === 'name-asc' ? '↑' : sortMode === 'name-desc' ? '↓' : ''}</button></th><th>Catégorie</th><th>Packs</th><th>Format</th><th>Taille</th><th>Statut</th><th><span className="sr-only">Actions</span></th>
+        <th><button type="button" onClick={() => setSortMode(sortMode === 'name-asc' ? 'name-desc' : 'name-asc')}>Nom {sortMode === 'name-asc' ? '↑' : sortMode === 'name-desc' ? '↓' : ''}</button></th><th>Catégorie</th><th>Packs</th><th>Format</th><th>Taille</th><th>Statut</th><th>Picto BAT</th><th><span className="sr-only">Actions</span></th>
       </tr></thead><tbody>{visibleAssets.map((asset) => <tr key={asset.type} tabIndex={0} onClick={() => onSelectAsset(asset)} onKeyDown={(event) => { if (event.target === event.currentTarget && event.key === 'Enter') onSelectAsset(asset); }}>
         <td><input type="checkbox" aria-label={`Sélectionner ${asset.label || asset.type}`} checked={selectedAssetTypes.includes(asset.type)} onClick={(event) => event.stopPropagation()} onChange={() => toggleSelectedAsset(asset.type)} /></td>
         <td><span className="asset-library-row-name"><span className="asset-library-row-thumb">{asset.thumbnail_url ? <img src={asset.thumbnail_url} alt="" /> : assetFormat(asset)}</span><strong>{asset.label || asset.type}</strong></span></td>
         <td>{assetBusinessCategoryLabel(asset, assets)}</td><td><span className="asset-library-row-packs">{assetPacks(asset, scenes).map((pack) => <em key={pack}>{pack}</em>)}</span></td><td>{assetFormat(asset)}</td><td>{assetSizeLabel(asset)}</td><td><span className={`asset-library-row-status ${assetStatus(asset)}`}>{assetStatus(asset) === 'active' ? 'Actif' : assetStatus(asset) === 'processing' ? 'En cours' : 'Inactif'}</span></td>
+        <td><AssetBatPictoBadge asset={asset} emptyLabel="—" /></td>
         <td className="asset-library-row-actions"><button type="button" aria-label={`Actions pour ${asset.label || asset.type}`} aria-expanded={rowMenuType === asset.type} onClick={(event) => { event.stopPropagation(); setRowMenuType(rowMenuType === asset.type ? '' : asset.type); }}>⋯</button>{rowMenuType === asset.type && <div className="asset-library-row-menu"><button type="button" onClick={(event) => { event.stopPropagation(); setRowMenuType(''); onSelectAsset(asset); }}>Modifier</button><button type="button" onClick={(event) => { event.stopPropagation(); setRowMenuType(''); onDuplicateAsset(asset); }}>Dupliquer</button><button type="button" onClick={(event) => { event.stopPropagation(); setRowMenuType(''); onDeleteAsset(asset); }}>Supprimer</button></div>}</td>
       </tr>)}</tbody></table></div> : <div className="asset-grid asset-library-grid">
         {visibleAssets.map((asset) => (
@@ -12121,6 +12122,7 @@ function AdminObjectsView({ assets, scenes, salons, search, onSearchChange, cate
               <strong>{asset.label || asset.type}</strong>
               <span>{assetAdminCardCategoryLabel(asset, assets)}</span>
               <em>{assetSizeLabel(asset)}</em>
+              <AssetBatPictoBadge asset={asset} />
               <div className="asset-tags">
                 {assetPacks(asset, scenes).slice(0, 2).map((pack) => <small key={pack}>{pack}</small>)}
                 {asset.dimensions?.adminOnly && <small className="admin-only">Admin</small>}
@@ -12223,6 +12225,37 @@ function uniqueAssetCopyLabel(label, existingAssets = []) {
   let index = 2;
   while (labels.has(`${label} ${index}`)) index += 1;
   return `${label} ${index}`;
+}
+
+function assetBatPictoPreviews(asset = {}) {
+  const dimensions = asset.dimensions || {};
+  const previews = [];
+  if (dimensions.batPictoUrl) previews.push({ imageUrl: dimensions.batPictoUrl, label: asset.label || asset.type || 'Objet' });
+  for (const [type, meta] of Object.entries(dimensions.variantMeta || dimensions.variantBatPictos || {})) {
+    if (meta?.batPictoUrl) previews.push({ imageUrl: meta.batPictoUrl, label: type });
+  }
+  return previews;
+}
+
+function AssetBatPictoBadge({ asset, emptyLabel = '' }) {
+  const previews = assetBatPictoPreviews(asset);
+  if (!previews.length) return emptyLabel || null;
+  return <BatPictoPreview imageUrl={previews[0].imageUrl} label={previews.map((entry) => entry.label).join(', ')} compact caption={previews.length > 1 ? `${previews.length} pictos BAT` : 'Picto BAT'} />;
+}
+
+function BatPictoPreview({ imageUrl = '', label = 'Objet', compact = false, caption = 'Picto BAT' }) {
+  const [failedUrl, setFailedUrl] = useState('');
+  if (!imageUrl) return null;
+  const failed = failedUrl === imageUrl;
+  const preview = <span className="bat-picto-preview-image">{failed ? <FileImage size={20} aria-hidden="true" /> : <img src={imageUrl} alt={`Picto BAT : ${label}`} loading="lazy" onError={() => setFailedUrl(imageUrl)} />}</span>;
+  if (compact) return <span className="bat-picto-preview bat-picto-preview--compact" title={`${caption} importé : ${label}${failed ? ' (aperçu indisponible)' : ''}`}>{preview}<span>{caption}</span></span>;
+  return (
+    <div className="bat-picto-preview">
+      {preview}
+      {failed && <small>Aperçu indisponible. Le picto reste associé à cet objet.</small>}
+      <a href={imageUrl} target="_blank" rel="noopener noreferrer" aria-label={`Voir le picto BAT de ${label} en grand`}>Voir le picto en grand</a>
+    </div>
+  );
 }
 
 function AssetPreview({ asset }) {
@@ -12732,6 +12765,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
         </label>
 
         {!isColorGroup && !isVariantGroup && (
+        <div className="asset-bat-picto-field">
         <label className="asset-thumbnail-edit">
           <FileImage size={18} />
           <span>
@@ -12750,6 +12784,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
             }}
           />
         </label>
+        <BatPictoPreview imageUrl={draft.dimensions?.batPictoUrl} label={draft.label || draft.type} />
+        </div>
         )}
         </div>
         <div className="asset-drawer-name-grid">
@@ -13582,12 +13618,13 @@ function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, colorTem
             <div className="asset-variant-compact-head">
               <span className="asset-variant-drag" draggable={Boolean(onReorder)} onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; setDraggingIndex(index); }} onDragEnd={() => setDraggingIndex(null)} aria-label="Déplacer la variante">⋮⋮</span>
               <span className="asset-variant-compact-thumb">{selectedSource?.thumbnail_url ? <img src={selectedSource.thumbnail_url} alt="" /> : <Box size={17} />}</span>
-              <span className="asset-variant-compact-copy"><strong>{selectedSource?.label || type || 'Objet'}</strong><small>{selectedSource ? selectedSource.dimensions?.variantLabel || assetCategoryLabel(selectedSource) : 'Objet introuvable'}</small></span>
+              <span className="asset-variant-compact-copy"><strong>{selectedSource?.label || type || 'Objet'}</strong><small>{selectedSource ? selectedSource.dimensions?.variantLabel || assetCategoryLabel(selectedSource) : 'Objet introuvable'}</small><BatPictoPreview imageUrl={meta.batPictoUrl || selectedSource?.dimensions?.batPictoUrl} label={selectedSource?.label || type} compact /></span>
               {index === 0 ? <span className="asset-variant-default">Par défaut</span> : <button type="button" className="asset-variant-set-default" onClick={() => onReorder?.(index, 0)}>Définir par défaut</button>}
               <button type="button" className="asset-variant-remove" onClick={() => onRemove(index)} aria-label={`Retirer ${selectedSource?.label || 'cette variante'}`}><Trash2 size={15} /></button>
             </div>
             <details className="asset-variant-advanced"><summary>Choisir l'objet et régler la variante</summary><div className="asset-picker-field"><span>Objet variante</span><AdminAssetPicker assets={sourceAssets} value={type} onChange={(nextType) => onChange(index, nextType)} /></div>
             {onBatPictoChange && !colorTemplatesEnabled && (
+              <div className="asset-bat-picto-field">
               <label className="variant-bat-picto-upload">
                 <FileImage size={13} />
                 <span>{meta.batPictoUrl ? 'Picto BAT variante importé' : 'Picto BAT variante'}</span>
@@ -13601,6 +13638,8 @@ function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, colorTem
                   }}
                 />
               </label>
+              <BatPictoPreview imageUrl={meta.batPictoUrl || selectedSource?.dimensions?.batPictoUrl} label={selectedSource?.label || type} />
+              </div>
             )}
             {colorTemplatesEnabled && (
               <div className="variant-color-template-settings">
@@ -13676,6 +13715,7 @@ function VariantColorTemplateCard({ title, format, imageUrl = '', sourceColor = 
           }}
         />
       </label>
+      {title === 'Picto BAT' && <BatPictoPreview imageUrl={imageUrl} label="Variante" />}
       <label className="variant-color-template-color">
         <span>Couleur présente dans l’image à remplacer</span>
         <div>
