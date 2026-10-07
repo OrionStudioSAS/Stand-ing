@@ -14723,6 +14723,13 @@ img.asset-thumb {
 .admin-request-card .request-order-line { display: grid; grid-template-columns: minmax(0, 1fr) 100px 140px 26px; align-items: start; gap: 12px; margin: 0 0 12px; }
 .admin-request-card .request-order-line label { display: grid; gap: 6px; color: #172033; font-size: 11px; font-weight: 600; }
 .admin-request-card .request-order-description { display: grid; gap: 6px; }
+.admin-request-card .request-order-metadata { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.admin-request-card .request-order-line select { width: 100%; min-width: 0; height: 36px; border: 1px solid #dce2e9; border-radius: 5px; padding: 0 8px; color: #172033; background: #fff; font-size: 12px; }
+.admin-request-card .request-order-description .admin-asset-picker-trigger { min-height: 38px; padding: 5px 9px; text-align: left; }
+.admin-request-card .request-order-description .admin-asset-picker-thumb { width: 28px; height: 28px; flex: 0 0 28px; }
+.admin-request-card .request-order-description .admin-asset-picker-trigger strong { font-size: 11px; }
+.admin-request-card .request-order-description .admin-asset-picker-trigger small { font-size: 10px; }
+@media (max-width: 520px) { .admin-request-card .request-order-metadata { grid-template-columns: minmax(0, 1fr); } }
 .admin-request-card .request-order-line input { min-height: 36px; border: 1px solid #dce2e9; border-radius: 5px; padding: 0 11px; color: #172033; font-size: 12px; font-weight: 400; }
 .admin-request-card .request-order-line input::placeholder { color: #a1abb9; }
 .admin-request-card .request-order-description > input { min-height: 28px; font-size: 11px; }

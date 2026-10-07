@@ -4,6 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { packAllowanceLineType, scenePackBenefits, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
+import { manualOrderRowsToPricingLines } from '../src/manualOrderLines.js';
 
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 
@@ -39,6 +40,7 @@ test('Signature wall-cover allowance follows its area bands; SMCL Confort and Pr
 
 test('manual admin lines are distinct BDC rows and Signature discount is recalculated after them', () => {
   const api = vm.createContext({
+    manualOrderRowsToPricingLines,
     roundCurrency: (value) => Math.round(Number(value) * 100) / 100,
     packAllowanceLineType,
     findCatalogEntry: () => null,

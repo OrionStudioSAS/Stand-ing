@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { manualOrderRowsToPricingLines } from '../src/manualOrderLines.js';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -109,6 +110,7 @@ test('all objects and options consume one allowance; insurance is separate and r
 
 test('scene pricing deducts the allowance after objects, shared options, covers, floor and colours, before insurance', () => {
   const api = vm.createContext({ normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, isSignatureScene: () => false,
+    manualPurchaseOrderLines: (scene) => manualOrderRowsToPricingLines(scene?.source_payload?.manualPurchaseOrderLines),
     roundCurrency: (value) => Math.round(value * 100) / 100,
     normalizeBaseItemsForUi: (value) => value,
     baseItemsToCountMap: () => new Map(),

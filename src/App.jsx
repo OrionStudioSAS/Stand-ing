@@ -9,6 +9,7 @@ import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { defaultImageFraming, framedImageRect, normalizeImageFraming } from './imageFraming.js';
 import { packEditorChanges, packEditorImpact } from './packEditor.js';
+import { manualOrderCategories, manualOrderRowsToPricingLines, normalizeManualOrderCategory, replaceManualOrderPricingLines } from './manualOrderLines.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   AlertTriangle,
@@ -1574,13 +1575,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     try {
       const requestText = String(specialRequest || '').trim();
       const hasSpecialRequest = Boolean(requestText);
-      const confirmedScene = currentScenePayload(hasSpecialRequest ? 'bat_pending' : 'configured', 'configured');
-      await saveScene(confirmedScene);
+      const confirmedScene = await saveScene(currentScenePayload(hasSpecialRequest ? 'bat_pending' : 'configured', 'configured'));
+      const confirmedPricing = confirmedScene.source_payload?.pricing || scenePricing;
 
       if (hasSpecialRequest) {
         let emailMessage = 'Un email de prise en compte vient d’être envoyé à l’adresse de contact de la scène.';
         try {
-          const directPurchaseOrder = purchaseOrderFromPricingLines(scenePricing.lines || [], availableCatalog);
+          const directPurchaseOrder = purchaseOrderFromPricingLines(confirmedPricing.lines || [], availableCatalog);
           let purchaseOrder = null;
           let technicalPlan = null;
           let attachmentIssue = false;
@@ -1627,14 +1628,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       await syncSceneConfigToMonday(confirmedScene);
       let emailMessage = 'Un email de confirmation vient d’être envoyé à l’adresse de contact de la scène.';
       try {
-        const purchaseOrderScene = {
-          ...confirmedScene,
-          source_payload: {
-            ...(confirmedScene.source_payload || {}),
-            pricing: { ...(confirmedScene.source_payload?.pricing || {}), lines: scenePricing.lines || [], total: scenePricing.total || 0 },
-          },
-        };
-        const directPurchaseOrder = purchaseOrderFromPricingLines(scenePricing.lines || [], availableCatalog);
+        const purchaseOrderScene = confirmedScene;
+        const directPurchaseOrder = purchaseOrderFromPricingLines(confirmedPricing.lines || [], availableCatalog);
         const purchaseOrder = hasAmcoOrderLines(directPurchaseOrder)
           ? await scenePurchaseOrderEmailAttachment(purchaseOrderScene, objectBank, directPurchaseOrder)
           : null;
@@ -7025,6 +7020,7 @@ function ValidationStepPanel({
 
   const optionSupplementTotal = (match) => lines
     .filter((line) => !line.mandatory)
+    .filter((line) => !String(line.type || '').startsWith('admin-manual-'))
     .filter((line) => match(line, normalizeTextValue(line.label || '')))
     .reduce((sum, line) => sum + Number(line.total || 0), 0);
   const carpetSupplement = optionSupplementTotal((line, label) => label.startsWith('moquette') && !label.includes('epaisse'));
@@ -7054,14 +7050,16 @@ function ValidationStepPanel({
   const supplementRowFromLine = (line, index, billableItems = [], entry = null, associatedItem = null) => {
     const sourceItem = billableItems[0] || associatedItem;
     const isCounterLogo = validationIsCounterLogoLine(line);
+    const isManual = String(line.type || '').startsWith('admin-manual-');
     return {
       id: `line-${line.type}-${index}`,
       label: isCounterLogo ? 'Logo comptoir accueil' : line.label,
       detail: isCounterLogo ? '' : uniqueTextValues([
+        ...(isManual ? [`${formatNumber(line.quantity)} × ${validationMoney(line.unitPrice, true)} € HT`, line.reference ? `Réf. ${line.reference}` : '', 'Ajouté par Stand-ING'] : []),
         ...(Array.isArray(line.optionLines) ? line.optionLines : []),
         ...billableItems.flatMap((item) => itemOptionLines(item)),
-      ]).slice(0, 2).join(' · '),
-      imageUrl: isCounterLogo ? validationCounterLogoImage(sourceItem, entry, catalog) : validationItemImage(sourceItem, entry, catalog),
+      ]).slice(0, isManual ? 3 : 2).join(' · '),
+      imageUrl: isManual ? validDisplayImageUrl(line.thumbnailUrl) || validationItemImage(null, entry, catalog) : isCounterLogo ? validationCounterLogoImage(sourceItem, entry, catalog) : validationItemImage(sourceItem, entry, catalog),
       badge: priceBadge(line.total),
       badgeTone: isSignatureStand || Number(line.total || 0) > 0 ? 'price' : 'included',
       visualStatus: isCounterLogo ? validationCounterLogoVisualStatus(sourceItem) : null,
@@ -7202,7 +7200,7 @@ function ValidationStepPanel({
       const includedCount = includedCounts.get(line.type) || 0;
       const billableItems = associatedItem ? [associatedItem] : safeItems.filter((i) => i.type === line.type).slice(includedCount);
       const firstItem = billableItems[0] || associatedItem || null;
-      const entry = firstItem ? (findCatalogEntry(catalog, firstItem.type) || firstItem) : findCatalogEntry(catalog, line.type);
+      const entry = firstItem ? (findCatalogEntry(catalog, firstItem.type) || firstItem) : findCatalogEntry(catalog, line.assetType || line.type);
       const removable = !associatedItem ? billableItems.find((item) => canDeleteSceneItem(item, isAdminViewer)) : null;
       const section = validationCategoryFromLine(line, entry, firstItem);
       const mergedCounterAmount = !associatedItem && firstItem && isWoodReceptionDeskItem(firstItem)
@@ -7394,6 +7392,7 @@ function validationVisualStatus(pending = false, hasImage = false) {
 
 function validationLineHandledByOptions(line = {}) {
   const type = String(line.type || '');
+  if (type.startsWith('admin-manual-')) return false;
   const label = normalizeTextValue(line.label || '');
   if (type === 'wall-cover') return true;
   if (type.startsWith('color-')) return true;
@@ -7404,6 +7403,7 @@ function validationLineHandledByOptions(line = {}) {
 
 function validationIsCounterLogoLine(line = {}) {
   const type = String(line.type || '');
+  if (type.startsWith('admin-manual-')) return false;
   const label = normalizeTextValue(line.label || '');
   return type.startsWith('counter-logo-') || label.includes('signaletique comptoir accueil');
 }
@@ -7426,6 +7426,7 @@ function validationCategoryFromEntry(entry = {}, item = {}) {
 
 function validationCategoryFromLine(line = {}, entry = {}, item = null) {
   const type = String(line.type || '');
+  if (type.startsWith('admin-manual-')) return normalizeManualOrderCategory(line.category) || 'furniture';
   const label = normalizeTextValue(`${line.label || ''} ${entry?.label || ''} ${entry?.type || ''}`);
   if (type.startsWith('counter-logo-') || label.includes('signaletique comptoir')) return 'signage';
   if (label.includes('tv') || label.includes('ecran') || label.includes('televiseur') || label.includes('multimedia') || label.includes('comptoir numerique')) return 'multimedia';
@@ -14309,7 +14310,7 @@ function AdminSpecialRequestsView({ scenes, assets = [], search = '', onResolve,
               </button>
               </div>
             </div>
-            <AdminRequestOrderEditor scene={scene} initiallyOpen={index === 0 && activeTab === 'open'} onSave={(lines) => onSaveManualLines?.(scene, lines)} />
+            <AdminRequestOrderEditor scene={scene} assets={assets} initiallyOpen={index === 0 && activeTab === 'open'} onSave={(lines) => onSaveManualLines?.(scene, lines)} />
           </article>
         );
       }) : <div className="admin-empty-row">Aucune demande avec ces filtres.</div>}
@@ -14335,15 +14336,28 @@ function requestReplyMailto(scene = {}) {
 }
 
 function newRequestOrderLine() {
-  return { id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, label: '', reference: '', quantity: 1, unitPrice: '' };
+  return { id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, label: '', reference: '', category: 'furniture', assetType: '', quantity: 1, unitPrice: '' };
 }
 
-function AdminRequestOrderEditor({ scene, initiallyOpen = false, onSave }) {
+function requestOrderAssetFields(asset = {}, scene = {}, assets = []) {
+  const packLabel = sceneOfferLabel(scene);
+  return {
+    assetType: asset.type,
+    label: asset.label || asset.type,
+    reference: assetReference(asset, packLabel),
+    category: normalizeManualOrderCategory(assetBusinessCategoryLabel(asset, assets)) || 'furniture',
+    unitPrice: assetUnitPrice(assetToCatalogEntry(asset, assets) || asset, packLabel),
+    thumbnailUrl: asset.thumbnail_url || '',
+  };
+}
+
+function AdminRequestOrderEditor({ scene, assets = [], initiallyOpen = false, onSave }) {
   const [open, setOpen] = useState(initiallyOpen);
   const [lines, setLines] = useState(() => scene.source_payload?.manualPurchaseOrderLines?.length ? scene.source_payload.manualPurchaseOrderLines : [newRequestOrderLine()]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const linkableAssets = useMemo(() => sortAdminAssets(assets.filter((asset) => !asset.dimensions?.isColorGroup)), [assets]);
 
   useEffect(() => {
     setLines(scene.source_payload?.manualPurchaseOrderLines?.length ? scene.source_payload.manualPurchaseOrderLines : [newRequestOrderLine()]);
@@ -14362,8 +14376,8 @@ function AdminRequestOrderEditor({ scene, initiallyOpen = false, onSave }) {
     setError('');
     setMessage('');
     try {
-      await onSave(enteredLines.map((line) => ({ id: line.id, label: String(line.label).trim(), reference: String(line.reference || '').trim(), quantity: Number(line.quantity), unitPrice: Number(line.unitPrice) })));
-      setMessage('Lignes enregistrées sur le bon de commande. Aucun e-mail envoyé.');
+      await onSave(enteredLines.map((line) => ({ id: line.id, label: String(line.label).trim(), reference: String(line.reference || '').trim(), category: normalizeManualOrderCategory(line.category) || 'furniture', assetType: line.assetType || '', thumbnailUrl: line.thumbnailUrl || '', quantity: Number(line.quantity), unitPrice: Number(line.unitPrice) })));
+      setMessage('Lignes enregistrées sur le bon de commande et dans le panier de l’étape 4. Aucun e-mail envoyé.');
     } catch (saveError) {
       setError(saveError.message || 'Impossible d’enregistrer les lignes.');
     } finally {
@@ -14373,9 +14387,19 @@ function AdminRequestOrderEditor({ scene, initiallyOpen = false, onSave }) {
 
   return <details className="request-order-editor" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary><ChevronRight size={15} />Éléments manuels du bon de commande <span>{scene.source_payload?.manualPurchaseOrderLines?.length || 0}</span></summary>
-    <p>Ajoutez les éléments convenus avec l’exposant. Téléchargez ensuite le BDC pour l’envoyer manuellement si besoin.</p>
+    <p>Ces lignes apparaissent aussi dans le panier de l’étape 4, dans la catégorie choisie. Lier un asset reprend sa désignation, sa référence et son prix, sans le placer dans la scène 3D.</p>
     {lines.map((line) => <div className="request-order-line" key={line.id}>
-      <div className="request-order-description"><label>Désignation<input value={line.label || ''} onChange={(event) => updateLine(line.id, { label: event.target.value })} placeholder="Ex : Machine à café" /></label><input aria-label="Référence (optionnel)" value={line.reference || ''} onChange={(event) => updateLine(line.id, { reference: event.target.value })} placeholder="Référence (optionnel)" /></div>
+      <div className="request-order-description">
+        <label>Désignation<input value={line.label || ''} onChange={(event) => updateLine(line.id, { label: event.target.value })} placeholder="Ex : Machine à café" /></label>
+        <div className="request-order-metadata">
+          <label>Référence (optionnel)<input value={line.reference || ''} onChange={(event) => updateLine(line.id, { reference: event.target.value })} placeholder="Référence (optionnel)" /></label>
+          <label>Catégorie du panier<select value={normalizeManualOrderCategory(line.category) || 'furniture'} onChange={(event) => updateLine(line.id, { category: event.target.value })}>{manualOrderCategories.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        </div>
+        <AdminAssetPicker assets={linkableAssets} value={line.assetType || ''} placeholder="Lier un objet des Assets 3D" allowEmpty emptyLabel="Ne pas lier d’objet" onChange={(type) => {
+          const asset = linkableAssets.find((entry) => entry.type === type);
+          updateLine(line.id, asset ? requestOrderAssetFields(asset, scene, assets) : { assetType: '', thumbnailUrl: '' });
+        }} />
+      </div>
       <label>Quantité<input type="number" min="0.01" step="0.01" value={line.quantity} onChange={(event) => updateLine(line.id, { quantity: event.target.value })} /></label>
       <label>Prix unitaire HT<input type="number" min="0" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(line.id, { unitPrice: event.target.value })} placeholder="—" /></label>
       <button className="request-order-remove" type="button" onClick={() => setLines((current) => current.length > 1 ? current.filter((entry) => entry.id !== line.id) : [newRequestOrderLine()])} aria-label={`Retirer ${line.label || 'la ligne'}`}><Trash2 size={17} /></button>
@@ -14527,26 +14551,13 @@ function scenePurchaseOrder(scene = {}, assets = []) {
   const sourceLines = savedLines.length
     ? enrichPurchaseOrderLinesWithFallback(savedLines, fallbackPricing.lines)
     : fallbackPricing.lines;
-  const lines = normalizePurchaseOrderLines(withPackAllowance([...sourceLines, ...manualPurchaseOrderLines(scene)], scenePackBenefits(scene)), catalogEntries);
+  const lines = normalizePurchaseOrderLines(withPackAllowance(replaceManualOrderPricingLines(sourceLines, scene.source_payload?.manualPurchaseOrderLines), scenePackBenefits(scene)), catalogEntries);
   const total = lines.reduce((sum, line) => sum + line.total, 0);
   return { lines, total: roundCurrency(total), header: purchaseOrderHeaderInfo(scene) };
 }
 
 function manualPurchaseOrderLines(scene = {}) {
-  const saved = scene.source_payload?.manualPurchaseOrderLines;
-  if (!Array.isArray(saved)) return [];
-  return saved.map((row, index) => {
-    const quantity = Number(row.quantity);
-    const unitPrice = Number(row.unitPrice);
-    return {
-      type: `admin-manual-${row.id || index}`,
-      label: String(row.label || '').trim(),
-      reference: String(row.reference || '').trim(),
-      quantity,
-      unitPrice,
-      total: roundCurrency(quantity * unitPrice),
-    };
-  }).filter((line) => line.label && Number.isFinite(line.quantity) && line.quantity > 0 && Number.isFinite(line.unitPrice) && line.unitPrice >= 0);
+  return manualOrderRowsToPricingLines(scene.source_payload?.manualPurchaseOrderLines);
 }
 
 function hasAmcoOrderLines(order = {}) {
@@ -16248,6 +16259,10 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     }
   }
 
+  manualPurchaseOrderLines(scene).forEach((line) => {
+    itemsTotal += line.total;
+    lines.push(line);
+  });
   const allowance = packAllowanceBreakdown(itemsTotal, scenePackBenefits(scene));
   const grossAccessoriesTotal = itemsTotal;
   if (allowance.allowanceLine) {

@@ -4,6 +4,7 @@ import { demoScenes } from './seed.js';
 import { supabase } from './supabaseClient.js';
 import { catalog, layouts } from '../config/catalog.js';
 import { normalizePackBenefits, scenePackBenefits, inheritCurrentPackBenefits, isSignaturePackScene } from '../../supabase/functions/_shared/packBenefits.js';
+import { mergeManualOrderPricing } from '../manualOrderLines.js';
 
 const storageKey = 'standing-scenes-v1';
 const fixedWallHeight = 2.5;
@@ -325,15 +326,29 @@ export async function saveScene(scene) {
 }
 
 export async function saveSceneManualOrderLines(scene, lines = []) {
-  if (!supabase) return saveScene({ ...scene, source_payload: { ...(scene.source_payload || {}), manualPurchaseOrderLines: lines } });
+  if (!supabase) {
+    const scenes = readLocalScenes();
+    const current = scenes.find((item) => item.id === scene.id) || scene;
+    const updated = sceneWithManualOrderLines(current, lines);
+    writeLocalScenes(scenes.some((item) => item.id === scene.id) ? scenes.map((item) => item.id === scene.id ? updated : item) : [updated, ...scenes]);
+    return updated;
+  }
   const { data: current, error: readError } = await supabase.from('scenes')
     .select('source_payload').eq('id', scene.id).single();
   if (readError) throw readError;
-  const sourcePayload = { ...(current.source_payload || {}), manualPurchaseOrderLines: lines };
+  const sourcePayload = sceneWithManualOrderLines({ ...scene, source_payload: current.source_payload }, lines).source_payload;
   const { error } = await supabase.from('scenes')
     .update({ source_payload: sourcePayload, updated_at: new Date().toISOString() })
     .eq('id', scene.id);
   if (error) throw error;
+  return { ...scene, source_payload: sourcePayload };
+}
+
+function sceneWithManualOrderLines(scene, lines = []) {
+  const sourcePayload = { ...(scene.source_payload || {}), manualPurchaseOrderLines: lines };
+  if (Array.isArray(sourcePayload.pricing?.lines)) {
+    sourcePayload.pricing = mergeManualOrderPricing(sourcePayload.pricing, lines, scenePackBenefits(scene));
+  }
   return { ...scene, source_payload: sourcePayload };
 }
 
@@ -356,11 +371,22 @@ export async function markSceneSpecialRequestResolved(scene) {
 async function persistScene(scene) {
   if (!supabase) {
     const scenes = readLocalScenes();
+    const current = scenes.find((item) => item.id === scene.id);
+    if (Object.hasOwn(current?.source_payload || {}, 'manualPurchaseOrderLines')) {
+      scene = sceneWithManualOrderLines(scene, current.source_payload.manualPurchaseOrderLines);
+    }
     const next = scenes.some((item) => item.id === scene.id)
       ? scenes.map((item) => (item.id === scene.id ? { ...item, ...scene } : item))
       : [scene, ...scenes];
     writeLocalScenes(next);
     return scene;
+  }
+
+  // A scene opened before an admin edit must not overwrite the latest order rows.
+  const { data: current, error: readError } = await supabase.from('scenes').select('source_payload').eq('id', scene.id).single();
+  if (readError) throw readError;
+  if (Object.hasOwn(current?.source_payload || {}, 'manualPurchaseOrderLines')) {
+    scene = sceneWithManualOrderLines(scene, current.source_payload.manualPurchaseOrderLines);
   }
 
   const payload = {
