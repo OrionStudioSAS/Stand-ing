@@ -59,6 +59,8 @@ test('BAT SVG pictograms keep their transparent background and the PNG is A3-rea
   const image = { width: 100, height: 50 };
   api.drawRotatedPictoObject(ctx, 0, 0, 100, 50, 0, image, '1');
   api.drawCeilingObject(ctx, 0, 0, 100, 50, 0, image, '#fff', '2');
+  for (const wall of ['back', 'left', 'right']) api.drawWallItemTop(ctx, { type: 'screen', wall, x: 0 }, 4, 3, 100, 8, (x) => x * 100, (z) => z * 100, '3', { width: 1, depth: 0.2 }, 'TV', image);
+  for (const orientation of ['x', 'z']) api.drawObjectWallItemTop(ctx, { x: 0, wallSurface: { orientation, normalAxis: 0, centerAxis: 0, length: 2 } }, 100, (x) => x * 100, (z) => z * 100, '4', 100, 20, 'TV', image);
   assert.equal(rectangles.length, 0);
 
   api.renderTechnicalPlanCanvas({ width: 4, depth: 3, layout: 'u', items: [], catalog: [] });

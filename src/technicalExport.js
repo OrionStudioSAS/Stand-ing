@@ -1,4 +1,6 @@
 import { recoloredImageCacheKey, recolorImageUrl } from './imageColorReplacement.js';
+import { createTechnicalSvgContext, sanitizeTechnicalSvg } from './technicalSvgContext.js';
+import { technicalA3, paginateTechnicalPrintDetails, wrapTechnicalPrintText } from './technicalPrintLayout.js';
 
 const sheet = {
   width: 1800,
@@ -33,6 +35,7 @@ const technicalTableY = 1040;
 // while preserving the existing logical layout dimensions.
 const technicalRenderScale = 2.75;
 
+// Legacy raster preview only; downloads and email attachments use the A3 PDF.
 export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems: providedTechnicalItems = null, pictoImages = new Map() }) {
   const technicalItems = providedTechnicalItems || technicalItemsForPlan(items, width, depth, catalog);
   const drawableTechnicalItems = technicalItems.filter((item) => !item?.sourceOptions);
@@ -62,18 +65,54 @@ export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog
   return canvas;
 }
 
-export async function createTechnicalPlanBlob({ width, depth, layout, items, catalog }) {
-  const technicalItems = technicalItemsForPlan(items, width, depth, catalog);
-  const pictoImages = await loadTechnicalPictoImages(technicalItems, catalog);
-  const canvas = renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems, pictoImages });
-  return canvasToBlob(canvas, 'image/png');
+export async function createTechnicalPlanBlob(options) {
+  const pages = await createTechnicalPlanSvgPages(options);
+  const [{ jsPDF }] = await Promise.all([import('jspdf'), import('svg2pdf.js')]);
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3', compress: true });
+  pdf.setProperties({ title: `BAT - ${options.documentInfo?.title || 'Plan technique'}`, subject: 'Plan technique A3', creator: 'Stand-ING' });
+  for (const [index, page] of pages.entries()) {
+    if (index) pdf.addPage('a3', 'landscape');
+    await pdf.svg(page, { x: 0, y: 0, width: technicalA3.widthMm, height: technicalA3.heightMm });
+  }
+  return pdf.output('blob');
 }
 
-export async function exportTechnicalPng({ width, depth, layout, items, catalog }) {
+export async function createTechnicalPlanSvgPages({ width, depth, layout, items, catalog, documentInfo = {} }) {
   const technicalItems = technicalItemsForPlan(items, width, depth, catalog);
   const pictoImages = await loadTechnicalPictoImages(technicalItems, catalog);
-  const canvas = renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems, pictoImages });
-  downloadCanvas(canvas, `standing-plan-technique-${width}x${depth}m.png`);
+  const drawable = technicalItems.filter((item) => !item?.sourceOptions);
+  const sections = technicalTableSections(technicalItems, catalog);
+  sections.unshift({ title: 'DECOUPE CLOISONS', rows: wallRows(width, depth, layout, drawable).map((row) => ({ label: row.label, lines: [row.summary] })) });
+  const visuals = technicalPlanVisuals(technicalItems, catalog, width, depth);
+  const constraints = technicalItems.find((item) => item?.sourceOptions)?.sourceConstraints || [];
+  const measure = document.createElement('canvas').getContext('2d');
+  const pages = [{ kind: 'plan' }, ...paginateTechnicalPrintDetails(measure, sections, visuals)];
+  return pages.map((page, index) => {
+    const ctx = createTechnicalSvgContext(technicalA3.width, technicalA3.height);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, technicalA3.width, technicalA3.height);
+    ctx.strokeStyle = technicalColors.ink;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(technicalA3.margin, technicalA3.margin, technicalA3.width - 2 * technicalA3.margin, technicalA3.height - 2 * technicalA3.margin);
+    if (page.kind === 'plan') {
+      drawPrintSidebar(ctx, width, depth, layout, drawable);
+      drawPlan(ctx, width, depth, layout, drawable, catalog, pictoImages, visuals, constraints, true);
+    } else drawPrintDetails(ctx, page, pictoImages);
+    drawPrintPageHeader(ctx, documentInfo, page.kind === 'plan');
+    drawText(ctx, `BAT - A3 paysage - Imprimer a 100 % / taille reelle`, technicalA3.margin + 16, technicalA3.height - 48, 15, '#555555');
+    drawText(ctx, `Page ${index + 1} / ${pages.length}`, technicalA3.width - technicalA3.margin - 16, technicalA3.height - 48, 16, technicalColors.ink, 'bold', 'right');
+    return ctx.svg;
+  });
+}
+
+export async function exportTechnicalPdf(options) {
+  const blob = await createTechnicalPlanBlob(options);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `standing-plan-technique-${options.width}x${options.depth}m-A3.pdf`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function technicalItemsForPlan(items, width, depth, catalog) {
@@ -85,16 +124,18 @@ async function loadTechnicalPictoImages(items = [], catalog = []) {
   (items || []).forEach((item) => {
     const entry = catalog.find((candidate) => candidate.type === item.type);
     const descriptor = technicalSvgPictoDescriptor(item, entry, catalog);
-    if (descriptor) imageRequests.set(descriptor.key, descriptor);
+    if (descriptor) imageRequests.set(descriptor.key, { ...descriptor, isPicto: true });
   });
   technicalPlanVisuals(items, catalog).forEach((visual) => {
-    if (visual.imageUrl) imageRequests.set(visual.imageUrl, { key: visual.imageUrl, url: visual.imageUrl, sourceColor: '', targetColor: '' });
+    if (visual.imageUrl && !imageRequests.has(visual.imageUrl)) imageRequests.set(visual.imageUrl, { key: visual.imageUrl, url: visual.imageUrl, sourceColor: '', targetColor: '' });
   });
   const loaded = await Promise.all([...imageRequests.values()].map(async (request) => {
     const imageUrl = request.sourceColor && request.targetColor
       ? await recolorImageUrl(request.url, request.sourceColor, request.targetColor)
       : request.url;
-    return [request.key, await loadCanvasImage(imageUrl)];
+    const image = await loadCanvasImage(imageUrl);
+    if (!image && request.isPicto) throw new Error('Impossible de charger un picto BAT. Verifiez le fichier importe puis relancez le BAT.');
+    return [request.key, image];
   }));
   return new Map(loaded.filter(([, image]) => image));
 }
@@ -148,13 +189,27 @@ function technicalBatDescription(item = {}, entry = {}, catalog = []) {
 }
 
 async function loadCanvasImage(url) {
+  let isSvg = /\.svg(?:$|[?#])/i.test(url) || /^data:image\/svg\+xml/i.test(url);
   try {
-    const response = await fetch(url, { mode: 'cors' });
+    const response = await fetch(url, { mode: 'cors', signal: AbortSignal.timeout(20000) });
     if (response.ok) {
-      const objectUrl = URL.createObjectURL(await response.blob());
+      let blob = await response.blob();
+      let svg = null;
+      isSvg ||= /svg/i.test(blob.type);
+      if (isSvg) {
+        svg = sanitizeTechnicalSvg(await blob.text());
+        blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
+      }
+      const objectUrl = URL.createObjectURL(blob);
       try {
         const image = await loadImageElement(objectUrl);
-        if (image) return image;
+        if (image) {
+          image.technicalSvg = svg;
+          image.technicalDataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob);
+          });
+          return image;
+        }
       } finally {
         URL.revokeObjectURL(objectUrl);
       }
@@ -162,6 +217,8 @@ async function loadCanvasImage(url) {
   } catch {
     // Fallback to direct image loading below when the storage URL is already canvas-safe.
   }
+  // Never silently rasterize an SVG that could not be parsed or sanitized.
+  if (isSvg) return null;
   return loadImageElement(url);
 }
 
@@ -169,8 +226,9 @@ function loadImageElement(url) {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
+    const timer = setTimeout(() => resolve(null), 15000);
+    img.onload = () => { clearTimeout(timer); resolve(img); };
+    img.onerror = () => { clearTimeout(timer); resolve(null); };
     img.src = url;
   });
 }
@@ -183,6 +241,80 @@ function drawFrame(ctx) {
   ctx.moveTo(sheet.left, sheet.margin);
   ctx.lineTo(sheet.left, sheet.height - sheet.margin);
   ctx.stroke();
+}
+
+function drawPrintPageHeader(ctx, info, plan) {
+  const x = plan ? sheet.left + 58 : technicalA3.margin + 18;
+  const title = info.title || 'PLAN TECHNIQUE ATELIER';
+  wrapTechnicalPrintText(ctx, title, plan ? 1190 : 1640, 25, 'bold').slice(0, 2).forEach((line, index) => drawText(ctx, line, x, 66 + index * 27, 25, technicalColors.ink, 'bold'));
+  const details = [info.salon, info.hall && `Hall ${info.hall}`, info.stand && `Stand ${info.stand}`].filter(Boolean).join(' - ');
+  drawText(ctx, details || (plan ? 'Vue de dessus - cotes en millimetres' : 'Detail des elements et visuels'), x, 116, 16, '#555555');
+}
+
+function drawPrintSidebar(ctx, width, depth, layout, items) {
+  const x = sheet.margin + 14;
+  const w = sheet.left - sheet.margin - 28;
+  ctx.strokeStyle = technicalColors.ink;
+  line(ctx, sheet.left, sheet.margin, sheet.left, technicalA3.bottom + 12);
+  drawBox(ctx, x, 48, w, 58, 'StandING', technicalColors.ink, 30);
+  drawBox(ctx, x, 118, w, 50, 'PLAN TECHNIQUE BAT', technicalColors.red, 22);
+  drawBox(ctx, x, 180, w, 50, `${mm(width)} x ${mm(depth)} mm`, technicalColors.blue, 22);
+  drawInfoBlock(ctx, x, 248, w, [
+    ['Surface', `${formatNumber(width * depth)} m2`],
+    ['Hauteur murs', `${mm(fixedWallHeight)} mm`],
+    ['Epaisseur murs', `${mm(wallThicknessMeters)} mm`],
+    ['Implantation', layoutLabel(layout)],
+    ['Objets', String(items.length)],
+    ['Date export', new Date().toLocaleDateString('fr-FR')],
+  ]);
+  drawText(ctx, 'CLOISONS', x + 14, 548, 20, technicalColors.blue, 'bold');
+  wallRows(width, depth, layout, items).forEach((row, index) => drawText(ctx, row.label, x + 14, 580 + index * 26, 16));
+  drawText(ctx, 'Decoupe detaillee aux pages suivantes.', x + 14, 672, 15, '#555555');
+  drawText(ctx, 'REPERES ATELIER', x + 14, 724, 20, technicalColors.blue, 'bold');
+  ['Numeros rouges : tableau des elements.', 'Cotes exprimees en millimetres.', 'Origine X/Z au centre du stand.', 'Rectangle barre : poteau de contrainte.'].forEach((text, index) => drawText(ctx, text, x + 14, 754 + index * 26, 15));
+  drawText(ctx, 'LEGENDE', x + 14, 890, 20, technicalColors.blue, 'bold');
+  legendLine(ctx, x + 18, 920, technicalColors.blue, 'Cotes stand');
+  legendLine(ctx, x + 18, 952, technicalColors.red, 'Cotes objet');
+  [
+    [technicalColors.panel1000, 'Cloison 1000mm'], [technicalColors.panel750, 'Cloison 750mm'],
+    [technicalColors.panel500, 'Cloison 500mm'], [technicalColors.panelOther, 'Autre largeur'],
+    [technicalColors.reinforcement, 'Renfort TV'], [technicalColors.footprint, 'Empreinte moquette +200mm'],
+  ].forEach(([color, label], index) => legendSwatch(ctx, x + 18, 980 + index * 28, color, label));
+  drawText(ctx, 'Echelle automatique - cotes faisant foi', x + 14, 1172, 15, '#555555');
+}
+
+function drawPrintDetails(ctx, page, imageMap) {
+  const x = technicalA3.margin + 18;
+  const w = technicalA3.width - x * 2;
+  for (const block of page.blocks) {
+    if (block.kind === 'heading') {
+      ctx.fillStyle = technicalColors.soft;
+      ctx.fillRect(x, block.y, w, block.height);
+      drawText(ctx, block.title, x + 14, block.y + 26, 19, technicalColors.blue, 'bold');
+    } else if (block.kind === 'row') {
+      ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 1;
+      ctx.strokeRect(x, block.y, w, block.height);
+      block.lines.forEach(([label, detail], index) => {
+        drawText(ctx, index === 0 && block.continued && !label ? block.continuationLabel : label, x + 14, block.y + 25 + index * 22, 16, technicalColors.ink, 'bold');
+        drawText(ctx, detail, x + 450, block.y + 25 + index * 22, 16, '#444444');
+      });
+    } else if (block.kind === 'visuals') {
+      const cardWidth = (w - 18) / 2;
+      block.cards.forEach((card, index) => {
+        const cx = x + index * (cardWidth + 18);
+        ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 1;
+        ctx.strokeRect(cx, block.y, cardWidth, block.height);
+        const image = imageMap.get(card.imageUrl);
+        if (image) drawContainedImage(ctx, image, cx + 12, block.y + 14, 194, 216);
+        else drawText(ctx, card.imageUrl ? 'Apercu indisponible' : 'Visuel en attente', cx + 109, block.y + 120, 15, '#777777', 'normal', 'center');
+        let y = block.y + 28;
+        card.fields.forEach((field) => {
+          field.lines.forEach((line) => { drawText(ctx, line, cx + 224, y, field.bold ? 17 : 16, field.bold ? technicalColors.blue : technicalColors.ink, field.bold ? 'bold' : 'normal'); y += 22; });
+          y += 10;
+        });
+      });
+    }
+  }
 }
 
 function drawSidebar(ctx, width, depth, height, layout, items) {
@@ -240,7 +372,7 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   drawText(ctx, 'Generateur : StandING configurateur 3D', x + 12, footerY + 64, 15);
 }
 
-function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map(), visuals = [], constraints = []) {
+function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map(), visuals = [], constraints = [], print = false) {
   const bounds = { x: sheet.left + 58, y: 130, w: 1260, h: 760 };
   const scale = Math.min(bounds.w / (width + 1.1), bounds.h / (depth + 1.1));
   const planW = width * scale;
@@ -249,7 +381,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
   const planY = bounds.y + (bounds.h - planH) / 2 + 30;
   const wallThickness = Math.max(8, scale * wallThicknessMeters);
 
-  drawText(ctx, `${formatNumber(width * depth)}m2`, planX + planW / 2, 105, 64, technicalColors.ink, 'bold', 'center');
+  drawText(ctx, `${formatNumber(width * depth)}m2`, print ? sheet.width - 60 : planX + planW / 2, print ? 116 : 105, print ? 24 : 64, technicalColors.ink, 'bold', print ? 'right' : 'center');
 
   const toX = (x) => planX + (x + width / 2) * scale;
   const toY = (z) => planY + (z + depth / 2) * scale;
@@ -427,7 +559,7 @@ function technicalObjectRow(item = {}, entry = {}, catalog = [], index = 0, prod
   const optionLines = technicalItemOptionLines(item, entry);
   const reference = item.options?.baseObjectReference || item.options?.variantReference || item.options?.resolvedObjectReference
     || productReferences[item.type] || entry.dimensions?.reference || item.dimensions?.reference || entry.reference || '';
-  const lines = [...(reference ? [`Référence : ${reference}`] : []), ...optionLines, ...descriptionLines].slice(0, 6);
+  const lines = [...(reference ? [`Référence : ${reference}`] : []), ...optionLines, ...descriptionLines];
   return {
     label: `${index + 1}. ${item.label || entry?.label || item.type || 'Objet'}`,
     lines: lines.length ? lines : ['—'],
@@ -581,7 +713,7 @@ function technicalItemOptionLines(item = {}, entry = {}) {
   if (options.technician) lines.push('Permanence technicien');
   if (options.fileCheck) lines.push('Vérification fichier');
   if (entry?.dimensions?.category) lines.push(`Catégorie : ${entry.dimensions.category}`);
-  return uniqueTechnicalLines(lines).slice(0, 4);
+  return uniqueTechnicalLines(lines);
 }
 
 function technicalSelectedColorCandidate(options = {}, optionRefs = []) {
@@ -718,9 +850,7 @@ function technicalDescriptionLines(text = '') {
   return String(text || '')
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 4)
-    .map((line) => (line.length > 58 ? `${line.slice(0, 55)}...` : line));
+    .filter(Boolean);
 }
 
 function drawWalls(ctx, x, y, w, h, thickness, layout, width, depth, scale, items) {
@@ -1082,10 +1212,10 @@ function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY
   if (item.wall === 'back') {
     const x = toX(item.x) - itemWidth / 2;
     const y = toY(-depth / 2) + wallThickness + wallItemPlanGap(item);
-    ctx.fillRect(x, y, itemWidth, itemDepth);
+    if (!pictoImage) ctx.fillRect(x, y, itemWidth, itemDepth);
     if (!pictoImage) ctx.strokeRect(x, y, itemWidth, itemDepth);
     if (pictoImage) drawContainedImage(ctx, pictoImage, x + 2, y + 2, itemWidth - 4, itemDepth - 4);
-    drawText(ctx, wallLabelText, x + itemWidth / 2, y + itemDepth + 42, 15, '#22364d', 'bold', 'center');
+    drawText(ctx, wallLabelText, x + itemWidth / 2, y + itemDepth + 58, 15, '#22364d', 'bold', 'center');
     drawBadge(ctx, x + itemWidth / 2, y + itemDepth + 22, label);
     return;
   }
@@ -1093,7 +1223,7 @@ function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY
   const gap = wallItemPlanGap(item);
   const x = item.wall === 'left' ? toX(-width / 2) + wallThickness + gap : toX(width / 2) - wallThickness - itemDepth - gap;
   const y = toY(item.x) - itemWidth / 2;
-  ctx.fillRect(x, y, itemDepth, itemWidth);
+  if (!pictoImage) ctx.fillRect(x, y, itemDepth, itemWidth);
   if (!pictoImage) ctx.strokeRect(x, y, itemDepth, itemWidth);
   if (pictoImage) drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4, sideWallPictoAngle(item));
   drawSideTvLabel(ctx, wallLabelText, item.wall, x, y + itemWidth / 2, itemDepth);
@@ -1111,18 +1241,18 @@ function drawObjectWallItemTop(ctx, item, scale, toX, toY, label, itemWidth, ite
     const x = toX(axis) - itemWidth / 2;
     const wallY = toY(Number(surface.normalAxis || 0));
     const y = side >= 0 ? wallY + gap : wallY - itemDepth - gap;
-    ctx.fillRect(x, y, itemWidth, itemDepth);
+    if (!pictoImage) ctx.fillRect(x, y, itemWidth, itemDepth);
     if (!pictoImage) ctx.strokeRect(x, y, itemWidth, itemDepth);
     if (pictoImage) drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemWidth - 4, itemDepth - 4, side >= 0 ? 0 : Math.PI);
-    drawText(ctx, wallLabelText, x + itemWidth / 2, side >= 0 ? y + itemDepth + 42 : y - 22, 15, '#22364d', 'bold', 'center');
-    drawBadge(ctx, x + itemWidth / 2, side >= 0 ? y + itemDepth + 22 : y - 42, label);
+    drawText(ctx, wallLabelText, x + itemWidth / 2, side >= 0 ? y + itemDepth + 58 : y - 48, 15, '#22364d', 'bold', 'center');
+    drawBadge(ctx, x + itemWidth / 2, side >= 0 ? y + itemDepth + 22 : y - 22, label);
     return;
   }
 
   const wallX = toX(Number(surface.normalAxis || 0));
   const x = side >= 0 ? wallX + gap : wallX - itemDepth - gap;
   const y = toY(axis) - itemWidth / 2;
-  ctx.fillRect(x, y, itemDepth, itemWidth);
+  if (!pictoImage) ctx.fillRect(x, y, itemDepth, itemWidth);
   if (!pictoImage) ctx.strokeRect(x, y, itemDepth, itemWidth);
   if (pictoImage) drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4, side >= 0 ? Math.PI / 2 : -Math.PI / 2);
   drawSideTvLabel(ctx, wallLabelText, side >= 0 ? 'left' : 'right', x, y + itemWidth / 2, itemDepth);
@@ -1131,7 +1261,7 @@ function drawObjectWallItemTop(ctx, item, scale, toX, toY, label, itemWidth, ite
 
 function drawSideTvLabel(ctx, label, wall, x, y, screenDepth) {
   ctx.save();
-  ctx.translate(wall === 'left' ? x + screenDepth + 44 : x - 36, y);
+  ctx.translate(wall === 'left' ? x + screenDepth + 58 : x - 36, y);
   ctx.rotate(-Math.PI / 2);
   drawText(ctx, label, 0, 0, 15, '#22364d', 'bold', 'center');
   ctx.restore();
@@ -1495,24 +1625,4 @@ function wallLabel(wall) {
   if (wall === 'left') return 'Mur gauche';
   if (wall === 'right') return 'Mur droit';
   return 'Mur fond';
-}
-
-function canvasToBlob(canvas, type = 'image/png') {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error('Export du plan technique impossible.'));
-    }, type);
-  });
-}
-
-function downloadCanvas(canvas, filename) {
-  canvasToBlob(canvas, 'image/png').then((blob) => {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-  }).catch(() => {});
 }

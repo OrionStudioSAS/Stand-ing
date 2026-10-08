@@ -61,7 +61,7 @@ import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
 import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminAuditEvents, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, markSceneSpecialRequestResolved, publicConfiguratorUrl, requestSceneAccessCode, saveAdminUser, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveSceneManualOrderLines, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, signatureAllowancePerSquareMeter, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
-import { createTechnicalPlanBlob, exportTechnicalPng, standWallPanelRequirements } from './technicalExport.js';
+import { createTechnicalPlanBlob, exportTechnicalPdf, standWallPanelRequirements } from './technicalExport.js';
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
 import { t as tRaw } from './i18n.js';
 import './styles.css';
@@ -14966,12 +14966,13 @@ async function downloadSceneTechnicalPlan(scene = {}, assets = []) {
   const width = Number(scene.dimensions?.width || scene.width_m || 4);
   const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
   const items = sceneAllAdminItems(scene, catalogEntries);
-  return exportTechnicalPng({
+  return exportTechnicalPdf({
     width,
     depth,
     layout: scene.layout || 'back',
     items: withTechnicalOptionsMarker(items, scene, catalogEntries),
     catalog: catalogEntries,
+    documentInfo: sceneTechnicalDocumentInfo(scene),
   });
 }
 
@@ -14986,11 +14987,21 @@ async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = []) {
     layout: scene.layout || 'back',
     items: withTechnicalOptionsMarker(sceneAllAdminItems(scene, catalogEntries), scene, catalogEntries),
     catalog: catalogEntries,
+    documentInfo: sceneTechnicalDocumentInfo(scene),
   });
   return {
-    filename: `bat-${slugForType(scene.client_name || scene.project_name || scene.id || 'stand')}.png`,
+    filename: `bat-${slugForType(scene.client_name || scene.project_name || scene.id || 'stand')}-A3.pdf`,
     contentBase64: await blobToBase64(blob),
-    contentType: 'image/png',
+    contentType: 'application/pdf',
+  };
+}
+
+function sceneTechnicalDocumentInfo(scene = {}) {
+  return {
+    title: scene.project_name || scene.client_name || 'Plan technique',
+    salon: scene.event_name || scene.salon?.name || (typeof scene.salon === 'string' ? scene.salon : ''),
+    hall: sceneHallLabel(scene),
+    stand: sceneStandNumber(scene),
   };
 }
 
