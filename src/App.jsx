@@ -284,6 +284,11 @@ const partitionHeadRuleBands = [
   { id: 'medium', label: '12 à 24 m²', minArea: 12, maxArea: 24.999, includedCount: 1 },
   { id: 'large', label: '25 m² et plus', minArea: 25, maxArea: null, includedCount: 2 },
 ];
+const equippedPartitionHeadRuleBands = [
+  ...partitionHeadRuleBands.slice(0, 2),
+  { id: 'large', label: '25 à 30 m²', minArea: 25, maxArea: 30.999, includedCount: 2 },
+  { id: 'extraLarge', label: '31 m² et plus', minArea: 31, maxArea: null, includedCount: 2 },
+];
 const placementRuleOptions = [
   { id: 'free', label: 'Libre', description: "L'utilisateur peut poser et déplacer cet objet normalement." },
   { id: 'back-left', label: 'Coin arrière gauche', description: "L'objet se colle automatiquement dans le coin arrière gauche." },
@@ -10761,7 +10766,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
   const packReserveBands = reserveRuleBandsForPack(offer?.name);
   const isSignaturePack = packReserveBands === signatureReserveRuleBands;
   const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(initialDraft?.reserveRules || preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true, bands: packReserveBands }));
-  const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(initialDraft?.partitionHeadRules || preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules, { isSignaturePack }));
+  const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(initialDraft?.partitionHeadRules || preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules, { isSignaturePack, isEquippedPack: normalizePackLabel(offer?.name) === 'equipe' }));
   const [autoSpotsRule, setAutoSpotsRule] = useState(() => initialDraft ? initialDraft.autoSpotsRule || null : preset.base_config?.autoSpotsRule || null);
   const [presetColorIds, setPresetColorIds] = useState(() => initialDraft?.defaultColorOptions || presetDefaultColorIds(preset));
   const carpetPalette = useMemo(() => packColorPalette(assets, offer?.name, 'carpet', carpetColors), [assets, offer?.name]);
@@ -11245,6 +11250,7 @@ function PresetReserveRulesEditor({ rules, bands = reserveRuleBands, entries, sa
 }
 
 function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, isSignaturePack = false, area = 0, onChange }) {
+  const bands = rules?.extraLarge ? equippedPartitionHeadRuleBands : partitionHeadRuleBands;
   const updateBand = (bandId, patch) => {
     onChange(normalizePartitionHeadRules({
       ...(rules || {}),
@@ -11295,7 +11301,7 @@ function PresetPartitionHeadRulesEditor({ rules, entries, salonLabel, isSignatur
       <h4>Têtes de cloison automatiques</h4>
       <p>Le nombre inclus dépend de la surface. Dans l'étape 2, l'exposant coche gauche/droite ; tout dépassement devient payant.</p>
       {!entries.length && <div className="preset-reserve-empty">Aucune tête de cloison disponible pour ce salon.</div>}
-      {partitionHeadRuleBands.map((band) => {
+      {bands.map((band) => {
         const rule = rules?.[band.id] || {};
         const includedCount = Number(rule.includedCount ?? band.includedCount ?? 0);
         const includedSideValue = includedCount >= 2 ? 'both' : includedCount <= 0 ? 'none' : (rule.includedSides?.[0] || '');
@@ -16218,13 +16224,14 @@ function scenePartitionHeadRules(scene = {}) {
     || scene?.options?.partitionHeadRules
     || scene?.source_payload?.options?.partitionHeadRules
     || {},
-    { isSignaturePack },
+    { isSignaturePack, isEquippedPack: normalizePackLabel(sceneOfferLabel(scene)) === 'equipe' },
   );
 }
 
-function normalizePartitionHeadRules(rules = {}, { isSignaturePack = false } = {}) {
-  return partitionHeadRuleBands.reduce((acc, band) => {
-    const source = rules?.[band.id] || {};
+function normalizePartitionHeadRules(rules = {}, { isSignaturePack = false, isEquippedPack = false } = {}) {
+  const bands = !isSignaturePack && (isEquippedPack || rules?.extraLarge) ? equippedPartitionHeadRuleBands : partitionHeadRuleBands;
+  return bands.reduce((acc, band) => {
+    const source = rules?.[band.id] || (band.id === 'extraLarge' ? rules?.large : null) || {};
     acc[band.id] = {
       id: band.id,
       bandLabel: band.label,
@@ -16250,12 +16257,11 @@ function normalizePartitionHeadIncludedSides(sides, side = '') {
 
 function activePartitionHeadRule(rules = {}, area = 0, layout = 'u') {
   const numericArea = Number(area || 0);
-  const band = partitionHeadRuleBands.find((entry) => (
+  const rule = Object.values(normalizePartitionHeadRules(rules)).find((entry, index, bands) => (
     numericArea >= entry.minArea
-    && (entry.maxArea === null || numericArea <= entry.maxArea)
+    && (!bands[index + 1] || numericArea < bands[index + 1].minArea)
   ));
-  if (!band) return null;
-  const rule = normalizePartitionHeadRules(rules)[band.id];
+  if (!rule) return null;
   const includedSides = partitionHeadRuleIncludedSides(rule, layout);
   return { ...rule, includedSides };
 }
@@ -19248,10 +19254,11 @@ function wallItemCollisionBox(item, items, width, depth) {
   const region = isPosterItem(item) ? posterSurfaceRegion(item, items, width, depth) : null;
   const axis = Number(region?.center ?? item.x ?? 0);
   const y = wallItemCenterY(item);
+  const solidBounds = siaePartitionHeadPlacementBounds(item) ? wallItemAxisBounds(item, item.wall || 'back') : null;
   return {
     wall: item.wall || 'back',
-    minAxis: axis - metrics.width / 2 - collisionPadding,
-    maxAxis: axis + metrics.width / 2 + collisionPadding,
+    minAxis: axis + (solidBounds?.min ?? -metrics.width / 2) - collisionPadding,
+    maxAxis: axis + (solidBounds?.max ?? metrics.width / 2) + collisionPadding,
     minY: y - metrics.height / 2 - collisionPadding,
     maxY: y + metrics.height / 2 + collisionPadding,
   };
@@ -19404,6 +19411,8 @@ function itemGroupBounds(item) {
 function itemPlacementBoundsOverride(item) {
   const smclBounds = smclPartitionHeadPlacementBounds(item);
   if (smclBounds) return smclBounds;
+  const siaeBounds = siaePartitionHeadPlacementBounds(item);
+  if (siaeBounds) return siaeBounds;
 
   const bounds = item?.dimensions?.placementBounds;
   const minX = Number(bounds?.minX);
@@ -19435,6 +19444,22 @@ function smclPartitionHeadPlacementBounds(item = {}) {
   const common = { minX: -0.3, maxX: 0.3, minZ: -0.0205, maxZ: 0.0205, depth: 0.041, width: 0.6, height: 2.4, centerX: 0, centerZ: 0, source: 'smcl-head-fallback' };
   if (side === 'right') return common;
   return common;
+}
+
+function siaePartitionHeadPlacementBounds(item = {}) {
+  const text = normalizedItemText(item);
+  if (!text.includes('tete de cloison') || !text.includes('siae')) return null;
+  const left = text.includes('gauche');
+  if (!left && !text.includes('droite')) return null;
+  const [modelWidth, height, depth] = itemDefaultSize(item);
+  const width = Math.min(0.6, modelWidth);
+  // Only the solid support anchors to the wall; the full model remains protected from reserves/arches.
+  const minX = left ? modelWidth / 2 - width : -modelWidth / 2;
+  return {
+    minX, maxX: minX + width, minZ: -depth / 2, maxZ: depth / 2,
+    centerX: minX + width / 2, centerZ: 0, width, depth, height,
+    source: 'siae-head-solid',
+  };
 }
 
 function itemDefaultSize(item) {
@@ -19633,6 +19658,10 @@ function wallMountedBlocker(item, wall, width, depth, margin = 0.1) {
   if (coverBlocker) return coverBlocker;
   if ((item.wall || 'back') !== wall) return null;
   const axis = Number(item.x || 0);
+  if (siaePartitionHeadPlacementBounds(item)) {
+    const bounds = wallItemAxisBounds(item, wall);
+    return { min: axis + bounds.min - margin, max: axis + bounds.max + margin };
+  }
   const itemWidth = wallItemMetrics(item, [], width, depth).width;
   return { min: axis - itemWidth / 2 - margin, max: axis + itemWidth / 2 + margin };
 }

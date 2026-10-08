@@ -33,11 +33,13 @@ function collisionContext() {
     'isSmclPartitionHeadItem', 'smclPartitionHeadSide', 'isSignaturePartitionHeadItem',
     'isAutomaticReserveItem', 'isReserveSceneItem', 'isPrestigeArchItem', 'isSignatureArchItem',
     'isWallItemType', 'isWallItem', 'normalizeModelSize', 'itemDefaultSize',
-    'smclPartitionHeadPlacementBounds', 'itemPlacementBoundsOverride', 'itemGroupBounds',
+    'smclPartitionHeadPlacementBounds', 'siaePartitionHeadPlacementBounds', 'itemPlacementBoundsOverride', 'itemGroupBounds',
     'childrenBounds', 'itemGroupSize', 'rotatePoint', 'itemPlacementBounds',
     'itemHardCollisionBox', 'boxesOverlap', 'itemCollisionEnabled', 'itemCollisionBox',
     'signatureArchTotemCollisionBox', 'collidesWithReserveProtectedArea',
     'wallMountedNormalOffset', 'wallMountedItemRotation', 'screenWorldPosition',
+    'wallItemAxisBounds', 'wallItemMetrics', 'wallItemCollisionBox',
+    'wallCoverPartitionHeadBlocker', 'wallMountedBlocker',
     'partitionHeadModelBounds', 'partitionHeadPhysicalBox', 'collidesWithPartitionHeads',
     'collidesWithScene', 'signatureArchWallX', 'signatureArchBackWallZ',
     'placeSignatureArchAgainstBackWall', 'isTransformPatch',
@@ -67,6 +69,47 @@ test('SMCL retains its 60 cm placement footprint but protects the complete head'
   assert.equal(context.collidesWithScene(reserve, [head], reserve.id, 4, 4), true);
   assert.equal(context.collidesWithScene({ ...reserve, x: 0.2 }, [head], reserve.id, 4, 4), false);
   assert.equal(context.collidesWithScene({ ...reserve, x: 0.25 }, [head], reserve.id, 4, 4), false, 'No arbitrary extra clearance');
+});
+
+test('SIAE supports span 60 cm from the inner edge and retain model depth and height', () => {
+  const context = collisionContext();
+  for (const [side, minX, maxX, centerX] of [
+    ['Gauche', -0.045, 0.555, 0.255],
+    ['Droite', -0.555, 0.045, -0.255],
+  ]) {
+    const item = { ...head, label: `Te\u0302te De Cloison SIAE ${side} `, dimensions: { size: [1.11, 2.99, 0.11] } };
+    const bounds = context.itemGroupBounds(item);
+    for (const [key, expected] of Object.entries({ minX, maxX, centerX, width: 0.6, minZ: -0.055, maxZ: 0.055, depth: 0.11, height: 2.99 })) {
+      assert.ok(Math.abs(bounds[key] - expected) < 1e-9, `${side}: ${key}`);
+    }
+    assert.deepEqual(Array.from(context.itemDefaultSize(item)), [1.11, 2.99, 0.11], 'Never resize the visible model');
+    const physical = context.partitionHeadPhysicalBox(item, [], 4, 4);
+    assert.ok(Math.abs(physical.maxX - physical.minX - 1.11) < 1e-9, 'Full head still blocks reserves/arches');
+    const rotated = context.partitionHeadPhysicalBox({ ...item, wall: 'left' }, [], 4, 4);
+    assert.ok(Math.abs(rotated.maxZ - rotated.minZ - 1.11) < 1e-9, 'Full protection follows the wall orientation');
+  }
+  assert.equal(context.siaePartitionHeadPlacementBounds({ ...head, label: 'Cloison SIAE' }), null);
+  assert.equal(context.siaePartitionHeadPlacementBounds(head), null);
+});
+
+test('SIAE wall collisions and banner exclusions follow the off-centre solid support on every wall', () => {
+  const context = collisionContext();
+  for (const side of ['Gauche', 'Droite']) {
+    for (const wall of ['back', 'left', 'right']) {
+      const item = { ...head, label: `Tete De Cloison SIAE ${side}`, wall, modelUrl: 'head.glb', dimensions: { size: [1.11, 2.99, 0.11] } };
+      const bounds = context.wallItemAxisBounds(item, wall);
+      const blocker = context.wallMountedBlocker(item, wall, 4, 4, 0);
+      const collision = context.wallItemCollisionBox(item, [], 4, 4);
+      assert.ok(Math.abs(blocker.min - (item.x + bounds.min)) < 1e-9);
+      assert.ok(Math.abs(blocker.max - (item.x + bounds.max)) < 1e-9);
+      assert.equal(collision.minAxis, blocker.min);
+      assert.equal(collision.maxAxis, blocker.max);
+      assert.ok(Math.abs(blocker.max - blocker.min - 0.6) < 1e-9);
+      const center = (bounds.min + bounds.max) / 2;
+      const positiveCenter = (side === 'Gauche') !== (wall === 'left');
+      assert.equal(center > 0, positiveCenter, `${side} / ${wall}`);
+    }
+  }
 });
 
 test('Full physical head bounds apply to floor heads and both side walls', () => {

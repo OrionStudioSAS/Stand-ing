@@ -56,6 +56,8 @@ test('Signature includes both partition heads at every area, including existing 
   const context = vm.createContext({
     isSignatureScene: (scene) => scene.offer === 'Signature',
     scenePackBenefits: () => ({ mode: 'allowance' }),
+    normalizePackLabel: (label) => String(label || '').toLowerCase(),
+    sceneOfferLabel: (scene) => scene.offer,
   });
   const start = source.indexOf('const partitionHeadRuleBands = [');
   const end = source.indexOf('const placementRuleOptions = [', start);
