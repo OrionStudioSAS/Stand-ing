@@ -187,6 +187,12 @@ function dbSceneToScene(row) {
 
 function applyPresetDefaultColorOptions(row) {
   const sourcePayload = { ...(row.source_payload || {}) };
+  const presetOptions = row.stand_presets?.base_config?.options || {};
+  for (const key of ['ledRailOverrides', 'reserveItemOverrides']) {
+    if (presetOptions[key] && !Object.prototype.hasOwnProperty.call(sourcePayload.options || {}, key)) {
+      sourcePayload.options = { ...(sourcePayload.options || {}), [key]: presetOptions[key] };
+    }
+  }
   const presetDefaults = row.stand_presets?.base_config?.defaultColorOptions
     || row.stand_presets?.base_config?.options?.defaultColorOptions
     || null;

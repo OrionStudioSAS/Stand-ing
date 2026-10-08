@@ -50,6 +50,12 @@ export function packEditorChanges(before = {}, after = {}) {
     const enabled = after.autoSpotsRule?.twoSpotType || after.autoSpotsRule?.threeSpotType || after.autoSpotsRule?.type;
     changes.push({ label: 'Spots', detail: enabled ? 'Rails automatiques mis à jour' : 'Rails automatiques désactivés' });
   }
+  if (!same(before.options?.ledRailOverrides || {}, after.options?.ledRailOverrides || {})) {
+    changes.push({ label: 'Position des spots', detail: 'Placement des rails automatiques mis à jour' });
+  }
+  if (!same(before.options?.reserveItemOverrides || {}, after.options?.reserveItemOverrides || {})) {
+    changes.push({ label: 'Position de la réserve', detail: 'Placement de la réserve automatique mis à jour' });
+  }
   if (!same(before.items, after.items)) {
     const oldItems = before.items || [];
     const newItems = after.items || [];

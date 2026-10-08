@@ -38,6 +38,12 @@ test('moving an included object is reported even when the quantity stays the sam
   assert.equal(packEditorChanges(before, after)[0].label, 'Objets inclus');
 });
 
+test('confirmation includes changed automatic reserve and rail positions', () => {
+  const after = { options: { ledRailOverrides: { rail: { wall: 'object-wall:reserve', x: 1 } }, reserveItemOverrides: { reserve: { x: 2 } } } };
+  assert.deepEqual(packEditorChanges({}, after).map((change) => change.label), ['Position des spots', 'Position de la réserve']);
+  assert.deepEqual(packEditorChanges(after, structuredClone(after)), []);
+});
+
 test('saving an explicitly removed rail rule clears the old stored rule', async () => {
   const source = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
   const saveSource = source.slice(source.indexOf('export async function saveStandPresetConfig('), source.indexOf('\nfunction sceneItemToPresetRow(')).replace('export async function', 'async function');

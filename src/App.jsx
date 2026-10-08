@@ -1156,9 +1156,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const rawSelectedCarpetColor = findColorInPalette(carpetPalette, selectedCarpetId) || defaultColorFromPalette(carpetPalette) || carpetPalette[0] || carpetColors[0];
   const rawSelectedCarpetFootprintColor = findColorInPalette(footprintPalette, selectedCarpetFootprintId) || defaultColorFromPalette(footprintPalette) || rawSelectedCarpetColor;
   const rawSelectedWallFabricColor = findColorInPalette(wallFabricPalette, selectedWallFabricId) || defaultColorFromPalette(wallFabricPalette) || wallFabricPalette[0] || wallFabricColors[0];
-  const rawReserveWallFabricColor = isSignatureStand
-    ? signatureReserveWallFabricColor()
-    : findColorInPalette(wallFabricPalette, effectiveDefaultColorOptions.reserveWallFabricColorId) || rawSelectedWallFabricColor;
+  const rawReserveWallFabricColor = reserveWallFabricColorForPack(assetPackLabel, wallFabricPalette, effectiveDefaultColorOptions.reserveWallFabricColorId, rawSelectedWallFabricColor);
   const selectedCarpetColor = colorWithDefaultIncluded(rawSelectedCarpetColor, effectiveDefaultColorOptions.carpetColorId);
   const selectedCarpetFootprintColor = colorWithDefaultIncluded(rawSelectedCarpetFootprintColor, effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId);
   const selectedWallFabricColor = colorWithDefaultIncluded(rawSelectedWallFabricColor, effectiveDefaultColorOptions.wallFabricColorId);
@@ -1270,10 +1268,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   );
   const automaticSpotItems = useMemo(
     () => (ledRailsEnabled && hasAutoSpotsRule(autoSpotsRule)
-      ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems)
+      ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...automaticReserveItems, ...manualHydratedItems])
         .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout))
       : []),
-    [ledRailsEnabled, autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, ledRailOverrides],
+    [ledRailsEnabled, autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, manualHydratedItems, ledRailOverrides],
   );
   const actualLedSpotCount = useMemo(() => (
     ledRailsEnabled
@@ -1762,10 +1760,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     setItems((current) => {
       const visibleCurrent = current.filter((item) => item.id === id || !isHiddenIncludedCounterItem(item));
       const blockers = [...automaticReserveItems, ...automaticPartitionHeadItems].filter((item) => item.id !== id);
-      const updated = updateSceneItemWithCollision([...visibleCurrent, ...blockers], id, patch, width, depth, layout, genericCarpetFootprintEnabled);
-      const updatedItem = updated.find((item) => item.id === id);
-      if (!updatedItem) return current;
-      return current.map((item) => (item.id === id ? updatedItem : item));
+      const updated = updateManualSceneItemWithCollision(visibleCurrent, id, patch, blockers, width, depth, layout, genericCarpetFootprintEnabled);
+      const byId = new Map(updated.map((item) => [item.id, item]));
+      return current.map((item) => byId.get(item.id) || item);
     });
   };
 
@@ -8058,8 +8055,8 @@ function reserveSizeDescription(area = 0, label = '') {
 function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions }) {
   const t = useT();
   const rows = [
-    { side: 'left', label: t('partition_left'), visualLabel: 'VISUEL LUMINEUX tête de cloison gauche', uploadSubtitle: isSignatureStand ? 'Visuel LED · PNG, JPG ou PDF' : 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.leftType, price: rule?.leftPrice },
-    { side: 'right', label: t('partition_right'), visualLabel: 'VISUEL LUMINEUX tête de cloison droite', uploadSubtitle: isSignatureStand ? 'Visuel LED · PNG, JPG ou PDF' : 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.rightType, price: rule?.rightPrice },
+    { side: 'left', label: t('partition_left'), visualLabel: partitionHeadVisualLabel('left', salonLabel, findCatalogEntry(catalog, rule?.leftType)), uploadSubtitle: isSignatureStand ? 'Visuel LED · PNG, JPG ou PDF' : 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.leftType, price: rule?.leftPrice },
+    { side: 'right', label: t('partition_right'), visualLabel: partitionHeadVisualLabel('right', salonLabel, findCatalogEntry(catalog, rule?.rightType)), uploadSubtitle: isSignatureStand ? 'Visuel LED · PNG, JPG ou PDF' : 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.rightType, price: rule?.rightPrice },
   ];
   const selectedRows = rows.filter((row) => Boolean(sides?.[row.side]));
   const selectedCount = selectedRows.length;
@@ -10769,15 +10766,15 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
   const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(initialDraft?.partitionHeadRules || preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules, { isSignaturePack, isEquippedPack: normalizePackLabel(offer?.name) === 'equipe' }));
   const [autoSpotsRule, setAutoSpotsRule] = useState(() => initialDraft ? initialDraft.autoSpotsRule || null : preset.base_config?.autoSpotsRule || null);
   const [presetColorIds, setPresetColorIds] = useState(() => initialDraft?.defaultColorOptions || presetDefaultColorIds(preset));
+  const [ledRailOverrides, setLedRailOverrides] = useState(() => initialDraft?.options?.ledRailOverrides || preset.base_config?.options?.ledRailOverrides || {});
+  const [reserveItemOverrides, setReserveItemOverrides] = useState(() => initialDraft?.options?.reserveItemOverrides || preset.base_config?.options?.reserveItemOverrides || {});
   const carpetPalette = useMemo(() => packColorPalette(assets, offer?.name, 'carpet', carpetColors), [assets, offer?.name]);
   const footprintPalette = useMemo(() => packColorPalette(assets, offer?.name, 'footprint', carpetPalette), [assets, offer?.name, carpetPalette]);
   const wallFabricPalette = useMemo(() => packColorPalette(assets, offer?.name, 'wallFabric', wallFabricColors), [assets, offer?.name]);
   const selectedCarpetColor = findColorInPalette(carpetPalette, presetColorIds.carpetColorId) || defaultColorFromPalette(carpetPalette) || carpetPalette[0] || carpetColors[0];
   const selectedCarpetFootprintColor = findColorInPalette(footprintPalette, presetColorIds.carpetFootprintColorId) || defaultColorFromPalette(footprintPalette) || selectedCarpetColor;
   const selectedWallFabricColor = findColorInPalette(wallFabricPalette, presetColorIds.wallFabricColorId) || defaultColorFromPalette(wallFabricPalette) || wallFabricPalette[0] || wallFabricColors[0];
-  const selectedReserveWallFabricColor = isSignaturePack
-    ? signatureReserveWallFabricColor()
-    : findColorInPalette(wallFabricPalette, presetColorIds.reserveWallFabricColorId) || selectedWallFabricColor;
+  const selectedReserveWallFabricColor = reserveWallFabricColorForPack(offer?.name, wallFabricPalette, presetColorIds.reserveWallFabricColorId, selectedWallFabricColor);
   const selectedDefaultColorOptions = useMemo(() => defaultColorOptionsFromColors({
     carpetColor: selectedCarpetColor,
     carpetFootprintColor: selectedCarpetFootprintColor,
@@ -10787,12 +10784,15 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
   const previewItems = useMemo(() => {
     const area = width * depth;
     const reserveRule = activeReserveRule(reserveRules, area, packReserveBands);
-    const automaticReserves = makeAutomaticReserveItems(reserveRule, '', availableCatalog, width, depth, layout, offer?.name);
+    const automaticReserves = makeAutomaticReserveItems(reserveRule, '', availableCatalog, width, depth, layout, offer?.name)
+      .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, !isSignaturePack));
     const headRule = activePartitionHeadRule(partitionHeadRules, area, layout);
     const automaticHeads = makeAutomaticPartitionHeadItems(headRule, partitionHeadEnabledSides(headRule), availableCatalog, width, depth, layout, offer?.name);
-    const automaticSpots = hasAutoSpotsRule(autoSpotsRule) ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...items, ...automaticReserves]) : [];
-    return [...items, ...automaticReserves, ...automaticHeads, ...automaticSpots];
-  }, [items, width, depth, layout, reserveRules, partitionHeadRules, autoSpotsRule, availableCatalog, packReserveBands, offer?.name]);
+    const automaticSpots = hasAutoSpotsRule(autoSpotsRule)
+      ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...items, ...automaticReserves])
+        .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout)) : [];
+    return resolveSurfaceAttachments([...items, ...automaticReserves, ...automaticHeads, ...automaticSpots]);
+  }, [items, width, depth, layout, reserveRules, partitionHeadRules, autoSpotsRule, availableCatalog, packReserveBands, offer?.name, reserveItemOverrides, ledRailOverrides, isSignaturePack]);
   const presetTextureLoad = useSceneTexturePreload(previewItems, [
     selectedCarpetColor.image,
     selectedCarpetFootprintColor.image,
@@ -10802,7 +10802,8 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
   const presetSuspendLoad = useSceneSuspendPreload(previewItems);
   const presetAssetsReady = presetTextureLoad.ready && presetSuspendLoad.ready;
   const presetLoadProgress = combineLoadStates(presetTextureLoad, presetSuspendLoad);
-  const selected = items.find((item) => item.id === selectedId);
+  const selected = previewItems.find((item) => item.id === selectedId);
+  const selectedIsAutomatic = selected && (isAutomaticLedRailItem(selected) || isAutomaticReserveItem(selected) || isAutomaticPartitionHeadItem(selected));
 
   useEffect(() => {
     setItems((current) => current.map((item) => constrainItem(hydrateSceneItemFromCatalog(item, availableCatalog), width, depth, layout)));
@@ -10810,15 +10811,28 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
   }, [width, depth, layout, availableCatalog]);
 
   const updateItem = (id, patch) => {
-    setItems((current) => updateSceneItemWithCollision(current, id, patch, width, depth, layout));
+    const item = previewItems.find((entry) => entry.id === id);
+    if (!item || isAutomaticPartitionHeadItem(item)) return;
+    if (isAutomaticLedRailItem(item)) {
+      const constrained = constrainItem({ ...item, ...patch }, width, depth, layout, !isSignaturePack);
+      setLedRailOverrides((current) => ({ ...current, [id]: pickLedRailOverride(constrained) }));
+      return;
+    }
+    if (isAutomaticReserveItem(item)) {
+      const candidate = automaticReserveBackWallCandidate(item, patch, width, depth, layout);
+      if (collidesWithScene(candidate, previewItems, id, width, depth)) return;
+      setReserveItemOverrides((current) => ({ ...current, [id]: pickReserveItemOverride(candidate) }));
+      return;
+    }
+    setItems((current) => updateManualSceneItemWithCollision(current, id, patch, previewItems, width, depth, layout, !isSignaturePack));
   };
 
   const moveDraggedItem = (point) => {
     if (!draggingId) return;
-    const dragged = items.find((item) => item.id === draggingId);
+    const dragged = previewItems.find((item) => item.id === draggingId);
     if (!dragged) return;
     if (isWallItem(dragged)) {
-      updateItem(draggingId, wallDragPatch(point, dragged, items, width, depth, layout));
+      updateItem(draggingId, wallDragPatch(point, dragged, previewItems, width, depth, layout));
       return;
     }
     updateItem(draggingId, { x: dragCoordinate(point.x), z: dragCoordinate(point.z) });
@@ -10826,7 +10840,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
 
   const addItem = (entry) => {
     const item = makeItem(entry.type, width, depth, layout, entry);
-    const placed = placeItemInFreeSpot({ ...item, label: entry.label }, items, width, depth, layout);
+    const placed = placeItemInFreeSpot({ ...item, label: entry.label }, previewItems, width, depth, layout, !isSignaturePack);
     if (!placed) { setObjectFeedback('Pas de place disponible pour cet objet. Déplace les objets ou agrandis la scène.'); return; }
     setObjectFeedback('');
     setItems((current) => [...current, placed]);
@@ -10850,10 +10864,12 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
         partitionHeadRules,
         autoSpotsRule: autoSpotsRule || undefined,
         defaultColorOptions: selectedDefaultColorOptions,
+        ledRailOverrides,
+        reserveItemOverrides,
         ...selectedDefaultColorOptions,
       },
     };
-  }, [width, depth, layout, items, reserveRules, partitionHeadRules, autoSpotsRule, selectedDefaultColorOptions, packReserveBands, offer?.name, salon.name]);
+  }, [width, depth, layout, items, reserveRules, partitionHeadRules, autoSpotsRule, selectedDefaultColorOptions, packReserveBands, offer?.name, salon.name, ledRailOverrides, reserveItemOverrides]);
 
   useEffect(() => { if (draftReady) onDraftChange(preset.id, sceneDraft); }, [preset.id, sceneDraft, onDraftChange, draftReady]);
   const removeItem = (id) => {
@@ -10903,7 +10919,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
               selectedToolbar={selected ? (
                 <div className={`view-toolbar preset-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) ? 'rotation-open' : ''}`}>
                   <button type="button" disabled={isWallItem(selected) || itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
-                  <button type="button" onClick={() => { setItems((current) => current.filter((item) => item.id !== selected.id)); setSelectedId(null); }} title="Supprimer"><Trash2 size={15} /></button>
+                  <button type="button" disabled={selectedIsAutomatic} onClick={() => removeItem(selected.id)} title={selectedIsAutomatic ? 'Modifiez les règles dans les onglets Réserves, Têtes ou Spots' : 'Supprimer'}><Trash2 size={15} /></button>
                   {rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) && (
                     <RotationDial value={selected.rotation || 0} onChange={(nextRotation) => updateItem(selected.id, { rotation: nextRotation })} />
                   )}
@@ -10933,7 +10949,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
           <PresetCameraFraming width={width} depth={depth} controlsRef={orbitControlsRef} />
         </Canvas>
         </div>
-        {viewMode === 'plan' && <PresetPlanView width={width} depth={depth} layout={layout} items={previewItems} editableIds={items.map((item) => item.id)} selectedId={selectedId} onSelect={setSelectedId} carpetColor={selectedCarpetColor} footprintColor={selectedCarpetFootprintColor} footprintEnabled={!isSignaturePack} onMove={updateItem} />}
+        {viewMode === 'plan' && <PresetPlanView width={width} depth={depth} layout={layout} items={previewItems} editableIds={previewItems.filter((item) => !isAutomaticPartitionHeadItem(item)).map((item) => item.id)} selectedId={selectedId} onSelect={setSelectedId} carpetColor={selectedCarpetColor} footprintColor={selectedCarpetFootprintColor} footprintEnabled={!isSignaturePack} onMove={updateItem} />}
 
         {!presetAssetsReady && <SceneTextureLoaderOverlay loaded={presetLoadProgress.loaded} total={presetLoadProgress.total} />}
 
@@ -10965,6 +10981,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
           selectedIds={presetColorIds}
           onChange={setPresetColorIds}
           isSignaturePack={isSignaturePack}
+          fixedReserveColorPack={normalizePackLabel(offer?.name) === 'equipe' ? 'Équipé' : ''}
         />
         </>}
         {editorTab === 'reserves' && <PresetReserveRulesEditor
@@ -11098,7 +11115,7 @@ function PresetPlanView({ width, depth, layout, items, editableIds, selectedId, 
   </div>;
 }
 
-function PresetDefaultColorsEditor({ carpetColors = [], footprintColors = [], wallFabricColors = [], selectedIds = {}, onChange, isSignaturePack = false }) {
+function PresetDefaultColorsEditor({ carpetColors = [], footprintColors = [], wallFabricColors = [], selectedIds = {}, onChange, isSignaturePack = false, fixedReserveColorPack = '' }) {
   const update = (key, value) => onChange((current) => ({ ...(current || {}), [key]: value }));
   return (
     <section className="preset-default-colors">
@@ -11125,8 +11142,8 @@ function PresetDefaultColorsEditor({ carpetColors = [], footprintColors = [], wa
         value={selectedIds.wallFabricColorId}
         onChange={(value) => update('wallFabricColorId', value)}
       />
-      {isSignaturePack
-        ? <p className="preset-reserve-empty">Cloisons de la réserve : gris anthracite (fixe pour Signature).</p>
+      {isSignaturePack || fixedReserveColorPack
+        ? <p className="preset-reserve-empty">Cloisons de la réserve : gris anthracite (fixe pour {isSignaturePack ? 'Signature' : fixedReserveColorPack}).</p>
         : <PresetColorSelect
             label="Cloisons de la réserve"
             colors={wallFabricColors}
@@ -15725,6 +15742,16 @@ function signatureReserveWallFabricColor() {
   return wallFabricColors.find((color) => color.code === '3026');
 }
 
+function reserveWallFabricColorForPack(packLabel, palette = [], colorId = '', fallback = null) {
+  if (isSignaturePackLabel(packLabel) || normalizePackLabel(packLabel) === 'equipe') return signatureReserveWallFabricColor();
+  return findColorInPalette(palette, colorId) || fallback;
+}
+
+function partitionHeadVisualLabel(side, packLabel = '', entry = {}) {
+  const isEquipped = normalizePackLabel(packLabel) === 'equipe' || normalizedItemText(entry).includes('siae');
+  return `${isEquipped ? 'VISUEL' : 'VISUEL LUMINEUX'} tête de cloison ${side === 'left' ? 'gauche' : 'droite'}`;
+}
+
 function isSignaturePackLabel(packLabel = '') {
   return /\bsignature\b/.test(normalizePackLabel(packLabel));
 }
@@ -17813,7 +17840,8 @@ function makeAutomaticSpotItems(rule, catalogEntries, width, depth, layout, cont
       dimensions: { ...(firstEntry.dimensions || {}), wallY: ledRailCenterY(firstEntry) },
     };
     const range = wallItemAxisRange(firstBase, wallId, width, depth);
-    const blockers = wallBlockers(dummyItem, contextItems, width, depth, wallId);
+    // Posters and other wall accessories must not relocate the automatic lighting.
+    const blockers = wallBlockers(dummyItem, contextItems.filter(isReserveSceneItem), width, depth, wallId);
     const freeIntervals = freeWallIntervals(range, blockers);
     const positions = distributeInFreeIntervals(wallEntries.length, freeIntervals.length ? freeIntervals : [range]);
     return wallEntries.map((entry, index) => {
@@ -19001,6 +19029,14 @@ function updateSceneItemWithCollision(items, id, patch, width, depth, layout, ca
   if (isPositionPatch && collidesWithScene(candidate, resolvedItems, id, width, depth)) return items;
   if (isPositionPatch && isSameSceneTransform(currentItem, candidate)) return items;
   return resolveSurfaceAttachments(resolvedItems.map((item) => (item.id === id ? candidate : item)));
+}
+
+function updateManualSceneItemWithCollision(items, id, patch, contextItems, width, depth, layout, carpetFootprintEnabled = true) {
+  const manualIds = new Set(items.map((item) => item.id));
+  const blockers = (contextItems || []).filter((item) => !manualIds.has(item.id) && !isAutomaticLedRailItem(item));
+  const updated = updateSceneItemWithCollision([...items, ...blockers], id, patch, width, depth, layout, carpetFootprintEnabled);
+  const byId = new Map(updated.map((item) => [item.id, item]));
+  return items.map((item) => byId.get(item.id) || item);
 }
 
 function isSameSceneTransform(a = {}, b = {}) {
