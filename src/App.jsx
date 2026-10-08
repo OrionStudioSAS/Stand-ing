@@ -11,6 +11,8 @@ import { defaultImageFraming, framedImageRect, normalizeImageFraming } from './i
 import { packEditorChanges, packEditorImpact } from './packEditor.js';
 import { manualOrderCategories, manualOrderRowsToPricingLines, normalizeManualOrderCategory, replaceManualOrderPricingLines } from './manualOrderLines.js';
 import { useSceneExhibitorReadOnly } from './useSceneExhibitorReadOnly.js';
+import AdminMondayView from './AdminMondayView.jsx';
+import { mondaySyncDuration } from './adminMonday.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   AlertTriangle,
@@ -8873,6 +8875,7 @@ function AdminDashboard({ user, adminProfile }) {
   const [openSalonName, setOpenSalonName] = useState('');
   const [accountOpen, setAccountOpen] = useState(false);
   const [syncState, setSyncState] = useState({ loading: false, message: '', error: '' });
+  const mondaySyncInFlight = useRef(false);
   const [assetUploadState, setAssetUploadState] = useState({ loading: false, message: '', error: '' });
   const profile = getAdminProfile(user, adminProfile);
   const packFilterChoices = useMemo(() => adminPackAssignmentChoices(salons), [salons]);
@@ -8980,14 +8983,12 @@ function AdminDashboard({ user, adminProfile }) {
   };
 
   const runMondaySync = async () => {
-    setSyncState({ loading: true, message: '', error: '' });
+    if (mondaySyncInFlight.current) return;
+    mondaySyncInFlight.current = true;
+    setSyncState({ loading: true, startedAt: Date.now(), message: '', error: '' });
     try {
       const result = await syncMondayScenes();
-      await refreshScenes();
-      await refreshClients();
-      await refreshSalons();
-      await refreshAdminUsers();
-      await refreshSalonFilterChoices();
+      await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers(), refreshSalonFilterChoices()]);
       const createdCount = result?.created ?? result?.processed ?? 0;
       const warnings = Array.isArray(result?.warnings) && result.warnings.length
         ? `\n${result.warnings.join('\n')}`
@@ -9013,7 +9014,7 @@ function AdminDashboard({ user, adminProfile }) {
         loading: false,
         message: (createdCount
           ? `${createdCount} nouvelle(s) scène(s) créée(s), ${result?.clients ?? 0} exposant(s) traité(s) depuis Monday.`
-          : 'Aucune nouvelle scène à créer depuis Monday.') + constraintMessage + inviteMessage + skippedMessage + warnings,
+          : 'Aucune nouvelle scène à créer depuis Monday.') + (result?.duration_ms != null ? `\nDurée : ${mondaySyncDuration(result.duration_ms)}.` : '') + constraintMessage + inviteMessage + skippedMessage + warnings,
         error: syncErrors,
       });
     } catch (error) {
@@ -9022,6 +9023,8 @@ function AdminDashboard({ user, adminProfile }) {
         message: '',
         error: error.message || 'Synchronisation Monday impossible.',
       });
+    } finally {
+      mondaySyncInFlight.current = false;
     }
   };
 
@@ -9203,7 +9206,7 @@ function AdminDashboard({ user, adminProfile }) {
           </div>
           <div className="admin-topbar-actions">
             {tab === 'dashboard' && <div className="admin-dashboard-year" aria-label="Année du dashboard"><button type="button" aria-label="Année précédente" onClick={() => setDashboardYear((year) => year - 1)}><ChevronLeft size={16} /></button><strong>{dashboardYear}</strong>{dashboardYear === new Date().getFullYear() && <span>En cours</span>}<button type="button" aria-label="Année suivante" onClick={() => setDashboardYear((year) => year + 1)}><ChevronRight size={16} /></button></div>}
-            {(tab === 'dashboard' || tab === 'salons' || tab === 'clients' || tab === 'bat' || tab === 'objects' || tab === 'users') && <label className="admin-global-search"><Search size={17} /><input aria-label="Rechercher" placeholder="Rechercher..." value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} /></label>}
+            {(tab === 'dashboard' || tab === 'salons' || tab === 'clients' || tab === 'bat' || tab === 'objects' || tab === 'users' || tab === 'monday') && <label className="admin-global-search"><Search size={17} /><input aria-label="Rechercher" placeholder="Rechercher..." value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} /></label>}
           </div>
         </header>
 
@@ -9266,7 +9269,7 @@ function AdminDashboard({ user, adminProfile }) {
               onUploadColorGroup={uploadColorGroup}
             />
           )}
-          {tab === 'monday' && <AdminMondayView syncState={syncState} runMondaySync={runMondaySync} />}
+          {tab === 'monday' && <AdminMondayView salons={salons} search={adminSearch} syncState={syncState} runMondaySync={runMondaySync} onSalonsChanged={refreshSalons} />}
           {tab === 'requests' && (
             <AdminSpecialRequestsView
               scenes={scenes}
@@ -14468,18 +14471,6 @@ function MiniGroupPlan({ rows, sourceAssets, selectedUid, onSelect, onMove }) {
         <span>X horizontal · Z vertical</span>
       </div>
     </div>
-  );
-}
-
-function AdminMondayView({ syncState, runMondaySync }) {
-  return (
-    <section className="monday-panel modern">
-      <h2>Synchronisation Monday</h2>
-      <p>Lit les tableaux Monday associés aux packs, crée une scène quand CONFIGURABLE vaut OUI et remplit le lien configurateur. Pour un tableau organisé par pack, chaque salon utilise uniquement ses groupes. Le premier email est envoyé une seule fois, lorsque ÉTAPE 1 passe à 1ER ENVOI.</p>
-      <button className="sync-button" onClick={runMondaySync} disabled={syncState.loading}>{syncState.loading ? 'Synchronisation...' : 'Synchroniser Monday'}</button>
-      {syncState.message && <div className="sync-result success">{syncState.message}</div>}
-      {syncState.error && <div className="sync-result error">{syncState.error}</div>}
-    </section>
   );
 }
 

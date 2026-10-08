@@ -8,17 +8,22 @@ import { normalizePackBenefits, packBenefitsForScene, isSignaturePackScene } fro
 const edgeSource = readFileSync(new URL('../supabase/functions/monday-sync/index.ts', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '');
 const compiled = transformSync(edgeSource, { loader: 'ts', format: 'cjs' }).code;
 
-function requestHandler(sourceError = null) {
+function requestHandler(sourceError = null, sources = []) {
   let handler;
+  const history = [];
   const database = {
     auth: { getUser: async () => ({ data: { user: { id: 'admin' } }, error: null }) },
     from(table) {
-      if (table === 'admin_users') return { select() { return this; }, eq() { return this; }, maybeSingle: async () => ({ data: { user_id: 'admin' } }) };
+      if (table === 'admin_users') return { select() { return this; }, eq() { return this; }, maybeSingle: async () => ({ data: { user_id: 'admin', full_name: 'Admin Test' } }) };
       if (table === 'monday_sources') return { select() { return this; }, async eq() {
         if (sourceError) throw sourceError;
-        return { data: [], error: null };
+        return { data: sources, error: null };
       } };
-      if (table === 'monday_sync_runs') return { insert: async () => ({ error: null }) };
+      if (table === 'monday_sync_runs') return {
+        insert(value) { history.push(value); return this; }, select() { return this; },
+        single: async () => ({ data: { id: 'run' }, error: null }),
+        update(value) { history.push(value); return this; }, eq: async () => ({ error: null }),
+      };
       throw new Error(`Unexpected table ${table}`);
     },
   };
@@ -28,37 +33,47 @@ function requestHandler(sourceError = null) {
     normalizePackBenefits, packBenefitsForScene, isSignaturePackScene,
   });
   vm.runInContext(compiled, context);
-  return { handler, database };
+  return { handler, database, history, context };
 }
 
 test('Monday preflight and successful synchronization return browser-readable responses', async () => {
-  const { handler } = requestHandler();
+  const { handler, history } = requestHandler();
   const preflight = await handler(new Request('https://test.supabase.co/functions/v1/monday-sync', { method: 'OPTIONS' }));
   assert.equal(preflight.status, 200);
   assert.equal(preflight.headers.get('Access-Control-Allow-Origin'), '*');
   const success = await handler(new Request('https://test.supabase.co/functions/v1/monday-sync', { method: 'POST', headers: { Authorization: 'Bearer admin-token' }, body: '{}' }));
   assert.equal(success.status, 200);
-  assert.equal((await success.json()).processed, 0);
+  const result = await success.json();
+  assert.equal(result.processed, 0);
+  assert.ok(result.duration_ms >= 0);
+  assert.equal(history[0].actor_user_id, 'admin');
+  assert.equal(history[0].actor_name, 'Admin Test');
+  assert.equal(history[1].status, 'success');
+  assert.equal(history[1].result.invite_emails_sent, 0);
+  assert.ok(history[1].finished_at);
 });
 
 test('Monday unexpected database and network failures retain JSON and CORS instead of masking the cause', async () => {
   for (const error of [{ code: '42501', message: 'permission denied for schema private' }, new Error('Monday unavailable')]) {
-    const { handler } = requestHandler(error);
+    const { handler, history } = requestHandler(error);
     const response = await handler(new Request('https://test.supabase.co/functions/v1/monday-sync', { method: 'POST', headers: { Authorization: 'Bearer admin-token' }, body: '{}' }));
     assert.equal(response.status, 500);
     assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*');
     assert.equal(response.headers.get('Content-Type'), 'application/json');
     assert.equal((await response.json()).error, `Synchronisation Monday impossible : ${error.message}`);
+    assert.equal(history.at(-1).status, 'error');
+    assert.equal(history.at(-1).error, error.message);
   }
 });
 
 test('Monday authentication remains required and rejected requests retain CORS', async () => {
-  const { handler, database } = requestHandler();
+  const { handler, database, history } = requestHandler();
   database.auth.getUser = async () => ({ data: { user: null }, error: new Error('Unauthorized') });
   const response = await handler(new Request('https://test.supabase.co/functions/v1/monday-sync', { method: 'POST', body: '{}' }));
   assert.equal(response.status, 401);
   assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*');
   assert.equal((await response.json()).error, 'Unauthorized');
+  assert.equal(history.length, 0);
 });
 
 function runtime(fetch = () => { throw new Error('Unexpected network request'); }) {
@@ -193,4 +208,94 @@ test('board preparation does not duplicate the required columns', async () => {
   });
   const result = await api.prepareMondayBoard('test-token', 'test-board');
   assert.equal(result.created.length, 0);
+});
+
+test('existing scenes are read in unique batches of 200, not once per exhibitor', async () => {
+  const api = runtime();
+  const batches = [];
+  const database = { from(table) {
+    assert.equal(table, 'scenes');
+    return { select() { return this; }, async in(column, ids) {
+      assert.equal(column, 'monday_item_id');
+      batches.push([...ids]);
+      return { data: ids.map((id) => ({ id: `scene-${id}`, monday_item_id: id })) };
+    } };
+  } };
+  const scenes = await api.fetchExistingMondayScenes(database, [...Array.from({ length: 401 }, (_, id) => ({ id })), { id: 1 }]);
+  assert.deepEqual(batches.map((batch) => batch.length), [200, 200, 1]);
+  assert.equal(scenes.size, 401);
+  assert.equal(scenes.get('400').id, 'scene-400');
+  assert.equal((await api.fetchExistingMondayScenes(database, [])).size, 0);
+  const error = new Error('Database unavailable');
+  await assert.rejects(api.fetchExistingMondayScenes({ from: () => ({ select() { return this; }, in: async () => ({ error }) }) }, [{ id: 1 }]), /Database unavailable/);
+});
+
+test('unchanged JSONB data compares equal regardless of object key ordering', () => {
+  const api = runtime();
+  assert.equal(api.sameMondayData({ a: 1, b: [{ x: 1, y: null }] }, { b: [{ y: null, x: 1 }], a: 1 }), true);
+  assert.equal(api.sameMondayData({ a: 1 }, { a: 2 }), false);
+  assert.equal(api.sameMondayData([1, 2], [2, 1]), false);
+  assert.equal(api.sameMondayData(null, {}), false);
+  assert.equal(api.sameMondayData([], {}), false);
+  assert.equal(api.sameMondayData({ a: 1 }, { a: 1, b: 2 }), false);
+});
+
+test('Monday skips correct configurator links and repairs absent, incorrect or malformed ones', async () => {
+  const calls = [];
+  const api = runtime(async (_url, request) => {
+    calls.push(JSON.parse(request.body));
+    return { ok: true, json: async () => ({ data: { change_multiple_column_values: { id: 'item' } } }) };
+  });
+  const options = { mondayToken: 'token', publicAppUrl: 'https://example.com/', shareToken: 'token', source: { board_id: 'board', link_column_id: 'link' } };
+  await api.ensureMondayConfiguratorLink({ ...options, item: { id: 'item', column_values: [{ id: 'link', value: JSON.stringify({ url: 'https://example.com?scene=token', text: 'Custom label' }) }] } });
+  assert.equal(calls.length, 0);
+  for (const value of [null, '{invalid', JSON.stringify({ url: 'https://old.example.com' })]) {
+    await api.ensureMondayConfiguratorLink({ ...options, item: { id: 'item', column_values: [{ id: 'link', value }] } });
+  }
+  assert.equal(calls.length, 3);
+  for (const call of calls) assert.match(call.variables.value, /https:\/\/example.com\?scene=token/);
+});
+
+test('full sync skips unchanged scene writes and caches shared board reads while keeping history', async () => {
+  const sources = [{ id: 's1', board_id: 'board', offer: 'Confort', mapping: {} }, { id: 's2', board_id: 'board', offer: 'Confort', mapping: {} }];
+  const { handler, database, context, history } = requestHandler(null, sources);
+  let columnReads = 0;
+  let itemReads = 0;
+  let sceneReads = 0;
+  const writes = [];
+  context.fetchMondayBoardColumnsSafe = async () => { columnReads++; return { columns: [] }; };
+  context.ensureSourceContext = async () => ({ offerId: 'offer' });
+  context.fetchOfferPackConfiguration = async () => ({ packBenefits: {}, baseItems: [] });
+  context.fetchMondayItems = async () => { itemReads++; return Array.from({ length: 100 }, (_, id) => ({ id: String(id), name: 'Company', column_values: [] })); };
+  const from = database.from.bind(database);
+  database.from = (table) => table === 'scenes' ? { select() { return this; }, async in(_column, ids) {
+    sceneReads++;
+    return { data: ids.map((id) => ({ id, monday_item_id: id, offer: 'Confort', client_name: 'Contact', client_email: 'contact@example.com', client_status: 'configured', source_payload: { stand_number: id === '0' ? 'OUTDATED' : '', aisle_number: '', hall: '', sector: '', constraint: null, constraints: [], poteau_1_text: '', poteau_2_text: '' } })) };
+  } } : from(table);
+  context.mondaySceneLocation = () => ({ standNumber: 'NEW', aisleNumber: '', hall: '', sector: '' });
+  // Every scene except 0 already has the mapped stand number.
+  const scenesFrom = database.from;
+  database.from = (table) => {
+    const query = scenesFrom(table);
+    if (table === 'scenes') {
+      const original = query.in;
+      query.in = async (...args) => {
+        const result = await original(...args);
+        for (const scene of result.data) if (scene.id !== '0') scene.source_payload.stand_number = 'NEW';
+        return result;
+      };
+    }
+    return query;
+  };
+  database.rpc = async (name, args) => { writes.push({ name, args }); return { data: true }; };
+  const response = await handler(new Request('https://test/functions/v1/monday-sync', { method: 'POST', headers: { Authorization: 'Bearer token' }, body: '{}' }));
+  assert.equal(response.status, 200);
+  assert.equal(columnReads, 1);
+  assert.equal(itemReads, 1);
+  assert.equal(sceneReads, 2);
+  assert.equal(writes.length, 2); // One changed scene per source; no writes for the other 99.
+  assert.equal(writes[0].name, 'patch_scene_from_monday');
+  assert.equal(writes[0].args.p_source_patch.stand_number, 'NEW');
+  assert.equal(writes[0].args.p_source_patch.options, undefined);
+  assert.deepEqual([...history.at(-1).source_ids], ['s1', 's2']);
 });

@@ -11,19 +11,27 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+type MondaySyncExecution = { database?: any; id?: string; startedAt: number; sourceIds: string[] };
+
 Deno.serve(async (req) => {
+  const execution: MondaySyncExecution = { startedAt: Date.now(), sourceIds: [] };
   try {
-    return await handleMondaySync(req);
+    return await handleMondaySync(req, execution);
   } catch (error) {
     console.error("Monday sync failed", error);
     const message = error instanceof Error ? error.message
       : error && typeof error === "object" && "message" in error ? String(error.message)
       : "Erreur interne du serveur.";
+    try {
+      await finishMondaySyncRun(execution, {}, "error", message);
+    } catch (historyError) {
+      console.error("Monday sync history failed", historyError);
+    }
     return json({ error: `Synchronisation Monday impossible : ${message}` }, 500);
   }
 });
 
-async function handleMondaySync(req: Request) {
+async function handleMondaySync(req: Request, execution: MondaySyncExecution) {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -55,7 +63,7 @@ async function handleMondaySync(req: Request) {
 
   const { data: adminUser } = await supabase
     .from("admin_users")
-    .select("user_id")
+    .select("user_id, full_name")
     .eq("user_id", authData.user.id)
     .eq("is_active", true)
     .maybeSingle();
@@ -88,12 +96,22 @@ async function handleMondaySync(req: Request) {
     return json({ recreated: created, skipped, warnings });
   }
 
+  const { data: run, error: runError } = await supabase.from("monday_sync_runs").insert({
+    status: "started",
+    actor_user_id: authData.user.id,
+    actor_name: adminUser.full_name || authData.user.email || "Administrateur",
+  }).select("id").single();
+  if (runError) throw runError;
+  execution.database = supabase;
+  execution.id = run.id;
+
   const { data: sources, error } = await supabase
     .from("monday_sources")
     .select("*")
     .eq("is_active", true);
 
-  if (error) return json({ error: error.message }, 500);
+  if (error) throw error;
+  execution.sourceIds = (sources || []).map((source: any) => source.id);
 
   let processed = 0;
   let clients = 0;
@@ -112,8 +130,10 @@ async function handleMondaySync(req: Request) {
   const errors: string[] = [];
 
   const boardItems = new Map<string, any[]>();
+  const boardColumns = new Map<string, Awaited<ReturnType<typeof fetchMondayBoardColumnsSafe>>>();
   for (const source of sources ?? []) {
-    const { columns: mondayColumns, warning: columnWarning } = await fetchMondayBoardColumnsSafe(mondayToken, source.board_id);
+    if (!boardColumns.has(source.board_id)) boardColumns.set(source.board_id, await fetchMondayBoardColumnsSafe(mondayToken, source.board_id));
+    const { columns: mondayColumns, warning: columnWarning } = boardColumns.get(source.board_id)!;
     if (columnWarning) warnings.push(columnWarning);
     if (mondayColumns.length) {
       warnings.push(...mondayConstraintColumnMessages(source.board_id, mondayColumns));
@@ -123,15 +143,11 @@ async function handleMondaySync(req: Request) {
     const packConfiguration = await fetchOfferPackConfiguration(supabase, context.offerId);
     if (!boardItems.has(resolvedSource.board_id)) boardItems.set(resolvedSource.board_id, await fetchMondayItems(mondayToken, resolvedSource.board_id));
     const items = filterMondaySourceItems(boardItems.get(resolvedSource.board_id) || [], { ...resolvedSource, salon: context.salonLabel });
+    const existingScenes = await fetchExistingMondayScenes(supabase, items);
     if (resolvedSource.mapping?.salon_from_group && !items.length) warnings.push(`Aucun stand dans un groupe nommé ${resolvedSource.salon} sur le tableau ${resolvedSource.board_id}.`);
 
     for (const item of items) {
-      const { data: existingScene, error: existingSceneError } = await supabase
-        .from("scenes")
-        .select("id, share_token, source_payload, width_m, depth_m, client_email, client_name, project_name, event_name, salon, offer, client_status")
-        .eq("monday_item_id", item.id)
-        .maybeSingle();
-      if (existingSceneError) throw existingSceneError;
+      const existingScene = existingScenes.get(String(item.id));
 
       const createValue = readColumn(item, resolvedSource.create_column_id);
       const stepOneValue = readColumn(item, resolvedSource.status_column_id);
@@ -151,7 +167,6 @@ async function handleMondaySync(req: Request) {
         const mappedLocation = mondaySceneLocation(item, resolvedSource);
         const scenePatch: Record<string, unknown> = {
           source_payload: {
-            ...(existingScene.source_payload || {}),
             stand_number: mappedLocation.standNumber || existingScene.source_payload?.stand_number || "",
             aisle_number: mappedLocation.aisleNumber || existingScene.source_payload?.aisle_number || "",
             hall: mappedLocation.hall || existingScene.source_payload?.hall || "",
@@ -163,23 +178,20 @@ async function handleMondaySync(req: Request) {
             poteau_2_text: mondayPoleRawText(item, resolvedSource, 2),
           },
         };
-        const packConfigurationChanged = updatePackBenefits
-          && (JSON.stringify(existingScene.source_payload?.packBenefits) !== JSON.stringify(currentPackBenefits)
-            || JSON.stringify(existingScene.source_payload?.baseItems) !== JSON.stringify(currentBaseItems));
         if (!clean(existingScene.client_email) && mappedClientEmail) scenePatch.client_email = mappedClientEmail;
         if (!clean(existingScene.client_name) && mappedClientName) scenePatch.client_name = mappedClientName;
-        const hasLocationPatch = Boolean(mappedLocation.standNumber || mappedLocation.aisleNumber || mappedLocation.hall || mappedLocation.sector);
-        const hasScenePatch = Object.keys(scenePatch).some((key) => key !== "source_payload")
-          || constraintColumnsConfigured(resolvedSource)
-          || Boolean(constraint)
-          || constraints.length > 0
-          || hasLocationPatch;
-        if (hasScenePatch || packConfigurationChanged) {
-          const { error: updateConstraintError } = await supabase
-            .from("scenes")
-            .update(scenePatch)
-            .eq("id", existingScene.id);
+        const hasScenePatch = Object.entries(scenePatch.source_payload as Record<string, unknown>)
+          .some(([key, value]) => !sameMondayData(existingScene.source_payload?.[key], value))
+          || Object.keys(scenePatch).some((key) => key !== "source_payload");
+        if (hasScenePatch) {
+          const { data: updated, error: updateConstraintError } = await supabase.rpc("patch_scene_from_monday", {
+            p_scene_id: existingScene.id,
+            p_source_patch: scenePatch.source_payload,
+            p_client_email: scenePatch.client_email || null,
+            p_client_name: scenePatch.client_name || null,
+          });
           if (updateConstraintError) throw updateConstraintError;
+          if (!updated) throw new Error(`Scène ${existingScene.id} introuvable pendant la synchronisation.`);
           if (constraintColumnsConfigured(resolvedSource) || constraint) constraintsUpdated += 1;
         }
 
@@ -195,7 +207,7 @@ async function handleMondaySync(req: Request) {
           const sftpFolderResult = await ensureSceneSftpFolder({
             gatewayUrl: sftpGatewayUrl,
             gatewayToken: sftpGatewayToken,
-            scene: { ...existingScene, ...scenePatch, source_payload: scenePatch.source_payload },
+            scene: { ...existingScene, ...scenePatch, source_payload: { ...existingScene.source_payload, ...scenePatch.source_payload as object } },
             warnings,
           });
           if (sftpFolderResult.created) sftpFoldersCreated += 1;
@@ -210,6 +222,7 @@ async function handleMondaySync(req: Request) {
           const inviteScene = {
             ...existingScene,
             ...scenePatch,
+            source_payload: { ...existingScene.source_payload, ...scenePatch.source_payload as object },
             client_email: clean(String(scenePatch.client_email || "")) || existingScene.client_email,
             client_name: clean(String(scenePatch.client_name || "")) || existingScene.client_name,
           };
@@ -380,8 +393,7 @@ async function handleMondaySync(req: Request) {
     }
   }
 
-  await supabase.from("monday_sync_runs").insert({ status: "success", processed_count: processed });
-  return json({
+  const result = {
     processed,
     created: processed,
     clients,
@@ -398,7 +410,44 @@ async function handleMondaySync(req: Request) {
     skipped_not_first_send: skippedNotFirstSend,
     errors,
     warnings,
-  });
+  };
+  const durationMs = await finishMondaySyncRun(execution, result, errors.length ? "warning" : "success");
+  return json({ ...result, duration_ms: durationMs });
+}
+
+async function finishMondaySyncRun(execution: MondaySyncExecution, result: any, status: string, error: string | null = null) {
+  if (!execution.id || !execution.database) return 0;
+  const durationMs = Math.max(0, Date.now() - execution.startedAt);
+  const { error: historyError } = await execution.database.from("monday_sync_runs").update({
+    status, error, result, source_ids: execution.sourceIds,
+    processed_count: result.created || 0,
+    finished_at: new Date().toISOString(), duration_ms: durationMs,
+  }).eq("id", execution.id);
+  if (historyError) throw historyError;
+  return durationMs;
+}
+
+async function fetchExistingMondayScenes(database: any, items: any[]) {
+  const ids = [...new Set(items.map((item) => String(item.id)))];
+  const scenes = new Map<string, any>();
+  // Small batches avoid URL limits and replace a database round-trip per exhibitor.
+  for (let offset = 0; offset < ids.length; offset += 200) {
+    const { data, error } = await database.from("scenes")
+      .select("id, monday_item_id, share_token, source_payload, width_m, depth_m, client_email, client_name, project_name, event_name, salon, offer, client_status")
+      .in("monday_item_id", ids.slice(offset, offset + 200));
+    if (error) throw error;
+    for (const scene of data || []) scenes.set(String(scene.monday_item_id), scene);
+  }
+  return scenes;
+}
+
+function sameMondayData(left: any, right: any): boolean {
+  if (left === right) return true;
+  if (left == null || right == null || typeof left !== "object" || typeof right !== "object") return false;
+  if (Array.isArray(left) !== Array.isArray(right)) return false;
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length
+    && keys.every((key) => Object.prototype.hasOwnProperty.call(right, key) && sameMondayData(left[key], right[key]));
 }
 
 function withResolvedMondayColumns(source: any, columns: Array<{ id: string; title: string; type?: string }>, warnings: string[] = []) {
@@ -1397,6 +1446,13 @@ async function ensureMondayConfiguratorLink({
 }) {
   const shareUrl = configuratorShareUrl(publicAppUrl, shareToken);
   if (!source.link_column_id || source.link_column_id === source.create_column_id || !shareUrl) return;
+  const currentLink = item.column_values?.find((column: any) => column.id === source.link_column_id);
+  try {
+    const value = typeof currentLink?.value === "string" ? JSON.parse(currentLink.value) : currentLink?.value;
+    if (value?.url === shareUrl) return;
+  } catch {
+    // A missing or malformed value is repaired by writing the expected link.
+  }
 
   await updateMondayColumnValue(mondayToken, source.board_id, item.id, source.link_column_id, {
     url: shareUrl,

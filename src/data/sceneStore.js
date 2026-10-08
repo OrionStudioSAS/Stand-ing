@@ -965,6 +965,17 @@ function sftpLocationCode(value = '') {
     .toUpperCase();
 }
 
+export async function listMondaySyncRuns(offset = 0, limit = 20) {
+  if (!supabase) return { runs: [], hasMore: false };
+  const { data, error } = await supabase.from('monday_sync_runs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(offset, offset + limit);
+  if (error) throw error;
+  return { runs: (data || []).slice(0, limit), hasMore: (data || []).length > limit };
+}
+
 export async function syncMondayScenes() {
   if (!supabase) throw new Error('Supabase non configure.');
 
