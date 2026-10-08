@@ -11,8 +11,7 @@ import { defaultImageFraming, framedImageRect, normalizeImageFraming } from './i
 import { packEditorChanges, packEditorImpact } from './packEditor.js';
 import { manualOrderCategories, manualOrderRowsToPricingLines, normalizeManualOrderCategory, replaceManualOrderPricingLines } from './manualOrderLines.js';
 import { useSceneExhibitorReadOnly } from './useSceneExhibitorReadOnly.js';
-import AdminMondayView from './AdminMondayView.jsx';
-import { mondaySyncDuration } from './adminMonday.js';
+import AdminMondayView, { MondaySyncFeedback } from './AdminMondayView.jsx';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   AlertTriangle,
@@ -8989,34 +8988,7 @@ function AdminDashboard({ user, adminProfile }) {
     try {
       const result = await syncMondayScenes();
       await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers(), refreshSalonFilterChoices()]);
-      const createdCount = result?.created ?? result?.processed ?? 0;
-      const warnings = Array.isArray(result?.warnings) && result.warnings.length
-        ? `\n${result.warnings.join('\n')}`
-        : '';
-      const syncErrors = Array.isArray(result?.errors) && result.errors.length
-        ? result.errors.join('\n')
-        : '';
-      const constraintMessage = Number(result?.constraints_updated || 0) > 0
-        ? `\n${result.constraints_updated} contrainte(s) mise(s) à jour.`
-        : '';
-      const sentInvites = Number(result?.invite_emails_sent || 0);
-      const skippedInvites = Number(result?.invite_emails_skipped || 0);
-      const updatedMondayStatuses = Number(result?.monday_status_updated || 0);
-      const skippedNotConfigurable = Number(result?.skipped_not_configurable || 0);
-      const skippedNotFirstSend = Number(result?.skipped_not_first_send || 0);
-      const inviteMessage = sentInvites || skippedInvites
-        ? `\n${sentInvites} email(s) configurateur envoyé(s), statut Étape 1 non modifié${updatedMondayStatuses ? `, ${updatedMondayStatuses} statut(s) Monday mis à jour` : ''}${skippedInvites ? `, ${skippedInvites} email(s) non envoyé(s)` : ''}.`
-        : '';
-      const skippedMessage = skippedNotConfigurable || skippedNotFirstSend
-        ? `\n${skippedNotConfigurable} ligne(s) ignorée(s) car CONFIGURABLE ≠ OUI, ${skippedNotFirstSend} scène(s) créée(s)/existante(s) sans mail car Étape 1 ≠ 1ER ENVOI.`
-        : '';
-      setSyncState({
-        loading: false,
-        message: (createdCount
-          ? `${createdCount} nouvelle(s) scène(s) créée(s), ${result?.clients ?? 0} exposant(s) traité(s) depuis Monday.`
-          : 'Aucune nouvelle scène à créer depuis Monday.') + (result?.duration_ms != null ? `\nDurée : ${mondaySyncDuration(result.duration_ms)}.` : '') + constraintMessage + inviteMessage + skippedMessage + warnings,
-        error: syncErrors,
-      });
+      setSyncState({ loading: false, result, error: '' });
     } catch (error) {
       setSyncState({
         loading: false,
@@ -12018,8 +11990,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
         <button className="admin-exhibitors-sync" type="button" disabled={syncState?.loading} onClick={onSyncMonday}>{syncState?.loading ? 'Synchronisation...' : 'Synchroniser Monday'}</button>
         <button className="admin-outline-v2" type="button" onClick={exportCsv}>Exporter</button>
       </div>
-      {syncState?.error && <div className="sync-result error" role="alert">{syncState.error}</div>}
-      {syncState?.message && <div className="sync-result" role="status">{syncState.message}</div>}
+      <MondaySyncFeedback syncState={syncState} />
       {deleteState.error && <div className="sync-result error" role="alert">{deleteState.error}</div>}
       <p className="admin-exhibitors-count"><strong>{visibleRows.length} exposant{visibleRows.length > 1 ? 's' : ''}</strong> · triés par nom</p>
       <div className="admin-exhibitors-table-scroll"><section className="admin-exhibitors-table" aria-label="Liste des exposants">

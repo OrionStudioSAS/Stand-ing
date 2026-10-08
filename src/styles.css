@@ -15070,6 +15070,19 @@ img.asset-thumb {
 .admin-monday-packs { display: flex; flex-wrap: wrap; gap: 6px; }
 .admin-monday-notice { padding: 12px 16px; border-radius: 8px; color: #102f73; background: #edf3ff; font-size: 13px; line-height: 1.5; }
 .admin-monday-view .sync-result { margin: -12px 0 0; white-space: pre-line; }
+.admin-sync-feedback { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 16px 18px; border: 1px solid #d5e9df; border-radius: 10px; color: #172033; background: #fff; font-size: 13px; font-weight: 400; }
+.admin-sync-feedback.warning { border-color: #f0dfc2; }
+.admin-sync-feedback.error { border-color: #f0d4d4; }
+.admin-sync-feedback-icon { display: grid; place-items: center; flex: 0 0 32px; height: 32px; border-radius: 50%; color: #00865b; background: #e6f6ef; }
+.admin-sync-feedback.warning .admin-sync-feedback-icon { color: #b75c00; background: #fff3df; }
+.admin-sync-feedback.error .admin-sync-feedback-icon { color: #d52424; background: #ffeded; }
+.admin-sync-feedback-content { flex: 1; min-width: 0; }
+.admin-sync-feedback-content > strong { display: block; margin: 0 0 4px; font-size: 14px; font-weight: 500; line-height: 1.4; }
+.admin-sync-feedback-content > p { margin: 0; color: #677287; font-size: 13px; font-weight: 400; line-height: 1.5; }
+.admin-sync-feedback-duration { flex-shrink: 0; padding-top: 3px; color: #737e92; font-size: 12px; font-weight: 400; }
+.admin-sync-diagnostics { margin-top: 10px; font-size: 12px; font-weight: 400; }
+.admin-sync-diagnostics summary { width: fit-content; color: #677287; cursor: pointer; }
+.admin-sync-diagnostics ul { max-height: 220px; overflow-y: auto; padding-left: 18px; color: #737e92; font-size: 12px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
 .admin-monday-more { display: block; margin: 16px auto 0; }
 .admin-monday-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .admin-monday-dialog { width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 24px; border: 1px solid #dce2e9; border-radius: 12px; color: #111827; background: #fff; }
@@ -15089,6 +15102,8 @@ img.asset-thumb {
 @keyframes monday-sync-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .admin-monday-icon .is-syncing { animation: none; } }
 @media (max-width: 700px) {
+  .admin-sync-feedback { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 8px 12px; }
+  .admin-sync-feedback-duration { grid-column: 2; padding-top: 0; }
   .admin-monday-view { gap: 24px; min-width: 0; }
   .admin-monday-banner { flex-wrap: wrap; padding: 20px; }
   .admin-monday-banner > div { flex: 1; min-width: 180px; }

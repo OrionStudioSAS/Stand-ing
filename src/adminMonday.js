@@ -27,7 +27,7 @@ export function mondaySyncStatus(run, now = Date.now()) {
 }
 
 export function mondaySyncSummary(run) {
-  if (run.error) return run.error;
+  if (run.error || run.status === 'error') return 'Synchronisation non terminée.';
   if (run.status === 'started') return 'Synchronisation lancée, résultat non disponible.';
   const result = run.result || {};
   const created = Number(result.created ?? run.processed_count ?? 0);
@@ -35,6 +35,33 @@ export function mondaySyncSummary(run) {
   return `${created} scène${created > 1 ? 's' : ''} créée${created > 1 ? 's' : ''}`
     + (emails == null ? '' : ` · ${Number(emails)} e-mail${Number(emails) > 1 ? 's' : ''} envoyé${Number(emails) > 1 ? 's' : ''}`)
     + (result.errors?.length ? ` · ${result.errors.length} anomalie(s)` : '');
+}
+
+export function mondaySyncOutcome(result, error = '') {
+  if (error) return {
+    tone: 'error', title: 'Synchronisation non terminée',
+    description: 'Certaines données peuvent ne pas être à jour. Contactez votre administrateur si le problème persiste.',
+  };
+  if (!result) return null;
+  const created = Math.max(0, Number(result.created ?? result.processed) || 0);
+  const sent = Math.max(0, Number(result.invite_emails_sent) || 0);
+  const missed = Math.max(0, Number(result.invite_emails_skipped) || 0);
+  const incomplete = Boolean(result.errors?.length || missed);
+  const summary = [
+    created ? `${created} nouvelle${created > 1 ? 's' : ''} scène${created > 1 ? 's' : ''}` : 'Aucune nouvelle scène à créer',
+    sent ? `${sent} invitation${sent > 1 ? 's' : ''} envoyée${sent > 1 ? 's' : ''}` : '',
+  ].filter(Boolean).join(' · ');
+  return {
+    tone: incomplete ? 'warning' : 'success',
+    title: incomplete ? 'Synchronisation à vérifier' : 'Synchronisation terminée',
+    description: `${summary}.${incomplete ? (missed
+      ? ` ${missed} invitation${missed > 1 ? 's n’ont' : ' n’a'} pas pu être envoyée${missed > 1 ? 's' : ''}.`
+      : ' Certains éléments n’ont pas pu être synchronisés.') : ''}`,
+  };
+}
+
+export function mondaySyncDiagnostics(run) {
+  return [...new Set([run.error, ...(run.result?.errors || []), ...(run.result?.warnings || [])].filter(Boolean))];
 }
 
 export function mondaySalonRows(salons = [], runs = [], search = '') {

@@ -1,7 +1,26 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RotateCcw, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, RotateCcw, X } from 'lucide-react';
 import { listMondaySyncRuns, saveMondayBoardForPack } from './data/sceneStore.js';
-import { mondaySalonRows, mondaySyncDate, mondaySyncDuration, mondaySyncStatus, mondaySyncSummary } from './adminMonday.js';
+import { mondaySalonRows, mondaySyncDate, mondaySyncDiagnostics, mondaySyncDuration, mondaySyncOutcome, mondaySyncStatus, mondaySyncSummary } from './adminMonday.js';
+
+export function MondaySyncFeedback({ syncState }) {
+  if (!syncState || syncState.loading) return null;
+  const outcome = mondaySyncOutcome(syncState.result, syncState.error);
+  if (!outcome) return null;
+  const Icon = outcome.tone === 'success' ? CheckCircle2 : AlertCircle;
+  const diagnostics = outcome.tone === 'success' ? [] : mondaySyncDiagnostics(syncState);
+  return (
+    <div className={`admin-sync-feedback ${outcome.tone}`} role={outcome.tone === 'error' ? 'alert' : 'status'}>
+      <span className="admin-sync-feedback-icon" aria-hidden="true"><Icon size={19} /></span>
+      <div className="admin-sync-feedback-content">
+        <strong>{outcome.title}</strong>
+        <p>{outcome.description}</p>
+        {!!diagnostics.length && <details key={outcome.tone} className="admin-sync-diagnostics"><summary>Détails techniques</summary><ul>{diagnostics.map((message, index) => <li key={index}>{message}</li>)}</ul></details>}
+      </div>
+      {syncState.result?.duration_ms != null && <span className="admin-sync-feedback-duration">Durée : {mondaySyncDuration(syncState.result.duration_ms)}</span>}
+    </div>
+  );
+}
 
 export default function AdminMondayView({ salons = [], search = '', syncState, runMondaySync, onSalonsChanged }) {
   const [history, setHistory] = useState({ runs: [], hasMore: false, loading: true, error: '' });
@@ -54,8 +73,7 @@ export default function AdminMondayView({ salons = [], search = '', syncState, r
         <button className="admin-primary-v2" type="button" onClick={runMondaySync} disabled={syncState.loading || !hasSources}>{syncState.loading ? `Synchronisation… ${mondaySyncDuration(elapsed)}` : 'Synchroniser maintenant'}</button>
       </div>
       {syncState.loading && <div className="admin-monday-notice" role="status">Lecture des tableaux et traitement des scènes en cours. Cela peut prendre une minute ou davantage selon le volume et les services externes. Ne relancez pas la synchronisation.</div>}
-      {syncState.message && <div className="sync-result success" role="status">{syncState.message}</div>}
-      {syncState.error && <div className="sync-result error" role="alert">{syncState.error}</div>}
+      <MondaySyncFeedback syncState={syncState} />
 
       <section><header className="admin-monday-heading"><div><h3>Ce que fait la synchronisation</h3><p>Les règles appliquées à chaque synchronisation.</p></div></header>
         <div className="admin-monday-rules"><article><span>1</span><h4>Lecture des tableaux</h4><p>Les tableaux Monday associés aux packs sont lus. Pour un tableau organisé par pack, chaque salon n’utilise que ses groupes.</p></article><article><span>2</span><h4>Création des scènes</h4><p>Quand CONFIGURABLE vaut OUI, une scène est créée et le lien configurateur est rempli dans Monday.</p></article></div>
@@ -77,7 +95,8 @@ export default function AdminMondayView({ salons = [], search = '', syncState, r
         <div className="admin-monday-table-wrap"><table><thead><tr><th>Date</th><th>Lancée par</th><th>Résultat</th><th>Durée</th><th>Statut</th></tr></thead><tbody>
           {history.runs.map((run) => {
             const state = mondaySyncStatus(run);
-            return <tr key={run.id}><td>{mondaySyncDate(run.created_at)}</td><td>{run.actor_name || 'Non renseigné (ancien historique)'}</td><td><div>{mondaySyncSummary(run)}</div>{!!(run.result?.errors?.length || run.result?.warnings?.length) && <details><summary>Détails</summary><ul>{[...(run.result?.errors || []), ...(run.result?.warnings || [])].map((message, index) => <li key={index}>{message}</li>)}</ul></details>}</td><td>{mondaySyncDuration(run.duration_ms)}</td><td><span className={`admin-monday-badge ${state.tone}`}>{state.label}</span></td></tr>;
+            const diagnostics = mondaySyncDiagnostics(run);
+            return <tr key={run.id}><td>{mondaySyncDate(run.created_at)}</td><td>{run.actor_name || 'Non renseigné (ancien historique)'}</td><td><div>{mondaySyncSummary(run)}</div>{!!diagnostics.length && <details className="admin-sync-diagnostics"><summary>Détails techniques</summary><ul>{diagnostics.map((message, index) => <li key={index}>{message}</li>)}</ul></details>}</td><td>{mondaySyncDuration(run.duration_ms)}</td><td><span className={`admin-monday-badge ${state.tone}`}>{state.label}</span></td></tr>;
           })}
           {!history.runs.length && <tr><td colSpan={5}>{history.loading ? 'Chargement de l’historique…' : 'Aucune synchronisation enregistrée.'}</td></tr>}
         </tbody></table></div>
