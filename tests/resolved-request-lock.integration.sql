@@ -11,6 +11,34 @@ insert into public.scenes (id, salon, offer, client_email, source_payload)
 select 'codex-lock-verification', 'Test rollback only', 'Confort', client_email, '{"exhibitor_view_only":true}'::jsonb from lock_test_identities;
 insert into public.scene_items (scene_id,item_uid,type,label) values ('codex-lock-verification','test-item','test','Before');
 insert into public.scene_files (scene_id,type,file_name) values ('codex-lock-verification','other','before.txt');
+-- Reproduce the Edge Function database role, without granting private helpers.
+do $$
+begin
+  if has_schema_privilege('service_role', 'private', 'USAGE')
+    or has_function_privilege('service_role', 'private.is_admin()', 'EXECUTE') then
+    raise exception 'Service-role regression test requires the original restricted private permissions';
+  end if;
+end;
+$$;
+set local role service_role;
+update public.scenes set source_payload=source_payload || '{"stand_number":"C12"}'::jsonb where id='codex-lock-verification';
+update public.scene_items set label='Backend may edit' where scene_id='codex-lock-verification';
+update public.scene_files set file_name='backend.txt' where scene_id='codex-lock-verification';
+insert into public.scene_items(scene_id,item_uid,type) values ('codex-lock-verification','backend-test','test');
+delete from public.scene_items where scene_id='codex-lock-verification' and item_uid='backend-test';
+insert into public.scene_files(scene_id,type,file_name) values ('codex-lock-verification','other','backend-extra.txt');
+delete from public.scene_files where scene_id='codex-lock-verification' and file_name='backend-extra.txt';
+do $$
+begin
+  if not exists(select 1 from public.scenes where id='codex-lock-verification' and source_payload->>'stand_number'='C12') then
+    raise exception 'Service role could not update the scene';
+  end if;
+  if exists(select 1 from public.scene_items where scene_id='codex-lock-verification' and item_uid='backend-test') then
+    raise exception 'Service role child delete did not return OLD';
+  end if;
+end;
+$$;
+reset role;
 select set_config('request.jwt.claims', jsonb_build_object('sub',client_id,'email',client_email,'role','authenticated')::text,true) is not null as client_claims_set from lock_test_identities;
 set local role authenticated;
 do $$
@@ -65,5 +93,5 @@ begin
 end;
 $$;
 reset role;
-select 'PASS: client read preserved, scene/items/files writes denied while locked, admin edits allowed, unlocked client edits allowed' as verification;
+select 'PASS: backend writes allowed without private grants, client read preserved, scene/items/files writes denied while locked, admin edits allowed, unlocked client edits allowed' as verification;
 rollback;

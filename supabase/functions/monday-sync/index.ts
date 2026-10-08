@@ -12,6 +12,18 @@ const corsHeaders = {
 };
 
 Deno.serve(async (req) => {
+  try {
+    return await handleMondaySync(req);
+  } catch (error) {
+    console.error("Monday sync failed", error);
+    const message = error instanceof Error ? error.message
+      : error && typeof error === "object" && "message" in error ? String(error.message)
+      : "Erreur interne du serveur.";
+    return json({ error: `Synchronisation Monday impossible : ${message}` }, 500);
+  }
+});
+
+async function handleMondaySync(req: Request) {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -387,7 +399,7 @@ Deno.serve(async (req) => {
     errors,
     warnings,
   });
-});
+}
 
 function withResolvedMondayColumns(source: any, columns: Array<{ id: string; title: string; type?: string }>, warnings: string[] = []) {
   const mapping = source.mapping ?? {};

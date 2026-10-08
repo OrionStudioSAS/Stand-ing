@@ -8,6 +8,59 @@ import { normalizePackBenefits, packBenefitsForScene, isSignaturePackScene } fro
 const edgeSource = readFileSync(new URL('../supabase/functions/monday-sync/index.ts', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '');
 const compiled = transformSync(edgeSource, { loader: 'ts', format: 'cjs' }).code;
 
+function requestHandler(sourceError = null) {
+  let handler;
+  const database = {
+    auth: { getUser: async () => ({ data: { user: { id: 'admin' } }, error: null }) },
+    from(table) {
+      if (table === 'admin_users') return { select() { return this; }, eq() { return this; }, maybeSingle: async () => ({ data: { user_id: 'admin' } }) };
+      if (table === 'monday_sources') return { select() { return this; }, async eq() {
+        if (sourceError) throw sourceError;
+        return { data: [], error: null };
+      } };
+      if (table === 'monday_sync_runs') return { insert: async () => ({ error: null }) };
+      throw new Error(`Unexpected table ${table}`);
+    },
+  };
+  const context = vm.createContext({
+    Deno: { serve(value) { handler = value; }, env: { get: (key) => ({ SUPABASE_URL: 'https://test.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'test-service-key', MONDAY_API_TOKEN: 'test-monday-token' }[key]) } },
+    createClient: () => database, Response, console: { error() {} },
+    normalizePackBenefits, packBenefitsForScene, isSignaturePackScene,
+  });
+  vm.runInContext(compiled, context);
+  return { handler, database };
+}
+
+test('Monday preflight and successful synchronization return browser-readable responses', async () => {
+  const { handler } = requestHandler();
+  const preflight = await handler(new Request('https://test.supabase.co/functions/v1/monday-sync', { method: 'OPTIONS' }));
+  assert.equal(preflight.status, 200);
+  assert.equal(preflight.headers.get('Access-Control-Allow-Origin'), '*');
+  const success = await handler(new Request('https://test.supabase.co/functions/v1/monday-sync', { method: 'POST', headers: { Authorization: 'Bearer admin-token' }, body: '{}' }));
+  assert.equal(success.status, 200);
+  assert.equal((await success.json()).processed, 0);
+});
+
+test('Monday unexpected database and network failures retain JSON and CORS instead of masking the cause', async () => {
+  for (const error of [{ code: '42501', message: 'permission denied for schema private' }, new Error('Monday unavailable')]) {
+    const { handler } = requestHandler(error);
+    const response = await handler(new Request('https://test.supabase.co/functions/v1/monday-sync', { method: 'POST', headers: { Authorization: 'Bearer admin-token' }, body: '{}' }));
+    assert.equal(response.status, 500);
+    assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*');
+    assert.equal(response.headers.get('Content-Type'), 'application/json');
+    assert.equal((await response.json()).error, `Synchronisation Monday impossible : ${error.message}`);
+  }
+});
+
+test('Monday authentication remains required and rejected requests retain CORS', async () => {
+  const { handler, database } = requestHandler();
+  database.auth.getUser = async () => ({ data: { user: null }, error: new Error('Unauthorized') });
+  const response = await handler(new Request('https://test.supabase.co/functions/v1/monday-sync', { method: 'POST', body: '{}' }));
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*');
+  assert.equal((await response.json()).error, 'Unauthorized');
+});
+
 function runtime(fetch = () => { throw new Error('Unexpected network request'); }) {
   const context = vm.createContext({ Deno: { serve() {} }, fetch, console, normalizePackBenefits, packBenefitsForScene, isSignaturePackScene });
   vm.runInContext(compiled, context);

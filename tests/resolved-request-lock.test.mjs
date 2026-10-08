@@ -6,6 +6,7 @@ import vm from 'node:vm';
 const store = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
 const hook = readFileSync(new URL('../src/useSceneExhibitorReadOnly.js', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../supabase/migrations/20261007115000_lock_resolved_request_scenes.sql', import.meta.url), 'utf8');
+const serviceRoleFix = readFileSync(new URL('../supabase/migrations/20261008082556_fix_scene_lock_service_role_checks.sql', import.meta.url), 'utf8');
 
 function load(api, name) {
   let start = store.indexOf(`function ${name}(`);
@@ -74,4 +75,15 @@ test('database guards cover parent updates and all child mutations without grant
   assert.match(migration, /before insert or update or delete on public\.scene_items/);
   assert.match(migration, /before insert or update or delete on public\.scene_files/);
   assert.match(migration, /private\.is_admin\(\)/);
+});
+
+test('backend roles return before private admin checks are planned, without widening permissions', () => {
+  assert.equal((serviceRoleFix.match(/security invoker/g) || []).length, 2);
+  assert.doesNotMatch(serviceRoleFix, /security definer|grant /i);
+  assert.equal((serviceRoleFix.match(/if current_user in \('postgres', 'service_role', 'supabase_admin'\) then/g) || []).length, 2);
+  assert.match(serviceRoleFix, /return new;\s+end if;\s+if \(select private\.is_admin\(\)\) then/);
+  assert.match(serviceRoleFix, /if tg_op = 'DELETE' then return old; end if;\s+return new;\s+end if;\s+if \(select private\.is_admin\(\)\) then/);
+  assert.match(serviceRoleFix, /old\.source_payload->>'exhibitor_view_only' = 'true'/);
+  assert.match(serviceRoleFix, /order by id for share/);
+  assert.match(serviceRoleFix, /Seul un administrateur peut modifier le verrouillage/);
 });
