@@ -14359,6 +14359,10 @@ img.asset-thumb {
 .bat-picto-preview { display: grid; gap: 7px; min-width: 0; border: 1px solid #dce2ea; border-radius: 7px; padding: 9px; background: #fff; }
 .bat-picto-preview-image { position: relative; display: grid; place-items: center; height: 100px; min-width: 0; overflow: hidden; border-radius: 4px; color: #738094; background-color: #fff; background-image: conic-gradient(#edf0f4 25%, transparent 0 50%, #edf0f4 0 75%, transparent 0); background-size: 16px 16px; }
 .bat-picto-preview-image img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: contain; }
+.bat-picto-preview-image .bat-picto-remove { position: absolute; top: 5px; right: 5px; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid #dce2ea; border-radius: 50%; color: #677287; background: #fff; cursor: pointer; }
+.bat-picto-preview-image .bat-picto-remove:hover:not(:disabled) { color: #d52424; border-color: #f0d4d4; background: #ffeded; }
+.bat-picto-preview-image .bat-picto-remove:focus-visible { outline: 2px solid #0e2d69; outline-offset: 2px; }
+.bat-picto-preview-image .bat-picto-remove:disabled { opacity: .5; cursor: wait; }
 .bat-picto-preview > a { justify-self: start; color: #0e2d69; font-size: 11px; text-decoration: underline; text-underline-offset: 2px; }
 .bat-picto-preview > a:focus-visible { outline: 2px solid #0e2d69; outline-offset: 3px; }
 .bat-picto-preview > small { color: #738094; font-size: 11px; line-height: 1.4; }

@@ -12404,11 +12404,15 @@ function AssetBatPictoBadge({ asset, emptyLabel = '' }) {
   return <BatPictoPreview imageUrl={previews[0].imageUrl} label={previews.map((entry) => entry.label).join(', ')} compact caption={previews.length > 1 ? `${previews.length} pictos BAT` : 'Picto BAT'} />;
 }
 
-function BatPictoPreview({ imageUrl = '', label = 'Objet', compact = false, caption = 'Picto BAT' }) {
+function clearBatPictoMetadata(metadata = {}) {
+  return { ...metadata, batPictoUrl: '', batPictoPath: '', batPictoReplaceColor: '' };
+}
+
+function BatPictoPreview({ imageUrl = '', label = 'Objet', compact = false, caption = 'Picto BAT', onRemove, removeDisabled = false }) {
   const [failedUrl, setFailedUrl] = useState('');
   if (!imageUrl) return null;
   const failed = failedUrl === imageUrl;
-  const preview = <span className="bat-picto-preview-image">{failed ? <FileImage size={20} aria-hidden="true" /> : <img src={imageUrl} alt={`Picto BAT : ${label}`} loading="lazy" onError={() => setFailedUrl(imageUrl)} />}</span>;
+  const preview = <span className="bat-picto-preview-image">{failed ? <FileImage size={20} aria-hidden="true" /> : <img src={imageUrl} alt={`Picto BAT : ${label}`} loading="lazy" onError={() => setFailedUrl(imageUrl)} />}{onRemove && <button type="button" className="bat-picto-remove" aria-label={`Supprimer le picto BAT de ${label}`} title="Supprimer le picto BAT" disabled={removeDisabled} onClick={onRemove}><X size={14} aria-hidden="true" /></button>}</span>;
   if (compact) return <span className="bat-picto-preview bat-picto-preview--compact" title={`${caption} importé : ${label}${failed ? ' (aperçu indisponible)' : ''}`}>{preview}<span>{caption}</span></span>;
   return (
     <div className="bat-picto-preview">
@@ -12850,6 +12854,21 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     }
   };
 
+  const removeBatPicto = async () => {
+    if (batPictoUploading) return;
+    setBatPictoUploading(true);
+    setBatPictoError('');
+    try {
+      // Detach only: copies or existing BATs may still reference the shared file.
+      const saved = await onSave({ ...draft, dimensions: clearBatPictoMetadata(draft.dimensions) });
+      setDraft(saved);
+    } catch (error) {
+      setBatPictoError(error.message || 'Impossible de supprimer le picto BAT.');
+    } finally {
+      setBatPictoUploading(false);
+    }
+  };
+
 
   const updateVariantMeta = (assetType, patch) => {
     if (!assetType) return;
@@ -12939,7 +12958,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
         <label className="asset-thumbnail-edit">
           <FileImage size={18} />
           <span>
-            <strong>{batPictoUploading ? "Picto en cours d'envoi..." : "Picto plan BAT"}</strong>
+            <strong>{batPictoUploading ? 'Mise à jour du picto...' : 'Picto plan BAT'}</strong>
             <small>{draft.dimensions?.batPictoUrl ? "Remplacer le picto affiché sur le plan technique BAT." : "Ajouter un picto pour le plan technique BAT (remplace la vue 3D)."}</small>
             {draft.dimensions?.batPictoUrl && !batPictoUploading && <em className="bat-picto-ok">Picto importé ✓</em>}
             {batPictoError && <em>{batPictoError}</em>}
@@ -12954,7 +12973,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
             }}
           />
         </label>
-        <BatPictoPreview imageUrl={draft.dimensions?.batPictoUrl} label={draft.label || draft.type} />
+        <BatPictoPreview imageUrl={draft.dimensions?.batPictoUrl} label={draft.label || draft.type} onRemove={removeBatPicto} removeDisabled={batPictoUploading} />
         </div>
         )}
         </div>
@@ -13430,7 +13449,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
         <footer>
           <button type="button" className="asset-delete" onClick={onDelete}>Supprimer définitivement</button>
           <button type="button" className="asset-duplicate" onClick={onDuplicate}><Copy size={14} /> Dupliquer</button>
-          <button type="button" className="asset-save" onClick={saveDraft}>{isSimpleAsset ? 'Enregistrer' : 'Enregistrer les modifications'}</button>
+          <button type="button" className="asset-save" disabled={batPictoUploading} onClick={saveDraft}>{isSimpleAsset ? 'Enregistrer' : 'Enregistrer les modifications'}</button>
         </footer>
       </aside>
     </div>
