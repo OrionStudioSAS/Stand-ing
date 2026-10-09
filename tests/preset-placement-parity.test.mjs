@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import { wallFabricColors } from '../src/config/colorOptions.js';
+import { closestSpotWallTarget, spotTargetPatch, spotWallTargets } from '../src/spotPlacement.js';
 
 const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
@@ -40,9 +41,15 @@ test('SIAE head upload labels do not claim to be luminous; other heads keep thei
 
 function surfaceContext() {
   const context = vm.createContext({
+    closestSpotWallTarget, spotTargetPatch, spotWallTargets,
     objectWallAxisPadding: 0.1, objectWallSnapThreshold: 0.3,
     clamp: (value, min, max) => Math.max(min, Math.min(max, value)),
     isTelevisionItem: () => false,
+    isLedRailEntry: (item) => Boolean(item.autoLedRail), isAutomaticSpotItem: () => false,
+    wallItemMetrics: () => ({ width: 1 }), itemGroupSize: () => ({ depth: 0.1 }),
+    availableWalls: () => [{ id: 'back' }], wallAxisLimits: () => ({ min: -3.5, max: 3.5 }),
+    standFloorBounds: () => ({ minX: -3.5, maxX: 3.5, minZ: -1.44, maxZ: 1.5 }),
+    wallMountedNormalOffset: (_item, object) => object ? 0.08 : 0.11,
     wallFromDrag: () => 'back',
     snapWallAxis: (value) => Math.round(value * 100) / 100,
     isWallItem: (item) => Boolean(item.isWallItem),
@@ -55,7 +62,7 @@ function surfaceContext() {
     'rotatePoint', 'wallSurfaceCandidate', 'isObjectWallSurfaceCandidate',
     'objectWallSurfaces', 'groupObjectWallSurfaces', 'mergeObjectWallSurfaces',
     'isProtectedBoundarySurface', 'protectedObjectOutsideSide', 'safeObjectWallSide',
-    'serializeObjectWallSurface', 'objectWallFromDrag', 'wallDragPatch',
+    'serializeObjectWallSurface', 'objectWallFromDrag', 'wallDragPatch', 'isSpotWallItem', 'spotPlacementTargetsForItem',
     'pickLedRailOverride', 'applyLedRailOverride',
   ]) loadFunction(name, context);
   return context;

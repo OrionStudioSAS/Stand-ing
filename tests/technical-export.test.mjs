@@ -252,6 +252,7 @@ test('a missing reserve surface cannot create reinforcement at the scene origin'
 
 test('the BAT uses the moved reserve and refreshes the TV surface from its current walls', () => {
   const { api } = runtime();
+  api.resolveSpotWallAttachments = (items) => items;
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
   for (const name of ['sceneAllAdminItems', 'resolveTechnicalWallSurfaces', 'isObjectWallId', 'serializeObjectWallSurface', 'safeObjectWallSide', 'protectedObjectOutsideSide']) {
     const start = appSource.indexOf(`function ${name}(`);

@@ -9,6 +9,7 @@ import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { defaultImageFraming, framedImageRect, normalizeImageFraming } from './imageFraming.js';
 import { packEditorChanges, packEditorImpact } from './packEditor.js';
+import { closestSpotWallTarget, spotTargetPatch, spotWallTargetFromRay, spotWallTargets } from './spotPlacement.js';
 import { manualOrderCategories, manualOrderRowsToPricingLines, normalizeManualOrderCategory, replaceManualOrderPricingLines } from './manualOrderLines.js';
 import { useSceneExhibitorReadOnly } from './useSceneExhibitorReadOnly.js';
 import AdminMondayView, { MondaySyncFeedback } from './AdminMondayView.jsx';
@@ -1286,7 +1287,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     () => wallCoverSurfaceOptions(layout, width, depth, [...manualVisibleItems, ...automaticReserveItems, ...automaticPartitionHeadItems], { splitForCovers: true }),
     [layout, width, depth, manualVisibleItems, automaticReserveItems, automaticPartitionHeadItems],
   );
-  const sceneItems = useMemo(() => [...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems]);
+  const sceneItems = useMemo(() => resolveSpotWallAttachments([...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], width, depth, layout), [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems, width, depth, layout]);
   const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand]);
   const signatureArchItems = useMemo(() => sceneItems.filter(isSignatureArchItem), [sceneItems]);
   const signatureArchItem = signatureArchItems[0] || null;
@@ -1738,7 +1739,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }
     const autoLedItem = sceneItems.find((item) => item.id === id && isAutomaticLedRailItem(item));
     if (autoLedItem) {
-      const constrained = constrainItem({ ...autoLedItem, ...patch }, width, depth, layout, genericCarpetFootprintEnabled);
+      const candidate = constrainItem({ ...autoLedItem, ...patch }, width, depth, layout, genericCarpetFootprintEnabled);
+      const constrained = resolveSpotWallAttachments([candidate, ...visibleSceneItems.filter((item) => item.id !== id)], width, depth, layout)[0];
       setLedRailOverrides((current) => ({
         ...current,
         [id]: pickLedRailOverride(constrained),
@@ -10791,7 +10793,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
     const automaticSpots = hasAutoSpotsRule(autoSpotsRule)
       ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...items, ...automaticReserves])
         .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout)) : [];
-    return resolveSurfaceAttachments([...items, ...automaticReserves, ...automaticHeads, ...automaticSpots]);
+    return resolveSpotWallAttachments(resolveSurfaceAttachments([...items, ...automaticReserves, ...automaticHeads, ...automaticSpots]), width, depth, layout);
   }, [items, width, depth, layout, reserveRules, partitionHeadRules, autoSpotsRule, availableCatalog, packReserveBands, offer?.name, reserveItemOverrides, ledRailOverrides, isSignaturePack]);
   const presetTextureLoad = useSceneTexturePreload(previewItems, [
     selectedCarpetColor.image,
@@ -10814,7 +10816,8 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
     const item = previewItems.find((entry) => entry.id === id);
     if (!item || isAutomaticPartitionHeadItem(item)) return;
     if (isAutomaticLedRailItem(item)) {
-      const constrained = constrainItem({ ...item, ...patch }, width, depth, layout, !isSignaturePack);
+      const candidate = constrainItem({ ...item, ...patch }, width, depth, layout, !isSignaturePack);
+      const constrained = resolveSpotWallAttachments([candidate, ...previewItems.filter((entry) => entry.id !== id)], width, depth, layout)[0];
       setLedRailOverrides((current) => ({ ...current, [id]: pickLedRailOverride(constrained) }));
       return;
     }
@@ -14820,13 +14823,13 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
         .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout))
       : makeAutomaticLedRailItems(ledEntries, width, depth, layout, ledSpotCountForArea(area))
         .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout));
-  return resolveTechnicalWallSurfaces([
+  return resolveTechnicalWallSurfaces(resolveSpotWallAttachments([
     ...manualItems,
     ...automaticReserveItems,
     ...makeAutomaticPartitionHeadItems(partitionRule, partitionSides, catalogEntries, width, depth, layout, packLabel)
       .map((item) => applyPartitionHeadVisualOptions(item, options.partitionHeadVisuals || {})),
     ...ledItems,
-  ]);
+  ], width, depth, layout));
 }
 
 function resolveTechnicalWallSurfaces(items = []) {
@@ -18636,6 +18639,13 @@ function wallFromDrag(point, currentWall, width, depth, layout) {
 }
 
 function wallDragPatch(point, dragged, items, width, depth, layout) {
+  if (isSpotWallItem(dragged)) {
+    const targets = spotPlacementTargetsForItem(dragged, items, width, depth, layout);
+    const target = point.spotWallTarget && targets.find((candidate) => candidate.wall === point.spotWallTarget.wall && candidate.wallSide === point.spotWallTarget.wallSide);
+    if (target) return spotTargetPatch(target, target.orientation === 'x' ? point.x : point.z);
+    const closest = closestSpotWallTarget(point, targets, { threshold: objectWallSnapThreshold, preferredWall: dragged.wall });
+    return closest ? spotTargetPatch(closest.target, closest.axis) : {};
+  }
   const fixedY = isTelevisionItem(dragged) ? { y: screenCenterHeight } : {};
   const objectWall = objectWallFromDrag(point, items, dragged);
   if (objectWall) {
@@ -18656,6 +18666,45 @@ function wallDragPatch(point, dragged, items, width, depth, layout) {
     wallSurface: null,
     ...fixedY,
   };
+}
+
+function isSpotWallItem(item = {}) {
+  return isWallItem(item) && (isLedRailEntry(item) || isAutomaticSpotItem(item));
+}
+
+function spotPlacementTargetsForItem(item, items, width, depth, layout) {
+  const halfWidth = wallItemMetrics(item, items, width, depth).width / 2;
+  const halfDepth = Math.max(0.02, Number(itemGroupSize(item).depth || 0.08) / 2);
+  const walls = availableWalls(layout).map(({ id }) => {
+    const range = wallAxisLimits(id, width, depth);
+    return {
+      wall: id, orientation: id === 'back' ? 'x' : 'z',
+      normalAxis: id === 'back' ? -depth / 2 : id === 'left' ? -width / 2 : width / 2,
+      side: id === 'right' ? -1 : 1,
+      min: range.min, max: range.max,
+    };
+  });
+  return spotWallTargets({
+    walls,
+    objectSurfaces: objectWallSurfaces(items, item.id).map(serializeObjectWallSurface),
+    reserves: items.filter(isReserveSceneItem).map((reserve) => itemHardCollisionBox(reserve, 0)).filter(Boolean),
+    bounds: standFloorBounds(width, depth, layout), halfWidth, halfDepth,
+    nativeOffset: wallMountedNormalOffset(item), objectOffset: wallMountedNormalOffset(item, true),
+  });
+}
+
+function resolveSpotWallAttachments(items = [], width, depth, layout) {
+  return items.map((item) => {
+    if (!isSpotWallItem(item)) return item;
+    const targets = spotPlacementTargetsForItem(item, items, width, depth, layout);
+    const current = targets.find((target) => target.wall === (item.wall || 'back')
+      && (!target.wallSurface || target.wallSide === safeObjectWallSide(target.wallSurface, item.x, item.wallSide))
+      && target.intervals.some(({ min, max }) => Number(item.x || 0) >= min - 0.001 && Number(item.x || 0) <= max + 0.001));
+    if (current) return { ...item, ...spotTargetPatch(current, Number(item.x || 0)) };
+    const [x, , z] = screenWorldPosition(item, width, depth, items);
+    const closest = closestSpotWallTarget({ x, z }, targets, { preferredWall: item.wall });
+    return closest ? { ...item, ...spotTargetPatch(closest.target, closest.axis) } : item;
+  });
 }
 
 function objectWallFromDrag(point, items, dragged = null) {
@@ -18712,7 +18761,7 @@ function objectWallSurfaces(items = [], ignoreId = null) {
 
 function groupObjectWallSurfaces(group) {
   const groupRotation = Number(group.rotation || 0);
-  const protectedBounds = isReserveSceneItem(group) ? itemHardCollisionBox(group) : null;
+  const protectedBounds = isReserveSceneItem(group) ? itemHardCollisionBox(group, 0) : null;
   const surfaces = (group.children || [])
     .flatMap((child) => {
       const rotated = rotatePoint(Number(child.x || 0), Number(child.z || 0), groupRotation);
@@ -19835,7 +19884,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   const dragFromPointer = (event) => {
     if (!interactive || !draggingId) return;
     const projectedPoint = draggingItem && isWallItem(draggingItem)
-      ? wallDragPointFromRay(event.ray, draggingItem, items, width, depth, cameraPivot)
+      ? wallDragPointFromRay(event.ray, draggingItem, items, width, depth, cameraPivot, layout)
       : floorDragPointFromRay(event.ray, cameraPivot);
     if (!projectedPoint) return;
     event.stopPropagation();
@@ -19900,7 +19949,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
 
   return (
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
-      {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragMove={(point) => onDragMove(applyDragPointerOffset(point, dragPointerOffset.current))} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
+      {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragPointer={dragFromPointer} onDragMove={(point) => onDragMove(applyDragPointerOffset(point, dragPointerOffset.current))} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
       <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRampX={technicalFloorRampX} onTechnicalFloorRampX={onTechnicalFloorRampX} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
       <Walls width={width} depth={depth} height={height} layout={layout} items={items} wallFabricColor={wallFabricColor} reserveWallFabricColor={reserveWallFabricColor} wallCovers={wallCovers} onDeselect={clearSceneSelection} />
       <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
@@ -19927,7 +19976,14 @@ function floorDragPointFromRay(ray, cameraPivot = [0, 0, 0]) {
   return { x: point.x - Number(cameraPivot[0] || 0), z: point.z - Number(cameraPivot[2] || 0) };
 }
 
-function wallDragPointFromRay(ray, item, items = [], width = 0, depth = 0, cameraPivot = [0, 0, 0]) {
+function wallDragPointFromRay(ray, item, items = [], width = 0, depth = 0, cameraPivot = [0, 0, 0], layout = 'back') {
+  if (isSpotWallItem(item)) {
+    const hit = spotWallTargetFromRay(ray, spotPlacementTargetsForItem(item, items, width, depth, layout), {
+      height: fixedWallHeight, pivot: cameraPivot,
+      axisPadding: wallItemMetrics(item, items, width, depth).width / 2,
+    });
+    return hit ? { ...hit.point, spotWallTarget: { wall: hit.target.wall, wallSide: hit.target.wallSide } } : null;
+  }
   const center = sceneItemDragCenter(item, items, width, depth);
   const orientation = wallItemDragOrientation(item, items);
   const normal = orientation === 'x' ? new Vector3(0, 0, 1) : new Vector3(1, 0, 0);
@@ -19965,6 +20021,7 @@ function sceneItemDragPointerOffset(item = {}, pointer = {}, items = [], width =
 
 function applyDragPointerOffset(point = {}, offset = {}) {
   return {
+    ...(point.spotWallTarget ? { spotWallTarget: point.spotWallTarget } : {}),
     x: Number(point.x || 0) + Number(offset.x || 0),
     z: Number(point.z || 0) + Number(offset.z || 0),
   };
@@ -20452,11 +20509,15 @@ function createGenericWallCoverTexture(width = 1, height = 1) {
 }
 
 
-function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, sceneOffset, draggingId, draggingItem = null, onDragMove, onClearHover, onDeselect }) {
+function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, sceneOffset, draggingId, draggingItem = null, onDragMove, onDragPointer, onClearHover, onDeselect }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
   const floorDepth = sceneFloorDepth(layout, depth);
   const floorCenterZ = sceneFloorCenterZ(layout);
   const emitDragPoint = (event) => {
+    if (isSpotWallItem(draggingItem)) {
+      onDragPointer?.(event);
+      return;
+    }
     onDragMove({
       x: event.point.x - sceneOffset[0],
       z: event.point.z - sceneOffset[2],
