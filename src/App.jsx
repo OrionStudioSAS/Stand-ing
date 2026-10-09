@@ -13,6 +13,7 @@ import { closestSpotWallTarget, spotTargetPatch, spotWallTargetFromRay, spotWall
 import { manualOrderCategories, manualOrderRowsToPricingLines, normalizeManualOrderCategory, replaceManualOrderPricingLines } from './manualOrderLines.js';
 import { useSceneExhibitorReadOnly } from './useSceneExhibitorReadOnly.js';
 import AdminMondayView, { MondaySyncFeedback } from './AdminMondayView.jsx';
+import PresentationGround from './PresentationGround.jsx';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   AlertTriangle,
@@ -19847,44 +19848,6 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
     min: clamp(blocker.min, limits.min, limits.max),
     max: clamp(blocker.max, limits.min, limits.max),
   };
-}
-
-function PresentationGround() {
-  const texture = useMemo(() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-    const context = canvas.getContext('2d');
-    const image = context.createImageData(canvas.width, canvas.height);
-    for (let y = 0; y < canvas.height; y += 1) {
-      for (let x = 0; x < canvas.width; x += 1) {
-        const index = (y * canvas.width + x) * 4;
-        const radius = Math.hypot((x / (canvas.width - 1)) * 2 - 1, (y / (canvas.height - 1)) * 2 - 1);
-        const fade = Math.max(0, Math.min(1, (0.98 - radius) / 0.53));
-        const seed = Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 668265263);
-        const grain = (Math.imul(seed ^ (seed >>> 13), 1274126177) >>> 0) % 19 - 9;
-        const shade = 58 + grain * 0.7;
-        image.data[index] = shade;
-        image.data[index + 1] = shade;
-        image.data[index + 2] = shade + 1;
-        image.data[index + 3] = Math.round(fade * fade * (3 - 2 * fade) * 255);
-      }
-    }
-    context.putImageData(image, 0, 0);
-    const result = new CanvasTexture(canvas);
-    result.colorSpace = SRGBColorSpace;
-    result.minFilter = LinearMipmapLinearFilter;
-    return result;
-  }, []);
-
-  useEffect(() => () => texture.dispose(), [texture]);
-
-  return (
-    <mesh position={[0, -0.035, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
-      <planeGeometry args={[40, 40]} />
-      <meshBasicMaterial map={texture} transparent depthWrite={false} />
-    </mesh>
-  );
 }
 
 function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {

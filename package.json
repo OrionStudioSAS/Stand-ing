@@ -5,7 +5,8 @@
     "test:spots": "node tests/spot-placement.browser.mjs",
     "test:signature-preset": "node tests/signature-preset-colour.browser.mjs",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "test:ground": "node tests/presentation-ground.browser.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.0.0",

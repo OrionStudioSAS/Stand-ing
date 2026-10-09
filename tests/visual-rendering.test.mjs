@@ -7,6 +7,7 @@ import { DoubleSide, LinearFilter, LinearMipmapLinearFilter, MeshStandardMateria
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
 const stylesSource = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+const groundSource = readFileSync(new URL('../src/PresentationGround.jsx', import.meta.url), 'utf8');
 
 function loadFunction(source, api, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -35,7 +36,17 @@ test('configurator scene uses a black backdrop and textured ground without chang
   assert.match(canvas, /<color attach="background" args=\{\['#050506'\]\} \/>/);
   assert.match(canvas, /<PresentationGround \/>/);
   assert.match(stylesSource, /\.configurator-stage\s*\{[^}]*background: #050506/);
-  assert.match(appSource, /function PresentationGround\(\)[\s\S]*<planeGeometry args=\{\[40, 40\]\}/);
+  assert.match(groundSource, /function PresentationGround\(\)[\s\S]*<planeGeometry args=\{\[40, 40\]\}/);
+  assert.equal((appSource.match(/<PresentationGround \/>/g) || []).length, 2);
+});
+
+test('presentation ground uses continuous filtered grain and an analytic fade, not stretched pixels', () => {
+  assert.match(groundSource, /fwidth\(p\)/);
+  assert.match(groundSource, /smoothstep\(9\.0, 19\.6, length\(vGroundPosition\)\)/);
+  assert.match(groundSource, /#include <colorspace_fragment>/);
+  assert.match(groundSource, /raycast=\{\(\) => null\}/);
+  assert.match(groundSource, /transparent depthWrite=\{false\}/);
+  assert.doesNotMatch(groundSource, /CanvasTexture|createImageData/);
 });
 
 test('scene orbiting and panning cannot expose the underside of the ground', () => {
