@@ -133,7 +133,7 @@ test('impossible/narrow mounting surfaces do not accept a rail or cause a drag j
 test('exhibitor, pack preview and BAT reconstruction share the same placement validation', () => {
   const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(app, /const sceneItems = useMemo\(\(\) => resolveSpotWallAttachments/);
-  assert.match(app, /return resolveSpotWallAttachments\(resolveSurfaceAttachments\(\[\.\.\.items, \.\.\.automaticReserves/);
+  assert.match(app, /return resolveSpotWallAttachments\(resolveSurfaceAttachments\(\[\.\.\.presetItems, \.\.\.automaticReserves/);
   assert.match(app, /return resolveTechnicalWallSurfaces\(resolveSpotWallAttachments\(/);
   assert.match(app, /onDragPointer=\{dragFromPointer\}/);
 });

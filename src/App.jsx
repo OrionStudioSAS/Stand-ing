@@ -6352,6 +6352,14 @@ function signatureArchColorOptions(color = {}) {
   };
 }
 
+function presetItemsWithArchColor(items = [], color = {}, isSignaturePack = false) {
+  if (!isSignaturePack) return items;
+  const colorOptions = signatureArchColorOptions(color);
+  return items.map((item) => isSignatureArchItem(item)
+    ? { ...item, options: { ...(item.options || {}), ...colorOptions } }
+    : item);
+}
+
 function signatureArchBackWallZ(item = {}, standDepth = 0) {
   const bounds = itemGroupBounds(item);
   return -Number(standDepth || 0) / 2 + wallThickness - Number(bounds.minZ || 0);
@@ -10783,6 +10791,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
     wallFabricColor: selectedWallFabricColor,
     reserveWallFabricColor: selectedReserveWallFabricColor,
   }), [selectedCarpetColor, selectedCarpetFootprintColor, selectedWallFabricColor, selectedReserveWallFabricColor]);
+  const presetItems = useMemo(() => presetItemsWithArchColor(items, selectedCarpetFootprintColor, isSignaturePack), [items, selectedCarpetFootprintColor, isSignaturePack]);
   const previewItems = useMemo(() => {
     const area = width * depth;
     const reserveRule = activeReserveRule(reserveRules, area, packReserveBands);
@@ -10791,10 +10800,10 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
     const headRule = activePartitionHeadRule(partitionHeadRules, area, layout);
     const automaticHeads = makeAutomaticPartitionHeadItems(headRule, partitionHeadEnabledSides(headRule), availableCatalog, width, depth, layout, offer?.name);
     const automaticSpots = hasAutoSpotsRule(autoSpotsRule)
-      ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...items, ...automaticReserves])
+      ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...presetItems, ...automaticReserves])
         .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout)) : [];
-    return resolveSpotWallAttachments(resolveSurfaceAttachments([...items, ...automaticReserves, ...automaticHeads, ...automaticSpots]), width, depth, layout);
-  }, [items, width, depth, layout, reserveRules, partitionHeadRules, autoSpotsRule, availableCatalog, packReserveBands, offer?.name, reserveItemOverrides, ledRailOverrides, isSignaturePack]);
+    return resolveSpotWallAttachments(resolveSurfaceAttachments([...presetItems, ...automaticReserves, ...automaticHeads, ...automaticSpots]), width, depth, layout);
+  }, [presetItems, width, depth, layout, reserveRules, partitionHeadRules, autoSpotsRule, availableCatalog, packReserveBands, offer?.name, reserveItemOverrides, ledRailOverrides, isSignaturePack]);
   const presetTextureLoad = useSceneTexturePreload(previewItems, [
     selectedCarpetColor.image,
     selectedCarpetFootprintColor.image,
@@ -10854,7 +10863,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
     return {
       dimensions: { width, depth, height: fixedWallHeight },
       layout,
-      items,
+      items: presetItems,
       reserveRules,
       partitionHeadRules,
       autoSpotsRule: autoSpotsRule || undefined,
@@ -10872,7 +10881,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
         ...selectedDefaultColorOptions,
       },
     };
-  }, [width, depth, layout, items, reserveRules, partitionHeadRules, autoSpotsRule, selectedDefaultColorOptions, packReserveBands, offer?.name, salon.name, ledRailOverrides, reserveItemOverrides]);
+  }, [width, depth, layout, presetItems, reserveRules, partitionHeadRules, autoSpotsRule, selectedDefaultColorOptions, packReserveBands, offer?.name, salon.name, ledRailOverrides, reserveItemOverrides]);
 
   useEffect(() => { if (draftReady) onDraftChange(preset.id, sceneDraft); }, [preset.id, sceneDraft, onDraftChange, draftReady]);
   const removeItem = (id) => {
@@ -11086,6 +11095,13 @@ function PresetPlanView({ width, depth, layout, items, editableIds, selectedId, 
     }} onPointerUp={() => { dragRef.current = null; }} onPointerCancel={() => { dragRef.current = null; }}>
       <rect x={left} y={top} width={width * scale} height={depth * scale} fill={colorHex(carpetColor, '#e2e5e9')} opacity="0.65" />
       {footprintEnabled && <rect x={left + (footprint.minX + width / 2) * scale} y={top + (footprint.minZ + depth / 2) * scale} width={(footprint.maxX - footprint.minX) * scale} height={(footprint.maxZ - footprint.minZ) * scale} fill={colorHex(footprintColor)} />}
+      {items.filter(isSignatureArchItem).map((item) => {
+        const bounds = itemGroupBounds(item);
+        const stripDepth = depth + signatureArchFootprintOverflow;
+        return <g key={`footprint-${item.id}`} pointerEvents="none" transform={`translate(${left + (Number(item.x || 0) + width / 2) * scale}, ${top + (Number(item.z || 0) + depth / 2) * scale}) rotate(${-Number(item.rotation || 0)})`}>
+          <rect aria-label="Empreinte moquette de l'arche" x={bounds.minX * scale} y={(signatureArchFootprintLocalZ(item) - stripDepth / 2) * scale} width={bounds.width * scale} height={stripDepth * scale} fill={item.options?.signatureArchColorHex || '#bebebe'} />
+        </g>;
+      })}
       {availableWalls(layout).map((wall) => <line key={wall.id} x1={wall.id === 'right' ? left + width * scale : left} y1={top} x2={wall.id === 'back' || wall.id === 'right' ? left + width * scale : left} y2={wall.id === 'back' ? top : top + depth * scale} stroke="#9ca3af" strokeWidth="8" />)}
       <line x1={left} y1={top - 20} x2={left + width * scale} y2={top - 20} stroke="#9ca3af" />
       <text x="380" y={top - 27} textAnchor="middle">{formatNumber(width)} m</text>
@@ -11109,7 +11125,7 @@ function PresetPlanView({ width, depth, layout, items, editableIds, selectedId, 
           <title>{item.label}</title>{isLedRailEntry(item) ? <>
             <line x1={-itemWidth / 2} y1="0" x2={itemWidth / 2} y2="0" stroke="#4b5563" strokeWidth="4" />
             {Array.from({ length: ledSpotsPerRail(item) }, (_, spot) => <circle key={spot} cx={-itemWidth / 2 + itemWidth * (spot + 1) / (ledSpotsPerRail(item) + 1)} cy="6" r="4" fill="#f4b000" />)}
-          </> : <rect x={bounds.minX * scale} y={bounds.minZ * scale} width={itemWidth} height={itemDepth} rx="3" fill={selectedId === item.id ? '#0d2b70' : '#c6a575'} stroke={selectedId === item.id ? '#065dff' : '#fff'} strokeWidth="2" />}
+          </> : <rect x={bounds.minX * scale} y={bounds.minZ * scale} width={itemWidth} height={itemDepth} rx="3" fill={isSignatureArchItem(item) ? item.options?.signatureArchColorHex || '#bebebe' : selectedId === item.id ? '#0d2b70' : '#c6a575'} stroke={selectedId === item.id ? '#065dff' : '#fff'} strokeWidth="2" />}
         </g>;
       })}
       <text x="380" y={top + depth * scale + 45} textAnchor="middle">{formatNumber(width * depth)} m²</text>
@@ -11133,7 +11149,7 @@ function PresetDefaultColorsEditor({ carpetColors = [], footprintColors = [], wa
         onChange={(value) => update('carpetColorId', value)}
       />
       <PresetColorSelect
-        label="Empreinte moquette"
+        label={isSignaturePack ? 'Empreinte moquette / arche' : 'Empreinte moquette'}
         colors={footprintColors}
         value={selectedIds.carpetFootprintColorId}
         fallbackValue={selectedIds.carpetColorId}
@@ -11163,7 +11179,7 @@ function PresetColorSelect({ label, colors = [], value = '', fallbackValue = '',
   return (
     <label className="preset-color-select">
       <span>{label}</span>
-      <select value={selectedValue} onChange={(event) => onChange(event.target.value)}>
+      <select aria-label={label} value={selectedValue} onChange={(event) => onChange(event.target.value)}>
         {colors.map((color) => (
           <option key={color.id} value={color.id}>
             {color.name || color.code || color.id}{color.code ? ` (${color.code})` : ''}

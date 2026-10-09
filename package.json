@@ -3,6 +3,7 @@
     "dev": "vite --host 0.0.0.0",
     "test:bat": "node tests/technical-print.browser.mjs",
     "test:spots": "node tests/spot-placement.browser.mjs",
+    "test:signature-preset": "node tests/signature-preset-colour.browser.mjs",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0"
   },

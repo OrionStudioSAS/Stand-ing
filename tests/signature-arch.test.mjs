@@ -63,6 +63,49 @@ function archMaterialContext() {
   return context;
 }
 
+test('Signature preset footprint colours override stale arch colours without modifying other options or items', () => {
+  const context = archMaterialContext();
+  for (const name of ['colorHex', 'colorTextureUrl', 'signatureArchColorOptions', 'presetItemsWithArchColor']) loadFunction(name, context);
+  const arch = { id: 'arch', label: 'Arche Totem + Plafond Spot', x: 0.25, z: -0.5, rotation: 0,
+    options: { signatureArchColorId: 'old', signatureArchColorHex: '#ff0000', signatureArchColorImage: 'old.jpg',
+      textureSlotValues: { logo: { imageUrl: 'logo.png' } }, unitPrice: 120, signatureArchVariantType: 'arch-spot' } };
+  const suspension = { ...arch, id: 'suspension', label: 'Arche Totem + Plafond Suspension' };
+  const chair = { id: 'chair', type: 'chair', options: { color: '#ff0000' } };
+  const input = [arch, chair, suspension];
+  const before = JSON.stringify(input);
+  const color = { id: 'blue', name: 'Bleu', code: '123', hex: '#123456', image: 'blue-carpet.jpg', reference: 'BLUE-REF' };
+  const result = context.presetItemsWithArchColor(input, color, true);
+  for (const updated of [result[0], result[2]]) {
+    assert.equal(updated.options.signatureArchColorId, color.id);
+    assert.equal(updated.options.signatureArchColorHex, color.hex);
+    assert.equal(updated.options.signatureArchColorImage, color.image);
+    assert.equal(updated.options.signatureArchColorReference, color.reference);
+    assert.equal(updated.options.signatureArchColorName, color.name);
+    assert.equal(updated.options.signatureArchColorCode, color.code);
+    assert.equal(updated.options.textureSlotValues, arch.options.textureSlotValues);
+    assert.equal(updated.options.signatureArchVariantType, 'arch-spot');
+    assert.equal(updated.options.unitPrice, 120);
+    assert.equal(updated.x, arch.x);
+    assert.equal(updated.z, arch.z);
+    assert.equal(updated.rotation, arch.rotation);
+    const material = context.applyItemOptionMaterials(new MeshStandardMaterial({ name: 'Laminate_D02_120cm#1', map: new Texture() }), updated);
+    assert.equal(material.color.getHexString(), '123456');
+    assert.equal(material.map, null, 'Only the carpet strip uses the texture; the arch remains painted');
+  }
+  assert.equal(result[1], chair);
+  assert.equal(JSON.stringify(input), before);
+  assert.equal(context.presetItemsWithArchColor(input, color, false), input, 'Other packs are untouched');
+  const plain = context.presetItemsWithArchColor(result, { id: 'plain', hex: '#000000' }, true);
+  assert.equal(plain[0].options.signatureArchColorImage, '', 'A colour without a texture clears the previous carpet image');
+});
+
+test('Signature preset preview and saved draft use the same arch-coloured items', () => {
+  const editor = appSource.slice(appSource.indexOf('function PresetSceneEditor('), appSource.indexOf('function PresetCameraFraming('));
+  assert.match(editor, /presetItemsWithArchColor\(items, selectedCarpetFootprintColor, isSignaturePack\)/);
+  assert.match(editor, /resolveSurfaceAttachments\(\[\.\.\.presetItems, \.\.\.automaticReserves/);
+  assert.match(editor, /items: presetItems/);
+});
+
 test('Signature arch paint uses a solid carpet color without grain, relief, or emission', () => {
   const context = archMaterialContext();
   const carpetTexture = new Texture();
