@@ -14,6 +14,7 @@ import { manualOrderCategories, manualOrderRowsToPricingLines, normalizeManualOr
 import { useSceneExhibitorReadOnly } from './useSceneExhibitorReadOnly.js';
 import AdminMondayView, { MondaySyncFeedback } from './AdminMondayView.jsx';
 import PresentationGround from './PresentationGround.jsx';
+import { normalizePartitionHeadVisuals, partitionHeadUsesDifferentVisuals, patchPartitionHeadVisuals, withPartitionHeadVisualMode } from './partitionHeadVisuals.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   AlertTriangle,
@@ -1075,7 +1076,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     left: hasOwn(initialOptions, 'partitionHeadLeftEnabled') ? Boolean(initialOptions.partitionHeadLeftEnabled) : null,
     right: hasOwn(initialOptions, 'partitionHeadRightEnabled') ? Boolean(initialOptions.partitionHeadRightEnabled) : null,
   });
-  const [partitionHeadVisuals, setPartitionHeadVisuals] = useState(initialOptions.partitionHeadVisuals || {});
+  const [partitionHeadVisuals, setPartitionHeadVisuals] = useState(() => normalizePartitionHeadVisuals(initialOptions.partitionHeadVisuals || {}));
   const [prestigeArchEnabled, setPrestigeArchEnabled] = useState(() => (
     initialPrestigeArchVisible || (hasOwn(initialOptions, 'prestigeArchEnabled') ? initialOptions.prestigeArchEnabled !== false : false)
   ));
@@ -1774,10 +1775,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (isAutomaticPartitionHeadItem(targetItem)) {
       const side = targetItem.options?.partitionHeadSide || smclPartitionHeadSide(targetItem);
       if (side) {
-        setPartitionHeadVisuals((current) => ({
-          ...current,
-          [side]: { ...(current?.[side] || {}), ...patch },
-        }));
+        setPartitionHeadVisuals((current) => patchPartitionHeadVisuals(current, side, patch));
       }
       return;
     }
@@ -1931,15 +1929,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       }, file);
       const imageUrl = cacheBustedUrl(uploadedUrl);
       await preloadImage(imageUrl);
-      setPartitionHeadVisuals((current) => ({
-        ...current,
-        [side]: {
-          ...(current?.[side] || {}),
-          ...(slot
-            ? textureSlotPatch({ options: current?.[side] || {} }, slot, { imageUrl, imageName: file.name, visualPending: false, ...defaultImageFraming })
-            : { headMainImageUrl: imageUrl, headMainImageName: file.name, visualPending: false }),
-        },
-      }));
+      setPartitionHeadVisuals((current) => patchPartitionHeadVisuals(current, side, (options) => (
+        slot
+          ? textureSlotPatch({ options }, slot, { imageUrl, imageName: file.name, visualPending: false, ...defaultImageFraming })
+          : { headMainImageUrl: imageUrl, headMainImageName: file.name, visualPending: false }
+      )));
       setItemOptionState({ uploading: '', error: '' });
     } catch (error) {
       setItemOptionState({ uploading: '', error: error.message || 'Upload impossible.' });
@@ -1948,23 +1942,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const resetPartitionHeadVisual = (side, slot = null) => {
     if (!side || readOnly) return;
-    setPartitionHeadVisuals((current) => ({
-      ...current,
-      [side]: {
-        ...(current?.[side] || {}),
-        ...(slot
-          ? textureSlotPatch({ options: current?.[side] || {} }, slot, { imageUrl: '', imageName: '', visualPending: false, ...defaultImageFraming })
-          : { headMainImageUrl: '', headMainImageName: '' }),
-      },
-    }));
+    setPartitionHeadVisuals((current) => patchPartitionHeadVisuals(current, side, (options) => (
+      slot
+        ? textureSlotPatch({ options }, slot, { imageUrl: '', imageName: '', visualPending: false, ...defaultImageFraming })
+        : { headMainImageUrl: '', headMainImageName: '', visualPending: false }
+    )));
   };
 
   const updatePartitionHeadVisualOptions = (side, patch) => {
     if (!side || readOnly) return;
-    setPartitionHeadVisuals((current) => ({
-      ...current,
-      [side]: { ...(current?.[side] || {}), ...(patch || {}) },
-    }));
+    setPartitionHeadVisuals((current) => patchPartitionHeadVisuals(current, side, patch));
   };
   const openAddItemConfigurator = (entry) => {
     if (readOnly) return;
@@ -2929,6 +2916,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onPartitionHeadImage={uploadPartitionHeadVisual}
             onPartitionHeadResetImage={resetPartitionHeadVisual}
             onPartitionHeadVisualOptions={updatePartitionHeadVisualOptions}
+            onPartitionHeadDifferentVisuals={(checked) => !readOnly && setPartitionHeadVisuals((current) => withPartitionHeadVisualMode(current, checked))}
             onCounterImage={(item, file, optionKeys) => uploadItemImage(item, file, optionKeys)}
             onCounterOptions={updateItemOptions}
             onCounterVisibility={(item, visible) => {
@@ -4637,6 +4625,7 @@ function OptionsStepPanel({
   onPartitionHeadImage,
   onPartitionHeadResetImage,
   onPartitionHeadVisualOptions,
+  onPartitionHeadDifferentVisuals,
   onCounterImage,
   onCounterOptions,
   onCounterVisibility,
@@ -4775,6 +4764,7 @@ function OptionsStepPanel({
           onImage={onPartitionHeadImage}
           onResetImage={onPartitionHeadResetImage}
           onVisualOptions={onPartitionHeadVisualOptions}
+          onDifferentVisuals={onPartitionHeadDifferentVisuals}
         />
       </OptionAccordion>
       {isSignatureStand && (
@@ -8063,7 +8053,7 @@ function reserveSizeDescription(area = 0, label = '') {
   return label || 'Réserve complémentaire';
 }
 
-function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions }) {
+function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions, onDifferentVisuals }) {
   const t = useT();
   const rows = [
     { side: 'left', label: t('partition_left'), visualLabel: partitionHeadVisualLabel('left', salonLabel, findCatalogEntry(catalog, rule?.leftType)), uploadSubtitle: isSignatureStand ? 'Visuel LED · PNG, JPG ou PDF' : 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.leftType, price: rule?.leftPrice },
@@ -8071,6 +8061,10 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
   ];
   const selectedRows = rows.filter((row) => Boolean(sides?.[row.side]));
   const selectedCount = selectedRows.length;
+  const differentVisuals = partitionHeadUsesDifferentVisuals(visualOptions);
+  const sharedVisual = selectedCount === 2 && !differentVisuals;
+  const visualRows = sharedVisual ? selectedRows.slice(0, 1) : selectedRows;
+  const uploading = Boolean(uploadState?.uploading);
 
   return (
     <div className="partition-head-panel partition-head-panel-v2">
@@ -8116,13 +8110,21 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
         })}
       </div>}
 
-      {selectedRows.length ? selectedRows.map((row) => (
+      {selectedCount === 2 && <div className="partition-head-visual-mode">
+        <label className="visual-pending-checkbox">
+          <input type="checkbox" checked={differentVisuals} disabled={disabled || uploading} onChange={(event) => onDifferentVisuals?.(event.target.checked)} />
+          <span>{t('partition_different_visuals')}</span>
+        </label>
+        <small>{t(sharedVisual ? 'partition_shared_visual_hint' : 'partition_different_visuals_hint')}</small>
+      </div>}
+
+      {visualRows.length ? visualRows.map((row) => (
         <React.Fragment key={row.side}>
           <PartitionHeadVisualUpload
-            row={row}
+            row={sharedVisual ? { ...row, visualLabel: t('partition_visual_shared') } : row}
             visual={visualOptions?.[row.side] || {}}
-            uploading={uploadState?.uploading === row.side}
-            disabled={disabled}
+            uploading={sharedVisual ? uploading : uploadState?.uploading === row.side}
+            disabled={disabled || uploading}
             showPending={!isSignatureStand}
             onImage={(file) => onImage?.(row.side, file)}
             onReset={() => onResetImage?.(row.side)}
@@ -8133,10 +8135,10 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
             return (
               <PartitionHeadVisualUpload
                 key={slot.id}
-                row={{ ...row, visualLabel: `${slot.label} ${row.side === 'left' ? 'gauche' : 'droite'}`, uploadSubtitle: `${slot.targetName} · PNG, JPG ou PDF` }}
+                row={{ ...row, visualLabel: sharedVisual ? `${slot.label} · ${t('partition_both_heads')}` : `${slot.label} ${row.side === 'left' ? 'gauche' : 'droite'}`, uploadSubtitle: `${slot.targetName} · PNG, JPG ou PDF` }}
                 visual={{ headMainImageUrl: value.imageUrl, headMainImageName: value.imageName }}
-                uploading={uploadState?.uploading === row.side}
-                disabled={disabled}
+                uploading={sharedVisual ? uploading : uploadState?.uploading === row.side}
+                disabled={disabled || uploading}
                 showPending={false}
                 onImage={(file) => onImage?.(row.side, file, slot)}
                 onReset={() => onResetImage?.(row.side, slot)}

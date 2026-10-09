@@ -4,6 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { MeshStandardMaterial, Texture } from 'three';
 import { defaultImageFraming } from '../src/imageFraming.js';
+import { patchPartitionHeadVisuals } from '../src/partitionHeadVisuals.js';
 
 const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 
@@ -25,6 +26,7 @@ function visualContext() {
     smclExhibitorTextureForMaterial: () => null,
     shouldUseExhibitorHeadTexture: () => false,
     defaultImageFraming,
+    patchPartitionHeadVisuals,
   });
   const start = source.indexOf('const signaturePartitionHeadVisualSlots = [');
   const end = source.indexOf('\n];', start) + 3;

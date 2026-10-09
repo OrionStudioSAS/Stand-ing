@@ -6,7 +6,8 @@
     "test:signature-preset": "node tests/signature-preset-colour.browser.mjs",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test:ground": "node tests/presentation-ground.browser.mjs"
+    "test:ground": "node tests/presentation-ground.browser.mjs",
+    "test:partition-head-visuals": "node tests/partition-head-visuals.browser.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.0.0",

@@ -145,6 +145,11 @@ export const translations = {
     // PartitionHeadOptionCard
     partition_left: 'Gauche',
     partition_right: 'Droite',
+    partition_different_visuals: 'Je veux un visuel différent',
+    partition_shared_visual_hint: 'Le visuel importé est appliqué aux deux têtes de cloison.',
+    partition_different_visuals_hint: 'Importez un visuel pour la tête gauche et un autre pour la tête droite. En décochant, le visuel gauche sera utilisé pour les deux.',
+    partition_visual_shared: 'Visuel des deux têtes de cloison',
+    partition_both_heads: 'Deux têtes de cloison',
     partition_not_configured: 'Non configurée',
     partition_select_visual: 'Sélectionnez une tête de cloison pour ajouter un visuel.',
     partition_remove: 'Supprimer les têtes de cloison',
@@ -530,6 +535,11 @@ export const translations = {
     // PartitionHeadOptionCard
     partition_left: 'Left',
     partition_right: 'Right',
+    partition_different_visuals: 'I want different artwork',
+    partition_shared_visual_hint: 'The uploaded artwork is applied to both partition heads.',
+    partition_different_visuals_hint: 'Upload artwork for the left head and another for the right. Uncheck to use the left artwork for both.',
+    partition_visual_shared: 'Artwork for both partition heads',
+    partition_both_heads: 'Both partition heads',
     partition_not_configured: 'Not configured',
     partition_select_visual: 'Select a partition head to add a visual.',
     partition_remove: 'Remove partition heads',

@@ -12359,6 +12359,21 @@ img.asset-thumb {
   font-weight: 950;
 }
 
+.partition-head-visual-mode {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  background: #f5f8fd;
+}
+
+.partition-head-visual-mode small {
+  color: #68778c;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
 .partition-head-company-field input {
   width: 100%;
   min-height: 42px;
