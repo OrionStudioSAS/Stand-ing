@@ -20756,18 +20756,15 @@ function WallFabricSurface({ surface, color }) {
     <group position={position} rotation={[0, surface.rotation, 0]}>
       <mesh renderOrder={1} raycast={() => null}>
         <boxGeometry args={[surface.width, fabricHeight, 0.001]} />
-        <meshStandardMaterial
-          color={texture ? '#ffffff' : colorHex(color, '#fffdf8')}
-          map={texture || null}
-          emissive={texture ? '#ffffff' : colorHex(color, '#fffdf8')}
-          emissiveMap={texture || null}
-          emissiveIntensity={0.16}
-          roughness={0.82}
-          metalness={0}
-        />
+        <meshStandardMaterial {...wallFabricMaterialProps(color, texture)} />
       </mesh>
     </group>
   );
+}
+
+function wallFabricMaterialProps(color, texture = null) {
+  const tint = texture ? '#ffffff' : colorHex(color, '#fffdf8');
+  return { color: tint, map: texture, emissive: tint, emissiveMap: texture, emissiveIntensity: 0.16, roughness: 0.82, metalness: 0 };
 }
 
 function WallCoverSurfaces({ width, depth, layout, items = [], covers = {}, previews = {} }) {
@@ -21056,6 +21053,7 @@ function MissingModelFallback({ item, selected, hovered, dragging }) {
 
 function GlbModel({ item, selected, hovered, visualContext }) {
   const gltf = useGlbModel(item.modelUrl);
+  const reserveDoorTexture = useReserveDoorFabricTexture(item, false);
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.binary3ImageFraming) });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '', { flipY: false });
   const textureSlotImages = useTextureSlotImages(item);
@@ -21065,13 +21063,14 @@ function GlbModel({ item, selected, hovered, visualContext }) {
   ), [item.type, item.label, item.modelUrl, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
   const model = useMemo(() => (gltf?.scene ? prepareLoadedModel(gltf.scene, item, {
     isGlb: true,
+    reserveDoorTexture,
     customImageTexture,
     counterColorTexture,
     textureSlotImages,
     textureSlotFlipY: false,
     mainImageTexture,
     exhibitorTexture,
-  }) : null), [gltf, item, customImageTexture, counterColorTexture, textureSlotImages, mainImageTexture, exhibitorTexture]);
+  }) : null), [gltf, item, reserveDoorTexture, customImageTexture, counterColorTexture, textureSlotImages, mainImageTexture, exhibitorTexture]);
   return model ? <primitive object={model} dispose={null} /> : <MissingModelFallback item={item} selected={selected} hovered={hovered} />;
 }
 
@@ -21097,6 +21096,7 @@ function useObjModel(modelUrl, materials) {
 }
 
 function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualContext }) {
+  const reserveDoorTexture = useReserveDoorFabricTexture(item);
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.headMainImageFraming) });
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.binary3ImageFraming) });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '');
@@ -21113,6 +21113,7 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
     <ObjModelWithPreparedMaterials
       item={item}
       materials={materials}
+      reserveDoorTexture={reserveDoorTexture}
       mainImageTexture={mainImageTexture}
       customImageTexture={customImageTexture}
       counterColorTexture={counterColorTexture}
@@ -21124,16 +21125,17 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   );
 }
 
-function ObjModelWithPreparedMaterials({ item, materials, mainImageTexture, customImageTexture, counterColorTexture, textureSlotImages, exhibitorTexture, selected, hovered }) {
+function ObjModelWithPreparedMaterials({ item, materials, reserveDoorTexture, mainImageTexture, customImageTexture, counterColorTexture, textureSlotImages, exhibitorTexture, selected, hovered }) {
   const obj = useObjModel(item.modelUrl, materials);
   const model = useMemo(() => (obj ? prepareLoadedModel(obj, item, {
     mainImageTexture,
+    reserveDoorTexture,
     customImageTexture,
     counterColorTexture,
     textureSlotImages,
     textureSlotFlipY: true,
     exhibitorTexture,
-  }) : null), [obj, item, mainImageTexture, customImageTexture, counterColorTexture, textureSlotImages, exhibitorTexture]);
+  }) : null), [obj, item, reserveDoorTexture, mainImageTexture, customImageTexture, counterColorTexture, textureSlotImages, exhibitorTexture]);
 
   return model ? <primitive object={model} dispose={null} /> : <MissingModelFallback item={item} selected={selected} hovered={hovered} />;
 }
@@ -21223,6 +21225,7 @@ function modelMaterialUrl(item) {
 
 function ObjModel({ item, selected, hovered, dragging }) {
   const obj = useObjModel(item.modelUrl, null);
+  const reserveDoorTexture = useReserveDoorFabricTexture(item);
   const model = useMemo(() => {
     if (!obj) return null;
     const clone = obj.clone(true);
@@ -21234,17 +21237,19 @@ function ObjModel({ item, selected, hovered, dragging }) {
       ...hoverMaterialProps(selected, hovered),
     });
 
+    const finishMaterial = (source) => item.options?.reserveDoorColorHex && isReserveDoorPaintMaterial(source?.name)
+      ? reserveDoorFabricMaterial(source, item, reserveDoorTexture) : material;
     clone.traverse((child) => {
       if (child.isMesh) {
         child.castShadow = true;
         child.receiveShadow = true;
         child.renderOrder = modelRenderOrderForItem(item);
-        child.material = material;
+        child.material = Array.isArray(child.material) ? child.material.map(finishMaterial) : finishMaterial(child.material);
       }
     });
 
     return centerModel(clone, item);
-  }, [obj, item, selected, hovered, dragging]);
+  }, [obj, item, reserveDoorTexture, selected, hovered, dragging]);
 
   return model ? <primitive object={model} dispose={null} /> : <MissingModelFallback item={item} selected={selected} hovered={hovered} dragging={dragging} />;
 }
@@ -21408,7 +21413,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
 
   const materialName = normalizeMaterialName(material.name);
   const doorColor = item?.options?.reserveDoorColorHex;
-  if (doorColor && isReserveDoorPaintMaterial(materialName)) return signatureArchPaintMaterial(material, doorColor);
+  if (doorColor && isReserveDoorPaintMaterial(materialName)) return reserveDoorFabricMaterial(material, item, textureOptions.reserveDoorTexture);
   if (isSignatureArchItem(item) && isSignatureArchColorMaterial(materialName, material)) {
     return signatureArchPaintMaterial(material, item?.options?.signatureArchColorHex || '#bebebe');
   }
@@ -21450,6 +21455,27 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
 
 function isReserveDoorPaintMaterial(materialName = '') {
   return normalizeMaterialName(materialName) === 'meshfabric_b01_18cm_3';
+}
+
+function reserveDoorFabricColor(item = {}) {
+  return item.options?.reserveDoorColorHex
+    ? { ...signatureReserveWallFabricColor(), hex: item.options.reserveDoorColorHex }
+    : null;
+}
+
+function useReserveDoorFabricTexture(item, flipY = true) {
+  const color = reserveDoorFabricColor(item);
+  const texture = useRepeatedTexture(colorTextureUrl(color), 1, Math.max(0.1, fixedWallHeight - baseboardHeight), 1.8);
+  return useMemo(() => {
+    if (texture) { texture.flipY = flipY; texture.needsUpdate = true; }
+    return texture;
+  }, [texture, flipY]);
+}
+
+function reserveDoorFabricMaterial(material, item, texture = null) {
+  // Use the same fabric shader as the reserve walls, including its texture and light response.
+  return new MeshStandardMaterial({ name: material.name, side: material.side,
+    ...wallFabricMaterialProps(reserveDoorFabricColor(item), texture) });
 }
 
 function isSignatureArchColorMaterial(materialName = '', material = null) {

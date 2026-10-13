@@ -68,7 +68,8 @@ test('wall fabric keeps scene shading with a restrained texture lift', () => {
   const end = appSource.indexOf('\nfunction WallCoverSurfaces(', start);
   const source = appSource.slice(start, end);
   assert.ok(start >= 0);
-  assert.match(source, /<meshStandardMaterial[\s\S]*map=\{texture \|\| null\}[\s\S]*emissiveMap=\{texture \|\| null\}[\s\S]*emissiveIntensity=\{0\.16\}/);
+  assert.match(source, /<meshStandardMaterial \{\.\.\.wallFabricMaterialProps\(color, texture\)\}/);
+  assert.match(source, /map: texture, emissive: tint, emissiveMap: texture, emissiveIntensity: 0\.16, roughness: 0\.82, metalness: 0/);
   assert.doesNotMatch(source, /meshBasicMaterial|toneMapped=\{false\}/);
 });
 

@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
-import { MeshStandardMaterial, Texture } from 'three';
+import { MeshPhongMaterial, MeshStandardMaterial, Texture } from 'three';
 import { wallFabricColors } from '../src/config/colorOptions.js';
 
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 function runtime() {
-  const api = vm.createContext({ wallFabricColors });
-  for (const name of ['normalizeTextValue', 'normalizePackLabel', 'isSignaturePackLabel', 'signatureReserveWallFabricColor', 'reserveDoorColorForPack', 'reserveChildWithFinish', 'normalizedItemText', 'normalizeMaterialName', 'isReserveDoorPaintMaterial', 'materialWithColor', 'signatureArchPaintMaterial']) {
+  const api = vm.createContext({ wallFabricColors, MeshStandardMaterial });
+  for (const name of ['normalizeTextValue', 'normalizePackLabel', 'isSignaturePackLabel', 'signatureReserveWallFabricColor', 'reserveDoorColorForPack', 'reserveChildWithFinish', 'normalizedItemText', 'normalizeMaterialName', 'isReserveDoorPaintMaterial', 'colorHex', 'wallFabricMaterialProps', 'reserveDoorFabricColor', 'reserveDoorFabricMaterial']) {
     const start = app.indexOf(`function ${name}(`);
     assert.ok(start >= 0, name);
     vm.runInContext(app.slice(start, app.indexOf('\n}\n', start) + 2), api);
@@ -40,13 +40,6 @@ test('door paint is limited to the requested material, not all panels or door fr
   for (const name of ['porte_trad', 'menuiserie', 'meshfabric_b01_18cm1', 'white', 'door_leaf', 'door_paint', 'default', 'metallic_paint_silver', 'aluminum_blurry', 'poignee', 'digicode', 'color_m05', 'glass']) {
     assert.equal(api.isReserveDoorPaintMaterial(name), false, name);
   }
-  const original = new MeshStandardMaterial({ color: '#ffffff', map: new Texture(), normalMap: new Texture(), roughness: 0.9 });
-  const painted = api.signatureArchPaintMaterial(original, '#787878');
-  assert.equal(painted.color.getHexString(), '787878');
-  assert.equal(painted.map, null);
-  assert.equal(painted.normalMap, null);
-  assert.notEqual(original.map, null);
-  assert.equal(original.color.getHexString(), 'ffffff');
 });
 
 test('monolithic reserves target MeshFabric_B01_18cm_3 without painting other fabric panels', () => {
@@ -56,5 +49,30 @@ test('monolithic reserves target MeshFabric_B01_18cm_3 without painting other fa
   }
   for (const name of ['MeshFabric_B01_18cm_1', 'MeshFabric_B01_18cm_30', 'MeshFabric_B01_18cm_3.001', 'MeshFabric_B01_18cm_3#1', 'MeshFabric_B01_18cm', 'Metallic_Paint_Silver']) {
     assert.equal(api.isReserveDoorPaintMaterial(name), false, name);
+  }
+});
+
+test('door fabric uses the reserve wall texture and PBR light response, not smooth imported paint', () => {
+  const api = runtime();
+  const color = wallFabricColors.find((color) => color.code === '3026');
+  const texture = new Texture();
+  const item = { options: { reserveDoorColorHex: color.hex } };
+  assert.equal(api.reserveDoorFabricColor(item).image, color.image);
+  assert.equal(api.reserveDoorFabricColor({}), null);
+  for (const Original of [MeshPhongMaterial, MeshStandardMaterial]) {
+    const oldMap = new Texture();
+    const original = new Original({ name: 'MeshFabric_B01_18cm_3', color: '#ffffff', map: oldMap, normalMap: new Texture() });
+    const door = api.reserveDoorFabricMaterial(original, item, texture);
+    const wall = new MeshStandardMaterial(api.wallFabricMaterialProps(color, texture));
+    for (const field of ['type', 'roughness', 'metalness', 'emissiveIntensity', 'map', 'emissiveMap', 'normalMap']) assert.equal(door[field], wall[field], field);
+    assert.equal(door.color.getHexString(), wall.color.getHexString());
+    assert.equal(door.emissive.getHexString(), wall.emissive.getHexString());
+    assert.equal(door.name, original.name);
+    assert.equal(original.map, oldMap, 'Imported materials remain unchanged');
+    assert.notEqual(original.normalMap, null);
+    const fallback = api.reserveDoorFabricMaterial(original, item);
+    assert.equal(fallback.color.getHexString(), '787878');
+    assert.equal(fallback.emissive.getHexString(), '787878');
+    assert.equal(fallback.emissiveIntensity, 0.16);
   }
 });
