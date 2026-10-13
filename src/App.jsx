@@ -8525,6 +8525,7 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
   const thickOption = <div className="carpet-thick-option"><ToggleOption active={thick} disabled={disabled} label={t('carpet_thick_label')}
     detail="S’applique à la moquette et à l’empreinte moquette."
     price={thickCarpetPriceFromCarpetTab(area, footprintArea, t)} onChange={onThickChange} /></div>;
+  // Other packs already show this shared option below the footprint palette.
   if (uniformLayout) {
     return <><SurfaceColorOptionCard title="MOQUETTE" iconSrc="/icons/moquette_icon.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />{thickOption}</>;
   }
@@ -8589,7 +8590,6 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
           </>
         )}
       </section>
-      {thickOption}
     </div>
   );
 }

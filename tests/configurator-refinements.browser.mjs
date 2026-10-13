@@ -31,6 +31,12 @@ function Test() {
   return <><div style={{ position: 'fixed', bottom: 0, left: 0, zIndex: 9999 }}>
     <button onClick={() => setComponents((value) => !value)}>Composants test</button>
     <button onClick={() => { setScene(JSON.parse(JSON.stringify(window.savedScene))); setRevision((n) => n + 1); }}>Reouvrir test</button>
+    {['Confort', 'Prestige', 'Équipé', 'Signature'].map((pack) => <button key={pack} onClick={() => {
+      window.savedScene = null;
+      setComponents(false);
+      setScene({ ...${JSON.stringify(scene)}, offer: pack, items: pack === 'Signature' ? [${JSON.stringify(arch)}] : [] });
+      setRevision((n) => n + 1);
+    }}>Pack test {pack}</button>)}
   </div>{components ? <div style={{ maxWidth: 600, margin: 'auto', overflow: 'auto', height: '100vh' }}>
     <section data-test="poster"><api.PosterOptionsPanel item={{ id: 'poster', type: 'poster', wall: 'back', x: 0, options }} items={[]} width={5} depth={4} onFramingChange={change('poster')} embedded /></section>
     <section data-test="head"><api.PartitionHeadOptionsPanel item={{ options }} onFramingChange={change('head')} embedded /></section>
@@ -188,6 +194,23 @@ try {
     await editor.getByRole('button', {name:'Réinitialiser le cadrage'}).click();
     assert.deepEqual(await page.evaluate((key) => window.componentFrames[key], key), { imageZoom:1,imageOffsetX:0,imageOffsetY:0 });
   }
+  for (const pack of ['Confort', 'Prestige', 'Équipé', 'Signature']) {
+    await page.getByRole('button', { name: `Pack test ${pack}`, exact: true }).click();
+    await page.getByRole('button', { name: /^Sol/ }).click();
+    const option = page.locator('.config-toggle-option').filter({ hasText: 'Moquette épaisse' });
+    assert.equal(await option.count(), 1, `${pack} exposes just one shared thick-carpet option`);
+    await option.click();
+    await page.waitForFunction((pack) => window.savedScene?.offer === pack && window.savedScene.options.carpetThick && window.savedScene.options.footprintThick, pack);
+    const lines = await page.evaluate(() => window.refinementPricing.lines.filter((line) => line.label.includes('Moquette épaisse')));
+    assert.equal(lines.length, 2, `${pack} charges carpet and footprint once each`);
+    await page.getByRole('button', { name: 'Reouvrir test', exact: true }).click();
+    await page.getByRole('button', { name: /^Sol/ }).click();
+    assert.equal(await option.count(), 1, `${pack} keeps a single option after reopening`);
+    assert.equal(await option.getAttribute('aria-pressed'), 'true');
+    await option.click();
+    await page.waitForFunction(() => window.savedScene && !window.savedScene.options.carpetThick && !window.savedScene.options.footprintThick);
+    assert.equal(await page.evaluate(() => window.refinementPricing.lines.filter((line) => line.label.includes('Moquette épaisse')).length), 0);
+  }
   assert.deepEqual(errors, []);
-  console.log('Configurator refinements: Signature thick carpet + footprint / autosave / responsive header / reserve spot BAT reconstruction / native image zoom and drag OK');
+  console.log('Configurator refinements: single thick-carpet option across all packs + footprint pricing / autosave / responsive header / reserve spot BAT reconstruction / native image zoom and drag OK');
 } finally { await browser?.close(); await server.close(); }
