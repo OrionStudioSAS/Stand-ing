@@ -34,15 +34,12 @@ test('reserve groups inherit door finish without mutating the catalog or losing 
   assert.equal(api.reserveChildWithFinish(child, {}), child);
 });
 
-test('only painted door panels/frames are recoloured; handles, locks, glass and unrelated furniture stay intact', () => {
+test('door paint is limited to the requested material, not all panels or door frames', () => {
   const api = runtime();
-  const door = { label: 'Porte Poussant Gauche (1)', type: 'porte-reserve' };
-  for (const name of ['porte_trad', 'menuiserie', 'meshfabric_b01_18cm1', 'white', 'door_leaf']) assert.equal(api.isReserveDoorPaintMaterial(door, name), true, name);
-  for (const name of ['metallic_paint_silver', 'aluminum_blurry', 'poignee', 'digicode', 'color_m05', 'glass']) assert.equal(api.isReserveDoorPaintMaterial(door, name), false, name);
-  assert.equal(api.isReserveDoorPaintMaterial({ type: 'porte_reserve_droite' }, 'white'), true);
-  assert.equal(api.isReserveDoorPaintMaterial({ label: 'Porte Document' }, 'white'), false);
-  assert.equal(api.isReserveDoorPaintMaterial({ label: 'Machine a cafe' }, 'white'), false);
-  assert.equal(api.isReserveDoorPaintMaterial({ label: 'Reserve monobloc' }, 'porte_trad'), true);
+  assert.equal(api.isReserveDoorPaintMaterial('MeshFabric_B01_18cm_3'), true);
+  for (const name of ['porte_trad', 'menuiserie', 'meshfabric_b01_18cm1', 'white', 'door_leaf', 'door_paint', 'default', 'metallic_paint_silver', 'aluminum_blurry', 'poignee', 'digicode', 'color_m05', 'glass']) {
+    assert.equal(api.isReserveDoorPaintMaterial(name), false, name);
+  }
   const original = new MeshStandardMaterial({ color: '#ffffff', map: new Texture(), normalMap: new Texture(), roughness: 0.9 });
   const painted = api.signatureArchPaintMaterial(original, '#787878');
   assert.equal(painted.color.getHexString(), '787878');
@@ -54,11 +51,10 @@ test('only painted door panels/frames are recoloured; handles, locks, glass and 
 
 test('monolithic reserves target MeshFabric_B01_18cm_3 without painting other fabric panels', () => {
   const api = runtime();
-  const reserve = { label: 'Réserve 2 m² arrière droite', type: 'asset-reserve' };
-  for (const name of ['MeshFabric_B01_18cm_3', 'meshfabric_b01_18cm_3', 'MeshFabric_B01_18cm_3.001']) {
-    assert.equal(api.isReserveDoorPaintMaterial(reserve, name), true, name);
+  for (const name of ['MeshFabric_B01_18cm_3', 'meshfabric_b01_18cm_3']) {
+    assert.equal(api.isReserveDoorPaintMaterial(name), true, name);
   }
-  for (const name of ['MeshFabric_B01_18cm_1', 'MeshFabric_B01_18cm_30', 'MeshFabric_B01_18cm', 'Metallic_Paint_Silver']) {
-    assert.equal(api.isReserveDoorPaintMaterial(reserve, name), false, name);
+  for (const name of ['MeshFabric_B01_18cm_1', 'MeshFabric_B01_18cm_30', 'MeshFabric_B01_18cm_3.001', 'MeshFabric_B01_18cm_3#1', 'MeshFabric_B01_18cm', 'Metallic_Paint_Silver']) {
+    assert.equal(api.isReserveDoorPaintMaterial(name), false, name);
   }
 });

@@ -21227,7 +21227,7 @@ function ObjModel({ item, selected, hovered, dragging }) {
     if (!obj) return null;
     const clone = obj.clone(true);
     const material = new MeshStandardMaterial({
-      color: activeColor(selected, dragging, item.options?.reserveDoorColorHex && isReserveDoorPaintMaterial(item, 'default') ? item.options.reserveDoorColorHex : defaultModelColor(item)),
+      color: activeColor(selected, dragging, defaultModelColor(item)),
       roughness: defaultModelRoughness(item),
       metalness: defaultModelMetalness(item),
       side: DoubleSide,
@@ -21408,7 +21408,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
 
   const materialName = normalizeMaterialName(material.name);
   const doorColor = item?.options?.reserveDoorColorHex;
-  if (doorColor && isReserveDoorPaintMaterial(item, materialName)) return signatureArchPaintMaterial(material, doorColor);
+  if (doorColor && isReserveDoorPaintMaterial(materialName)) return signatureArchPaintMaterial(material, doorColor);
   if (isSignatureArchItem(item) && isSignatureArchColorMaterial(materialName, material)) {
     return signatureArchPaintMaterial(material, item?.options?.signatureArchColorHex || '#bebebe');
   }
@@ -21448,14 +21448,8 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   return material;
 }
 
-function isReserveDoorPaintMaterial(item, materialName = '') {
-  materialName = normalizeMaterialName(materialName);
-  // Monolithic reserve models identify the door by material, not by object name.
-  if (/^meshfabric_b01_18cm_3(?:[.#]\d+)?$/.test(materialName)) return true;
-  const text = normalizedItemText(item);
-  const isDoor = /(?:^|[^a-z])(?:portes?|doors?)(?:[^a-z]|$)/.test(text) && !/document/.test(text);
-  if (/metal|alumin|chrome|silver|poign|handle|hinge|glass|verre|digicode|color_m05/.test(materialName)) return false;
-  return /porte_trad|door_paint|door_leaf/.test(materialName) || isDoor;
+function isReserveDoorPaintMaterial(materialName = '') {
+  return normalizeMaterialName(materialName) === 'meshfabric_b01_18cm_3';
 }
 
 function isSignatureArchColorMaterial(materialName = '', material = null) {

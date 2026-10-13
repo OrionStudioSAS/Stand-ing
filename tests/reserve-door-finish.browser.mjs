@@ -15,7 +15,7 @@ const model = {
 const items = [model, {
   id: 'reserve-group', type: 'reserve-group', label: 'Réserve assemblée', x: 1, z: 0, rotation: 0,
   isGroup: true, groupSize: [1, 2, 1],
-  children: [{ ...model, id: 'panel', type: 'panel', label: 'Module', x: 0, z: 0 }],
+  children: [{ ...model, id: 'door', type: 'porte-reserve', label: 'Porte réserve poussant gauche', x: 0, z: 0 }],
 }];
 const harness = `
 import React, { Suspense, useState } from 'react';
@@ -28,7 +28,7 @@ function Probe() {
     const result = [];
     scene.traverse((node) => {
       for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
-        if (['MeshFabric_B01_18cm_3', 'MeshFabric_B01_18cm_1', 'Metallic_Paint_Silver'].includes(material?.name)) {
+        if (['MeshFabric_B01_18cm_3', 'MeshFabric_B01_18cm_1', 'Metallic_Paint_Silver', 'Porte_trad', 'Menuiserie', 'door_paint'].includes(material?.name)) {
           result.push({ name: material.name, hex: material.color.getHexString(), textured: Boolean(material.map) });
         }
       }
@@ -63,6 +63,15 @@ f 1 4 3 2
 o Handle
 usemtl Metallic_Paint_Silver
 f 1 2 3
+o DoorFrame
+usemtl Porte_trad
+f 1 2 3
+o WoodFrame
+usemtl Menuiserie
+f 1 2 3
+o OtherPaint
+usemtl door_paint
+f 1 2 3
 `;
 const server = await createServer({ server: { host: '127.0.0.1', port: 0 }, logLevel: 'error', plugins: [{
   name: 'reserve-door-test',
@@ -83,7 +92,7 @@ const server = await createServer({ server: { host: '127.0.0.1', port: 0 }, logL
         res.setHeader('Content-Type', 'text/plain'); res.end(obj);
       } else if (req.url === '/__reserve-door.mtl') {
         res.setHeader('Content-Type', 'text/plain');
-        res.end('newmtl MeshFabric_B01_18cm_3\nKd 1 1 1\nnewmtl MeshFabric_B01_18cm_1\nKd 1 1 1\nnewmtl Metallic_Paint_Silver\nKd 1 1 1\n');
+        res.end(['MeshFabric_B01_18cm_3', 'MeshFabric_B01_18cm_1', 'Metallic_Paint_Silver', 'Porte_trad', 'Menuiserie', 'door_paint'].map((name) => `newmtl ${name}\nKd 1 1 1\n`).join(''));
       } else next();
     });
   },
@@ -105,7 +114,7 @@ try {
       return doors?.length === 2 && doors.every((material) => material.hex === hex);
     }, expected);
     const materials = await page.evaluate(() => window.materials);
-    assert.equal(materials.length, 6);
+    assert.equal(materials.length, 12);
     const otherMaterials = materials.filter((material) => material.name !== 'MeshFabric_B01_18cm_3');
     unchangedMaterials ??= otherMaterials;
     assert.deepEqual(otherMaterials, unchangedMaterials, 'Walls and hardware keep their original finish');
