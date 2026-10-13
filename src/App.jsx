@@ -8522,9 +8522,9 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
 
 function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect, uniformLayout = false, thick = false, footprintArea = 0, onThickChange }) {
   const t = useT();
-  const thickOption = <ToggleOption active={thick} disabled={disabled} label={t('carpet_thick_label')}
+  const thickOption = <div className="carpet-thick-option"><ToggleOption active={thick} disabled={disabled} label={t('carpet_thick_label')}
     detail="S’applique à la moquette et à l’empreinte moquette."
-    price={thickCarpetPriceFromCarpetTab(area, footprintArea, t)} onChange={onThickChange} />;
+    price={thickCarpetPriceFromCarpetTab(area, footprintArea, t)} onChange={onThickChange} /></div>;
   if (uniformLayout) {
     return <><SurfaceColorOptionCard title="MOQUETTE" iconSrc="/icons/moquette_icon.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />{thickOption}</>;
   }

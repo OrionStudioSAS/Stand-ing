@@ -72,8 +72,39 @@ try {
   await page.waitForFunction(() => window.refinementPricing);
   await page.getByRole('button', { name: /^Sol/ }).click();
   const thick = page.locator('.config-toggle-option').filter({ hasText: 'Moquette épaisse' });
+  const appearance = () => thick.evaluate((button) => {
+    const style = (element) => getComputedStyle(element);
+    const rect = (element) => { const r = element.getBoundingClientRect(); return { left:r.left, right:r.right }; };
+    return { background: style(button).backgroundColor, title: style(button.querySelector('strong')).color,
+      detail: style(button.querySelector('small')).color, switch: style(button.querySelector('i')).backgroundColor,
+      toggle: rect(button.querySelector('i')), text: rect(button.querySelector('span')), price: rect(button.querySelector('em')), card:rect(button) };
+  });
+  const contrast = (foreground, background) => {
+    const luminance = (color) => color.match(/[\d.]+/g).slice(0, 3).map((part) => Number(part) / 255)
+      .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+      .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+    const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+    return (values[0] + 0.05) / (values[1] + 0.05);
+  };
+  const unchecked = await appearance();
+  await thick.screenshot({ path: '/tmp/standing-carpet-thick-unchecked.png' });
   await thick.click();
   await page.waitForFunction(() => window.savedScene?.options.carpetThick);
+  const checked = await appearance();
+  assert.equal(checked.background, unchecked.background, 'The blue card background must not change when toggled');
+  assert.notEqual(checked.switch, unchecked.switch, 'The switch indicates the selected state');
+  for (const state of [unchecked, checked]) {
+    assert.ok(contrast(state.title, state.background) >= 4.5, 'Title contrast meets WCAG AA');
+    assert.ok(contrast(state.detail, state.background) >= 4.5, 'Description contrast meets WCAG AA');
+  }
+  await thick.screenshot({ path: '/tmp/standing-carpet-thick-checked.png' });
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height:1000 });
+    const state = await appearance();
+    assert.ok(state.toggle.right <= state.text.left && state.text.right <= state.price.left, `Card contents do not overlap at ${width}px`);
+    assert.ok(state.price.right <= state.card.right, 'Price stays inside the card');
+    assert.equal(state.background, unchecked.background);
+  }
   const carpetLines = await page.evaluate(() => window.refinementPricing.lines.filter((line) => line.label.includes('Moquette épaisse')));
   assert.equal(carpetLines.length, 2, 'Carpet and Signature arch footprint are both charged');
   assert.equal(carpetLines.find((line) => line.label.startsWith('Moquette')).total, 20 * 30);
