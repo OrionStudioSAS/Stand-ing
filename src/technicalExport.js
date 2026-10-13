@@ -1197,8 +1197,8 @@ function drawObjectDimensions(ctx, x, y, w, h, dims, rotation) {
 
 function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, defaultLabel, pictoImage = null) {
   const isCustomWallModel = Boolean(item.modelUrl) && !['screen', 'poster'].includes(item.type);
-  const itemWidth = (item.type === 'poster' ? Number(item.posterWidth || 1) : isCustomWallModel ? dims.width : 0.95) * scale;
-  const itemDepth = (item.type === 'poster' ? 0.04 : isTechnicalScreenItem(item) ? 0.18 : isCustomWallModel ? Math.max(0.04, dims.depth) : 0.08) * scale;
+  const itemWidth = (item.type === 'poster' ? Number(item.posterWidth || 1) : isCustomWallModel || isLedRailItem(item) ? dims.width : 0.95) * scale;
+  const itemDepth = (item.type === 'poster' ? 0.04 : isTechnicalScreenItem(item) ? 0.18 : isCustomWallModel || isLedRailItem(item) ? Math.max(0.04, dims.depth) : 0.08) * scale;
   const wallLabelText = item.type === 'poster' ? `AFFICHE ${mm(item.posterWidth || 1)}` : isTechnicalScreenItem(item) ? tvTechnicalLabel(item) : (defaultLabel || 'OBJET MURAL');
   ctx.fillStyle = item.type === 'poster' ? '#f7f1dc' : isTechnicalScreenItem(item) ? '#22364d' : (item.color || '#dfe8ec');
   ctx.strokeStyle = technicalColors.ink;
@@ -1447,7 +1447,8 @@ function legendSwatch(ctx, x, y, color, label) {
 
 function flattenTechnicalItems(items, catalog) {
   return (items || []).filter(Boolean).flatMap((item) => {
-    if (!item.isGroup || !item.children?.length) return [item];
+    // Wall-mounted assemblies use the parent's wall axis, not child floor coordinates.
+    if (isWallItem(item) || !item.isGroup || !item.children?.length) return [item];
     const parentRotation = Number(item.rotation || 0);
     const radians = (parentRotation * Math.PI) / 180;
     const cos = Math.cos(radians);
@@ -1497,7 +1498,7 @@ function applyWallItemMetrics(items, width, depth, catalog) {
 }
 
 function isWallItem(item) {
-  return ['screen', 'poster'].includes(item?.type) || Boolean(item?.wall && item?.isWallItem);
+  return ['screen', 'poster'].includes(item?.type) || Boolean(item?.wall && (item?.isWallItem || isLedRailItem(item)));
 }
 
 function posterAvailableWidth(item, items, width, depth, catalog) {
@@ -1555,6 +1556,9 @@ function itemDimensions(item, entry) {
     return { width: Number(item.posterWidth || 1), depth: 0.04, height: Number(item.posterHeight || 1.25) };
   }
 
+  if (item?.isGroup && item?.groupSize?.length >= 3) {
+    return { width: Number(item.groupSize[0]), height: Number(item.groupSize[1]), depth: Number(item.groupSize[2]) };
+  }
   if (item?.modelSize?.length >= 3) {
     return {
       width: Number(item.modelSize[0]) || 0.6,

@@ -206,6 +206,7 @@ test('allowance scenes inherit automatic reserve rules and charge the default re
 
   const itemApi = vm.createContext({
     isSignaturePackLabel: () => false,
+    reserveDoorColorForPack: () => '',
     normalizeComplementaryOptions: api.normalizeComplementaryOptions,
     findCatalogEntry: (_catalog, type) => ({ type, label: 'Réserve 2 m²', price: 450 }),
     reserveOptionPrice: (_option, entry) => entry.price,

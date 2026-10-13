@@ -1405,6 +1405,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     setItems((current) => current.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)));
   }, [objectBank, availableCatalog]);
 
+  const thickFootprintArea = isSignatureStand
+    ? signatureArchItems.reduce((total, item) => total + signatureArchFootprintDimensions(item, depth).area, 0)
+    : genericCarpetFootprintEnabled ? carpetFootprintAreaM2() : 0;
+
   const scenePricing = useMemo(() => calculateScenePricing({
     area,
     catalog: availableCatalog,
@@ -1417,14 +1421,21 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     technicalFloor: selectedTechnicalFloor ? { ...selectedTechnicalFloor, area } : null,
     colorSelections: [
       { usage: 'Moquette', color: selectedCarpetColor, defaultColorId: effectiveDefaultColorOptions.carpetColorId, quantityM2: area, configOptions: [...carpetGroupConfigOptionsList, { id: '__carpet-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { ...carpetConfigOptions, '__carpet-thick__': thickCarpetEnabled } },
-      genericCarpetFootprintEnabled ? { usage: 'Empreinte moquette', color: selectedCarpetFootprintColor, defaultColorId: effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId, quantityM2: carpetFootprintAreaM2(), configOptions: [{ id: '__footprint-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { '__footprint-thick__': thickCarpetEnabled } } : null,
+      thickFootprintArea > 0 ? {
+        usage: 'Empreinte moquette',
+        color: isSignatureStand ? null : selectedCarpetFootprintColor,
+        defaultColorId: effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId,
+        quantityM2: thickFootprintArea,
+        configOptions: [{ id: '__footprint-thick__', label: 'Moquette épaisse', pricePerM2: 30 }],
+        selectedConfigOptions: { '__footprint-thick__': thickCarpetEnabled },
+      } : null,
       { usage: 'Coton cloison', color: selectedWallFabricColor, defaultColorId: effectiveDefaultColorOptions.wallFabricColorId, quantityM2: Math.max(0, sceneWallFabricArea(width, depth, layout) - activeWallCoverFabricArea(wallCoverSurfaces, wallCovers)) },
     ],
     wallCovers,
     wallCoverSurfaces,
     ledRailsEnabled,
     expectedLedSpotCount: ledSpotCount,
-  }), [area, availableCatalog, visibleSceneItems, assetPackLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, thickCarpetEnabled, ledRailsEnabled, ledSpotCount]);
+  }), [area, availableCatalog, visibleSceneItems, assetPackLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, thickCarpetEnabled, thickFootprintArea, isSignatureStand, ledRailsEnabled, ledSpotCount]);
   const estimatedTotal = scenePricing.total;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
@@ -1807,7 +1818,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       if (optionKeys.textureSlot) {
         updateItemOptions(targetItem, textureSlotPatch(targetItem, optionKeys.textureSlot, { imageUrl: displayUrl, imageName: file.name, visualPending: false, ...defaultImageFraming }));
       } else {
-        updateItemOptions(targetItem, { [urlKey]: displayUrl, [nameKey]: file.name, ...(optionKeys.extraPatch || {}) });
+        updateItemOptions(targetItem, { [urlKey]: displayUrl, [nameKey]: file.name, [urlKey.replace('ImageUrl', 'ImageFraming')]: defaultImageFraming, ...(optionKeys.extraPatch || {}) });
       }
       setItemOptionState({ uploading: false, error: '' });
     } catch (error) {
@@ -1868,6 +1879,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         enabled: true,
         previewUrl: imageUrl,
         previewName: file.name,
+        ...defaultImageFraming,
       };
       const nextWallCovers = { ...(wallCovers || {}), [surfaceId]: nextCover };
       setWallCovers((current) => ({
@@ -1877,6 +1889,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           enabled: true,
           previewUrl: imageUrl,
           previewName: file.name,
+          ...defaultImageFraming,
         },
       }));
       persistWallCoversNow(nextWallCovers);
@@ -1887,6 +1900,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         [surfaceId]: { url: localPreviewUrl, name: file.name, uploadError: true },
       }));
     }
+  };
+
+  const setWallCoverFraming = (surfaceId, framing) => {
+    if (readOnly || !surfaceId) return;
+    const patch = normalizeImageFraming(framing);
+    setWallCoverPreviews((current) => ({ ...current, [surfaceId]: { ...current[surfaceId], ...patch } }));
+    setWallCovers((current) => ({ ...current, [surfaceId]: { ...current[surfaceId], ...patch } }));
   };
 
   const resetWallCoverPreview = (surfaceId) => {
@@ -1905,6 +1925,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       const nextCover = { ...(current?.[surfaceId] || {}) };
       delete nextCover.previewUrl;
       delete nextCover.previewName;
+      Object.assign(nextCover, defaultImageFraming);
       return { ...(current || {}), [surfaceId]: nextCover };
     });
   };
@@ -1932,7 +1953,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       setPartitionHeadVisuals((current) => patchPartitionHeadVisuals(current, side, (options) => (
         slot
           ? textureSlotPatch({ options }, slot, { imageUrl, imageName: file.name, visualPending: false, ...defaultImageFraming })
-          : { headMainImageUrl: imageUrl, headMainImageName: file.name, visualPending: false }
+          : { headMainImageUrl: imageUrl, headMainImageName: file.name, visualPending: false, headMainImageFraming: defaultImageFraming }
       )));
       setItemOptionState({ uploading: '', error: '' });
     } catch (error) {
@@ -1945,7 +1966,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     setPartitionHeadVisuals((current) => patchPartitionHeadVisuals(current, side, (options) => (
       slot
         ? textureSlotPatch({ options }, slot, { imageUrl: '', imageName: '', visualPending: false, ...defaultImageFraming })
-        : { headMainImageUrl: '', headMainImageName: '', visualPending: false }
+        : { headMainImageUrl: '', headMainImageName: '', visualPending: false, headMainImageFraming: defaultImageFraming }
     )));
   };
 
@@ -2524,7 +2545,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         <a className="config-logo" href="/">
           <img src="/images/logo.png" alt="Stand-ING" />
         </a>
-        <div className="config-breadcrumb">
+        <div className="config-breadcrumb" title={`${salonLabel} · ${offerLabel} · ${standLabel} · ${area} m²`}>
           <span>{salonLabel}</span>
           {offerLabel && <span className="config-offer-chip">{offerLabel}</span>}
           <span>{standLabel}</span>
@@ -2679,6 +2700,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 carpetFootprintEnabled={genericCarpetFootprintEnabled}
                 wallFabricColor={selectedWallFabricColor}
                 reserveWallFabricColor={selectedReserveWallFabricColor}
+                reserveDoorColorHex={reserveDoorColorForPack(assetPackLabel)}
                 wallCovers={wallCovers}
                 wallCoverPreviews={wallCoverPreviews}
                 technicalFloor={selectedTechnicalFloor}
@@ -2886,7 +2908,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             carpetThick={thickCarpetEnabled}
             footprintThick={thickCarpetEnabled}
             carpetArea={area}
-            footprintArea={genericCarpetFootprintEnabled ? carpetFootprintAreaM2() : 0}
+            footprintArea={thickFootprintArea}
             onCarpetColor={(colorId) => !readOnly && setSelectedCarpetId(colorId)}
             onCarpetConfigOption={(optionId, checked) => !readOnly && setCarpetConfigOptions((current) => ({ ...current, [optionId]: checked }))}
             onCarpetThick={(v) => {
@@ -2906,6 +2928,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onWallCoverPreview={setWallCoverPreview}
             onWallCoverPreviewReset={resetWallCoverPreview}
             onWallCoverPending={setWallCoverPending}
+            onWallCoverFraming={setWallCoverFraming}
             onTechnicalFloorType={(type) => !readOnly && handleTechnicalFloorType(type)}
             onTechnicalFloorTrimType={(type) => !readOnly && setTechnicalFloorTrimType(type)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
@@ -2930,6 +2953,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onSignatureArchColor={updateSignatureArchColor}
             onSignatureArchImage={(item, slot, file) => uploadItemImage(item, file, { textureSlot: slot })}
             onSignatureArchResetImage={resetSignatureArchImage}
+            onSignatureArchFraming={(item, slot, framing) => updateItemOptions(item, textureSlotPatch(item, slot, framing))}
             onPrestigeArchToggle={setPrestigeArchPresence}
             onPrestigeArchTv={updatePrestigeArchTv}
             onPrestigeSignageToggle={setPrestigeSignagePresence}
@@ -2937,7 +2961,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onPrestigeSignageResetImage={resetPrestigeSignageImage}
             onPrestigeSignageVisualPending={updatePrestigeSignageVisualPending}
             onPrestigeSignageVisualEnabled={updatePrestigeSignageVisualEnabled}
-            onPrestigeSignageFraming={(item, slot, framing) => updateItemOptions(item, textureSlotPatch(item, slot, framing))}
+            onPrestigeSignageFraming={(item, slot, framing) => updateItemOptions(item, slot ? textureSlotPatch(item, slot, framing) : { headMainImageFraming: framing })}
             onSelectPrestigeItem={setSelectedId}
             isAdminViewer={effectiveAdminViewer}
           />
@@ -3393,7 +3417,7 @@ function VisualUploadDropzone({ imageUrl = '', alt = '', disabled = false, uploa
   );
 }
 
-function ImageFramingControls({ imageUrl, value = {}, disabled = false, onChange }) {
+function ImageFramingControls({ imageUrl, value = {}, disabled = false, onChange, fit = 'contain', aspectRatio = 420 / 250 }) {
   const canvasRef = useRef(null);
   const dragRef = useRef(null);
   const [image, setImage] = useState(null);
@@ -3429,9 +3453,9 @@ function ImageFramingControls({ imageUrl, value = {}, disabled = false, onChange
     context.fillStyle = '#ffffff';
     context.fillRect(0, 0, canvas.width, canvas.height);
     if (!image) return;
-    const rect = framedImageRect(image.naturalWidth || image.width, image.naturalHeight || image.height, canvas.width, canvas.height, { ...framing, fit: 'contain' });
+    const rect = framedImageRect(image.naturalWidth || image.width, image.naturalHeight || image.height, canvas.width, canvas.height, { ...framing, fit });
     context.drawImage(image, rect.x, rect.y, rect.width, rect.height);
-  }, [image, framing.imageZoom, framing.imageOffsetX, framing.imageOffsetY]);
+  }, [image, framing.imageZoom, framing.imageOffsetX, framing.imageOffsetY, fit, aspectRatio]);
 
   const moveImage = (event) => {
     if (!dragRef.current || disabled) return null;
@@ -3446,11 +3470,11 @@ function ImageFramingControls({ imageUrl, value = {}, disabled = false, onChange
   return (
     <details className="image-framing-controls">
       <summary>Recadrer l’image</summary>
-      <p>Glissez le visuel, puis ajustez sa taille (100 % = image entière). Le rendu exact est visible sur l’objet après avoir relâché.</p>
+      <p>Glissez le visuel, puis ajustez sa taille (100 % = cadrage initial). Le rendu exact est visible sur l’objet après avoir relâché.</p>
       <canvas
         ref={canvasRef}
         width={420}
-        height={250}
+        height={Math.max(80, Math.round(420 / Math.max(0.1, Number(aspectRatio) || 420 / 250)))}
         aria-label="Aperçu du cadrage, faites glisser pour déplacer l’image"
         onPointerDown={(event) => {
           if (disabled) return;
@@ -3459,12 +3483,13 @@ function ImageFramingControls({ imageUrl, value = {}, disabled = false, onChange
         }}
         onPointerMove={moveImage}
         onPointerUp={(event) => {
+          if (disabled) return;
           const next = moveImage(event) || framingRef.current;
           dragRef.current = null;
           if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
           onChange?.(next);
         }}
-        onPointerCancel={() => { dragRef.current = null; onChange?.(framingRef.current); }}
+        onPointerCancel={() => { dragRef.current = null; if (!disabled) onChange?.(framingRef.current); }}
       />
       <label>
         <span>Taille du visuel <strong>{Math.round(framing.imageZoom * 100)} %</strong></span>
@@ -3475,7 +3500,7 @@ function ImageFramingControls({ imageUrl, value = {}, disabled = false, onChange
   );
 }
 
-function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageChange, onResetImage, embedded = false }) {
+function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageChange, onResetImage, onFramingChange, embedded = false }) {
   const t = useT();
   return (
     <aside className={embedded ? 'item-visual-config' : 'item-options-panel'}>
@@ -3500,6 +3525,8 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
         onImage={onImageChange}
       />
 
+      {item.options?.headMainImageUrl && <ImageFramingControls imageUrl={item.options.headMainImageUrl} value={item.options?.headMainImageFraming || {}} disabled={uploadState?.uploading} onChange={onFramingChange} />}
+
       {item.options?.headMainImageUrl && (
         <button className="item-image-reset" type="button" onClick={onResetImage}>{t('img_upload_reset')}</button>
       )}
@@ -3509,7 +3536,7 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
   );
 }
 
-function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageChange, onResetImage, embedded = false }) {
+function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageChange, onResetImage, onFramingChange, embedded = false }) {
   const t = useT();
   const printSize = posterSurfaceRegion(item, items, width, depth);
   const recommendedSpec = recommendedSimulatorImageSpec(printSize.width, printSize.height);
@@ -3551,6 +3578,8 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
         uploading={uploadState?.uploading}
         onImage={onImageChange}
       />
+
+      {item.options?.posterImageUrl && <ImageFramingControls imageUrl={item.options.posterImageUrl} value={item.options?.posterImageFraming || {}} disabled={uploadState?.uploading} onChange={onFramingChange} />}
 
       {item.options?.posterImageUrl && (
         <button className="item-image-reset" type="button" onClick={onResetImage}>{t('poster_reset')}</button>
@@ -3634,7 +3663,7 @@ function LogoUploadCard({
   );
 }
 
-function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onVisualPendingChange, onLogoEnabledChange, embedded = false, optionsFree = false, logoPrice = 0, hideColors = false }) {
+function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onVisualPendingChange, onLogoEnabledChange, onFramingChange, embedded = false, optionsFree = false, logoPrice = 0, hideColors = false }) {
   const t = useT();
   const finishes = counterFinishOptions(colors);
   const woodFinish = counterWoodFinish(colors);
@@ -3707,6 +3736,8 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
         imageUrl={item.options?.binary3ImageUrl}
         spec={(() => { const [w, h] = woodReceptionDeskImageCoverSize(item); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
         visualPending={logoPending}
+        imageFraming={item.options?.binary3ImageFraming}
+        onFramingChange={onFramingChange}
         onEnabledChange={onLogoEnabledChange}
         onImageChange={onImageChange}
         onVisualPendingChange={onVisualPendingChange}
@@ -3879,7 +3910,7 @@ function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = 
   );
 }
 
-function SignatureArchOptionCard({ items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage }) {
+function SignatureArchOptionCard({ items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage, onFramingChange }) {
   const selectedItem = items[0] || null;
   const selectedType = selectedItem?.options?.signatureArchVariantType || selectedItem?.type || '';
   const selectedColorId = selectedItem?.options?.signatureArchColorId || selectedColor?.id || '';
@@ -3951,6 +3982,7 @@ function SignatureArchOptionCard({ items = [], entries = [], colors = [], select
               uploading={Boolean(uploadState?.uploading)}
               onImage={(file) => { if (file && selectedItem) onImage?.(selectedItem, slot, file); }}
             />
+            {value.imageUrl && <ImageFramingControls imageUrl={value.imageUrl} value={value} disabled={disabled || Boolean(uploadState?.uploading)} onChange={(framing) => onFramingChange?.(selectedItem, slot, framing)} />}
             {value.imageName && <small className="signature-arch-image-name">{value.imageName}</small>}
             {value.imageUrl && (
               <button type="button" className="item-image-reset" disabled={disabled || Boolean(uploadState?.uploading)} onClick={() => onResetImage?.(selectedItem, slot)}>
@@ -3988,14 +4020,14 @@ function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = 
           className="texture-slot-logo-card prestige-signage-upload"
           title="Logo"
           imageUrl={imageUrl}
-          imageFraming={value}
+          imageFraming={slot ? value : item.options?.headMainImageFraming}
           alt={slot?.label || 'Logo enseigne haute'}
           visualPending={Boolean(value.visualPending)}
           onEnabledChange={(checked) => onVisualEnabled?.(item, slot, checked)}
           onImageChange={(file) => onImage?.(item, file, slot)}
           onVisualPendingChange={(checked) => onVisualPending?.(item, slot, checked)}
           onResetImage={() => onResetImage?.(item, slot)}
-          onFramingChange={slot ? (framing) => onFramingChange?.(item, slot, framing) : null}
+          onFramingChange={(framing) => onFramingChange?.(item, slot, framing)}
           resetLabel="Retirer le visuel"
         />
       )}
@@ -4177,6 +4209,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
               label=""
               browseLabel="Importer"
             />
+            {selectedItem?.options?.binary3ImageUrl && <ImageFramingControls imageUrl={selectedItem.options.binary3ImageUrl} value={selectedItem.options.binary3ImageFraming || {}} disabled={disabled || uploadState?.uploading} onChange={(framing) => updateSelected({ binary3ImageFraming: framing })} />}
             <small className="visual-upload-spec">
               {t('img_format_spec', { w: logoSpecW.toLocaleString('fr-FR'), h: logoSpecH.toLocaleString('fr-FR') })}
             </small>
@@ -4615,6 +4648,7 @@ function OptionsStepPanel({
   onWallCoverPreview,
   onWallCoverPreviewReset,
   onWallCoverPending,
+  onWallCoverFraming,
   onTechnicalFloorType,
   onTechnicalFloorTrimType,
   onLedRailsEnabled,
@@ -4636,6 +4670,7 @@ function OptionsStepPanel({
   onSignatureArchColor,
   onSignatureArchImage,
   onSignatureArchResetImage,
+  onSignatureArchFraming,
   onPrestigeArchToggle,
   onPrestigeArchTv,
   onPrestigeSignageToggle,
@@ -4713,6 +4748,7 @@ function OptionsStepPanel({
           onPreview={onWallCoverPreview}
           onPreviewReset={onWallCoverPreviewReset}
           onPending={onWallCoverPending}
+          onFramingChange={onWallCoverFraming}
         />
       </OptionAccordion>
       {isAdminViewer && (
@@ -4780,6 +4816,7 @@ function OptionsStepPanel({
             onColorChange={onSignatureArchColor}
             onImage={onSignatureArchImage}
             onResetImage={onSignatureArchResetImage}
+            onFramingChange={onSignatureArchFraming}
           />
         </OptionAccordion>
       )}
@@ -5451,7 +5488,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
       if (keys.textureSlot) {
         updateDraftVisualOptions(textureSlotPatch(visualItem, keys.textureSlot, { imageUrl, imageName: file.name, visualPending: false, ...defaultImageFraming }));
       } else {
-        updateDraftVisualOptions({ [urlKey]: imageUrl, [nameKey]: file.name, ...(keys.extraPatch || {}) });
+        updateDraftVisualOptions({ [urlKey]: imageUrl, [nameKey]: file.name, [urlKey.replace('ImageUrl', 'ImageFraming')]: defaultImageFraming, ...(keys.extraPatch || {}) });
       }
       setDraftUploadState({ uploading: false, error: '' });
     } catch (error) {
@@ -5560,7 +5597,8 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             visualContext={visualContext}
             uploadState={modalUploadState}
             onImageChange={(file) => onImageChange?.(item, file)}
-            onResetImage={() => onUpdateItemOptions?.(item, { headMainImageUrl: '', headMainImageName: '' })}
+            onResetImage={() => onUpdateItemOptions?.(item, { headMainImageUrl: '', headMainImageName: '', headMainImageFraming: defaultImageFraming })}
+            onFramingChange={(framing) => onUpdateItemOptions?.(item, { headMainImageFraming: framing })}
             embedded
           />
         )}
@@ -5573,7 +5611,8 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             depth={depth}
             uploadState={modalUploadState}
             onImageChange={(file) => onImageChange?.(item, file, { urlKey: 'posterImageUrl', nameKey: 'posterImageName' })}
-            onResetImage={() => onUpdateItemOptions?.(item, { posterImageUrl: '', posterImageName: '' })}
+            onResetImage={() => onUpdateItemOptions?.(item, { posterImageUrl: '', posterImageName: '', posterImageFraming: defaultImageFraming })}
+            onFramingChange={(framing) => onUpdateItemOptions?.(item, { posterImageFraming: framing })}
             embedded
           />
         )}
@@ -5584,7 +5623,8 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
             colors={counterColors}
             uploadState={modalUploadState}
             onImageChange={(file) => handleDraftImage(file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName', extraPatch: { binary3Enabled: true, binary3VisualPending: false } })}
-            onResetImage={() => updateDraftVisualOptions({ binary3ImageUrl: '', binary3ImageName: '' })}
+            onResetImage={() => updateDraftVisualOptions({ binary3ImageUrl: '', binary3ImageName: '', binary3ImageFraming: defaultImageFraming })}
+            onFramingChange={(framing) => updateDraftVisualOptions({ binary3ImageFraming: framing })}
             onColorChange={(finish) => updateDraftVisualOptions(counterFinishPatch(finish))}
             onVisualPendingChange={(checked) => updateDraftVisualOptions({ binary3Enabled: true, binary3VisualPending: checked })}
             onLogoEnabledChange={(checked) => updateDraftVisualOptions(counterLogoTogglePatch(checked))}
@@ -5822,10 +5862,10 @@ function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '',
   );
 }
 
-function ToggleOption({ active, label, detail, price, onChange }) {
+function ToggleOption({ active, label, detail, price, onChange, disabled = false }) {
   const detailLines = Array.isArray(detail) ? detail : (detail ? [detail] : []);
   return (
-    <button type="button" className={`config-toggle-option ${active ? 'active' : ''}`} onClick={() => onChange(!active)}>
+    <button type="button" className={`config-toggle-option ${active ? 'active' : ''}`} disabled={disabled} aria-pressed={active} onClick={() => onChange?.(!active)}>
       <i />
       <span>
         <strong>{label}</strong>
@@ -8129,6 +8169,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
             onImage={(file) => onImage?.(row.side, file)}
             onReset={() => onResetImage?.(row.side)}
             onPending={(checked) => onVisualOptions?.(row.side, { visualPending: checked })}
+            onFramingChange={(framing) => onVisualOptions?.(row.side, { headMainImageFraming: framing })}
           />
           {isSignatureStand && signaturePartitionHeadVisualSlots.map((slot) => {
             const value = visualOptions?.[row.side]?.textureSlotValues?.[slot.id] || {};
@@ -8136,12 +8177,13 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
               <PartitionHeadVisualUpload
                 key={slot.id}
                 row={{ ...row, visualLabel: sharedVisual ? `${slot.label} · ${t('partition_both_heads')}` : `${slot.label} ${row.side === 'left' ? 'gauche' : 'droite'}`, uploadSubtitle: `${slot.targetName} · PNG, JPG ou PDF` }}
-                visual={{ headMainImageUrl: value.imageUrl, headMainImageName: value.imageName }}
+                visual={{ headMainImageUrl: value.imageUrl, headMainImageName: value.imageName, headMainImageFraming: value }}
                 uploading={sharedVisual ? uploading : uploadState?.uploading === row.side}
                 disabled={disabled || uploading}
                 showPending={false}
                 onImage={(file) => onImage?.(row.side, file, slot)}
                 onReset={() => onResetImage?.(row.side, slot)}
+                onFramingChange={(framing) => onVisualOptions?.(row.side, textureSlotPatch({ options: visualOptions?.[row.side] || {} }, slot, framing))}
               />
             );
           })}
@@ -8166,7 +8208,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
   );
 }
 
-function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabled = false, showPending = true, onImage, onReset, onPending }) {
+function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabled = false, showPending = true, onImage, onReset, onPending, onFramingChange }) {
   const t = useT();
   const hasImage = Boolean(visual.headMainImageUrl);
   const pending = Boolean(visual.visualPending);
@@ -8190,6 +8232,7 @@ function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabl
           }}
         />
       </label>
+      {hasImage && <ImageFramingControls imageUrl={visual.headMainImageUrl} value={visual.headMainImageFraming || {}} disabled={disabled || uploading} onChange={onFramingChange} />}
       {showPending && <label className="visual-pending-checkbox partition-head-pending-v2">
         <input
           type="checkbox"
@@ -8377,7 +8420,7 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
   );
 }
 
-function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, onToggle, onPreview, onPreviewReset, onPending }) {
+function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, onToggle, onPreview, onPreviewReset, onPending, onFramingChange }) {
   const t = useT();
   const includedLabel = Number(includedMl || 0) > 0 ? `${formatNumber(includedMl)} ml inclus dans votre formule` : '';
   const activeMl = surfaces
@@ -8460,6 +8503,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
                 </button>
               )}
             </div>
+            {preview?.url && <ImageFramingControls imageUrl={preview.url} value={preview} fit="cover" aspectRatio={surface.width / surface.height} disabled={disabled || preview.uploading} onChange={(framing) => onFramingChange?.(surface.id, framing)} />}
             <label className="visual-pending-checkbox wall-cover-pending">
               <input
                 type="checkbox"
@@ -8476,10 +8520,13 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
   );
 }
 
-function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect, uniformLayout = false }) {
+function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect, uniformLayout = false, thick = false, footprintArea = 0, onThickChange }) {
   const t = useT();
+  const thickOption = <ToggleOption active={thick} disabled={disabled} label={t('carpet_thick_label')}
+    detail="S’applique à la moquette et à l’empreinte moquette."
+    price={thickCarpetPriceFromCarpetTab(area, footprintArea, t)} onChange={onThickChange} />;
   if (uniformLayout) {
-    return <SurfaceColorOptionCard title="MOQUETTE" iconSrc="/icons/moquette_icon.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />;
+    return <><SurfaceColorOptionCard title="MOQUETTE" iconSrc="/icons/moquette_icon.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />{thickOption}</>;
   }
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
@@ -8542,6 +8589,7 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
           </>
         )}
       </section>
+      {thickOption}
     </div>
   );
 }
@@ -10931,6 +10979,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
               carpetFootprintEnabled={!isSignaturePack}
               wallFabricColor={selectedWallFabricColor}
               reserveWallFabricColor={selectedReserveWallFabricColor}
+              reserveDoorColorHex={reserveDoorColorForPack(offer?.name)}
               selectedToolbar={selected ? (
                 <div className={`view-toolbar preset-toolbar selection-mode ${rotationPanelOpen && !isWallItem(selected) && !itemPlacementLocked(selected) ? 'rotation-open' : ''}`}>
                   <button type="button" disabled={isWallItem(selected) || itemPlacementLocked(selected)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
@@ -14820,7 +14869,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const layout = scene.layout || 'back';
   const area = width * depth;
   const packLabel = sceneOfferLabel(scene);
-  const options = scene.options || scene.source_payload?.options || {};
+  const options = { ...(scene.source_payload?.options || {}), ...(scene.options || {}) };
   const manualItems = sceneAdminItems(scene, catalogEntries);
   const reserveRule = activeReserveRule(sceneReserveRules(scene), area, isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands);
   const reserveOption = options.reserveOptionType === '__legacy__'
@@ -15775,6 +15824,11 @@ function signatureReserveWallFabricColor() {
   return wallFabricColors.find((color) => color.code === '3026');
 }
 
+function reserveDoorColorForPack(packLabel) {
+  return isSignaturePackLabel(packLabel) || normalizePackLabel(packLabel) === 'equipe'
+    ? signatureReserveWallFabricColor()?.hex || '#787878' : '';
+}
+
 function reserveWallFabricColorForPack(packLabel, palette = [], colorId = '', fallback = null) {
   if (isSignaturePackLabel(packLabel) || normalizePackLabel(packLabel) === 'equipe') return signatureReserveWallFabricColor();
   return findColorInPalette(palette, colorId) || fallback;
@@ -16265,6 +16319,7 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
       reserveRuleId: rule.id,
       reserveUpgrade: billable,
       reserveOptionType: selectedOption?.type || '',
+      reserveDoorColorHex: reserveDoorColorForPack(salonLabel),
       reserveDoorOpening: reserveOptions.doorOpening || '',
       reserveHandleOrientation: reserveOptions.handleOrientation || '',
     },
@@ -19852,7 +19907,7 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
   };
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
+function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, reserveDoorColorHex = '', wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const dragPointerOffset = useRef({ x: 0, z: 0 });
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
@@ -19888,7 +19943,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   const renderSceneItem = (item) => (
     <Suspense key={item.id} fallback={null}>
       <SceneItem
-        item={item}
+        item={isReserveSceneItem(item) && reserveDoorColorHex ? { ...item, options: { ...item.options, reserveDoorColorHex } } : item}
         items={items}
         width={width}
         depth={depth}
@@ -20683,7 +20738,7 @@ function wallSurfaceSegmentFromInterval(surface, interval, width, depth, index =
 function wallCoverPreviewsFromCovers(covers = {}) {
   return Object.entries(covers || {}).reduce((acc, [surfaceId, cover]) => {
     if (cover?.previewUrl) {
-      acc[surfaceId] = { url: cover.previewUrl, name: cover.previewName || 'Aperçu bâche' };
+      acc[surfaceId] = { url: cover.previewUrl, name: cover.previewName || 'Aperçu bâche', ...normalizeImageFraming(cover) };
     }
     return acc;
   }, {});
@@ -20730,7 +20785,7 @@ function WallCoverSurface({ surface, preview = null }) {
   const coverHeight = Math.max(0.1, Number(surface.height || fixedWallHeight) - baseboardHeight);
   const genericTexture = useGenericWallCoverTexture(surface.width, coverHeight);
   const previewCoverSize = posterCoverTextureSize({ width: surface.width, height: coverHeight }, 2200);
-  const previewTexture = useExternalTexture(preview?.url || '', { coverSize: previewCoverSize, flipY: true, backgroundColor: '#ffffff' });
+  const previewTexture = useExternalTexture(preview?.url || '', { coverSize: previewCoverSize, flipY: true, backgroundColor: '#ffffff', ...normalizeImageFraming(preview || {}) });
   const texture = previewTexture || genericTexture;
   const position = [surface.position[0], baseboardHeight + coverHeight / 2, surface.position[2]];
   return (
@@ -20761,17 +20816,22 @@ function Baseboard({ position, size }) {
   );
 }
 
-function SignatureArchFootprint({ item, standDepth = 0 }) {
+function signatureArchFootprintDimensions(item, standDepth = 0) {
   const bounds = itemGroupBounds(item);
   const width = Math.max(0.1, Number(bounds.width || itemDefaultSize(item)?.[0] || 1));
   const depth = Math.max(0.1, Number(standDepth || 0) + signatureArchFootprintOverflow);
+  return { width, depth, area: width * depth, centerX: Number(bounds.centerX || 0) };
+}
+
+function SignatureArchFootprint({ item, standDepth = 0 }) {
+  const { width, depth, centerX } = signatureArchFootprintDimensions(item, standDepth);
   const imageUrl = item?.options?.signatureArchColorImage || '';
   const texture = useRepeatedTexture(imageUrl, width, depth);
   const color = item?.options?.signatureArchColorHex || '#bebebe';
   const y = 0.014 - floorItemBaseY(item);
 
   return (
-    <mesh receiveShadow raycast={() => null} position={[Number(bounds.centerX || 0), y, signatureArchFootprintLocalZ(item)]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+    <mesh receiveShadow raycast={() => null} position={[centerX, y, signatureArchFootprintLocalZ(item)]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
       <planeGeometry args={[width, depth]} />
       <meshStandardMaterial color={texture ? '#ffffff' : color} map={texture || null} roughness={0.88} />
     </mesh>
@@ -20825,12 +20885,17 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, standD
       {isSignatureArchItem(item) && <SignatureArchFootprint item={item} standDepth={standDepth} />}
       {item.children?.map((child) => (
         <group key={child.id} position={[child.x || 0, groupChildRenderY(child), child.z || 0]} rotation={[0, ((child.rotation || 0) * Math.PI) / 180, 0]}>
-          <SceneItemContent item={child} selected={false} hovered={hovered} dragging={dragging} visualContext={visualContext} />
+          <SceneItemContent item={reserveChildWithFinish(child, item)} selected={false} hovered={hovered} dragging={dragging} visualContext={visualContext} />
         </group>
       ))}
       {selected && <SelectionFrame bounds={groupBounds} />}
     </group>
   );
+}
+
+function reserveChildWithFinish(child, parent) {
+  const color = parent.options?.reserveDoorColorHex;
+  return color ? { ...child, options: { ...child.options, reserveDoorColorHex: color } } : child;
 }
 
 function groupChildRenderY(child = {}) {
@@ -20991,10 +21056,10 @@ function MissingModelFallback({ item, selected, hovered, dragging }) {
 
 function GlbModel({ item, selected, hovered, visualContext }) {
   const gltf = useGlbModel(item.modelUrl);
-  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff' });
+  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.binary3ImageFraming) });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '', { flipY: false });
   const textureSlotImages = useTextureSlotImages(item);
-  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff' });
+  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.headMainImageFraming) });
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item, { flipY: false }) : null
   ), [item.type, item.label, item.modelUrl, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
@@ -21032,8 +21097,8 @@ function useObjModel(modelUrl, materials) {
 }
 
 function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualContext }) {
-  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff' });
-  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff' });
+  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.headMainImageFraming) });
+  const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.binary3ImageFraming) });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '');
   const textureSlotImages = useTextureSlotImages(item);
   const exhibitorTexture = useMemo(() => (
@@ -21162,7 +21227,7 @@ function ObjModel({ item, selected, hovered, dragging }) {
     if (!obj) return null;
     const clone = obj.clone(true);
     const material = new MeshStandardMaterial({
-      color: activeColor(selected, dragging, defaultModelColor(item)),
+      color: activeColor(selected, dragging, item.options?.reserveDoorColorHex && isReserveDoorPaintMaterial(item, 'default') ? item.options.reserveDoorColorHex : defaultModelColor(item)),
       roughness: defaultModelRoughness(item),
       metalness: defaultModelMetalness(item),
       side: DoubleSide,
@@ -21255,7 +21320,7 @@ function useExternalTexture(url, options = {}) {
       disposed = true;
       currentTexture?.dispose?.();
     };
-  }, [url, options.coverSize?.[0], options.coverSize?.[1], options.flipY, options.fit, options.backgroundColor]);
+  }, [url, options.coverSize?.[0], options.coverSize?.[1], options.flipY, options.fit, options.backgroundColor, options.imageZoom, options.imageOffsetX, options.imageOffsetY]);
 
   return texture;
 }
@@ -21342,6 +21407,8 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   material = enhanceIcareChromeMaterial(material, item);
 
   const materialName = normalizeMaterialName(material.name);
+  const doorColor = item?.options?.reserveDoorColorHex;
+  if (doorColor && isReserveDoorPaintMaterial(item, materialName)) return signatureArchPaintMaterial(material, doorColor);
   if (isSignatureArchItem(item) && isSignatureArchColorMaterial(materialName, material)) {
     return signatureArchPaintMaterial(material, item?.options?.signatureArchColorHex || '#bebebe');
   }
@@ -21379,6 +21446,16 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
     return materialWithTexture(material, textureOptions.exhibitorTexture);
   }
   return material;
+}
+
+function isReserveDoorPaintMaterial(item, materialName = '') {
+  materialName = normalizeMaterialName(materialName);
+  // Monolithic reserve models identify the door by material, not by object name.
+  if (/^meshfabric_b01_18cm_3(?:[.#]\d+)?$/.test(materialName)) return true;
+  const text = normalizedItemText(item);
+  const isDoor = /(?:^|[^a-z])(?:portes?|doors?)(?:[^a-z]|$)/.test(text) && !/document/.test(text);
+  if (/metal|alumin|chrome|silver|poign|handle|hinge|glass|verre|digicode|color_m05/.test(materialName)) return false;
+  return /porte_trad|door_paint|door_leaf/.test(materialName) || isDoor;
 }
 
 function isSignatureArchColorMaterial(materialName = '', material = null) {
@@ -22370,7 +22447,7 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
   const isPoster = isPosterItem(item);
   const posterRegion = isPoster ? posterSurfaceRegion(item, items, width, depth) : null;
   const posterCoverSize = posterCoverTextureSize(posterRegion);
-  const posterTexture = useExternalTexture(isPoster ? item.options?.posterImageUrl : '', { coverSize: posterCoverSize, fit: 'contain', backgroundColor: '#ffffff' });
+  const posterTexture = useExternalTexture(isPoster ? item.options?.posterImageUrl : '', { coverSize: posterCoverSize, fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.posterImageFraming) });
   const objectTransform = objectWallTransform(item, items);
   const rotation = wallMountedItemRotation(item, objectTransform);
   const offset = objectTransform?.position ?? screenWorldPosition(item, width, depth, items);

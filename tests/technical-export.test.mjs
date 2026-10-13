@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
+import { normalizeImageFraming } from '../src/imageFraming.js';
 import { Euler, Vector3 } from 'three';
 import { scenePackBenefits } from '../supabase/functions/_shared/packBenefits.js';
 import { recoloredImageCacheKey, recolorImageUrl } from '../src/imageColorReplacement.js';
@@ -26,7 +27,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ document: { createElement: () => canvas }, console, scenePackBenefits, recoloredImageCacheKey, recolorImageUrl });
+  const api = vm.createContext({ document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, recoloredImageCacheKey, recolorImageUrl });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }
@@ -374,4 +375,27 @@ test('the BAT renders all saved poles from its marker without counting them as f
   emptyApi.drawTechnicalConstraints(ctx, [], 100, (x) => x, (z) => z);
   emptyApi.drawTechnicalConstraints(ctx, [{ width: 0, depth: 1, x: 0, z: 0 }], 100, (x) => x, (z) => z);
   assert.equal(emptyOutlines.length, 0);
+});
+
+test('BAT keeps a reserve-mounted LED assembly on its object wall, without flattening it onto native scene walls', () => {
+  const { api, ctx, rectangles } = runtime();
+  for (const orientation of ['x', 'z']) {
+    const surface = { orientation, centerAxis: 0.8, normalAxis: -0.6, length: 2 };
+    const rail = { id: 'rail', type: 'rail-led', label: 'Rail LED 3 spots', isGroup: true, autoLedRail: true,
+      wall: 'object-wall:reserve:front', wallSide: 1, wallSurface: surface, x: 0.8,
+      groupSize: [0.9, 0.15, 0.3], children: [{ id: 'child', type: 'spot', wall: 'back', isWallItem: true, x: 0.2 }] };
+    const items = api.technicalItemsForPlan([rail], 5, 4, []);
+    assert.equal(items.length, 1);
+    assert.equal(items[0].id, 'rail');
+    assert.equal(items[0].wall, rail.wall);
+    assert.equal(items[0].wallSurface.normalAxis, -0.6);
+    const dims = api.itemDimensions(items[0], {});
+    assert.equal(dims.width, 0.9);
+    assert.equal(dims.depth, 0.3);
+    rectangles.length = 0;
+    api.drawWallItemTop(ctx, items[0], 5, 4, 100, 8, (x) => x * 100, (z) => z * 100, '1', dims, 'RAIL');
+    assert.equal(rectangles.length, 1);
+    if (orientation === 'x') assert.equal(rectangles[0].y, -56);
+    else assert.equal(rectangles[0].x, -56);
+  }
 });

@@ -7,7 +7,8 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test:ground": "node tests/presentation-ground.browser.mjs",
-    "test:partition-head-visuals": "node tests/partition-head-visuals.browser.mjs"
+    "test:partition-head-visuals": "node tests/partition-head-visuals.browser.mjs",
+    "test:configurator": "node tests/configurator-refinements.browser.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.0.0",

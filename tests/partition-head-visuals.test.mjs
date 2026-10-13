@@ -84,3 +84,14 @@ test('legacy Signature heads with different top images open in independent mode'
   assert.equal(normalizePartitionHeadVisuals(visuals).differentVisuals, true);
   assert.equal(patchPartitionHeadVisuals(visuals, 'invalid', image('new')), visuals);
 });
+
+test('native head framing is shared, persisted, and can become independent per side', () => {
+  const common = patchPartitionHeadVisuals({}, 'left', { ...image('common'), headMainImageFraming: { imageZoom: 0.7, imageOffsetX: 12, imageOffsetY: -5 } });
+  assert.deepEqual(common.left.headMainImageFraming, common.right.headMainImageFraming);
+  assert.deepEqual(reload(common).right.headMainImageFraming, common.right.headMainImageFraming);
+  const independent = patchPartitionHeadVisuals(withPartitionHeadVisualMode(common, true), 'right', { headMainImageFraming: { imageZoom: 1.5, imageOffsetX: -10, imageOffsetY: 8 } });
+  assert.equal(reload(independent).right.headMainImageFraming.imageZoom, 1.5);
+  assert.equal(reload(independent).left.headMainImageFraming.imageZoom, 0.7);
+  const shared = withPartitionHeadVisualMode(independent, false);
+  assert.deepEqual(shared.left.headMainImageFraming, shared.right.headMainImageFraming);
+});

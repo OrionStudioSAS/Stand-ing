@@ -86,6 +86,13 @@ try {
   await upload(0, 'common.svg', 'red');
   await page.waitForFunction(() => window.headItems.every((item) => item.options.headMainImageName === 'common.svg'));
   assert.equal(await page.evaluate(() => window.headUploads.length), 1, 'Shared artwork requires one upload, not two');
+  const framing = page.locator('.partition-head-upload-block .image-framing-controls').first();
+  await framing.locator('summary').click();
+  await framing.locator('input[type=range]').fill('65');
+  await framing.locator('input[type=range]').press('ArrowRight');
+  await page.waitForFunction(() => window.headItems.every((item) => item.options.headMainImageFraming?.imageZoom === 0.7));
+  await page.waitForFunction(() => window.savedScene?.options.partitionHeadVisuals.right.headMainImageFraming?.imageZoom === 0.7);
+
   const rightHead = page.locator('.partition-head-choice-grid button').filter({ hasText: 'Droite' });
   await rightHead.click();
   assert.equal(await checkbox.count(), 0, 'A single head does not need a different-artwork option');
@@ -104,6 +111,8 @@ try {
   await openHeads();
   assert.equal(await checkbox.isChecked(), true);
   assert.equal(await uploads.count(), 2);
+  assert.equal(await page.evaluate(() => window.headItems.find((item) => item.options.partitionHeadSide === 'left').options.headMainImageFraming.imageZoom), 0.7);
+  assert.equal(await page.evaluate(() => window.headItems.find((item) => item.options.partitionHeadSide === 'right').options.headMainImageFraming.imageZoom), 1);
   await checkbox.uncheck();
   await page.waitForFunction(() => window.headItems.length === 2 && window.headItems.every((item) => item.options.headMainImageName === 'common.svg'));
   assert.equal(await uploads.count(), 1);

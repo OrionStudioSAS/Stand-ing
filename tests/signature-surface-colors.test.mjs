@@ -26,7 +26,7 @@ test('Signature surfaces share one layout without changing other packs', () => {
     const start = source.indexOf(`function ${name}(`);
     const component = source.slice(start, source.indexOf('\n}\n', start));
     assert.match(component, /uniformLayout = false/);
-    assert.match(component, /if \(uniformLayout\) \{\s+return <SurfaceColorOptionCard/);
+    assert.match(component, /if \(uniformLayout\) \{\s+return (?:<>)?<SurfaceColorOptionCard/);
     assert.match(component, /area=\{area\} disabled=\{disabled\} onSelect=\{onSelect\}/);
   }
 });

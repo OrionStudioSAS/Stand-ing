@@ -1,5 +1,5 @@
 const imageFields = ['imageUrl', 'imageName', 'visualPending', 'imageZoom', 'imageOffsetX', 'imageOffsetY', 'visualEnabled'];
-const mainFields = ['headMainImageUrl', 'headMainImageName', 'visualPending'];
+const mainFields = ['headMainImageUrl', 'headMainImageName', 'headMainImageFraming', 'visualPending'];
 const has = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 const pick = (value, fields) => Object.fromEntries(fields.filter((key) => has(value, key)).map((key) => [key, value[key]]));
 
@@ -28,7 +28,8 @@ export function partitionHeadUsesDifferentVisuals(visuals = {}) {
   // Keep deliberately different artwork in scenes saved before the shared option existed.
   const left = visualPatch(visuals.left), right = visualPatch(visuals.right);
   const identity = (value) => value.headMainImageUrl || value.headMainImageName || value.imageUrl || value.imageName || '';
-  if (identity(left) && identity(right) && identity(left) !== identity(right)) return true;
+  if (identity(left) && identity(right) && (identity(left) !== identity(right)
+    || JSON.stringify(left.headMainImageFraming || {}) !== JSON.stringify(right.headMainImageFraming || {}))) return true;
   return Object.keys({ ...left.textureSlotValues, ...right.textureSlotValues }).some((id) => {
     const a = left.textureSlotValues?.[id] || {}, b = right.textureSlotValues?.[id] || {};
     return identity(a) && identity(b) && (identity(a) !== identity(b)
@@ -43,6 +44,7 @@ export function withPartitionHeadVisualMode(visuals = {}, differentVisuals = fal
   const main = left.headMainImageUrl || left.headMainImageName || left.visualPending ? left : right;
   const common = {
     headMainImageUrl: main.headMainImageUrl || '', headMainImageName: main.headMainImageName || '',
+    headMainImageFraming: main.headMainImageFraming || { imageZoom: 1, imageOffsetX: 0, imageOffsetY: 0 },
     visualPending: Boolean(main.visualPending), textureSlotValues: {},
   };
   for (const id of Object.keys({ ...left.textureSlotValues, ...right.textureSlotValues })) {

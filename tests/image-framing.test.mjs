@@ -16,6 +16,6 @@ test('the image editor persists framing per texture slot and the 3D material app
   assert.match(app, /function ImageFramingControls\(/);
   assert.match(app, /onFramingChange=\{\(slot, framing\) => updateDraftVisualOptions\(textureSlotPatch\(visualItem, slot, framing\)\)\}/);
   assert.match(app, /createCoverImageTexture\(image, targetWidth, targetHeight, \{ flipY: textureOptions\.textureSlotFlipY \?\? true, fit: 'contain', backgroundColor: '#ffffff', \.\.\.normalizeImageFraming\(value\) \}\)/);
-  assert.match(app, /onPrestigeSignageFraming=\{\(item, slot, framing\) => updateItemOptions\(item, textureSlotPatch\(item, slot, framing\)\)\}/);
+  assert.match(app, /onPrestigeSignageFraming=\{\(item, slot, framing\) => updateItemOptions\(item, slot \? textureSlotPatch\(item, slot, framing\) : \{ headMainImageFraming: framing \}\)\}/);
   assert.match(app, /if \(item\) setDraftVisualOptions\(item\.options \|\| \{\}\)/);
 });
