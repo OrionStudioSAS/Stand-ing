@@ -265,10 +265,12 @@ test('the BAT uses the moved reserve and refreshes the TV surface from its curre
     sceneOfferLabel: (scene) => scene.offer || '',
     isSignatureScene: () => false, reserveRuleBands: [], signatureReserveRuleBands: [],
     sceneReserveRules: () => [], activeReserveRule: () => ({}),
+    reserveSizingRule: (rule) => rule,
     scenePartitionHeadRules: () => [], activePartitionHeadRule: () => null,
     partitionHeadEnabledSides: () => ({}), hasOwn: (value, key) => Object.hasOwn(value, key),
     ledRailCatalogEntries: () => [], makeAutomaticPartitionHeadItems: () => [],
     makeAutomaticReserveItems: () => [{ id: 'auto-reserve-medium', x: 0 }],
+    makeAutomaticMeterCoverItems: () => [],
     applyReserveItemOverride: (item, overrides) => ({ ...item, x: overrides[item.id]?.x ?? item.x }),
     objectWallSurfaces: (items) => [{ id: 'object-wall:auto-reserve-medium:merged-1-0', orientation: 'z', centerAxis: -0.99, normalAxis: items.find((item) => item.id === 'auto-reserve-medium').x - 0.5, length: 1.9, protectedBounds: { minX: -0.05, maxX: 1.01 } }],
   });

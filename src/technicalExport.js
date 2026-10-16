@@ -1,6 +1,7 @@
 import { recoloredImageCacheKey, recolorImageUrl } from './imageColorReplacement.js';
 import { createTechnicalSvgContext, sanitizeTechnicalSvg } from './technicalSvgContext.js';
 import { technicalA3, paginateTechnicalPrintDetails, wrapTechnicalPrintText } from './technicalPrintLayout.js';
+import { normalizeTechnicalPlanEdits } from './technicalPlanEdits.js';
 
 const sheet = {
   width: 1800,
@@ -77,9 +78,11 @@ export async function createTechnicalPlanBlob(options) {
   return pdf.output('blob');
 }
 
-export async function createTechnicalPlanSvgPages({ width, depth, layout, items, catalog, documentInfo = {} }) {
+export async function createTechnicalPlanSvgPages({ width, depth, layout, items, catalog, documentInfo = {}, batEdits = {} }) {
+  const edits = normalizeTechnicalPlanEdits(batEdits);
   const technicalItems = technicalItemsForPlan(items, width, depth, catalog);
-  const pictoImages = await loadTechnicalPictoImages(technicalItems, catalog);
+  const extraItems = edits.extras.map((extra) => ({ ...extra, dimensions: catalog.find((entry) => entry.type === extra.type)?.dimensions }));
+  const pictoImages = await loadTechnicalPictoImages([...technicalItems, ...extraItems], catalog);
   const drawable = technicalItems.filter((item) => !item?.sourceOptions);
   const sections = technicalTableSections(technicalItems, catalog);
   sections.unshift({ title: 'DECOUPE CLOISONS', rows: wallRows(width, depth, layout, drawable).map((row) => ({ label: row.label, lines: [row.summary] })) });
@@ -96,12 +99,31 @@ export async function createTechnicalPlanSvgPages({ width, depth, layout, items,
     ctx.strokeRect(technicalA3.margin, technicalA3.margin, technicalA3.width - 2 * technicalA3.margin, technicalA3.height - 2 * technicalA3.margin);
     if (page.kind === 'plan') {
       drawPrintSidebar(ctx, width, depth, layout, drawable);
-      drawPlan(ctx, width, depth, layout, drawable, catalog, pictoImages, visuals, constraints, true);
+      drawPlan(ctx, width, depth, layout, drawable, catalog, pictoImages, visuals, constraints, true, edits);
     } else drawPrintDetails(ctx, page, pictoImages);
     drawPrintPageHeader(ctx, documentInfo, page.kind === 'plan');
     drawText(ctx, `BAT - A3 paysage - Imprimer a 100 % / taille reelle`, technicalA3.margin + 16, technicalA3.height - 48, 15, '#555555');
     drawText(ctx, `Page ${index + 1} / ${pages.length}`, technicalA3.width - technicalA3.margin - 16, technicalA3.height - 48, 16, technicalColors.ink, 'bold', 'right');
+    drawTechnicalPlanEdits(ctx, edits, index, catalog, pictoImages);
     return ctx.svg;
+  });
+}
+
+function drawTechnicalPlanEdits(ctx, edits, page, catalog, images) {
+  edits.extras.filter((item) => item.page === page).forEach((item) => {
+    const entry = catalog.find((candidate) => candidate.type === item.type);
+    const image = technicalPictoImageForItem(item, entry, images, catalog);
+    if (!image) return;
+    ctx.beginObject(item.id, 'extra', {}, entry?.label || 'Picto');
+    drawRotatedContainedImage(ctx, image, (item.x - item.width / 2) * technicalA3.width,
+      (item.y - item.height / 2) * technicalA3.height, item.width * technicalA3.width, item.height * technicalA3.height, item.rotation * Math.PI / 180);
+    ctx.endObject();
+  });
+  edits.annotations.filter((item) => item.page === page).forEach((item) => {
+    ctx.beginObject(item.id, 'annotation', {}, 'Annotation');
+    const lines = wrapTechnicalPrintText(ctx, item.text, Math.max(80, (0.97 - item.x) * technicalA3.width), item.size);
+    lines.forEach((line, index) => drawText(ctx, line, item.x * technicalA3.width, item.y * technicalA3.height + index * item.size * 1.25, item.size, technicalColors.blue));
+    ctx.endObject();
   });
 }
 
@@ -372,7 +394,7 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   drawText(ctx, 'Generateur : StandING configurateur 3D', x + 12, footerY + 64, 15);
 }
 
-function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map(), visuals = [], constraints = [], print = false) {
+function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map(), visuals = [], constraints = [], print = false, edits = {}) {
   const bounds = { x: sheet.left + 58, y: 130, w: 1260, h: 760 };
   const scale = Math.min(bounds.w / (width + 1.1), bounds.h / (depth + 1.1));
   const planW = width * scale;
@@ -405,6 +427,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
 
   items.forEach((item, index) => {
     if (isWallItem(item)) return;
+    ctx.beginObject?.(item.id, 'item', edits.items?.[item.id], item.label || item.type);
     const entry = catalog.find((candidate) => candidate.type === item.type);
     const dims = itemDimensions(item, entry);
     const center = { x: toX(item.x), y: toY(item.z) };
@@ -416,23 +439,27 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
       const solidW = Math.max(0.32, dims.width || 0.6) * scale;
       const solidH = Math.max(0.18, dims.depth || 0.3) * scale;
       drawCeilingObject(ctx, center.x, center.y, solidW, solidH, item.rotation || 0, pictoImage, item.color || entry?.color || '#c8c0d8', label);
+      ctx.endObject?.();
       return;
     }
 
     if (pictoImage) drawRotatedPictoObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, pictoImage, label);
     else drawRotatedObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, color, label);
     drawObjectDimensions(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, dims, item.rotation || 0);
+    ctx.endObject?.();
   });
 
   drawObjectWallReinforcements(ctx, items, scale, wallThickness, toX, toY);
 
   items.forEach((item, index) => {
     if (!isWallItem(item)) return;
+    ctx.beginObject?.(item.id, 'item', edits.items?.[item.id], item.label || item.type);
     const entry = catalog.find((candidate) => candidate.type === item.type);
     const dims = itemDimensions(item, entry);
     const label = `${index + 1}`;
     const pictoImage = technicalPictoImageForItem(item, entry, pictoImages, catalog);
     drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, item.label || entry?.label, pictoImage);
+    ctx.endObject?.();
   });
 
   drawTechnicalConstraints(ctx, constraints, scale, toX, toY);

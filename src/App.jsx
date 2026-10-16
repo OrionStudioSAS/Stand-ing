@@ -67,6 +67,9 @@ import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packA
 import { createTechnicalPlanBlob, exportTechnicalPdf, standWallPanelRequirements } from './technicalExport.js';
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
 import { t as tRaw } from './i18n.js';
+import { reserveSizingCatalog, reserveSizingRule, reserveSizingEntry } from './reserveSizing.js';
+import TechnicalPlanEditor from './TechnicalPlanEditor.jsx';
+import { loadTechnicalPlanEdits } from './data/technicalPlanStore.js';
 import './styles.css';
 
 const visualUploadAccept = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf,.svg,.pdf,.psd,image/vnd.adobe.photoshop';
@@ -1067,6 +1070,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [ledRailsEnabled, setLedRailsEnabled] = useState(scenePackBenefits(initialScene).mode !== 'allowance' && initialOptions.ledRailsEnabled !== false);
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
   const [reserveItemOverrides, setReserveItemOverrides] = useState(initialOptions.reserveItemOverrides || {});
+  const [signatureMeterCoverType, setSignatureMeterCoverType] = useState(initialOptions.signatureMeterCoverType || '');
   const [reserveOptionType, setReserveOptionType] = useState(initialOptions.reserveOptionType || (initialOptions.reserveUpgradeEnabled ? '__legacy__' : ''));
   const [reserveOptions, setReserveOptions] = useState(() => ({
     doorOpening: initialOptions.reserveOptions?.doorOpening || '',
@@ -1229,7 +1233,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       .map((asset) => assetToCatalogEntry(asset, objectBank))
       .filter(Boolean);
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
-    return sortCatalogEntries(uniqueCatalogEntries(entries));
+    return sortCatalogEntries(uniqueCatalogEntries(reserveSizingCatalog(entries, objectBank, assetPackLabel)));
   }, [objectBank, assetPackLabel]);
   const placeableCatalog = useMemo(
     () => availableCatalog.filter((entry) => effectiveAdminViewer || !entry.dimensions?.adminOnly),
@@ -1238,11 +1242,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const hydratedItems = useMemo(() => resolveSurfaceAttachments(
     objectBankLoaded ? items.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)) : items,
   ), [items, availableCatalog, objectBankLoaded]);
-  const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item) && !isAutomaticReserveItem(item) && !isAutomaticPartitionHeadItem(item)), [hydratedItems]);
+  const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item) && !isAutomaticReserveItem(item) && !isAutomaticPartitionHeadItem(item) && !item.autoMeterCover), [hydratedItems]);
+  const automaticMeterCoverItems = useMemo(() => makeAutomaticMeterCoverItems(assetPackLabel, signatureMeterCoverType, availableCatalog, width, depth, layout, manualHydratedItems), [assetPackLabel, signatureMeterCoverType, availableCatalog, width, depth, layout, manualHydratedItems]);
+  const meterCoverConfiguratorEntry = useMemo(() => signatureMeterCoverConfiguratorEntry(availableCatalog), [availableCatalog]);
   const ledRailEntries = useMemo(() => scenePackBenefits(initialScene).mode === 'allowance' ? [] : ledRailCatalogEntries(availableCatalog), [availableCatalog, initialScene]);
   const ledSpotCount = ledSpotCountForArea(area);
   const reserveRules = useMemo(() => sceneReserveRules(initialScene), [initialScene]);
-  const activeReserveRuleConfig = useMemo(() => activeReserveRule(reserveRules, area, isSignatureStand ? signatureReserveRuleBands : reserveRuleBands), [reserveRules, area, isSignatureStand]);
+  const activeReserveRuleConfig = useMemo(() => reserveSizingRule(activeReserveRule(reserveRules, area, isSignatureStand ? signatureReserveRuleBands : reserveRuleBands), availableCatalog, assetPackLabel, layout, width, depth), [reserveRules, area, isSignatureStand, availableCatalog, assetPackLabel, layout, width, depth]);
   const effectiveReserveOptionType = reserveOptionType === '__legacy__' ? normalizeComplementaryOptions(activeReserveRuleConfig?.options)[0]?.type || '' : reserveOptionType;
   const partitionHeadRules = useMemo(() => scenePartitionHeadRules(initialScene), [initialScene]);
   const activePartitionHeadRuleConfig = useMemo(() => activePartitionHeadRule(partitionHeadRules, area, layout), [partitionHeadRules, area, layout]);
@@ -1286,10 +1292,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const prestigeBaseHidden = (item) => isHiddenPrestigeBaseItem(item, { archEnabled: prestigeArchEnabled, signageEnabled: prestigeSignageEnabled, isPrestigeStand });
   const manualVisibleItems = useMemo(() => manualHydratedItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [manualHydratedItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand]);
   const wallCoverSurfaces = useMemo(
-    () => wallCoverSurfaceOptions(layout, width, depth, [...manualVisibleItems, ...automaticReserveItems, ...automaticPartitionHeadItems], { splitForCovers: true }),
+    () => wallCoverSurfaceOptions(layout, width, depth, [...manualVisibleItems, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems], { splitForCovers: true }),
     [layout, width, depth, manualVisibleItems, automaticReserveItems, automaticPartitionHeadItems],
   );
-  const sceneItems = useMemo(() => resolveSpotWallAttachments([...manualHydratedItems, ...automaticReserveItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], width, depth, layout), [manualHydratedItems, automaticReserveItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems, width, depth, layout]);
+  const sceneItems = useMemo(() => resolveSpotWallAttachments([...manualHydratedItems, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], width, depth, layout), [manualHydratedItems, automaticReserveItems, automaticMeterCoverItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems, width, depth, layout]);
   const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand]);
   const signatureArchItems = useMemo(() => sceneItems.filter(isSignatureArchItem), [sceneItems]);
   const signatureArchItem = signatureArchItems[0] || null;
@@ -1489,6 +1495,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       reserveOptionType: effectiveReserveOptionType,
       reserveOptions,
       reserveItemOverrides,
+      signatureMeterCoverType,
       partitionHeadLeftEnabled: effectivePartitionHeadSides.left,
       partitionHeadRightEnabled: effectivePartitionHeadSides.right,
       partitionHeadCompany,
@@ -1558,7 +1565,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly]);
 
   const persistWallCoversNow = (nextWallCovers) => {
     if (readOnly) return;
@@ -1618,7 +1625,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             }
           }
           try {
-            technicalPlan = await sceneTechnicalPlanEmailAttachment(confirmedScene, objectBank);
+            technicalPlan = await sceneTechnicalPlanEmailAttachment(confirmedScene, objectBank, effectiveAdminViewer);
           } catch (error) {
             attachmentIssue = true;
             console.warn('Special request BAT generation failed', error);
@@ -1657,7 +1664,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         const purchaseOrder = hasAmcoOrderLines(directPurchaseOrder)
           ? await scenePurchaseOrderEmailAttachment(purchaseOrderScene, objectBank, directPurchaseOrder)
           : null;
-        const technicalPlan = await sceneTechnicalPlanEmailAttachment(purchaseOrderScene, objectBank);
+        const technicalPlan = await sceneTechnicalPlanEmailAttachment(purchaseOrderScene, objectBank, effectiveAdminViewer);
         const emailResult = await sendSceneCompletionEmail(purchaseOrderScene, { purchaseOrder, technicalPlan });
         if (emailResult?.sent === false) {
           emailMessage = 'La scène est confirmée, mais l’email de confirmation n’a pas pu être envoyé automatiquement.';
@@ -1734,7 +1741,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (!effectiveAdminViewer && hasOwn(patch, 'rotation') && itemRotationLocked(currentItem)) return;
     if (isSignatureStand && isSignatureArchItem(currentItem)) {
       setItems((current) => {
-        const blockers = [...current, ...automaticReserveItems, ...automaticPartitionHeadItems];
+        const blockers = [...current, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems];
         return current.map((item) => {
           if (item.id !== id) return item;
           const candidate = {
@@ -1763,7 +1770,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     const autoReserveItem = sceneItems.find((item) => item.id === id && isAutomaticReserveItem(item));
     if (autoReserveItem) {
       const editableItem = automaticReserveBackWallCandidate(autoReserveItem, patch, width, depth, layout);
-      const blockers = [...manualHydratedItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems].filter((item) => item.id !== id);
+      const blockers = [...manualHydratedItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems].filter((item) => item.id !== id);
       if (collidesWithScene(editableItem, blockers, id, width, depth)) return;
       if (isSameSceneTransform(autoReserveItem, editableItem)) return;
       setReserveItemOverrides((current) => ({
@@ -1774,7 +1781,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }
     setItems((current) => {
       const visibleCurrent = current.filter((item) => item.id === id || !isHiddenIncludedCounterItem(item));
-      const blockers = [...automaticReserveItems, ...automaticPartitionHeadItems].filter((item) => item.id !== id);
+      const blockers = [...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems].filter((item) => item.id !== id);
       const updated = updateManualSceneItemWithCollision(visibleCurrent, id, patch, blockers, width, depth, layout, genericCarpetFootprintEnabled);
       const byId = new Map(updated.map((item) => [item.id, item]));
       return current.map((item) => byId.get(item.id) || item);
@@ -1983,9 +1990,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }
   };
 
-  const itemConfiguratorEntry = (item) => (item?.options?.variantGroupType
+  const itemConfiguratorEntry = (item) => (item?.autoMeterCover ? meterCoverConfiguratorEntry : item?.options?.variantGroupType
     ? findCatalogEntry(availableCatalog, item.options.variantGroupType)
     : findCatalogEntry(availableCatalog, item?.type));
+
+  const selectSceneItem = (id) => {
+    setSelectedId(id);
+    const item = automaticMeterCoverItems.find((candidate) => candidate.id === id);
+    if (item && !readOnly) setItemConfigModal({ mode: 'edit', item, entry: meterCoverConfiguratorEntry });
+  };
 
   const openSelectedItemConfigurator = () => {
     if (!selected || readOnly) return;
@@ -2019,6 +2032,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const confirmItemConfigurator = ({ entry, item, options, quantity = 1 }) => {
     if (readOnly) return;
+    if (item?.autoMeterCover) {
+      if (signatureMeterCoverEntries(availableCatalog).some((variant) => variant.type === entry?.type)) setSignatureMeterCoverType(entry.type);
+      setItemConfigModal(null);
+      return;
+    }
     if (item) {
       if (entry?.type && entry.type !== item.type) {
         replaceItemWithEntry(item, entry, options);
@@ -2064,7 +2082,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         : {};
       const candidate = constrainItem({ ...nextBase, ...compatiblePosition }, width, depth, layout, genericCarpetFootprintEnabled);
       const others = current.filter((sceneItem) => sceneItem.id !== item.id);
-      const blockers = [...others, ...automaticReserveItems, ...automaticPartitionHeadItems];
+      const blockers = [...others, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems];
       const placed = collidesWithScene(candidate, blockers, candidate.id, width, depth)
         ? placeItemInFreeSpot(candidate, blockers, width, depth, layout, genericCarpetFootprintEnabled)
         : candidate;
@@ -2121,7 +2139,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         },
       };
       const withoutArches = current.filter((item) => !isSignatureArchItem(item));
-      const placed = placeSignatureArchAgainstBackWall(nextItem, [...withoutArches, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth);
+      const placed = placeSignatureArchAgainstBackWall(nextItem, [...withoutArches, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems], width, depth);
       if (!placed) {
         failedPlacement = true;
         return current;
@@ -2195,7 +2213,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           ...makeItem(entry.type, width, depth, layout, entry),
           options: { ...(options || {}) },
         };
-        const placed = placeItemInFreeSpot(item, [...next, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth, layout, genericCarpetFootprintEnabled);
+        const placed = placeItemInFreeSpot(item, [...next, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems], width, depth, layout, genericCarpetFootprintEnabled);
         if (!placed) break;
         placedCount += 1;
         lastPlacedId = placed.id;
@@ -2222,7 +2240,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   };
 
   const duplicateCartItem = (item) => {
-    if (readOnly || !item) return;
+    if (readOnly || !item || item.autoMeterCover) return;
     const entry = findCatalogEntry(availableCatalog, item.type) || item;
     addItem(entry, { ...(item.options || {}) }, 1);
   };
@@ -2287,7 +2305,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       },
     };
     setItems((current) => {
-      const placed = placeItemInFreeSpot(item, [...current, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth, layout, genericCarpetFootprintEnabled) || constrainItem(item, width, depth, layout, genericCarpetFootprintEnabled);
+      const placed = placeItemInFreeSpot(item, [...current, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems], width, depth, layout, genericCarpetFootprintEnabled) || constrainItem(item, width, depth, layout, genericCarpetFootprintEnabled);
       setSelectedId(placed.id);
       return [...current, placed];
     });
@@ -2308,7 +2326,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     };
     let placedItem = null;
     setItems((current) => {
-      const placed = placeItemInFreeSpot(item, [...current, ...automaticReserveItems, ...automaticPartitionHeadItems], width, depth, layout, genericCarpetFootprintEnabled)
+      const placed = placeItemInFreeSpot(item, [...current, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems], width, depth, layout, genericCarpetFootprintEnabled)
         || constrainItem(item, width, depth, layout, genericCarpetFootprintEnabled);
       placedItem = placed;
       return [...current, placed];
@@ -2687,7 +2705,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 layout={layout}
                 items={visibleSceneItems}
                 selectedId={selectedId}
-                setSelectedId={setSelectedId}
+                setSelectedId={selectSceneItem}
                 draggingId={draggingId}
                 setDraggingId={setDraggingId}
                 interactive={!readOnly}
@@ -4009,7 +4027,7 @@ function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = 
     <div className="prestige-base-card prestige-signage-card">
       <div className="prestige-base-info">
         <b>i</b>
-        <span>L'enseigne haute Prestige est comprise dans la scène de base. Le visuel se modifie ici uniquement.</span>
+        <span>L'enseigne haute Prestige est comprise dans la scène de base. Visuel : 1500 × 1300 mm ht · RECTO VERSO.</span>
       </div>
 
       {enabled && item && (
@@ -4019,6 +4037,7 @@ function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = 
           uploading={uploading}
           className="texture-slot-logo-card prestige-signage-upload"
           title="Logo"
+          spec="Visuel 1500 × 1300 mm ht · RECTO VERSO"
           imageUrl={imageUrl}
           imageFraming={slot ? value : item.options?.headMainImageFraming}
           alt={slot?.label || 'Logo enseigne haute'}
@@ -5111,7 +5130,7 @@ function HeaderCartMenu({ items, catalog, selectedId, total, pricing, salonLabel
                         <Minus size={13} />
                       </button>
                       <span>{group.items.length}</span>
-                      <button type="button" disabled={readOnly} onClick={() => onIncrementItem?.(item)} aria-label="+1">
+                    <button type="button" disabled={readOnly || item.autoMeterCover} onClick={() => onIncrementItem?.(item)} aria-label="+1">
                         <Plus size={13} />
                       </button>
                     </div>
@@ -5231,7 +5250,7 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
                         <Minus size={13} />
                       </button>
                       <span>{group.items.length}</span>
-                      <button type="button" disabled={readOnly} onClick={() => onIncrementItem?.(item)} aria-label="+1">
+                      <button type="button" disabled={readOnly || item.autoMeterCover} onClick={() => onIncrementItem?.(item)} aria-label="+1">
                         <Plus size={13} />
                       </button>
                     </div>
@@ -5414,7 +5433,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const headerFinishCount = canConfigureCounterVisual ? counterFinishOptions(counterColors).length : 0;
   const headerMetaParts = [
     headerFinishCount ? `${headerFinishCount} coloris` : '',
-    variants.length > 1 ? `${variants.length} taille${variants.length > 1 ? 's' : ''}` : '',
+    variants.length > 1 ? (catalogEntry.dimensions?.isSignatureMeterCoverGroup ? `${variants.length} coloris` : `${variants.length} taille${variants.length > 1 ? 's' : ''}`) : '',
     (extraOptions.length + colorOptions.length) ? `${extraOptions.length + colorOptions.length} option${extraOptions.length + colorOptions.length > 1 ? 's' : ''}` : '',
   ].filter(Boolean);
   const headerMeta = headerMetaParts.length
@@ -5935,6 +5954,10 @@ function normalizeRotationDegrees(value = 0) {
 }
 
 function itemConfigVariants(entry, salonLabel) {
+  if (entry?.dimensions?.isSignatureMeterCoverGroup) {
+    return normalizeVariantGroupOptions(entry.dimensions.variantAssets, salonLabel)
+      .map((variant) => ({ ...variant, label: signatureMeterCoverFinish(variant.entry), price: 0 }));
+  }
   if (isVariantGroupEntry(entry)) {
     const configOptions = entry?.dimensions?.configOptions || [];
     const selectOption = configOptions.find((o) => o.type === 'select' && o.choices?.length);
@@ -8058,7 +8081,9 @@ function reserveChoiceRow({ type, label, entry, included = false, billable = fal
     area,
     areaLabel: area ? `${formatAreaValue(area)} m²` : '',
     sizeName: reserveSizeName(area, fullLabel),
-    description: reserveSizeDescription(area, fullLabel),
+    description: [entry?.dimensions?.reserveSizingOnly
+      ? `${entry.dimensions.reserveLayout === 'back' || entry.dimensions.reserveLayout === 'u' ? `1m × ${formatAreaValue(area)}m` : `${formatAreaValue(area)}m × 1m`}`
+      : reserveSizeDescription(area, fullLabel), fullLabel.match(/\(\+[^)]+\)/)?.[0]].filter(Boolean).join(' · '),
     recommended: area >= 1.75 && area <= 2.5,
   };
 }
@@ -8089,7 +8114,7 @@ function reserveSizeDescription(area = 0, label = '') {
   if (area && area <= 1.25) return '1m × 1m';
   if (area && area <= 2.5) return '1m × 2m';
   if (area && area <= 3.25) return '3m × 1m';
-  if (area) return '2m × 2m';
+  if (area) return `${formatAreaValue(area)}m × 1m`;
   return label || 'Réserve complémentaire';
 }
 
@@ -8157,6 +8182,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
         </label>
         <small>{t(sharedVisual ? 'partition_shared_visual_hint' : 'partition_different_visuals_hint')}</small>
       </div>}
+      {isSignatureStand && <p className="preset-included-help">Logo en haut : 97 € HT pour les deux têtes de cloison (forfait unique).</p>}
 
       {visualRows.length ? visualRows.map((row) => (
         <React.Fragment key={row.side}>
@@ -10798,7 +10824,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
       .map((asset) => assetToCatalogEntry(asset, assets))
       .filter(Boolean);
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
-    return sortCatalogEntries(uniqueCatalogEntries(entries));
+    return sortCatalogEntries(uniqueCatalogEntries(reserveSizingCatalog(entries, assets, offer?.name)));
   }, [assets, offer?.name]);
   const initialScene = useMemo(() => initialDraft || presetToEditableScene(preset, availableCatalog), []);
   const initialWidth = initialScene.dimensions.width;
@@ -10843,6 +10869,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
     reserveWallFabricColor: selectedReserveWallFabricColor,
   }), [selectedCarpetColor, selectedCarpetFootprintColor, selectedWallFabricColor, selectedReserveWallFabricColor]);
   const presetItems = useMemo(() => presetItemsWithArchColor(items, selectedCarpetFootprintColor, isSignaturePack), [items, selectedCarpetFootprintColor, isSignaturePack]);
+  const presetMeterCoverType = initialDraft?.options?.signatureMeterCoverType || preset.base_config?.options?.signatureMeterCoverType || '';
   const previewItems = useMemo(() => {
     const area = width * depth;
     const reserveRule = activeReserveRule(reserveRules, area, packReserveBands);
@@ -10850,11 +10877,12 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
       .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, !isSignaturePack));
     const headRule = activePartitionHeadRule(partitionHeadRules, area, layout);
     const automaticHeads = makeAutomaticPartitionHeadItems(headRule, partitionHeadEnabledSides(headRule), availableCatalog, width, depth, layout, offer?.name);
+    const automaticMeterCovers = makeAutomaticMeterCoverItems(offer?.name, presetMeterCoverType, availableCatalog, width, depth, layout, presetItems);
     const automaticSpots = hasAutoSpotsRule(autoSpotsRule)
       ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...presetItems, ...automaticReserves])
         .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout)) : [];
-    return resolveSpotWallAttachments(resolveSurfaceAttachments([...presetItems, ...automaticReserves, ...automaticHeads, ...automaticSpots]), width, depth, layout);
-  }, [presetItems, width, depth, layout, reserveRules, partitionHeadRules, autoSpotsRule, availableCatalog, packReserveBands, offer?.name, reserveItemOverrides, ledRailOverrides, isSignaturePack]);
+    return resolveSpotWallAttachments(resolveSurfaceAttachments([...presetItems, ...automaticReserves, ...automaticMeterCovers, ...automaticHeads, ...automaticSpots]), width, depth, layout);
+  }, [presetItems, width, depth, layout, reserveRules, partitionHeadRules, autoSpotsRule, availableCatalog, packReserveBands, offer?.name, reserveItemOverrides, ledRailOverrides, isSignaturePack, presetMeterCoverType]);
   const presetTextureLoad = useSceneTexturePreload(previewItems, [
     selectedCarpetColor.image,
     selectedCarpetFootprintColor.image,
@@ -10865,7 +10893,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
   const presetAssetsReady = presetTextureLoad.ready && presetSuspendLoad.ready;
   const presetLoadProgress = combineLoadStates(presetTextureLoad, presetSuspendLoad);
   const selected = previewItems.find((item) => item.id === selectedId);
-  const selectedIsAutomatic = selected && (isAutomaticLedRailItem(selected) || isAutomaticReserveItem(selected) || isAutomaticPartitionHeadItem(selected));
+  const selectedIsAutomatic = selected && (isAutomaticLedRailItem(selected) || isAutomaticReserveItem(selected) || isAutomaticPartitionHeadItem(selected) || selected.autoMeterCover);
 
   useEffect(() => {
     setItems((current) => current.map((item) => constrainItem(hydrateSceneItemFromCatalog(item, availableCatalog), width, depth, layout)));
@@ -10874,7 +10902,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
 
   const updateItem = (id, patch) => {
     const item = previewItems.find((entry) => entry.id === id);
-    if (!item || isAutomaticPartitionHeadItem(item)) return;
+    if (!item || isAutomaticPartitionHeadItem(item) || item.autoMeterCover) return;
     if (isAutomaticLedRailItem(item)) {
       const candidate = constrainItem({ ...item, ...patch }, width, depth, layout, !isSignaturePack);
       const constrained = resolveSpotWallAttachments([candidate, ...previewItems.filter((entry) => entry.id !== id)], width, depth, layout)[0];
@@ -10929,10 +10957,11 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
         defaultColorOptions: selectedDefaultColorOptions,
         ledRailOverrides,
         reserveItemOverrides,
+        signatureMeterCoverType: presetMeterCoverType,
         ...selectedDefaultColorOptions,
       },
     };
-  }, [width, depth, layout, presetItems, reserveRules, partitionHeadRules, autoSpotsRule, selectedDefaultColorOptions, packReserveBands, offer?.name, salon.name, ledRailOverrides, reserveItemOverrides]);
+  }, [width, depth, layout, presetItems, reserveRules, partitionHeadRules, autoSpotsRule, selectedDefaultColorOptions, packReserveBands, offer?.name, salon.name, ledRailOverrides, reserveItemOverrides, presetMeterCoverType]);
 
   useEffect(() => { if (draftReady) onDraftChange(preset.id, sceneDraft); }, [preset.id, sceneDraft, onDraftChange, draftReady]);
   const removeItem = (id) => {
@@ -11227,7 +11256,8 @@ function PresetDefaultColorsEditor({ carpetColors = [], footprintColors = [], wa
 }
 
 function PresetColorSelect({ label, colors = [], value = '', fallbackValue = '', onChange }) {
-  const selectedValue = value || fallbackValue || defaultColorFromPalette(colors)?.id || colors[0]?.id || '';
+  const selectedColor = findColorInPalette(colors, value) || findColorInPalette(colors, fallbackValue) || defaultColorFromPalette(colors);
+  const selectedValue = selectedColor?.id || '';
   return (
     <label className="preset-color-select">
       <span>{label}</span>
@@ -12245,6 +12275,7 @@ function AdminObjectsView({ assets, scenes, salons, search, onSearchChange, cate
   const [rowMenuType, setRowMenuType] = useState('');
   const [sortMode, setSortMode] = useState('name-asc');
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState('20');
   const [feedbackVisible, setFeedbackVisible] = useState(true);
   const addMenuRef = useRef(null);
   const packMenuRef = useRef(null);
@@ -12266,7 +12297,7 @@ function AdminObjectsView({ assets, scenes, salons, search, onSearchChange, cate
       return sortMode === 'name-desc' ? -compared : compared;
     });
   }, [assets, scenes, salons, category, search, assetSearch, categoryFilter, packFilter, salonFilter, statusFilter, formatFilter, visibilityFilter, sortMode]);
-  const pageSize = 24;
+  const pageSize = pageSizeChoice === 'all' ? Math.max(1, filteredAssets.length) : Number(pageSizeChoice);
   const pageCount = Math.max(1, Math.ceil(filteredAssets.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const visibleAssets = filteredAssets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -12389,7 +12420,11 @@ function AdminObjectsView({ assets, scenes, salons, search, onSearchChange, cate
       </div>}
       {viewMode === 'list' && selectedAssetTypes.length > 0 && <div className="asset-library-selection"><span>{selectedAssetTypes.length} sélectionné{selectedAssetTypes.length > 1 ? 's' : ''}</span><button type="button" onClick={() => setSelectedAssetTypes([])}>Effacer la sélection</button></div>}
       {!filteredAssets.length && <p className="asset-library-empty">Aucun élément ne correspond aux filtres.</p>}
-      {pageCount > 1 && <div className="asset-library-pagination"><button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Précédent</button><span>Page {currentPage} / {pageCount}</span><button type="button" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</button></div>}
+      <div className="asset-library-pagination">
+        <label>Afficher <select aria-label="Nombre d'assets par page" value={pageSizeChoice} onChange={(event) => { setPageSizeChoice(event.target.value); setPage(1); }}><option value="20">20</option><option value="50">50</option><option value="all">Tout</option></select></label>
+        <span>{filteredAssets.length ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, filteredAssets.length)}</span>
+        {pageCount > 1 && <><button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Précédent</button><span>Page {currentPage} / {pageCount}</span><button type="button" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</button></>}
+      </div>
 
       {selectedAsset && (
         <AssetDrawer
@@ -13189,6 +13224,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
               onReorder={reorderColorGroupColor}
               onDefaultChange={setColorGroupDefault}
               onFreeChange={toggleColorGroupFree}
+              onColorChange={(id, patch) => setDraft((current) => ({ ...current, dimensions: { ...current.dimensions, colorOptions: normalizeColorGroupOptions(current).map((color) => color.id === id ? { ...color, ...patch } : color) } }))}
             />
 
             <div className="asset-variants-head compact">
@@ -13550,7 +13586,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   );
 }
 
-function ColorGroupColorsEditor({ colors = [], groupType = '', onReorder, onDefaultChange, onFreeChange }) {
+function ColorGroupColorsEditor({ colors = [], groupType = '', onReorder, onDefaultChange, onFreeChange, onColorChange }) {
   const [draggingId, setDraggingId] = useState('');
   const [dropTargetId, setDropTargetId] = useState('');
   const [announcement, setAnnouncement] = useState('');
@@ -13599,7 +13635,10 @@ function ColorGroupColorsEditor({ colors = [], groupType = '', onReorder, onDefa
               <GripVertical size={16} />
             </button>
             <i style={{ '--swatch-color': color.hex, '--swatch-image': color.image ? `url("${color.image}")` : 'none' }} />
-            <div className="color-group-color-copy"><strong>{color.name}</strong><small>{color.code}</small></div>
+            <div className="color-group-color-copy">
+              <input aria-label={`Nom de la couleur ${index + 1}`} value={color.name} onChange={(event) => onColorChange?.(color.id, { name: event.target.value })} />
+              <input aria-label={`Référence de la couleur ${index + 1}`} value={color.code} onChange={(event) => onColorChange?.(color.id, { code: event.target.value })} />
+            </div>
             <label><input type="radio" name={`default-color-${groupType}`} checked={color.isDefault} onChange={() => onDefaultChange?.(color.id)} />Base</label>
             <label><input type="checkbox" checked={color.isDefault || color.isFree} disabled={color.isDefault} onChange={(event) => onFreeChange?.(color.id, event.target.checked)} />Gratuite</label>
             <div className="color-group-order-buttons">
@@ -14560,11 +14599,28 @@ function MiniGroupPlan({ rows, sourceAssets, selectedUid, onSelect, onMove }) {
 
 function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
   const [page, setPage] = useState(1);
+  const [editor, setEditor] = useState(null);
+  const [editorError, setEditorError] = useState('');
+  const [loadingId, setLoadingId] = useState('');
+  const openEditor = async (scene) => {
+    setLoadingId(scene.id); setEditorError('');
+    try {
+      const full = await loadSceneForAdminAction(scene);
+      await prepareTechnicalExportFonts();
+      const catalog = sceneAdminCatalog(assets, full);
+      setEditor({ sceneId: full.id, options: {
+        width: Number(full.dimensions?.width || full.width_m || 4), depth: Number(full.dimensions?.depth || full.depth_m || 3),
+        layout: full.layout || 'back', items: withTechnicalOptionsMarker(sceneAllAdminItems(full, catalog), full, catalog),
+        catalog, documentInfo: sceneTechnicalDocumentInfo(full),
+      } });
+    } catch (error) { setEditorError(error.message); } finally { setLoadingId(''); }
+  };
   const pageCount = Math.max(1, Math.ceil(scenes.length / 18));
   const currentPage = Math.min(page, pageCount);
   const rows = scenes.slice((currentPage - 1) * 18, currentPage * 18);
   return (
     <section className="admin-table modern bat-table">
+      {editorError && <p role="alert">{editorError}</p>}
       {rows.length ? rows.map((scene) => {
         const order = scenePurchaseOrder(scene, assets);
         const lockedForExhibitor = Boolean(scene.source_payload?.exhibitor_view_only);
@@ -14585,12 +14641,14 @@ function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
             <div className="stand-actions">
               <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a>
               <button type="button" onClick={() => downloadSceneTechnicalPlan(scene, assets)}>Télécharger BAT</button>
+              <button type="button" disabled={Boolean(loadingId)} onClick={() => openEditor(scene)}>{loadingId === scene.id ? 'Chargement…' : 'Modifier le BAT'}</button>
               <button type="button" onClick={() => downloadScenePurchaseOrder(scene, assets)}>Bon de commande</button>
             </div>
           </article>
         );
       }) : <div className="admin-empty-row">Aucune scène à afficher.</div>}
       {pageCount > 1 && <nav className="admin-pagination" aria-label="Pagination des BAT"><span>Page {currentPage}/{pageCount}</span><div><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Précédent</button><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</button></div></nav>}
+      {editor && <TechnicalPlanEditor {...editor} onClose={() => setEditor(null)} />}
     </section>
   );
 }
@@ -14856,7 +14914,7 @@ function sceneAdminCatalog(assets = [], scene = {}) {
     .map((asset) => assetToCatalogEntry(asset, assets))
     .filter(Boolean);
   const entries = [...dynamicEntries, ...nativeCatalogEntries()];
-  return sortCatalogEntries(uniqueCatalogEntries(entries));
+  return sortCatalogEntries(uniqueCatalogEntries(reserveSizingCatalog(entries, assets, packLabel)));
 }
 
 function sceneAdminItems(scene = {}, catalogEntries = []) {
@@ -14870,8 +14928,9 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const area = width * depth;
   const packLabel = sceneOfferLabel(scene);
   const options = { ...(scene.source_payload?.options || {}), ...(scene.options || {}) };
-  const manualItems = sceneAdminItems(scene, catalogEntries);
-  const reserveRule = activeReserveRule(sceneReserveRules(scene), area, isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands);
+  const manualItems = sceneAdminItems(scene, catalogEntries).filter((item) => !item.autoMeterCover);
+  const automaticMeterCoverItems = makeAutomaticMeterCoverItems(packLabel, options.signatureMeterCoverType, catalogEntries, width, depth, layout, manualItems);
+  const reserveRule = reserveSizingRule(activeReserveRule(sceneReserveRules(scene), area, isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands), catalogEntries, packLabel, layout, width, depth);
   const reserveOption = options.reserveOptionType === '__legacy__'
     ? normalizeComplementaryOptions(reserveRule?.options)[0]?.type || ''
     : options.reserveOptionType || '';
@@ -14894,6 +14953,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   return resolveTechnicalWallSurfaces(resolveSpotWallAttachments([
     ...manualItems,
     ...automaticReserveItems,
+    ...automaticMeterCoverItems,
     ...makeAutomaticPartitionHeadItems(partitionRule, partitionSides, catalogEntries, width, depth, layout, packLabel)
       .map((item) => applyPartitionHeadVisualOptions(item, options.partitionHeadVisuals || {})),
     ...ledItems,
@@ -15037,7 +15097,9 @@ async function downloadSceneTechnicalPlan(scene = {}, assets = []) {
   const width = Number(scene.dimensions?.width || scene.width_m || 4);
   const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
   const items = sceneAllAdminItems(scene, catalogEntries);
+  const { edits: batEdits } = await loadTechnicalPlanEdits(scene.id);
   return exportTechnicalPdf({
+    batEdits,
     width,
     depth,
     layout: scene.layout || 'back',
@@ -15047,12 +15109,14 @@ async function downloadSceneTechnicalPlan(scene = {}, assets = []) {
   });
 }
 
-async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = []) {
+async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = [], includeAdminEdits = false) {
   await prepareTechnicalExportFonts();
   const catalogEntries = sceneAdminCatalog(assets, scene);
   const width = Number(scene.dimensions?.width || scene.width_m || 4);
   const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
+  const { edits: batEdits } = includeAdminEdits ? await loadTechnicalPlanEdits(scene.id) : { edits: {} };
   const blob = await createTechnicalPlanBlob({
+    batEdits,
     width,
     depth,
     layout: scene.layout || 'back',
@@ -15864,8 +15928,10 @@ function defaultColorFromPalette(colors = []) {
 function findColorInPalette(colors = [], value = '') {
   const normalizedValue = normalizeColorId(value);
   if (!normalizedValue) return null;
+  const localId = normalizedValue.split(':').pop();
   return colors.find((color) => normalizeColorId(color.id) === normalizedValue)
     || colors.find((color) => normalizeColorId(color.code) === normalizedValue)
+    || colors.find((color) => normalizeColorId(color.id).split(':').pop() === localId)
     || (normalizedValue === 'signature-wall-light-gray' ? colors.find((color) => color.code === '319') : null)
     || null;
 }
@@ -15944,6 +16010,7 @@ function normalizeColorGroupOptions(asset = {}) {
         storagePath: color.storagePath || '',
         batPictoUrl: color.batPictoUrl || '',
         batPictoPath: color.batPictoPath || '',
+        swatchSource: color.swatchSource || '',
         isDefault,
         isFree,
         included: Boolean(isDefault || isFree),
@@ -16024,14 +16091,19 @@ function assetToCatalogEntry(asset, allAssets = []) {
   }
 
   if (asset.dimensions?.isGroup) {
+    const children = (asset.dimensions?.children || []).map((child) => {
+      const current = allAssets.find((candidate) => candidate.type === child.type);
+      return { ...child, dimensions: { ...(current?.dimensions || {}), ...(child.dimensions || {}),
+        depthLocked6cm: Boolean(current?.dimensions?.depthLocked6cm || child.dimensions?.depthLocked6cm) } };
+    });
     return {
       type: asset.type,
       label: asset.label,
       icon: Layers,
       color: asset.dimensions?.color || '#dfe8ec',
       isGroup: true,
-      groupSize: asset.dimensions?.groupSize || computeGroupSize(asset.dimensions?.children || []),
-      children: asset.dimensions?.children || [],
+      groupSize: asset.dimensions?.groupSize || computeGroupSize(children),
+      children,
       placementRule: effectivePlacementRule(asset),
       movementLocked: Boolean(asset.dimensions?.movementLocked),
       deleteLocked: Boolean(asset.dimensions?.deleteLocked),
@@ -16131,6 +16203,7 @@ function dragCoordinate(value) {
 }
 
 function assetMatchesPack(asset, packLabel = '') {
+  if (['signature', 'equipe'].includes(normalizePackLabel(packLabel)) && asset.dimensions?.isGroup && isReserveCatalogEntry(asset)) return true;
   const packs = assetPacks(asset);
   if (!packs.length) return false;
   if (!normalizeTextValue(packLabel)) return true;
@@ -16290,12 +16363,50 @@ function isReserveCatalogEntry(entry = {}) {
   return Boolean(safeEntry.dimensions?.isReserve || text.includes('reserve'));
 }
 
+function isMeterCoverItem(item = {}) {
+  return /cache[\s_-]*compteur/.test(normalizedItemText(item));
+}
+
+function signatureMeterCoverFinish(entry = {}) {
+  return normalizedItemText(entry).includes('noir') ? 'Noir' : 'Blanc';
+}
+
+function signatureMeterCoverEntries(catalogEntries = []) {
+  return catalogEntries.filter((entry) => isMeterCoverItem(entry) && !isVariantGroupEntry(entry) && entry.is_active !== false)
+    .sort((a, b) => Number(signatureMeterCoverFinish(a) === 'Noir') - Number(signatureMeterCoverFinish(b) === 'Noir'));
+}
+
+function signatureMeterCoverConfiguratorEntry(catalogEntries = []) {
+  return { type: '__signature-meter-cover__', label: 'Cache compteur', dimensions: {
+    isVariantGroup: true, isSignatureMeterCoverGroup: true, variantAssets: signatureMeterCoverEntries(catalogEntries),
+  } };
+}
+
+function makeAutomaticMeterCoverItems(packLabel, variantType, catalogEntries = [], width, depth, layout, existingItems = []) {
+  const area = Number(width || 0) * Number(depth || 0);
+  if (!isSignaturePackLabel(packLabel) || area < 9 || area >= 15 || existingItems.some((item) => isMeterCoverItem(item) && isIncludedSceneItem(item))) return [];
+  const entries = signatureMeterCoverEntries(catalogEntries);
+  const entry = entries.find((candidate) => candidate.type === variantType) || entries[0];
+  if (!entry) return [];
+  const base = makeItem(entry.type, width, depth, layout, entry);
+  const bounds = itemGroupBounds(base);
+  const x = layout === 'left' ? -width / 2 + wallThickness - bounds.minX
+    : layout === 'right' ? width / 2 - wallThickness - bounds.maxX : -Number(bounds.centerX || 0);
+  return [{ ...base, id: 'auto-signature-meter-cover', label: entry.label,
+    x, z: -depth / 2 + wallThickness - bounds.minZ, rotation: 0,
+    placementRule: null, lockedPlacement: true, movementLocked: true, rotationLocked: true, deleteLocked: true,
+    autoMeterCover: true, included: true, priceMode: 'included',
+    options: { ...(base.options || {}), unitPrice: 0, variantId: entry.type,
+      variantAssetType: entry.type, variantLabel: signatureMeterCoverFinish(entry), variantGroupLabel: 'Cache compteur' },
+  }];
+}
+
 function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = [], width, depth, layout, salonLabel, reserveOptions = {}) {
   if (selectedOptionType === '__none__') return [];
   if (!rule?.includedType && !selectedOptionType) return [];
   const selectedOption = normalizeComplementaryOptions(rule?.options).find((option) => option.type === selectedOptionType) || null;
   const type = selectedOption?.type || rule?.includedType;
-  const entry = findCatalogEntry(catalogEntries, type);
+  const entry = reserveSizingEntry(findCatalogEntry(catalogEntries, type), findCatalogEntry(catalogEntries, rule?.includedType));
   if (!entry) return [];
 
   const billable = Boolean(selectedOption || rule.chargeIncluded || isSignaturePackLabel(salonLabel));
@@ -16493,7 +16604,9 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
   const basePrice = 0;
   const baseItems = sceneBaseItems(scene);
   const baseItemsConfigured = sceneHasBaseItems(scene);
-  const includedSceneCounts = isSignatureScene(scene) ? new Map() : countSceneItems(safeItems.filter(isIncludedSceneItem));
+  const includedSceneCounts = isSignatureScene(scene)
+    ? countSceneItems(safeItems.filter((item) => item.autoMeterCover))
+    : countSceneItems(safeItems.filter(isIncludedSceneItem));
   const baseItemCounts = baseItemsToCountMap(baseItems);
   const includedCounts = baseItemsConfigured
     ? mergeIncludedCountMaps(includedSceneCounts, baseItemCounts)
@@ -16572,6 +16685,14 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       lines.push(logoLine);
     }
   });
+
+  if (isSignatureScene(scene) && safeItems.some((item) => item.autoPartitionHead && (() => {
+    const visual = item.options?.textureSlotValues?.['signature-head-top-28'];
+    return visual?.visualEnabled !== false && Boolean(visual?.imageUrl || visual?.imageName || visual?.visualPending);
+  })())) {
+    itemsTotal += 97;
+    lines.push({ type: 'signature-head-top-logo', label: 'Logo haut — deux têtes de cloison', quantity: 1, unitPrice: 97, total: 97, reference: '' });
+  }
 
   globalSharedOptionLines(safeItems, catalog).forEach((line) => {
     itemsTotal += line.total;
@@ -16775,6 +16896,7 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
     dimensions: entryDimensions.dimensions || itemDimensions.dimensions,
     modelSize: entryDimensions.modelSize || itemDimensions.modelSize,
     sizeSource: entryDimensions.sizeSource || itemDimensions.sizeSource,
+    depthLocked6cm: Boolean(entryDimensions.depthLocked6cm || itemDimensions.depthLocked6cm),
   };
   if (isTelevisionItem({ ...item, dimensions }) || isTelevisionItem(entry)) {
     dimensions.isTelevision = true;
@@ -16811,7 +16933,12 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
   };
 
   if (isGroup && item.children?.length) {
-    hydrated.children = item.children.map((child) => hydrateSceneItemFromCatalog(child, catalogEntries));
+    hydrated.children = item.children.map((child) => {
+      const currentChild = entry.children?.find((candidate) => candidate.id === child.id)
+        || entry.children?.find((candidate) => candidate.type === child.type);
+      return hydrateSceneItemFromCatalog({ ...child, dimensions: { ...child.dimensions,
+        depthLocked6cm: Boolean(currentChild?.dimensions?.depthLocked6cm || child.dimensions?.depthLocked6cm) } }, catalogEntries);
+    });
   }
 
   return hydrated;
@@ -16865,6 +16992,8 @@ function looseBasePackKey(item = {}) {
 
 function automaticBaseUsageRows(items = [], scene = {}, catalogEntries = [], config = {}) {
   const rows = [];
+  const meterCover = items.find((item) => item.autoMeterCover);
+  if (meterCover) rows.push({ type: meterCover.type, label: meterCover.label, quantity: 1, used: 1, remaining: 0, billable: 0, automatic: true });
   const area = Number(scene?.dimensions?.width || scene?.width_m || 0) * Number(scene?.dimensions?.depth || scene?.depth_m || 0);
   const reserveRule = activeReserveRule(sceneReserveRules(scene), area, isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands);
   if (reserveRule?.includedType) {
@@ -17376,7 +17505,7 @@ function itemMovementLocked(item) {
 }
 
 function itemSystemTransformLocked(item = {}) {
-  return Boolean(isAutomaticReserveItem(item));
+  return Boolean(isAutomaticReserveItem(item) || item?.autoMeterCover);
 }
 
 function isTransformPatch(patch = {}) {
@@ -17434,6 +17563,7 @@ function canRotateSceneItem(item = {}, canEditLockedItems = false) {
 }
 
 function canDeleteSceneItem(item = {}, isAdminViewer = false) {
+  if (item?.autoMeterCover) return false;
   if (isIncludedSceneItem(item) && isWoodReceptionDeskItem(item)) return false;
   if (isIncludedPrestigeArchItem(item) || isIncludedPrestigeHighSignItem(item)) return false;
   if (isAdminViewer) return true;
@@ -19653,12 +19783,12 @@ function itemDefaultSize(item) {
 function childrenBounds(children) {
   if (!children?.length) return null;
   const bounds = children.reduce((acc, child) => {
-    const childBounds = itemPlacementBoundsOverride(child) || itemGroupBounds({ ...child, isGroup: false });
+    const childBounds = itemGroupBounds({ ...child, isGroup: false });
     const corners = [
-      rotatePoint(childBounds.minX, childBounds.minZ, Number(child.rotation || 0)),
-      rotatePoint(childBounds.minX, childBounds.maxZ, Number(child.rotation || 0)),
-      rotatePoint(childBounds.maxX, childBounds.minZ, Number(child.rotation || 0)),
-      rotatePoint(childBounds.maxX, childBounds.maxZ, Number(child.rotation || 0)),
+      rotatePoint(childBounds.minX, childBounds.minZ, -Number(child.rotation || 0)),
+      rotatePoint(childBounds.minX, childBounds.maxZ, -Number(child.rotation || 0)),
+      rotatePoint(childBounds.maxX, childBounds.minZ, -Number(child.rotation || 0)),
+      rotatePoint(childBounds.maxX, childBounds.maxZ, -Number(child.rotation || 0)),
     ];
     const minX = Math.min(...corners.map((corner) => Number(child.x || 0) + corner.x));
     const maxX = Math.max(...corners.map((corner) => Number(child.x || 0) + corner.x));
@@ -19837,9 +19967,17 @@ function wallMountedBlocker(item, wall, width, depth, margin = 0.1) {
 }
 
 function wallCoverPartitionHeadBlocker(item, wall, width, depth, margin = 0.1) {
-  if (margin !== 0 || !isSmclPartitionHeadItem(item)) return null;
+  if (margin !== 0 || (!isPartitionHeadItem(item) && !isAutomaticPartitionHeadItem(item))) return null;
+  if (item.options?.partitionHeadHidden || item.options?.prestigeHidden) return null;
   const itemWall = item.wall || 'back';
   if (itemWall !== wall) return null;
+
+  if (!isSmclPartitionHeadItem(item)) {
+    // Match the rendered wall axis: Signature uses local Z, SIAE its offset 60 cm support.
+    const bounds = wallItemAxisBounds(item, wall);
+    const axis = Number(item.x || 0);
+    return { min: axis + bounds.min, max: axis + bounds.max };
+  }
 
   const coverWidth = Number(smclPartitionHeadPlacementBounds(item)?.width || partitionHeadWallCoverWidth);
   const range = wallAxisLimits(wall, width, depth);

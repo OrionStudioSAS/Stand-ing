@@ -14,7 +14,12 @@ function loadFunction(name, context) {
 function collisionContext() {
   const context = vm.createContext({
     collisionPadding: 0,
+    automaticMeterCoverItems: [],
     wallThickness: 0.06,
+    fixedWallHeight: 2.5,
+    partitionHeadWallCoverWidth: 0.6,
+    wallCoverSurfaceOffset: 0.008,
+    minWallCoverDisplayWidth: 0.7,
     partitionHeadWallGap: 0.02,
     signatureArchPlacementStep: 0.25,
     signatureArchTotemDepth: 0.55,
@@ -24,6 +29,9 @@ function collisionContext() {
     isSignaturePackLabel: (label) => label === 'Signature',
     inferredAssetModelSize: () => [0.7, 0.7, 0.7],
     objectWallTransform: () => null,
+    objectWallSurfaces: () => [],
+    availableWalls: (layout) => ['back', ...(layout === 'left' || layout === 'u' ? ['left'] : []), ...(layout === 'right' || layout === 'u' ? ['right'] : [])].map((id) => ({ id })),
+    roundM2: (value) => Math.round(value * 100) / 100,
     wallItemCenterY: () => 0,
     clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
     hasOwn: (object, key) => Object.hasOwn(object, key),
@@ -43,6 +51,10 @@ function collisionContext() {
     'partitionHeadModelBounds', 'partitionHeadPhysicalBox', 'collidesWithPartitionHeads',
     'collidesWithScene', 'signatureArchWallX', 'signatureArchBackWallZ',
     'placeSignatureArchAgainstBackWall', 'isTransformPatch',
+    'sideWallLength', 'sideWallStartZ', 'sideWallEndZ', 'sideWallCenterZ', 'wallAxisLimits',
+    'freeWallIntervals', 'wallCoverSurfaceOptions', 'wallCoverDisplaySegments', 'wallCoverDisplayIntervals',
+    'wallCoverDisplayBlockers', 'wallCoverSegmentFromInterval', 'wallCoverSegmentId',
+    'wallCoverSegmentSuffix', 'wallCoverSegmentLabel',
   ]) loadFunction(name, context);
   return context;
 }
@@ -99,16 +111,67 @@ test('SIAE wall collisions and banner exclusions follow the off-centre solid sup
       const item = { ...head, label: `Tete De Cloison SIAE ${side}`, wall, modelUrl: 'head.glb', dimensions: { size: [1.11, 2.99, 0.11] } };
       const bounds = context.wallItemAxisBounds(item, wall);
       const blocker = context.wallMountedBlocker(item, wall, 4, 4, 0);
+      const coverBlocker = context.wallCoverPartitionHeadBlocker(item, wall, 4, 4, 0);
       const collision = context.wallItemCollisionBox(item, [], 4, 4);
       assert.ok(Math.abs(blocker.min - (item.x + bounds.min)) < 1e-9);
       assert.ok(Math.abs(blocker.max - (item.x + bounds.max)) < 1e-9);
       assert.equal(collision.minAxis, blocker.min);
       assert.equal(collision.maxAxis, blocker.max);
+      assert.deepEqual({ ...coverBlocker }, { ...blocker });
       assert.ok(Math.abs(blocker.max - blocker.min - 0.6) < 1e-9);
       const center = (bounds.min + bounds.max) / 2;
       const positiveCenter = (side === 'Gauche') !== (wall === 'left');
       assert.equal(center > 0, positiveCenter, `${side} / ${wall}`);
     }
+  }
+});
+
+test('Signature banner exclusions use local Z on every wall instead of the narrow model depth', () => {
+  const context = collisionContext();
+  for (const wall of ['back', 'left', 'right']) {
+    const item = { ...head, label: 'Tete De Cloison - Signature', wall, x: 0.8, dimensions: { size: [0.2, 2.4, 1.4] } };
+    const blocker = context.wallCoverPartitionHeadBlocker(item, wall, 5, 4, 0);
+    assert.ok(Math.abs(blocker.min - 0.1) < 1e-9);
+    assert.ok(Math.abs(blocker.max - 1.5) < 1e-9);
+    assert.equal(context.wallCoverPartitionHeadBlocker(item, wall === 'back' ? 'left' : 'back', 5, 4, 0), null);
+    assert.equal(context.wallCoverPartitionHeadBlocker(item, wall, 5, 4, 0.1), null, 'Cover clipping must not change padded movement collisions');
+  }
+});
+
+test('covers stop at equipped heads on the back wall and Signature heads on side walls', () => {
+  const context = collisionContext();
+  const cases = [
+    { layout: 'u', wall: 'back', expected: 3.76, heads: ['Gauche', 'Droite'].map((side, i) => ({
+      ...head, id: `siae-${i}`, label: `Tete De Cloison SIAE ${side}`, x: i === 0 ? -2.435 : 2.435,
+      wall: 'back', dimensions: { size: [1.11, 2.99, 0.11] },
+    })) },
+    ...['left', 'right'].map((wall) => ({ layout: 'u', wall, expected: 2.52, heads: [{
+      ...head, label: 'Tete De Cloison - Signature', wall, x: 1.28, dimensions: { size: [0.2, 2.4, 1.4] },
+    }] })),
+  ];
+  for (const fixture of cases) {
+    const surfaces = context.wallCoverSurfaceOptions(fixture.layout, 5, 4, fixture.heads, { splitForCovers: true }).filter((surface) => surface.wall === fixture.wall);
+    assert.equal(surfaces.length, 1);
+    const surface = surfaces[0];
+    assert.ok(Math.abs(surface.width - fixture.expected) < 1e-9);
+    assert.equal(surface.visibleWidth, fixture.expected, 'Displayed and billed linear metres match the clipped geometry');
+    const axis = surface.position[fixture.wall === 'back' ? 0 : 2];
+    for (const item of fixture.heads) {
+      const blocker = context.wallCoverPartitionHeadBlocker(item, fixture.wall, 5, 4, 0);
+      assert.ok(axis + surface.width / 2 <= blocker.min + 1e-9 || axis - surface.width / 2 >= blocker.max - 1e-9, 'Banner cannot extend behind a head');
+    }
+  }
+});
+
+test('removed heads free the banner surface, and the legacy SMCL 60 cm exclusion stays intact', () => {
+  const context = collisionContext();
+  for (const key of ['partitionHeadHidden', 'prestigeHidden']) {
+    assert.equal(context.wallCoverPartitionHeadBlocker({ ...head, options: { [key]: true } }, 'back', 5, 4, 0), null);
+  }
+  assert.equal(context.wallCoverPartitionHeadBlocker(reserve, 'back', 5, 4, 0), null);
+  for (const [side, min, max] of [['gauche', -2.5, -1.9], ['droite', 1.9, 2.5]]) {
+    const item = { ...head, label: `Tete de cloison SMCL ${side}` };
+    assert.deepEqual({ ...context.wallCoverPartitionHeadBlocker(item, 'back', 5, 4, 0) }, { min, max });
   }
 });
 

@@ -19,12 +19,13 @@ export function createTechnicalSvgContext(width, height) {
   const stack = [];
   let path = [];
   let serial = 0;
+  let objectGroup = null;
   const transform = () => `matrix(${[state.matrix.a, state.matrix.b, state.matrix.c, state.matrix.d, state.matrix.e, state.matrix.f].join(' ')})`;
   const append = (node) => {
     node.setAttribute('transform', transform());
     let wrapped = node;
     state.clips.forEach((id) => { const group = element('g', { 'clip-path': `url(#${id})` }); group.append(wrapped); wrapped = group; });
-    svg.append(wrapped);
+    (objectGroup || svg).append(wrapped);
   };
   const paint = (node, fill) => {
     node.setAttribute('fill', fill ? state.fillStyle : 'none');
@@ -37,6 +38,13 @@ export function createTechnicalSvgContext(width, height) {
   };
   const ctx = {
     svg,
+    beginObject(id, kind = 'item', edit = {}, label = '') {
+      objectGroup = element('g', { 'data-bat-id': id, 'data-bat-kind': kind, 'data-bat-label': label,
+        transform: `translate(${Number(edit.dx || 0) * width} ${Number(edit.dy || 0) * height})`,
+        ...(edit.hidden ? { display: 'none' } : {}) });
+      svg.append(objectGroup);
+    },
+    endObject() { objectGroup = null; },
     save() { stack.push({ ...state, matrix: DOMMatrix.fromMatrix(state.matrix), clips: [...state.clips], dash: [...state.dash] }); },
     restore() { if (stack.length) state = stack.pop(); },
     scale(x, y) { state.matrix = state.matrix.scale(x, y); },

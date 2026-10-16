@@ -6818,6 +6818,12 @@ img.asset-thumb {
   gap: 2px;
 }
 
+.color-group-color-copy input { width: 100%; min-width: 0; padding: 5px 7px; border: 1px solid #dce2ea; border-radius: 4px; color: #182234; background: #fff; font: inherit; }
+.color-group-color-copy input + input { color: #697484; font-size: .76rem; }
+.asset-library-pagination { flex-wrap: wrap; }
+.asset-library-pagination label { display: flex; align-items: center; gap: 8px; }
+.asset-library-pagination select { min-height: 33px; padding: 0 8px; border: 1px solid #dce2ea; border-radius: 5px; color: #0e2d69; background: #fff; }
+
 .color-group-drag-handle,
 .color-group-order-buttons button {
   display: grid;
@@ -14471,6 +14477,36 @@ img.asset-thumb {
 .asset-library-pagination { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 25px 0 5px; color: #657287; font-size: 12px; }
 .asset-library-pagination button { min-height: 33px; border: 1px solid #dce2ea; border-radius: 5px; padding: 0 12px; color: #0e2d69; background: #fff; cursor: pointer; }
 .asset-library-pagination button:disabled { opacity: .45; cursor: default; }
+
+.bat-editor { position: fixed; inset: 0; z-index: 5000; display: flex; flex-direction: column; color: #172033; background: #f4f5f8; font-size: 13px; }
+.bat-editor > header, .bat-editor > footer { display: flex; align-items: center; gap: 14px; padding: 16px 24px; background: #fff; border-bottom: 1px solid #dce2ea; }
+.bat-editor > header h2 { margin: 3px 0 0; font-size: 18px; }
+.bat-editor > header > span, .bat-editor > footer > small { margin-left: auto; color: #697484; }
+.bat-editor > footer { border-top: 1px solid #dce2ea; border-bottom: 0; }
+.bat-editor > footer > small { margin: 0 auto 0 0; }
+.bat-editor button { display: inline-flex; justify-content: center; align-items: center; gap: 7px; min-height: 36px; padding: 8px 12px; border: 1px solid #dce2ea; border-radius: 6px; background: #fff; color: #132c65; cursor: pointer; }
+.bat-editor button:disabled { opacity: .5; cursor: default; }
+.bat-editor button.primary, .bat-editor nav button.active { background: #102e6c; color: #fff; }
+.bat-editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 0; flex: 1; }
+.bat-editor-layout main { overflow: auto; padding: 24px; }
+.bat-editor-layout nav { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.bat-editor-paper { background: #fff; box-shadow: 0 4px 20px #152d4714; touch-action: none; }
+.bat-editor-paper > svg { display: block; width: 100%; height: auto; }
+.bat-editor-paper [data-bat-id] { cursor: move; }
+.bat-editor-paper [data-bat-id]:hover { filter: drop-shadow(0 0 3px #5278c6); }
+.bat-editor-paper .bat-editor-selected { filter: drop-shadow(0 0 3px #0057a8); }
+.bat-editor-paper .bat-editor-selected > [data-bat-hit] { stroke: #0057a8; stroke-width: 1.5; stroke-dasharray: 6 4; }
+.bat-editor-layout aside { overflow: auto; display: flex; flex-direction: column; align-items: stretch; gap: 14px; padding: 24px 18px; background: #fff; border-left: 1px solid #dce2ea; }
+.bat-editor-layout fieldset { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 0; margin: 0; border: 0; }
+.bat-editor-layout h3 { margin: 0; font-size: 14px; }
+.bat-editor-layout p { margin: 0; color: #697484; line-height: 1.6; }
+.bat-editor-layout label { display: grid; gap: 8px; }
+.bat-editor-layout input, .bat-editor-layout select, .bat-editor-layout textarea { box-sizing: border-box; min-width: 0; width: 100%; padding: 8px; border: 1px solid #dce2ea; border-radius: 5px; color: #172033; background: #fff; font: inherit; }
+.bat-editor-layout textarea { min-height: 110px; resize: vertical; }
+.bat-editor-layout aside section { display: grid; gap: 12px; padding: 16px 0; border-top: 1px solid #dce2ea; border-bottom: 1px solid #dce2ea; }
+.bat-editor-arrows { display: flex; gap: 6px; }
+.bat-editor-layout .bat-editor-error { color: #b42318; }
+@media (max-width: 760px) { .bat-editor-layout { grid-template-columns: minmax(0, 1fr); overflow: auto; } .bat-editor-layout main { overflow: visible; padding: 12px; } .bat-editor-layout aside { overflow: visible; border-top: 1px solid #dce2ea; } .bat-editor > header, .bat-editor > footer { padding: 10px 12px; flex-wrap: wrap; } .bat-editor > header > span { display: none; } .bat-editor > header > button { margin-left: auto; } }
 @media (max-width: 1250px) { .asset-library-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 850px) { .asset-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .asset-library-tabs { gap: 15px; } }
 @media (max-width: 550px) { .asset-library-tabs-row { align-items: stretch; flex-direction: column-reverse; } .asset-library-add { align-self: flex-end; } .asset-library-tabs { width: 100%; } .asset-library-search { flex-basis: 100%; } .asset-library-filters > .asset-library-sort { margin-left: 0; } .asset-library-grid { grid-template-columns: 1fr; } }

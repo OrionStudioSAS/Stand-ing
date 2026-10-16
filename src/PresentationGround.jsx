@@ -38,9 +38,9 @@ const fragmentShader = `
 
   void main() {
     // Physical-scale detail, independent of the size of the presentation plane.
-    float grain = filteredGrain(vGroundPosition * 0.7) * 0.004
-      + filteredGrain(vGroundPosition * 7.0) * 0.007
-      + filteredGrain(vGroundPosition * 90.0) * 0.004;
+    float grain = filteredGrain(vGroundPosition * 2.8) * 0.003
+      + filteredGrain(vGroundPosition * 28.0) * 0.006
+      + filteredGrain(vGroundPosition * 180.0) * 0.004;
     float fade = 1.0 - smoothstep(9.0, 19.6, length(vGroundPosition));
     // Linear-space charcoal; convert once to the renderer's output colour space.
     gl_FragColor = vec4(vec3(0.0423, 0.0423, 0.0437) + grain, fade);

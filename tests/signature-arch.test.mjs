@@ -186,6 +186,7 @@ test('Signature arch moves in 25 cm steps along the back wall without changing i
     itemRotationLocked: () => false,
     sceneItems: items,
     automaticReserveItems: [],
+    automaticMeterCoverItems: [],
     automaticPartitionHeadItems: [],
     collidesWithScene: () => false,
     width: 4,

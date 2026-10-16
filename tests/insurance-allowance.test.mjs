@@ -36,6 +36,23 @@ function pricingApi() {
   return api;
 }
 
+test('Signature top logos cost 97 EUR once for both heads, including different artwork, and use the allowance', () => {
+  const api = pricingApi();
+  const scene = { offer: 'Signature', dimensions: { width: 4, depth: 3 } };
+  const catalog = [{ type: 'head', label: 'Tête de cloison', price: 0 }];
+  const head = (side, visual) => ({ id: side, type: 'head', autoPartitionHead: true, options: { textureSlotValues: { 'signature-head-top-28': visual } } });
+  for (const items of [[head('left', { imageUrl: '/a.png' })], [head('left', { imageUrl: '/a.png' }), head('right', { imageUrl: '/b.png' })]]) {
+    const pricing = api.calculateScenePricing({ catalog, items, scene });
+    const lines = pricing.lines.filter((line) => line.type === 'signature-head-top-logo');
+    assert.equal(lines.length, 1); assert.equal(lines[0].quantity, 1); assert.equal(lines[0].total, 97);
+    assert.equal(pricing.allowanceApplied, 97); assert.equal(pricing.total, 0);
+  }
+  for (const items of [[], [head('left', {})], [head('left', { imageUrl: '/a.png', visualEnabled: false })]]) {
+    assert.equal(api.calculateScenePricing({ catalog, items, scene }).lines.some((line) => line.type === 'signature-head-top-logo'), false);
+  }
+  assert.equal(api.calculateScenePricing({ catalog, items: [head('left', { imageUrl: '/a.png' })], scene: { ...scene, offer: 'Équipé' } }).lines.some((line) => line.type === 'signature-head-top-logo'), false);
+});
+
 test('Signature covers furniture insurance before charging only the combined excess', () => {
   const api = pricingApi();
   for (const [price, total, remaining] of [[700, 0, 15.26], [715.26, 0, 0], [750, 34.74, 0]]) {
