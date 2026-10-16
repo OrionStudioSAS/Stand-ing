@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { reserveSizingEntry } from '../src/reserveSizing.js';
 import { manualOrderRowsToPricingLines } from '../src/manualOrderLines.js';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -206,7 +205,6 @@ test('allowance scenes inherit automatic reserve rules and charge the default re
   assert.equal(rules.small.chargeIncluded, true);
 
   const itemApi = vm.createContext({
-    reserveSizingEntry,
     isSignaturePackLabel: () => false,
     reserveDoorColorForPack: () => '',
     normalizeComplementaryOptions: api.normalizeComplementaryOptions,

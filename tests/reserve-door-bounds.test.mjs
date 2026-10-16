@@ -21,22 +21,26 @@ function runtime() {
   return api;
 }
 
-test('current door depth flags reach cached group and saved scene children, even when standalone doors are not assigned to the pack', () => {
+test('manual group door flags and composition are not overwritten from standalone source assets', () => {
   const api = runtime();
   const door = { type: 'door', dimensions: { size: [1, 2.5, 0.25], depthLocked6cm: true } };
   const group = { type: 'reserve', dimensions: { isGroup: true, groupSize: [2.2, 2.5, 1], children: [{ ...door, id: 'door-child', dimensions: { ...door.dimensions, depthLocked6cm: false } }] } };
   const entry = api.assetToCatalogEntry(group, [door, group]);
-  assert.equal(entry.children[0].dimensions.depthLocked6cm, true);
+  assert.equal(entry.children, group.dimensions.children);
+  assert.equal(entry.children[0].dimensions.depthLocked6cm, false);
   const saved = { type: 'reserve', isGroup: true, children: group.dimensions.children };
-  assert.equal(api.hydrateSceneItemFromCatalog(saved, [entry]).children[0].dimensions.depthLocked6cm, true);
+  assert.equal(api.hydrateSceneItemFromCatalog(saved, [entry]).children[0].dimensions.depthLocked6cm, false);
   assert.equal(saved.children[0].dimensions.depthLocked6cm, false, 'Existing saved data is not mutated');
 });
 
-test('six-centimetre rear door geometry rotates like the rendered Three.js model instead of adding the handle/door-opening depth to banner deductions', () => {
+test('manual group bounds keep the original signed rotation convention and saved rear-depth setting', () => {
   const api = runtime();
   const wall = { type: 'wall', x: -0.5, z: 0.5, rotation: 0, dimensions: { size: [1, 2.5, 0.06] } };
   const front = { ...wall, x: 0.5 };
   const door = { type: 'door', x: 0.875, z: 0, rotation: -90, dimensions: { size: [1, 2.5, 0.25], depthLocked6cm: true } };
+  const doorBounds = api.childrenBounds([door]);
+  assert.ok(Math.abs(doorBounds.minX - 0.75) < 1e-9);
+  assert.ok(Math.abs(doorBounds.maxX - 0.81) < 1e-9);
   const bounds = api.childrenBounds([wall, front, door]);
   assert.ok(Math.abs(bounds.minX + 1) < 1e-9);
   assert.ok(Math.abs(bounds.maxX - 1) < 1e-9);

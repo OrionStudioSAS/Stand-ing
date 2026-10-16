@@ -67,7 +67,6 @@ import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packA
 import { createTechnicalPlanBlob, exportTechnicalPdf, standWallPanelRequirements } from './technicalExport.js';
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
 import { t as tRaw } from './i18n.js';
-import { reserveSizingCatalog, reserveSizingRule, reserveSizingEntry } from './reserveSizing.js';
 import TechnicalPlanEditor from './TechnicalPlanEditor.jsx';
 import { loadTechnicalPlanEdits } from './data/technicalPlanStore.js';
 import './styles.css';
@@ -1226,15 +1225,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   }, [selectedId]);
 
   const availableCatalog = useMemo(() => {
+    const reserveTypes = configuredReserveAssetTypes(sceneReserveRules(initialScene));
     const dynamicEntries = objectBank
       .filter((asset) => asset.is_active)
       .filter((asset) => !asset.dimensions?.isColorGroup)
-      .filter((asset) => assetMatchesPack(asset, assetPackLabel))
+      .filter((asset) => assetMatchesPack(asset, assetPackLabel) || reserveTypes.has(asset.type))
       .map((asset) => assetToCatalogEntry(asset, objectBank))
       .filter(Boolean);
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
-    return sortCatalogEntries(uniqueCatalogEntries(reserveSizingCatalog(entries, objectBank, assetPackLabel)));
-  }, [objectBank, assetPackLabel]);
+    return sortCatalogEntries(uniqueCatalogEntries(entries));
+  }, [objectBank, assetPackLabel, initialScene]);
   const placeableCatalog = useMemo(
     () => availableCatalog.filter((entry) => effectiveAdminViewer || !entry.dimensions?.adminOnly),
     [availableCatalog, effectiveAdminViewer],
@@ -1248,8 +1248,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const ledRailEntries = useMemo(() => scenePackBenefits(initialScene).mode === 'allowance' ? [] : ledRailCatalogEntries(availableCatalog), [availableCatalog, initialScene]);
   const ledSpotCount = ledSpotCountForArea(area);
   const reserveRules = useMemo(() => sceneReserveRules(initialScene), [initialScene]);
-  const activeReserveRuleConfig = useMemo(() => reserveSizingRule(activeReserveRule(reserveRules, area, isSignatureStand ? signatureReserveRuleBands : reserveRuleBands), availableCatalog, assetPackLabel, layout, width, depth), [reserveRules, area, isSignatureStand, availableCatalog, assetPackLabel, layout, width, depth]);
-  const effectiveReserveOptionType = reserveOptionType === '__legacy__' ? normalizeComplementaryOptions(activeReserveRuleConfig?.options)[0]?.type || '' : reserveOptionType;
+  const activeReserveRuleConfig = useMemo(() => activeReserveRule(reserveRules, area, isSignatureStand ? signatureReserveRuleBands : reserveRuleBands), [reserveRules, area, isSignatureStand]);
+  const effectiveReserveOptionType = configuredReserveOptionType(activeReserveRuleConfig, reserveOptionType);
   const partitionHeadRules = useMemo(() => scenePartitionHeadRules(initialScene), [initialScene]);
   const activePartitionHeadRuleConfig = useMemo(() => activePartitionHeadRule(partitionHeadRules, area, layout), [partitionHeadRules, area, layout]);
   const effectivePartitionHeadSides = useMemo(
@@ -8081,9 +8081,7 @@ function reserveChoiceRow({ type, label, entry, included = false, billable = fal
     area,
     areaLabel: area ? `${formatAreaValue(area)} m²` : '',
     sizeName: reserveSizeName(area, fullLabel),
-    description: [entry?.dimensions?.reserveSizingOnly
-      ? `${entry.dimensions.reserveLayout === 'back' || entry.dimensions.reserveLayout === 'u' ? `1m × ${formatAreaValue(area)}m` : `${formatAreaValue(area)}m × 1m`}`
-      : reserveSizeDescription(area, fullLabel), fullLabel.match(/\(\+[^)]+\)/)?.[0]].filter(Boolean).join(' · '),
+    description: reserveSizeDescription(area, fullLabel),
     recommended: area >= 1.75 && area <= 2.5,
   };
 }
@@ -10817,15 +10815,16 @@ function AdminSalonPresetConfigurator({ salon, salons = [], assets, initialOffer
 
 function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraftChange }) {
   const availableCatalog = useMemo(() => {
+    const reserveTypes = configuredReserveAssetTypes(initialDraft?.reserveRules || preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules);
     const dynamicEntries = (assets || [])
       .filter((asset) => asset.is_active)
       .filter((asset) => !asset.dimensions?.isColorGroup)
-      .filter((asset) => assetMatchesPack(asset, offer?.name))
+      .filter((asset) => assetMatchesPack(asset, offer?.name) || reserveTypes.has(asset.type))
       .map((asset) => assetToCatalogEntry(asset, assets))
       .filter(Boolean);
     const entries = [...dynamicEntries, ...nativeCatalogEntries()];
-    return sortCatalogEntries(uniqueCatalogEntries(reserveSizingCatalog(entries, assets, offer?.name)));
-  }, [assets, offer?.name]);
+    return sortCatalogEntries(uniqueCatalogEntries(entries));
+  }, [assets, offer?.name, initialDraft?.reserveRules, preset.base_config]);
   const initialScene = useMemo(() => initialDraft || presetToEditableScene(preset, availableCatalog), []);
   const initialWidth = initialScene.dimensions.width;
   const initialDepth = initialScene.dimensions.depth;
@@ -14907,14 +14906,15 @@ function businessDaysSince(value) {
 
 function sceneAdminCatalog(assets = [], scene = {}) {
   const packLabel = sceneOfferLabel(scene);
+  const reserveTypes = configuredReserveAssetTypes(sceneReserveRules(scene));
   const dynamicEntries = (assets || [])
     .filter((asset) => asset.is_active)
     .filter((asset) => !asset.dimensions?.isColorGroup)
-    .filter((asset) => assetMatchesPack(asset, packLabel))
+    .filter((asset) => assetMatchesPack(asset, packLabel) || reserveTypes.has(asset.type))
     .map((asset) => assetToCatalogEntry(asset, assets))
     .filter(Boolean);
   const entries = [...dynamicEntries, ...nativeCatalogEntries()];
-  return sortCatalogEntries(uniqueCatalogEntries(reserveSizingCatalog(entries, assets, packLabel)));
+  return sortCatalogEntries(uniqueCatalogEntries(entries));
 }
 
 function sceneAdminItems(scene = {}, catalogEntries = []) {
@@ -14930,10 +14930,8 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const options = { ...(scene.source_payload?.options || {}), ...(scene.options || {}) };
   const manualItems = sceneAdminItems(scene, catalogEntries).filter((item) => !item.autoMeterCover);
   const automaticMeterCoverItems = makeAutomaticMeterCoverItems(packLabel, options.signatureMeterCoverType, catalogEntries, width, depth, layout, manualItems);
-  const reserveRule = reserveSizingRule(activeReserveRule(sceneReserveRules(scene), area, isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands), catalogEntries, packLabel, layout, width, depth);
-  const reserveOption = options.reserveOptionType === '__legacy__'
-    ? normalizeComplementaryOptions(reserveRule?.options)[0]?.type || ''
-    : options.reserveOptionType || '';
+  const reserveRule = activeReserveRule(sceneReserveRules(scene), area, isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands);
+  const reserveOption = configuredReserveOptionType(reserveRule, options.reserveOptionType);
   const partitionRule = activePartitionHeadRule(scenePartitionHeadRules(scene), area, layout);
   const partitionSides = isSignatureScene(scene) ? { left: true, right: true } : partitionHeadEnabledSides(partitionRule, {
     left: hasOwn(options, 'partitionHeadLeftEnabled') ? Boolean(options.partitionHeadLeftEnabled) : null,
@@ -16091,19 +16089,14 @@ function assetToCatalogEntry(asset, allAssets = []) {
   }
 
   if (asset.dimensions?.isGroup) {
-    const children = (asset.dimensions?.children || []).map((child) => {
-      const current = allAssets.find((candidate) => candidate.type === child.type);
-      return { ...child, dimensions: { ...(current?.dimensions || {}), ...(child.dimensions || {}),
-        depthLocked6cm: Boolean(current?.dimensions?.depthLocked6cm || child.dimensions?.depthLocked6cm) } };
-    });
     return {
       type: asset.type,
       label: asset.label,
       icon: Layers,
       color: asset.dimensions?.color || '#dfe8ec',
       isGroup: true,
-      groupSize: asset.dimensions?.groupSize || computeGroupSize(children),
-      children,
+      groupSize: asset.dimensions?.groupSize || computeGroupSize(asset.dimensions?.children || []),
+      children: asset.dimensions?.children || [],
       placementRule: effectivePlacementRule(asset),
       movementLocked: Boolean(asset.dimensions?.movementLocked),
       deleteLocked: Boolean(asset.dimensions?.deleteLocked),
@@ -16203,7 +16196,6 @@ function dragCoordinate(value) {
 }
 
 function assetMatchesPack(asset, packLabel = '') {
-  if (['signature', 'equipe'].includes(normalizePackLabel(packLabel)) && asset.dimensions?.isGroup && isReserveCatalogEntry(asset)) return true;
   const packs = assetPacks(asset);
   if (!packs.length) return false;
   if (!normalizeTextValue(packLabel)) return true;
@@ -16354,6 +16346,21 @@ function reserveOptionPrice(option = {}, entry = null, salonLabel = '') {
   return firstPriceValue(option.price, assetUnitPrice(entry, salonLabel), 0);
 }
 
+function configuredReserveAssetTypes(rules = {}) {
+  return new Set(Object.values(rules || {}).flatMap((rule) => [
+    rule?.includedType || rule?.included_type,
+    rule?.upgradeType || rule?.upgrade_type,
+    ...normalizeComplementaryOptions(rule?.options || rule?.complementaryOptions || rule?.complementary_options).map((option) => option.type),
+  ]).filter((type) => type && !String(type).startsWith('reserve-sized-')));
+}
+
+function configuredReserveOptionType(rule, selectedType = '') {
+  if (selectedType === '__none__') return selectedType;
+  const options = normalizeComplementaryOptions(rule?.options);
+  if (selectedType === '__legacy__') return options[0]?.type || '';
+  return options.some((option) => option.type === selectedType) ? selectedType : '';
+}
+
 function isReserveCatalogEntry(entry = {}) {
   const safeEntry = entry || {};
   const text = `${safeEntry.type || ''} ${safeEntry.label || ''} ${safeEntry.dimensions?.category || ''}`
@@ -16406,7 +16413,7 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
   if (!rule?.includedType && !selectedOptionType) return [];
   const selectedOption = normalizeComplementaryOptions(rule?.options).find((option) => option.type === selectedOptionType) || null;
   const type = selectedOption?.type || rule?.includedType;
-  const entry = reserveSizingEntry(findCatalogEntry(catalogEntries, type), findCatalogEntry(catalogEntries, rule?.includedType));
+  const entry = findCatalogEntry(catalogEntries, type);
   if (!entry) return [];
 
   const billable = Boolean(selectedOption || rule.chargeIncluded || isSignaturePackLabel(salonLabel));
@@ -16896,7 +16903,6 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
     dimensions: entryDimensions.dimensions || itemDimensions.dimensions,
     modelSize: entryDimensions.modelSize || itemDimensions.modelSize,
     sizeSource: entryDimensions.sizeSource || itemDimensions.sizeSource,
-    depthLocked6cm: Boolean(entryDimensions.depthLocked6cm || itemDimensions.depthLocked6cm),
   };
   if (isTelevisionItem({ ...item, dimensions }) || isTelevisionItem(entry)) {
     dimensions.isTelevision = true;
@@ -16933,12 +16939,7 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
   };
 
   if (isGroup && item.children?.length) {
-    hydrated.children = item.children.map((child) => {
-      const currentChild = entry.children?.find((candidate) => candidate.id === child.id)
-        || entry.children?.find((candidate) => candidate.type === child.type);
-      return hydrateSceneItemFromCatalog({ ...child, dimensions: { ...child.dimensions,
-        depthLocked6cm: Boolean(currentChild?.dimensions?.depthLocked6cm || child.dimensions?.depthLocked6cm) } }, catalogEntries);
-    });
+    hydrated.children = item.children.map((child) => hydrateSceneItemFromCatalog(child, catalogEntries));
   }
 
   return hydrated;
@@ -19783,12 +19784,12 @@ function itemDefaultSize(item) {
 function childrenBounds(children) {
   if (!children?.length) return null;
   const bounds = children.reduce((acc, child) => {
-    const childBounds = itemGroupBounds({ ...child, isGroup: false });
+    const childBounds = itemPlacementBoundsOverride(child) || itemGroupBounds({ ...child, isGroup: false });
     const corners = [
-      rotatePoint(childBounds.minX, childBounds.minZ, -Number(child.rotation || 0)),
-      rotatePoint(childBounds.minX, childBounds.maxZ, -Number(child.rotation || 0)),
-      rotatePoint(childBounds.maxX, childBounds.minZ, -Number(child.rotation || 0)),
-      rotatePoint(childBounds.maxX, childBounds.maxZ, -Number(child.rotation || 0)),
+      rotatePoint(childBounds.minX, childBounds.minZ, Number(child.rotation || 0)),
+      rotatePoint(childBounds.minX, childBounds.maxZ, Number(child.rotation || 0)),
+      rotatePoint(childBounds.maxX, childBounds.minZ, Number(child.rotation || 0)),
+      rotatePoint(childBounds.maxX, childBounds.maxZ, Number(child.rotation || 0)),
     ];
     const minX = Math.min(...corners.map((corner) => Number(child.x || 0) + corner.x));
     const maxX = Math.max(...corners.map((corner) => Number(child.x || 0) + corner.x));

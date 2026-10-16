@@ -265,7 +265,7 @@ test('the BAT uses the moved reserve and refreshes the TV surface from its curre
     sceneOfferLabel: (scene) => scene.offer || '',
     isSignatureScene: () => false, reserveRuleBands: [], signatureReserveRuleBands: [],
     sceneReserveRules: () => [], activeReserveRule: () => ({}),
-    reserveSizingRule: (rule) => rule,
+    configuredReserveOptionType: (_rule, type) => type || '',
     scenePartitionHeadRules: () => [], activePartitionHeadRule: () => null,
     partitionHeadEnabledSides: () => ({}), hasOwn: (value, key) => Object.hasOwn(value, key),
     ledRailCatalogEntries: () => [], makeAutomaticPartitionHeadItems: () => [],
