@@ -17,6 +17,7 @@ function colorContext() {
     colorGroupMatchesPack: (group, pack) => group.dimensions?.packs?.includes(pack),
     counterOptionalColorPrice: 79,
     normalizePackLabel: (label) => String(label || '').toLowerCase(),
+    assetMatchesPack: (asset, pack) => asset.dimensions?.packs?.includes(pack),
   });
   for (const name of [
     'slugForType', 'normalizeColorId', 'normalizeTextValue', 'moveArrayItem',
@@ -24,6 +25,8 @@ function colorContext() {
     'colorGroupsFromOptions', 'isSignaturePackLabel', 'packColorPalette',
     'colorGroupEntryForOption', 'colorChoicesForConfigOption', 'defaultColorChoiceForConfigOption',
     'selectedColorChoiceForConfigOption', 'counterWoodFinish', 'counterWhiteFinish',
+    'normalizeAssetConfigOptions', 'itemConfigColorOptions', 'colorConfigOptionUsesCounterPalette',
+    'uniqueTextValues', 'variantOptionLinkedAssetTypes', 'variantPrimaryAssetTypes', 'counterColorOptionsForItem',
     'isHiddenCounterFinish', 'counterFinishOptions',
   ]) loadFunction(name, context);
   return context;
@@ -61,6 +64,29 @@ test('Color group reordering preserves IDs, base/free flags, files and pack assi
   vm.runInContext("reorderColorGroupColor('blue', 'blue'); reorderColorGroupColor('missing', 'red')", context);
   assert.equal(draft, unchanged);
   assert.deepEqual(ids(group.dimensions.colorOptions), ['red', 'gray', 'blue']);
+});
+
+test('An explicitly linked counter palette supplies every configured color on Equipe despite its global pack assignments', () => {
+  const context = colorContext();
+  const palette = { ...group, dimensions: { ...group.dimensions, colorGroupPrice: 79,
+    colorOptions: [{ id: 'white', name: 'Blanc craie', image: '/white.jpg' }, { id: 'wood', name: 'Chêne Nebraska', image: '/wood.jpg' }, ...group.dimensions.colorOptions] } };
+  const option = { id: 'finish', label: 'Couleurs', type: 'color', colorGroupType: palette.type, price: 0 };
+  const counter = { type: 'counter-1m', dimensions: {} };
+  const variants = { type: 'counter-group', is_active: true, dimensions: { isVariantGroup: true, packs: ['Équipé'], variantAssetTypes: [counter.type], configOptions: [option] } };
+  const assets = [counter, variants, palette];
+  const colors = context.counterColorOptionsForItem(counter, assets, 'Équipé', []);
+  assert.deepEqual(ids(colors), ['white', 'wood', 'red', 'gray', 'blue']);
+  assert.ok(colors.every((color) => color.price === 0 && color.configOptionId === option.id));
+  const finishes = context.counterFinishOptions(colors);
+  assert.deepEqual(ids(finishes), ids(colors));
+  assert.equal(finishes[1].mode, 'color', 'A configured wood texture must be applied, not replaced by the native wood');
+  assert.equal(finishes[1].image, '/wood.jpg');
+  assert.equal(context.selectedColorChoiceForConfigOption(option, assets, 'Équipé', { id: `${palette.type}:blue` }).id, 'blue');
+  const inactive = { ...palette, is_active: false };
+  assert.equal(context.counterColorOptionsForItem(counter, [counter, variants, inactive], 'Équipé').length, 0);
+  const fallback = [{ id: 'legacy' }];
+  assert.equal(context.counterColorOptionsForItem(counter, [counter], 'Équipé', fallback), fallback);
+  assert.equal(context.colorOptionsForUsage(assets, 'Équipé', 'counter', []).length, 0, 'Global pack palettes remain pack-filtered');
 });
 
 test('Imported colors without IDs acquire stable identities before being reordered', () => {

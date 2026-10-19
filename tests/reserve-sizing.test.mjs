@@ -17,7 +17,7 @@ function runtime() {
     assetUnitPrice: () => 0, findCatalogEntry: (entries, type) => entries.find((entry) => entry.type === type),
     makeItem: (_type, _width, _depth, _layout, entry) => structuredClone(entry), constrainItem: (item) => item,
   });
-  for (const name of ['normalizeComplementaryOptions', 'configuredReserveAssetTypes', 'configuredReserveOptionType', 'firstPriceValue', 'reserveOptionPrice', 'makeAutomaticReserveItems']) {
+  for (const name of ['normalizeComplementaryOptions', 'configuredReserveAssetTypes', 'configuredReserveOptionType', 'reserveAreaFromText', 'isReserveCatalogEntry', 'reserveRuleWithPackChoices', 'firstPriceValue', 'reserveOptionPrice', 'makeAutomaticReserveItems']) {
     const start = source.indexOf(`function ${name}(`);
     vm.runInContext(source.slice(start, source.indexOf('\n}\n', start) + 2), api);
   }
@@ -32,6 +32,33 @@ test('only manual groups explicitly referenced by pack rules are requested, neve
   assert.equal(api.configuredReserveAssetTypes({ medium: { ...rule, options: [] } }).size, 1);
   assert.equal(api.configuredReserveAssetTypes({ medium: { includedType: 'reserve-sized-left-2m2' } }).size, 0);
   assert.equal(JSON.stringify(rule), before);
+});
+
+test('Signature offers only existing reserves referenced in other pack bands, charging 222 per extra square metre', () => {
+  const api = runtime();
+  const rules = Object.fromEntries(groups.slice(0, 3).map((group, index) => [`signature-${index + 1}m2`, { id: `signature-${index + 1}m2`, includedType: group.type, includedLabel: group.label, options: [] }]));
+  const before = JSON.stringify({ rules, groups });
+  for (const baseArea of [1, 2, 3]) {
+    const baseRule = rules[`signature-${baseArea}m2`];
+    const choices = api.reserveRuleWithPackChoices(baseRule, rules, groups, 'Signature');
+    assert.equal(choices.includedType, groups[baseArea - 1].type);
+    assert.equal(choices.options.length, 2);
+    for (const option of choices.options) {
+      const expected = groups.find((entry) => entry.type === option.type);
+      const expectedArea = api.reserveAreaFromText(expected.label);
+      assert.equal(option.price, Math.max(0, expectedArea - baseArea) * 222);
+      const [item] = api.makeAutomaticReserveItems(choices, option.type, groups, 8, 4, 'left', 'Signature');
+      assert.equal(item.type, expected.type);
+      assert.equal(item.options.unitPrice, option.price);
+      assert.equal(JSON.stringify(item.children), JSON.stringify(expected.children));
+    }
+    assert.equal(choices.options.some((option) => option.type === groups[3].type), false);
+    assert.equal(api.reserveRuleWithPackChoices(baseRule, rules, groups, 'Équipé'), baseRule);
+    assert.equal(api.reserveRuleWithPackChoices(baseRule, rules, groups, 'Confort'), baseRule);
+  }
+  const noReserve = { id: 'signature-none', includedType: '', options: [] };
+  assert.equal(api.reserveRuleWithPackChoices(noReserve, rules, groups, 'Signature'), noReserve);
+  assert.equal(JSON.stringify({ rules, groups }), before);
 });
 
 test('manual reserve composition, door offsets, accessories and configured supplements are identical across packs', () => {

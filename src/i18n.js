@@ -259,7 +259,7 @@ export const translations = {
     validation_supplements_title: 'Suppléments facturés AMCO',
     validation_no_supplements: 'Aucun supplément : la configuration reste à 0 € HT.',
     validation_confirmed_admin_note: 'Scène confirmée côté admin. Vous pouvez encore la modifier.',
-    validation_confirmed_client_note: 'Votre scène est confirmée. Vous pouvez encore la modifier tant que l’équipe Stand-ING ne l’a pas verrouillée.',
+    validation_confirmed_client_note: 'Votre scène est confirmée. Vous pouvez encore la consulter.',
     validation_confirm_loading: 'Confirmation...',
     validation_confirm_update: 'Mettre à jour la scène confirmée',
     validation_confirm_btn: 'Confirmer la scène',

@@ -1248,7 +1248,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const ledRailEntries = useMemo(() => scenePackBenefits(initialScene).mode === 'allowance' ? [] : ledRailCatalogEntries(availableCatalog), [availableCatalog, initialScene]);
   const ledSpotCount = ledSpotCountForArea(area);
   const reserveRules = useMemo(() => sceneReserveRules(initialScene), [initialScene]);
-  const activeReserveRuleConfig = useMemo(() => activeReserveRule(reserveRules, area, isSignatureStand ? signatureReserveRuleBands : reserveRuleBands), [reserveRules, area, isSignatureStand]);
+  const activeReserveRuleConfig = useMemo(() => reserveRuleWithPackChoices(
+    activeReserveRule(reserveRules, area, isSignatureStand ? signatureReserveRuleBands : reserveRuleBands),
+    reserveRules, availableCatalog, assetPackLabel,
+  ), [reserveRules, area, isSignatureStand, availableCatalog, assetPackLabel]);
   const effectiveReserveOptionType = configuredReserveOptionType(activeReserveRuleConfig, reserveOptionType);
   const partitionHeadRules = useMemo(() => scenePartitionHeadRules(initialScene), [initialScene]);
   const activePartitionHeadRuleConfig = useMemo(() => activePartitionHeadRule(partitionHeadRules, area, layout), [partitionHeadRules, area, layout]);
@@ -1553,7 +1556,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       return undefined;
     }
 
-    if (readOnly) return undefined;
+    if (readOnly || !objectBankLoaded) return undefined;
 
     const timer = window.setTimeout(() => {
       const alreadyConfigured = saveState === 'configured';
@@ -1565,7 +1568,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly, objectBankLoaded]);
 
   const persistWallCoversNow = (nextWallCovers) => {
     if (readOnly) return;
@@ -2904,6 +2907,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             partitionHeadUploadState={itemOptionState}
             counterItems={includedCounterItems}
             counterColors={counterPalette}
+            counterColorCatalog={objectBank}
             counterUploadState={itemOptionState}
             isSignatureStand={isSignatureStand}
             signatureArchItems={signatureArchItems}
@@ -3686,7 +3690,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
   const finishes = counterFinishOptions(colors);
   const woodFinish = counterWoodFinish(colors);
   const selectedColorId = item.options?.binary2ColorId || woodFinish.id;
-  const selectedFinish = finishes.find((finish) => finish.id === selectedColorId) || woodFinish;
+  const selectedFinish = findColorInPalette(finishes, selectedColorId) || woodFinish;
   const includedFinishes = optionsFree ? finishes : finishes.filter((finish) => finish.included || finish.mode === 'wood');
   const optionalFinishes = optionsFree ? [] : finishes.filter((finish) => !includedFinishes.some((included) => included.id === finish.id));
   const optionPrice = optionalFinishes.find((finish) => Number(finish.price || 0) > 0)?.price || 0;
@@ -4077,7 +4081,7 @@ function textureSlotColorPatch(finish = {}) {
   };
 }
 
-function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel = '', uploadState = {}, disabled = false, onImage, onOptions, onVisibility, onRestore, onVariant, onSelect }) {
+function CounterOptionCard({ items = [], colors = [], colorCatalog = [], catalog = [], salonLabel = '', uploadState = {}, disabled = false, onImage, onOptions, onVisibility, onRestore, onVariant, onSelect }) {
   const t = useT();
   const [selectedCounterId, setSelectedCounterId] = useState(items[0]?.id || '');
 
@@ -4096,8 +4100,10 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   const baseVariant = counterVariants[0] || null;
   const selectedVariant = counterVariants.find((variant) => variant.assetType === selectedItem?.type || variant.id === selectedItem?.options?.variantId) || baseVariant;
   const baseVariantPrice = Number(baseVariant?.price || 0);
-  const selectedColorId = selectedItem?.options?.binary2ColorId || counterWoodFinish(colors).id;
-  const selectedFinish = counterFinishOptions(colors).find((finish) => finish.id === selectedColorId) || counterWoodFinish(colors);
+  const configuredColors = counterColorOptionsForItem(selectedItem, colorCatalog, salonLabel, colors);
+  const finishes = counterFinishOptions(configuredColors);
+  const selectedColorId = selectedItem?.options?.binary2ColorId || counterWoodFinish(configuredColors).id;
+  const selectedFinish = findColorInPalette(finishes, selectedColorId) || counterWoodFinish(configuredColors);
   const imageName = selectedItem?.options?.binary3ImageName || t('counter_no_logo');
   const logoPending = Boolean(selectedItem?.options?.binary3VisualPending);
   const logoEnabled = counterLogoOptionActive(selectedItem || {});
@@ -4135,7 +4141,10 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
   };
   const selectFinish = (finish) => {
     if (!selectedItem) return;
-    updateSelected(counterFinishPatch(finish));
+    updateSelected({
+      ...counterFinishPatch(finish),
+      ...(finish.configOptionId ? { variantColorSelections: { ...selectedItem.options?.variantColorSelections, [finish.configOptionId]: finish } } : {}),
+    });
   };
 
   if (!items.length) {
@@ -4194,7 +4203,7 @@ function CounterOptionCard({ items = [], colors = [], catalog = [], salonLabel =
 
       <CounterFinishCard
         compact
-        finishes={counterFinishOptions(colors)}
+        finishes={finishes}
         selectedFinish={selectedFinish}
         disabled={disabled}
         onSelect={selectFinish}
@@ -4437,7 +4446,7 @@ function counterFinishOptions(colors = []) {
         const isWood = /bois|wood|ch[êe]ne|oak/i.test(`${color.name || ''} ${color.code || ''} ${color.reference || ''}`);
         return {
           ...color,
-          mode: isWood ? 'wood' : 'color',
+          mode: isWood && !color.image ? 'wood' : 'color',
           included,
           price: included ? 0 : rawPrice,
         };
@@ -4633,6 +4642,7 @@ function OptionsStepPanel({
   partitionHeadUploadState = {},
   counterItems = [],
   counterColors = [],
+  counterColorCatalog = [],
   counterUploadState = {},
   isSignatureStand = false,
   signatureArchItems = [],
@@ -4872,6 +4882,7 @@ function OptionsStepPanel({
         <CounterOptionCard
           items={counterItems}
           colors={counterColors}
+          colorCatalog={counterColorCatalog}
           uploadState={counterUploadState}
           catalog={catalog}
           salonLabel={salonLabel}
@@ -5357,6 +5368,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     },
   };
   const canConfigureCounterVisual = isWoodReceptionDeskItem(visualItem) || isWoodReceptionDeskItem(resolvedEntry);
+  const configuredCounterColors = counterColorOptionsForItem(visualItem, catalog, salonLabel, counterColors);
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
   const extras = extraOptions
     .reduce((sum, option) => sum + (selectedExtras[option.id] ? effectiveExtraOptionPrice(option, catalogEntry, selectedVariant) : 0), 0);
@@ -5430,7 +5442,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     || textureSlots.length > 0
   );
   const headerImageUrl = optionLink?.entry?.thumbnailUrl || selectedVariant?.imageUrl || catalogEntry.thumbnailUrl;
-  const headerFinishCount = canConfigureCounterVisual ? counterFinishOptions(counterColors).length : 0;
+  const headerFinishCount = canConfigureCounterVisual ? counterFinishOptions(configuredCounterColors).length : 0;
   const headerMetaParts = [
     headerFinishCount ? `${headerFinishCount} coloris` : '',
     variants.length > 1 ? (catalogEntry.dimensions?.isSignatureMeterCoverGroup ? `${variants.length} coloris` : `${variants.length} taille${variants.length > 1 ? 's' : ''}`) : '',
@@ -5639,7 +5651,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
         {hasVisualOptions && canConfigureCounterVisual && (
           <WoodReceptionDeskOptionsPanel
             item={visualItem}
-            colors={counterColors}
+            colors={configuredCounterColors}
             uploadState={modalUploadState}
             onImageChange={(file) => handleDraftImage(file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName', extraPatch: { binary3Enabled: true, binary3VisualPending: false } })}
             onResetImage={() => updateDraftVisualOptions({ binary3ImageUrl: '', binary3ImageName: '', binary3ImageFraming: defaultImageFraming })}
@@ -5693,7 +5705,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
               if (!checked) updateDraftVisualOptions(textureSlotPatch(visualItem, slot, { imageUrl: '', imageName: '', visualPending: false, ...defaultImageFraming }));
             }}
             logoGateControls={textureSlotLogoGateControls}
-            counterColors={counterColors}
+            counterColors={configuredCounterColors}
             embedded
           />
         )}
@@ -6025,8 +6037,21 @@ function itemConfigColorOptions(entry) {
 
 function colorGroupEntryForOption(option = {}, catalog = [], salonLabel = '') {
   const group = (catalog || []).find((entry) => entry?.type === option.colorGroupType && entry?.dimensions?.isColorGroup);
-  if (!group || !colorGroupMatchesPack(group, salonLabel)) return null;
+  // An explicit asset-to-palette link takes precedence over global pack palette assignments.
+  if (!group || group.is_active === false) return null;
   return group;
+}
+
+function counterColorOptionsForItem(item = {}, assets = [], packLabel = '', fallbackColors = []) {
+  const asset = assets.find((candidate) => candidate.type === item?.type) || item;
+  const group = assets.find((candidate) => candidate.type === item?.options?.variantGroupType)
+    || assets.find((candidate) => candidate.is_active !== false && candidate.dimensions?.isVariantGroup
+      && assetMatchesPack(candidate, packLabel) && variantPrimaryAssetTypes(candidate).includes(item?.type));
+  const options = [...itemConfigColorOptions(asset), ...itemConfigColorOptions(group)]
+    .filter((option) => colorConfigOptionUsesCounterPalette(option, assets, packLabel));
+  if (!options.length) return fallbackColors;
+  return colorChoicesForConfigOption(options[0], assets, packLabel)
+    .map((color) => ({ ...color, configOptionId: options[0].id }));
 }
 
 function colorConfigOptionUsesCounterPalette(option = {}, catalog = [], salonLabel = '') {
@@ -6087,6 +6112,7 @@ function selectedColorChoiceForConfigOption(option = {}, catalog = [], salonLabe
   const previousId = previous?.id || previous?.colorId || '';
   if (previousId) {
     const found = choices.find((color) => normalizeColorId(color.id) === normalizeColorId(previousId))
+      || choices.find((color) => normalizeColorId(color.id) === normalizeColorId(previousId).split(':').pop())
       || choices.find((color) => normalizeColorId(color.code) === normalizeColorId(previousId));
     if (found) return found;
   }
@@ -14930,7 +14956,8 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const options = { ...(scene.source_payload?.options || {}), ...(scene.options || {}) };
   const manualItems = sceneAdminItems(scene, catalogEntries).filter((item) => !item.autoMeterCover);
   const automaticMeterCoverItems = makeAutomaticMeterCoverItems(packLabel, options.signatureMeterCoverType, catalogEntries, width, depth, layout, manualItems);
-  const reserveRule = activeReserveRule(sceneReserveRules(scene), area, isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands);
+  const reserveRules = sceneReserveRules(scene);
+  const reserveRule = reserveRuleWithPackChoices(activeReserveRule(reserveRules, area, isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands), reserveRules, catalogEntries, packLabel);
   const reserveOption = configuredReserveOptionType(reserveRule, options.reserveOptionType);
   const partitionRule = activePartitionHeadRule(scenePartitionHeadRules(scene), area, layout);
   const partitionSides = isSignatureScene(scene) ? { left: true, right: true } : partitionHeadEnabledSides(partitionRule, {
@@ -16359,6 +16386,21 @@ function configuredReserveOptionType(rule, selectedType = '') {
   const options = normalizeComplementaryOptions(rule?.options);
   if (selectedType === '__legacy__') return options[0]?.type || '';
   return options.some((option) => option.type === selectedType) ? selectedType : '';
+}
+
+function reserveRuleWithPackChoices(rule, rules = {}, catalogEntries = [], packLabel = '') {
+  if (!isSignaturePackLabel(packLabel) || !rule?.includedType) return rule;
+  const includedEntry = findCatalogEntry(catalogEntries, rule.includedType);
+  const includedArea = reserveAreaFromText(`${includedEntry?.label || rule.includedLabel || ''} ${rule.includedType}`);
+  if (!includedEntry || !includedArea) return rule;
+  const configuredTypes = configuredReserveAssetTypes(rules);
+  const options = [...configuredTypes].filter((type) => type !== rule.includedType).flatMap((type) => {
+    const entry = findCatalogEntry(catalogEntries, type);
+    const area = reserveAreaFromText(`${entry?.label || ''} ${type}`);
+    if (!entry?.isGroup || !isReserveCatalogEntry(entry) || !area) return [];
+    return [{ type, label: entry.label, price: Math.max(0, area - includedArea) * 222 }];
+  });
+  return { ...rule, options };
 }
 
 function isReserveCatalogEntry(entry = {}) {

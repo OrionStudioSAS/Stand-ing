@@ -21,9 +21,13 @@ const unconfigured = { ...group, type: 'group-reserve-4m2-test', label: 'Réserv
 const assets = [wall, door, shelf, group, small, large, unconfigured];
 const childGeometry = (items) => items.map(({ id, type, x, y = 0, z, rotation, modelUrl, modelSize, dimensions }) => ({ id, type, x, y, z, rotation, modelUrl, modelSize, dimensions }));
 const rule = { includedType: group.type, includedLabel: group.label, options: [{ type: small.type, label: small.label, price: 0 }, { type: large.type, label: large.label, price: 222 }] };
-const scene = { id: 'reserve-browser', client_name: 'Test réserve', offer: 'Signature', event_name: 'Test', dimensions: { width: 8, depth: 4 }, layout: 'left', items: [], options: {}, source_payload: { reserveRules: { 'signature-2m2': rule, large: rule } } };
-const harness = `import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{ConfiguratorApp}from'/src/__reserve-sizing-app.jsx';
-const original=${JSON.stringify(scene)};function Test(){const[scene,setScene]=useState(original);const[key,setKey]=useState(0);return <><div style={{position:'fixed',bottom:0,left:0,zIndex:9999,background:'white'}}><button onClick={()=>{setScene(window.savedScene);setKey(v=>v+1)}}>Reouvrir réserve</button><button onClick={()=>{setScene({...original,offer:'Équipé'});setKey(v=>v+1)}}>Pack Équipé test</button><button onClick={()=>{const rule={includedType:'reserve-fixture',includedLabel:'Réserve 2m² arrière gauche',options:[]};setScene({...original,source_payload:{reserveRules:{'signature-2m2':rule}}});setKey(v=>v+1)}}>Sans alternatives</button><button onClick={()=>{setScene({...original,options:{reserveOptionType:'reserve-sized-left-3m2'}});setKey(v=>v+1)}}>Ancien choix automatique</button></div><ConfiguratorApp key={key} initialScene={scene} isAdminViewer /></>};createRoot(document.getElementById('root')).render(<Test/>);`;
+const scene = { id: 'reserve-browser', client_name: 'Test réserve', offer: 'Signature', event_name: 'Test', dimensions: { width: 8, depth: 4 }, layout: 'left', items: [], options: {}, source_payload: { reserveRules: {
+  'signature-1m2': { includedType: small.type, includedLabel: small.label, options: [] },
+  'signature-2m2': { includedType: group.type, includedLabel: group.label, options: [] },
+  'signature-3m2': { includedType: large.type, includedLabel: large.label, options: [] }, large: rule,
+} } };
+const harness = `import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{ConfiguratorApp,sceneAllAdminItems}from'/src/__reserve-sizing-app.jsx';window.reserveBatItems=sceneAllAdminItems;
+const original=${JSON.stringify(scene)};function Test(){const[scene,setScene]=useState(original);const[key,setKey]=useState(0);return <><div style={{position:'fixed',bottom:0,left:0,zIndex:9999,background:'white'}}><button onClick={()=>{window.reserveBankDelay=1200;setScene(window.savedScene);setKey(v=>v+1)}}>Reouvrir réserve</button><button onClick={()=>{setScene({...original,offer:'Équipé'});setKey(v=>v+1)}}>Pack Équipé test</button><button onClick={()=>{const rule={includedType:'reserve-fixture',includedLabel:'Réserve 2m² arrière gauche',options:[]};setScene({...original,source_payload:{reserveRules:{'signature-2m2':rule}}});setKey(v=>v+1)}}>Sans alternatives</button><button onClick={()=>{setScene({...original,options:{reserveOptionType:'reserve-sized-left-3m2'}});setKey(v=>v+1)}}>Ancien choix automatique</button><button onClick={()=>{setScene({...original,dimensions:{width:5,depth:4}});setKey(v=>v+1)}}>Base 1m2 test</button><button onClick={()=>{setScene({...original,dimensions:{width:8,depth:5}});setKey(v=>v+1)}}>Base 3m2 test</button></div><ConfiguratorApp key={key} initialScene={scene} isAdminViewer /></>};createRoot(document.getElementById('root')).render(<Test/>);`;
 const box = (width, height, depth) => {
   const x = width / 2, z = depth / 2;
   return `o Fixture\nv ${-x} 0 ${-z}\nv ${x} 0 ${-z}\nv ${x} ${height} ${-z}\nv ${-x} ${height} ${-z}\nv ${-x} 0 ${z}\nv ${x} 0 ${z}\nv ${x} ${height} ${z}\nv ${-x} ${height} ${z}\nf 1 2 3 4\nf 5 8 7 6\nf 1 5 6 2\nf 4 3 7 8\nf 1 4 8 5\nf 2 6 7 3\n`;
@@ -32,9 +36,9 @@ const server = await createServer({ logLevel: 'error', server: { host: '127.0.0.
   name: 'reserve-sizing-test',
   resolveId(id) { if (id === '/src/__reserve-sizing-app.jsx') return `${root}src/__reserve-sizing-app.jsx`; if (id === '/src/__reserve-sizing-page.jsx') return `${root}src/__reserve-sizing-page.jsx`; },
   load(id) {
-    if (id === `${root}src/__reserve-sizing-app.jsx`) return source.replace("createRoot(document.getElementById('root')).render(<App />);", 'export {ConfiguratorApp};').replace('  const estimatedTotal = scenePricing.total;', '  window.reserveTestItems=visibleSceneItems;window.reserveTestPricing=scenePricing;\n  const estimatedTotal = scenePricing.total;');
+    if (id === `${root}src/__reserve-sizing-app.jsx`) return source.replace("createRoot(document.getElementById('root')).render(<App />);", 'export {ConfiguratorApp,sceneAllAdminItems};').replace('  const estimatedTotal = scenePricing.total;', '  window.reserveTestItems=visibleSceneItems;window.reserveTestPricing=scenePricing;window.reserveTestCatalog=availableCatalog;\n  const estimatedTotal = scenePricing.total;');
     if (id === `${root}src/__reserve-sizing-page.jsx`) return harness;
-    if (id === `${root}src/data/sceneStore.js`) return `export * from '/src/data/sceneStore.js?original-reserve-test';export async function listObjectBank(){return ${JSON.stringify(assets)}};export async function saveScene(scene){window.savedScene=JSON.parse(JSON.stringify(scene));return scene;}`;
+    if (id === `${root}src/data/sceneStore.js`) return `export * from '/src/data/sceneStore.js?original-reserve-test';export async function listObjectBank(){await new Promise(resolve=>setTimeout(resolve,window.reserveBankDelay||0));window.reserveBankDelay=0;return ${JSON.stringify(assets)}};export async function saveScene(scene){window.savedScene=JSON.parse(JSON.stringify(scene));(window.reserveSaveHistory ||= []).push(window.savedScene);return scene;}`;
   },
   configureServer(vite) { vite.middlewares.use((req, res, next) => {
     const objects = { '/__reserve-wall.obj': box(1, 2.5, 0.06), '/__reserve-door.obj': box(1, 2.5, 0.25), '/__reserve-shelf.obj': box(0.3, 1, 0.3) };
@@ -62,9 +66,15 @@ try {
   assert.equal(await page.locator('.reserve-choice-card').count(), 3);
   assert.equal(await pick(4).count(), 0);
   await page.waitForFunction(() => window.savedScene?.options?.reserveOptionType === 'group-reserve-3m2-test');
+  const batReserve = await page.evaluate(() => window.reserveBatItems(window.savedScene, window.reserveTestCatalog).find((item) => item.autoReserve));
+  assert.equal(batReserve.type, large.type);
+  assert.equal(batReserve.options.unitPrice, 222);
+  assert.deepEqual(childGeometry(batReserve.children), childGeometry(large.dimensions.children));
   await page.screenshot({ path: '/tmp/standing-reserve-size-3m2.png' });
+  const saveHistoryStart = await page.evaluate(() => window.reserveSaveHistory.length);
   await page.getByRole('button', { name: 'Reouvrir réserve' }).click();
   await page.waitForFunction(() => window.reserveTestItems.find((item) => item.autoReserve)?.type === 'group-reserve-3m2-test');
+  assert.ok(await page.evaluate((start) => window.reserveSaveHistory.slice(start).every((saved) => saved.options.reserveOptionType === 'group-reserve-3m2-test'), saveHistoryStart), 'A slow asset load must not autosave the default over the selected reserve');
   assert.deepEqual(childGeometry(await page.evaluate(() => window.reserveTestItems.find((item) => item.autoReserve).children)), childGeometry(large.dimensions.children));
   await page.getByRole('button', { name: /^Réserve/ }).click();
   await pick(1).click();
@@ -75,6 +85,15 @@ try {
   await pick(3).click();
   await page.waitForFunction(() => window.reserveTestItems.find((item) => item.autoReserve)?.type === 'group-reserve-3m2-test');
   assert.equal(await page.evaluate(() => window.reserveTestItems.find((item) => item.autoReserve).options.unitPrice), 222);
+  await page.getByRole('button', { name: 'Base 1m2 test' }).click();
+  await page.getByRole('button', { name: /^Réserve/ }).click();
+  await pick(3).click();
+  await page.waitForFunction(() => window.reserveTestItems.find((item) => item.autoReserve)?.options?.unitPrice === 444);
+  await page.getByRole('button', { name: 'Base 3m2 test' }).click();
+  await page.getByRole('button', { name: /^Réserve/ }).click();
+  await pick(2).click();
+  await page.waitForFunction(() => window.reserveTestItems.find((item) => item.autoReserve)?.type === 'reserve-fixture');
+  assert.equal(await page.evaluate(() => window.reserveTestItems.find((item) => item.autoReserve).options.unitPrice), 0);
   await page.getByRole('button', { name: 'Sans alternatives' }).click();
   await page.getByRole('button', { name: /^Réserve/ }).click();
   assert.equal(await page.locator('.reserve-choice-card').count(), 1);
