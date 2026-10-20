@@ -21,6 +21,9 @@ function collisionContext() {
     wallCoverSurfaceOffset: 0.008,
     minWallCoverDisplayWidth: 0.7,
     partitionHeadWallGap: 0.02,
+    partitionHeadEdgeInset: 0.02, partitionHeadWallAxisInset: 0,
+    normalizePlacementRule: (rule) => rule,
+    snapWallAxis: (value) => Math.round(value / .1) * .1,
     signatureArchPlacementStep: 0.25,
     signatureArchTotemDepth: 0.55,
     isCeilingMountedItem: () => false,
@@ -48,6 +51,7 @@ function collisionContext() {
     'wallMountedNormalOffset', 'wallMountedItemRotation', 'screenWorldPosition',
     'wallItemAxisBounds', 'wallItemMetrics', 'wallItemCollisionBox',
     'wallCoverPartitionHeadBlocker', 'wallMountedBlocker',
+    'wallItemAxisRange', 'smclPartitionHeadWallAxis', 'applyWallPlacementRule',
     'partitionHeadModelBounds', 'partitionHeadPhysicalBox', 'collidesWithPartitionHeads',
     'collidesWithScene', 'signatureArchWallX', 'signatureArchBackWallZ',
     'placeSignatureArchAgainstBackWall', 'isTransformPatch',
@@ -335,4 +339,16 @@ test('Changing arch variants preserves images and rejects an impossible replacem
   vm.runInContext('selectSignatureArchVariant(entry)', context);
   assert.equal(items, previous);
   assert.equal(message, 'No space available');
+});
+
+
+test('Signature and SIAE back-wall heads meet the exact scene edge, including half-centimetre centers', () => {
+  const api = collisionContext();
+  for (const pack of ['Signature', 'SIAE']) for (const width of [4, 5, 5.25]) for (const side of ['left','right']) {
+    const item = { type: `head-${pack}-${side}`, label: `Tête de cloison ${pack} ${side === 'left' ? 'Gauche' : 'Droite'}`, dimensions: { size: pack === 'Signature' ? [.11, 2.99, .61] : [1.11, 2.99, .11] }, placementRule: { id: `outer-${side}`, locked: true } };
+    const position = api.applyWallPlacementRule(item, width, 4, 'back');
+    const bounds = api.wallItemAxisBounds(position, 'back');
+    const edge = position.x + (side === 'left' ? bounds.min : bounds.max);
+    assert.ok(Math.abs(edge - (side === 'left' ? -width / 2 : width / 2)) < 1e-8, `${pack} ${width} ${side}: ${edge}`);
+  }
 });

@@ -1,3 +1,4 @@
+import { signatureFootprintSupplementLine } from '../src/signatureFootprint.js';
 import assert from 'node:assert/strict';
 import { manualOrderRowsToPricingLines } from '../src/manualOrderLines.js';
 import { readFileSync } from 'node:fs';
@@ -71,7 +72,7 @@ test('Signature allowance is always 40 euros per square meter, including existin
 
 test('scene loading resolves pack benefits before automatic objects and preset defaults', () => {
   const store = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
-  const api = vm.createContext({ inheritCurrentPackBenefits, scenePackBenefits,
+  const api = vm.createContext({ signatureFootprintSupplementLine, inheritCurrentPackBenefits, scenePackBenefits,
     dedupeIncludedReceptionDesks: (items) => items,
     fixedWallHeight: 2.5,
     normalizeSceneItem: (item) => item,
@@ -109,7 +110,7 @@ test('objects, options and furniture insurance consume one allowance and recalcu
 });
 
 test('scene pricing deducts the allowance after objects, shared options, covers, floor, colours and insurance', () => {
-  const api = vm.createContext({ normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, isSignatureScene: () => false,
+  const api = vm.createContext({ signatureFootprintSupplementLine, normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, isSignatureScene: () => false,
     manualPurchaseOrderLines: (scene) => manualOrderRowsToPricingLines(scene?.source_payload?.manualPurchaseOrderLines),
     roundCurrency: (value) => Math.round(value * 100) / 100,
     normalizeBaseItemsForUi: (value) => value,
@@ -154,7 +155,7 @@ test('scene pricing deducts the allowance after objects, shared options, covers,
 });
 
 test('BDC keeps the negative allowance, including fully covered orders, without accepting arbitrary negative prices', () => {
-  const api = vm.createContext({ packAllowanceLineType,
+  const api = vm.createContext({ signatureFootprintSupplementLine, packAllowanceLineType,
     roundCurrency: (value) => Math.round(value * 100) / 100,
     findCatalogEntry: () => null, assetReference: () => '', uniqueTextValues: (value) => value,
     purchaseOrderBaseLabel: (value) => value, purchaseOrderDisplayLabel: (value) => value,
@@ -172,7 +173,7 @@ test('BDC keeps the negative allowance, including fully covered orders, without 
 
 test('allowance scenes cannot regain automatic pack LEDs from preset defaults on reload', () => {
   const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
-  const api = vm.createContext({ scenePackBenefits });
+  const api = vm.createContext({ signatureFootprintSupplementLine, scenePackBenefits });
   for (const name of ['applyPresetDefaultColorOptions', 'mergePresetDefaultsIntoDraftOptions']) loadFunction(api, storeSource, name);
   const result = api.applyPresetDefaultColorOptions({ client_status: 'in_progress',
     source_payload: { packBenefits: { mode: 'allowance', allowanceAmount: 1000 } },
@@ -185,7 +186,7 @@ test('allowance scenes cannot regain automatic pack LEDs from preset defaults on
 test('allowance scenes inherit automatic reserve rules and charge the default reserve against the allowance', () => {
   const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
   const presetReserveRules = { small: { includedType: 'reserve-2m2', includedLabel: 'Réserve 2 m²', options: [] } };
-  const storeApi = vm.createContext({ scenePackBenefits });
+  const storeApi = vm.createContext({ signatureFootprintSupplementLine, scenePackBenefits });
   for (const name of ['applyPresetDefaultColorOptions', 'mergePresetDefaultsIntoDraftOptions']) loadFunction(storeApi, storeSource, name);
   const sourcePayload = storeApi.applyPresetDefaultColorOptions({
     client_status: 'draft',
@@ -196,7 +197,7 @@ test('allowance scenes inherit automatic reserve rules and charge the default re
   assert.equal(sourcePayload.pricing.reserveRules.small.includedType, 'reserve-2m2');
 
   const reserveRuleBands = [{ id: 'small', label: 'Petit stand', minArea: 0, maxArea: 20, includedLabel: 'Réserve' }];
-  const api = vm.createContext({ scenePackBenefits, reserveRuleBands, signatureReserveRuleBands: [], isSignatureScene: () => false });
+  const api = vm.createContext({ signatureFootprintSupplementLine, scenePackBenefits, reserveRuleBands, signatureReserveRuleBands: [], isSignatureScene: () => false });
   for (const name of ['normalizeComplementaryOptions', 'normalizeReserveRules', 'sceneReserveRules']) loadFunction(api, appSource, name);
   const rules = api.sceneReserveRules({
     source_payload: { packBenefits: { mode: 'allowance', allowanceAmount: 1600 }, reserveRules: presetReserveRules },
@@ -204,7 +205,7 @@ test('allowance scenes inherit automatic reserve rules and charge the default re
   assert.equal(rules.small.includedType, 'reserve-2m2');
   assert.equal(rules.small.chargeIncluded, true);
 
-  const itemApi = vm.createContext({
+  const itemApi = vm.createContext({ signatureFootprintSupplementLine,
     isSignaturePackLabel: () => false,
     reserveDoorColorForPack: () => '',
     normalizeComplementaryOptions: api.normalizeComplementaryOptions,
@@ -221,7 +222,7 @@ test('allowance scenes inherit automatic reserve rules and charge the default re
 });
 
 test('a full BDC still displays the allowance within its 15 template rows and retains the correct sum', () => {
-  const api = vm.createContext({ packAllowanceLineType, roundCurrency: (value) => Math.round(value * 100) / 100 });
+  const api = vm.createContext({ signatureFootprintSupplementLine, packAllowanceLineType, roundCurrency: (value) => Math.round(value * 100) / 100 });
   loadFunction(api, appSource, 'purchaseOrderTemplateRows');
   const lines = withPackAllowance(Array.from({ length: 18 }, (_, index) => ({ type: `object-${index}`, total: 100 })), { mode: 'allowance', allowanceAmount: 1000 });
   const rows = api.purchaseOrderTemplateRows(lines);
@@ -232,7 +233,7 @@ test('a full BDC still displays the allowance within its 15 template rows and re
 
 test('the actual BDC template stores a negative allowance and net HT/VAT/TTC totals', async () => {
   const template = readFileSync(new URL('../public/templates/bon-commande-template.pdf', import.meta.url));
-  const api = vm.createContext({ PDFDocument, StandardFonts, rgb, Blob, Uint8Array, console, packAllowanceLineType,
+  const api = vm.createContext({ signatureFootprintSupplementLine, PDFDocument, StandardFonts, rgb, Blob, Uint8Array, console, packAllowanceLineType,
     roundCurrency: (value) => Math.round(value * 100) / 100,
     uniqueTextValues: (values) => [...new Set(values)],
     fetch: async () => ({ ok: true, arrayBuffer: async () => Uint8Array.from(template).buffer }),
@@ -252,7 +253,7 @@ test('the actual BDC template stores a negative allowance and net HT/VAT/TTC tot
 
 test('pack settings preserve unrelated metadata and clear base quotas only in allowance mode', async () => {
   const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
-  const api = vm.createContext({ normalizePackBenefits, isSignaturePackScene, supabase: null });
+  const api = vm.createContext({ signatureFootprintSupplementLine, normalizePackBenefits, isSignaturePackScene, supabase: null });
   for (const name of ['saveSalonOfferBaseItems', 'normalizeBaseItems']) loadFunction(api, storeSource, name);
   const offer = { id: 'offer', metadata: { custom: 'keep' } };
   const result = await api.saveSalonOfferBaseItems(offer, [{ type: 'desk', quantity: 1 }], { mode: 'allowance', allowanceAmount: '1200' });

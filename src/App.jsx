@@ -1,3 +1,5 @@
+import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
+import { sceneAdminRequests, sceneQuestions, questionAsRequest } from './sceneRequests.js';
 import React, { Suspense, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
@@ -63,7 +65,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminAuditEvents, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, markSceneSpecialRequestResolved, publicConfiguratorUrl, reopenSceneAsDraft, requestSceneAccessCode, saveAdminUser, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveSceneManualOrderLines, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminAuditEvents, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, markSceneSpecialRequestResolved, publicConfiguratorUrl, reopenSceneAsDraft, requestSceneAccessCode, saveAdminUser, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveSceneManualOrderLines, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadColorGroupColors, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, signatureAllowancePerSquareMeter, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
 import { createTechnicalPlanBlob, exportTechnicalPdf, standWallPanelRequirements } from './technicalExport.js';
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
@@ -135,8 +137,8 @@ const signatureArchPlacementStep = 0.25;
 // Only the front totem occupies floor space; the remaining arch spans overhead.
 const signatureArchTotemDepth = 0.55;
 const signatureArchVisualSlots = [
-  { id: 'signature-arch-led-5', label: 'Visuel LED #5', targetName: 'LED_5500k#5', kind: 'image', matchMode: 'exact' },
-  { id: 'signature-arch-led-30', label: 'Visuel LED #30', targetName: 'LED_5500k#30', kind: 'image', matchMode: 'exact' },
+  { id: 'signature-arch-led-5', label: 'Totem lumineux — Lumitex', format: '1000 × 2980 mm', aspectRatio: 1000 / 2980, targetName: 'LED_5500k#5', kind: 'image', matchMode: 'exact' },
+  { id: 'signature-arch-led-30', label: 'Visuel arrière haut — Viscom', format: '1000 × 1000 mm', aspectRatio: 1, targetName: 'LED_5500k#30', kind: 'image', matchMode: 'exact' },
 ];
 const signaturePartitionHeadVisualSlots = [
   { id: 'signature-head-top-28', label: 'Visuel haut de la tête de cloison', targetName: '*28', kind: 'image', matchMode: 'exact' },
@@ -1146,7 +1148,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const standLabel = initialScene.project_name || clientInfo.project || 'Stand A-14';
   const clientLabel = clientInfo.client || contactDetails.company || 'Aerosys Industries';
   const carpetPalette = useMemo(() => packColorPalette(objectBank, assetPackLabel, 'carpet', carpetColors), [objectBank, assetPackLabel]);
-  const footprintPalette = useMemo(() => packColorPalette(objectBank, assetPackLabel, 'footprint', carpetPalette), [objectBank, assetPackLabel, carpetPalette]);
+  const footprintPalette = useMemo(() => packColorPalette(objectBank, assetPackLabel, 'footprint', isSignatureStand ? carpetColors : carpetPalette), [objectBank, assetPackLabel, carpetPalette, isSignatureStand]);
   const wallFabricPalette = useMemo(() => packColorPalette(objectBank, assetPackLabel, 'wallFabric', wallFabricColors), [objectBank, assetPackLabel]);
   const counterPalette = useMemo(() => colorOptionsForUsage(objectBank, assetPackLabel, 'counter', []), [objectBank, assetPackLabel]);
   const carpetGroupConfigOptionsList = useMemo(() => colorGroupConfigOptions(objectBank, assetPackLabel, 'carpet'), [objectBank, assetPackLabel]);
@@ -1165,7 +1167,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const rawSelectedWallFabricColor = findColorInPalette(wallFabricPalette, selectedWallFabricId) || defaultColorFromPalette(wallFabricPalette) || wallFabricPalette[0] || wallFabricColors[0];
   const rawReserveWallFabricColor = reserveWallFabricColorForPack(assetPackLabel, wallFabricPalette, effectiveDefaultColorOptions.reserveWallFabricColorId, rawSelectedWallFabricColor);
   const selectedCarpetColor = colorWithDefaultIncluded(rawSelectedCarpetColor, effectiveDefaultColorOptions.carpetColorId);
-  const selectedCarpetFootprintColor = colorWithDefaultIncluded(rawSelectedCarpetFootprintColor, effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId);
+  const selectedCarpetFootprintColor = isSignatureStand ? rawSelectedCarpetFootprintColor : colorWithDefaultIncluded(rawSelectedCarpetFootprintColor, effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId);
   const selectedWallFabricColor = colorWithDefaultIncluded(rawSelectedWallFabricColor, effectiveDefaultColorOptions.wallFabricColorId);
   const selectedReserveWallFabricColor = colorWithDefaultIncluded(rawReserveWallFabricColor, effectiveDefaultColorOptions.reserveWallFabricColorId || effectiveDefaultColorOptions.wallFabricColorId);
   const selectedTechnicalFloor = technicalFloorOptions.find((option) => option.id === technicalFloorType) || null;
@@ -2543,7 +2545,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
     setQuestionState({ loading: true, message: '', error: '' });
     try {
-      await sendSceneQuestionEmail(currentScenePayload(saveState === 'configured' ? 'configured' : 'created', saveState === 'configured' ? 'configured' : 'draft'), {
+      const delivery = await sendSceneQuestionEmail(currentScenePayload(saveState === 'configured' ? 'configured' : 'created', saveState === 'configured' ? 'configured' : 'draft'), {
         subject,
         message,
         category: questionCategory,
@@ -2551,7 +2553,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         sceneUrl: sceneShareUrl(initialScene),
       });
       setQuestionForm({ subject: '', message: '' });
-      setQuestionState({ loading: false, message: 'Question envoyée à Stand-ING.', error: '' });
+      setQuestionState({ loading: false, message: delivery.saved && !delivery.sent ? 'Question enregistrée dans les demandes Stand-ING.' : 'Question envoyée et enregistrée dans les demandes Stand-ING.', error: '' });
       window.setTimeout(() => setHeaderPanel(null), 650);
     } catch (error) {
       console.error('Question email failed', error);
@@ -3937,7 +3939,6 @@ function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = 
 function SignatureArchOptionCard({ items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage, onFramingChange }) {
   const selectedItem = items[0] || null;
   const selectedType = selectedItem?.options?.signatureArchVariantType || selectedItem?.type || '';
-  const selectedColorId = selectedItem?.options?.signatureArchColorId || selectedColor?.id || '';
 
   return (
     <div className="signature-arch-card">
@@ -3973,22 +3974,8 @@ function SignatureArchOptionCard({ items = [], entries = [], colors = [], select
       </section>
 
       <section className="signature-arch-section signature-arch-color-section">
-        <div className="signature-arch-section-head">
-          <strong>Couleur</strong>
-          <span>{selectedColor?.name || ''}{selectedColor?.code ? ` (${selectedColor.code})` : ''}</span>
-        </div>
-        <small>La couleur choisie s'applique à l'arche et à son empreinte moquette.</small>
-        <div className="counter-finish-swatches signature-arch-swatches">
-          {colors.map((color) => (
-            <CounterFinishSwatch
-              key={color.id}
-              finish={color}
-              active={normalizeColorId(color.id) === normalizeColorId(selectedColorId)}
-              disabled={disabled || !selectedItem}
-              onClick={() => onColorChange?.(color.id)}
-            />
-          ))}
-        </div>
+        <SurfaceColorOptionCard title="EMPREINTE MOQUETTE" iconSrc="/icons/empreinte_moquette_icon.svg" colors={colors} selectedColor={selectedColor || {}} area={1} disabled={disabled || !selectedItem} onSelect={onColorChange} />
+        <small>8 couleurs incluses : jaune, orange, rouge, fuchsia, vert pistache, bleu turquoise, bleu marine et noir. Les autres teintes du nuancier sont proposées au forfait de 285 € HT. La couleur s’applique à l’arche et à son empreinte moquette.</small>
       </section>
 
       {signatureArchVisualSlots.map((slot) => {
@@ -3997,7 +3984,7 @@ function SignatureArchOptionCard({ items = [], entries = [], colors = [], select
           <section key={slot.id} className="signature-arch-section signature-arch-visual-section">
             <div className="signature-arch-section-head">
               <strong>{slot.label}</strong>
-              <span>{slot.targetName}</span>
+              <span>{slot.format || slot.targetName}</span>
             </div>
             <VisualUploadDropzone
               imageUrl={value.imageUrl || ''}
@@ -4006,7 +3993,7 @@ function SignatureArchOptionCard({ items = [], entries = [], colors = [], select
               uploading={Boolean(uploadState?.uploading)}
               onImage={(file) => { if (file && selectedItem) onImage?.(selectedItem, slot, file); }}
             />
-            {value.imageUrl && <ImageFramingControls imageUrl={value.imageUrl} value={value} disabled={disabled || Boolean(uploadState?.uploading)} onChange={(framing) => onFramingChange?.(selectedItem, slot, framing)} />}
+            {value.imageUrl && <ImageFramingControls imageUrl={value.imageUrl} value={value} aspectRatio={slot.aspectRatio} disabled={disabled || Boolean(uploadState?.uploading)} onChange={(framing) => onFramingChange?.(selectedItem, slot, framing)} />}
             {value.imageName && <small className="signature-arch-image-name">{value.imageName}</small>}
             {value.imageUrl && (
               <button type="button" className="item-image-reset" disabled={disabled || Boolean(uploadState?.uploading)} onClick={() => onResetImage?.(selectedItem, slot)}>
@@ -4714,6 +4701,7 @@ function OptionsStepPanel({
   isAdminViewer = false,
 }) {
   const t = useT();
+  const uniformColorSections = isSignatureStand || normalizePackLabel(salonLabel) === 'equipe' || normalizeTextValue(salonLabel).includes('siae');
   const accordionScrollProps = (optionKey) => ({
     optionKey,
     scrollTarget: optionScrollTarget,
@@ -4724,7 +4712,8 @@ function OptionsStepPanel({
       <PanelHead title={t('panel_options_title')} step={activeStep} />
       <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle={isSignatureStand ? 'Moquette' : 'Moquette · Empreinte'} icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
-          uniformLayout={isSignatureStand}
+          uniformLayout={uniformColorSections}
+          showThickOption={isSignatureStand}
           colors={carpetColors}
           selectedColor={selectedCarpetColor}
           defaultColorId={defaultColorOptions.carpetColorId}
@@ -4758,7 +4747,7 @@ function OptionsStepPanel({
       </OptionAccordion>
       <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} subtitle="Coton gratté · Bâche imprimée" icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
         <ColorOptionCard
-          uniformLayout={isSignatureStand}
+          uniformLayout={uniformColorSections}
           title="COTON GRATTÉ"
           colors={wallFabricColors}
           selectedColor={selectedWallFabricColor}
@@ -6431,6 +6420,7 @@ function signatureArchColorOptions(color = {}) {
     signatureArchColorHex: colorHex(color, '#bebebe'),
     signatureArchColorImage: colorTextureUrl(color),
     signatureArchColorReference: color?.reference || '',
+    signatureArchColorSupplement: color?.included ? 0 : 285,
   };
 }
 
@@ -7976,7 +7966,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
             >
               <span className="reserve-choice-radio" aria-hidden="true">{selected ? <span /> : null}</span>
               <span className="reserve-choice-copy">
-                <strong>{row.sizeName} <b>{row.areaLabel}</b></strong>
+                <strong>Réserve <b>{row.areaLabel}</b></strong>
                 <small>{row.description}</small>
               </span>
               <span className={row.included && !row.billable ? 'reserve-choice-price included' : 'reserve-choice-price'}>
@@ -8572,14 +8562,14 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
   );
 }
 
-function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect, uniformLayout = false, thick = false, footprintArea = 0, onThickChange }) {
+function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect, uniformLayout = false, showThickOption = true, thick = false, footprintArea = 0, onThickChange }) {
   const t = useT();
   const thickOption = <div className="carpet-thick-option"><ToggleOption active={thick} disabled={disabled} label={t('carpet_thick_label')}
     detail="S’applique à la moquette et à l’empreinte moquette."
     price={thickCarpetPriceFromCarpetTab(area, footprintArea, t)} onChange={onThickChange} /></div>;
   // Other packs already show this shared option below the footprint palette.
   if (uniformLayout) {
-    return <><SurfaceColorOptionCard title="MOQUETTE" iconSrc="/icons/moquette_icon.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />{thickOption}</>;
+    return <><SurfaceColorOptionCard title="MOQUETTE" iconSrc="/icons/moquette_icon.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />{showThickOption && thickOption}</>;
   }
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
@@ -9379,7 +9369,7 @@ function AdminDashboard({ user, adminProfile }) {
               onResolve={async (scene) => {
                 const updatedScene = await markSceneSpecialRequestResolved(scene);
                 setScenes((current) => current.map((item) => (item.id === scene.id ? updatedScene : item)));
-                await syncSceneConfigToMonday(updatedScene);
+                if (!scene.requestQuestionId) await syncSceneConfigToMonday(updatedScene);
               }}
             />
           )}
@@ -9468,7 +9458,7 @@ function AdminDashboardHome({ scenes, salons, year, search, onOpenRequests, onOp
   const batState = (scene) => adminSalonBatState(scene);
   const hasPricing = yearScenes.some((scene) => isComplete(scene) && adminDashboardScenePrice(scene) !== null);
   const revenue = yearScenes.filter(isComplete).reduce((sum, scene) => sum + (adminDashboardScenePrice(scene) || 0), 0);
-  const requestRows = yearScenes.filter((scene) => sceneHasSpecialRequest(scene) && sceneSpecialRequestStatus(scene).id !== 'resolved').sort((a, b) => new Date(sceneSpecialRequestStatus(a).date || 0) - new Date(sceneSpecialRequestStatus(b).date || 0));
+  const requestRows = yearScenes.flatMap(sceneAdminRequests).filter((scene) => sceneHasSpecialRequest(scene) && sceneSpecialRequestStatus(scene).id !== 'resolved').sort((a, b) => new Date(sceneSpecialRequestStatus(a).date || 0) - new Date(sceneSpecialRequestStatus(b).date || 0));
   const searched = normalizeTextValue(search || '');
   const visibleRequests = requestRows.filter((scene) => !searched || normalizeTextValue([scene.client_name, scene.project_name, scene.salon, scene.event_name, sceneStandNumber(scene)].join(' ')).includes(searched)).slice(0, 4);
   const activeSalons = yearSalons.filter((salon) => salon.status === 'active').filter((salon) => !searched || normalizeTextValue([salon.name, ...(salon.offers || []).map((offer) => offer.name)].join(' ')).includes(searched));
@@ -9523,7 +9513,7 @@ function AdminDashboardHome({ scenes, salons, year, search, onOpenRequests, onOp
         const requestTime = new Date(sceneSpecialRequestStatus(scene).date || Date.now()).getTime();
         const age = Number.isFinite(requestTime) ? Math.max(0, Math.floor((Date.now() - requestTime) / 86400000)) : 0;
         const name = scene.client_name || scene.project_name || 'Exposant';
-        return <button className="admin-dashboard-v2-request" type="button" key={scene.id} onClick={onOpenRequests}><span className="admin-dashboard-v2-avatar">{name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><span className="admin-dashboard-v2-request-name"><strong>{name}</strong><small>{normalizeSalonTitle(scene.event_name || scene.salon) || 'Salon'} · {sceneStandNumber(scene) || 'Stand à définir'}</small></span><span className={`admin-dashboard-v2-age ${age >= 5 ? 'late' : ''}`}>Depuis {age} j</span><ChevronRight size={16} /></button>;
+        return <button className="admin-dashboard-v2-request" type="button" key={`${scene.id}:${scene.requestQuestionId || 'special'}`} onClick={onOpenRequests}><span className="admin-dashboard-v2-avatar">{name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><span className="admin-dashboard-v2-request-name"><strong>{name}</strong><small>{normalizeSalonTitle(scene.event_name || scene.salon) || 'Salon'} · {sceneStandNumber(scene) || 'Stand à définir'}</small></span><span className={`admin-dashboard-v2-age ${age >= 5 ? 'late' : ''}`}>Depuis {age} j</span><ChevronRight size={16} /></button>;
       }) : <p className="admin-dashboard-v2-empty">{searched ? 'Aucune demande ne correspond à la recherche.' : 'Aucune demande en attente pour cette année.'}</p>}
     </section>
 
@@ -12625,6 +12615,24 @@ function AssetPreview({ asset }) {
 
 function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose, onSave, onDelete, onDuplicate }) {
   const [draft, setDraft] = useState(asset);
+  const [colorUploading, setColorUploading] = useState(false);
+  const [colorUploadError, setColorUploadError] = useState('');
+  const importGroupColors = async (files) => {
+    if (!files?.length || colorUploading) return;
+    const target = draft;
+    setColorUploading(true); setColorUploadError('');
+    try {
+      const colors = await uploadColorGroupColors(target, files);
+      setDraft((current) => current.type !== target.type ? current : ({ ...current, dimensions: {
+        ...current.dimensions,
+        colorOptions: [...normalizeColorGroupOptions(current), ...colors],
+        storagePaths: [...(current.dimensions?.storagePaths || []), ...colors.map((color) => color.storagePath).filter(Boolean)],
+        uploadedFiles: Number(current.dimensions?.uploadedFiles || current.dimensions?.colorOptions?.length || 0) + colors.length,
+      } }));
+    } catch (error) { setColorUploadError(error.message || 'Import de couleurs impossible.'); }
+    finally { setColorUploading(false); }
+  };
+
   const [activeTab, setActiveTab] = useState('general');
   const contentRef = useRef(null);
   const [thumbnailUploading, setThumbnailUploading] = useState(false);
@@ -13271,6 +13279,12 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
                 />
               </label>
             </div>
+            <label className="asset-color-import">
+              <Plus size={15} /> {colorUploading ? 'Import en cours…' : 'Importer des couleurs supplémentaires'}
+              <input type="file" multiple accept=".jpg,.jpeg,.png,.webp,.svg" disabled={colorUploading} onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ''; importGroupColors(files); }} />
+            </label>
+            <small className="asset-color-import-help">Les nouvelles couleurs s’ajoutent au groupe. Configurez leur nom et leur gratuité, puis enregistrez les modifications.</small>
+            {colorUploadError && <p className="sync-result error" role="alert">{colorUploadError}</p>}
             <ColorGroupColorsEditor
               colors={normalizeColorGroupOptions(draft)}
               groupType={draft.type}
@@ -13632,7 +13646,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
         <footer>
           <button type="button" className="asset-delete" onClick={onDelete}>Supprimer définitivement</button>
           <button type="button" className="asset-duplicate" onClick={onDuplicate}><Copy size={14} /> Dupliquer</button>
-          <button type="button" className="asset-save" disabled={batPictoUploading} onClick={saveDraft}>{isSimpleAsset ? 'Enregistrer' : 'Enregistrer les modifications'}</button>
+          <button type="button" className="asset-save" disabled={batPictoUploading || colorUploading} onClick={saveDraft}>{isSimpleAsset ? 'Enregistrer' : 'Enregistrer les modifications'}</button>
         </footer>
       </aside>
     </div>
@@ -14715,6 +14729,7 @@ function AdminSpecialRequestsView({ scenes, assets = [], search = '', onResolve,
   const [localSearch, setLocalSearch] = useState('');
   const [sortOrder, setSortOrder] = useState('urgent');
   const allRows = useMemo(() => scenes
+      .flatMap(sceneAdminRequests)
       .filter(sceneHasSpecialRequest)
       .map((scene) => ({ scene, status: sceneSpecialRequestStatus(scene) })), [scenes]);
   const counts = {
@@ -14743,7 +14758,7 @@ function AdminSpecialRequestsView({ scenes, assets = [], search = '', onResolve,
     setActionState({ sceneId: scene.id, message: '', error: '' });
     try {
       await onResolve?.(scene);
-      setActionState({ sceneId: '', message: `Demande traitée pour ${scene.client_name || scene.project_name || 'la scène'}. La scène est désormais en lecture seule pour l’exposant.`, error: '' });
+      setActionState({ sceneId: '', message: scene.requestQuestionId ? 'Question / remarque marquée comme traitée.' : `Demande traitée pour ${scene.client_name || scene.project_name || 'la scène'}. La scène est désormais en lecture seule pour l’exposant.`, error: '' });
     } catch (error) {
       setActionState({ sceneId: '', message: '', error: error.message || 'Impossible de marquer la demande comme traitée.' });
     }
@@ -14771,21 +14786,21 @@ function AdminSpecialRequestsView({ scenes, assets = [], search = '', onResolve,
         const email = adminRequestEmail(scene);
         const initials = userInitials(scene.source_payload?.contactDetails?.firstName, scene.source_payload?.contactDetails?.lastName, name);
         return (
-          <article key={scene.id} className={`admin-request-card ${status.id}`}>
+          <article key={`${scene.id}:${scene.requestQuestionId || 'special'}`} className={`admin-request-card ${status.id}`}>
             <div className="admin-request-card-main">
               <div className="admin-request-person"><i>{initials}</i><div><strong>{name}</strong><small>{company || 'Société non renseignée'}</small>{email ? <a className="admin-request-email" href={requestReplyMailto(scene)}>{email}</a> : <small>E-mail non renseigné</small>}<span>{normalizeSalonTitle(scene.event_name || scene.salon) || 'Salon à définir'}</span></div></div>
-              <div className="admin-request-message"><span>Demande</span><p>« {request.text} »</p>{request.tags?.length ? <small>{request.tags.join(' · ')}</small> : null}</div>
+              <div className="admin-request-message"><span>{scene.requestQuestionId ? 'Question / remarque' : 'Demande'}</span><p>« {request.text} »</p>{request.tags?.length ? <small>{request.tags.join(' · ')}</small> : null}</div>
               <div className="admin-request-estimate"><span>Estimation</span><strong>{order.total ? `${order.total.toLocaleString('fr-FR')} € HT` : 'Aucun lot payant'}</strong><em className={`admin-request-status ${status.id}`}>{status.label}</em><small>{status.id === 'resolved' ? status.detail : `Depuis ${businessDaysSince(status.date)} j ouvrés`}</small></div>
               <div className="admin-request-actions">
               <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Modifier la scène</a>
               {hasAmcoOrderLines(order) && <button type="button" onClick={() => downloadScenePurchaseOrder(scene, assets)}>Télécharger le BDC</button>}
               {email && <a href={requestReplyMailto(scene)}>Valider par e-mail</a>}
-              <button type="button" title="Marquer la demande traitée et bloquer les modifications de l’exposant" disabled={status.id === 'resolved' || actionState.sceneId === scene.id} onClick={() => resolve(scene)}>
+              <button type="button" title={scene.requestQuestionId ? "Marquer la question comme traitée" : "Marquer la demande traitée et bloquer les modifications de l’exposant"} disabled={status.id === 'resolved' || actionState.sceneId === scene.id} onClick={() => resolve(scene)}>
                 {actionState.sceneId === scene.id ? 'Enregistrement...' : 'Marquer traitée'}
               </button>
               </div>
             </div>
-            <AdminRequestOrderEditor scene={scene} assets={assets} initiallyOpen={index === 0 && activeTab === 'open'} onSave={(lines) => onSaveManualLines?.(scene, lines)} />
+            {!scene.requestQuestionId && <AdminRequestOrderEditor scene={scene} assets={assets} initiallyOpen={index === 0 && activeTab === 'open'} onSave={(lines) => onSaveManualLines?.(scene, lines)} />}
           </article>
         );
       }) : <div className="admin-empty-row">Aucune demande avec ces filtres.</div>}
@@ -14896,6 +14911,7 @@ function AdminRequestOrderEditor({ scene, assets = [], initiallyOpen = false, on
 }
 
 function sceneSpecialRequest(scene = {}) {
+  if (scene.requestQuestionId) return questionAsRequest(sceneQuestions(scene).find((question) => question.id === scene.requestQuestionId));
   const request = scene.source_payload?.specialRequest || scene.source_payload?.options?.specialRequest || scene.options?.specialRequest || {};
   if (typeof request === 'string') return { text: request, tags: [], status: 'pending' };
   return {
@@ -15911,6 +15927,7 @@ function colorOptionsForUsage(assets = [], salonLabel = '', usage = '', fallback
 function packColorPalette(assets = [], packLabel = '', usage = '', fallbackColors = []) {
   const palette = colorOptionsForUsage(assets, packLabel, usage, fallbackColors);
   if (!isSignaturePackLabel(packLabel)) return palette;
+  if (usage === 'footprint') return signatureFootprintPalette(palette.length ? palette : carpetColors);
   if (colorGroupAssets(assets, packLabel, usage).length && palette.length) {
     if (usage === 'wallFabric' && !palette.some((color) => color.isDefault)) {
       return palette.map((color) => color.code === '303' ? { ...color, isDefault: true, included: true } : color);
@@ -16769,6 +16786,11 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
   })())) {
     itemsTotal += 97;
     lines.push({ type: 'signature-head-top-logo', label: 'Logo haut — deux têtes de cloison', quantity: 1, unitPrice: 97, total: 97, reference: '' });
+  }
+
+  if (isSignatureScene(scene)) {
+    const footprintLine = signatureFootprintSupplementLine(safeItems);
+    if (footprintLine) { itemsTotal += footprintLine.total; lines.push(footprintLine); }
   }
 
   globalSharedOptionLines(safeItems, catalog).forEach((line) => {
@@ -18866,7 +18888,7 @@ function closestPlacementInRegions(item, regions) {
 function wallItemAxisRange(item, wall, width, depth) {
   const limits = wallAxisLimits(wall, width, depth);
   const bounds = wallItemAxisBounds(item, wall);
-  const sideMargin = isPartitionHeadItem(item) ? partitionHeadEdgeInset : 0;
+  const sideMargin = isPartitionHeadItem(item) && wall !== 'back' ? partitionHeadEdgeInset : 0;
   return {
     min: limits.min - bounds.min + sideMargin,
     max: limits.max - bounds.max - sideMargin,
@@ -19274,7 +19296,7 @@ function applyWallPlacementRule(item, width, depth, layout) {
     placementRule: rule,
     lockedPlacement: true,
     wall,
-    x: Number(axis.toFixed(2)),
+    x: Number(axis.toFixed(isPartitionHeadItem(item) ? 4 : 2)),
     y: wallItemCenterY(item),
     z: wall === 'back' ? -depth / 2 + wallThickness : Number(axis.toFixed(2)),
     wallSide: null,
@@ -19283,7 +19305,7 @@ function applyWallPlacementRule(item, width, depth, layout) {
 }
 
 function smclPartitionHeadWallAxis(item, wall, rawAxis, range) {
-  if (!isSmclPartitionHeadItem(item)) return snapWallAxis(rawAxis, item);
+  if (!isSmclPartitionHeadItem(item)) return isPartitionHeadItem(item) && wall === 'back' ? rawAxis : snapWallAxis(rawAxis, item);
   const axis = Number(rawAxis || 0);
   const middle = (Number(range.min || 0) + Number(range.max || 0)) / 2;
   if (wall === 'back') {

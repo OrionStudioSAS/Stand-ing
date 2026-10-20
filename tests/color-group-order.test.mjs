@@ -1,3 +1,4 @@
+import { signatureFootprintPalette } from '../src/signatureFootprint.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -13,7 +14,7 @@ function loadFunction(name, context) {
 }
 
 function colorContext() {
-  const context = vm.createContext({
+  const context = vm.createContext({ signatureFootprintPalette,
     colorGroupMatchesPack: (group, pack) => group.dimensions?.packs?.includes(pack),
     counterOptionalColorPrice: 79,
     normalizePackLabel: (label) => String(label || '').toLowerCase(),
@@ -106,8 +107,13 @@ test('All attached pack palettes and grouped swatches retain the saved order', (
       const palette = context.packColorPalette([saved], pack, usage, []);
       assert.deepEqual(ids(palette), ['color-group-test:blue', 'color-group-test:red', 'color-group-test:gray']);
       assert.deepEqual(ids(context.colorGroupsFromOptions(palette)[0].colors), ids(palette));
-      assert.deepEqual(ids(palette.filter((color) => color.included)), ['color-group-test:blue', 'color-group-test:gray']);
-      assert.equal(palette[2].isDefault, true);
+      if (pack === 'Signature' && usage === 'footprint') {
+        assert.deepEqual(ids(palette.filter((color) => color.included)), ['color-group-test:red']);
+        assert.equal(palette[2].isDefault, false);
+      } else {
+        assert.deepEqual(ids(palette.filter((color) => color.included)), ['color-group-test:blue', 'color-group-test:gray']);
+        assert.equal(palette[2].isDefault, true);
+      }
     }
   }
 });

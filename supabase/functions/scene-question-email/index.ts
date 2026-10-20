@@ -18,7 +18,6 @@ Deno.serve(async (req) => {
   const questionTo = Deno.env.get("QUESTION_NOTIFICATION_EMAIL") || "configurateur@stand-ing.com";
   const publicAppUrl = Deno.env.get("PUBLIC_APP_URL") || "https://configurateur3d.stand-ing.com/";
 
-  if (!resendApiKey) return json({ error: "Missing RESEND_API_KEY" }, 500);
 
   const body = await req.json().catch(() => ({}));
   const sceneId = clean(body.sceneId);
@@ -34,6 +33,27 @@ Deno.serve(async (req) => {
   const scene = scenes?.[0];
   if (!scene) return json({ error: "Scene not found" }, 404);
 
+  // Le lien de partage autorise l’exposant ; les admins sont vérifiés côté serveur.
+  if (!shareToken || shareToken !== scene.share_token) {
+    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+    const { data: authData } = await supabase.auth.getUser(token);
+    if (!authData?.user?.id) return json({ error: "Unauthorized" }, 401);
+    const { data: adminUser } = await supabase.from("admin_users").select("user_id").eq("user_id", authData.user.id).eq("is_active", true).maybeSingle();
+    if (!adminUser) return json({ error: "Forbidden" }, 403);
+  }
+  if (!clean(body.subject) && !clean(body.message)) return json({ error: "Objet ou message requis." }, 400);
+  if (clean(body.subject).length > 200 || clean(body.message).length > 10000) return json({ error: "Message trop long." }, 400);
+  const requestId = clean(body.requestId) || crypto.randomUUID();
+  const questions = Array.isArray(scene.source_payload?.questions) ? scene.source_payload.questions : [];
+  if (questions.some((question: any) => question.id === requestId)) return json({ saved: true, sent: false, requestId, duplicate: true });
+  const question = { id: requestId, subject: clean(body.subject), message: clean(body.message), category: clean(body.category).slice(0, 80), urgency: clean(body.urgency).slice(0, 80), status: "pending", createdAt: new Date().toISOString() };
+  let update = supabase.from("scenes").update({ source_payload: { ...(scene.source_payload || {}), questions: [...questions, question] }, updated_at: question.createdAt }).eq("id", scene.id);
+  update = scene.updated_at ? update.eq("updated_at", scene.updated_at) : update.is("updated_at", null);
+  const { data: saved, error: saveError } = await update.select("id").maybeSingle();
+  if (saveError) return json({ error: saveError.message }, 500);
+  if (!saved) return json({ error: "La scène a été modifiée pendant l’envoi. Réessayez." }, 409);
+  if (!resendApiKey) return json({ saved: true, sent: false, requestId, warning: "Notification email non configurée." });
+
   const subject = clean(body.subject) || "Question configurateur";
   const message = clean(body.message);
   const sceneUrl = clean(body.sceneUrl) || `${publicAppUrl.replace(/\/+$/g, "")}/?scene=${encodeURIComponent(scene.share_token || scene.id)}`;
@@ -42,7 +62,9 @@ Deno.serve(async (req) => {
   const clientEmail = clean(contact.email) || clean(scene.client_email);
   const offerLabel = sceneOfferLabel(scene);
 
-  const response = await fetch("https://api.resend.com/emails", {
+  let response;
+  try { response = await fetch("https://api.resend.com/emails", {
+    signal: AbortSignal.timeout(15000),
     method: "POST",
     headers: { Authorization: `Bearer ${resendApiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -55,9 +77,11 @@ Deno.serve(async (req) => {
     }),
   });
 
+  } catch { return json({ saved: true, sent: false, requestId, warning: "Demande enregistrée ; notification email indisponible." }); }
+
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) return json({ error: payload?.message || "Email not sent" }, 502);
-  return json({ sent: true, to: questionTo, id: payload?.id || null });
+  if (!response.ok) return json({ saved: true, sent: false, requestId, warning: "Demande enregistrée ; notification email indisponible." });
+  return json({ saved: true, requestId, sent: true, to: questionTo, id: payload?.id || null });
 });
 
 function questionEmailHtml({ scene, clientName, clientEmail, offerLabel, subject, message, sceneUrl, category, urgency }: any) {

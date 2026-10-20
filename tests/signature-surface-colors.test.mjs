@@ -18,10 +18,10 @@ const colors = [
 ];
 const ids = (list) => Array.from(list, (color) => color.id);
 
-test('Signature surfaces share one layout without changing other packs', () => {
+test('Signature and SIAE surfaces share one layout', () => {
   const options = source.slice(source.indexOf('function OptionsStepPanel('), source.indexOf('function OptionsStepPanel(') + 22000);
-  assert.match(options, /<CarpetColorOptionCard\s+uniformLayout=\{isSignatureStand\}/);
-  assert.match(options, /<ColorOptionCard\s+uniformLayout=\{isSignatureStand\}/);
+  assert.match(options, /<CarpetColorOptionCard\s+uniformLayout=\{uniformColorSections\}/);
+  assert.match(options, /<ColorOptionCard\s+uniformLayout=\{uniformColorSections\}/);
   for (const name of ['ColorOptionCard', 'CarpetColorOptionCard']) {
     const start = source.indexOf(`function ${name}(`);
     const component = source.slice(start, source.indexOf('\n}\n', start));

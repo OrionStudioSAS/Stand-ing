@@ -1,3 +1,4 @@
+import { signatureFootprintSupplementLine } from '../src/signatureFootprint.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -18,7 +19,7 @@ function load(api, source, name) {
 }
 
 function pricingApi() {
-  const api = vm.createContext({
+  const api = vm.createContext({ signatureFootprintSupplementLine,
     manualOrderRowsToPricingLines, normalizeManualOrderCategory, replaceManualOrderPricingLines,
     roundCurrency: money, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance,
     isSignatureScene: (scene) => scene.offer === 'Signature',
@@ -95,7 +96,7 @@ test('manual rows named reserve, carpet or counter logo remain distinct and resp
 });
 
 test('asset link uses the scene pack reference and price, and maps the configured asset category', () => {
-  const api = vm.createContext({ normalizeManualOrderCategory,
+  const api = vm.createContext({ signatureFootprintSupplementLine, normalizeManualOrderCategory,
     sceneOfferLabel: (scene) => scene.offer,
     assetBusinessCategoryLabel: (asset) => asset.dimensions.category,
     assetToCatalogEntry: (asset) => asset,
@@ -119,12 +120,22 @@ test('asset link uses the scene pack reference and price, and maps the configure
 function persistenceApi(remote = false) {
   let scenes = [{ id: 'scene-one', offer: 'Confort', source_payload: { specialRequest: { text: 'Please add coffee' }, options: { carpet: 'blue' }, pricing: { lines: [] } }, dimensions: { width: 4, depth: 3 } }];
   let readError = null;
-  const api = vm.createContext({ mergeManualOrderPricing, scenePackBenefits, fixedWallHeight: 2.5,
+  const api = vm.createContext({ signatureFootprintSupplementLine, mergeManualOrderPricing, scenePackBenefits, fixedWallHeight: 2.5,
     readLocalScenes: () => scenes, writeLocalScenes: (next) => { scenes = next; }, saveSceneItems: async () => {},
     supabase: remote ? { from(table) {
       assert.equal(table, 'scenes');
       return { select() { return { eq(column, id) { assert.equal(column, 'id'); return { async single() { return { data: scenes.find((scene) => scene.id === id), error: readError }; } }; } }; },
-        update(payload) { return { async eq(column, id) { assert.equal(column, 'id'); scenes = scenes.map((scene) => scene.id === id ? { ...scene, ...payload } : scene); return { error: null }; } }; } };
+        update(payload) {
+          const filters = [];
+          const apply = () => {
+            const matches = scene => filters.every(([key,value]) => scene[key] === value);
+            const matched = scenes.find(matches);
+            scenes = scenes.map(scene => matches(scene) ? { ...scene, ...payload } : scene);
+            return { data: matched ? { id: matched.id } : null, error: null };
+          };
+          const query = { eq(column,value) { filters.push([column,value]); return query; }, select() { return query; }, maybeSingle: async () => apply(), then(resolve,reject) { return Promise.resolve(apply()).then(resolve,reject); } };
+          return query;
+        } };
     } } : null,
   });
   for (const name of ['sceneWithManualOrderLines', 'saveSceneManualOrderLines', 'preserveSceneReadOnly', 'persistScene']) load(api, store, name);

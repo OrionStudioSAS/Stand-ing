@@ -97,7 +97,7 @@ try {
   await thick.click();
   await page.waitForFunction(() => window.savedScene?.options.carpetThick);
   const checked = await appearance();
-  assert.equal(checked.background, unchecked.background, 'The blue card background must not change when toggled');
+  assert.equal(checked.background, unchecked.background, 'The neutral card background must not change when toggled');
   assert.notEqual(checked.switch, unchecked.switch, 'The switch indicates the selected state');
   for (const state of [unchecked, checked]) {
     assert.ok(contrast(state.title, state.background) >= 4.5, 'Title contrast meets WCAG AA');
@@ -107,7 +107,7 @@ try {
   for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height:1000 });
     const state = await appearance();
-    assert.ok(state.toggle.right <= state.text.left && state.text.right <= state.price.left, `Card contents do not overlap at ${width}px`);
+    assert.ok(state.text.right <= state.toggle.left, `Card contents do not overlap at ${width}px`);
     assert.ok(state.price.right <= state.card.right, 'Price stays inside the card');
     assert.equal(state.background, unchecked.background);
   }
@@ -199,6 +199,12 @@ try {
     await page.getByRole('button', { name: /^Sol/ }).click();
     const option = page.locator('.config-toggle-option').filter({ hasText: 'Moquette épaisse' });
     assert.equal(await option.count(), 1, `${pack} exposes just one shared thick-carpet option`);
+    if (['Équipé', 'Signature'].includes(pack)) {
+      assert.equal(await page.locator('.surface-color-option-card').filter({hasText:'MOQUETTE'}).count() >= 1, true, `${pack} uses the shared floor color layout`);
+      await page.getByRole('button', { name: /^Cloison/ }).click();
+      assert.equal(await page.locator('.surface-color-option-card').filter({hasText:'COTON GRATTÉ'}).count(), 1, `${pack} uses the shared wall color layout`);
+      await page.getByRole('button', { name: /^Sol/ }).click();
+    }
     await option.click();
     await page.waitForFunction((pack) => window.savedScene?.offer === pack && window.savedScene.options.carpetThick && window.savedScene.options.footprintThick, pack);
     const lines = await page.evaluate(() => window.refinementPricing.lines.filter((line) => line.label.includes('Moquette épaisse')));

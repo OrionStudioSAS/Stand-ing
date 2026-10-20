@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { createServer } from 'vite';
+import { chromium } from 'playwright';
+const appId=resolve('src/__adjustments-app.jsx'), pageId=resolve('src/__adjustments-page.jsx');
+const source=await readFile('src/App.jsx','utf8');
+const entries=[['0809','Marine'],['0939','Gris Clair'],['0400','Jaune'],['0200','Beige'],['0740','Bordeaux'],['0625','Vert Pré'],['0952','Gris Chiné Clair'],['0822','Turquoise'],['0713','Rouge'],['0450','Orange'],['0913','Noir'],['0524','Violet'],['0947','Gris Moyen'],['0960','Gris Foncé'],['0510','Fuchsia'],['0842','Bleu Nuit'],['0219','Sable'],['0840','Bleu Clair'],['0675','Pistache'],['0637','Vert Sapin'],['0936','Taupe']];
+const asset={type:'signature-colors',label:'Empreinte + arche SIGNATURE',is_active:true,dimensions:{isColorGroup:true,packs:['Signature'],colorUsages:['footprint'],colorGroupPrice:285,colorOptions:entries.map(([code,name],i)=>({id:code,code,name,hex:'#1450aa',isDefault:i===0,isFree:i===0}))}};
+const harness=`import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {AssetDrawer,SignatureArchOptionCard,packColorPalette} from '/src/__adjustments-app.jsx';
+const asset=${JSON.stringify(asset)};const colors=packColorPalette([asset],'Signature','footprint');
+function Test(){const [drawer,setDrawer]=useState(false),[color,setColor]=useState(colors[0]);return <><button onClick={()=>setDrawer(!drawer)}>Editer le groupe test</button>{drawer?<AssetDrawer asset={asset} assets={[asset]} scenes={[]} salons={[]} onClose={()=>setDrawer(false)} onSave={value=>{window.savedGroup=value;return value;}}/>:<SignatureArchOptionCard items={[{id:'arch',type:'arche-signature',options:{}}]} colors={colors} selectedColor={color} onColorChange={id=>setColor(colors.find(c=>c.id===id))}/>}</>};createRoot(document.getElementById('root')).render(<Test/>);`;
+const server=await createServer({server:{host:'127.0.0.1',port:0},logLevel:'error',plugins:[{name:'requested-adjustments',resolveId(id){if(id==='/src/__adjustments-app.jsx')return appId;if(id==='/src/__adjustments-page.jsx')return pageId;},load(id){if(id===appId)return source.replace("createRoot(document.getElementById('root')).render(<App />);",'export {AssetDrawer,SignatureArchOptionCard,packColorPalette};');if(id===pageId)return harness;if(id===resolve('src/data/supabaseClient.js'))return 'export const supabase = null;';},configureServer(vite){vite.middlewares.use((req,res,next)=>{if(req.url!=='/__adjustments-test__')return next();res.setHeader('Content-Type','text/html');res.end('<div id="root"></div><script type="module" src="/src/__adjustments-page.jsx"></script>');});}}]});
+let browser;
+try{
+ await server.listen();browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1100,height:1000}});const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__adjustments-test__`);
+ assert.equal(await page.getByRole('group',{name:'EMPREINTE MOQUETTE : couleurs incluses',exact:true}).getByRole('button').count(),8);
+ const optional=page.getByRole('group',{name:'EMPREINTE MOQUETTE : couleurs en option',exact:true});assert.equal(await optional.getByRole('button').count(),13);
+ await optional.getByRole('button',{name:'Gris Clair (0939)',exact:true}).click();
+ assert.match(await page.locator('.surface-color-option-card').innerText(),/285/);
+ assert.equal(await page.getByText('1000 × 2980 mm',{exact:true}).count(),1);assert.equal(await page.getByText('1000 × 1000 mm',{exact:true}).count(),1);
+ await page.screenshot({path:'/tmp/standing-signature-adjustments.png',fullPage:true});
+ await page.getByRole('button',{name:'Editer le groupe test'}).click();
+ await page.locator('.asset-color-import input').setInputFiles({name:'0999-Nouvelle couleur.svg',mimeType:'image/svg+xml',buffer:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#ff9900"/></svg>')});
+ await page.getByRole('button',{name:'Enregistrer les modifications',exact:true}).click();
+ await page.waitForFunction(()=>window.savedGroup?.dimensions.colorOptions.length===22);
+ const saved=await page.evaluate(()=>window.savedGroup);assert.deepEqual(saved.dimensions.colorOptions.slice(0,21).map(c=>c.id),asset.dimensions.colorOptions.map(c=>c.id));assert.equal(saved.dimensions.colorOptions[0].isDefault,true);assert.equal(saved.dimensions.colorOptions.at(-1).isDefault,false);assert.equal(saved.dimensions.colorOptions.at(-1).isFree,false);assert.equal(saved.dimensions.colorGroupPrice,285);assert.deepEqual(errors,[]);
+ console.log('Requested adjustments browser: configured group 8/13, flat price, arch dimensions, additional color upload preserving group OK');
+}finally{await browser?.close();await server.close();}

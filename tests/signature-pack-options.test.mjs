@@ -1,3 +1,4 @@
+import { signatureFootprintPalette } from '../src/signatureFootprint.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -13,7 +14,7 @@ function loadFunction(name, context) {
 }
 
 function packContext() {
-  const context = vm.createContext({
+  const context = vm.createContext({ signatureFootprintPalette,
     carpetColors,
     wallFabricColors,
     colorOptionsForUsage: (_assets, _pack, _usage, fallback) => fallback,
@@ -53,7 +54,7 @@ test('Signature reserve bands cover 14, 15, 23, 24, 35 and 36 square metres with
 });
 
 test('Signature includes both partition heads at every area, including existing scenes with old rule counts', () => {
-  const context = vm.createContext({
+  const context = vm.createContext({ signatureFootprintPalette,
     isSignatureScene: (scene) => scene.offer === 'Signature',
     scenePackBenefits: () => ({ mode: 'allowance' }),
     normalizePackLabel: (label) => String(label || '').toLowerCase(),
@@ -92,7 +93,7 @@ test('Signature includes both partition heads at every area, including existing 
 
 test('The same Signature head asset is assigned to opposite stand edges', () => {
   const entry = { type: 'signature-head', label: 'Tête de cloison Signature' };
-  const context = vm.createContext({
+  const context = vm.createContext({ signatureFootprintPalette,
     isSignaturePackLabel: (label) => String(label || '').toLowerCase() === 'signature',
     findCatalogEntry: () => entry,
     isSmclPartitionHeadItem: () => false,
@@ -118,7 +119,7 @@ test('The same Signature head asset is assigned to opposite stand edges', () => 
 });
 
 test('Signature heads attach to side-wall fronts or back-wall ends, never rear corners', () => {
-  const context = vm.createContext({
+  const context = vm.createContext({ signatureFootprintPalette, isPartitionHeadItem: () => true,
     availableWalls: (layout) => layout === 'u'
       ? [{ id: 'back' }, { id: 'left' }, { id: 'right' }]
       : [{ id: 'back' }, ...(layout === 'back' ? [] : [{ id: layout }])],
@@ -143,7 +144,7 @@ test('Signature heads attach to side-wall fronts or back-wall ends, never rear c
 });
 
 test('Signature head follows each wall with its long model axis and correct wall gap', () => {
-  const context = vm.createContext({
+  const context = vm.createContext({ signatureFootprintPalette,
     isSignaturePartitionHeadItem: (item) => item.type === 'signature-head',
     isPartitionHeadItem: () => true,
     isPosterItem: () => false,
@@ -168,7 +169,7 @@ test('Signature head follows each wall with its long model axis and correct wall
 });
 
 test('Signature heads use their LED material for each uploaded image, not the other materials', () => {
-  const context = vm.createContext({
+  const context = vm.createContext({ signatureFootprintPalette,
     normalizedItemText: (item) => `${item.label || ''}`.toLowerCase(),
     isSignaturePackLabel: (pack) => String(pack).toLowerCase() === 'signature',
     normalizeMaterialName: (name) => String(name).toLowerCase(),
@@ -216,7 +217,8 @@ test('Signature fallback palettes remain restricted and its reserve fabric is an
   const footprint = context.packColorPalette([], 'Signature', 'footprint', carpetColors);
   const fabric = context.packColorPalette([], 'Signature', 'wallFabric', wallFabricColors);
   assert.deepEqual(Array.from(carpet, (color) => color.name), ['Gris clair', 'Bleu marine', 'Rouge']);
-  assert.deepEqual(Array.from(footprint, (color) => color.name), ['Gris clair', 'Bleu marine', 'Rouge']);
+  assert.equal(footprint.filter(color => color.included).length, 8);
+  assert.ok(footprint.filter(color => !color.included).every(color => color.price === 285));
   assert.deepEqual(Array.from(fabric, (color) => color.name), ['Blanc', 'Rouge', 'Gris clair', 'Bleu']);
   assert.equal(fabric[2].hex, '#c8c8c8');
   assert.equal(context.signatureReserveWallFabricColor().code, '3026');

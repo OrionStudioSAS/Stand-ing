@@ -361,6 +361,23 @@ function sceneWithManualOrderLines(scene, lines = []) {
 
 export async function markSceneSpecialRequestResolved(scene) {
   const resolvedAt = new Date().toISOString();
+  if (scene.requestQuestionId) {
+    const resolveQuestions = (source = {}) => ({ ...source, questions: (source.questions || []).map((question) => question.id === scene.requestQuestionId ? { ...question, status: 'resolved', resolvedAt } : question) });
+    if (!supabase) {
+      const scenes = readLocalScenes();
+      const current = scenes.find((item) => item.id === scene.id) || scene;
+      const updated = { ...current, requestQuestionId: undefined, source_payload: resolveQuestions(current.source_payload) };
+      writeLocalScenes(scenes.map((item) => item.id === scene.id ? updated : item));
+      return updated;
+    }
+    const { data: current, error: readError } = await supabase.from('scenes').select('source_payload').eq('id', scene.id).single();
+    if (readError) throw readError;
+    const sourcePayload = resolveQuestions(current.source_payload);
+    const { error } = await supabase.from('scenes').update({ source_payload: sourcePayload, updated_at: resolvedAt }).eq('id', scene.id);
+    if (error) throw error;
+    return { ...scene, requestQuestionId: undefined, source_payload: sourcePayload };
+  }
+
   const resolvedRequest = (value) => ({ ...(typeof value === 'string' ? { text: value } : value || {}), status: 'resolved', resolvedAt });
   const resolvedPayload = (source = {}) => ({
     ...source,
@@ -428,7 +445,7 @@ export async function reopenSceneAsDraft(scene) {
 
 function preserveSceneReadOnly(scene, current = {}) {
   const sourcePayload = { ...(scene.source_payload || {}) };
-  for (const key of ['exhibitor_view_only', 'exhibitor_view_only_updated_at']) {
+  for (const key of ['exhibitor_view_only', 'exhibitor_view_only_updated_at', 'questions']) {
     if (Object.hasOwn(current || {}, key)) sourcePayload[key] = current[key];
   }
   return { ...scene, source_payload: sourcePayload };
@@ -450,7 +467,7 @@ async function persistScene(scene) {
   }
 
   // A scene opened before an admin edit must not overwrite the latest order rows.
-  const { data: current, error: readError } = await supabase.from('scenes').select('source_payload').eq('id', scene.id).single();
+  const { data: current, error: readError } = await supabase.from('scenes').select('source_payload,updated_at').eq('id', scene.id).single();
   if (readError) throw readError;
   if (Object.hasOwn(current?.source_payload || {}, 'manualPurchaseOrderLines')) {
     scene = sceneWithManualOrderLines(scene, current.source_payload.manualPurchaseOrderLines);
@@ -478,8 +495,15 @@ async function persistScene(scene) {
     updated_at: new Date().toISOString(),
   };
 
-  const { error } = await supabase.from('scenes').update(payload).eq('id', scene.id);
-  if (error) throw error;
+  const update = supabase.from('scenes').update(payload).eq('id', scene.id);
+  if (current.updated_at) {
+    const { data, error } = await update.eq('updated_at', current.updated_at).select('id').maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('La scène a été modifiée entre-temps. Réessayez pour conserver les dernières demandes.');
+  } else {
+    const { error } = await update;
+    if (error) throw error;
+  }
 
   await saveSceneItems(scene);
 
@@ -685,10 +709,20 @@ export async function setSceneExhibitorReadOnly(scene, locked) {
 }
 
 export async function sendSceneQuestionEmail(scene, options = {}) {
-  if (!supabase) return { sent: false, local: true };
+  const requestId = crypto.randomUUID();
+  if (!supabase) {
+    const questions = { id: requestId, subject: String(options.subject || '').trim(), message: String(options.message || '').trim(), category: options.category || '', urgency: options.urgency || '', status: 'pending', createdAt: new Date().toISOString() };
+    const scenes = readLocalScenes();
+    const current = scenes.find((item) => item.id === scene.id) || scene;
+    const updated = { ...current, source_payload: { ...current.source_payload, questions: [...(current.source_payload?.questions || []), questions] } };
+    writeLocalScenes(scenes.some((item) => item.id === scene.id) ? scenes.map((item) => item.id === scene.id ? updated : item) : [updated, ...scenes]);
+    return { sent: false, saved: true, local: true, requestId };
+  }
+
 
   const { data, error } = await supabase.functions.invoke('scene-question-email', {
     body: {
+      requestId,
       sceneId: scene?.id,
       shareToken: scene?.share_token,
       subject: options.subject || '',
@@ -1903,6 +1937,27 @@ export async function uploadObjectAssetBatPicto(asset, file, scopeKey = '') {
       batPictoPath: uploaded.path,
     },
   };
+}
+
+export async function uploadColorGroupColors(asset, files) {
+  if (!asset?.dimensions?.isColorGroup) throw new Error('Sélectionne un groupe de couleurs.');
+  const fileList = Array.from(files || []);
+  if (!fileList.length || fileList.some((file) => !isProfileImageFile(file))) throw new Error('Sélectionne des images JPG, PNG, WebP ou SVG.');
+  const batch = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const colors = [];
+  for (const [index, file] of fileList.entries()) {
+    const storagePath = `${asset.dimensions.storageRoot || asset.type}/additional/${batch}-${index}-${sanitizeStoragePath(file.name)}`;
+    let publicUrl;
+    if (supabase) {
+      const bucket = supabase.storage.from('object-assets');
+      const { error } = await bucket.upload(storagePath, file, { cacheControl: '31536000', contentType: guessContentType(file), upsert: false });
+      if (error) throw error;
+      publicUrl = bucket.getPublicUrl(storagePath).data.publicUrl;
+    } else publicUrl = await fileToDataUrl(file);
+    const color = colorOptionFromFile(file, publicUrl, supabase ? storagePath : '');
+    colors.push({ ...color, id: `${color.id}-${batch}-${index}`, isDefault: false, isFree: false });
+  }
+  return colors;
 }
 
 export async function uploadColorGroupFolder(files) {

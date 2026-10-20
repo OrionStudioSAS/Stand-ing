@@ -1,3 +1,4 @@
+import { signatureFootprintSupplementLine } from '../src/signatureFootprint.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -9,7 +10,7 @@ const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const money = (value) => Math.round(Number(value) * 100) / 100;
 
 function pricingApi() {
-  const api = vm.createContext({
+  const api = vm.createContext({ signatureFootprintSupplementLine,
     scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance,
     manualOrderRowsToPricingLines, replaceManualOrderPricingLines, roundCurrency: money,
     isSignatureScene: (scene) => scene.offer === 'Signature',
