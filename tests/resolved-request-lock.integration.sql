@@ -7,8 +7,8 @@ select
  (select u.email from auth.users u where not exists (select 1 from public.admin_users a where a.user_id=u.id and a.is_active) limit 1) as client_email,
  (select user_id from public.admin_users where is_active limit 1) as admin_id;
 grant select on lock_test_identities to authenticated;
-insert into public.scenes (id, salon, offer, client_email, source_payload)
-select 'codex-lock-verification', 'Test rollback only', 'Confort', client_email, '{"exhibitor_view_only":true}'::jsonb from lock_test_identities;
+insert into public.scenes (id, salon, offer, client_email, status, client_status, source_payload)
+select 'codex-lock-verification', 'Test rollback only', 'Confort', client_email, 'bat_pending', 'configured', '{"exhibitor_view_only":true,"options":{"reserveOptionType":"manual-reserve"}}'::jsonb from lock_test_identities;
 insert into public.scene_items (scene_id,item_uid,type,label) values ('codex-lock-verification','test-item','test','Before');
 insert into public.scene_files (scene_id,type,file_name) values ('codex-lock-verification','other','before.txt');
 -- Reproduce the Edge Function database role, without granting private helpers.
@@ -77,7 +77,17 @@ set local role authenticated;
 update public.scenes set project_name='Admin may edit' where id='codex-lock-verification';
 update public.scene_items set label='Admin may edit' where scene_id='codex-lock-verification';
 update public.scene_files set file_name='admin.txt' where scene_id='codex-lock-verification';
-update public.scenes set source_payload=jsonb_build_object('exhibitor_view_only',false) where id='codex-lock-verification';
+update public.scenes set status='created',client_status='draft',
+  source_payload=source_payload || jsonb_build_object('exhibitor_view_only',false,'exhibitor_view_only_updated_at',now()),
+  updated_at=now() where id='codex-lock-verification';
+do $$
+begin
+  if not exists(select 1 from public.scenes where id='codex-lock-verification' and status='created' and client_status='draft'
+    and source_payload->>'exhibitor_view_only'='false' and source_payload->'options'->>'reserveOptionType'='manual-reserve') then
+    raise exception 'Admin reopening did not preserve configuration and reset both statuses';
+  end if;
+end;
+$$;
 reset role;
 select set_config('request.jwt.claims',jsonb_build_object('sub',client_id,'email',client_email,'role','authenticated')::text,true) is not null as client_claims_restored from lock_test_identities;
 set local role authenticated;

@@ -12,6 +12,7 @@ import { packEditorChanges, packEditorImpact } from './packEditor.js';
 import { closestSpotWallTarget, spotTargetPatch, spotWallTargetFromRay, spotWallTargets } from './spotPlacement.js';
 import { manualOrderCategories, manualOrderRowsToPricingLines, normalizeManualOrderCategory, replaceManualOrderPricingLines } from './manualOrderLines.js';
 import { useSceneExhibitorReadOnly } from './useSceneExhibitorReadOnly.js';
+import { canReopenSceneAsDraft } from './sceneReopening.js';
 import AdminMondayView, { MondaySyncFeedback } from './AdminMondayView.jsx';
 import PresentationGround from './PresentationGround.jsx';
 import { normalizePartitionHeadVisuals, partitionHeadUsesDifferentVisuals, patchPartitionHeadVisuals, withPartitionHeadVisualMode } from './partitionHeadVisuals.js';
@@ -62,7 +63,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminAuditEvents, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, markSceneSpecialRequestResolved, publicConfiguratorUrl, requestSceneAccessCode, saveAdminUser, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveSceneManualOrderLines, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminAuditEvents, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, markSceneSpecialRequestResolved, publicConfiguratorUrl, reopenSceneAsDraft, requestSceneAccessCode, saveAdminUser, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveSceneManualOrderLines, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, signatureAllowancePerSquareMeter, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
 import { createTechnicalPlanBlob, exportTechnicalPdf, standWallPanelRequirements } from './technicalExport.js';
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
@@ -1173,7 +1174,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
   const effectiveAdminViewer = Boolean(isAdminViewer && !adminExhibitorPreview);
-  const readOnly = useSceneExhibitorReadOnly(initialScene, effectiveAdminViewer, forceReadOnly);
+  const handleSceneReopened = useCallback(() => setSaveState('draft'), []);
+  const readOnly = useSceneExhibitorReadOnly(initialScene, effectiveAdminViewer, forceReadOnly, handleSceneReopened);
   const sceneVisualContext = useMemo(() => ({
     fontRevision,
     language,
@@ -9146,6 +9148,16 @@ function AdminDashboard({ user, adminProfile }) {
     await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminUsers(), refreshAdminAudit(), refreshSalonFilterChoices()]);
   };
 
+  const reopenAdminScene = async (scene) => {
+    const updated = await reopenSceneAsDraft(scene);
+    setScenes((current) => current.map((item) => item.id === updated.id ? { ...item, ...updated } : item));
+    setClients((current) => current.map((client) => ({ ...client,
+      scenes: (client.scenes || []).map((item) => item.id === updated.id ? { ...item, ...updated } : item),
+    })));
+    await Promise.all([refreshScenes(), refreshClients(), refreshSalons(), refreshAdminAudit()]);
+    return updated;
+  };
+
   const deleteAdminUser = async (userRow) => {
     if (!userRow?.id) return false;
     const label = userRow.display_name || userRow.email || 'cet utilisateur';
@@ -9331,7 +9343,7 @@ function AdminDashboard({ user, adminProfile }) {
               onSalonChanged={refreshSalons}
             />
           )}
-          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} salonChoices={salonFilterChoices} packChoices={packFilterChoices} updateFilter={updateFilter} search={adminSearch} syncState={syncState} onSyncMonday={runMondaySync} onDeleteScene={deleteAdminScene} />}
+          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} salonChoices={salonFilterChoices} packChoices={packFilterChoices} updateFilter={updateFilter} search={adminSearch} syncState={syncState} onSyncMonday={runMondaySync} onDeleteScene={deleteAdminScene} onReopenScene={reopenAdminScene} />}
           {tab === 'bat' && <AdminBatView scenes={scenes.filter((scene) => !adminSearch || normalizeTextValue([scene.project_name, scene.client_name, scene.salon, scene.event_name].join(' ')).includes(normalizeTextValue(adminSearch)))} assets={assets} />}
           {tab === 'objects' && (
             <AdminObjectsView
@@ -12067,8 +12079,9 @@ function adminClientSalonChoices(baseChoices = [], currentSalon = '') {
   return [...choices].sort((a, b) => a.localeCompare(b, 'fr'));
 }
 
-function AdminClientsView({ clients, scenes = [], assets = [], filters, salonChoices = [], packChoices = [], updateFilter, search = '', syncState, onSyncMonday, onDeleteScene }) {
+function AdminClientsView({ clients, scenes = [], assets = [], filters, salonChoices = [], packChoices = [], updateFilter, search = '', syncState, onSyncMonday, onDeleteScene, onReopenScene }) {
   const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
+  const [reopenState, setReopenState] = useState({ sceneId: '', message: '', error: '' });
   const [clientPage, setClientPage] = useState(1);
   const [clientPageSize, setClientPageSize] = useState(12);
   const [activeTab, setActiveTab] = useState('all');
@@ -12126,6 +12139,19 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
     }
   };
 
+  const runReopen = async (scene) => {
+    if (reopenState.sceneId || !onReopenScene || !canReopenSceneAsDraft(scene)) return;
+    const label = scene.project_name || scene.client_name || 'cette scène';
+    if (!window.confirm(`Repasser ${label} en brouillon ?\n\nL’exposant pourra à nouveau modifier sa scène. Son contenu sera conservé.`)) return;
+    setReopenState({ sceneId: scene.id, message: '', error: '' });
+    try {
+      await onReopenScene(scene);
+      setReopenState({ sceneId: '', message: `${label} est repassée en brouillon. L’exposant peut à nouveau la modifier.`, error: '' });
+    } catch (error) {
+      setReopenState({ sceneId: '', message: '', error: error.message || 'Déverrouillage impossible.' });
+    }
+  };
+
   return (
     <section className="admin-exhibitors-v2">
       <div className="admin-exhibitors-tabs" role="group" aria-label="Statut des exposants">
@@ -12141,6 +12167,8 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
       </div>
       <MondaySyncFeedback syncState={syncState} />
       {deleteState.error && <div className="sync-result error" role="alert">{deleteState.error}</div>}
+      {reopenState.error && <div className="sync-result error" role="alert">{reopenState.error}</div>}
+      {reopenState.message && <p className="admin-exhibitors-feedback" role="status">{reopenState.message}</p>}
       <p className="admin-exhibitors-count"><strong>{visibleRows.length} exposant{visibleRows.length > 1 ? 's' : ''}</strong> · triés par nom</p>
       <div className="admin-exhibitors-table-scroll"><section className="admin-exhibitors-table" aria-label="Liste des exposants">
         <div className="admin-exhibitors-head"><span>Exposant ↑</span><span>Société</span><span>Salon</span><span>Pack</span><span>Statut</span><span className="sr-only">Actions</span></div>
@@ -12154,7 +12182,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
             <summary className="admin-exhibitors-row"><span className="admin-exhibitors-person"><i>{initials}</i><span><strong>{name}</strong><small>{client.email || 'E-mail non renseigné'}</small></span></span><span className="admin-exhibitors-company">{company || '—'}</span><span>{clientSalonSummary(client)}</span><span><em className="admin-exhibitors-pack">{primary.offer || '—'}</em></span><span><em className={`admin-exhibitors-badge ${status.id}`}>{status.label}</em>{clientScenes.length > 1 && <small className="admin-exhibitors-more">+{clientScenes.length - 1}</small>}</span><span className="admin-exhibitors-expand">Scènes {clientScenes.length} <ChevronDown size={14} /></span></summary>
             <div className="admin-exhibitors-scenes"><div className="admin-exhibitors-scenes-head"><p>{clientScenes.length} scène{clientScenes.length > 1 ? 's' : ''} liée{clientScenes.length > 1 ? 's' : ''}</p><button type="button" onClick={() => setProfileClient(client)}>Ouvrir la fiche exposant</button></div>{clientScenes.length ? clientScenes.map((scene) => {
               const sceneStatus = adminClientSceneState(scene);
-              return <div className="admin-exhibitors-scene" key={scene.id || scene.share_token || scene.monday_item_id}><span className="admin-exhibitors-scene-icon"><Box size={16} /></span><span className="admin-exhibitors-scene-title"><strong>{scene.project_name || scene.client_name || 'Scène'}</strong><small>{clientSceneMeta(scene)}</small><small className="admin-exhibitors-scene-location">{clientSceneLocationLabel(scene)}</small></span><em className={`admin-exhibitors-badge ${sceneStatus.id}`}>{sceneStatus.label}</em><div className="admin-exhibitors-scene-actions"><a className="admin-outline-v2" href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a><button type="button" onClick={async () => downloadSceneTechnicalPlan(await loadSceneForAdminAction(scene), assets)}>Télécharger BAT</button><button type="button" onClick={async () => downloadScenePurchaseOrder(await loadSceneForAdminAction(scene), assets)}>Bon de commande</button><button className="admin-exhibitors-delete" type="button" aria-label={`Supprimer la scène ${scene.project_name || ''}`} disabled={deleteState.loadingId === `scene:${scene.id}`} onClick={() => runDelete(`scene:${scene.id}`, () => onDeleteScene?.(scene))}><Trash2 size={16} /></button></div></div>;
+              return <div className="admin-exhibitors-scene" key={scene.id || scene.share_token || scene.monday_item_id}><span className="admin-exhibitors-scene-icon"><Box size={16} /></span><span className="admin-exhibitors-scene-title"><strong>{scene.project_name || scene.client_name || 'Scène'}</strong><small>{clientSceneMeta(scene)}</small><small className="admin-exhibitors-scene-location">{clientSceneLocationLabel(scene)}</small></span><em className={`admin-exhibitors-badge ${sceneStatus.id}`}>{sceneStatus.label}</em><div className="admin-exhibitors-scene-actions">{onReopenScene && canReopenSceneAsDraft(scene) && <button className="admin-exhibitors-reopen" type="button" disabled={Boolean(reopenState.sceneId) || Boolean(deleteState.loadingId)} onClick={() => runReopen(scene)}><Unlock size={14} />{reopenState.sceneId === scene.id ? 'Déverrouillage...' : 'Repasser en brouillon'}</button>}<a className="admin-outline-v2" href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a><button type="button" onClick={async () => downloadSceneTechnicalPlan(await loadSceneForAdminAction(scene), assets)}>Télécharger BAT</button><button type="button" onClick={async () => downloadScenePurchaseOrder(await loadSceneForAdminAction(scene), assets)}>Bon de commande</button><button className="admin-exhibitors-delete" type="button" aria-label={`Supprimer la scène ${scene.project_name || ''}`} disabled={deleteState.loadingId === `scene:${scene.id}`} onClick={() => runDelete(`scene:${scene.id}`, () => onDeleteScene?.(scene))}><Trash2 size={16} /></button></div></div>;
             }) : <div className="admin-empty-row">Aucune scène associée.</div>}</div>
           </details>;
         }) : <div className="admin-empty-row">Aucun exposant trouvé avec les filtres actuels.</div>}

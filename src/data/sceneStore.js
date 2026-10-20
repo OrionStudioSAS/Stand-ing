@@ -5,6 +5,7 @@ import { supabase } from './supabaseClient.js';
 import { catalog, layouts } from '../config/catalog.js';
 import { normalizePackBenefits, scenePackBenefits, inheritCurrentPackBenefits, isSignaturePackScene } from '../../supabase/functions/_shared/packBenefits.js';
 import { mergeManualOrderPricing } from '../manualOrderLines.js';
+import { sceneDraftPatch } from '../sceneReopening.js';
 
 const storageKey = 'standing-scenes-v1';
 const fixedWallHeight = 2.5;
@@ -386,10 +387,43 @@ export async function markSceneSpecialRequestResolved(scene) {
 }
 
 export async function getSceneExhibitorReadOnly(scene) {
-  if (!supabase) return Boolean(readLocalScenes().find((item) => item.id === scene.id)?.source_payload?.exhibitor_view_only);
-  const { data, error } = await supabase.from('scenes').select('source_payload->exhibitor_view_only').eq('id', scene.id).single();
+  return (await getSceneExhibitorState(scene)).locked;
+}
+
+export async function getSceneExhibitorState(scene) {
+  if (!supabase) {
+    const current = readLocalScenes().find((item) => item.id === scene.id) || scene;
+    return { locked: Boolean(current.source_payload?.exhibitor_view_only), clientStatus: current.client_status,
+      lockUpdatedAt: current.source_payload?.exhibitor_view_only_updated_at || '' };
+  }
+  const { data, error } = await supabase.from('scenes')
+    .select('client_status,source_payload->exhibitor_view_only,source_payload->exhibitor_view_only_updated_at').eq('id', scene.id).single();
   if (error) throw error;
-  return Boolean(data.exhibitor_view_only);
+  return { locked: Boolean(data.exhibitor_view_only), clientStatus: data.client_status,
+    lockUpdatedAt: data.exhibitor_view_only_updated_at || '' };
+}
+
+export async function reopenSceneAsDraft(scene) {
+  if (!scene?.id) throw new Error('Scène introuvable.');
+  if (!supabase) {
+    const scenes = readLocalScenes();
+    const current = scenes.find((item) => item.id === scene.id) || scene;
+    const updated = { ...current, ...sceneDraftPatch(current) };
+    writeLocalScenes(scenes.some((item) => item.id === scene.id)
+      ? scenes.map((item) => item.id === scene.id ? updated : item)
+      : [updated, ...scenes]);
+    return updated;
+  }
+  const columns = 'status,client_status,source_payload,updated_at';
+  const { data: current, error: readError } = await supabase.from('scenes')
+    .select(columns).eq('id', scene.id).single();
+  if (readError) throw readError;
+  // The lock guard restricts this update to admins. Reject concurrent edits rather than overwrite them.
+  const { data, error } = await supabase.from('scenes').update(sceneDraftPatch(current))
+    .eq('id', scene.id).eq('updated_at', current.updated_at).select(columns).maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error('La scène a été modifiée entre-temps. Actualisez la liste et réessayez.');
+  return { ...scene, ...data };
 }
 
 function preserveSceneReadOnly(scene, current = {}) {

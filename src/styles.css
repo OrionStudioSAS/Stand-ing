@@ -14772,6 +14772,9 @@ img.asset-thumb {
 .admin-exhibitors-scene-actions .admin-outline-v2 { min-height: 33px; white-space: nowrap; text-decoration: none; }
 .admin-exhibitors-scene-actions .admin-exhibitors-delete { display: grid; place-items: center; width: 32px; height: 32px; border: 0; color: #ce4141; background: transparent; cursor: pointer; }
 .admin-exhibitors-scene-actions .admin-exhibitors-delete:disabled { opacity: .4; cursor: wait; }
+.admin-exhibitors-scene-actions > button.admin-exhibitors-reopen { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #dce2e9; border-radius: 6px; color: #123878; white-space: nowrap; }
+.admin-exhibitors-scene-actions > button.admin-exhibitors-reopen:disabled { opacity: .5; cursor: wait; }
+.admin-exhibitors-feedback { margin: 12px 0; color: #147758; font-size: 13px; }
 .admin-exhibitors-pagination { display: flex; align-items: center; gap: 12px; color: #778194; font-size: 12px; }
 .admin-exhibitors-pagination > label { border: 1px solid #dce2e9; border-radius: 6px; padding: 8px 10px; background: #fff; }
 .admin-exhibitors-pagination > div { display: flex; align-items: center; gap: 6px; margin-left: auto; }
