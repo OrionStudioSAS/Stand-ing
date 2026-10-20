@@ -655,12 +655,12 @@ function technicalPlanVisuals(items = [], catalog = [], width = 4, depth = 3) {
     const itemIndex = drawable.findIndex((item) => item.id === head.itemId || item.groupId === head.itemId);
     const headVisual = visuals.find((visual) => visual.headSide === head.side);
     visuals.push({
-      label: `Habillage tête de cloison ${head.side === 'left' ? 'gauche' : head.side === 'right' ? 'droite' : ''}`.trim(),
+      label: `Habillage tête de cloison ${head.side === 'left' ? 'gauche' : head.side === 'right' ? 'droite' : ''}${head.face ? ` — ${head.face === 'front' ? 'recto' : 'verso'}` : ''}`.trim(),
       placement: `${itemIndex >= 0 ? `Objet n° ${itemIndex + 1} - ` : ''}${head.label}`,
       position: head.position,
       slotIndex: headVisual ? 1 : 0,
       imageUrl: head.imageUrl,
-      status: 'Société, stand, pavillon et secteur - visuel automatique',
+      status: head.face ? 'Société, allée, emplacement et pays - visuel automatique' : 'Société, stand, pavillon et secteur - visuel automatique',
     });
   });
   return visuals.map((visual, index) => ({ ...visual, reference: `S${index + 1}` }));

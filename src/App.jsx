@@ -1,3 +1,4 @@
+import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
 import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
 import { sceneAdminRequests, sceneQuestions, questionAsRequest } from './sceneRequests.js';
@@ -1180,15 +1181,17 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const effectiveAdminViewer = Boolean(isAdminViewer && !adminExhibitorPreview);
   const handleSceneReopened = useCallback(() => setSaveState('draft'), []);
   const readOnly = useSceneExhibitorReadOnly(initialScene, effectiveAdminViewer, forceReadOnly, handleSceneReopened);
+  const headCountry = sceneHeadCountry(initialScene);
   const sceneVisualContext = useMemo(() => ({
     fontRevision,
+    country: headCountry,
     language,
     company: partitionHeadCompany || sceneExhibitorCompanyName(initialScene, clientInfo, contactDetails),
     standNumber: sceneStandNumber(initialScene, contactDetails, standLabel),
     aisleNumber: sceneAisleNumber(initialScene, contactDetails),
     hall: sceneHallLabel(initialScene, contactDetails),
     sector: sceneSectorLabel(initialScene),
-  }), [fontRevision, language, partitionHeadCompany, initialScene, clientInfo, contactDetails, standLabel]);
+  }), [fontRevision, headCountry, language, partitionHeadCompany, initialScene, clientInfo, contactDetails, standLabel]);
   const sceneConstraints = useMemo(() => sceneConstraintsFromPayload(initialScene.source_payload, width, depth), [initialScene.source_payload, width, depth]);
   const sceneConstraint = sceneConstraints[0] || null;
 
@@ -1204,6 +1207,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [isSignatureStand]);
+
+  useEffect(() => {
+    if (normalizePackLabel(assetPackLabel) !== 'equipe' && !normalizeTextValue(assetPackLabel).includes('siae')) return undefined;
+    let cancelled = false;
+    loadEquippedHeadFlag(headCountry).then(() => { if (!cancelled) setFontRevision((value) => value + 1); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [assetPackLabel, headCountry]);
 
   useEffect(() => {
     setItems((current) => current.map((item) => constrainItem(item, width, depth, layout, genericCarpetFootprintEnabled)));
@@ -14672,7 +14682,7 @@ function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
     setLoadingId(scene.id); setEditorError('');
     try {
       const full = await loadSceneForAdminAction(scene);
-      await prepareTechnicalExportFonts();
+      await prepareTechnicalExportFonts(full);
       const catalog = sceneAdminCatalog(assets, full);
       setEditor({ sceneId: full.id, options: {
         width: Number(full.dimensions?.width || full.width_m || 4), depth: Number(full.dimensions?.depth || full.depth_m || 3),
@@ -15160,7 +15170,7 @@ function purchaseOrderOptionLabel(option = '') {
 
 async function downloadSceneTechnicalPlan(scene = {}, assets = []) {
   scene = await loadSceneForAdminAction(scene);
-  await prepareTechnicalExportFonts();
+  await prepareTechnicalExportFonts(scene);
   const catalogEntries = sceneAdminCatalog(assets, scene);
   const width = Number(scene.dimensions?.width || scene.width_m || 4);
   const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
@@ -15178,7 +15188,7 @@ async function downloadSceneTechnicalPlan(scene = {}, assets = []) {
 }
 
 async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = [], includeAdminEdits = false) {
-  await prepareTechnicalExportFonts();
+  await prepareTechnicalExportFonts(scene);
   const catalogEntries = sceneAdminCatalog(assets, scene);
   const width = Number(scene.dimensions?.width || scene.width_m || 4);
   const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
@@ -15238,12 +15248,13 @@ function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = [])
   ];
 }
 
-async function prepareTechnicalExportFonts() {
+async function prepareTechnicalExportFonts(scene = {}) {
   if (!document.fonts?.load) return;
   await Promise.allSettled([
     ...[200, 300, 700].map((weight) => document.fonts.load(`${weight} 92px Oswald`)),
     document.fonts.load('500 144px Gotham'),
     document.fonts.load('900 130px Gotham'),
+    loadEquippedHeadFlag(sceneHeadCountry(scene)),
   ]);
 }
 
@@ -15253,6 +15264,7 @@ function technicalPartitionHeadInformation(items = [], scene = {}) {
   const options = scene.options || scene.source_payload?.options || {};
   const contact = scene.source_payload?.contactDetails || {};
   const visualContext = {
+    country: sceneHeadCountry(scene),
     language: options.language || scene.source_payload?.language || 'fr',
     company: options.partitionHeadCompany || scene.source_payload?.partitionHeadCompany
       || mondayColumnTextByTitle(scene.source_payload, ['texte tete de cloison', 'texte tête de cloison'])
@@ -15262,7 +15274,7 @@ function technicalPartitionHeadInformation(items = [], scene = {}) {
     hall: sceneHallLabel(scene, contact),
     sector: sceneSectorLabel(scene),
   };
-  return heads.map((item) => {
+  return heads.flatMap((item) => {
     const headChild = item.children?.find(isPartitionHeadItem);
     const renderedItem = headChild || item;
     const side = item.options?.partitionHeadSide || item.dimensions?.smclHeadSide || smclPartitionHeadSide(item) || smclPartitionHeadSide(renderedItem);
@@ -15270,7 +15282,9 @@ function technicalPartitionHeadInformation(items = [], scene = {}) {
     const textures = createPartitionHeadInfoTexture(visualContext, { ...renderedItem, options: { ...renderedItem.options, partitionHeadSide: side || renderedItem.options?.partitionHeadSide } });
     const texture = textures?.image ? textures : textures?.[side || 'left'];
     try {
-      return { itemId: item.id, side, label: item.label || 'Tête de cloison', position: [Number(item.x || 0), Number(item.y || 0), Number(item.z || 0)], imageUrl: texture?.image?.toDataURL('image/png') || '' };
+      const information = { itemId: item.id, side, label: item.label || 'Tête de cloison', position: [Number(item.x || 0), Number(item.y || 0), Number(item.z || 0)] };
+      if (textures?.front && textures?.back) return ['front', 'back'].map((face) => ({ ...information, face, label: `${information.label} — ${face === 'front' ? 'recto' : 'verso'}`, imageUrl: textures[face].image.toDataURL('image/png') }));
+      return { ...information, imageUrl: texture?.image?.toDataURL('image/png') || '' };
     } finally {
       if (textures?.image) textures.dispose();
       else Object.values(textures || {}).forEach((value) => value?.dispose());
@@ -17862,8 +17876,16 @@ function wallCoverSurfaceOptions(layout, width, depth, items = [], options = {})
 }
 
 function wallCoverDisplaySegments(surface, items, width, depth, layout = 'back') {
-  const rawSegments = wallCoverDisplayIntervals(surface, items, width, depth, layout)
-    .map((interval, index) => wallCoverSegmentFromInterval(surface, interval, width, depth, index));
+  const measuredIntervals = wallCoverDisplayIntervals(surface, items, width, depth, layout);
+  const rawSegments = wallCoverDisplayIntervals(surface, items, width, depth, layout, { physicalReserveBounds: true })
+    .map((interval, index) => {
+      // Render up to the actual reserve wall; retain the commercial metre deduction.
+      const measured = measuredIntervals.reduce((best, candidate) => {
+        const overlap = Math.max(0, Math.min(interval.max, candidate.max) - Math.max(interval.min, candidate.min));
+        return overlap > best.overlap ? { interval: candidate, overlap } : best;
+      }, { interval: null, overlap: 0 }).interval || interval;
+      return { ...wallCoverSegmentFromInterval(surface, interval, width, depth, index), visibleWidth: roundM2(measured.max - measured.min) };
+    });
   const segments = rawSegments.filter((segment) => Number(segment.width || 0) >= minWallCoverDisplayWidth);
   if (!segments.length) return [];
   if (segments.length === 1) {
@@ -17874,7 +17896,7 @@ function wallCoverDisplaySegments(surface, items, width, depth, layout = 'back')
       sourceWall: surface.id,
       label: surface.label,
       wallCoverSegment: true,
-      visibleWidth: roundM2(Number(segment.width || 0)),
+      visibleWidth: segment.visibleWidth,
     }];
   }
   return segments.map((segment, index) => ({
@@ -17883,7 +17905,7 @@ function wallCoverDisplaySegments(surface, items, width, depth, layout = 'back')
     sourceWall: surface.id,
     label: wallCoverSegmentLabel(surface, segment, index, depth),
     wallCoverSegment: true,
-    visibleWidth: roundM2(Number(segment.width || 0)),
+    visibleWidth: segment.visibleWidth,
   }));
 }
 
@@ -17898,17 +17920,17 @@ function wallCoverBaseAvailableWidth(surface, width, depth, layout = 'back') {
   return Math.max(0, availableWidth);
 }
 
-function wallCoverDisplayIntervals(surface, items, width, depth, layout = 'back') {
+function wallCoverDisplayIntervals(surface, items, width, depth, layout = 'back', options = {}) {
   if (!surface || surface.kind === 'reserve') return [];
   const wall = surface.wall || surface.id;
   const range = wallAxisLimits(wall, width, depth);
-  const blockers = wallCoverDisplayBlockers(wall, items, width, depth, layout)
+  const blockers = wallCoverDisplayBlockers(wall, items, width, depth, layout, options)
     .map((blocker) => ({ min: clamp(blocker.min, range.min, range.max), max: clamp(blocker.max, range.min, range.max) }))
     .filter((blocker) => blocker.max > blocker.min);
   return freeWallIntervals(range, blockers).filter((interval) => interval.max - interval.min >= minWallCoverDisplayWidth);
 }
 
-function wallCoverDisplayBlockers(wall, items, width, depth, layout = 'back') {
+function wallCoverDisplayBlockers(wall, items, width, depth, layout = 'back', options = {}) {
   const range = wallAxisLimits(wall, width, depth);
   const blockers = [];
   if (wall === 'back') {
@@ -17919,7 +17941,7 @@ function wallCoverDisplayBlockers(wall, items, width, depth, layout = 'back') {
     const partitionBlocker = wallCoverPartitionHeadBlocker(item, wall, width, depth, 0);
     if (partitionBlocker) blockers.push(partitionBlocker);
     if (isReserveSceneItem(item)) {
-      const reserveBlocker = wallCoverReserveDisplayBlocker(item, wall, width, depth);
+      const reserveBlocker = wallCoverReserveDisplayBlocker(item, wall, width, depth, options);
       if (reserveBlocker) blockers.push(reserveBlocker);
     }
   });
@@ -17975,12 +17997,13 @@ function summedIntervalLength(intervals = [], range = { min: 0, max: 0 }) {
   }, 0);
 }
 
-function wallCoverReserveDisplayBlocker(item, wall, width, depth) {
+function wallCoverReserveDisplayBlocker(item, wall, width, depth, options = {}) {
   const blocker = reserveWallBlocker(item, wall, width, depth, 0);
   if (!blocker) return null;
   const limits = wallAxisLimits(wall, width, depth);
   const rawMin = clamp(Number(blocker.min || 0), limits.min, limits.max);
   const rawMax = clamp(Number(blocker.max || 0), limits.min, limits.max);
+  if (options.physicalReserveBounds) return rawMax > rawMin ? { min: rawMin, max: rawMax } : null;
   const length = normalizeWallCoverDeductionLength(rawMax - rawMin);
   if (length <= 0) return null;
 
@@ -18458,6 +18481,11 @@ function isSignaturePartitionHeadItem(item = {}) {
     normalizedItemText(item).includes('signature')
     || (Array.isArray(item?.dimensions?.packs) && item.dimensions.packs.some((pack) => isSignaturePackLabel(pack)))
   );
+}
+
+function isEquippedPartitionHeadItem(item = {}) {
+  return isPartitionHeadItem(item) && (normalizedItemText(item).includes('siae')
+    || (Array.isArray(item.dimensions?.packs) && item.dimensions.packs.some((pack) => normalizePackLabel(pack) === 'equipe')));
 }
 
 function isSmclPartitionHeadItem(item = {}) {
@@ -21294,7 +21322,7 @@ function GlbModel({ item, selected, hovered, visualContext }) {
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.headMainImageFraming) });
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item, { flipY: false }) : null
-  ), [item.type, item.label, item.modelUrl, item.options?.partitionHeadSide, item.dimensions?.smclHeadSide, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
+  ), [item.type, item.label, item.modelUrl, item.options?.partitionHeadSide, item.dimensions?.smclHeadSide, visualContext?.fontRevision, visualContext?.country, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
   const model = useMemo(() => (gltf?.scene ? prepareLoadedModel(gltf.scene, item, {
     isGlb: true,
     reserveDoorTexture,
@@ -21337,7 +21365,7 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   const textureSlotImages = useTextureSlotImages(item);
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item) : null
-  ), [item.type, item.label, item.modelUrl, item.options?.partitionHeadSide, item.dimensions?.smclHeadSide, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
+  ), [item.type, item.label, item.modelUrl, item.options?.partitionHeadSide, item.dimensions?.smclHeadSide, visualContext?.fontRevision, visualContext?.country, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
   const materials = useMtlMaterials(materialUrl, item);
   const mtlTexturesReady = useMtlTexturePreload(materials, item, materialUrl);
 
@@ -21679,7 +21707,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   }
   const smclExhibitorTexture = smclExhibitorTextureForMaterial(textureOptions.exhibitorTexture, materialName, material, item);
   if (smclExhibitorTexture) {
-    return materialWithTexture(material, smclExhibitorTexture, { luminous: true });
+    return materialWithTexture(material, smclExhibitorTexture, { luminous: isSmclPartitionHeadItem(item) });
   }
   if (textureOptions.exhibitorTexture && !isSmclPartitionHeadItem(item) && shouldUseExhibitorHeadTexture(materialName, meshName, item, material)) {
     return materialWithTexture(material, textureOptions.exhibitorTexture);
@@ -21872,6 +21900,7 @@ function shouldUseExhibitorHeadTexture(materialName = '', meshName = '', item = 
     return Boolean(smclInfoLayoutSideForMaterial(materialName, material, item)) || isLikelySmclInfoPanelMesh(normalizedMeshName);
   }
   if (isSignaturePartitionHeadItem(item)) return materialMatchesTextureSlot(materialName, material, '*28', 'exact');
+  if (isEquippedPartitionHeadItem(item)) return Boolean(equippedHeadMaterialFace(materialName));
   return materialName === '_10'
     || materialName === '10'
     || materialName.endsWith('_10')
@@ -21879,6 +21908,7 @@ function shouldUseExhibitorHeadTexture(materialName = '', meshName = '', item = 
 }
 
 function smclExhibitorTextureForMaterial(exhibitorTexture, materialName = '', material = null, item = {}) {
+  if (isEquippedPartitionHeadItem(item)) return exhibitorTexture?.[equippedHeadMaterialFace(materialName)] || null;
   if (!isSmclPartitionHeadItem(item) || !exhibitorTexture) return null;
   const layoutSide = smclInfoLayoutSideForMaterial(materialName, material, item);
   if (!layoutSide) return null;
@@ -21971,6 +22001,15 @@ function createPartitionHeadInfoTexture(visualContext = {}, item = {}, options =
       left: createSmclPartitionHeadInfoTexture(visualContext, item, { ...options, layoutSide: 'left' }),
       right: createSmclPartitionHeadInfoTexture(visualContext, item, { ...options, layoutSide: 'right' }),
     };
+  }
+
+  if (isEquippedPartitionHeadItem(item)) {
+    return Object.fromEntries(['front', 'back'].map((face) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 656; canvas.height = 407;
+      drawEquippedHeadInformation(canvas.getContext('2d'), visualContext, face);
+      return [face, prepareDynamicTexture(new CanvasTexture(canvas), options)];
+    }));
   }
 
   if (isSignaturePartitionHeadItem(item)) {

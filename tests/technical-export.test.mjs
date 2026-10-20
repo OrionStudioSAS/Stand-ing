@@ -1,3 +1,4 @@
+import { sceneHeadCountry } from '../src/equippedHeadInformation.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -311,6 +312,7 @@ test('head information uses the scene renderer even with no uploaded image, incl
   }
   let disposed = 0;
   Object.assign(api, {
+    sceneHeadCountry,
     CanvasTexture: class { constructor(image) { this.image = image; } dispose() { disposed += 1; } },
     prepareDynamicTexture: (texture) => texture,
     normalizeLookupText: (value) => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(),
