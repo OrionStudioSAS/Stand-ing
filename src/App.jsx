@@ -1,3 +1,4 @@
+import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
 import { sceneAdminRequests, sceneQuestions, questionAsRequest } from './sceneRequests.js';
 import React, { Suspense, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -72,6 +73,7 @@ import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
 import { t as tRaw } from './i18n.js';
 import TechnicalPlanEditor from './TechnicalPlanEditor.jsx';
 import { loadTechnicalPlanEdits } from './data/technicalPlanStore.js';
+import './signatureHeadInformation.css';
 import './styles.css';
 
 const visualUploadAccept = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf,.svg,.pdf,.psd,image/vnd.adobe.photoshop';
@@ -1193,18 +1195,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   useEffect(() => {
     let cancelled = false;
     if (typeof document === 'undefined' || !document.fonts?.load) return undefined;
-    Promise.all([
-      document.fonts.load('200 92px Oswald'),
-      document.fonts.load('200 125px Oswald'),
-      document.fonts.load('300 54px Oswald'),
-      document.fonts.load('400 92px Oswald'),
-      document.fonts.load('500 92px Oswald'),
-      document.fonts.load('700 92px Oswald'),
-    ]).then(() => {
+    const fonts = isSignatureStand ? ['500 144px Gotham', '900 130px Gotham'] : [
+      '200 92px Oswald', '200 125px Oswald', '300 54px Oswald',
+      '400 92px Oswald', '500 92px Oswald', '700 92px Oswald',
+    ];
+    Promise.all(fonts.map((font) => document.fonts.load(font))).then(() => {
       if (!cancelled) setFontRevision((current) => current + 1);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [isSignatureStand]);
 
   useEffect(() => {
     setItems((current) => current.map((item) => constrainItem(item, width, depth, layout, genericCarpetFootprintEnabled)));
@@ -8198,7 +8197,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
         </label>
         <small>{t(sharedVisual ? 'partition_shared_visual_hint' : 'partition_different_visuals_hint')}</small>
       </div>}
-      {isSignatureStand && <p className="preset-included-help">Logo en haut : 97 € HT pour les deux têtes de cloison (forfait unique).</p>}
+      {isSignatureStand && <p className="preset-included-help">Le panneau supérieur affiche automatiquement le nom de société et le numéro de stand, en Gotham. Le numéro apparaît en bas à gauche ou à droite selon la tête de cloison. Un logo personnalisé remplace ce panneau automatique. Logo en haut : 97 € HT pour les deux têtes de cloison (forfait unique).</p>}
 
       {visualRows.length ? visualRows.map((row) => (
         <React.Fragment key={row.side}>
@@ -15241,7 +15240,11 @@ function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = [])
 
 async function prepareTechnicalExportFonts() {
   if (!document.fonts?.load) return;
-  await Promise.allSettled([200, 300, 700].map((weight) => document.fonts.load(`${weight} 92px Oswald`)));
+  await Promise.allSettled([
+    ...[200, 300, 700].map((weight) => document.fonts.load(`${weight} 92px Oswald`)),
+    document.fonts.load('500 144px Gotham'),
+    document.fonts.load('900 130px Gotham'),
+  ]);
 }
 
 function technicalPartitionHeadInformation(items = [], scene = {}) {
@@ -15264,7 +15267,7 @@ function technicalPartitionHeadInformation(items = [], scene = {}) {
     const renderedItem = headChild || item;
     const side = item.options?.partitionHeadSide || item.dimensions?.smclHeadSide || smclPartitionHeadSide(item) || smclPartitionHeadSide(renderedItem);
     // Reuse the scene's exact renderer, including its sector colours and typography.
-    const textures = createPartitionHeadInfoTexture(visualContext, renderedItem);
+    const textures = createPartitionHeadInfoTexture(visualContext, { ...renderedItem, options: { ...renderedItem.options, partitionHeadSide: side || renderedItem.options?.partitionHeadSide } });
     const texture = textures?.image ? textures : textures?.[side || 'left'];
     try {
       return { itemId: item.id, side, label: item.label || 'Tête de cloison', position: [Number(item.x || 0), Number(item.y || 0), Number(item.z || 0)], imageUrl: texture?.image?.toDataURL('image/png') || '' };
@@ -21291,7 +21294,7 @@ function GlbModel({ item, selected, hovered, visualContext }) {
   const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.headMainImageFraming) });
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item, { flipY: false }) : null
-  ), [item.type, item.label, item.modelUrl, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
+  ), [item.type, item.label, item.modelUrl, item.options?.partitionHeadSide, item.dimensions?.smclHeadSide, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
   const model = useMemo(() => (gltf?.scene ? prepareLoadedModel(gltf.scene, item, {
     isGlb: true,
     reserveDoorTexture,
@@ -21334,7 +21337,7 @@ function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualCon
   const textureSlotImages = useTextureSlotImages(item);
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item) : null
-  ), [item.type, item.label, item.modelUrl, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
+  ), [item.type, item.label, item.modelUrl, item.options?.partitionHeadSide, item.dimensions?.smclHeadSide, visualContext?.fontRevision, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
   const materials = useMtlMaterials(materialUrl, item);
   const mtlTexturesReady = useMtlTexturePreload(materials, item, materialUrl);
 
@@ -21868,6 +21871,7 @@ function shouldUseExhibitorHeadTexture(materialName = '', meshName = '', item = 
   if (isSmclPartitionHeadItem(item)) {
     return Boolean(smclInfoLayoutSideForMaterial(materialName, material, item)) || isLikelySmclInfoPanelMesh(normalizedMeshName);
   }
+  if (isSignaturePartitionHeadItem(item)) return materialMatchesTextureSlot(materialName, material, '*28', 'exact');
   return materialName === '_10'
     || materialName === '10'
     || materialName.endsWith('_10')
@@ -21967,6 +21971,14 @@ function createPartitionHeadInfoTexture(visualContext = {}, item = {}, options =
       left: createSmclPartitionHeadInfoTexture(visualContext, item, { ...options, layoutSide: 'left' }),
       right: createSmclPartitionHeadInfoTexture(visualContext, item, { ...options, layoutSide: 'right' }),
     };
+  }
+
+  if (isSignaturePartitionHeadItem(item)) {
+    const canvas = document.createElement('canvas');
+    canvas.width = signatureHeadCanvasSize.width;
+    canvas.height = signatureHeadCanvasSize.height;
+    drawSignatureHeadInformation(canvas.getContext('2d'), visualContext, item);
+    return prepareDynamicTexture(new CanvasTexture(canvas), options);
   }
 
   const canvas = document.createElement('canvas');
