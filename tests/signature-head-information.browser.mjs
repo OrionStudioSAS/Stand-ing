@@ -13,7 +13,7 @@ const head=side=>({id:side,type:'tete-de-cloison-signature',label:'Tête de cloi
 const textures={};
 for(const side of ['left','right']){
  const section=document.createElement('section');section.innerHTML='<h2>Tête de cloison '+(side==='left'?'gauche':'droite')+'</h2>';document.body.appendChild(section);
- const texture=createPartitionHeadInfoTexture({company:'NOM EXPOSANT',standNumber:'G25'},head(side),{flipY:false});texture.image.id=side;section.appendChild(texture.image);textures[side]=texture;
+ const texture=createPartitionHeadInfoTexture({company:'NOM EXPOSANT',aisleNumber:'G',standNumber:'25'},head(side),{flipY:false});texture.image.id=side;section.appendChild(texture.image);textures[side]=texture;
 }
 const changed=createPartitionHeadInfoTexture({company:'SOCIÉTÉ ÉNERGIE INTERNATIONALE',standNumber:'H32'},head('right'));changed.image.id='changed';document.body.appendChild(changed.image);
 const originalMap=new Texture(), material=new MeshStandardMaterial({name:'*28',map:originalMap});
@@ -21,7 +21,7 @@ const panel=applyItemOptionMaterials(material,head('left'),{exhibitorTexture:tex
 const vertical=new MeshStandardMaterial({name:'LED_5500k#4',map:originalMap});
 const custom=document.createElement('canvas');custom.width=100;custom.height=70;custom.getContext('2d').fillRect(0,0,100,70);
 window.results={materialCorrect:panel.map===textures.left,verticalUnchanged:applyItemOptionMaterials(vertical,head('left'),{exhibitorTexture:textures.left})===vertical,flipY:textures.left.flipY,changed:changed.image.toDataURL()!==textures.right.image.toDataURL(),customWins:applyItemOptionMaterials(material,{...head('left'),options:{...head('left').options,textureSlotValues:{'signature-head-top-28':{imageUrl:'custom.png'}}}},{exhibitorTexture:textures.left,textureSlotImages:{'signature-head-top-28':custom}}).map!==textures.left};
-const information=technicalPartitionHeadInformation([head('left'),head('right')],{project_name:'NOM EXPOSANT',source_payload:{stand_number:'G25'}});
+const information=technicalPartitionHeadInformation([head('left'),head('right')],{project_name:'NOM EXPOSANT',source_payload:{aisle_number:'G',stand_number:'25'}});
 window.exportMatches=information.map((entry,i)=>entry.imageUrl===[textures.left,textures.right][i].image.toDataURL());
 window.done=true;`;
 const server=await createServer({server:{host:'127.0.0.1',port:0},logLevel:'error',plugins:[{name:'signature-info-test',resolveId(id){if(id==='/src/__signature-info-app.jsx')return appId;if(id==='/src/__signature-info-page.jsx')return pageId;},load(id){if(id===appId)return source.replace("createRoot(document.getElementById('root')).render(<App />);",'export {createPartitionHeadInfoTexture,applyItemOptionMaterials,prepareTechnicalExportFonts,technicalPartitionHeadInformation};');if(id===pageId)return harness;},configureServer(vite){vite.middlewares.use((req,res,next)=>{if(req.url!=='/__signature-info-test__')return next();res.setHeader('Content-Type','text/html');res.end('<style>body{margin:20px;background:#eee;font-family:Arial}section{display:inline-block;width:48%;margin-right:1%}canvas{width:100%;height:auto}#changed{width:48%}</style><script type="module" src="/src/__signature-info-page.jsx"></script>');});}}]});

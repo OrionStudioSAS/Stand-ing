@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { drawSignatureHeadInformation, signatureHeadSide } from '../src/signatureHeadInformation.js';
+import { drawSignatureHeadInformation, signatureHeadSide, signatureHeadStandCode } from '../src/signatureHeadInformation.js';
 function context() {
  const calls=[];
  const ctx={ font:'', fillStyle:'', textAlign:'', fillRect(){},measureText(text){return {width:text.length * parseFloat(this.font.split(' ')[1]) * 0.7};},fillText(text,x,y){calls.push({text,x,y,color:this.fillStyle,align:this.textAlign,font:this.font});} };
@@ -22,4 +22,22 @@ test('Signature fits long names and codes without cropping or borrowing the exam
  for(const call of calls){ctx.font=call.font;assert.ok(ctx.measureText(call.text).width <= (call.color==='#f25723'?600:1050));}
  const empty=context();drawSignatureHeadInformation(empty.ctx,{},{});assert.equal(empty.calls.at(-1).text,'');
  assert.equal(signatureHeadSide({options:{partitionHeadSide:'left'},label:'droite'}),'left');
+});
+
+test('Signature prefixes the aisle once in the displayed stand code', () => {
+ for (const [visualContext, expected] of [
+  [{aisleNumber:'A',standNumber:'21'},'A21'],
+  [{aisleNumber:'A',standNumber:'A21'},'A21'],
+  [{aisleNumber:' allée a ',standNumber:'Stand 21'},'A21'],
+  [{aisleNumber:'A',standNumber:'a 21'},'A21'],
+  [{aisleNumber:'',standNumber:'21'},'21'],
+  [{aisleNumber:'A',standNumber:''},''],
+ ]) {
+  assert.equal(signatureHeadStandCode(visualContext),expected);
+  for(const side of ['left','right']) {
+   const {ctx,calls}=context();
+   drawSignatureHeadInformation(ctx,visualContext,{options:{partitionHeadSide:side}});
+   assert.equal(calls.at(-1).text,expected);
+  }
+ }
 });

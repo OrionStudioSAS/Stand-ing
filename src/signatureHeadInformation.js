@@ -5,6 +5,12 @@ export function signatureHeadSide(item = {}) {
   if (side === 'left' || side === 'right') return side;
   return /droite|right/i.test(`${item.label || ''} ${item.type || ''}`) ? 'right' : 'left';
 }
+export function signatureHeadStandCode(visualContext = {}) {
+  const stand = String(visualContext.standNumber ?? '').replace(/^stand\s+/i, '').replace(/\s+/g, '').toUpperCase();
+  const aisle = String(visualContext.aisleNumber ?? '').trim().replace(/^all[ée]e\s+/i, '').replace(/\s+/g, '').toUpperCase();
+  if (!stand || !aisle || stand.startsWith(aisle)) return stand;
+  return `${aisle}${stand}`;
+}
 function font(weight, size) { return `${weight} ${size}px "Gotham", sans-serif`; }
 function wrap(ctx, text, maxWidth) {
   const lines = [];
@@ -20,7 +26,7 @@ function wrap(ctx, text, maxWidth) {
 export function drawSignatureHeadInformation(ctx, visualContext = {}, item = {}) {
   const { width, height } = signatureHeadCanvasSize;
   const company = String(visualContext.company || 'NOM EXPOSANT').trim().toUpperCase() || 'NOM EXPOSANT';
-  const stand = String(visualContext.standNumber || '').replace(/^stand\s+/i, '').trim().toUpperCase();
+  const stand = signatureHeadStandCode(visualContext);
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = '#140e0c';
