@@ -13,6 +13,7 @@ const rule = { id: 'medium', includedType: groups[1].type, includedLabel: groups
   options: [{ type: groups[0].type, label: groups[0].label, price: 0 }, { type: groups[2].type, label: groups[2].label, price: 222 }] };
 function runtime() {
   const api = vm.createContext({
+    normalizePackLabel: label=>String(label).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(),
     isSignaturePackLabel: (label) => label === 'Signature', reserveDoorColorForPack: () => '',
     assetUnitPrice: () => 0, findCatalogEntry: (entries, type) => entries.find((entry) => entry.type === type),
     makeItem: (_type, _width, _depth, _layout, entry) => structuredClone(entry), constrainItem: (item) => item,
@@ -53,7 +54,7 @@ test('Signature offers only existing reserves referenced in other pack bands, ch
       assert.equal(JSON.stringify(item.children), JSON.stringify(expected.children));
     }
     assert.equal(choices.options.some((option) => option.type === groups[3].type), false);
-    assert.equal(api.reserveRuleWithPackChoices(baseRule, rules, groups, 'Équipé'), baseRule);
+    assert.equal(api.reserveRuleWithPackChoices(baseRule, rules, groups, 'Équipé').options.length, 2);
     assert.equal(api.reserveRuleWithPackChoices(baseRule, rules, groups, 'Confort'), baseRule);
   }
   const noReserve = { id: 'signature-none', includedType: '', options: [] };
@@ -89,4 +90,26 @@ test('empty options stay empty; old automatic choices fall back to the configure
   assert.equal(item.type, groups[1].type);
   assert.equal(api.makeAutomaticReserveItems(rule, '__none__', groups, 8, 4, 'left', 'Signature').length, 0);
   assert.equal(api.makeAutomaticReserveItems({}, '', groups, 8, 4, 'left', 'Signature').length, 0);
+});
+
+test('Equipped offers both linked 2m² and 3m² groups regardless of the active area band',()=>{
+ const api=runtime(), rules={medium:{id:'medium',includedType:groups[1].type,options:[]},large:{id:'large',includedType:groups[2].type,options:[]}};
+ for(const band of ['medium','large']){
+  const choices=api.reserveRuleWithPackChoices(rules[band],rules,groups,'Équipé');
+  assert.equal(choices.options.length,1);const alternative=choices.options[0];
+  assert.equal(alternative.type,band==='large'?groups[1].type:groups[2].type);
+  const selected=api.configuredReserveOptionType(choices,alternative.type);
+  assert.equal(selected,alternative.type);
+  const [item]=api.makeAutomaticReserveItems(choices,selected,groups,5,5,'right','Équipé');
+  assert.equal(item.type,alternative.type);assert.equal(JSON.stringify(item.children),JSON.stringify(groups.find(g=>g.type===alternative.type).children));
+ }
+});
+test('Equipped preserves explicit supplements and uses catalog differences or allowance prices for newly linked choices',()=>{
+ const api=runtime();api.assetUnitPrice=entry=>Number(entry?.price||0);
+ const catalog=groups.map((entry,i)=>({...entry,price:(i+1)*100}));
+ const rules={medium:{id:'medium',includedType:groups[1].type,options:[{type:groups[2].type,price:111,label:'Grande réserve'}]},large:{id:'large',includedType:groups[2].type,options:[]}};
+ const medium=api.reserveRuleWithPackChoices(rules.medium,rules,catalog,'Équipé');assert.equal(medium.options[0].price,111);assert.equal(medium.options[0].label,'Grande réserve');
+ assert.equal(api.reserveRuleWithPackChoices(rules.large,rules,catalog,'Équipé').options[0].price,0,'Choosing a smaller reserve does not create a supplement');
+ assert.equal(api.reserveRuleWithPackChoices({...rules.medium,options:[]},rules,catalog,'Équipé').options[0].price,100);
+ assert.equal(api.reserveRuleWithPackChoices({...rules.large,chargeIncluded:true},rules,catalog,'Équipé').options[0].price,200,'Allowance orders retain the complete catalog price');
 });

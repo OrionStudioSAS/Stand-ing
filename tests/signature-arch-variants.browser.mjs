@@ -12,7 +12,14 @@ const variants = [
   ['asset-arche-signature-3m-spot-210-mvghs5b8', 'Arche Signature 3m + Spot 110', 'arche-signature-3m-spot-210.glb', 3],
   ['asset-arche-signature-3m-suspension-mvghrlng', 'Arche Signature 3m + Suspension', 'arche-signature-3m-suspension.glb', 3],
 ];
-const models = await Promise.all(variants.map(async ([type, , file]) => {
+variants.push(
+ ['asset-mur-led-signature-2m-spot-210-mvghmqbr','Mur LED Signature 2m + Spot 210','mur-led-signature-2m-spot-210.glb',2],
+ ['asset-mur-led-signature-2m-suspension-mvghm8n8','Mur LED Signature 2m + Suspension','mur-led-signature-2m-suspension.glb',2],
+ ['asset-mur-led-signature-3m-spot-210-mvhvgq4h','Mur LED Signature 3m + Spot 210','mur-led-signature-3m-spot-210.glb',3],
+ ['asset-mur-led-signature-3m-suspension-mvhvgazp','Mur LED Signature 3m + Suspension','mur-led-signature-3m-suspension.glb',3],
+);
+const models = await Promise.all(variants.map(async ([type, , file],index) => {
+  if(process.env.ARCH_LED_CACHE_DIR && index>=6){const local=await readFile(resolve(process.env.ARCH_LED_CACHE_DIR,`${[1,0,3,2][index-6]}.glb`));assert.equal(local.readUInt32LE(8),local.length);return local;}
   const response = await fetch(`https://eljedngumyxwlvbckkkx.supabase.co/storage/v1/object/public/object-assets/${type}/${file}`);
   assert.ok(response.ok, file);
   return Buffer.from(await response.arrayBuffer());
@@ -32,7 +39,7 @@ const probe = `useFrame(({scene})=>{const paints=[],images=[],footprints=[];scen
   for(const material of (Array.isArray(node.material)?node.material:[node.material])){
     if(!material)continue;
     if(['Laminate_D02_120cm#1','Laminate_D02_120cm_1'].includes(material.name))paints.push({hex:material.color.getHexString(),map:Boolean(material.map)});
-    if(['LED_5500k#5','*30','LED_5500k_11','_28'].includes(material.name))images.push({name:material.name,custom:Boolean(material.map?.image?.getContext)});
+    if(['LED_5500k#5','*30','LED_5500k_11','_28','LED_5500k_15'].includes(material.name))images.push({name:material.name,custom:Boolean(material.map?.image?.getContext)});
   }
   if(node.renderOrder===1 && node.geometry?.type==='PlaneGeometry' && Math.abs(node.rotation.x+Math.PI/2)<.01)footprints.push({width:node.geometry.parameters.width,depth:node.geometry.parameters.height,textured:Boolean(node.material?.map)});
 });window.archRender={paints,images,footprints};});`;
@@ -65,6 +72,22 @@ try{
     assert.equal(await sizeGroup.getByRole('button',{name:new RegExp(`^${size} m`)}).getAttribute('aria-pressed'),'true');
     assert.equal(await lightingGroup.getByRole('button',{name:lighting,exact:true}).getAttribute('aria-pressed'),'true');
   }
+  const ledSwitch=page.getByRole('switch',{name:'Mur LED',exact:true});
+  await ledSwitch.click();
+  for(const index of [8,9,7,6]){
+    const size=variants[index][3],lighting=index%2?'Suspension':'Spot';
+    await sizeGroup.getByRole('button',{name:new RegExp(`^${size} m`)}).click();
+    await lightingGroup.getByRole('button',{name:lighting,exact:true}).click();
+    await page.waitForFunction(type=>window.savedScene?.items.some(i=>i.type===type),entries[index].type);
+    await page.waitForFunction(()=>window.archRender?.images.some(i=>i.name==='LED_5500k_15'&&i.custom)&&window.archRender.paints.length&&window.archRender.paints.every(p=>p.hex==='d20014'&&!p.map)&&window.archRender.footprints.some(f=>f.textured),null,{timeout:60000});
+    const result=await page.evaluate(()=>({arches:window.savedScene.items.filter(i=>i.options?.signatureBaseKey==='arche'),lines:window.archPricing.lines.filter(l=>l.type.startsWith('signature-arch-'))}));
+    assert.equal(result.arches.length,1);assert.deepEqual(result.arches[0].options.textureSlotValues,slots);
+    assert.equal(result.lines.filter(l=>l.type.startsWith('signature-arch-led-wall-')).length,1);
+    assert.equal(result.lines.reduce((sum,l)=>sum+l.total,0),2570+(size===3?249:0));
+    assert.equal(await ledSwitch.getAttribute('aria-checked'),'true');
+  }
+  await ledSwitch.click();await page.waitForFunction(()=>!window.archPricing.lines.some(l=>l.type.startsWith('signature-arch-led-wall-')));
+  await ledSwitch.click();
   await sizeGroup.getByRole('button',{name:/^3 m/}).click();await page.waitForFunction(()=>window.savedScene?.items.some(i=>i.options.signatureArchSizeM===3));
   await page.getByRole('button',{name:'Reouvrir test',exact:true}).click();await page.getByRole('button',{name:/^Arche/}).click();
   assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).getAttribute('aria-pressed'),'true');assert.equal(await lightingGroup.getByRole('button',{name:'Spot',exact:true}).getAttribute('aria-pressed'),'true');
@@ -81,7 +104,7 @@ try{
   await page.getByRole('button',{name:'Profondeur courte test',exact:true}).click();
   await page.waitForFunction(()=>window.savedScene?.dimensions.depth===2.99&&window.savedScene.items.some(i=>i.options.signatureArchSizeM===2));
   await page.getByRole('button',{name:/^Arche/}).click();
-  assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).isDisabled(),true);
+  assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).isDisabled(),true);assert.equal(await ledSwitch.getAttribute('aria-checked'),'true');assert.equal(await page.evaluate(()=>window.archPricing.lines.filter(l=>l.type.startsWith('signature-arch-led-wall-')).length),1);
   assert.equal(await page.getByText('L’arche 3 m nécessite une profondeur de stand d’au moins 3 m.',{exact:true}).isVisible(),true);
   assert.deepEqual(await page.evaluate(()=>window.savedScene.items.find(i=>i.options.signatureBaseKey==='arche').options.textureSlotValues['signature-arch-led-30']),slots['signature-arch-led-30']);
   assert.equal(await page.evaluate(()=>window.archPricing.lines.filter(l=>l.type.startsWith('signature-arch-size-')).length),0);
@@ -89,5 +112,5 @@ try{
   assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).isEnabled(),true);
   await sizeGroup.getByRole('button',{name:/^3 m/}).click();
   await page.waitForFunction(()=>window.savedScene?.dimensions.depth===3&&window.savedScene.items.some(i=>i.options.signatureArchSizeM===3));
-  assert.deepEqual(errors,[]);console.log('Four current arch models + legacy migration: size + lighting selection, single supplement, image framing/color preservation and reopening OK');
+  assert.deepEqual(errors,[]);console.log('Eight arch models + legacy migration: LED toggle/pricing/depth, size + lighting selection, single supplement, image framing/color preservation and reopening OK');
 }finally{await browser?.close();await server.close();}

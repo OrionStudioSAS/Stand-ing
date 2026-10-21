@@ -15307,3 +15307,17 @@ img.asset-thumb {
 .signature-arch-design .signature-arch-pending span { color: #8b8f9e; font-size: .68rem; font-weight: 400; }
 
 .signature-arch-design .signature-arch-depth-hint { margin: 8px 0 0; color: #7b8494; font-size: .69rem; font-weight: 400; line-height: 1.5; }
+
+.signature-arch-led-option { display: grid; gap: 9px; }
+.signature-arch-led-option > strong { font-size: .79rem; font-weight: 650; }
+.signature-arch-led-panel { padding: 10px 12px; border: 1px solid #dedfe5; border-radius: 8px; }
+.signature-arch-led-panel > button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0; border: 0; color: #414550; background: transparent; text-align: left; cursor: pointer; }
+.signature-arch-led-panel > button:disabled { opacity: .5; cursor: not-allowed; }
+.signature-arch-led-panel > button:focus-visible { outline: 2px solid #3967b6; outline-offset: 4px; border-radius: 4px; }
+.signature-arch-led-panel > button > img { width: 31px; height: 43px; object-fit: contain; }
+.signature-arch-led-panel > button > strong { font-size: .77rem; white-space: nowrap; }
+.signature-arch-led-panel > p { margin: 9px 0 0; color: #8b8f9e; font-size: .69rem; }
+.signature-arch-led-toggle { display: flex; flex: 0 0 36px; align-items: center; height: 20px; margin-left: auto; padding: 2px; border-radius: 20px; background: #d5d8df; }
+.signature-arch-led-toggle i { width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #0002; transition: transform .15s; }
+.signature-arch-led-panel > button[aria-checked="true"] .signature-arch-led-toggle { background: #3d63a4; }
+.signature-arch-led-panel > button[aria-checked="true"] .signature-arch-led-toggle i { transform: translateX(16px); }

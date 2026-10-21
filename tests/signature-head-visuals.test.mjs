@@ -1,3 +1,4 @@
+import { isSignatureLedArch } from '../src/signatureArchVariants.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -15,7 +16,7 @@ function loadFunction(name, context) {
 }
 
 function visualContext() {
-  const context = vm.createContext({
+  const context = vm.createContext({ isSignatureLedArch,
     isSignaturePackLabel: (label) => label === 'Signature',
     enhanceIcareChromeMaterial: (material) => material,
     textureSlotHasLogoGate: () => false,

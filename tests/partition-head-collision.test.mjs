@@ -1,5 +1,5 @@
 import { Box3, Matrix4, Vector3 } from 'three';
-import { signatureArchVariant, signatureArchFitsDepth } from '../src/signatureArchVariants.js';
+import { signatureArchVariant, isSignatureLedArch, signatureArchFitsDepth } from '../src/signatureArchVariants.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -14,7 +14,7 @@ function loadFunction(name, context) {
 }
 
 function collisionContext() {
-  const context = vm.createContext({ signatureArchVariant, signatureArchFitsDepth,
+  const context = vm.createContext({ signatureArchVariant, isSignatureLedArch, signatureArchFitsDepth,
     collisionPadding: 0,
     automaticMeterCoverItems: [],
     wallThickness: 0.06,

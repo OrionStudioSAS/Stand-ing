@@ -1,3 +1,4 @@
+import { isSignatureLedArch } from '../src/signatureArchVariants.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -50,7 +51,7 @@ test('presentation ground uses continuous filtered grain and an analytic fade, n
 });
 
 test('scene orbiting and panning cannot expose the underside of the ground', () => {
-  const api = vm.createContext({ sceneCameraTargetMinY: 0.7 });
+  const api = vm.createContext({ isSignatureLedArch, sceneCameraTargetMinY: 0.7 });
   loadFunction(appSource, api, 'keepSceneCameraAboveGround');
   const controls = { target: { y: -0.3 }, object: { position: { y: 1 } }, updateCalls: 0, update() { this.updateCalls += 1; } };
   api.keepSceneCameraAboveGround(controls);
@@ -93,7 +94,7 @@ test('carpet selector exposes the configured free and paid colors', () => {
 });
 
 test('imported non-metal furniture finishes keep their colors without a false metallic cast', () => {
-  const api = vm.createContext({ DoubleSide, isSignaturePrintedSurface: () => false });
+  const api = vm.createContext({ isSignatureLedArch, DoubleSide, isSignaturePrintedSurface: () => false });
   for (const name of ['normalizeMaterialName', 'normalizedItemText', 'normalizeMaterialTexture', 'isChromeMaterial', 'isAluminiumMaterial', 'isImportedNonmetalFinish', 'isBrightFridgeFinish', 'cloneAndNormalizeMaterial', 'cloneMeshMaterial']) {
     loadFunction(appSource, api, name);
   }
@@ -122,7 +123,7 @@ test('imported non-metal furniture finishes keep their colors without a false me
 });
 
 test('Signature printed panels stay white without metallic gray, including uploaded image margins', () => {
-  const api = vm.createContext({ DoubleSide, LinearFilter, LinearMipmapLinearFilter, SRGBColorSpace });
+  const api = vm.createContext({ isSignatureLedArch, DoubleSide, LinearFilter, LinearMipmapLinearFilter, SRGBColorSpace });
   api.isSignaturePackLabel = (label) => label === 'Signature';
   for (const name of [
     'normalizeMaterialName', 'normalizedItemText', 'normalizeMaterialTexture',
@@ -163,7 +164,7 @@ test('the header cart only shows the HT price next to its icon', () => {
 });
 
 test('chrome materials are detected for reflective furniture legs', () => {
-  const api = vm.createContext({});
+  const api = vm.createContext({ isSignatureLedArch,});
   loadFunction(appSource, api, 'isChromeMaterial');
   assert.equal(api.isChromeMaterial({ name: 'chrome' }), true);
   assert.equal(api.isChromeMaterial({ name: 'Acier poli' }), true);
@@ -205,7 +206,7 @@ test('step 3 counter options show the finish before the logo and podium uses hei
 });
 
 test('dragging preserves the pointer offset instead of snapping the object under the cursor', () => {
-  const api = vm.createContext({});
+  const api = vm.createContext({ isSignatureLedArch,});
   loadFunction(appSource, api, 'applyDragPointerOffset');
   assert.deepEqual(
     { ...api.applyDragPointerOffset({ x: 1.2, z: -0.4 }, { x: 0.3, z: -0.2 }) },

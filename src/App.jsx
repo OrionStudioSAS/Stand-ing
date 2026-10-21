@@ -1,4 +1,4 @@
-import { signatureArchVariant, signatureArchChoice, signatureArchSizeSupplementLines, isLegacySignatureArch, upgradeLegacySignatureArch, signatureArchFitsDepth } from './signatureArchVariants.js';
+import { signatureArchVariant, isSignatureLedArch, signatureArchChoice, signatureArchSizeSupplementLines, isLegacySignatureArch, upgradeLegacySignatureArch, signatureArchFitsDepth } from './signatureArchVariants.js';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
 import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
@@ -2194,7 +2194,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   useEffect(() => {
     if (readOnly || !isSignatureStand || !objectBankLoaded || !signatureArchItem || signatureArchFitsDepth(signatureArchItem, depth)) return;
-    const replacement = signatureArchChoice(signatureArchEntries, 2, signatureArchVariant(signatureArchItem).lighting);
+    const replacement = signatureArchChoice(signatureArchEntries, 2, signatureArchVariant(signatureArchItem).lighting, isSignatureLedArch(signatureArchItem));
     if (replacement) selectSignatureArchVariant(replacement);
   }, [depth, readOnly, isSignatureStand, objectBankLoaded, signatureArchItem?.type, signatureArchEntries]);
 
@@ -3962,8 +3962,10 @@ function SignatureArchOptionCard({ standDepth = Infinity, items = [], entries = 
   const selectedType = selectedItem?.options?.signatureArchVariantType || selectedItem?.type || '';
   const selectedEntry = entries.find((entry) => entry.type === selectedType) || selectedItem || entries[0];
   const selectedVariant = signatureArchVariant(selectedEntry);
+  const ledWall = isSignatureLedArch(selectedEntry);
+  const ledEntry = signatureArchChoice(entries, selectedVariant.size, selectedVariant.lighting, !ledWall);
   const { selected, includedColors, optionalColors } = surfaceColorOptionGroups(colors, selectedColor || {}, '', 1);
-  const supplement = selectedVariant.supplement + (selected.id && !selected.included ? 285 : 0);
+  const supplement = selectedVariant.supplement + (ledWall ? 2570 : 0) + (selected.id && !selected.included ? 285 : 0);
   const busy = disabled || Boolean(uploadState?.uploading);
   const colorLabel = (color) => `${color.name || ''}${color.code ? ` (${color.code})` : ''}`;
 
@@ -3975,7 +3977,7 @@ function SignatureArchOptionCard({ standDepth = Infinity, items = [], entries = 
             <legend>Taille</legend>
             <div>
               {[2, 3].map((size) => {
-                const entry = signatureArchChoice(entries, size, selectedVariant.lighting);
+                const entry = signatureArchChoice(entries, size, selectedVariant.lighting, ledWall);
                 return <button key={size} type="button" className={selectedVariant.size === size ? 'active' : ''}
                   aria-pressed={selectedVariant.size === size} title={size === 3 && Number(standDepth) < 3 ? 'Disponible à partir de 3 m de profondeur' : undefined} disabled={busy || !entry || !signatureArchFitsDepth(entry, standDepth)} onClick={() => onVariantChange?.(entry)}>
                   <strong>{size} m</strong><small className={size === 2 ? 'arch-badge included' : 'arch-badge'}>{size === 2 ? 'Inclus' : '+ 249 €'}</small>
@@ -3988,7 +3990,7 @@ function SignatureArchOptionCard({ standDepth = Infinity, items = [], entries = 
             <legend>Éclairage du plafond</legend>
             <div>
               {['spot', 'suspension'].map((lighting) => {
-                const entry = signatureArchChoice(entries, selectedVariant.size, lighting);
+                const entry = signatureArchChoice(entries, selectedVariant.size, lighting, ledWall);
                 const active = selectedVariant.lighting === lighting;
                 return <button key={lighting} type="button" className={active ? 'active' : ''}
                   aria-pressed={active} disabled={busy || !entry} onClick={() => onVariantChange?.(entry)}>
@@ -4000,6 +4002,18 @@ function SignatureArchOptionCard({ standDepth = Infinity, items = [], entries = 
           </fieldset>
         </div>
       ) : <p className="signature-arch-empty">Aucune arche Signature n'est encore associée à ce pack.</p>}
+
+      <section className="signature-arch-led-option">
+        <strong>Option</strong>
+        <div className="signature-arch-led-panel">
+          <button type="button" role="switch" aria-label="Mur LED" aria-checked={ledWall} disabled={busy || !selectedItem || !ledEntry || !signatureArchFitsDepth(ledEntry, standDepth)} onClick={() => onVariantChange?.(ledEntry)}>
+            <img src="/images/signature/arche-mur-led.png" alt="" />
+            <strong>Mur LED</strong><span className="arch-badge">+ 2 570 €</span>
+            <span className="signature-arch-led-toggle" aria-hidden="true"><i /></span>
+          </button>
+          <p>Résolution vidéo : 384 × 1152 px</p>
+        </div>
+      </section>
 
       <section className="signature-arch-palette surface-color-option-card">
         <div className="signature-arch-palette-heading"><strong>Couleur</strong><span>{colorLabel(selected)}</span></div>
@@ -4017,7 +4031,7 @@ function SignatureArchOptionCard({ standDepth = Infinity, items = [], entries = 
 
       {signatureArchVisualSlots.map((slot) => {
         const value = selectedItem?.options?.textureSlotValues?.[slot.id] || {};
-        const label = slot.id === 'signature-arch-led-5' ? 'Totem lumineux' : 'Visuel arrière haut';
+        const label = slot.id === 'signature-arch-led-5' ? 'Visuel lumineux façade' : 'Visuel arrière haut';
         return (
           <section key={slot.id} className="signature-arch-section signature-arch-visual-section">
             <div className="signature-arch-upload-heading"><strong>{label}</strong><span>{slot.format}</span><small className="arch-badge included">Inclus</small></div>
@@ -4869,7 +4883,7 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       {isSignatureStand && (
-        <OptionAccordion {...accordionScrollProps('arche')} className="signature-arch-accordion" title="Arche" subtitle="Taille · Éclairage · Couleur · Logo" icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
+        <OptionAccordion {...accordionScrollProps('arche')} className="signature-arch-accordion" title="Arche" subtitle="Taille · Éclairage · Couleur · Options" icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
           <SignatureArchOptionCard
             standDepth={standDepth}
             items={signatureArchItems}
@@ -6445,7 +6459,7 @@ function isSignatureScene(scene = {}) {
 function isSignatureArchItem(item = {}) {
   if (item?.options?.signatureBaseKey === 'arche') return true;
   const text = normalizedItemText(item);
-  return !item?.dimensions?.isColorGroup && text.includes('arche') && (text.includes('signature') || (text.includes('totem') && text.includes('plafond')));
+  return !item?.dimensions?.isColorGroup && (isSignatureLedArch(item) || (text.includes('arche') && (text.includes('signature') || (text.includes('totem') && text.includes('plafond')))));
 }
 
 function signatureArchCatalogEntries(entries = []) {
@@ -6524,7 +6538,9 @@ function itemTextureSlots(item = {}) {
   return configuredSlots;
 }
 
-function signatureArchVisualMaterialMatches(materialName = '', slot = {}) {
+function signatureArchVisualMaterialMatches(materialName = '', slot = {}, item = {}) {
+  // LED models have a distinct screen material; their other LEDs are lighting.
+  if (isSignatureLedArch(item)) return slot.id === 'signature-arch-led-5' && /^led_5500k_15(?:\.\d+)?$/.test(materialName);
   if (slot.id === 'signature-arch-led-5') return /^led_5500k_11(?:\.\d+)?$/.test(materialName);
   if (slot.id === 'signature-arch-led-30') return /^(?:led_5500k(?:#|\*|_)30|\*30|_28)(?:\.\d+)?$/.test(materialName);
   return false;
@@ -16502,18 +16518,24 @@ function configuredReserveOptionType(rule, selectedType = '') {
 }
 
 function reserveRuleWithPackChoices(rule, rules = {}, catalogEntries = [], packLabel = '') {
-  if (!isSignaturePackLabel(packLabel) || !rule?.includedType) return rule;
+  const isSignature = isSignaturePackLabel(packLabel);
+  if ((!isSignature && normalizePackLabel(packLabel) !== 'equipe') || !rule?.includedType) return rule;
   const includedEntry = findCatalogEntry(catalogEntries, rule.includedType);
   const includedArea = reserveAreaFromText(`${includedEntry?.label || rule.includedLabel || ''} ${rule.includedType}`);
   if (!includedEntry || !includedArea) return rule;
   const configuredTypes = configuredReserveAssetTypes(rules);
-  const options = [...configuredTypes].filter((type) => type !== rule.includedType).flatMap((type) => {
+  const explicitOptions = isSignature ? [] : normalizeComplementaryOptions(rule.options);
+  const explicitTypes = new Set(explicitOptions.map((option) => option.type));
+  const options = [...configuredTypes].filter((type) => type !== rule.includedType && !explicitTypes.has(type)).flatMap((type) => {
     const entry = findCatalogEntry(catalogEntries, type);
     const area = reserveAreaFromText(`${entry?.label || ''} ${type}`);
     if (!entry?.isGroup || !isReserveCatalogEntry(entry) || !area) return [];
-    return [{ type, label: entry.label, price: Math.max(0, area - includedArea) * 222 }];
+    if (isSignature) return [{ type, label: entry.label, price: Math.max(0, area - includedArea) * 222 }];
+    const price = rule.chargeIncluded ? assetUnitPrice(entry, packLabel)
+      : Math.max(0, assetUnitPrice(entry, packLabel) - assetUnitPrice(includedEntry, packLabel));
+    return [{ type, label: entry.label, price }];
   });
-  return { ...rule, options };
+  return { ...rule, options: [...explicitOptions, ...options] };
 }
 
 function isReserveCatalogEntry(entry = {}) {
@@ -21875,7 +21897,7 @@ function applyTextureSlotMaterial(material, item = {}, textureOptions = {}, mate
   if (!slots.length) return material;
   const values = item?.options?.textureSlotValues || {};
   for (const slot of slots) {
-    if (!materialMatchesTextureSlot(materialName, material, slot.targetName, slot.matchMode) && !signatureArchVisualMaterialMatches(materialName, slot)) continue;
+    if (!materialMatchesTextureSlot(materialName, material, slot.targetName, slot.matchMode) && !signatureArchVisualMaterialMatches(materialName, slot, item)) continue;
     const value = values[slot.id] || {};
     const image = textureOptions.textureSlotImages?.[slot.id];
     if (slot.kind === 'color') {
@@ -21889,7 +21911,9 @@ function applyTextureSlotMaterial(material, item = {}, textureOptions = {}, mate
       if (textureSlotHasLogoGate(item, slot) && !textureSlotLogoGateActive(item, slot)) {
         return materialWithColor(material, '#ffffff');
       }
-      const [targetWidth, targetHeight] = materialTextureCanvasSize(material);
+      const [targetWidth, targetHeight] = isSignatureLedArch(item)
+        ? posterCoverTextureSize({ width: slot.aspectRatio || 1, height: 1 })
+        : materialTextureCanvasSize(material);
       const texture = createCoverImageTexture(image, targetWidth, targetHeight, { flipY: textureOptions.textureSlotFlipY ?? true, fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(value) });
       if (texture) return materialWithTexture(material, texture);
     }

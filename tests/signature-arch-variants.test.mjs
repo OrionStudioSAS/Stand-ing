@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { signatureArchVariant, signatureArchChoice, signatureArchSizeSupplementLines, upgradeLegacySignatureArch, isLegacySignatureArch, signatureArchFitsDepth } from '../src/signatureArchVariants.js';
+import { signatureArchVariant, isSignatureLedArch, signatureArchChoice, signatureArchSizeSupplementLines, upgradeLegacySignatureArch, isLegacySignatureArch, signatureArchFitsDepth } from '../src/signatureArchVariants.js';
 
 const entries = [2, 3].flatMap(size => ['spot', 'suspension'].map(lighting => ({
   type: `arch-${size}m-${lighting}`,
@@ -54,4 +54,28 @@ test('3m arches require at least 3m of stand depth for both lighting options',()
   for (const depth of [2,2.5,2.99,2.9999]) assert.equal(signatureArchFitsDepth(entry,depth),size===2);
   for (const depth of [3,3.01,4]) assert.equal(signatureArchFitsDepth(entry,depth),true);
  }
+});
+
+const ledEntries = entries.map(entry => ({...entry,type:entry.type.replace('arch-', 'asset-mur-led-signature-'),label:entry.label.replace('Arche', 'Mur LED')}));
+test('LED wall choices keep all three axes independent even when LED assets come first', () => {
+  const catalog = [...ledEntries, ...entries];
+  for (const entry of entries) {
+    const {size,lighting} = signatureArchVariant(entry);
+    assert.equal(signatureArchChoice(catalog,size,lighting),entry);
+    const led = signatureArchChoice(catalog,size,lighting,true);
+    assert.ok(isSignatureLedArch(led));
+    assert.equal(signatureArchVariant(led).size,size);
+    assert.equal(signatureArchVariant(led).lighting,lighting);
+    assert.equal(signatureArchFitsDepth(led,2.99),size===2);
+    assert.equal(signatureArchChoice(entries,size,lighting,true),null);
+  }
+});
+test('LED wall costs 2570 once plus the 3m supplement and keeps optional carpet pricing', () => {
+  for (const entry of ledEntries) {
+    const lines=signatureArchSizeSupplementLines([{...entry,id:'led'}]);
+    const size=signatureArchVariant(entry).size;
+    assert.equal(lines.filter(line=>line.type.startsWith('signature-arch-led-wall-')).length,1);
+    assert.equal(lines.reduce((total,line)=>total+line.total,0),2570+(size===3?249:0));
+  }
+  assert.deepEqual(signatureArchSizeSupplementLines([{...ledEntries[0],dimensions:{isColorGroup:true}}]),[]);
 });

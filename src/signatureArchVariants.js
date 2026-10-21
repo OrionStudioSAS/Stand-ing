@@ -7,17 +7,22 @@ export function signatureArchVariant(item = {}) {
   const lighting = label.includes('suspension') ? 'suspension' : 'spot';
   return { size, lighting, supplement: Math.max(0, size - 2) * 249 };
 }
-export function signatureArchChoice(entries = [], size = 2, lighting = 'spot') {
-  return entries.find(entry => { const variant = signatureArchVariant(entry); return variant.size === size && variant.lighting === lighting; }) || null;
+export function isSignatureLedArch(item = {}) {
+  return /mur[ -]+led[ -]+signature/.test(text(item));
+}
+export function signatureArchChoice(entries = [], size = 2, lighting = 'spot', ledWall = false) {
+  return entries.find(entry => { const variant = signatureArchVariant(entry); return variant.size === size && variant.lighting === lighting && isSignatureLedArch(entry) === ledWall; }) || null;
 }
 export function signatureArchSizeSupplementLines(items = []) {
   return items.flatMap((item, index) => {
     const label = text(item);
-    const arch = item?.options?.signatureBaseKey === 'arche' || (label.includes('arche') && (label.includes('signature') || (label.includes('totem') && label.includes('plafond'))));
+    const arch = item?.options?.signatureBaseKey === 'arche' || isSignatureLedArch(item) || (label.includes('arche') && (label.includes('signature') || (label.includes('totem') && label.includes('plafond'))));
     if (!arch || item?.dimensions?.isColorGroup) return [];
     const variant = signatureArchVariant(item);
-    if (!variant.supplement) return [];
-    return [{ type: `signature-arch-size-${item.id || index}`, label: `Arche Signature ${variant.size} m — ${variant.lighting === 'suspension' ? 'Suspension' : 'Spot'}`, quantity: 1, unitPrice: variant.supplement, total: variant.supplement, reference: '' }];
+    const lines = [];
+    if (isSignatureLedArch(item)) lines.push({ type: `signature-arch-led-wall-${item.id || index}`, label: `Mur LED Signature ${variant.size} m`, quantity: 1, unitPrice: 2570, total: 2570, reference: '' });
+    if (!variant.supplement) return lines;
+    return [...lines, { type: `signature-arch-size-${item.id || index}`, label: `Arche Signature ${variant.size} m — ${variant.lighting === 'suspension' ? 'Suspension' : 'Spot'}`, quantity: 1, unitPrice: variant.supplement, total: variant.supplement, reference: '' }];
   });
 }
 

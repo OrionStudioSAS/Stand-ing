@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
+import { isSignatureLedArch } from '../src/signatureArchVariants.js';
 import { MeshPhongMaterial, MeshStandardMaterial, Texture } from 'three';
 import { normalizeImageFraming } from '../src/imageFraming.js';
 
@@ -19,7 +20,7 @@ test('Signature scenes expose their dedicated arch controls and hide the generic
   assert.match(appSource, /function SignatureArchOptionCard\(/);
   assert.match(appSource, /isSignatureStand \? 'Moquette' : 'Moquette · Empreinte'/);
   assert.match(appSource, /!isSignatureStand && \(\s*<FootprintColorOptionCard/);
-  assert.match(appSource, /title="Arche" subtitle="Taille · Éclairage · Couleur · Logo"/);
+  assert.match(appSource, /title="Arche" subtitle="Taille · Éclairage · Couleur · Options"/);
   assert.match(stylesSource, /\.signature-arch-variants/);
 });
 
@@ -47,7 +48,7 @@ test('Signature arch color targets the requested material and its attached carpe
 });
 
 function archMaterialContext() {
-  const context = vm.createContext({
+  const context = vm.createContext({ isSignatureLedArch,
     enhanceIcareChromeMaterial: (material) => material,
     applyTextureSlotMaterial: (material) => material,
     isWoodReceptionDeskItem: () => false,
@@ -153,7 +154,7 @@ test('OBJ paint supports Phong materials, color changes, and material arrays wit
 });
 
 test('Signature arch back touches the wall while its carpet strip spans the stand and 50 cm outside', () => {
-  const context = vm.createContext({
+  const context = vm.createContext({ isSignatureLedArch,
     itemGroupBounds: () => ({ minZ: -0.6 }),
     wallThickness: 0.06,
     signatureArchCenterZ: 0.25,
@@ -171,7 +172,7 @@ test('Signature arch back touches the wall while its carpet strip spans the stan
 test('Signature arch moves in 25 cm steps along the back wall without changing its visuals', () => {
   const arch = { id: 'arch', x: 0.13, z: 0, options: { imageUrl: 'existing-visual' } };
   let items = [arch, { id: 'chair', x: 0.18 }];
-  const context = vm.createContext({
+  const context = vm.createContext({ isSignatureLedArch,
     signatureArchPlacementStep: 0.25,
     wallThickness: 0.06,
     itemGroupBounds: () => ({ minX: -0.5, maxX: 0.5, minZ: -0.6 }),
@@ -222,7 +223,7 @@ test('Signature arch moves in 25 cm steps along the back wall without changing i
 });
 
 test('Furniture fits under the Signature arch but cannot intersect its front totem', () => {
-  const context = vm.createContext({
+  const context = vm.createContext({ isSignatureLedArch,
     collisionPadding: 0,
     signatureArchTotemDepth: 0.55,
     isSignatureArchItem: (item) => item.type === 'signature-arch',
@@ -248,7 +249,7 @@ test('Furniture fits under the Signature arch but cannot intersect its front tot
 });
 
 test('Signature arch image slots replace only their own material, including the literal *30 name', () => {
-  const context = vm.createContext({
+  const context = vm.createContext({ isSignatureLedArch,
     signatureArchVisualSlots: [
       { id: 'signature-arch-led-5', targetName: 'LED_5500k#5', kind: 'image', matchMode: 'exact' },
       { id: 'signature-arch-led-30', targetName: 'LED_5500k#30', kind: 'image', matchMode: 'exact' },
@@ -258,6 +259,7 @@ test('Signature arch image slots replace only their own material, including the 
     materialMatchesTextureSlot: (name, material, target) => name === target.toLowerCase(),
     textureSlotHasLogoGate: () => false,
     materialTextureCanvasSize: () => [100, 100],
+    posterCoverTextureSize: () => [336, 1000],
     normalizeImageFraming,
     createCoverImageTexture: (image) => image,
     materialWithTexture: (material, map) => ({ ...material, map }),
@@ -277,6 +279,9 @@ test('Signature arch image slots replace only their own material, including the 
   assert.equal(context.applyTextureSlotMaterial({ name: '*30' }, item, images, '*30').map.id, 'second');
   assert.equal(context.applyTextureSlotMaterial({ name: 'LED_5500k_11' }, item, images, 'led_5500k_11').map.id, 'first');
   assert.equal(context.applyTextureSlotMaterial({ name: '_28' }, item, images, '_28').map.id, 'second');
+  const ledItem = {...item,label:'Mur LED Signature 2m + Spot 210'};
+  assert.equal(context.applyTextureSlotMaterial({name:'LED_5500k_15'},ledItem,images,'led_5500k_15').map.id,'first');
+  for(const name of ['led_5500k_11','_28','led_5500k_150']) assert.equal(context.applyTextureSlotMaterial({name},ledItem,images,name).map,undefined);
   assert.equal(context.applyTextureSlotMaterial({ name: '_280' }, item, images, '_280').map, undefined);
   assert.equal(context.applyTextureSlotMaterial({ name: 'LED_5500k#50' }, item, images, 'led_5500k#50').map, undefined);
   assert.match(appSource, /onSignatureArchImage=\{\(item, slot, file\) => uploadItemImage\(item, file, \{ textureSlot: slot \}\)\}/);

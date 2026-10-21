@@ -27,7 +27,7 @@ export function signatureFootprintPalette(colors = []) {
 export function signatureFootprintSupplementLine(items = []) {
   const arch = items.find(item => {
     const options = item.options || {};
-    const isArch = options.signatureBaseKey === 'arche' || /arche.*signature|signature.*arche/.test(key(`${item.type} ${item.label}`));
+    const isArch = options.signatureBaseKey === 'arche' || /arche.*signature|signature.*arche|mur led signature/.test(key(`${item.type} ${item.label}`));
     const hasColor = options.signatureArchColorId || options.signatureArchColorCode || options.signatureArchColorName;
     return isArch && hasColor && !signatureIncludedFootprintColor({ id: options.signatureArchColorId, code: options.signatureArchColorCode, name: options.signatureArchColorName });
   });
