@@ -55,3 +55,23 @@ test('Signature L-right banners meet the rendered 2m² rear-right door frame, no
  const oldMeasured=api.wallCoverSurfaceOptions('right',6,3,[oldGroup],{splitForCovers:true}).find(surface=>surface.wall==='back').visibleWidth;
  assert.equal(cover.visibleWidth,oldMeasured,'Commercial metres remain unchanged');
 });
+
+test('1m² rear-right cover uses the front-side fixed frame of the actual opposite-handle door',()=>{
+ const api=reserveCoverRuntime();
+ const assets=JSON.parse(readFileSync(new URL('./fixtures/signature-reserve-1m-back-right.json',import.meta.url),'utf8'));
+ const entry=api.assetToCatalogEntry(assets.find(a=>a.dimensions.isGroup),assets);
+ const door=entry.children.find(child=>child.label.startsWith('Porte'));
+ assert.equal(door.dimensions.depthLocked6cm,true);
+ const group={...entry,id:'auto-reserve',rotation:0};const bounds=api.itemPlacementBounds(group);
+ group.x=3-.06-bounds.maxX;group.z=-1.5+.06-bounds.minZ;
+ const frame=new Box3(new Vector3(-.5,0,.058895),new Vector3(.5,2.5,.118895));
+ const matrix=new Matrix4().makeRotationY(door.rotation*Math.PI/180);matrix.setPosition(group.x+door.x,0,group.z+door.z);frame.applyMatrix4(matrix);
+ const cover=api.wallCoverSurfaceOptions('right',6,3,[group],{splitForCovers:true}).find(surface=>surface.wall==='back');
+ assert.ok(Math.abs(cover.position[0]+cover.width/2-frame.min.x)<1e-9);
+ const oldGroup={...group,children:entry.children.map(c=>({...c,dimensions:{...c.dimensions,wallCoverFrameBounds:undefined}}))};
+ const oldCover=api.wallCoverSurfaceOptions('right',6,3,[oldGroup],{splitForCovers:true}).find(surface=>surface.wall==='back');
+ assert.equal(cover.visibleWidth,oldCover.visibleWidth);
+ assert.ok((cover.position[0]+cover.width/2)-(oldCover.position[0]+oldCover.width/2)>.17,'The fixed-frame correction removes the overlap at the opening');
+ const raw={...door,dimensions:{...door.dimensions,depthLocked6cm:false}};
+ assert.deepEqual(JSON.parse(JSON.stringify(api.reserveWallCoverBounds(raw))),JSON.parse(JSON.stringify(api.reserveWallCoverBounds({...raw,dimensions:{...raw.dimensions,wallCoverFrameBounds:undefined}}))),'Explicitly disabling the 6cm option retains the original bounds');
+});

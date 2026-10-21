@@ -2174,12 +2174,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }, 0);
   };
 
-  useEffect(() => {
-    if (readOnly || !isSignatureStand || !objectBankLoaded || !signatureArchItem || signatureArchFitsDepth(signatureArchItem, depth)) return;
-    const replacement = signatureArchChoice(signatureArchEntries, 2, signatureArchVariant(signatureArchItem).lighting);
-    if (replacement) selectSignatureArchVariant(replacement);
-  }, [depth, readOnly, isSignatureStand, objectBankLoaded, signatureArchItem?.type, signatureArchEntries]);
-
   const updateSignatureArchColor = (colorId) => {
     if (readOnly || !isSignatureStand) return;
     const color = findColorInPalette(footprintPalette, colorId);
@@ -2197,6 +2191,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (readOnly || !item || !slot) return;
     updateItemOptions(item, textureSlotPatch(item, slot, { imageUrl: '', imageName: '', visualPending: false, ...defaultImageFraming }));
   };
+
+  useEffect(() => {
+    if (readOnly || !isSignatureStand || !objectBankLoaded || !signatureArchItem || signatureArchFitsDepth(signatureArchItem, depth)) return;
+    const replacement = signatureArchChoice(signatureArchEntries, 2, signatureArchVariant(signatureArchItem).lighting);
+    if (replacement) selectSignatureArchVariant(replacement);
+  }, [depth, readOnly, isSignatureStand, objectBankLoaded, signatureArchItem?.type, signatureArchEntries]);
 
   const moveDraggedItem = (point) => {
     if (readOnly || !draggingId) return;
@@ -3977,7 +3977,7 @@ function SignatureArchOptionCard({ standDepth = Infinity, items = [], entries = 
               {[2, 3].map((size) => {
                 const entry = signatureArchChoice(entries, size, selectedVariant.lighting);
                 return <button key={size} type="button" className={selectedVariant.size === size ? 'active' : ''}
-                  aria-pressed={selectedVariant.size === size} title={size === 3 && !signatureArchFitsDepth({ label: 'Arche Signature 3m' }, standDepth) ? 'Disponible à partir de 3 m de profondeur' : undefined} disabled={busy || !entry || !signatureArchFitsDepth(entry, standDepth)} onClick={() => onVariantChange?.(entry)}>
+                  aria-pressed={selectedVariant.size === size} title={size === 3 && Number(standDepth) < 3 ? 'Disponible à partir de 3 m de profondeur' : undefined} disabled={busy || !entry || !signatureArchFitsDepth(entry, standDepth)} onClick={() => onVariantChange?.(entry)}>
                   <strong>{size} m</strong><small className={size === 2 ? 'arch-badge included' : 'arch-badge'}>{size === 2 ? 'Inclus' : '+ 249 €'}</small>
                 </button>;
               })}
@@ -15871,11 +15871,12 @@ function uniqueCatalogEntries(entries = []) {
 function inheritGroupChildDepth(children = [], sources = []) {
   const resolved = children.map((child) => {
     // An explicit false belongs to the group; older snapshots have no override.
-    if (child.dimensions?.depthLocked6cm != null) return child;
     const source = sources.find((entry) => entry.type === child.type && entry.id === child.id)
       || sources.find((entry) => entry.type === child.type);
-    if (source?.dimensions?.depthLocked6cm !== true) return child;
-    return { ...child, dimensions: { ...child.dimensions, depthLocked6cm: true } };
+    const patch = {};
+    if (child.dimensions?.depthLocked6cm == null && source?.dimensions?.depthLocked6cm === true) patch.depthLocked6cm = true;
+    if (!child.dimensions?.wallCoverFrameBounds && source?.dimensions?.wallCoverFrameBounds) patch.wallCoverFrameBounds = source.dimensions.wallCoverFrameBounds;
+    return Object.keys(patch).length ? { ...child, dimensions: { ...child.dimensions, ...patch } } : child;
   });
   return resolved.some((child, index) => child !== children[index]) ? resolved : children;
 }
@@ -18052,12 +18053,15 @@ function summedIntervalLength(intervals = [], range = { min: 0, max: 0 }) {
 function reserveWallCoverBounds(item = {}) {
   const childBounds = item.isGroup && item.children?.length
     ? item.children.map((child) => reserveWallCoverBounds(child)) : null;
+  const frame = item.dimensions?.depthLocked6cm && item.dimensions?.wallCoverFrameBounds;
+  const fixedFrame = frame && [frame.minX, frame.maxX, frame.minZ, frame.maxZ].every(Number.isFinite)
+    && frame.maxX > frame.minX && frame.maxZ > frame.minZ ? frame : null;
   const local = childBounds ? {
     minX: Math.min(...childBounds.map((bounds) => bounds.minX)),
     maxX: Math.max(...childBounds.map((bounds) => bounds.maxX)),
     minZ: Math.min(...childBounds.map((bounds) => bounds.minZ)),
     maxZ: Math.max(...childBounds.map((bounds) => bounds.maxZ)),
-  } : itemGroupBounds(item);
+  } : fixedFrame || itemGroupBounds(item);
   // Three.js rotates the X/Z plane with the opposite sign to the legacy placement helper.
   // Use the rendered door frame for banners, retaining existing placement and pricing bounds.
   const corners = [[local.minX, local.minZ], [local.minX, local.maxZ], [local.maxX, local.minZ], [local.maxX, local.maxZ]]

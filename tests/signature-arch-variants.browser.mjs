@@ -26,7 +26,7 @@ const source = await readFile('src/App.jsx','utf8');
 const appId = resolve('src/__arch-variants-app.jsx'), pageId = resolve('src/__arch-variants-page.jsx'), storeId = resolve('src/data/sceneStore.js');
 const harness = `import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {ConfiguratorApp} from '/src/__arch-variants-app.jsx';
 localStorage.setItem('standing-config-intro:arch-variants','started');localStorage.setItem('standing-config-tutorial:arch-variants','done');
-function Test(){const [scene,setScene]=useState(${JSON.stringify(scene)}),[revision,setRevision]=useState(0);return <><button style={{position:'fixed',bottom:0,left:0,zIndex:99999}} onClick={()=>{setScene(window.savedScene);setRevision(n=>n+1)}}>Reouvrir test</button><ConfiguratorApp key={revision} initialScene={scene} isAdminViewer /></>};createRoot(document.getElementById('root')).render(<Test/>);`;
+function Test(){const [scene,setScene]=useState(${JSON.stringify(scene)}),[revision,setRevision]=useState(0);return <><button style={{position:'fixed',bottom:0,left:0,zIndex:99999}} onClick={()=>{setScene(window.savedScene);setRevision(n=>n+1)}}>Reouvrir test</button><button style={{position:'fixed',bottom:0,left:140,zIndex:99999}} onClick={()=>{setScene({...window.savedScene,dimensions:{...window.savedScene.dimensions,depth:2.99}});setRevision(n=>n+1)}}>Profondeur courte test</button><button style={{position:'fixed',bottom:0,left:340,zIndex:99999}} onClick={()=>{setScene({...window.savedScene,dimensions:{...window.savedScene.dimensions,depth:3}});setRevision(n=>n+1)}}>Profondeur 3m test</button><ConfiguratorApp key={revision} initialScene={scene} isAdminViewer /></>};createRoot(document.getElementById('root')).render(<Test/>);`;
 // Inspect the materials and carpet plane actually mounted in the Three.js scene.
 const probe = `useFrame(({scene})=>{const paints=[],images=[],footprints=[];scene.traverse(node=>{
   for(const material of (Array.isArray(node.material)?node.material:[node.material])){
@@ -77,5 +77,17 @@ try{
   await page.getByRole('button',{name:/^Arche/}).click();
   await page.screenshot({path:'/tmp/standing-arch-variants.png'});
   await page.setViewportSize({width:390,height:844});assert.ok(await sizeGroup.getByRole('button',{name:/^3 m/}).isVisible());
+  await page.setViewportSize({width:1440,height:1000});
+  await page.getByRole('button',{name:'Profondeur courte test',exact:true}).click();
+  await page.waitForFunction(()=>window.savedScene?.dimensions.depth===2.99&&window.savedScene.items.some(i=>i.options.signatureArchSizeM===2));
+  await page.getByRole('button',{name:/^Arche/}).click();
+  assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).isDisabled(),true);
+  assert.equal(await page.getByText('L’arche 3 m nécessite une profondeur de stand d’au moins 3 m.',{exact:true}).isVisible(),true);
+  assert.deepEqual(await page.evaluate(()=>window.savedScene.items.find(i=>i.options.signatureBaseKey==='arche').options.textureSlotValues['signature-arch-led-30']),slots['signature-arch-led-30']);
+  assert.equal(await page.evaluate(()=>window.archPricing.lines.filter(l=>l.type.startsWith('signature-arch-size-')).length),0);
+  await page.getByRole('button',{name:'Profondeur 3m test',exact:true}).click();await page.getByRole('button',{name:/^Arche/}).click();
+  assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).isEnabled(),true);
+  await sizeGroup.getByRole('button',{name:/^3 m/}).click();
+  await page.waitForFunction(()=>window.savedScene?.dimensions.depth===3&&window.savedScene.items.some(i=>i.options.signatureArchSizeM===3));
   assert.deepEqual(errors,[]);console.log('Four current arch models + legacy migration: size + lighting selection, single supplement, image framing/color preservation and reopening OK');
 }finally{await browser?.close();await server.close();}
