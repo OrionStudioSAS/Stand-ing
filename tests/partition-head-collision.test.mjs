@@ -1,3 +1,4 @@
+import { Box3, Matrix4, Vector3 } from 'three';
 import { signatureArchVariant, signatureArchFitsDepth } from '../src/signatureArchVariants.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -352,4 +353,16 @@ test('Signature and SIAE back-wall heads meet the exact scene edge, including ha
     const edge = position.x + (side === 'left' ? bounds.min : bounds.max);
     assert.ok(Math.abs(edge - (side === 'left' ? -width / 2 : width / 2)) < 1e-8, `${pack} ${width} ${side}: ${edge}`);
   }
+});
+
+test('Signature heads touch the inner wall face on both sides of every layout',()=>{
+ const api=collisionContext();
+ for(const layout of ['back','left','right','u'])for(const width of [4,5.25])for(const side of ['left','right']){
+  const item={type:'head-signature',label:'Tête de cloison Signature',modelUrl:'/head.glb',dimensions:{size:[.11,2.99,.61]},placementRule:{id:`outer-${side}`,locked:true}};
+  const placed=api.applyWallPlacementRule(item,width,3,layout),position=api.screenWorldPosition(placed,width,3,[]),rotation=api.wallMountedItemRotation(placed);
+  const transform=new Matrix4().makeRotationY(rotation);transform.setPosition(...position);
+  const box=new Box3(new Vector3(-.055,0,-.305),new Vector3(.055,2.99,.305)).applyMatrix4(transform);
+  const gap=placed.wall==='back'?box.min.z-(-1.5+.06):placed.wall==='left'?box.min.x-(-width/2+.06):(width/2-.06)-box.max.x;
+  assert.ok(Math.abs(gap)<1e-9,`${layout} ${width} ${side}: gap ${gap}`);
+ }
 });

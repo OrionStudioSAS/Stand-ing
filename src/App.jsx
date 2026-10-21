@@ -8192,7 +8192,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
 
   return (
     <div className={`partition-head-panel partition-head-panel-v2${isSignatureStand ? ' signature-head-options' : ''}`}>
-      {!isSignatureStand && <div className="partition-head-activity-info">
+      {!isSignatureStand && normalizePackLabel(salonLabel) !== 'equipe' && !normalizeTextValue(salonLabel).includes('siae') && <div className="partition-head-activity-info">
         <b>i</b>
         <span>Le fond de couleur correspond à votre secteur d'activité et ne peut être modifié.</span>
       </div>}
@@ -20075,7 +20075,7 @@ function wallMountedNormalOffset(item, objectSurface = false) {
   if (item?.type === 'screen') return wallFaceOffset + screenDepth / 2;
   if (isPartitionHeadItem(item)) {
     const bounds = itemGroupBounds(item);
-    if (isSignaturePartitionHeadItem(item)) return wallFaceOffset + partitionHeadWallGap - Number(bounds.minX || 0);
+    if (isSignaturePartitionHeadItem(item)) return wallFaceOffset - Number(bounds.minX || 0);
     return wallFaceOffset + partitionHeadWallGap - Number(bounds.minZ || 0);
   }
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);

@@ -165,7 +165,8 @@ test('Signature head follows each wall with its long model axis and correct wall
   assert.equal(context.wallItemAxisBounds(signature, 'back').max, 0.25);
   assert.equal(context.wallItemAxisBounds(signature, 'left').max, 0.25);
   assert.equal(context.wallItemMetrics(signature).width, 0.5);
-  assert.equal(context.wallMountedNormalOffset(signature), 0.15);
+  assert.equal(context.wallMountedNormalOffset(signature), 0.14);
+  assert.equal(context.wallMountedNormalOffset(smcl), 0.32, 'Other partition heads retain their existing gap');
 });
 
 test('Signature heads use their LED material for each uploaded image, not the other materials', () => {

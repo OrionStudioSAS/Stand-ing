@@ -75,6 +75,7 @@ try {
   await page.waitForFunction(() => window.headItems?.length === 2);
   const openHeads = async () => page.getByRole('button', { name: 'Tête de cloison', exact: true }).click();
   await openHeads();
+  assert.equal(await page.locator('.partition-head-activity-info').count(),0,'Equipped heads do not show the sector-color notice');
   const checkbox = page.getByRole('checkbox', { name: 'Je veux un visuel différent', exact: true });
   const uploads = page.locator('.partition-head-upload-block input[type=file]');
   const upload = async (index, name, fill) => {
