@@ -1,3 +1,4 @@
+import { signatureArchVariant, signatureArchChoice, signatureArchSizeSupplementLines } from './signatureArchVariants.js';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
 import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
@@ -2152,6 +2153,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           signatureBaseKey: 'arche',
           signatureArchVariantType: entry.type,
           signatureArchVariantLabel: entry.label || '',
+          signatureArchSizeM: signatureArchVariant(entry).size,
+          signatureArchLighting: signatureArchVariant(entry).lighting,
+          signatureArchSizeSupplement: signatureArchVariant(entry).supplement,
         },
       };
       const withoutArches = current.filter((item) => !isSignatureArchItem(item));
@@ -3948,6 +3952,8 @@ function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = 
 function SignatureArchOptionCard({ items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage, onFramingChange }) {
   const selectedItem = items[0] || null;
   const selectedType = selectedItem?.options?.signatureArchVariantType || selectedItem?.type || '';
+  const selectedEntry = entries.find((entry) => entry.type === selectedType) || selectedItem || entries[0];
+  const selectedVariant = signatureArchVariant(selectedEntry);
 
   return (
     <div className="signature-arch-card">
@@ -3957,25 +3963,31 @@ function SignatureArchOptionCard({ items = [], entries = [], colors = [], select
           <span>{selectedItem?.label || 'Choisissez une option'}</span>
         </div>
         {entries.length ? (
-          <div className="signature-arch-variants">
-            {entries.map((entry) => {
-              const active = entry.type === selectedType;
-              return (
-                <button
-                  key={entry.type}
-                  type="button"
-                  className={active ? 'active' : ''}
-                  disabled={disabled}
-                  onClick={() => onVariantChange?.(entry)}
-                >
-                  <span className="signature-arch-variant-image">
-                    {entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Layers size={28} />}
-                    {active && <Check size={14} />}
-                  </span>
-                  <strong>{entry.label}</strong>
-                </button>
-              );
-            })}
+          <div className="signature-arch-variants signature-arch-controls">
+            <fieldset className="signature-arch-choice-group">
+              <legend>Taille</legend>
+              <div>
+                {[1, 2, 3].map((size) => {
+                  const entry = signatureArchChoice(entries, size, selectedVariant.lighting);
+                  return <button key={size} type="button" className={selectedVariant.size === size ? 'active' : ''}
+                    aria-pressed={selectedVariant.size === size} disabled={disabled || !entry} onClick={() => onVariantChange?.(entry)}>
+                    <strong>{size} m</strong><small>{size === 1 ? 'Inclus' : `+ ${(size - 1) * 249} € HT`}</small>
+                  </button>;
+                })}
+              </div>
+            </fieldset>
+            <fieldset className="signature-arch-choice-group">
+              <legend>Option</legend>
+              <div>
+                {['spot', 'suspension'].map((lighting) => {
+                  const entry = signatureArchChoice(entries, selectedVariant.size, lighting);
+                  return <button key={lighting} type="button" className={selectedVariant.lighting === lighting ? 'active' : ''}
+                    aria-pressed={selectedVariant.lighting === lighting} disabled={disabled || !entry} onClick={() => onVariantChange?.(entry)}>
+                    <strong>{lighting === 'spot' ? 'Spot' : 'Suspension'}</strong>
+                  </button>;
+                })}
+              </div>
+            </fieldset>
           </div>
         ) : (
           <p className="signature-arch-empty">Aucune arche Signature n'est encore associée à ce pack.</p>
@@ -6414,18 +6426,16 @@ function isSignatureScene(scene = {}) {
 function isSignatureArchItem(item = {}) {
   if (item?.options?.signatureBaseKey === 'arche') return true;
   const text = normalizedItemText(item);
-  return text.includes('arche') && text.includes('totem') && text.includes('plafond');
+  return !item?.dimensions?.isColorGroup && text.includes('arche') && (text.includes('signature') || (text.includes('totem') && text.includes('plafond')));
 }
 
 function signatureArchCatalogEntries(entries = []) {
   return (entries || [])
     .filter((entry) => !isVariantGroupEntry(entry) && isSignatureArchItem(entry))
     .sort((left, right) => {
-      const leftText = normalizedItemText(left);
-      const rightText = normalizedItemText(right);
-      const leftOrder = leftText.includes('spot') ? 0 : leftText.includes('suspension') ? 1 : 2;
-      const rightOrder = rightText.includes('spot') ? 0 : rightText.includes('suspension') ? 1 : 2;
-      return leftOrder - rightOrder || String(left.label || '').localeCompare(String(right.label || ''), 'fr');
+      const a = signatureArchVariant(left), b = signatureArchVariant(right);
+      return a.size - b.size || Number(a.lighting === 'suspension') - Number(b.lighting === 'suspension')
+        || String(left.label || '').localeCompare(String(right.label || ''), 'fr');
     });
 }
 
@@ -6496,8 +6506,9 @@ function itemTextureSlots(item = {}) {
 }
 
 function signatureArchVisualMaterialMatches(materialName = '', slot = {}) {
-  if (slot.id !== 'signature-arch-led-30') return false;
-  return /^(?:led_5500k(?:#|\*|_)30|\*30)(?:\.\d+)?$/.test(materialName);
+  if (slot.id === 'signature-arch-led-5') return /^led_5500k_11(?:\.\d+)?$/.test(materialName);
+  if (slot.id === 'signature-arch-led-30') return /^(?:led_5500k(?:#|\*|_)30|\*30|_28)(?:\.\d+)?$/.test(materialName);
+  return false;
 }
 
 function isPrestigeArchItem(item = {}) {
@@ -16810,6 +16821,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
   }
 
   if (isSignatureScene(scene)) {
+    signatureArchSizeSupplementLines(safeItems).forEach((line) => { itemsTotal += line.total; lines.push(line); });
     const footprintLine = signatureFootprintSupplementLine(safeItems);
     if (footprintLine) { itemsTotal += footprintLine.total; lines.push(footprintLine); }
   }
@@ -21763,7 +21775,7 @@ function reserveDoorFabricMaterial(material, item, texture = null) {
 }
 
 function isSignatureArchColorMaterial(materialName = '', material = null) {
-  return materialMatchesTextureSlot(materialName, material, 'Laminate_D02_120cm#1', 'exact');
+  return ['Laminate_D02_120cm#1', 'Laminate_D02_120cm_1'].some((target) => materialMatchesTextureSlot(materialName, material, target, 'exact'));
 }
 
 function signatureArchPaintMaterial(material, color) {

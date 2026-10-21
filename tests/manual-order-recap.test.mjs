@@ -1,3 +1,4 @@
+import { signatureArchSizeSupplementLines } from '../src/signatureArchVariants.js';
 import { signatureFootprintSupplementLine } from '../src/signatureFootprint.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -19,7 +20,7 @@ function load(api, source, name) {
 }
 
 function pricingApi() {
-  const api = vm.createContext({ signatureFootprintSupplementLine,
+  const api = vm.createContext({ signatureArchSizeSupplementLines, signatureFootprintSupplementLine,
     manualOrderRowsToPricingLines, normalizeManualOrderCategory, replaceManualOrderPricingLines,
     roundCurrency: money, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance,
     isSignatureScene: (scene) => scene.offer === 'Signature',
@@ -96,7 +97,7 @@ test('manual rows named reserve, carpet or counter logo remain distinct and resp
 });
 
 test('asset link uses the scene pack reference and price, and maps the configured asset category', () => {
-  const api = vm.createContext({ signatureFootprintSupplementLine, normalizeManualOrderCategory,
+  const api = vm.createContext({ signatureArchSizeSupplementLines, signatureFootprintSupplementLine, normalizeManualOrderCategory,
     sceneOfferLabel: (scene) => scene.offer,
     assetBusinessCategoryLabel: (asset) => asset.dimensions.category,
     assetToCatalogEntry: (asset) => asset,
@@ -120,7 +121,7 @@ test('asset link uses the scene pack reference and price, and maps the configure
 function persistenceApi(remote = false) {
   let scenes = [{ id: 'scene-one', offer: 'Confort', source_payload: { specialRequest: { text: 'Please add coffee' }, options: { carpet: 'blue' }, pricing: { lines: [] } }, dimensions: { width: 4, depth: 3 } }];
   let readError = null;
-  const api = vm.createContext({ signatureFootprintSupplementLine, mergeManualOrderPricing, scenePackBenefits, fixedWallHeight: 2.5,
+  const api = vm.createContext({ signatureArchSizeSupplementLines, signatureFootprintSupplementLine, mergeManualOrderPricing, scenePackBenefits, fixedWallHeight: 2.5,
     readLocalScenes: () => scenes, writeLocalScenes: (next) => { scenes = next; }, saveSceneItems: async () => {},
     supabase: remote ? { from(table) {
       assert.equal(table, 'scenes');

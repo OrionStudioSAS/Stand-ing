@@ -275,6 +275,24 @@ test('Signature arch image slots replace only their own material, including the 
   } };
   assert.equal(context.applyTextureSlotMaterial({ name: 'LED_5500k#5' }, item, images, 'led_5500k#5').map.id, 'first');
   assert.equal(context.applyTextureSlotMaterial({ name: '*30' }, item, images, '*30').map.id, 'second');
+  assert.equal(context.applyTextureSlotMaterial({ name: 'LED_5500k_11' }, item, images, 'led_5500k_11').map.id, 'first');
+  assert.equal(context.applyTextureSlotMaterial({ name: '_28' }, item, images, '_28').map.id, 'second');
+  assert.equal(context.applyTextureSlotMaterial({ name: '_280' }, item, images, '_280').map, undefined);
   assert.equal(context.applyTextureSlotMaterial({ name: 'LED_5500k#50' }, item, images, 'led_5500k#50').map, undefined);
   assert.match(appSource, /onSignatureArchImage=\{\(item, slot, file\) => uploadItemImage\(item, file, \{ textureSlot: slot \}\)\}/);
+});
+
+
+test('New Signature exports paint only the structure while retaining the surrounding materials', () => {
+  const context = archMaterialContext();
+  const item = { label: 'Arche Signature 3m + Suspension', options: { signatureArchColorHex: '#bb2233' } };
+  for (const name of ['Laminate_D02_120cm_1', 'Laminate_D02_120cm_1.001']) {
+    const result = context.applyItemOptionMaterials(new MeshStandardMaterial({name,map:new Texture()}), item);
+    assert.equal(result.color.getHexString(), 'bb2233');
+    assert.equal(result.map, null);
+  }
+  for (const name of ['Laminate_D02_120cm_2', 'Laminate_D02_120cm_10', 'LED_5500k_11', '_28']) {
+    const original = new MeshStandardMaterial({name,map:new Texture()});
+    assert.equal(context.applyItemOptionMaterials(original,item),original);
+  }
 });

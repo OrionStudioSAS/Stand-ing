@@ -15203,3 +15203,14 @@ img.asset-thumb {
 .asset-color-import input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
 .asset-color-import:focus-within { outline: 2px solid #416bb0; outline-offset: 3px; }
 .asset-color-import-help { display: block; margin-top: 9px; color: #637083; line-height: 1.5; }
+
+.signature-arch-controls { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.signature-arch-choice-group { min-width: 0; margin: 0; padding: 0; border: 0; }
+.signature-arch-choice-group legend { margin-bottom: 8px; color: #3b414d; font-size: .78rem; font-weight: 850; }
+.signature-arch-choice-group > div { display: flex; gap: 8px; }
+.signature-arch-choice-group button { flex: 1; min-width: 0; display: grid; justify-items: center; gap: 5px; padding: 12px 6px; border: 1px solid #dce5ef; border-radius: 8px; background: #fff; color: #3b414d; }
+.signature-arch-choice-group button.active { border-color: #416bb0; background: #edf3ff; color: #1f5db4; box-shadow: inset 0 0 0 1px #416bb0; }
+.signature-arch-choice-group button:disabled { cursor: not-allowed; opacity: .45; }
+.signature-arch-choice-group button strong { font-size: .78rem; }
+.signature-arch-choice-group button small { font-size: .68rem; white-space: nowrap; }
+.signature-arch-choice-group button:focus-visible { outline: 2px solid #416bb0; outline-offset: 3px; }

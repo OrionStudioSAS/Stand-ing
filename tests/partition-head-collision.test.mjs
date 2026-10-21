@@ -1,3 +1,4 @@
+import { signatureArchVariant } from '../src/signatureArchVariants.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -12,7 +13,7 @@ function loadFunction(name, context) {
 }
 
 function collisionContext() {
-  const context = vm.createContext({
+  const context = vm.createContext({ signatureArchVariant,
     collisionPadding: 0,
     automaticMeterCoverItems: [],
     wallThickness: 0.06,
