@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { signatureArchVariant, signatureArchChoice, signatureArchSizeSupplementLines, upgradeLegacySignatureArch, isLegacySignatureArch } from '../src/signatureArchVariants.js';
+import { signatureArchVariant, signatureArchChoice, signatureArchSizeSupplementLines, upgradeLegacySignatureArch, isLegacySignatureArch, signatureArchFitsDepth } from '../src/signatureArchVariants.js';
 
 const entries = [2, 3].flatMap(size => ['spot', 'suspension'].map(lighting => ({
   type: `arch-${size}m-${lighting}`,
@@ -46,4 +46,12 @@ test('Old arches migrate to the current 2 m model with the same lighting and all
     assert.ok(isLegacySignatureArch(old));
   }
   assert.equal(upgradeLegacySignatureArch(entries[2],entries),entries[2]);
+});
+
+test('3m arches require at least 3m of stand depth for both lighting options',()=>{
+ for (const entry of entries) {
+  const {size}=signatureArchVariant(entry);
+  for (const depth of [2,2.5,2.99,2.9999]) assert.equal(signatureArchFitsDepth(entry,depth),size===2);
+  for (const depth of [3,3.01,4]) assert.equal(signatureArchFitsDepth(entry,depth),true);
+ }
 });

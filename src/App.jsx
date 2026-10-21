@@ -1,4 +1,4 @@
-import { signatureArchVariant, signatureArchChoice, signatureArchSizeSupplementLines, isLegacySignatureArch, upgradeLegacySignatureArch } from './signatureArchVariants.js';
+import { signatureArchVariant, signatureArchChoice, signatureArchSizeSupplementLines, isLegacySignatureArch, upgradeLegacySignatureArch, signatureArchFitsDepth } from './signatureArchVariants.js';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
 import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
@@ -2115,7 +2115,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   };
 
   const selectSignatureArchVariant = (entry) => {
-    if (readOnly || !isSignatureStand || !entry) return;
+    if (readOnly || !isSignatureStand || !entry || !signatureArchFitsDepth(entry, depth)) return;
     const activeItem = signatureArchItem;
     const color = signatureArchColor || selectedCarpetFootprintColor;
     const colorOptions = signatureArchColorOptions(color);
@@ -2173,6 +2173,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       else setSelectedId(selectedArchId);
     }, 0);
   };
+
+  useEffect(() => {
+    if (readOnly || !isSignatureStand || !objectBankLoaded || !signatureArchItem || signatureArchFitsDepth(signatureArchItem, depth)) return;
+    const replacement = signatureArchChoice(signatureArchEntries, 2, signatureArchVariant(signatureArchItem).lighting);
+    if (replacement) selectSignatureArchVariant(replacement);
+  }, [depth, readOnly, isSignatureStand, objectBankLoaded, signatureArchItem?.type, signatureArchEntries]);
 
   const updateSignatureArchColor = (colorId) => {
     if (readOnly || !isSignatureStand) return;
@@ -2887,6 +2893,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           />
         ) : (
           <OptionsStepPanel
+            standDepth={depth}
             hasIncludedObjects={scenePackBenefits(initialScene).mode !== 'allowance'}
             activeStep={activeStep}
             area={area}
@@ -3950,7 +3957,7 @@ function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = 
   );
 }
 
-function SignatureArchOptionCard({ items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage, onFramingChange, onVisualPending, onApply }) {
+function SignatureArchOptionCard({ standDepth = Infinity, items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage, onFramingChange, onVisualPending, onApply }) {
   const selectedItem = items[0] || null;
   const selectedType = selectedItem?.options?.signatureArchVariantType || selectedItem?.type || '';
   const selectedEntry = entries.find((entry) => entry.type === selectedType) || selectedItem || entries[0];
@@ -3970,11 +3977,12 @@ function SignatureArchOptionCard({ items = [], entries = [], colors = [], select
               {[2, 3].map((size) => {
                 const entry = signatureArchChoice(entries, size, selectedVariant.lighting);
                 return <button key={size} type="button" className={selectedVariant.size === size ? 'active' : ''}
-                  aria-pressed={selectedVariant.size === size} disabled={busy || !entry} onClick={() => onVariantChange?.(entry)}>
+                  aria-pressed={selectedVariant.size === size} title={size === 3 && !signatureArchFitsDepth({ label: 'Arche Signature 3m' }, standDepth) ? 'Disponible à partir de 3 m de profondeur' : undefined} disabled={busy || !entry || !signatureArchFitsDepth(entry, standDepth)} onClick={() => onVariantChange?.(entry)}>
                   <strong>{size} m</strong><small className={size === 2 ? 'arch-badge included' : 'arch-badge'}>{size === 2 ? 'Inclus' : '+ 249 €'}</small>
                 </button>;
               })}
             </div>
+            {Number(standDepth) < 3 && <p className="signature-arch-depth-hint">L’arche 3 m nécessite une profondeur de stand d’au moins 3 m.</p>}
           </fieldset>
           <fieldset className="signature-arch-choice-group signature-arch-lighting">
             <legend>Éclairage du plafond</legend>
@@ -4630,6 +4638,7 @@ function useSimulatorImageQualityCheck(imageUrl, recommendedSpec = null) {
 }
 
 function OptionsStepPanel({
+  standDepth = Infinity,
   hasIncludedObjects = true,
   activeStep,
   area,
@@ -4862,6 +4871,7 @@ function OptionsStepPanel({
       {isSignatureStand && (
         <OptionAccordion {...accordionScrollProps('arche')} className="signature-arch-accordion" title="Arche" subtitle="Taille · Éclairage · Couleur · Logo" icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
           <SignatureArchOptionCard
+            standDepth={standDepth}
             items={signatureArchItems}
             entries={signatureArchEntries}
             colors={signatureArchColors}
@@ -12676,7 +12686,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   const [thumbnailError, setThumbnailError] = useState('');
   const [batPictoUploading, setBatPictoUploading] = useState(false);
   const [batPictoError, setBatPictoError] = useState('');
-  const [groupRows, setGroupRows] = useState(() => assetToGroupRows(asset));
+  const [groupRows, setGroupRows] = useState(() => assetToGroupRows(asset, assets));
   const [selectedGroupRowUid, setSelectedGroupRowUid] = useState(null);
   const [draggingGroupRowUid, setDraggingGroupRowUid] = useState(null);
   const packChoices = adminPackAssignmentChoices(adminSalons, scenes);
@@ -12715,7 +12725,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     setThumbnailError('');
     setBatPictoUploading(false);
     setBatPictoError('');
-    setGroupRows(assetToGroupRows(asset));
+    setGroupRows(assetToGroupRows(asset, assets));
     setVariantAssetTypes(variantPrimaryAssetTypes(asset));
     setVariantOptionLinks(asset.dimensions?.variantOptionLinks || []);
     setVariantMeta(asset.dimensions?.variantMeta || asset.dimensions?.variantBatPictos || {});
@@ -15858,8 +15868,20 @@ function uniqueCatalogEntries(entries = []) {
     .filter((entry, index, all) => all.findIndex((candidate) => candidate?.type === entry?.type) === index);
 }
 
-function assetToGroupRows(asset) {
-  return (asset?.dimensions?.children || []).map((child, index) => ({
+function inheritGroupChildDepth(children = [], sources = []) {
+  const resolved = children.map((child) => {
+    // An explicit false belongs to the group; older snapshots have no override.
+    if (child.dimensions?.depthLocked6cm != null) return child;
+    const source = sources.find((entry) => entry.type === child.type && entry.id === child.id)
+      || sources.find((entry) => entry.type === child.type);
+    if (source?.dimensions?.depthLocked6cm !== true) return child;
+    return { ...child, dimensions: { ...child.dimensions, depthLocked6cm: true } };
+  });
+  return resolved.some((child, index) => child !== children[index]) ? resolved : children;
+}
+
+function assetToGroupRows(asset, assets = []) {
+  return inheritGroupChildDepth(asset?.dimensions?.children || [], assets).map((child, index) => ({
     uid: `${child.id || child.type || 'child'}-${index}-${Date.now()}`,
     type: child.type,
     label: child.label || '',
@@ -15904,7 +15926,7 @@ function buildGroupChildren(rows, sourceAssets) {
         modelSize: assetModelSize(source),
         materialUrl: source.dimensions?.materialUrl || null,
         isWallItem: isWallMounted,
-        dimensions: { ...(source.dimensions || {}), ...(sourceEntry.dimensions || {}), ...(row.depthLocked6cm ? { depthLocked6cm: true } : { depthLocked6cm: undefined }) },
+        dimensions: { ...(source.dimensions || {}), ...(sourceEntry.dimensions || {}), depthLocked6cm: Boolean(row.depthLocked6cm) },
         color: source.dimensions?.color || source.color,
         lockedInGroup: true,
       };
@@ -16213,7 +16235,7 @@ function assetToCatalogEntry(asset, allAssets = []) {
       color: asset.dimensions?.color || '#dfe8ec',
       isGroup: true,
       groupSize: asset.dimensions?.groupSize || computeGroupSize(asset.dimensions?.children || []),
-      children: asset.dimensions?.children || [],
+      children: inheritGroupChildDepth(asset.dimensions?.children || [], allAssets),
       placementRule: effectivePlacementRule(asset),
       movementLocked: Boolean(asset.dimensions?.movementLocked),
       deleteLocked: Boolean(asset.dimensions?.deleteLocked),
@@ -17078,7 +17100,7 @@ function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
   };
 
   if (isGroup && item.children?.length) {
-    hydrated.children = item.children.map((child) => hydrateSceneItemFromCatalog(child, catalogEntries));
+    hydrated.children = inheritGroupChildDepth(item.children, entry.children || []).map((child) => hydrateSceneItemFromCatalog(child, catalogEntries));
   }
 
   return hydrated;
@@ -18027,8 +18049,29 @@ function summedIntervalLength(intervals = [], range = { min: 0, max: 0 }) {
   }, 0);
 }
 
+function reserveWallCoverBounds(item = {}) {
+  const childBounds = item.isGroup && item.children?.length
+    ? item.children.map((child) => reserveWallCoverBounds(child)) : null;
+  const local = childBounds ? {
+    minX: Math.min(...childBounds.map((bounds) => bounds.minX)),
+    maxX: Math.max(...childBounds.map((bounds) => bounds.maxX)),
+    minZ: Math.min(...childBounds.map((bounds) => bounds.minZ)),
+    maxZ: Math.max(...childBounds.map((bounds) => bounds.maxZ)),
+  } : itemGroupBounds(item);
+  // Three.js rotates the X/Z plane with the opposite sign to the legacy placement helper.
+  // Use the rendered door frame for banners, retaining existing placement and pricing bounds.
+  const corners = [[local.minX, local.minZ], [local.minX, local.maxZ], [local.maxX, local.minZ], [local.maxX, local.maxZ]]
+    .map(([x, z]) => rotatePoint(x, z, -Number(item.rotation || 0)));
+  return {
+    minX: Number(item.x || 0) + Math.min(...corners.map((corner) => corner.x)),
+    maxX: Number(item.x || 0) + Math.max(...corners.map((corner) => corner.x)),
+    minZ: Number(item.z || 0) + Math.min(...corners.map((corner) => corner.z)),
+    maxZ: Number(item.z || 0) + Math.max(...corners.map((corner) => corner.z)),
+  };
+}
+
 function wallCoverReserveDisplayBlocker(item, wall, width, depth, options = {}) {
-  const blocker = reserveWallBlocker(item, wall, width, depth, 0);
+  const blocker = reserveWallBlocker(item, wall, width, depth, 0, options.physicalReserveBounds ? reserveWallCoverBounds(item) : null);
   if (!blocker) return null;
   const limits = wallAxisLimits(wall, width, depth);
   const rawMin = clamp(Number(blocker.min || 0), limits.min, limits.max);
@@ -20166,8 +20209,8 @@ function floorWallBlocker(item, wall, width, depth, margin = 0.1) {
   return null;
 }
 
-function reserveWallBlocker(item, wall, width, depth, margin = 0.03) {
-  const bounds = itemHardCollisionBox(item, 0);
+function reserveWallBlocker(item, wall, width, depth, margin = 0.03, renderedBounds = null) {
+  const bounds = renderedBounds || itemHardCollisionBox(item, 0);
   if (!bounds) return null;
   const wallZone = 0.9;
   const cornerZone = 0.9;

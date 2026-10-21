@@ -37,3 +37,7 @@ export function upgradeLegacySignatureArch(item, entries = []) {
       signatureArchVariantLabel: replacement.label, signatureArchSizeM: 2, signatureArchLighting: lighting, signatureArchSizeSupplement: 0 },
   };
 }
+
+export function signatureArchFitsDepth(item = {}, standDepth = Infinity) {
+  return signatureArchVariant(item).size !== 3 || Number(standDepth) >= 3;
+}

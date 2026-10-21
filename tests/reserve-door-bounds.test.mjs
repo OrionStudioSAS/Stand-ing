@@ -15,7 +15,7 @@ function runtime() {
     isTelevisionItem: () => false, isLedRailEntry: () => false, hasOwn: Object.hasOwn,
     isLockedPlacementRule: () => false,
   });
-  for (const name of ['rotatePoint', 'childrenBounds', 'itemGroupBounds', 'assetToCatalogEntry', 'hydrateSceneItemFromCatalog']) {
+  for (const name of ['inheritGroupChildDepth', 'rotatePoint', 'childrenBounds', 'itemGroupBounds', 'assetToCatalogEntry', 'hydrateSceneItemFromCatalog']) {
     const start = source.indexOf(`function ${name}(`);
     vm.runInContext(source.slice(start, source.indexOf('\n}\n', start) + 2), api);
   }
@@ -49,4 +49,18 @@ test('manual group bounds keep the original signed rotation convention and saved
   const mirrored = api.childrenBounds([wall, front, { ...door, x: -0.875, rotation: 90 }]);
   assert.ok(Math.abs(mirrored.minX + 1) < 1e-9);
   assert.ok(Math.abs(mirrored.maxX - 1) < 1e-9);
+});
+
+test('missing group depth settings inherit from the source and survive saved-scene hydration',()=>{
+ const api=runtime();
+ const door={type:'door',dimensions:{size:[1,2.5,.25],depthLocked6cm:true}};
+ const child={type:'door',id:'door-child',x:-.93,z:-.51,rotation:-90,dimensions:{size:[1,2.5,.25]}};
+ const group={type:'reserve',dimensions:{isGroup:true,groupSize:[2,2.5,1],children:[child]}};
+ const entry=api.assetToCatalogEntry(group,[door,group]);
+ assert.equal(entry.children[0].dimensions.depthLocked6cm,true);
+ const hydrated=api.hydrateSceneItemFromCatalog({type:'reserve',isGroup:true,children:[child]},[entry]);
+ assert.equal(hydrated.children[0].dimensions.depthLocked6cm,true);
+ assert.equal(child.dimensions.depthLocked6cm,undefined);
+ const explicitFalse={...child,dimensions:{...child.dimensions,depthLocked6cm:false}};
+ assert.equal(api.hydrateSceneItemFromCatalog({type:'reserve',isGroup:true,children:[explicitFalse]},[entry]).children[0].dimensions.depthLocked6cm,false);
 });
