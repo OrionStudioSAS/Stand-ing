@@ -1,3 +1,4 @@
+import { upgradeLegacySignatureArch } from '../src/signatureArchVariants.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -5,7 +6,7 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 
 function runtime() {
-  const api = vm.createContext({
+  const api = vm.createContext({ upgradeLegacySignatureArch,
     Layers: null, wallThickness: 0.06,
     isCeilingMountedItem: () => false, itemPlacementBoundsOverride: () => null,
     itemDefaultSize: (item) => item.dimensions.size, effectivePlacementRule: () => null,

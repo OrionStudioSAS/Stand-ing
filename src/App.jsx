@@ -1,4 +1,4 @@
-import { signatureArchVariant, signatureArchChoice, signatureArchSizeSupplementLines } from './signatureArchVariants.js';
+import { signatureArchVariant, signatureArchChoice, signatureArchSizeSupplementLines, isLegacySignatureArch, upgradeLegacySignatureArch } from './signatureArchVariants.js';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
 import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
@@ -3967,11 +3967,11 @@ function SignatureArchOptionCard({ items = [], entries = [], colors = [], select
             <fieldset className="signature-arch-choice-group">
               <legend>Taille</legend>
               <div>
-                {[1, 2, 3].map((size) => {
+                {[2, 3].map((size) => {
                   const entry = signatureArchChoice(entries, size, selectedVariant.lighting);
                   return <button key={size} type="button" className={selectedVariant.size === size ? 'active' : ''}
                     aria-pressed={selectedVariant.size === size} disabled={disabled || !entry} onClick={() => onVariantChange?.(entry)}>
-                    <strong>{size} m</strong><small>{size === 1 ? 'Inclus' : `+ ${(size - 1) * 249} € HT`}</small>
+                    <strong>{size} m</strong><small>{size === 2 ? 'Inclus' : '+ 249 € HT'}</small>
                   </button>;
                 })}
               </div>
@@ -6431,7 +6431,7 @@ function isSignatureArchItem(item = {}) {
 
 function signatureArchCatalogEntries(entries = []) {
   return (entries || [])
-    .filter((entry) => !isVariantGroupEntry(entry) && isSignatureArchItem(entry))
+    .filter((entry) => !isVariantGroupEntry(entry) && isSignatureArchItem(entry) && !isLegacySignatureArch(entry))
     .sort((left, right) => {
       const a = signatureArchVariant(left), b = signatureArchVariant(right);
       return a.size - b.size || Number(a.lighting === 'suspension') - Number(b.lighting === 'suspension')
@@ -17009,6 +17009,7 @@ function findCatalogEntry(catalogEntries, type) {
 }
 
 function hydrateSceneItemFromCatalog(item, catalogEntries = []) {
+  item = upgradeLegacySignatureArch(item, catalogEntries);
   const entry = findCatalogEntry(catalogEntries, item?.type);
   if (!entry) return item;
   const isGroup = Boolean(item.isGroup || entry.isGroup);

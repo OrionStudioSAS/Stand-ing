@@ -50,7 +50,10 @@ try{
   await page.waitForFunction(()=>window.archPricing,null,{timeout:60000});
   await page.getByRole('button',{name:/^Arche/}).click();
   const sizeGroup=page.getByRole('group',{name:'Taille',exact:true}), lightingGroup=page.getByRole('group',{name:'Option',exact:true});
-  for(const index of [2,3,5,4,0,1]){
+  assert.equal(await sizeGroup.getByRole('button').count(),2);
+  assert.equal(await sizeGroup.getByRole('button',{name:/^1 m/}).count(),0);
+  await page.waitForFunction(()=>window.archItems.some(i=>i.type==='asset-arche-signature-2m-spot-210-mvhslqjn'));
+  for(const index of [2,3,5,4]){
     const size=variants[index][3],lighting=index%2?'Suspension':'Spot';
     await sizeGroup.getByRole('button',{name:new RegExp(`^${size} m`)}).click();
     await lightingGroup.getByRole('button',{name:lighting,exact:true}).click();
@@ -58,14 +61,14 @@ try{
     const result=await page.evaluate(()=>({arches:window.savedScene.items.filter(i=>i.options?.signatureBaseKey==='arche'),lines:window.archPricing.lines.filter(l=>l.type.startsWith('signature-arch-size-'))}));
     await page.waitForFunction(()=>window.archRender?.paints.length && window.archRender.paints.every(p=>p.hex==='d20014'&&!p.map) && window.archRender.images.length>=2 && window.archRender.images.every(i=>i.custom) && window.archRender.footprints.some(f=>Math.abs(f.width-1.1)<.01&&f.depth===4.5&&f.textured),null,{timeout:60000});
     assert.equal(result.arches.length,1);assert.deepEqual(result.arches[0].options.textureSlotValues,slots);assert.equal(result.arches[0].options.signatureArchColorHex,'#d20014');
-    assert.equal(result.lines.length,size===1?0:1);if(size>1)assert.equal(result.lines[0].total,(size-1)*249);
+    assert.equal(result.lines.length,size===2?0:1);if(size>2)assert.equal(result.lines[0].total,(size-2)*249);
     assert.equal(await sizeGroup.getByRole('button',{name:new RegExp(`^${size} m`)}).getAttribute('aria-pressed'),'true');
     assert.equal(await lightingGroup.getByRole('button',{name:lighting,exact:true}).getAttribute('aria-pressed'),'true');
   }
   await sizeGroup.getByRole('button',{name:/^3 m/}).click();await page.waitForFunction(()=>window.savedScene?.items.some(i=>i.options.signatureArchSizeM===3));
   await page.getByRole('button',{name:'Reouvrir test',exact:true}).click();await page.getByRole('button',{name:/^Arche/}).click();
-  assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).getAttribute('aria-pressed'),'true');assert.equal(await lightingGroup.getByRole('button',{name:'Suspension',exact:true}).getAttribute('aria-pressed'),'true');
+  assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).getAttribute('aria-pressed'),'true');assert.equal(await lightingGroup.getByRole('button',{name:'Spot',exact:true}).getAttribute('aria-pressed'),'true');
   await page.screenshot({path:'/tmp/standing-arch-variants.png'});
   await page.setViewportSize({width:390,height:844});assert.ok(await sizeGroup.getByRole('button',{name:/^3 m/}).isVisible());
-  assert.deepEqual(errors,[]);console.log('Six live arch models: size + lighting selection, single supplement, image framing/color preservation and reopening OK');
+  assert.deepEqual(errors,[]);console.log('Four current arch models + legacy migration: size + lighting selection, single supplement, image framing/color preservation and reopening OK');
 }finally{await browser?.close();await server.close();}
