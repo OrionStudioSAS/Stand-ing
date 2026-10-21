@@ -196,6 +196,12 @@ try {
   }
   for (const pack of ['Confort', 'Prestige', 'Équipé', 'Signature']) {
     await page.getByRole('button', { name: `Pack test ${pack}`, exact: true }).click();
+    await page.getByRole('button', { name: /^Réserve/ }).click();
+    const formula=page.locator('.formula-included-box');
+    assert.equal(await formula.locator('p').first().isVisible(),true,`${pack} keeps the included formula visible`);
+    assert.equal(await formula.locator('button').count(),0,'The formula cannot be collapsed');
+    await formula.locator('header').click();
+    assert.equal(await formula.locator('p').first().isVisible(),true);
     await page.getByRole('button', { name: /^Sol/ }).click();
     const option = page.locator('.config-toggle-option').filter({ hasText: 'Moquette épaisse' });
     assert.equal(await option.count(), 1, `${pack} exposes just one shared thick-carpet option`);

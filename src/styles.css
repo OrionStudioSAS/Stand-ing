@@ -9982,7 +9982,7 @@ img.asset-thumb {
   color: #c87300;
 }
 
-.formula-included-box > button {
+.formula-included-box > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -9995,7 +9995,7 @@ img.asset-thumb {
   text-align: left;
 }
 
-.formula-included-box > button span {
+.formula-included-box > header span {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -11835,7 +11835,7 @@ img.asset-thumb {
   background: #effaf3;
 }
 
-.formula-included-box.compact > button {
+.formula-included-box.compact > header {
   min-height: 34px;
   padding: 8px 12px;
   color: #17824b;

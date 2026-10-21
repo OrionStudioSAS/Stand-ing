@@ -16,6 +16,8 @@ const draft = {
     options: { signatureArchColorId: 'stale', signatureArchColorHex: '#ff0000', signatureArchColorImage: '',
       signatureArchVariantType: 'test-arch', textureSlotValues: { logo: { imageUrl: '' } } } }],
 };
+draft.items.push({ id: 'signature-head', type: 'head-signature', label: 'Tête de cloison Signature', x: 2, z: -1,
+  modelUrl: '/__signature-fixture.obj', materialUrl: '/__signature-fixture.mtl', dimensions: { size: [0.5, 2.5, 0.06], sizeSource: 'manual' } });
 const harness = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';

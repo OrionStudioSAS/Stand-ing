@@ -4293,15 +4293,23 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
       <div className="counter-finish-meta-line">
         <small>{includedColorisLabel(includedFinishes.length)}</small>
       </div>
-      <div className="counter-finish-included-list">
-        {(includedFinishes.length ? includedFinishes : [counterWoodFinish()]).map((finish) => (
-          <div key={finish.id} className="counter-finish-included-row">
-            <CounterFinishSwatch finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
-            <strong>{shortFinishName(finish.name)}</strong>
-            <em className="included">Inclus</em>
-          </div>
-        ))}
-      </div>
+      {includedFinishes.length > 1 ? (
+        <div className="counter-finish-swatches included">
+          {includedFinishes.map((finish) => (
+            <CounterFinishSwatch key={finish.id} finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
+          ))}
+        </div>
+      ) : (
+        <div className="counter-finish-included-list">
+          {(includedFinishes.length ? includedFinishes : [counterWoodFinish()]).map((finish) => (
+            <div key={finish.id} className="counter-finish-included-row">
+              <CounterFinishSwatch finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
+              <strong>{shortFinishName(finish.name)}</strong>
+              <em className="included">Inclus</em>
+            </div>
+          ))}
+        </div>
+      )}
       {optionalFinishes.length > 0 && (
         <>
           <div className="counter-finish-meta-line">
@@ -7941,7 +7949,6 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
 
 function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalog = [], salonLabel = '', disabled = false, onChange, onOptions }) {
   const t = useT();
-  const [formulaOpen, setFormulaOpen] = useState(false);
   const rows = reserveChoiceRows(rule, catalog, salonLabel);
   const includedRow = rows.find((row) => row.included && !row.billable) || null;
   const noneSelected = selectedOptionType === '__none__';
@@ -7949,7 +7956,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
   if (!rule?.includedType && !rows.length) {
     return (
       <div className="reserve-choice-panel">
-        <FormulaIncludedBox open={formulaOpen} onToggle={() => setFormulaOpen((current) => !current)} includedRow={null} />
+        <FormulaIncludedBox includedRow={null} />
         <div className="reserve-empty-card">
           <strong>{t('reserve_empty_title')}</strong>
           <span>{t('reserve_empty_detail')}</span>
@@ -7960,7 +7967,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
 
   return (
     <div className="reserve-choice-panel reserve-choice-panel-v2">
-      <FormulaIncludedBox open={formulaOpen} onToggle={() => setFormulaOpen((current) => !current)} includedRow={includedRow} compact />
+      <FormulaIncludedBox includedRow={includedRow} compact />
       <strong className="reserve-choice-title">Taille</strong>
       <div className="reserve-choice-list">
         {rows.map((row) => {
@@ -8042,26 +8049,23 @@ function reserveOptionSummary(options = {}) {
   ].filter(Boolean).join(' · ');
 }
 
-function FormulaIncludedBox({ open, onToggle, includedRow, compact = false }) {
+function FormulaIncludedBox({ includedRow, compact = false }) {
   const t = useT();
   return (
-    <div className={`${open ? 'formula-included-box open' : 'formula-included-box'}${compact ? ' compact' : ''}`}>
-      <button type="button" onClick={onToggle}>
+    <div className={`formula-included-box open${compact ? ' compact' : ''}`}>
+      <header>
         <span><b>!</b> {t('formula_title')}</span>
-        {open ? <Minus size={16} /> : <Plus size={16} />}
-      </button>
-      {open && (
-        <div>
-          {includedRow ? (
-            <>
-              <p>{t('formula_reserve_included', { area: includedRow.areaLabel })}</p>
-              {t('formula_reserve_detail') && <p>{t('formula_reserve_detail')}</p>}
-            </>
-          ) : (
-            <p>{t('formula_reserve_none')}</p>
-          )}
-        </div>
-      )}
+      </header>
+      <div>
+        {includedRow ? (
+          <>
+            <p>{t('formula_reserve_included', { area: includedRow.areaLabel })}</p>
+            {t('formula_reserve_detail') && <p>{t('formula_reserve_detail')}</p>}
+          </>
+        ) : (
+          <p>{t('formula_reserve_none')}</p>
+        )}
+      </div>
     </div>
   );
 }

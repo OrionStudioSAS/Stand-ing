@@ -51,6 +51,8 @@ try {
   const finishes = page.locator('.counter-option-panel .counter-finish-card button');
   await finishes.first().waitFor();
   assert.equal(await finishes.count(), 20);
+  assert.equal(await page.locator('.counter-option-panel .counter-finish-swatches.included button').count(), 20, 'Included colors use the compact swatch grid shared with SMCL');
+  assert.ok(await page.locator('.counter-option-panel .counter-finish-swatches.included').evaluate(element=>element.getBoundingClientRect().height<180), 'The twenty colors fit in a compact palette');
   assert.equal(await finishes.nth(3).evaluate((button) => button.classList.contains('active')), true, 'Legacy group-prefixed IDs stay selected');
   assert.equal(await page.locator('.counter-option-panel .counter-finish-swatches.optional').count(), 0, 'The asset option makes every color free, overriding the group price');
   await finishes.nth(1).click();

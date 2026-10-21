@@ -54,6 +54,7 @@ function fit(ctx,text,x,y,maxWidth,baseSize,weight) {
   ctx.fillText(text,x,y);
 }
 export function drawEquippedHeadInformation(ctx, visualContext = {}, face = 'front') {
+  visualContext ||= {};
   const company=String(visualContext.company || 'NOM EXPOSANT').trim().toUpperCase();
   const stand=signatureHeadStandCode(visualContext);
   const country=equippedHeadCountryCode(visualContext.country);

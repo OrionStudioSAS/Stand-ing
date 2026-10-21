@@ -6,8 +6,8 @@ export function signatureHeadSide(item = {}) {
   return /droite|right/i.test(`${item.label || ''} ${item.type || ''}`) ? 'right' : 'left';
 }
 export function signatureHeadStandCode(visualContext = {}) {
-  const stand = String(visualContext.standNumber ?? '').replace(/^stand\s+/i, '').replace(/\s+/g, '').toUpperCase();
-  const aisle = String(visualContext.aisleNumber ?? '').trim().replace(/^all[ée]e\s+/i, '').replace(/\s+/g, '').toUpperCase();
+  const stand = String(visualContext?.standNumber ?? '').replace(/^stand\s+/i, '').replace(/\s+/g, '').toUpperCase();
+  const aisle = String(visualContext?.aisleNumber ?? '').trim().replace(/^all[ée]e\s+/i, '').replace(/\s+/g, '').toUpperCase();
   if (!stand || !aisle || stand.startsWith(aisle)) return stand;
   return `${aisle}${stand}`;
 }
@@ -24,6 +24,7 @@ function wrap(ctx, text, maxWidth) {
   return lines;
 }
 export function drawSignatureHeadInformation(ctx, visualContext = {}, item = {}) {
+  visualContext ||= {};
   const { width, height } = signatureHeadCanvasSize;
   const company = String(visualContext.company || 'NOM EXPOSANT').trim().toUpperCase() || 'NOM EXPOSANT';
   const stand = signatureHeadStandCode(visualContext);
