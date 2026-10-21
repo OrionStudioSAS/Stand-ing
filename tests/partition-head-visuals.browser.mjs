@@ -125,6 +125,10 @@ try {
   await page.waitForFunction(() => window.headItems.length === 2);
   await openHeads();
   assert.equal(await uploads.count(), 2, 'Signature shares the main image and top image separately');
+  await page.locator('.signature-head-options').screenshot({path:'/tmp/standing-signature-head-options.png'});
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('.signature-head-options').screenshot({path:'/tmp/standing-signature-head-options-mobile.png'});
+  await page.setViewportSize({width:1440,height:1000});
   await upload(1, 'top.svg', 'green');
   await page.waitForFunction(() => window.headItems.length === 2 && window.headItems.every((item) => item.options.textureSlotValues?.['signature-head-top-28']?.imageName === 'top.svg'));
   await checkbox.check();

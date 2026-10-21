@@ -49,7 +49,7 @@ try{
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__arch-test__`);
   await page.waitForFunction(()=>window.archPricing,null,{timeout:60000});
   await page.getByRole('button',{name:/^Arche/}).click();
-  const sizeGroup=page.getByRole('group',{name:'Taille',exact:true}), lightingGroup=page.getByRole('group',{name:'Option',exact:true});
+  const sizeGroup=page.getByRole('group',{name:'Taille',exact:true}), lightingGroup=page.getByRole('group',{name:'Éclairage du plafond',exact:true});
   assert.equal(await sizeGroup.getByRole('button').count(),2);
   assert.equal(await sizeGroup.getByRole('button',{name:/^1 m/}).count(),0);
   await page.waitForFunction(()=>window.archItems.some(i=>i.type==='asset-arche-signature-2m-spot-210-mvhslqjn'));
@@ -68,6 +68,13 @@ try{
   await sizeGroup.getByRole('button',{name:/^3 m/}).click();await page.waitForFunction(()=>window.savedScene?.items.some(i=>i.options.signatureArchSizeM===3));
   await page.getByRole('button',{name:'Reouvrir test',exact:true}).click();await page.getByRole('button',{name:/^Arche/}).click();
   assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).getAttribute('aria-pressed'),'true');assert.equal(await lightingGroup.getByRole('button',{name:'Spot',exact:true}).getAttribute('aria-pressed'),'true');
+  const pending=page.getByRole('checkbox',{name:'Je fournirai le visuel plus tard',exact:true});
+  await pending.first().check();
+  await page.waitForFunction(()=>window.savedScene?.items.some(i=>i.options.textureSlotValues?.['signature-arch-led-5']?.visualPending));
+  await page.getByRole('button',{name:'Reouvrir test',exact:true}).click();await page.getByRole('button',{name:/^Arche/}).click();
+  assert.equal(await pending.first().isChecked(),true);
+  await page.getByRole('button',{name:'Appliquer',exact:true}).click();assert.equal(await page.locator('.signature-arch-card').count(),0);
+  await page.getByRole('button',{name:/^Arche/}).click();
   await page.screenshot({path:'/tmp/standing-arch-variants.png'});
   await page.setViewportSize({width:390,height:844});assert.ok(await sizeGroup.getByRole('button',{name:/^3 m/}).isVisible());
   assert.deepEqual(errors,[]);console.log('Four current arch models + legacy migration: size + lighting selection, single supplement, image framing/color preservation and reopening OK');

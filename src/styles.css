@@ -15214,3 +15214,94 @@ img.asset-thumb {
 .signature-arch-choice-group button strong { font-size: .78rem; }
 .signature-arch-choice-group button small { font-size: .68rem; white-space: nowrap; }
 .signature-arch-choice-group button:focus-visible { outline: 2px solid #416bb0; outline-offset: 3px; }
+
+/* Signature partition heads: compact sections matching the arch controls. */
+.partition-head-upload-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.signature-head-options { gap: 16px; }
+.signature-head-identity { display: grid; gap: 12px; border: 1px solid #dce5ef; border-radius: 10px; padding: 14px; }
+.signature-head-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #252b35; font-size: .86rem; font-weight: 850; }
+.signature-head-section-heading small { border-radius: 5px; padding: 4px 7px; background: #edf6f0; color: #287346; font-size: .65rem; font-weight: 750; }
+.signature-head-options .partition-head-company-field { gap: 7px; color: #596579; font-size: .73rem; font-weight: 650; }
+.signature-head-options .partition-head-company-field input { min-height: 42px; font-size: .85rem; font-weight: 650; }
+.signature-head-options .signature-head-note { margin: 0; color: #68778c; font-size: .73rem; font-weight: 450; line-height: 1.55; }
+.signature-head-options .partition-head-visual-mode { gap: 7px; border: 0; border-bottom: 1px solid #e9edf3; border-radius: 0; padding: 0 0 16px; background: transparent; }
+.signature-head-options .partition-head-visual-mode .visual-pending-checkbox { display: flex; align-items: center; gap: 10px; min-height: 28px; border: 0; padding: 0; background: transparent; color: #343b47; font-size: .77rem; font-weight: 650; cursor: pointer; }
+.signature-head-options .partition-head-visual-mode input { appearance: none; position: relative; flex: 0 0 34px; width: 34px; height: 20px; margin: 0; border: 0; border-radius: 20px; background: #b9c4d4; cursor: pointer; transition: background .15s; }
+.signature-head-options .partition-head-visual-mode input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform .15s; }
+.signature-head-options .partition-head-visual-mode input:checked { background: #416bb0; }
+.signature-head-options .partition-head-visual-mode input:checked::after { transform: translateX(14px); }
+.signature-head-options .partition-head-visual-mode input:focus-visible { outline: 2px solid #416bb0; outline-offset: 3px; }
+.signature-head-options .partition-head-visual-mode input:disabled { opacity: .5; cursor: not-allowed; }
+.signature-head-options .partition-head-visual-mode small { font-size: .71rem; line-height: 1.5; }
+.signature-head-options .partition-head-upload-block-v2 { gap: 12px; border-radius: 10px; padding: 14px; }
+.signature-head-options .partition-head-upload-heading { flex-wrap: wrap; }
+.signature-head-options .partition-head-upload-heading strong { font-size: .84rem; font-weight: 800; }
+.signature-head-options .partition-head-upload-heading small { padding: 4px 7px; border-radius: 5px; background: #edf3fc; color: #315b95; font-size: .64rem; font-weight: 750; white-space: nowrap; }
+.signature-head-options .partition-head-upload-title { gap: 5px; }
+.signature-head-options .partition-head-upload-title > span { color: #68778c; font-size: .69rem; font-weight: 500; }
+.signature-head-options .partition-head-dropzone-v2 { min-height: 82px; border-color: #b8c9e2; background: #f8faff; gap: 8px; }
+.signature-head-options .partition-head-dropzone-v2 > svg { display: block; width: 21px; height: 21px; padding: 0; border: 0; border-radius: 0; background: transparent; color: #748eb4; }
+.signature-head-options .partition-head-dropzone-v2 > span { padding: 7px 15px; border-radius: 6px; font-size: .73rem; font-weight: 700; }
+.signature-head-options .partition-head-dropzone-v2.has-image { min-height: 120px; }
+.signature-head-options .partition-head-dropzone-v2:focus-within { outline: 2px solid #416bb0; outline-offset: 3px; }
+
+/* Signature arch reference design. */
+.signature-arch-accordion.option-accordion > button { background: #3d63a4; }
+.signature-arch-accordion.option-accordion > button > svg { padding: 5px; width: 26px; height: 26px; border-radius: 50%; background: #ffffff26; }
+.signature-arch-accordion .option-accordion-label small { color: #e0e8f8; font-size: .68rem; font-weight: 400; }
+.signature-arch-card.signature-arch-design { gap: 22px; padding: 18px; color: #414550; }
+.signature-arch-design .signature-arch-controls { gap: 22px; }
+.signature-arch-design .signature-arch-choice-group legend { margin-bottom: 9px; color: #414550; font-size: .79rem; font-weight: 650; }
+.signature-arch-design .signature-arch-choice-group > div { gap: 10px; }
+.signature-arch-design .signature-arch-choice-group button { gap: 6px; border-color: #dedfe5; padding: 12px 5px; border-radius: 8px; color: #414550; }
+.signature-arch-design .signature-arch-choice-group button.active { border-color: #3967b6; background: #f4f7fc; color: #2e60b7; box-shadow: inset 0 0 0 1px #3967b6; }
+.signature-arch-design .signature-arch-choice-group button strong { font-size: .87rem; font-weight: 650; }
+.signature-arch-design .arch-badge { display: inline-flex; align-items: center; justify-content: center; width: max-content; border-radius: 20px; padding: 4px 10px; color: #24569f; background: #eaf2ff; font-size: .65rem; line-height: 1.1; font-weight: 750; white-space: nowrap; }
+.signature-arch-design .arch-badge.included { color: #198347; background: #eaf6ed; }
+.signature-arch-design .signature-arch-choice-group button small { font-size: .65rem; }
+.signature-arch-design .signature-arch-lighting button { position: relative; padding: 5px 5px 11px; gap: 8px; }
+.signature-arch-lighting-image { display: grid; position: relative; place-items: center; width: 100%; height: 85px; border-radius: 5px; background: #fff; }
+.signature-arch-lighting-image img { width: 112px; max-width: 100%; height: 80px; object-fit: contain; }
+.signature-arch-lighting-image i { display: grid; position: absolute; right: 5px; top: 7px; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #3d63a4; color: #fff; }
+.signature-arch-design .signature-arch-lighting button strong { font-size: .77rem; }
+.signature-arch-design .signature-arch-palette { display: grid; gap: 14px; margin: 0; padding: 0; border: 0; background: transparent; }
+.signature-arch-palette-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.signature-arch-palette-heading strong { font-size: .79rem; font-weight: 650; }
+.signature-arch-palette-heading > span { color: #2e60b7; font-size: .69rem; text-align: right; }
+.signature-arch-design .signature-arch-palette > p { margin: -10px 0 0; color: #8b8f9e; font-size: .69rem; line-height: 1.45; }
+.signature-arch-palette-group { display: grid; gap: 9px; }
+.signature-arch-palette-group > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.signature-arch-palette-group > div > small { color: #858b99; font-size: .65rem; font-weight: 650; }
+.signature-arch-design .signature-arch-swatches { display: grid; grid-template-columns: repeat(8,minmax(0,1fr)); gap: 11px 8px; }
+.signature-arch-design .signature-arch-swatches button { width: 26px; max-width: 100%; aspect-ratio: 1; min-height: 0; padding: 0; border: 1px solid #00000012; border-radius: 50%; cursor: pointer; }
+.signature-arch-design .signature-arch-swatches button.active { outline: 2px solid #3d63a4; outline-offset: 2px; }
+.signature-arch-design button:focus-visible, .signature-arch-upload:focus-within { outline: 2px solid #3d63a4; outline-offset: 3px; }
+.signature-arch-design .signature-arch-swatches button:disabled { cursor: not-allowed; opacity: .5; }
+.signature-arch-design .signature-arch-visual-section { gap: 10px; padding: 12px; border-color: #dedfe5; border-radius: 8px; }
+.signature-arch-upload-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.signature-arch-upload-heading strong { font-size: .73rem; font-weight: 650; }
+.signature-arch-upload-heading > span { font-size: .61rem; white-space: nowrap; }
+.signature-arch-upload-heading .arch-badge { padding: 4px 8px; font-size: .61rem; }
+.signature-arch-upload { position: relative; display: flex; align-items: center; gap: 9px; min-height: 62px; border: 1px dashed #91ace0; border-radius: 7px; padding: 9px; background: #f5f8fe; cursor: pointer; }
+.signature-arch-upload input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.signature-arch-upload.disabled, .signature-arch-upload.disabled input { cursor: not-allowed; opacity: .6; }
+.signature-arch-file-icon { display: grid; flex: 0 0 32px; place-items: center; width: 32px; height: 36px; border-radius: 50%; color: #3967b6; background: #fff; box-shadow: 0 2px 5px #375b9520; }
+.signature-arch-upload > img { flex: 0 0 32px; width: 32px; height: 36px; object-fit: contain; background: #fff; }
+.signature-arch-upload-copy { display: grid; flex: 1; gap: 3px; min-width: 0; }
+.signature-arch-upload-copy strong { font-size: .69rem; font-weight: 650; }
+.signature-arch-upload-copy small { color: #8b8f9e; font-size: .59rem; line-height: 1.3; }
+.signature-arch-import { flex: 0 0 auto; border-radius: 22px; padding: 8px 13px; color: #fff; background: #3d63a4; font-size: .67rem; font-weight: 650; }
+.signature-arch-pending { display: flex; align-items: center; gap: 7px; color: #8b8f9e; font-size: .68rem; line-height: 1.4; cursor: pointer; }
+.signature-arch-pending input { flex: 0 0 15px; width: 15px; height: 15px; margin: 0; accent-color: #3d63a4; }
+.signature-arch-footer { display: grid; gap: 12px; margin: 0 -18px -18px; padding: 16px 18px 18px; border-top: 1px solid #e2e4ea; }
+.signature-arch-footer > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.signature-arch-footer > div > span { display: grid; gap: 3px; color: #8b8f9e; font-size: .74rem; }
+.signature-arch-footer small { font-size: .67rem; }
+.signature-arch-footer > div > strong { font-size: .9rem; font-weight: 700; }
+.signature-arch-footer > button { min-height: 38px; border: 0; border-radius: 24px; color: #fff; background: #3d63a4; font-size: .77rem; font-weight: 700; cursor: pointer; }
+.signature-arch-footer > button:disabled { opacity: .5; cursor: not-allowed; }
+.signature-arch-accordion.option-accordion > button .option-accordion-label small { font-size: .68rem; font-weight: 400; color: #e0e8f8; }
+.signature-arch-design .signature-arch-upload { font-weight: 400; }
+.signature-arch-design .signature-arch-upload-copy strong { color: #414550; }
+.signature-arch-design .signature-arch-upload-copy small { font-weight: 400; }
+.signature-arch-design .signature-arch-pending span { color: #8b8f9e; font-size: .68rem; font-weight: 400; }

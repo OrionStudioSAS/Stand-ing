@@ -2992,6 +2992,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onSignatureArchColor={updateSignatureArchColor}
             onSignatureArchImage={(item, slot, file) => uploadItemImage(item, file, { textureSlot: slot })}
             onSignatureArchResetImage={resetSignatureArchImage}
+            onSignatureArchVisualPending={(item, slot, checked) => updateItemOptions(item, textureSlotPatch(item, slot, { visualPending: checked }))}
             onSignatureArchFraming={(item, slot, framing) => updateItemOptions(item, textureSlotPatch(item, slot, framing))}
             onPrestigeArchToggle={setPrestigeArchPresence}
             onPrestigeArchTv={updatePrestigeArchTv}
@@ -3949,82 +3950,87 @@ function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = 
   );
 }
 
-function SignatureArchOptionCard({ items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage, onFramingChange }) {
+function SignatureArchOptionCard({ items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage, onFramingChange, onVisualPending, onApply }) {
   const selectedItem = items[0] || null;
   const selectedType = selectedItem?.options?.signatureArchVariantType || selectedItem?.type || '';
   const selectedEntry = entries.find((entry) => entry.type === selectedType) || selectedItem || entries[0];
   const selectedVariant = signatureArchVariant(selectedEntry);
+  const { selected, includedColors, optionalColors } = surfaceColorOptionGroups(colors, selectedColor || {}, '', 1);
+  const supplement = selectedVariant.supplement + (selected.id && !selected.included ? 285 : 0);
+  const busy = disabled || Boolean(uploadState?.uploading);
+  const colorLabel = (color) => `${color.name || ''}${color.code ? ` (${color.code})` : ''}`;
 
   return (
-    <div className="signature-arch-card">
-      <section className="signature-arch-section">
-        <div className="signature-arch-section-head">
-          <strong>Modèle d'arche</strong>
-          <span>{selectedItem?.label || 'Choisissez une option'}</span>
+    <div className="signature-arch-card signature-arch-design">
+      {entries.length ? (
+        <div className="signature-arch-variants signature-arch-controls">
+          <fieldset className="signature-arch-choice-group">
+            <legend>Taille</legend>
+            <div>
+              {[2, 3].map((size) => {
+                const entry = signatureArchChoice(entries, size, selectedVariant.lighting);
+                return <button key={size} type="button" className={selectedVariant.size === size ? 'active' : ''}
+                  aria-pressed={selectedVariant.size === size} disabled={busy || !entry} onClick={() => onVariantChange?.(entry)}>
+                  <strong>{size} m</strong><small className={size === 2 ? 'arch-badge included' : 'arch-badge'}>{size === 2 ? 'Inclus' : '+ 249 €'}</small>
+                </button>;
+              })}
+            </div>
+          </fieldset>
+          <fieldset className="signature-arch-choice-group signature-arch-lighting">
+            <legend>Éclairage du plafond</legend>
+            <div>
+              {['spot', 'suspension'].map((lighting) => {
+                const entry = signatureArchChoice(entries, selectedVariant.size, lighting);
+                const active = selectedVariant.lighting === lighting;
+                return <button key={lighting} type="button" className={active ? 'active' : ''}
+                  aria-pressed={active} disabled={busy || !entry} onClick={() => onVariantChange?.(entry)}>
+                  <span className="signature-arch-lighting-image"><img src={`/images/signature/arche-${lighting}.png`} alt="" />{active && <i><Check size={13} strokeWidth={3} /></i>}</span>
+                  <strong>{lighting === 'spot' ? 'Spot' : 'Suspension'}</strong>
+                </button>;
+              })}
+            </div>
+          </fieldset>
         </div>
-        {entries.length ? (
-          <div className="signature-arch-variants signature-arch-controls">
-            <fieldset className="signature-arch-choice-group">
-              <legend>Taille</legend>
-              <div>
-                {[2, 3].map((size) => {
-                  const entry = signatureArchChoice(entries, size, selectedVariant.lighting);
-                  return <button key={size} type="button" className={selectedVariant.size === size ? 'active' : ''}
-                    aria-pressed={selectedVariant.size === size} disabled={disabled || !entry} onClick={() => onVariantChange?.(entry)}>
-                    <strong>{size} m</strong><small>{size === 2 ? 'Inclus' : '+ 249 € HT'}</small>
-                  </button>;
-                })}
-              </div>
-            </fieldset>
-            <fieldset className="signature-arch-choice-group">
-              <legend>Option</legend>
-              <div>
-                {['spot', 'suspension'].map((lighting) => {
-                  const entry = signatureArchChoice(entries, selectedVariant.size, lighting);
-                  return <button key={lighting} type="button" className={selectedVariant.lighting === lighting ? 'active' : ''}
-                    aria-pressed={selectedVariant.lighting === lighting} disabled={disabled || !entry} onClick={() => onVariantChange?.(entry)}>
-                    <strong>{lighting === 'spot' ? 'Spot' : 'Suspension'}</strong>
-                  </button>;
-                })}
-              </div>
-            </fieldset>
-          </div>
-        ) : (
-          <p className="signature-arch-empty">Aucune arche Signature n'est encore associée à ce pack.</p>
-        )}
-      </section>
+      ) : <p className="signature-arch-empty">Aucune arche Signature n'est encore associée à ce pack.</p>}
 
-      <section className="signature-arch-section signature-arch-color-section">
-        <SurfaceColorOptionCard title="EMPREINTE MOQUETTE" iconSrc="/icons/empreinte_moquette_icon.svg" colors={colors} selectedColor={selectedColor || {}} area={1} disabled={disabled || !selectedItem} onSelect={onColorChange} />
-        <small>8 couleurs incluses : jaune, orange, rouge, fuchsia, vert pistache, bleu turquoise, bleu marine et noir. Les autres teintes du nuancier sont proposées au forfait de 285 € HT. La couleur s’applique à l’arche et à son empreinte moquette.</small>
+      <section className="signature-arch-palette surface-color-option-card">
+        <div className="signature-arch-palette-heading"><strong>Couleur</strong><span>{colorLabel(selected)}</span></div>
+        <p>S’applique à l’arche et à son empreinte moquette.</p>
+        {[[includedColors, true], [optionalColors, false]].map(([choices, included]) => choices.length > 0 && (
+          <div key={String(included)} className="signature-arch-palette-group">
+            <div><small>{choices.length} couleurs {included ? 'incluses' : 'en option'}</small><span className={included ? 'arch-badge included' : 'arch-badge'}>{included ? 'Inclus' : '+ 285 €'}</span></div>
+            <div className="signature-arch-swatches" role="group" aria-label={`EMPREINTE MOQUETTE : couleurs ${included ? 'incluses' : 'en option'}`}>
+              {choices.map((color) => <button key={color.id} type="button" title={colorLabel(color)} aria-label={colorLabel(color)} aria-pressed={normalizeColorId(selected.id) === normalizeColorId(color.id)}
+                className={normalizeColorId(selected.id) === normalizeColorId(color.id) ? 'active' : ''} style={{ backgroundColor: colorHex(color) }} disabled={busy || !selectedItem} onClick={() => onColorChange?.(color.id)} />)}
+            </div>
+          </div>
+        ))}
       </section>
 
       {signatureArchVisualSlots.map((slot) => {
         const value = selectedItem?.options?.textureSlotValues?.[slot.id] || {};
+        const label = slot.id === 'signature-arch-led-5' ? 'Totem lumineux' : 'Visuel arrière haut';
         return (
           <section key={slot.id} className="signature-arch-section signature-arch-visual-section">
-            <div className="signature-arch-section-head">
-              <strong>{slot.label}</strong>
-              <span>{slot.format || slot.targetName}</span>
-            </div>
-            <VisualUploadDropzone
-              imageUrl={value.imageUrl || ''}
-              alt={slot.label}
-              disabled={disabled || !selectedItem}
-              uploading={Boolean(uploadState?.uploading)}
-              onImage={(file) => { if (file && selectedItem) onImage?.(selectedItem, slot, file); }}
-            />
-            {value.imageUrl && <ImageFramingControls imageUrl={value.imageUrl} value={value} aspectRatio={slot.aspectRatio} disabled={disabled || Boolean(uploadState?.uploading)} onChange={(framing) => onFramingChange?.(selectedItem, slot, framing)} />}
+            <div className="signature-arch-upload-heading"><strong>{label}</strong><span>{slot.format}</span><small className="arch-badge included">Inclus</small></div>
+            <label className={`signature-arch-upload${value.imageUrl ? ' has-image' : ''}${busy ? ' disabled' : ''}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const file = event.dataTransfer.files?.[0]; if (!busy && selectedItem && file) onImage?.(selectedItem, slot, file); }}>
+              {value.imageUrl ? <img src={value.imageUrl} alt={label} /> : <span className="signature-arch-file-icon"><FileImage size={19} /></span>}
+              <span className="signature-arch-upload-copy"><strong>{uploadState?.uploading ? 'Import en cours…' : value.imageUrl ? 'Votre visuel' : 'Glissez votre logo'}</strong><small>PDF, SVG, PNG ou JPG HD</small></span>
+              <span className="signature-arch-import">{value.imageUrl ? 'Modifier' : 'Importer'}</span>
+              <input type="file" aria-label={`Importer — ${label}`} accept={visualUploadAccept} disabled={busy || !selectedItem} onChange={(event) => { const file = event.target.files?.[0]; if (file && selectedItem) onImage?.(selectedItem, slot, file); event.target.value = ''; }} />
+            </label>
+            {value.imageUrl && <ImageFramingControls imageUrl={value.imageUrl} value={value} aspectRatio={slot.aspectRatio} disabled={busy} onChange={(framing) => onFramingChange?.(selectedItem, slot, framing)} />}
+            <label className="signature-arch-pending"><input type="checkbox" checked={Boolean(value.visualPending)} disabled={busy || !selectedItem} onChange={(event) => onVisualPending?.(selectedItem, slot, event.target.checked)} /><span>Je fournirai le visuel plus tard</span></label>
             {value.imageName && <small className="signature-arch-image-name">{value.imageName}</small>}
-            {value.imageUrl && (
-              <button type="button" className="item-image-reset" disabled={disabled || Boolean(uploadState?.uploading)} onClick={() => onResetImage?.(selectedItem, slot)}>
-                Réinitialiser
-              </button>
-            )}
+            {value.imageUrl && <button type="button" className="item-image-reset" disabled={busy} onClick={() => onResetImage?.(selectedItem, slot)}>Réinitialiser</button>}
           </section>
         );
       })}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
+      <footer className="signature-arch-footer">
+        <div><span>Suppléments HT<small>{supplement ? 'Options sélectionnées' : 'Configuration standard'}</small></span><strong>{supplement.toLocaleString('fr-FR')} €</strong></div>
+        <button type="button" disabled={busy || !selectedItem} onClick={onApply}>Appliquer</button>
+      </footer>
     </div>
   );
 }
@@ -4718,6 +4724,7 @@ function OptionsStepPanel({
   onSignatureArchImage,
   onSignatureArchResetImage,
   onSignatureArchFraming,
+  onSignatureArchVisualPending,
   onPrestigeArchToggle,
   onPrestigeArchTv,
   onPrestigeSignageToggle,
@@ -4853,7 +4860,7 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       {isSignatureStand && (
-        <OptionAccordion {...accordionScrollProps('arche')} title="Arche" subtitle="Modèle · Couleur" icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
+        <OptionAccordion {...accordionScrollProps('arche')} className="signature-arch-accordion" title="Arche" subtitle="Taille · Éclairage · Couleur · Logo" icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
           <SignatureArchOptionCard
             items={signatureArchItems}
             entries={signatureArchEntries}
@@ -4866,6 +4873,8 @@ function OptionsStepPanel({
             onImage={onSignatureArchImage}
             onResetImage={onSignatureArchResetImage}
             onFramingChange={onSignatureArchFraming}
+            onVisualPending={onSignatureArchVisualPending}
+            onApply={() => toggleOption('arche')}
           />
         </OptionAccordion>
       )}
@@ -7851,7 +7860,7 @@ function ConfiguratorOptionIcon({ src }) {
   return <img className="configurator-option-icon" src={src} alt="" aria-hidden="true" loading="eager" />;
 }
 
-function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, title, subtitle = '', icon, open, onToggle, children }) {
+function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, title, subtitle = '', icon, open, onToggle, children, className = '' }) {
   const accordionRef = useRef(null);
 
   useEffect(() => {
@@ -7864,7 +7873,7 @@ function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, 
   }, [open, optionKey, scrollTarget, onScrollTargetHandled]);
 
   return (
-    <section ref={accordionRef} className={`option-accordion ${open ? 'open' : ''}`}>
+    <section ref={accordionRef} className={`option-accordion ${open ? 'open' : ''} ${className}`}>
       <button type="button" onClick={onToggle}>
         <span className="option-accordion-label">
           {icon}
@@ -7873,7 +7882,7 @@ function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, 
             {subtitle && <small>{subtitle}</small>}
           </span>
         </span>
-        <ChevronUp size={18} />
+        {open && className === 'signature-arch-accordion' ? <X size={18} /> : <ChevronUp size={18} />}
       </button>
       {open && children}
     </section>
@@ -8172,14 +8181,16 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
   const uploading = Boolean(uploadState?.uploading);
 
   return (
-    <div className="partition-head-panel partition-head-panel-v2">
+    <div className={`partition-head-panel partition-head-panel-v2${isSignatureStand ? ' signature-head-options' : ''}`}>
       {!isSignatureStand && <div className="partition-head-activity-info">
         <b>i</b>
         <span>Le fond de couleur correspond à votre secteur d'activité et ne peut être modifié.</span>
       </div>}
 
+      <div className={isSignatureStand ? 'signature-head-identity' : undefined}>
+      {isSignatureStand && <div className="signature-head-section-heading"><span>Votre enseigne</span><small>Inclus</small></div>}
       <label className="partition-head-company-field">
-        <span>{t('partition_head_company_field')}</span>
+        <span>{isSignatureStand ? 'Nom de votre société' : t('partition_head_company_field')}</span>
         <input
           value={companyName || ''}
           disabled={disabled}
@@ -8187,6 +8198,8 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
           placeholder={t('partition_head_company_placeholder')}
         />
       </label>
+      {isSignatureStand && <p className="signature-head-note">Le nom, l’allée et l’emplacement s’affichent automatiquement sur les deux têtes de cloison.</p>}
+      </div>
 
       {!isSignatureStand && <div className="partition-head-choice-grid">
         {rows.map((row) => {
@@ -8222,12 +8235,11 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
         </label>
         <small>{t(sharedVisual ? 'partition_shared_visual_hint' : 'partition_different_visuals_hint')}</small>
       </div>}
-      {isSignatureStand && <p className="preset-included-help">Le panneau supérieur affiche automatiquement le nom de société et le numéro de stand, en Gotham. Le numéro apparaît en bas à gauche ou à droite selon la tête de cloison. Un logo personnalisé remplace ce panneau automatique. Logo en haut : 97 € HT pour les deux têtes de cloison (forfait unique).</p>}
 
       {visualRows.length ? visualRows.map((row) => (
         <React.Fragment key={row.side}>
           <PartitionHeadVisualUpload
-            row={sharedVisual ? { ...row, visualLabel: t('partition_visual_shared') } : row}
+            row={isSignatureStand ? { ...row, visualLabel: 'Visuel lumineux', badge: sharedVisual ? 'Deux têtes' : row.label, uploadSubtitle: 'PNG, JPG ou PDF' } : sharedVisual ? { ...row, visualLabel: t('partition_visual_shared') } : row}
             visual={visualOptions?.[row.side] || {}}
             uploading={sharedVisual ? uploading : uploadState?.uploading === row.side}
             disabled={disabled || uploading}
@@ -8242,7 +8254,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
             return (
               <PartitionHeadVisualUpload
                 key={slot.id}
-                row={{ ...row, visualLabel: sharedVisual ? `${slot.label} · ${t('partition_both_heads')}` : `${slot.label} ${row.side === 'left' ? 'gauche' : 'droite'}`, uploadSubtitle: `${slot.targetName} · PNG, JPG ou PDF` }}
+                row={{ ...row, visualLabel: sharedVisual ? 'Logo en partie haute' : `Logo en partie haute · ${row.side === 'left' ? 'gauche' : 'droite'}`, badge: '97 € HT / 2 têtes', uploadSubtitle: 'PNG, JPG ou PDF', description: 'Remplace l’enseigne automatique. Forfait unique pour les deux têtes de cloison.' }}
                 visual={{ headMainImageUrl: value.imageUrl, headMainImageName: value.imageName, headMainImageFraming: value }}
                 uploading={sharedVisual ? uploading : uploadState?.uploading === row.side}
                 disabled={disabled || uploading}
@@ -8281,8 +8293,9 @@ function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabl
   return (
     <div className="partition-head-upload-block partition-head-upload-block-v2">
       <div className="partition-head-upload-title">
-        <strong>{row.visualLabel}</strong>
+        <div className="partition-head-upload-heading"><strong>{row.visualLabel}</strong>{row.badge && <small>{row.badge}</small>}</div>
         <span>{row.uploadSubtitle || t('partition_size')}</span>
+        {row.description && <p className="signature-head-note">{row.description}</p>}
       </div>
       <label className={hasImage ? 'partition-head-dropzone partition-head-dropzone-v2 has-image' : 'partition-head-dropzone partition-head-dropzone-v2'}>
         {hasImage ? <img src={visual.headMainImageUrl} alt={row.visualLabel} /> : <FileImage size={24} />}
