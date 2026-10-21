@@ -1,0 +1,1230 @@
+{
+  "doors": [
+    {
+      "type": "asset-porte-trad-droite-1000x2500mm-mqqg2up1",
+      "label": "Porte droite poignée droite",
+      "model_url": "https://eljedngumyxwlvbckkkx.supabase.co/storage/v1/object/public/object-assets/asset-porte-trad-droite-1000x2500mm-mqqg2up1/porte-trad-droite-1000x2500mm.glb",
+      "dimensions": {
+        "size": [
+          1,
+          2.5,
+          0.24
+        ],
+        "depthLocked6cm": true,
+        "wallCoverFrameBounds": {
+          "minX": -0.4993,
+          "maxX": 0.5003,
+          "minZ": 0.058871,
+          "maxZ": 0.118848
+        }
+      },
+      "sourceMaterials": [
+        "WallPaint_Simple_Reflective_5"
+      ]
+    },
+    {
+      "type": "asset-porte-trad-gauche-1000x2500mm-ht-poignee-droite-mr394sjc",
+      "label": "Porte Trad Gauche 1000x2500mm Ht + PoignéE Droite",
+      "model_url": "https://eljedngumyxwlvbckkkx.supabase.co/storage/v1/object/public/object-assets/asset-porte-trad-gauche-1000x2500mm-ht-poignee-droite-mr394sjc/porte-trad-gauche-1000x2500mm-ht-poignee-droite.glb",
+      "dimensions": {
+        "size": [
+          1,
+          2.5,
+          0.25
+        ],
+        "depthLocked6cm": true,
+        "wallCoverFrameBounds": {
+          "minX": -0.5,
+          "maxX": 0.5,
+          "minZ": -0.121381,
+          "maxZ": -0.061381
+        }
+      },
+      "sourceMaterials": [
+        "MeshFabric_B01_18cm_3"
+      ]
+    },
+    {
+      "type": "asset-porte-trad-gauche-1000x2500mm-mqqg4197",
+      "label": "Porte gauche poignée droite",
+      "model_url": "https://eljedngumyxwlvbckkkx.supabase.co/storage/v1/object/public/object-assets/asset-porte-trad-gauche-1000x2500mm-mqqg4197/porte-trad-gauche-1000x2500mm.glb",
+      "dimensions": {
+        "size": [
+          1,
+          2.5,
+          0.25
+        ],
+        "depthLocked6cm": true,
+        "wallCoverFrameBounds": {
+          "minX": -0.4993,
+          "maxX": 0.5003,
+          "minZ": 0.061411,
+          "maxZ": 0.121388
+        }
+      },
+      "sourceMaterials": [
+        "WallPaint_Simple_Reflective_5"
+      ]
+    },
+    {
+      "type": "asset-porte-trad-gauche-1000x2500mm-avec-poignee-droit-mqqg3nf7",
+      "label": "Porte gauche poignée gauche",
+      "model_url": "https://eljedngumyxwlvbckkkx.supabase.co/storage/v1/object/public/object-assets/asset-porte-trad-gauche-1000x2500mm-avec-poignee-droit-mqqg3nf7/porte-trad-gauche-1000x2500mm-avec-poignee-droite.glb",
+      "dimensions": {
+        "size": [
+          1,
+          2.5,
+          0.25
+        ],
+        "depthLocked6cm": true,
+        "wallCoverFrameBounds": {
+          "minX": -0.4993,
+          "maxX": 0.5003,
+          "minZ": -0.121549,
+          "maxZ": -0.061573
+        }
+      },
+      "sourceMaterials": [
+        "WallPaint_Simple_Reflective_5"
+      ]
+    },
+    {
+      "type": "asset-porte-trad-droite-1000x2500mm-avec-poignee-gauch-mqqg1x7h",
+      "label": "Porte droite poignée gauche",
+      "model_url": "https://eljedngumyxwlvbckkkx.supabase.co/storage/v1/object/public/object-assets/asset-porte-trad-droite-1000x2500mm-avec-poignee-gauch-mqqg1x7h/porte-trad-droite-1000x2500mm-avec-poignee-gauche.glb",
+      "dimensions": {
+        "size": [
+          1,
+          2.5,
+          0.25
+        ],
+        "depthLocked6cm": true,
+        "wallCoverFrameBounds": {
+          "minX": -0.4993,
+          "maxX": 0.5003,
+          "minZ": -0.121333,
+          "maxZ": -0.061356
+        }
+      },
+      "sourceMaterials": [
+        "WallPaint_Simple_Reflective_5"
+      ]
+    },
+    {
+      "type": "asset-porte-trad-gauche-1000x2500mm-ht-poignee-gauche-mr39i28s",
+      "label": "Porte Trad Gauche 1000x2500mm Ht + PoignéE Gauche",
+      "model_url": "https://eljedngumyxwlvbckkkx.supabase.co/storage/v1/object/public/object-assets/asset-porte-trad-gauche-1000x2500mm-ht-poignee-gauche-mr39i28s/porte-trad-gauche-1000x2500mm-ht-poignee-gauche.glb",
+      "dimensions": {
+        "size": [
+          1,
+          2.5,
+          0.25
+        ],
+        "depthLocked6cm": true,
+        "wallCoverFrameBounds": {
+          "minX": -0.5,
+          "maxX": 0.5,
+          "minZ": 0.061381,
+          "maxZ": 0.121381
+        }
+      },
+      "sourceMaterials": [
+        "MeshFabric_B01_18cm_3"
+      ]
+    },
+    {
+      "type": "asset-porte-trad-droite-1000x2500mm-ht-poignee-gauche-mr398ygq",
+      "label": "Porte Trad Droite 1000x2500mm Ht + PoignéE Gauche",
+      "model_url": "https://eljedngumyxwlvbckkkx.supabase.co/storage/v1/object/public/object-assets/asset-porte-trad-droite-1000x2500mm-ht-poignee-gauche-mr398ygq/porte-trad-droite-1000x2500mm-ht-poignee-gauche.glb",
+      "dimensions": {
+        "size": [
+          1,
+          2.5,
+          0.25
+        ],
+        "depthLocked6cm": true,
+        "wallCoverFrameBounds": {
+          "minX": -0.5,
+          "maxX": 0.5,
+          "minZ": -0.121381,
+          "maxZ": -0.061381
+        }
+      },
+      "sourceMaterials": [
+        "MeshFabric_B01_18cm_3"
+      ]
+    },
+    {
+      "type": "asset-porte-trad-droite-1000x2500mm-ht-poignee-droite-mr39jc1z",
+      "label": "Porte Trad Droite 1000x2500mm Ht + PoignéE Droite",
+      "model_url": "https://eljedngumyxwlvbckkkx.supabase.co/storage/v1/object/public/object-assets/asset-porte-trad-droite-1000x2500mm-ht-poignee-droite-mr39jc1z/porte-trad-droite-1000x2500mm-ht-poignee-droite.glb",
+      "dimensions": {
+        "size": [
+          1,
+          2.5,
+          0.24
+        ],
+        "depthLocked6cm": true,
+        "wallCoverFrameBounds": {
+          "minX": -0.5,
+          "maxX": 0.5,
+          "minZ": 0.058895,
+          "maxZ": 0.118895
+        }
+      },
+      "sourceMaterials": [
+        "MeshFabric_B01_18cm_3"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "type": "group-reserve-3m2-centre-arriere-mqruneb4",
+      "label": "Réserve 3m² centre arrière",
+      "dimensions": {
+        "isGroup": true,
+        "placementRule": {
+          "id": "back-center",
+          "locked": true
+        },
+        "groupSize": [
+          2,
+          2.5,
+          3.08
+        ],
+        "children": [
+          {
+            "id": "asset-porte-trad-gauche-1000x2500mm-ht-poignee-droite-mr394sjc-child-1",
+            "type": "asset-porte-trad-gauche-1000x2500mm-ht-poignee-droite-mr394sjc",
+            "label": "Porte Trad Gauche 1000x2500mm Ht + PoignéE Droite",
+            "x": 0,
+            "y": 0,
+            "z": 1.66,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.25
+              ],
+              "depthLocked6cm": true
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-2",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": -0.48,
+            "y": 0,
+            "z": 1.09,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-3",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": 0.51,
+            "y": 0,
+            "z": 0.12,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-4",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": -0.49,
+            "y": 0,
+            "z": 0.16,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-5",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": 0.51,
+            "y": 0,
+            "z": 1.09,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-6",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": -0.49,
+            "y": 0,
+            "z": -0.8,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-7",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": 0.51,
+            "y": 0,
+            "z": -0.8,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-triplette-mqsb0l9j-child-8",
+            "type": "asset-triplette-mqsb0l9j",
+            "label": "Triplette",
+            "x": 0.01,
+            "y": 0,
+            "z": -0.69,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                0.23,
+                0.05,
+                0.13
+              ]
+            }
+          },
+          {
+            "id": "asset-patere-mqsbbhzv-child-9",
+            "type": "asset-patere-mqsbbhzv",
+            "label": "Patère",
+            "x": 0.44,
+            "y": 1.6,
+            "z": 0.58,
+            "rotation": -90,
+            "dimensions": {
+              "size": [
+                0.46,
+                0.06,
+                0.07
+              ]
+            }
+          },
+          {
+            "id": "asset-bloc-3-etageres-1-muwrjruf-child-10",
+            "type": "asset-bloc-3-etageres-1-muwrjruf",
+            "label": "Bloc 3 Étagères ",
+            "x": 0,
+            "y": 0,
+            "z": -1.13,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                0.95,
+                1.8,
+                0.33
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "group-reserve-fond-gauche-1x1m-mqqgud6g",
+      "label": "Réserve 1m2 arrière gauche",
+      "dimensions": {
+        "isGroup": true,
+        "placementRule": {
+          "id": "back-left",
+          "locked": true
+        },
+        "groupSize": [
+          1.84,
+          2.5,
+          0.97
+        ],
+        "children": [
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mqqgzewt-child-1",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mqqgzewt",
+            "label": "Cloison 1x2.5m",
+            "x": -0.5,
+            "y": 0,
+            "z": 0,
+            "rotation": 180,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-porte-trad-gauche-1000x2500mm-mqqg4197-child-2",
+            "type": "asset-porte-trad-gauche-1000x2500mm-mqqg4197",
+            "label": "Porte gauche poignée droite",
+            "x": 0.05,
+            "y": 0,
+            "z": -0.49,
+            "rotation": -90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.25
+              ],
+              "depthLocked6cm": true
+            }
+          },
+          {
+            "id": "asset-bloc-3-etageres-1-muwrjruf-child-3",
+            "type": "asset-bloc-3-etageres-1-muwrjruf",
+            "label": "Bloc 3 Étagères ",
+            "x": -0.81,
+            "y": 0,
+            "z": -0.52,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                0.95,
+                1.8,
+                0.33
+              ]
+            }
+          },
+          {
+            "id": "asset-patere-mqsbbhzv-child-4",
+            "type": "asset-patere-mqsbbhzv",
+            "label": "Patère",
+            "x": -0.37,
+            "y": 1.6,
+            "z": -0.07,
+            "rotation": 180,
+            "dimensions": {
+              "size": [
+                0.46,
+                0.06,
+                0.07
+              ]
+            }
+          },
+          {
+            "id": "asset-triplette-mqsb0l9j-child-5",
+            "type": "asset-triplette-mqsb0l9j",
+            "label": "Triplette",
+            "x": -0.36,
+            "y": 0,
+            "z": -0.87,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                0.23,
+                0.05,
+                0.13
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "group-reserve-arriere-gauche-porte-gauche-poigne-mqqj4q5q",
+      "label": "Réserve Arrière Gauche Porte Gauche Poignet Gauche L. 50 x H. 250 cm",
+      "dimensions": {
+        "isGroup": true,
+        "placementRule": {
+          "id": "back-left",
+          "locked": true
+        },
+        "groupSize": [
+          1.05,
+          2.5,
+          0.66
+        ],
+        "children": [
+          {
+            "id": "asset-cloison-trad-500x2500mm-ht-mqksl0yd-child-1",
+            "type": "asset-cloison-trad-500x2500mm-ht-mqksl0yd",
+            "label": "Cloison 0.5x2.5m",
+            "x": -0.2,
+            "y": 0,
+            "z": 0,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                0.5,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-porte-trad-gauche-1000x2500mm-avec-poignee-droit-mqqg3nf7-child-2",
+            "type": "asset-porte-trad-gauche-1000x2500mm-avec-poignee-droit-mqqg3nf7",
+            "label": "Porte gauche poignée gauche",
+            "x": 0.1,
+            "y": 0,
+            "z": -0.5,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.25
+              ],
+              "depthLocked6cm": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "group-reserve-1m2-arriere-droite-mqrv4cbu",
+      "label": "Réserve 1m2 arrière droite",
+      "dimensions": {
+        "isGroup": true,
+        "placementRule": {
+          "id": "back-right",
+          "locked": true
+        },
+        "groupSize": [
+          1.89,
+          2.5,
+          0.71
+        ],
+        "children": [
+          {
+            "id": "asset-porte-trad-droite-1000x2500mm-ht-poignee-droite-mr39jc1z-child-1",
+            "type": "asset-porte-trad-droite-1000x2500mm-ht-poignee-droite-mr39jc1z",
+            "label": "Porte Trad Droite 1000x2500mm Ht + PoignéE Droite",
+            "x": -0.39,
+            "y": 0,
+            "z": 0.02,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.24
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mqqgzewt-child-2",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mqqgzewt",
+            "label": "Cloison 1x2.5m",
+            "x": 0.2,
+            "y": 0,
+            "z": 0.5,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-bloc-3-etageres-1-muwrjruf-child-3",
+            "type": "asset-bloc-3-etageres-1-muwrjruf",
+            "label": "Bloc 3 Étagères ",
+            "x": 0.52,
+            "y": 0,
+            "z": -0.01,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                0.95,
+                1.8,
+                0.33
+              ]
+            }
+          },
+          {
+            "id": "asset-patere-mqsbbhzv-child-4",
+            "type": "asset-patere-mqsbbhzv",
+            "label": "Patère",
+            "x": 0.05,
+            "y": 1.6,
+            "z": 0.43,
+            "rotation": 180,
+            "dimensions": {
+              "size": [
+                0.46,
+                0.06,
+                0.07
+              ]
+            }
+          },
+          {
+            "id": "asset-triplette-mqsb0l9j-child-5",
+            "type": "asset-triplette-mqsb0l9j",
+            "label": "Triplette",
+            "x": 0.05,
+            "y": 0,
+            "z": 0.23,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                0.23,
+                0.05,
+                0.13
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "group-reserve-2m2-mqqjp2m1",
+      "label": "Réserve 2m² arrière gauche",
+      "dimensions": {
+        "isGroup": true,
+        "placementRule": {
+          "id": "back-left",
+          "locked": true
+        },
+        "groupSize": [
+          2.8,
+          2.5,
+          0.72
+        ],
+        "children": [
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-1",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": 0.35,
+            "y": 0,
+            "z": 0,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-porte-trad-gauche-1000x2500mm-ht-poignee-gauche-mr39i28s-child-2",
+            "type": "asset-porte-trad-gauche-1000x2500mm-ht-poignee-gauche-mr39i28s",
+            "label": "Porte Trad Gauche 1000x2500mm Ht + PoignéE Gauche",
+            "x": 0.92,
+            "y": 0,
+            "z": -0.49,
+            "rotation": -90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.25
+              ],
+              "depthLocked6cm": true
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-3",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": -0.59,
+            "y": 0,
+            "z": 0,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-patere-mqsbbhzv-child-4",
+            "type": "asset-patere-mqsbbhzv",
+            "label": "Patère",
+            "x": 0.11,
+            "y": 1.6,
+            "z": -0.07,
+            "rotation": 180,
+            "dimensions": {
+              "size": [
+                0.46,
+                0.06,
+                0.07
+              ]
+            }
+          },
+          {
+            "id": "asset-bloc-3-etageres-1-muwrjruf-child-5",
+            "type": "asset-bloc-3-etageres-1-muwrjruf",
+            "label": "Bloc 3 Étagères ",
+            "x": -0.91,
+            "y": 0,
+            "z": -0.52,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                0.95,
+                1.8,
+                0.33
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "group-nouveau-groupe-mqruijl9",
+      "label": "Réserve 3m2 arrière droite",
+      "dimensions": {
+        "isGroup": true,
+        "placementRule": {
+          "id": "back-right",
+          "locked": true
+        },
+        "groupSize": [
+          3.73,
+          2.5,
+          0.72
+        ],
+        "children": [
+          {
+            "id": "asset-porte-trad-droite-1000x2500mm-ht-poignee-gauche-mr398ygq-child-1",
+            "type": "asset-porte-trad-droite-1000x2500mm-ht-poignee-gauche-mr398ygq",
+            "label": "Porte Trad Droite 1000x2500mm Ht + PoignéE Gauche",
+            "x": -0.83,
+            "y": 0,
+            "z": -0.5,
+            "rotation": -90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.25
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-2",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": -0.26,
+            "y": 0,
+            "z": -0.01,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-3",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": 0.69,
+            "y": 0,
+            "z": -0.01,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-4",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": 1.62,
+            "y": 0,
+            "z": 0,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-patere-mqsbbhzv-child-5",
+            "type": "asset-patere-mqsbbhzv",
+            "label": "Patère",
+            "x": 0.17,
+            "y": 1.6,
+            "z": -0.08,
+            "rotation": 180,
+            "dimensions": {
+              "size": [
+                0.46,
+                0.06,
+                0.07
+              ]
+            }
+          },
+          {
+            "id": "asset-bloc-3-etageres-1-muwrjruf-child-6",
+            "type": "asset-bloc-3-etageres-1-muwrjruf",
+            "label": "Bloc 3 Étagères ",
+            "x": 1.93,
+            "y": 0,
+            "z": -0.52,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                0.95,
+                1.8,
+                0.33
+              ]
+            }
+          },
+          {
+            "id": "asset-triplette-mqsb0l9j-child-7",
+            "type": "asset-triplette-mqsb0l9j",
+            "label": "Triplette",
+            "x": 1.5,
+            "y": 0,
+            "z": -0.46,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                0.23,
+                0.05,
+                0.13
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "group-reserve-2m2-centre-mqrt34if",
+      "label": "Réserve 2m2 centre arrière",
+      "dimensions": {
+        "isGroup": true,
+        "placementRule": {
+          "id": "back-center",
+          "locked": true
+        },
+        "groupSize": [
+          2,
+          2.5,
+          2.1
+        ],
+        "children": [
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-1",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": 0.5,
+            "y": 0,
+            "z": -0.4,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-2",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": -0.5,
+            "y": 0,
+            "z": -0.4,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-3",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": -0.5,
+            "y": 0,
+            "z": -1.3,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-4",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": 0.5,
+            "y": 0,
+            "z": -1.3,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-porte-trad-gauche-1000x2500mm-ht-poignee-droite-mr394sjc-child-5",
+            "type": "asset-porte-trad-gauche-1000x2500mm-ht-poignee-droite-mr394sjc",
+            "label": "Porte Trad Gauche 1000x2500mm Ht + PoignéE Droite",
+            "x": 0,
+            "y": 0,
+            "z": 0.16,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.25
+              ],
+              "depthLocked6cm": true
+            }
+          },
+          {
+            "id": "asset-patere-mqsbbhzv-child-6",
+            "type": "asset-patere-mqsbbhzv",
+            "label": "Patère",
+            "x": -0.42,
+            "y": 1.6,
+            "z": -0.81,
+            "rotation": -90,
+            "dimensions": {
+              "size": [
+                0.46,
+                0.06,
+                0.07
+              ]
+            }
+          },
+          {
+            "id": "asset-bloc-3-etageres-1-muwrjruf-child-7",
+            "type": "asset-bloc-3-etageres-1-muwrjruf",
+            "label": "Bloc 3 Étagères ",
+            "x": 0,
+            "y": 0,
+            "z": -1.65,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                0.95,
+                1.8,
+                0.33
+              ]
+            }
+          },
+          {
+            "id": "asset-triplette-mqsb0l9j-child-8",
+            "type": "asset-triplette-mqsb0l9j",
+            "label": "Triplette",
+            "x": -0.02,
+            "y": 0,
+            "z": -1.37,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                0.23,
+                0.05,
+                0.13
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "group-reserve-3m2-arriere-gauche-mqruegq8",
+      "label": "Réserve 3m2 arrière gauche",
+      "dimensions": {
+        "isGroup": true,
+        "placementRule": {
+          "id": "back-left",
+          "locked": true
+        },
+        "groupSize": [
+          3.73,
+          2.5,
+          0.71
+        ],
+        "children": [
+          {
+            "id": "asset-porte-trad-gauche-1000x2500mm-ht-poignee-gauche-mr39i28s-child-1",
+            "type": "asset-porte-trad-gauche-1000x2500mm-ht-poignee-gauche-mr39i28s",
+            "label": "Porte Trad Gauche 1000x2500mm Ht + PoignéE Gauche",
+            "x": 0.88,
+            "y": 0,
+            "z": -0.51,
+            "rotation": -90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.25
+              ],
+              "depthLocked6cm": true
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-2",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": -0.62,
+            "y": 0,
+            "z": -0.01,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-3",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": 0.33,
+            "y": 0,
+            "z": -0.01,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-4",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": -1.55,
+            "y": 0,
+            "z": -0.01,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-patere-mqsbbhzv-child-5",
+            "type": "asset-patere-mqsbbhzv",
+            "label": "Patère",
+            "x": -0.61,
+            "y": 1.6,
+            "z": -0.08,
+            "rotation": 180,
+            "dimensions": {
+              "size": [
+                0.46,
+                0.06,
+                0.07
+              ]
+            }
+          },
+          {
+            "id": "asset-bloc-3-etageres-1-muwrjruf-child-6",
+            "type": "asset-bloc-3-etageres-1-muwrjruf",
+            "label": "Bloc 3 Étagères ",
+            "x": -1.88,
+            "y": 0,
+            "z": -0.52,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                0.95,
+                1.8,
+                0.33
+              ]
+            }
+          },
+          {
+            "id": "asset-triplette-mqsb0l9j-child-7",
+            "type": "asset-triplette-mqsb0l9j",
+            "label": "Triplette",
+            "x": 0.56,
+            "y": 0,
+            "z": -0.47,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                0.23,
+                0.05,
+                0.13
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "group-reserve-2m2-arriere-droite-mqrsqnfd",
+      "label": "Réserve 2m² arrière droite",
+      "dimensions": {
+        "isGroup": true,
+        "placementRule": {
+          "id": "back-right",
+          "locked": true
+        },
+        "groupSize": [
+          2.83,
+          2.5,
+          0.71
+        ],
+        "children": [
+          {
+            "id": "asset-porte-trad-droite-1000x2500mm-ht-poignee-gauche-mr398ygq-child-1",
+            "type": "asset-porte-trad-droite-1000x2500mm-ht-poignee-gauche-mr398ygq",
+            "label": "Porte Trad Droite 1000x2500mm Ht + PoignéE Gauche",
+            "x": -0.93,
+            "y": 0,
+            "z": -0.51,
+            "rotation": -90,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.25
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-2",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": -0.33,
+            "y": 0,
+            "z": 0,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-3",
+            "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+            "label": "Cloison Trad 1000x2500mm Ht",
+            "x": 0.6,
+            "y": 0,
+            "z": 0,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                1,
+                2.5,
+                0.06
+              ]
+            }
+          },
+          {
+            "id": "asset-patere-mqsbbhzv-child-4",
+            "type": "asset-patere-mqsbbhzv",
+            "label": "Patère",
+            "x": 0.15,
+            "y": 1.6,
+            "z": -0.08,
+            "rotation": 180,
+            "dimensions": {
+              "size": [
+                0.46,
+                0.06,
+                0.07
+              ]
+            }
+          },
+          {
+            "id": "asset-bloc-3-etageres-1-muwrjruf-child-5",
+            "type": "asset-bloc-3-etageres-1-muwrjruf",
+            "label": "Bloc 3 Étagères ",
+            "x": 0.92,
+            "y": 0,
+            "z": -0.51,
+            "rotation": 90,
+            "dimensions": {
+              "size": [
+                0.95,
+                1.8,
+                0.33
+              ]
+            }
+          },
+          {
+            "id": "asset-triplette-mqsb0l9j-child-6",
+            "type": "asset-triplette-mqsb0l9j",
+            "label": "Triplette",
+            "x": 0.58,
+            "y": 0,
+            "z": -0.5,
+            "rotation": 0,
+            "dimensions": {
+              "size": [
+                0.23,
+                0.05,
+                0.13
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -138,7 +138,7 @@ export const translations = {
     reserve_restore: 'Remettre la réserve',
     reserve_included: 'Inclus',
     formula_title: 'Votre formule inclut :',
-    formula_reserve_included: 'Votre formule inclut une réserve blanche de {area} (la couleur ne peut pas être modifiée) fermant avec une poignée à code et équipée de 2 étagères, un miroir et une patère.',
+    formula_reserve_included: 'Chaque réserve est équipée de 3 étagères, un miroir, une multiprise et une patère.',
     formula_reserve_detail: '',
     formula_reserve_none: 'Aucune réserve n\'est incluse automatiquement pour cette surface.',
 
@@ -528,7 +528,7 @@ export const translations = {
     reserve_restore: 'Restore storage',
     reserve_included: 'Included',
     formula_title: 'Your package includes:',
-    formula_reserve_included: 'Your package includes a white {area} storage unit (the color cannot be changed), closing with a coded handle and equipped with 2 shelves, a mirror and a coat hook.',
+    formula_reserve_included: 'Each storage unit is equipped with 3 shelves, a mirror, a power strip and a coat hook.',
     formula_reserve_detail: '',
     formula_reserve_none: 'No storage is included automatically for this surface area.',
 

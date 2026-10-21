@@ -86,3 +86,39 @@ test('1m² rear-left covers also respect the front-side fixed frame of the legac
  const edge=cover.position[0]-cover.width/2;
  assert.ok(edge>=frame.max.x && edge-frame.max.x<.02,'The left banner starts at the partition/frame joint and stays out of the opening');
 });
+
+test('All catalog reserve door frames follow Three.js in every rotation, across nine groups and four layouts',()=>{
+ const api=reserveCoverRuntime();
+ const {doors,groups}=JSON.parse(readFileSync(new URL('./fixtures/signature-reserve-door-audit.json',import.meta.url),'utf8'));
+ for(const door of doors)for(const rotation of [0,90,180,-90]){
+  const f=door.dimensions.wallCoverFrameBounds;
+  const expected=new Box3(new Vector3(f.minX,0,f.minZ),new Vector3(f.maxX,2.5,f.maxZ)).applyMatrix4(new Matrix4().makeRotationY(rotation*Math.PI/180));
+  const actual=api.reserveWallCoverBounds({...door,rotation});
+  for(const [key,value]of Object.entries({minX:expected.min.x,maxX:expected.max.x,minZ:expected.min.z,maxZ:expected.max.z}))assert.ok(Math.abs(actual[key]-value)<1e-9,`${door.label} rotation ${rotation} ${key}`);
+ }
+ const renderedGroupBounds=(group)=>{
+  const union=new Box3();
+  for(const child of group.children){
+   const [w,h,d]=child.dimensions.size;
+   const frame=child.dimensions.depthLocked6cm&&child.dimensions.wallCoverFrameBounds;
+   const box=frame?new Box3(new Vector3(frame.minX,0,frame.minZ),new Vector3(frame.maxX,h,frame.maxZ)):new Box3(new Vector3(-w/2,0,-d/2),new Vector3(w/2,h,d/2));
+   const matrix=new Matrix4().makeRotationY(Number(child.rotation||0)*Math.PI/180);matrix.setPosition(group.x+Number(child.x||0),0,group.z+Number(child.z||0));box.applyMatrix4(matrix);union.union(box);
+  }return union;
+ };
+ for(const asset of groups)for(const layout of ['back','left','right','u']){
+  const entry=api.assetToCatalogEntry(asset,[...doors,...groups]), group={...entry,id:'auto-reserve',rotation:0};const placement=api.itemPlacementBounds(group),side=asset.dimensions.placementRule?.id;
+  group.x=side==='back-left'?-4+.06-placement.minX:side==='back-right'?4-.06-placement.maxX:0;group.z=-3+.06-placement.minZ;
+  const expected=renderedGroupBounds(group),actual=api.reserveWallCoverBounds(group);
+  for(const [key,value]of Object.entries({minX:expected.min.x,maxX:expected.max.x,minZ:expected.min.z,maxZ:expected.max.z}))assert.ok(Math.abs(actual[key]-value)<1e-9,`${asset.label} / ${layout}: ${key}`);
+  const covers=api.wallCoverSurfaceOptions(layout,8,6,[group],{splitForCovers:true});
+  const previous={...group,children:group.children.map(c=>({...c,dimensions:{...c.dimensions,wallCoverFrameBounds:undefined}}))};
+  const previousCovers=api.wallCoverSurfaceOptions(layout,8,6,[previous],{splitForCovers:true});
+  for(const cover of covers.filter(c=>c.kind==='wall')){
+   const axis=cover.wall==='back'?0:2,center=cover.position[axis],min=center-cover.width/2,max=center+cover.width/2;
+   const intersectsWall=cover.wall==='back'||(cover.wall==='left'?expected.min.x<=-4+.9:expected.max.x>=4-.9);
+   const blockedMin=cover.wall==='back'?expected.min.x:expected.min.z,blockedMax=cover.wall==='back'?expected.max.x:expected.max.z;
+   if(intersectsWall)assert.ok(Math.min(max,blockedMax)-Math.max(min,blockedMin)<1e-8,`${asset.label} / ${layout} / ${cover.wall}: banner crosses the reserve`);
+   assert.equal(cover.visibleWidth,previousCovers.find(c=>c.id===cover.id)?.visibleWidth,`${asset.label} / ${layout}: commercial metres unchanged`);
+  }
+ }
+});

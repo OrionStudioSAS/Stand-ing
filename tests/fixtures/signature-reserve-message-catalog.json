@@ -1,0 +1,292 @@
+[
+  {
+    "type": "group-reserve-1m2-arriere-droite-mqrv4cbu",
+    "label": "Réserve 1m2 arrière droite",
+    "is_active": true,
+    "dimensions": {
+      "packs": [
+        "Confort",
+        "Signature",
+        "Prestige",
+        "Équipé"
+      ],
+      "format": "Groupe",
+      "salons": [
+        "SITL 2027",
+        "SMCL 2026"
+      ],
+      "addedBy": "Admin Stand-ING",
+      "isGroup": true,
+      "category": "Mobilier",
+      "children": [
+        {
+          "id": "asset-porte-trad-droite-1000x2500mm-ht-poignee-droite-mr39jc1z-child-1",
+          "type": "asset-porte-trad-droite-1000x2500mm-ht-poignee-droite-mr39jc1z",
+          "label": "Porte Trad Droite 1000x2500mm Ht + PoignéE Droite",
+          "x": -0.39,
+          "y": 0,
+          "z": 0.02,
+          "rotation": 90,
+          "dimensions": {
+            "size": [
+              1,
+              2.5,
+              0.24
+            ]
+          }
+        },
+        {
+          "id": "asset-cloison-trad-1000x2500mm-ht-mqqgzewt-child-2",
+          "type": "asset-cloison-trad-1000x2500mm-ht-mqqgzewt",
+          "label": "Cloison 1x2.5m",
+          "x": 0.2,
+          "y": 0,
+          "z": 0.5,
+          "rotation": 0,
+          "dimensions": {
+            "size": [
+              1,
+              2.5,
+              0.06
+            ]
+          }
+        },
+        {
+          "id": "asset-bloc-3-etageres-1-muwrjruf-child-3",
+          "type": "asset-bloc-3-etageres-1-muwrjruf",
+          "label": "Bloc 3 Étagères ",
+          "x": 0.52,
+          "y": 0,
+          "z": -0.01,
+          "rotation": 90,
+          "dimensions": {
+            "size": [
+              0.95,
+              1.8,
+              0.33
+            ]
+          }
+        },
+        {
+          "id": "asset-patere-mqsbbhzv-child-4",
+          "type": "asset-patere-mqsbbhzv",
+          "label": "Patère",
+          "x": 0.05,
+          "y": 1.6,
+          "z": 0.43,
+          "rotation": 180,
+          "dimensions": {
+            "size": [
+              0.46,
+              0.06,
+              0.07
+            ]
+          }
+        },
+        {
+          "id": "asset-triplette-mqsb0l9j-child-5",
+          "type": "asset-triplette-mqsb0l9j",
+          "label": "Triplette",
+          "x": 0.05,
+          "y": 0,
+          "z": 0.23,
+          "rotation": 0,
+          "dimensions": {
+            "size": [
+              0.23,
+              0.05,
+              0.13
+            ]
+          }
+        }
+      ],
+      "adminOnly": true,
+      "groupSize": [
+        1.89,
+        2.5,
+        0.71
+      ],
+      "mountType": "wall",
+      "packPricing": {
+        "confort": {
+          "pack": "Confort",
+          "sourceSalon": "SMCL 2026"
+        },
+        "prestige": {
+          "pack": "Prestige",
+          "sourceSalon": "SMCL 2026"
+        },
+        "signature": {
+          "pack": "Signature",
+          "sourceSalon": "SITL 2027"
+        }
+      },
+      "storageRoot": "group-reserve-1m2-arriere-droite-mqrv4cbu",
+      "wallTopSnap": true,
+      "deleteLocked": true,
+      "displayOrder": 46,
+      "isTelevision": false,
+      "placementRule": {
+        "id": "back-right",
+        "locked": true
+      },
+      "storageBucket": "object-assets",
+      "thumbnailPath": "group-reserve-1m2-arriere-droite-mqrv4cbu/profile-mtig372u.png",
+      "ceilingBottomY": 3,
+      "ceilingMounted": false,
+      "movementLocked": true,
+      "rotationLocked": true,
+      "isLedSpotOption": false
+    }
+  },
+  {
+    "type": "group-reserve-2m2-arriere-droite-mqrsqnfd",
+    "label": "Réserve 2m² arrière droite",
+    "is_active": true,
+    "dimensions": {
+      "packs": [
+        "Confort",
+        "Signature",
+        "Prestige",
+        "Équipé"
+      ],
+      "format": "Groupe",
+      "salons": [
+        "SITL 2027",
+        "SMCL 2026"
+      ],
+      "addedBy": "Admin Stand-ING",
+      "isGroup": true,
+      "category": "Mobilier",
+      "children": [
+        {
+          "id": "asset-porte-trad-droite-1000x2500mm-ht-poignee-gauche-mr398ygq-child-1",
+          "type": "asset-porte-trad-droite-1000x2500mm-ht-poignee-gauche-mr398ygq",
+          "label": "Porte Trad Droite 1000x2500mm Ht + PoignéE Gauche",
+          "x": -0.93,
+          "y": 0,
+          "z": -0.51,
+          "rotation": -90,
+          "dimensions": {
+            "size": [
+              1,
+              2.5,
+              0.25
+            ]
+          }
+        },
+        {
+          "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-2",
+          "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+          "label": "Cloison Trad 1000x2500mm Ht",
+          "x": -0.33,
+          "y": 0,
+          "z": 0,
+          "rotation": 0,
+          "dimensions": {
+            "size": [
+              1,
+              2.5,
+              0.06
+            ]
+          }
+        },
+        {
+          "id": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr-child-3",
+          "type": "asset-cloison-trad-1000x2500mm-ht-mr38qnyr",
+          "label": "Cloison Trad 1000x2500mm Ht",
+          "x": 0.6,
+          "y": 0,
+          "z": 0,
+          "rotation": 0,
+          "dimensions": {
+            "size": [
+              1,
+              2.5,
+              0.06
+            ]
+          }
+        },
+        {
+          "id": "asset-patere-mqsbbhzv-child-4",
+          "type": "asset-patere-mqsbbhzv",
+          "label": "Patère",
+          "x": 0.15,
+          "y": 1.6,
+          "z": -0.08,
+          "rotation": 180,
+          "dimensions": {
+            "size": [
+              0.46,
+              0.06,
+              0.07
+            ]
+          }
+        },
+        {
+          "id": "asset-bloc-3-etageres-1-muwrjruf-child-5",
+          "type": "asset-bloc-3-etageres-1-muwrjruf",
+          "label": "Bloc 3 Étagères ",
+          "x": 0.92,
+          "y": 0,
+          "z": -0.51,
+          "rotation": 90,
+          "dimensions": {
+            "size": [
+              0.95,
+              1.8,
+              0.33
+            ]
+          }
+        },
+        {
+          "id": "asset-triplette-mqsb0l9j-child-6",
+          "type": "asset-triplette-mqsb0l9j",
+          "label": "Triplette",
+          "x": 0.58,
+          "y": 0,
+          "z": -0.5,
+          "rotation": 0,
+          "dimensions": {
+            "size": [
+              0.23,
+              0.05,
+              0.13
+            ]
+          }
+        }
+      ],
+      "adminOnly": true,
+      "groupSize": [
+        2.83,
+        2.5,
+        0.71
+      ],
+      "packPricing": {
+        "confort": {
+          "pack": "Confort",
+          "sourceSalon": "SMCL 2026"
+        },
+        "prestige": {
+          "pack": "Prestige",
+          "sourceSalon": "SMCL 2026"
+        },
+        "signature": {
+          "pack": "Signature",
+          "sourceSalon": "SITL 2027"
+        }
+      },
+      "storageRoot": "group-reserve-2m2-arriere-droite-mqrsqnfd",
+      "deleteLocked": true,
+      "displayOrder": 1,
+      "placementRule": {
+        "id": "back-right",
+        "locked": true
+      },
+      "storageBucket": "object-assets",
+      "thumbnailPath": "group-reserve-2m2-arriere-droite-mqrsqnfd/profile-mtit7kue.png",
+      "movementLocked": true,
+      "rotationLocked": true
+    }
+  }
+]

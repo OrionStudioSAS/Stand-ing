@@ -7980,7 +7980,7 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
 function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalog = [], salonLabel = '', disabled = false, onChange, onOptions }) {
   const t = useT();
   const rows = reserveChoiceRows(rule, catalog, salonLabel);
-  const includedRow = rows.find((row) => row.included && !row.billable) || null;
+  const includedRow = rows.find((row) => row.included && row.price === 0) || null;
   const noneSelected = selectedOptionType === '__none__';
 
   if (!rule?.includedType && !rows.length) {
@@ -8015,8 +8015,8 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
                 <strong>Réserve <b>{row.areaLabel}</b></strong>
                 <small>{row.description}</small>
               </span>
-              <span className={row.included && !row.billable ? 'reserve-choice-price included' : 'reserve-choice-price'}>
-                {row.included && !row.billable ? t('reserve_included') : `+ ${row.price.toLocaleString('fr-FR')} €`}
+              <span className={row.included && row.price === 0 ? 'reserve-choice-price included' : 'reserve-choice-price'}>
+                {row.included && row.price === 0 ? t('reserve_included') : `+ ${row.price.toLocaleString('fr-FR')} €`}
               </span>
             </button>
           );
