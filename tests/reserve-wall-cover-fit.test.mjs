@@ -75,3 +75,14 @@ test('1m² rear-right cover uses the front-side fixed frame of the actual opposi
  const raw={...door,dimensions:{...door.dimensions,depthLocked6cm:false}};
  assert.deepEqual(JSON.parse(JSON.stringify(api.reserveWallCoverBounds(raw))),JSON.parse(JSON.stringify(api.reserveWallCoverBounds({...raw,dimensions:{...raw.dimensions,wallCoverFrameBounds:undefined}}))),'Explicitly disabling the 6cm option retains the original bounds');
 });
+
+test('1m² rear-left covers also respect the front-side fixed frame of the legacy door export',()=>{
+ const api=reserveCoverRuntime();
+ const door={id:'door',x:.05,z:-.49,rotation:-90,dimensions:{size:[1,2.5,.25],depthLocked6cm:true,wallCoverFrameBounds:{minX:-.499300,maxX:.500300,minZ:.061411,maxZ:.121388}}};
+ const group={id:'reserve',isGroup:true,rotation:0,children:[{id:'front',x:-.5,z:0,rotation:180,dimensions:{size:[1,2.5,.06]}},door]};
+ const placement=api.itemPlacementBounds(group);group.x=-3+.06-placement.minX;group.z=-1.5+.06-placement.minZ;
+ const frame=new Box3(new Vector3(-.499300,0,.061411),new Vector3(.500300,2.5,.121388));const matrix=new Matrix4().makeRotationY(-Math.PI/2);matrix.setPosition(group.x+door.x,0,group.z+door.z);frame.applyMatrix4(matrix);
+ const cover=api.wallCoverSurfaceOptions('left',6,3,[group],{splitForCovers:true}).find(surface=>surface.wall==='back');
+ const edge=cover.position[0]-cover.width/2;
+ assert.ok(edge>=frame.max.x && edge-frame.max.x<.02,'The left banner starts at the partition/frame joint and stays out of the opening');
+});
