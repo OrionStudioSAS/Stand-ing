@@ -20205,7 +20205,7 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
   const renderSceneItem = (item) => (
     <Suspense key={item.id} fallback={null}>
       <SceneItem
-        item={isReserveSceneItem(item) && reserveDoorColorHex ? { ...item, options: { ...item.options, reserveDoorColorHex } } : item}
+        item={isReserveSceneItem(item) && reserveDoorColorHex ? { ...item, options: { ...item.options, reserveDoorColorHex, reserveFrameColorHex: reserveDoorColorHex } } : item}
         items={items}
         width={width}
         depth={depth}
@@ -21154,7 +21154,12 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, standD
 
 function reserveChildWithFinish(child, parent) {
   const color = parent.options?.reserveDoorColorHex;
-  return color ? { ...child, options: { ...child.options, reserveDoorColorHex: color } } : child;
+  if (!color) return child;
+  const text = normalizedItemText(child).replace(/[_-]+/g, ' ');
+  const hasFrame = /cloison|reserve|\bporte\b(?!\s*(?:document|revue))/.test(text);
+  return { ...child, options: { ...child.options, reserveDoorColorHex: color,
+    ...(hasFrame ? { reserveFrameColorHex: parent.options?.reserveFrameColorHex || color } : {}),
+  } };
 }
 
 function groupChildRenderY(child = {}) {
@@ -21499,8 +21504,11 @@ function ObjModel({ item, selected, hovered, dragging }) {
       ...hoverMaterialProps(selected, hovered),
     });
 
-    const finishMaterial = (source) => item.options?.reserveDoorColorHex && isReserveDoorPaintMaterial(source?.name)
-      ? reserveDoorFabricMaterial(source, item, reserveDoorTexture) : material;
+    const finishMaterial = (source) => {
+      if (item.options?.reserveDoorColorHex && isReserveDoorPaintMaterial(source?.name)) return reserveDoorFabricMaterial(source, item, reserveDoorTexture);
+      if (item.options?.reserveFrameColorHex && isReserveFramePaintMaterial(source?.name)) return reserveFramePaintMaterial(source, item);
+      return material;
+    };
     clone.traverse((child) => {
       if (child.isMesh) {
         child.castShadow = true;
@@ -21676,6 +21684,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   const materialName = normalizeMaterialName(material.name);
   const doorColor = item?.options?.reserveDoorColorHex;
   if (doorColor && isReserveDoorPaintMaterial(materialName)) return reserveDoorFabricMaterial(material, item, textureOptions.reserveDoorTexture);
+  if (item.options?.reserveFrameColorHex && isReserveFramePaintMaterial(materialName)) return reserveFramePaintMaterial(material, item);
   if (isSignatureArchItem(item) && isSignatureArchColorMaterial(materialName, material)) {
     return signatureArchPaintMaterial(material, item?.options?.signatureArchColorHex || '#bebebe');
   }
@@ -21717,6 +21726,15 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
 
 function isReserveDoorPaintMaterial(materialName = '') {
   return normalizeMaterialName(materialName) === 'meshfabric_b01_18cm_3';
+}
+
+function isReserveFramePaintMaterial(materialName = '') {
+  return /^(meshfabric_b01_18cm_?1|menuiserie|plastic_simple_shiny_black_2)(?:\.\d+)?$/.test(normalizeMaterialName(materialName));
+}
+
+function reserveFramePaintMaterial(material, item) {
+  return new MeshStandardMaterial({ name: material.name, side: material.side,
+    ...wallFabricMaterialProps({ hex: item.options.reserveFrameColorHex }) });
 }
 
 function reserveDoorFabricColor(item = {}) {

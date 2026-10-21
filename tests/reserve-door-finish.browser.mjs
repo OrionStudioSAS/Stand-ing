@@ -160,9 +160,12 @@ try {
     }, enabled);
     const materials = await page.evaluate(() => window.materials);
     assert.equal(materials.length, 24);
-    const otherMaterials = materials.filter((material) => material.name !== 'MeshFabric_B01_18cm_3');
+    const frames = materials.filter((material) => ['MeshFabric_B01_18cm_1', 'Menuiserie'].includes(material.name));
+    assert.equal(frames.length, 8);
+    assert.ok(frames.every((material) => material.hex === (enabled ? '787878' : 'ffffff') && !material.textured), 'Reserve panels and door surrounds use anthracite only on Signature and Equipe');
+    const otherMaterials = materials.filter((material) => !['MeshFabric_B01_18cm_3', 'MeshFabric_B01_18cm_1', 'Menuiserie'].includes(material.name));
     unchangedMaterials ??= otherMaterials;
-    assert.deepEqual(otherMaterials, unchangedMaterials, 'Walls and hardware keep their original finish');
+    assert.deepEqual(otherMaterials, unchangedMaterials, 'Hardware and other materials keep their original finish');
     if (enabled) {
       const wall = await page.evaluate(() => window.wallFabricReference);
       const doors = materials.filter((material) => material.name === 'MeshFabric_B01_18cm_3');

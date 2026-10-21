@@ -30,6 +30,10 @@ test('reserve groups inherit door finish without mutating the catalog or losing 
   const renderChild = api.reserveChildWithFinish(child, parent);
   assert.equal(renderChild.options.reserveDoorColorHex, '#787878');
   assert.equal(renderChild.options.ref, '123');
+  assert.equal(renderChild.options.reserveFrameColorHex, '#787878');
+  assert.equal(api.reserveChildWithFinish({label:'Cloison',options:{}},parent).options.reserveFrameColorHex, '#787878');
+  assert.equal(api.reserveChildWithFinish({label:'Bloc étagères',options:{}},parent).options.reserveFrameColorHex, undefined);
+  assert.equal(api.reserveChildWithFinish({label:'Porte documents',options:{}},parent).options.reserveFrameColorHex, undefined);
   assert.equal(child.options.reserveDoorColorHex, undefined);
   assert.equal(api.reserveChildWithFinish(child, {}), child);
 });
