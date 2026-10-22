@@ -3986,7 +3986,7 @@ function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = 
   );
 }
 
-function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage, onFramingChange, onVisualPending, onApply, onAlternative }) {
+function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage, onFramingChange, onVisualPending, onAlternative }) {
   const selectedItem = items[0] || null;
   const selectedType = selectedItem?.options?.signatureArchVariantType || selectedItem?.type || '';
   const selectedEntry = entries.find((entry) => entry.type === selectedType) || selectedItem || entries[0];
@@ -4101,9 +4101,6 @@ function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items =
         );
       })}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
-      <footer className="signature-arch-footer">
-        <button type="button" disabled={busy || !selectedItem} onClick={onApply}>Appliquer</button>
-      </footer>
     </div>
   );
 }
@@ -4912,7 +4909,6 @@ function OptionsStepPanel({
           onPreviewReset={onWallCoverPreviewReset}
           onPending={onWallCoverPending}
           onFramingChange={onWallCoverFraming}
-          onApply={() => toggleOption('coton')}
         />
       </OptionAccordion>
       {isAdminViewer && (
@@ -4971,7 +4967,6 @@ function OptionsStepPanel({
           visualOptions={partitionHeadVisuals}
           uploadState={partitionHeadUploadState}
           visualContext={partitionHeadContext}
-          onApply={() => toggleOption('tete')}
           onChange={onPartitionHeadSide}
           onCompanyName={onPartitionHeadCompany}
           onImage={onPartitionHeadImage}
@@ -5000,7 +4995,6 @@ function OptionsStepPanel({
             onResetImage={onSignatureArchResetImage}
             onFramingChange={onSignatureArchFraming}
             onVisualPending={onSignatureArchVisualPending}
-            onApply={() => toggleOption('arche')}
             onAlternative={(target) => target === 'shop' ? onOpenShop?.() : toggleOption(target)}
           />
         </OptionAccordion>
@@ -8341,7 +8335,7 @@ function reserveSizeDescription(area = 0, label = '') {
   return label || 'Réserve complémentaire';
 }
 
-function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, visualContext = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions, onDifferentVisuals, onApply }) {
+function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, visualContext = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions, onDifferentVisuals }) {
   const t = useT();
   const billableSides = partitionHeadBillableSides(rule, sides);
   const selectedCount = Object.values(sides).filter(Boolean).length;
@@ -8366,7 +8360,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
     companyName={companyName} visualContext={visualContext} differentVisuals={partitionHeadUsesDifferentVisuals(visualOptions)}
     disabled={disabled} uploading={uploadState.uploading} error={uploadState.error} accept={visualUploadAccept} t={t}
     total={isSignatureStand ? (logoCharged ? 97 : 0) : rows.filter((row) => row.selected).reduce((sum, row) => sum + row.price, 0)} logoCharged={logoCharged}
-    onSide={onChange} onCompanyName={onCompanyName} onDifferentVisuals={onDifferentVisuals} onApply={onApply}
+    onSide={onChange} onCompanyName={onCompanyName} onDifferentVisuals={onDifferentVisuals}
     onArtwork={(row, file, slot) => {
       if (slot) onVisualOptions?.(row.side, textureSlotPatch({ options: row.visual }, slot, { visualEnabled: true }));
       onImage?.(row.side, file, slot);
@@ -8604,7 +8598,7 @@ function WallOptionsMap({ surfaces, covers, previews, selectedColor, standWidth,
   </div>;
 }
 
-function WallOptionsPanel({ standWidth = 4, standDepth = 3, colors = [], selectedColor = {}, defaultColorId = '', area = 0, surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, onSelectColor, onToggle, onPreview, onPreviewReset, onPending, onFramingChange, onApply }) {
+function WallOptionsPanel({ standWidth = 4, standDepth = 3, colors = [], selectedColor = {}, defaultColorId = '', area = 0, surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, onSelectColor, onToggle, onPreview, onPreviewReset, onPending, onFramingChange }) {
   const t = useT();
   const id = useId();
   const [tab, setTab] = useState(() => surfaces.some((surface) => wallCoverEnabledForSurface(covers, surface)) ? 'covers' : 'fabric');
@@ -8653,7 +8647,7 @@ function WallOptionsPanel({ standWidth = 4, standDepth = 3, colors = [], selecte
         <p>{t('wall_section_fabric_caption')}</p>
         {palette(includedColors, true)}{palette(optionalColors, false)}
       </section>
-      <footer className="wall-options-footer"><div><span>{t('wall_section_supplements')}<small>{colorLabel(selected)} · {activeSurfaces.length ? t(activeSurfaces.length === 1 ? 'wall_section_active_one' : 'wall_section_active_count', { count: activeSurfaces.length }) : t('wall_section_no_covers')}</small></span><strong>{fabricTotal + coversTotal > 0 ? '+ ' : ''}{formatNumber(fabricTotal + coversTotal)} €</strong></div><button type="button" onClick={onApply}>{t('wall_section_apply')}</button></footer>
+      <footer className="wall-options-footer"><div><span>{t('wall_section_supplements')}<small>{colorLabel(selected)} · {activeSurfaces.length ? t(activeSurfaces.length === 1 ? 'wall_section_active_one' : 'wall_section_active_count', { count: activeSurfaces.length }) : t('wall_section_no_covers')}</small></span><strong>{fabricTotal + coversTotal > 0 ? '+ ' : ''}{formatNumber(fabricTotal + coversTotal)} €</strong></div></footer>
     </div> : <div className="wall-options-covers" role="tabpanel" id={`${id}-covers-panel`} aria-labelledby={`${id}-covers-tab`}>
       <div className="wall-options-allowance"><HelpCircle size={14} /><span>{Number(includedMl) > 0 ? t('wall_section_allowance', { count: formatNumber(includedMl), price: wallCoverUnitPrice }) : t('wall_section_no_allowance', { price: wallCoverUnitPrice })}</span></div>
       <div><div className="wall-options-heading"><h3>{t('wall_section_printed_covers')}</h3><strong>{t(activeSurfaces.length === 1 ? 'wall_section_wall_one' : 'wall_section_wall_count', { count: activeSurfaces.length })}</strong></div><p className="wall-options-caption">{t('wall_section_covers_caption')}</p></div>

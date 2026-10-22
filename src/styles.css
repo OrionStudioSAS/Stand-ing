@@ -15292,9 +15292,6 @@ img.asset-thumb {
 .signature-arch-import { flex: 0 0 auto; border-radius: 22px; padding: 8px 13px; color: #fff; background: #3d63a4; font-size: .67rem; font-weight: 650; }
 .signature-arch-pending { display: flex; align-items: center; gap: 7px; color: #8b8f9e; font-size: .68rem; line-height: 1.4; cursor: pointer; }
 .signature-arch-pending input { flex: 0 0 15px; width: 15px; height: 15px; margin: 0; accent-color: #3d63a4; }
-.signature-arch-footer { display: grid; gap: 12px; margin: 0 -18px -18px; padding: 16px 18px 18px; border-top: 1px solid #e2e4ea; }
-.signature-arch-footer > button { min-height: 38px; border: 0; border-radius: 24px; color: #fff; background: #3d63a4; font-size: .77rem; font-weight: 700; cursor: pointer; }
-.signature-arch-footer > button:disabled { opacity: .5; cursor: not-allowed; }
 .signature-arch-accordion.option-accordion > button .option-accordion-label small { font-size: .68rem; font-weight: 400; color: #e0e8f8; }
 .signature-arch-design .signature-arch-upload { font-weight: 400; }
 .signature-arch-design .signature-arch-upload-copy strong { color: #414550; }
@@ -15392,7 +15389,6 @@ img.asset-thumb {
 .wall-options-footer > div > span { display: grid; gap: 3px; min-width: 0; color: #8b8f9e; font-size: 12px; font-weight: 400; line-height: 16px; }
 .wall-options-footer small { font-size: 10px; font-weight: 400; line-height: 13px; overflow-wrap: anywhere; }
 .wall-options-footer strong { flex: 0 0 auto; color: var(--wall-text); font-size: 14px; font-weight: 700; line-height: 18px; }
-.wall-options-footer > button { min-height: 38px; border: 0; border-radius: 24px; padding: 8px 16px; color: #fff; background: var(--wall-blue); font-size: 12px; font-weight: 650; line-height: 17px; }
 .wall-options-covers { display: grid; gap: 16px; }
 .wall-options-allowance { display: grid; grid-template-columns: 14px minmax(0,1fr); align-items: center; gap: 8px; border-radius: 8px; padding: 10px 11px; color: var(--wall-text); background: #f4f7fd; font-size: 11px; font-weight: 400; line-height: 14px; }
 .wall-options-allowance > svg { color: #3262af; }

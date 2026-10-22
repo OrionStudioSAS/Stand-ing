@@ -96,7 +96,7 @@ try{
   await page.waitForFunction(()=>window.savedScene?.items.some(i=>i.options.textureSlotValues?.['signature-arch-led-5']?.visualPending));
   await page.getByRole('button',{name:'Reouvrir test',exact:true}).click();await page.getByRole('button',{name:/^Arche/}).click();
   assert.equal(await pending.first().isChecked(),true);
-  await page.getByRole('button',{name:'Appliquer',exact:true}).click();assert.equal(await page.locator('.signature-arch-card').count(),0);
+  assert.equal(await page.getByRole('button',{name:'Appliquer',exact:true}).count(),0);await page.getByRole('button',{name:/^Arche/}).click();assert.equal(await page.locator('.signature-arch-card').count(),0);
   await page.getByRole('button',{name:/^Arche/}).click();
   await page.screenshot({path:'/tmp/standing-arch-variants.png'});
   await page.setViewportSize({width:390,height:844});assert.ok(await sizeGroup.getByRole('button',{name:/^3 m/}).isVisible());

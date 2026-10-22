@@ -4,7 +4,7 @@ import { headArtwork, headArtworkIsCustom, headArtworkStatus } from './partition
 import { normalizeImageFraming } from './imageFraming.js';
 import './partitionHeadQuickView.css';
 
-export default function PartitionHeadQuickView({ rows, signature, equipped, companyName, visualContext = {}, differentVisuals, disabled, uploading, error, onSide, onCompanyName, onDifferentVisuals, onArtwork, onReset, onPending, onTopEnabled, onMainMode, onFraming, onApply, renderFraming, accept, t, total = 0, logoCharged = false }) {
+export default function PartitionHeadQuickView({ rows, signature, equipped, companyName, visualContext = {}, differentVisuals, disabled, uploading, error, onSide, onCompanyName, onDifferentVisuals, onArtwork, onReset, onPending, onTopEnabled, onMainMode, onFraming, renderFraming, accept, t, total = 0, logoCharged = false }) {
   const [activeSide, setActiveSide] = useState('left');
   const [intents, setIntents] = useState({});
   const id = useId();
@@ -75,7 +75,7 @@ export default function PartitionHeadQuickView({ rows, signature, equipped, comp
     </> : <div className="partition-head-empty">{t('partition_select_visual')}</div>}
     {error && <p className="partition-head-upload-error" role="alert">{error}</p>}
     {!signature && <button type="button" className="partition-head-remove-button" disabled={busy || !selected.length} onClick={() => { onSide?.('left', false); onSide?.('right', false); }}><X size={14} />{t('partition_remove')}</button>}
-    <footer className="head-options-footer"><div><span>{t('head_supplements')}<small>{t(logoCharged ? 'head_logo_summary' : total ? 'head_selected_options' : needsArtwork ? 'head_configuration_incomplete' : 'head_included_configuration')}</small></span><strong>{total > 0 ? '+ ' : ''}{total.toLocaleString('fr-FR')} €</strong></div><button type="button" onClick={onApply}>{t('head_apply')}</button></footer>
+    <footer className="head-options-footer"><div><span>{t('head_supplements')}<small>{t(logoCharged ? 'head_logo_summary' : total ? 'head_selected_options' : needsArtwork ? 'head_configuration_incomplete' : 'head_included_configuration')}</small></span><strong>{total > 0 ? '+ ' : ''}{total.toLocaleString('fr-FR')} €</strong></div></footer>
   </div>;
 }
 
