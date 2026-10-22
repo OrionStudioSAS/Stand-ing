@@ -95,38 +95,3 @@ test('native head framing is shared, persisted, and can become independent per s
   const shared = withPartitionHeadVisualMode(independent, false);
   assert.deepEqual(shared.left.headMainImageFraming, shared.right.headMainImageFraming);
 });
-
-test('Signature can split the top logo while the luminous visual stays shared', () => {
-  const slot = 'signature-head-top-28';
-  let visuals = patchPartitionHeadVisuals({}, 'left', image('light'));
-  visuals = patchPartitionHeadVisuals(visuals, 'left', {textureSlotValues:{[slot]:{imageUrl:'logo.png',imageZoom:1.2,visualEnabled:true}}});
-  visuals = withPartitionHeadVisualMode(visuals,true,slot);
-  visuals = patchPartitionHeadVisuals(visuals,'right',{textureSlotValues:{[slot]:{imageUrl:'right-logo.png',imageZoom:1.5}}});
-  visuals = patchPartitionHeadVisuals(visuals,'right',image('shared-light'));
-  const saved = reload(visuals);
-  assert.equal(saved.left.textureSlotValues[slot].imageUrl,'logo.png');
-  assert.equal(saved.right.textureSlotValues[slot].imageUrl,'right-logo.png');
-  assert.equal(saved.left.headMainImageUrl,'shared-light.png');
-  assert.equal(saved.right.headMainImageUrl,'shared-light.png');
-  assert.equal(partitionHeadUsesDifferentVisuals(saved,slot),true);
-  assert.equal(partitionHeadUsesDifferentVisuals(saved,'main'),false);
-  const joined = withPartitionHeadVisualMode(saved,false,slot);
-  assert.deepEqual(joined.left.textureSlotValues[slot],joined.right.textureSlotValues[slot]);
-  assert.equal(joined.left.headMainImageUrl,'shared-light.png');
-});
-
-test('Signature can split the luminous visual independently and keep files when disabled', () => {
-  const slot = 'signature-head-top-28';
-  let visuals = patchPartitionHeadVisuals({},'left',image('left-light'));
-  visuals = withPartitionHeadVisualMode(visuals,true,'main');
-  visuals = patchPartitionHeadVisuals(visuals,'right',image('right-light'));
-  visuals = patchPartitionHeadVisuals(visuals,'right',{textureSlotValues:{[slot]:{imageUrl:'shared-logo.png',visualEnabled:true}}});
-  assert.equal(visuals.left.textureSlotValues[slot].imageUrl,'shared-logo.png');
-  assert.equal(visuals.left.headMainImageUrl,'left-light.png');
-  assert.equal(visuals.right.headMainImageUrl,'right-light.png');
-  for (const side of ['left','right']) visuals = patchPartitionHeadVisuals(visuals,side,{headMainVisualEnabled:false});
-  const saved=reload(visuals);
-  assert.equal(saved.left.headMainVisualEnabled,false);assert.equal(saved.right.headMainVisualEnabled,false);
-  assert.equal(saved.left.headMainImageUrl,'left-light.png');assert.equal(saved.right.headMainImageUrl,'right-light.png');
-  assert.deepEqual(saved.left.textureSlotValues,saved.right.textureSlotValues);
-});

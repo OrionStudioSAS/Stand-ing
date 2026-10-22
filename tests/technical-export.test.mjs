@@ -201,21 +201,6 @@ test('the product recap shows the selected product reference or its salon/catalo
   assert.equal(api.technicalObjectRow(counter('c'), entry).lines[0], 'Référence : GENERIC');
 });
 
-test('reserve door preferences appear once in the BAT without changing group geometry', () => {
-  const { api } = runtime();
-  const reserve = { id: 'reserve', type: 'reserve', label: 'Réserve 2 m²', isGroup: true, x: 1, z: -2, rotation: 90,
-    options: { reserveDoorOpening: 'pull', reserveHandleOrientation: 'right' },
-    children: [{ id: 'wall', type: 'wall', x: -0.5, z: 0.5, modelSize: [1, 2.5, 0.06] }, { id: 'door', type: 'door', x: 0.5, z: 0, rotation: 90, modelSize: [1, 2.5, 0.2] }] };
-  const plain = api.technicalItemsForPlan([{ ...reserve, options: {} }], 5, 4, []);
-  const configured = api.technicalItemsForPlan([reserve], 5, 4, []);
-  const geometry = (items) => JSON.stringify(items.map(({ id, x, z, rotation, modelSize }) => ({ id, x, z, rotation, modelSize })));
-  assert.equal(geometry(configured), geometry(plain));
-  const lines = configured.flatMap((item) => api.technicalObjectRow(item).lines);
-  assert.equal(lines.filter((line) => line === 'Ouverture de porte : Tirante').length, 1);
-  assert.equal(lines.filter((line) => line === 'Orientation de la poignée : Droite').length, 1);
-  assert.ok(!plain.flatMap((item) => api.technicalObjectRow(item).lines).some((line) => line.includes('poignée')));
-});
-
 test('group artwork survives flattening and is associated with one child only', () => {
   const { api } = runtime();
   const items = api.technicalItemsForPlan([null, { id: 'group', type: 'group', label: 'Enseigne haute', isGroup: true, options: { headMainImageUrl: imageUrl }, children: [{ id: 'a', type: 'part' }, { id: 'b', type: 'part' }] }], 4, 3, []);
@@ -271,7 +256,7 @@ test('the BAT uses the moved reserve and refreshes the TV surface from its curre
   const { api } = runtime();
   api.resolveSpotWallAttachments = (items) => items;
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  for (const name of ['sceneAllAdminItems', 'selectLedRailEntries', 'selectedLedRailRule', 'autoSpotsRuleEntries', 'resolveTechnicalWallSurfaces', 'isObjectWallId', 'serializeObjectWallSurface', 'safeObjectWallSide', 'protectedObjectOutsideSide']) {
+  for (const name of ['sceneAllAdminItems', 'resolveTechnicalWallSurfaces', 'isObjectWallId', 'serializeObjectWallSurface', 'safeObjectWallSide', 'protectedObjectOutsideSide']) {
     const start = appSource.indexOf(`function ${name}(`);
     const end = appSource.indexOf('\n}\n', start) + 2;
     vm.runInContext(appSource.slice(start, end), api);

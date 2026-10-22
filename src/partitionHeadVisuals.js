@@ -1,5 +1,5 @@
 const imageFields = ['imageUrl', 'imageName', 'visualPending', 'imageZoom', 'imageOffsetX', 'imageOffsetY', 'visualEnabled'];
-const mainFields = ['headMainImageUrl', 'headMainImageName', 'headMainImageFraming', 'visualPending', 'headMainVisualEnabled'];
+const mainFields = ['headMainImageUrl', 'headMainImageName', 'headMainImageFraming', 'visualPending'];
 const has = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 const pick = (value, fields) => Object.fromEntries(fields.filter((key) => has(value, key)).map((key) => [key, value[key]]));
 
@@ -23,9 +23,7 @@ function mergeOptions(options = {}, patch = {}) {
   return next;
 }
 
-export function partitionHeadUsesDifferentVisuals(visuals = {}, section = null) {
-  if (section && typeof visuals.visualModes?.[section] === 'boolean') return visuals.visualModes[section];
-  if (!section && visuals.visualModes) return Object.values(visuals.visualModes).some(Boolean);
+export function partitionHeadUsesDifferentVisuals(visuals = {}) {
   if (typeof visuals.differentVisuals === 'boolean') return visuals.differentVisuals;
   // Keep deliberately different artwork in scenes saved before the shared option existed.
   const left = visualPatch(visuals.left), right = visualPatch(visuals.right);
@@ -39,31 +37,15 @@ export function partitionHeadUsesDifferentVisuals(visuals = {}, section = null) 
   });
 }
 
-export function withPartitionHeadVisualMode(visuals = {}, differentVisuals = false, section = null) {
-  if (section) {
-    const next = { ...visuals, visualModes: { ...visuals.visualModes, [section]: differentVisuals } };
-    if (differentVisuals) return next;
-    if (section === 'main') {
-      const a = visuals.left || {}, b = visuals.right || {};
-      const source = a.headMainImageUrl || a.headMainImageName || a.visualPending ? a : b;
-      const common = pick(source, mainFields);
-      for (const side of ['left', 'right']) next[side] = mergeOptions(visuals[side], common);
-    } else {
-      const a = visuals.left?.textureSlotValues?.[section], b = visuals.right?.textureSlotValues?.[section];
-      const source = a?.imageUrl || a?.imageName || a?.visualPending ? a : b || a;
-      if (source) for (const side of ['left', 'right']) next[side] = mergeOptions(visuals[side], { textureSlotValues: { [section]: source } });
-    }
-    return next;
-  }
+export function withPartitionHeadVisualMode(visuals = {}, differentVisuals = false) {
   const next = { ...visuals, differentVisuals };
-  delete next.visualModes;
   if (differentVisuals) return next;
   const left = visualPatch(visuals.left), right = visualPatch(visuals.right);
   const main = left.headMainImageUrl || left.headMainImageName || left.visualPending ? left : right;
   const common = {
     headMainImageUrl: main.headMainImageUrl || '', headMainImageName: main.headMainImageName || '',
     headMainImageFraming: main.headMainImageFraming || { imageZoom: 1, imageOffsetX: 0, imageOffsetY: 0 },
-    visualPending: Boolean(main.visualPending), ...(has(main, 'headMainVisualEnabled') ? { headMainVisualEnabled: main.headMainVisualEnabled } : {}), textureSlotValues: {},
+    visualPending: Boolean(main.visualPending), textureSlotValues: {},
   };
   for (const id of Object.keys({ ...left.textureSlotValues, ...right.textureSlotValues })) {
     const a = left.textureSlotValues?.[id], b = right.textureSlotValues?.[id];
@@ -74,26 +56,18 @@ export function withPartitionHeadVisualMode(visuals = {}, differentVisuals = fal
 }
 
 export function normalizePartitionHeadVisuals(visuals = {}) {
-  if (visuals.visualModes) {
-    return Object.entries(visuals.visualModes).reduce((next, [section, different]) => withPartitionHeadVisualMode(next, different, section), visuals);
-  }
   return withPartitionHeadVisualMode(visuals, partitionHeadUsesDifferentVisuals(visuals));
 }
 
 export function patchPartitionHeadVisuals(visuals = {}, side, patch) {
   if (!['left', 'right'].includes(side)) return visuals;
-  const next = { ...visuals };
-  const options = visuals[side] || {};
-  const change = typeof patch === 'function' ? patch(options) : patch || {};
-  next[side] = mergeOptions(options, change);
-  const shared = visualPatch(change);
-  if (partitionHeadUsesDifferentVisuals(visuals, 'main')) for (const field of mainFields) delete shared[field];
-  if (shared.textureSlotValues) {
-    for (const id of Object.keys(shared.textureSlotValues)) if (partitionHeadUsesDifferentVisuals(visuals, id)) delete shared.textureSlotValues[id];
-    if (!Object.keys(shared.textureSlotValues).length) delete shared.textureSlotValues;
+  const differentVisuals = partitionHeadUsesDifferentVisuals(visuals);
+  const next = { ...visuals, differentVisuals };
+  for (const target of differentVisuals ? [side] : ['left', 'right']) {
+    const options = visuals[target] || {};
+    const change = typeof patch === 'function' ? patch(options) : patch || {};
+    // Only artwork is shared; side-specific placement and colour options stay independent.
+    next[target] = mergeOptions(options, target === side ? change : visualPatch(change));
   }
-  const other = side === 'left' ? 'right' : 'left';
-  if (Object.keys(shared).length) next[other] = mergeOptions(visuals[other], shared);
-  if (!visuals.visualModes) next.differentVisuals = partitionHeadUsesDifferentVisuals(visuals);
   return next;
 }
