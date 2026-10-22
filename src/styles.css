@@ -15321,3 +15321,38 @@ img.asset-thumb {
 .signature-arch-led-toggle i { width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #0002; transition: transform .15s; }
 .signature-arch-led-panel > button[aria-checked="true"] .signature-arch-led-toggle { background: #3d63a4; }
 .signature-arch-led-panel > button[aria-checked="true"] .signature-arch-led-toggle i { transform: translateX(16px); }
+
+/* Signature arches: depth-limited choices and the compact no-space state. */
+.signature-arch-accordion.option-accordion { border-radius: 12px; }
+.signature-arch-accordion.option-accordion > button { min-height: 67px; padding: 12px 18px; }
+.signature-arch-design .signature-arch-choice-group legend { width: 100%; }
+.signature-arch-selected-size { float: right; color: #2e60b7; font-size: 11px; font-weight: 500; }
+.signature-arch-design .signature-arch-choice-group button.unavailable { opacity: 1; border: 1px dotted #bfc8d8; color: #a3adbf; background: #f6f7f9; box-shadow: none; cursor: not-allowed; }
+.signature-arch-design .signature-arch-choice-group button.unavailable > strong { text-decoration: line-through; }
+.signature-arch-design .arch-badge.unavailable { gap: 4px; color: #6c7280; background: #ebedf1; }
+.signature-arch-title { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.signature-arch-accordion.option-accordion > button .option-accordion-label .signature-arch-title > small { display: inline-flex; border-radius: 20px; padding: 2px 7px; color: #24569f; background: #fff; font-size: 9px; font-weight: 650; line-height: 11px; }
+.signature-arch-unavailable { display: grid; gap: 16px; padding: 16px 18px 18px; color: #414550; background: #fff; }
+.signature-arch-space-notice { display: grid; grid-template-columns: 28px minmax(0,1fr); align-items: start; gap: 10px; border: 1px solid #e9ecf2; border-radius: 9px; padding: 11px; background: #f6f7f9; }
+.signature-arch-space-notice > span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: #9299a8; background: #fff; box-shadow: 0 1px 2px #19243a10; }
+.signature-arch-space-notice strong { display: block; color: #414550; font-size: 12px; font-weight: 650; line-height: 16px; }
+.signature-arch-space-notice p { margin: 3px 0 0; color: #8b8f9e; font-size: 11px; font-weight: 400; line-height: 16px; }
+.signature-arch-space-notice p b { font-weight: 650; }
+.signature-arch-alternatives { display: grid; gap: 4px; border-top: 1px solid #e9ecf2; padding-top: 12px; }
+.signature-arch-alternatives > h3 { margin: 0 0 4px; color: #8b8f9e; font-size: 10px; font-weight: 650; line-height: 15px; }
+.signature-arch-alternatives > button { display: grid; grid-template-columns: 36px minmax(0,1fr) auto 10px; align-items: center; gap: 10px; min-height: 46px; border: 0; border-radius: 6px; padding: 4px 0; color: #3d63a4; background: transparent; text-align: left; }
+.signature-arch-alternatives > button:hover { background: #f4f7fc; }
+.signature-arch-alternative-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 7px; background: #f3f7fd; }
+.signature-arch-alternative-icon svg { width: 32px; height: 32px; }
+.signature-arch-alternative-icon.coton { background: linear-gradient(135deg,#eaf3fc,#eff8f5); }
+.signature-arch-alternative-icon.tete { background: linear-gradient(145deg,#f4f7fc,#e1f1f6); }
+.signature-arch-alternative-copy { display: grid; gap: 1px; }
+.signature-arch-alternative-copy strong { color: #414550; font-size: 11.5px; font-weight: 600; line-height: 15px; }
+.signature-arch-alternative-copy small { color: #8b8f9e; font-size: 10.5px; font-weight: 400; line-height: 14px; }
+.signature-arch-alternative-category { border-radius: 5px; padding: 2px 6px; color: #5c7199; background: #eef2f8; font-size: 9px; font-weight: 600; line-height: 11px; white-space: nowrap; }
+.signature-arch-unavailable button:focus-visible { outline: 2px solid #3d63a4; outline-offset: 2px; }
+@media (max-width: 360px) {
+  .signature-arch-alternatives > button { gap: 6px; grid-template-columns: 30px minmax(0,1fr) auto 10px; }
+  .signature-arch-alternative-icon { width: 30px; height: 32px; }
+  .signature-arch-alternative-category { padding-inline: 4px; font-size: 8px; }
+}

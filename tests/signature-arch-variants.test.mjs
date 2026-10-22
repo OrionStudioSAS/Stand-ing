@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { signatureArchVariant, isSignatureLedArch, signatureArchChoice, signatureArchSizeSupplementLines, upgradeLegacySignatureArch, isLegacySignatureArch, signatureArchFitsDepth } from '../src/signatureArchVariants.js';
+import { signatureArchVariant, isSignatureLedArch, signatureArchChoice, signatureArchSizeSupplementLines, upgradeLegacySignatureArch, isLegacySignatureArch, signatureArchFitsDepth, signatureArchMinimumDepth } from '../src/signatureArchVariants.js';
 
 const entries = [2, 3].flatMap(size => ['spot', 'suspension'].map(lighting => ({
   type: `arch-${size}m-${lighting}`,
@@ -48,11 +48,16 @@ test('Old arches migrate to the current 2 m model with the same lighting and all
   assert.equal(upgradeLegacySignatureArch(entries[2],entries),entries[2]);
 });
 
-test('3m arches require at least 3m of stand depth for both lighting options',()=>{
+test('2m arches require 2.30m depth and 3m arches require 3.30m, independently of lighting',()=>{
+ assert.equal(signatureArchMinimumDepth(2),2.3);
+ assert.equal(signatureArchMinimumDepth(3),3.3);
  for (const entry of entries) {
   const {size}=signatureArchVariant(entry);
-  for (const depth of [2,2.5,2.99,2.9999]) assert.equal(signatureArchFitsDepth(entry,depth),size===2);
-  for (const depth of [3,3.01,4]) assert.equal(signatureArchFitsDepth(entry,depth),true);
+  for (const depth of [0,2,2.29,2.2999]) assert.equal(signatureArchFitsDepth(entry,depth),false);
+  for (const depth of [2.3,2.5,2.99,3,3.29,3.2999]) assert.equal(signatureArchFitsDepth(entry,depth),size===2);
+  for (const depth of [3.3,3.31,4]) assert.equal(signatureArchFitsDepth(entry,depth),true);
+  assert.equal(signatureArchFitsDepth(entry),true);
+  assert.equal(signatureArchFitsDepth(entry,NaN),false);
  }
 });
 
@@ -67,6 +72,9 @@ test('LED wall choices keep all three axes independent even when LED assets come
     assert.equal(signatureArchVariant(led).size,size);
     assert.equal(signatureArchVariant(led).lighting,lighting);
     assert.equal(signatureArchFitsDepth(led,2.99),size===2);
+    assert.equal(signatureArchFitsDepth(led,2.29),false);
+    assert.equal(signatureArchFitsDepth(led,3.29),size===2);
+    assert.equal(signatureArchFitsDepth(led,3.3),true);
     assert.equal(signatureArchChoice(entries,size,lighting,true),null);
   }
 });

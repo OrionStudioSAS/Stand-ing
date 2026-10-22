@@ -1,4 +1,4 @@
-import { signatureArchVariant, isSignatureLedArch, signatureArchChoice, signatureArchSizeSupplementLines, isLegacySignatureArch, upgradeLegacySignatureArch, signatureArchFitsDepth } from './signatureArchVariants.js';
+import { signatureArchVariant, isSignatureLedArch, signatureArchChoice, signatureArchSizeSupplementLines, isLegacySignatureArch, upgradeLegacySignatureArch, signatureArchFitsDepth, signatureArchMinimumDepth } from './signatureArchVariants.js';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
 import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
@@ -25,6 +25,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   AlertTriangle,
   ArrowRight,
+  Ban,
   Box,
   CalendarDays,
   Check,
@@ -1307,15 +1308,18 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const isPrestigeStand = useMemo(() => isPrestigeScene(initialScene), [initialScene]);
   const signatureArchEntries = useMemo(() => signatureArchCatalogEntries(availableCatalog), [availableCatalog]);
   const prestigeBaseHidden = (item) => isHiddenPrestigeBaseItem(item, { archEnabled: prestigeArchEnabled, signageEnabled: prestigeSignageEnabled, isPrestigeStand });
-  const manualVisibleItems = useMemo(() => manualHydratedItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [manualHydratedItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand]);
+  const manualVisibleItems = useMemo(() => manualHydratedItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)
+    && (!isSignatureStand || !isSignatureArchItem(item) || signatureArchFitsDepth(item, depth))), [manualHydratedItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand, isSignatureStand, depth]);
   const wallCoverSurfaces = useMemo(
     () => wallCoverSurfaceOptions(layout, width, depth, [...manualVisibleItems, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems], { splitForCovers: true }),
     [layout, width, depth, manualVisibleItems, automaticReserveItems, automaticPartitionHeadItems],
   );
   const sceneItems = useMemo(() => resolveSpotWallAttachments([...manualHydratedItems, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], width, depth, layout), [manualHydratedItems, automaticReserveItems, automaticMeterCoverItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems, width, depth, layout]);
-  const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand]);
-  const signatureArchItems = useMemo(() => sceneItems.filter(isSignatureArchItem), [sceneItems]);
-  const signatureArchItem = signatureArchItems[0] || null;
+  const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)
+    && (!isSignatureStand || !isSignatureArchItem(item) || signatureArchFitsDepth(item, depth))), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand, isSignatureStand, depth]);
+  const signatureArchItems = useMemo(() => visibleSceneItems.filter(isSignatureArchItem), [visibleSceneItems]);
+  // Keep the saved arch available for a safe downgrade and preserve its uploaded artwork.
+  const signatureArchItem = sceneItems.find(isSignatureArchItem) || null;
   const signatureArchBackZ = signatureArchItem ? signatureArchBackWallZ(signatureArchItem, depth) : null;
   const signatureArchColor = useMemo(() => {
     const colorId = signatureArchItem?.options?.signatureArchColorId || selectedCarpetFootprintColor?.id;
@@ -2073,6 +2077,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   };
 
   const replaceItemWithEntry = (item, entry, options = {}) => {
+    if (isSignatureStand && isSignatureArchItem(entry) && !signatureArchFitsDepth(entry, depth)) return;
     let failedPlacement = false;
     setItems((current) => {
       const previousEntry = findCatalogEntry(availableCatalog, item.type) || item;
@@ -2195,7 +2200,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   useEffect(() => {
     if (readOnly || !isSignatureStand || !objectBankLoaded || !signatureArchItem || signatureArchFitsDepth(signatureArchItem, depth)) return;
     const replacement = signatureArchChoice(signatureArchEntries, 2, signatureArchVariant(signatureArchItem).lighting, isSignatureLedArch(signatureArchItem));
-    if (replacement) selectSignatureArchVariant(replacement);
+    if (replacement && signatureArchFitsDepth(replacement, depth)) selectSignatureArchVariant(replacement);
   }, [depth, readOnly, isSignatureStand, objectBankLoaded, signatureArchItem?.type, signatureArchEntries]);
 
   const moveDraggedItem = (point) => {
@@ -2224,6 +2229,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const addItem = (entry, options = {}, quantity = 1) => {
     if (readOnly) return;
+    if (isSignatureStand && isSignatureArchItem(entry) && !signatureArchFitsDepth(entry, depth)) {
+      showPlacementMessage(`Cette arche nécessite au moins ${signatureArchMinimumDepth(signatureArchVariant(entry).size).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} m de profondeur.`);
+      return;
+    }
     const duplicateHeadSide = duplicatePartitionHeadSide(entry, [...visibleSceneItems, ...automaticPartitionHeadItems]);
     if (duplicateHeadSide) {
       showPlacementMessage(`Une tête de cloison ${duplicateHeadSide === 'left' ? 'gauche' : 'droite'} est déjà présente dans la scène et ne peut donc être ajoutée`);
@@ -2894,6 +2903,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         ) : (
           <OptionsStepPanel
             standDepth={depth}
+            onOpenShop={() => setActiveStep(3)}
             hasIncludedObjects={scenePackBenefits(initialScene).mode !== 'allowance'}
             activeStep={activeStep}
             area={area}
@@ -3957,7 +3967,7 @@ function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = 
   );
 }
 
-function SignatureArchOptionCard({ standDepth = Infinity, items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage, onFramingChange, onVisualPending, onApply }) {
+function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage, onFramingChange, onVisualPending, onApply, onAlternative }) {
   const selectedItem = items[0] || null;
   const selectedType = selectedItem?.options?.signatureArchVariantType || selectedItem?.type || '';
   const selectedEntry = entries.find((entry) => entry.type === selectedType) || selectedItem || entries[0];
@@ -3969,22 +3979,46 @@ function SignatureArchOptionCard({ standDepth = Infinity, items = [], entries = 
   const busy = disabled || Boolean(uploadState?.uploading);
   const colorLabel = (color) => `${color.name || ''}${color.code ? ` (${color.code})` : ''}`;
 
+  if (Number(standDepth) < signatureArchMinimumDepth(2)) return (
+    <div className="signature-arch-unavailable">
+      <div className="signature-arch-space-notice" role="status">
+        <span><Ban size={15} /></span>
+        <div><strong>L’arche ne tient pas sur ce stand</strong>
+          <p>Votre stand{standArea > 0 ? <> de <b>{formatNumber(standArea)} m²</b></> : ''} ne dispose pas des 2,30 m de profondeur nécessaires pour installer l’arche sans déborder sur l’allée.</p>
+        </div>
+      </div>
+      <section className="signature-arch-alternatives" aria-label="Alternatives à l’arche">
+        <h3>Mettez votre marque en avant autrement</h3>
+        {[
+          { id: 'coton', label: 'Bâches imprimées', detail: 'Votre visuel sur les cloisons', category: 'Cloison' },
+          { id: 'tete', label: 'Visuel lumineux', detail: 'Sur les 2 têtes de cloison', category: 'Tête de cloison' },
+          { id: 'shop', label: 'Enseigne haute', detail: 'Cube en tissu diffusant', category: 'Boutique' },
+        ].map((alternative) => <button type="button" key={alternative.id} onClick={() => onAlternative?.(alternative.id)}>
+          <span className={`signature-arch-alternative-icon ${alternative.id}`}><SignatureArchAlternativeIcon kind={alternative.id} /></span>
+          <span className="signature-arch-alternative-copy"><strong>{alternative.label}</strong><small>{alternative.detail}</small></span>
+          <span className="signature-arch-alternative-category">{alternative.category}</span><ChevronRight size={14} />
+        </button>)}
+      </section>
+    </div>
+  );
+
   return (
     <div className="signature-arch-card signature-arch-design">
       {entries.length ? (
         <div className="signature-arch-variants signature-arch-controls">
           <fieldset className="signature-arch-choice-group">
-            <legend>Taille</legend>
+            <legend>Taille <span className="signature-arch-selected-size" aria-hidden="true">{selectedVariant.size} m</span></legend>
             <div>
               {[2, 3].map((size) => {
                 const entry = signatureArchChoice(entries, size, selectedVariant.lighting, ledWall);
-                return <button key={size} type="button" className={selectedVariant.size === size ? 'active' : ''}
-                  aria-pressed={selectedVariant.size === size} title={size === 3 && Number(standDepth) < 3 ? 'Disponible à partir de 3 m de profondeur' : undefined} disabled={busy || !entry || !signatureArchFitsDepth(entry, standDepth)} onClick={() => onVariantChange?.(entry)}>
-                  <strong>{size} m</strong><small className={size === 2 ? 'arch-badge included' : 'arch-badge'}>{size === 2 ? 'Inclus' : '+ 249 €'}</small>
+                const unavailable = !entry || !signatureArchFitsDepth(entry, standDepth);
+                const active = !unavailable && selectedVariant.size === size;
+                return <button key={size} type="button" className={unavailable ? 'unavailable' : active ? 'active' : ''}
+                  aria-pressed={active} title={unavailable ? (!entry ? 'Cette variante n’est pas configurée pour ce pack' : `Disponible à partir de ${signatureArchMinimumDepth(size).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} m de profondeur`) : undefined} disabled={busy || unavailable} onClick={() => onVariantChange?.(entry)}>
+                  <strong>{size} m</strong><small className={`arch-badge${unavailable ? ' unavailable' : size === 2 ? ' included' : ''}`}>{unavailable ? <><Ban size={10} /> Non disponible</> : size === 2 ? 'Inclus' : '+ 249 €'}</small>
                 </button>;
               })}
             </div>
-            {Number(standDepth) < 3 && <p className="signature-arch-depth-hint">L’arche 3 m nécessite une profondeur de stand d’au moins 3 m.</p>}
           </fieldset>
           <fieldset className="signature-arch-choice-group signature-arch-lighting">
             <legend>Éclairage du plafond</legend>
@@ -3993,7 +4027,7 @@ function SignatureArchOptionCard({ standDepth = Infinity, items = [], entries = 
                 const entry = signatureArchChoice(entries, selectedVariant.size, lighting, ledWall);
                 const active = selectedVariant.lighting === lighting;
                 return <button key={lighting} type="button" className={active ? 'active' : ''}
-                  aria-pressed={active} disabled={busy || !entry} onClick={() => onVariantChange?.(entry)}>
+                  aria-pressed={active} disabled={busy || !entry || !signatureArchFitsDepth(entry, standDepth)} onClick={() => onVariantChange?.(entry)}>
                   <span className="signature-arch-lighting-image"><img src={`/images/signature/arche-${lighting}.png`} alt="" />{active && <i><Check size={13} strokeWidth={3} /></i>}</span>
                   <strong>{lighting === 'spot' ? 'Spot' : 'Suspension'}</strong>
                 </button>;
@@ -4055,6 +4089,18 @@ function SignatureArchOptionCard({ standDepth = Infinity, items = [], entries = 
       </footer>
     </div>
   );
+}
+
+function SignatureArchAlternativeIcon({ kind }) {
+  return <svg viewBox="0 0 36 36" width="32" height="32" aria-hidden="true">
+    {kind === 'coton' ? <>
+      <path d="M5 3 30 16V33L5 20Z" fill="#4eaac3" /><path d="M5 3 15 8V25L5 20Z" fill="#3d63a4" /><path d="M15 8 30 16V33L15 25Z" fill="#89c9cc" /><path d="m22 12 8 4v17l-8-4Z" fill="#c8d5b8" />
+    </> : kind === 'tete' ? <>
+      <path d="m13 3 9 3v28l-9-4Z" fill="#a8d7e1" /><path d="m22 6 4-3v28l-4 3Z" fill="#53a8ba" /><path d="m13 3 4-2 9 2-4 3Z" fill="#e2edf1" /><path d="m14 4 7 3v6l-7-3Z" fill="#fff" />
+    </> : <>
+      <path d="m18 2 16 9-16 9L2 11Z" fill="#e2ecfb" /><path d="m2 11 16 9v14L2 25Z" fill="#70bbd4" /><path d="m18 20 16-9v14l-16 9Z" fill="#b8a7db" /><path d="m6 12 12 7 12-7v7l-12 7-12-7Z" fill="#fff" /><path d="m6 22 12 7 12-7v3l-12 7-12-7Z" fill="#c6e2c4" />
+    </>}
+  </svg>;
 }
 
 function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = {}, disabled = false, onEnabledChange, onImage, onResetImage, onVisualPending, onVisualEnabled, onFramingChange, onSelect }) {
@@ -4653,6 +4699,7 @@ function useSimulatorImageQualityCheck(imageUrl, recommendedSpec = null) {
 
 function OptionsStepPanel({
   standDepth = Infinity,
+  onOpenShop,
   hasIncludedObjects = true,
   activeStep,
   area,
@@ -4883,9 +4930,13 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       {isSignatureStand && (
-        <OptionAccordion {...accordionScrollProps('arche')} className="signature-arch-accordion" title="Arche" subtitle="Taille · Éclairage · Couleur · Options" icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
+        <OptionAccordion {...accordionScrollProps('arche')} className="signature-arch-accordion"
+          title={<span className="signature-arch-title">Arche{Number(standDepth) < signatureArchMinimumDepth(2) && <small>Non disponible</small>}</span>}
+          subtitle={Number(standDepth) < signatureArchMinimumDepth(2) ? `Espace insuffisant · ${formatNumber(area)} m²` : 'Taille · Éclairage · Couleur · Options'}
+          icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
           <SignatureArchOptionCard
             standDepth={standDepth}
+            standArea={area}
             items={signatureArchItems}
             entries={signatureArchEntries}
             colors={signatureArchColors}
@@ -4899,6 +4950,7 @@ function OptionsStepPanel({
             onFramingChange={onSignatureArchFraming}
             onVisualPending={onSignatureArchVisualPending}
             onApply={() => toggleOption('arche')}
+            onAlternative={(target) => target === 'shop' ? onOpenShop?.() : toggleOption(target)}
           />
         </OptionAccordion>
       )}
@@ -6511,6 +6563,7 @@ function signatureArchFootprintLocalZ(item = {}) {
 }
 
 function placeSignatureArchAgainstBackWall(item, items, width, depth) {
+  if (!signatureArchFitsDepth(item, depth)) return null;
   const bounds = itemGroupBounds(item);
   const minX = -width / 2 + wallThickness - Number(bounds.minX || 0);
   const maxX = width / 2 - wallThickness - Number(bounds.maxX || 0);
@@ -15061,7 +15114,8 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const area = width * depth;
   const packLabel = sceneOfferLabel(scene);
   const options = { ...(scene.source_payload?.options || {}), ...(scene.options || {}) };
-  const manualItems = sceneAdminItems(scene, catalogEntries).filter((item) => !item.autoMeterCover);
+  const manualItems = sceneAdminItems(scene, catalogEntries).filter((item) => !item.autoMeterCover
+    && (!isSignatureScene(scene) || !isSignatureArchItem(item) || signatureArchFitsDepth(item, depth)));
   const automaticMeterCoverItems = makeAutomaticMeterCoverItems(packLabel, options.signatureMeterCoverType, catalogEntries, width, depth, layout, manualItems);
   const reserveRules = sceneReserveRules(scene);
   const reserveRule = reserveRuleWithPackChoices(activeReserveRule(reserveRules, area, isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands), reserveRules, catalogEntries, packLabel);
