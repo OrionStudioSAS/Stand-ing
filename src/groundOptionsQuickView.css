@@ -1,9 +1,3 @@
-.ground-section-accordion.option-accordion { border-radius: 12px; }
-.ground-section-accordion.option-accordion > button { min-height: 62px; gap: 12px; padding: 13px 16px; font-size: 14px; font-weight: 600; line-height: 17px; }
-.ground-section-accordion.option-accordion > button .option-accordion-label { gap: 12px; min-width: 0; }
-.ground-section-accordion.option-accordion > button .option-accordion-label strong { font-size: 14px; font-weight: 600; }
-.ground-section-accordion.option-accordion > button .option-accordion-label small { color: #e1e9f8; font-size: 11px; font-weight: 400; line-height: 14px; }
-.ground-section-accordion > button > svg { flex: 0 0 26px; width: 26px; height: 26px; padding: 5px; border-radius: 50%; background: #ffffff26; }
 .ground-options-quickview { display: grid; gap: 18px; padding: 12px 14px 16px; color: #444953; background: #fff; font-size: 12px; line-height: 1.4; }
 .ground-palette { display: grid; gap: 14px; min-width: 0; }
 .ground-palette-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }

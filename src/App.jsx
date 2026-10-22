@@ -8000,13 +8000,13 @@ function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, 
     <section ref={accordionRef} className={`option-accordion ${open ? 'open' : ''} ${className}`}>
       <button type="button" aria-label={ariaLabel} aria-expanded={open} onClick={onToggle}>
         <span className="option-accordion-label">
-          {icon}
-          <span>
-            <strong>{title}</strong>
-            {subtitle && <small>{subtitle}</small>}
+          <span className="option-accordion-icon" aria-hidden="true">{icon}</span>
+          <span className="option-accordion-copy">
+            <strong className="option-accordion-title">{title}</strong>
+            {subtitle && <small className="option-accordion-subtitle">{subtitle}</small>}
           </span>
         </span>
-        {open && ['signature-arch-accordion', 'wall-section-accordion', 'reserve-section-accordion', 'head-section-accordion'].includes(className) ? <X size={18} /> : <ChevronUp size={18} />}
+        <span className="option-accordion-toggle" aria-hidden="true"><ChevronDown size={16} /></span>
       </button>
       {open && children}
     </section>
