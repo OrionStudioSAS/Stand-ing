@@ -41,6 +41,11 @@ try {
   const sizes = page.getByRole('group', { name: 'Taille', exact: true });
   const three = sizes.getByRole('button', { name: /^3 m/ }), two = sizes.getByRole('button', { name: /^2 m/ });
   await three.waitFor(); await page.evaluate(() => document.fonts.ready);
+  const headerBackground = () => card.locator(':scope > button').evaluate((button) => getComputedStyle(button).backgroundColor);
+  assert.equal(await headerBackground(), 'rgb(31, 67, 120)');
+  await card.locator(':scope > button').click();
+  assert.equal(await headerBackground(), 'rgb(31, 67, 120)', 'The closed arch menu uses the shared accordion blue');
+  await card.locator(':scope > button').click();
   assert.equal(await three.isDisabled(), true); assert.equal(await two.isEnabled(), true);
   assert.match(await three.innerText(), /Non disponible/); assert.match(await three.getAttribute('title'), /3,30 m/);
   assert.equal(await three.evaluate((button) => getComputedStyle(button).borderStyle), 'dotted');
@@ -53,6 +58,7 @@ try {
   await three.click(); assert.equal(await three.getAttribute('aria-pressed'), 'true');
   await page.getByRole('button', { name: 'Profondeur 2.29', exact: true }).click();
   assert.equal(await card.locator('.signature-arch-unavailable').count(), 1); assert.equal(await card.locator('input,fieldset').count(), 0);
+  assert.equal(await headerBackground(), 'rgb(31, 67, 120)', 'Unavailable arches keep the same menu blue');
   assert.match(await card.locator(':scope > button').innerText(), /Non disponible.*Espace insuffisant/s);
   assert.equal(await card.locator('.signature-arch-title > small').evaluate((badge) => getComputedStyle(badge).color), 'rgb(36, 86, 159)');
   assert.match(await card.getByRole('status').innerText(), /2,30 m/);
