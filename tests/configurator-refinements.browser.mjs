@@ -205,7 +205,7 @@ try {
     const option = page.locator('.config-toggle-option').filter({ hasText: 'Moquette épaisse' });
     assert.equal(await option.count(), 1, `${pack} exposes just one shared thick-carpet option`);
     if (['Équipé', 'Signature'].includes(pack)) {
-      assert.equal(await page.locator('.surface-color-option-card').filter({hasText:'MOQUETTE'}).count() >= 1, true, `${pack} uses the shared floor color layout`);
+      assert.equal(await page.locator(pack === 'Signature' ? '.ground-signature' : '.surface-color-option-card').count() >= 1, true, `${pack} uses its expected floor layout`);
       await page.getByRole('button', { name: /^Cloison/ }).click();
       await page.getByRole('tab', { name: 'Coton gratté', exact: true }).click();
       assert.equal(await page.locator('.wall-fabric-selector').count(), 1, `${pack} uses the shared wall color layout`);

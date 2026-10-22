@@ -21,6 +21,8 @@ const ids = (list) => Array.from(list, (color) => color.id);
 test('all packs use the shared partition panel and retain the shared floor palette helpers', () => {
   const options = source.slice(source.indexOf('function OptionsStepPanel('), source.indexOf('function OptionsStepPanel(') + 22000);
   assert.match(options, /<CarpetColorOptionCard\s+uniformLayout=\{uniformColorSections\}/);
+  assert.match(options, /const quickGround = isSignatureStand \|\| \['confort', 'prestige'\]\.includes/);
+  assert.match(options, /quickGround \? <GroundOptionsQuickView/);
   assert.match(options, /<WallOptionsPanel\s+standWidth=\{standWidth\}/);
   const panel = source.slice(source.indexOf('function WallOptionsPanel('), source.indexOf('\nfunction WallCoverOptionCard('));
   assert.match(panel, /surfaceColorOptionGroups\(colors, selectedColor, defaultColorId, area\)/);

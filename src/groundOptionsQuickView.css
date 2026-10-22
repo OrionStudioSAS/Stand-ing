@@ -1,0 +1,46 @@
+.ground-section-accordion.option-accordion { border-radius: 12px; }
+.ground-section-accordion.option-accordion > button { min-height: 62px; gap: 12px; padding: 13px 16px; font-size: 14px; font-weight: 600; line-height: 17px; }
+.ground-section-accordion.option-accordion > button .option-accordion-label { gap: 12px; min-width: 0; }
+.ground-section-accordion.option-accordion > button .option-accordion-label strong { font-size: 14px; font-weight: 600; }
+.ground-section-accordion.option-accordion > button .option-accordion-label small { color: #e1e9f8; font-size: 11px; font-weight: 400; line-height: 14px; }
+.ground-section-accordion > button > svg { flex: 0 0 26px; width: 26px; height: 26px; padding: 5px; border-radius: 50%; background: #ffffff26; }
+.ground-options-quickview { display: grid; gap: 18px; padding: 12px 14px 16px; color: #444953; background: #fff; font-size: 12px; line-height: 1.4; }
+.ground-palette { display: grid; gap: 14px; min-width: 0; }
+.ground-palette-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ground-palette-heading > strong { color: #444953; font-size: 13px; font-weight: 600; }
+.ground-palette-heading > span { min-width: 0; color: #3865ad; font-size: 12px; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.ground-palette-detail { margin: -15px 0 -2px; color: #8c93a0; font-size: 11px; line-height: 16px; }
+.ground-palette-group { display: grid; gap: 10px; }
+.ground-palette-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 20px; }
+.ground-palette-group-heading > small { color: #8c93a0; font-size: 10px; font-weight: 600; line-height: 14px; }
+.ground-price-badge { flex: 0 0 auto; display: inline-block; padding: 3px 10px; border-radius: 16px; color: #234e92; background: #eaf3ff; font-size: 10px; font-weight: 600; line-height: 14px; white-space: nowrap; }
+.ground-price-badge.included { color: #158347; background: #eaf6ee; }
+.ground-color-swatches { display: grid; grid-template-columns: repeat(8, 26px); gap: 12px; }
+.ground-color-swatches > button, .ground-single-color > button { flex: 0 0 auto; width: 26px; height: 26px; padding: 0; border: 1px solid #fff; border-radius: 50%; background: var(--ground-swatch); box-shadow: none; }
+.ground-color-swatches > button.active { outline: 2px solid #3965ad; outline-offset: 2px; }
+.ground-single-color { display: flex; align-items: center; gap: 12px; margin-top: -7px; }
+.ground-single-color > button { width: 28px; height: 28px; border: 0; }
+.ground-single-color > strong { flex: 1; min-width: 0; color: #444953; font-size: 12px; font-weight: 600; }
+.ground-options-quickview .config-toggle-option.ground-thick-option { display: grid; grid-template-columns: minmax(0, 1fr) 36px; align-items: center; gap: 14px; min-height: 80px; width: 100%; margin: 0; padding: 12px; border: 1px solid #e0e3e9; border-radius: 11px; color: #444953; background: #fff; box-shadow: none; text-align: left; }
+.ground-options-quickview .ground-thick-option > span { grid-column: 1; grid-row: 1; display: grid; gap: 5px; min-width: 0; }
+.ground-options-quickview .ground-thick-option .ground-thick-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.ground-options-quickview .ground-thick-option strong { color: #444953; font-size: 12px; font-weight: 600; line-height: 16px; }
+.ground-options-quickview .ground-thick-option small { color: #697586; font-size: 11px; font-weight: 400; line-height: 15px; }
+.ground-options-quickview .ground-thick-option em { display: inline-block; margin: 0; padding: 3px 9px; color: #234e92; background: #eaf3ff; font-size: 10px; font-weight: 600; font-style: normal; line-height: 14px; }
+.ground-options-quickview .ground-thick-option > i { grid-column: 2; grid-row: 1; justify-self: end; display: block; width: 36px; height: 20px; margin: 0; border-radius: 20px; background: #d3d6de; }
+.ground-options-quickview .ground-thick-option > i::after { display: block; width: 16px; height: 16px; margin: 2px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #182e4d1f; content: ''; }
+.ground-options-quickview .ground-thick-option.active > i { background: #3965ad; }
+.ground-options-quickview .ground-thick-option.active > i::after { transform: translateX(16px); }
+.ground-light-warning { display: flex; align-items: start; gap: 9px; margin-top: -4px; padding: 9px 11px; border: 1px solid #f4bb6a; border-radius: 10px; color: #a75b04; background: #fff7eb; font-size: 11px; line-height: 16px; }
+.ground-light-warning > svg { flex: 0 0 14px; margin-top: 1px; }
+.ground-footprint-unavailable { padding: 9px 11px; border-radius: 8px; color: #697586; background: #f3f6fb; font-size: 11px; }
+.ground-footprint-unavailable p { margin: 0; }
+.ground-footprint-unavailable button { margin-top: 6px; padding: 0; border: 0; color: #3965ad; background: none; font-size: 11px; text-decoration: underline; }
+.ground-palette-empty { margin: 0; color: #8c93a0; font-size: 11px; }
+.ground-options-quickview button:disabled { cursor: not-allowed; opacity: .5; }
+.ground-options-quickview button:focus-visible { outline: 2px solid #3965ad; outline-offset: 3px; }
+@media (max-width: 360px) {
+  .ground-color-swatches { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px 6px; }
+  .ground-color-swatches > button { width: min(26px, 100%); height: auto; aspect-ratio: 1; }
+  .ground-options-quickview .ground-thick-option { gap: 10px; padding: 10px; }
+}
