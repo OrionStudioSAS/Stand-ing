@@ -55,7 +55,9 @@ test('Signature heads expose an independent built-in *28 image slot, but other h
   assert.equal(slots.length, 2);
   assert.equal(slots[1].id, 'other');
   assert.match(source, /const rawTextureSlots = isSignaturePartitionHeadItem\(textureSourceEntry\)\s*\? itemTextureSlots\(textureSourceEntry\)/);
-  assert.match(source, /isSignatureStand && signaturePartitionHeadVisualSlots\.map\(\(slot\)/);
+  assert.match(source, /topSlot: signaturePartitionHeadVisualSlots\[0\]/);
+  const quickView = readFileSync(new URL('../src/PartitionHeadQuickView.jsx', import.meta.url), 'utf8');
+  assert.match(quickView, /signature \? <>[\s\S]*custom\(row, 'top'\) \? upload\('top'\)/);
 });
 
 test('*28 and LED #4 use separate images without recoloring neighboring materials', () => {

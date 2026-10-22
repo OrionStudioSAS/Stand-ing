@@ -197,18 +197,18 @@ try {
   for (const pack of ['Confort', 'Prestige', 'Équipé', 'Signature']) {
     await page.getByRole('button', { name: `Pack test ${pack}`, exact: true }).click();
     await page.getByRole('button', { name: /^Réserve/ }).click();
-    const formula=page.locator('.formula-included-box');
-    assert.equal(await formula.locator('p').first().isVisible(),true,`${pack} keeps the included formula visible`);
-    assert.equal(await formula.locator('button').count(),0,'The formula cannot be collapsed');
-    await formula.locator('header').click();
-    assert.equal(await formula.locator('p').first().isVisible(),true);
+    const notice=page.locator('.reserve-unavailable-notice');
+    assert.equal(await notice.locator('p').isVisible(),true,`${pack} clearly explains that no reserve is configured`);
+    assert.equal(await notice.locator('button').count(),0,'The explanation cannot be collapsed');
+    assert.equal(await page.locator('.reserve-choice-card').count(),0,'No reserve is invented without a configured group');
     await page.getByRole('button', { name: /^Sol/ }).click();
     const option = page.locator('.config-toggle-option').filter({ hasText: 'Moquette épaisse' });
     assert.equal(await option.count(), 1, `${pack} exposes just one shared thick-carpet option`);
     if (['Équipé', 'Signature'].includes(pack)) {
       assert.equal(await page.locator('.surface-color-option-card').filter({hasText:'MOQUETTE'}).count() >= 1, true, `${pack} uses the shared floor color layout`);
       await page.getByRole('button', { name: /^Cloison/ }).click();
-      assert.equal(await page.locator('.surface-color-option-card').filter({hasText:'COTON GRATTÉ'}).count(), 1, `${pack} uses the shared wall color layout`);
+      await page.getByRole('tab', { name: 'Coton gratté', exact: true }).click();
+      assert.equal(await page.locator('.wall-fabric-selector').count(), 1, `${pack} uses the shared wall color layout`);
       await page.getByRole('button', { name: /^Sol/ }).click();
     }
     await option.click();
