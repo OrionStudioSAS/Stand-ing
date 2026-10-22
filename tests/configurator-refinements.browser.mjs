@@ -31,7 +31,7 @@ function Test() {
   return <><div style={{ position: 'fixed', bottom: 0, left: 0, zIndex: 9999 }}>
     <button onClick={() => setComponents((value) => !value)}>Composants test</button>
     <button onClick={() => { setScene(JSON.parse(JSON.stringify(window.savedScene))); setRevision((n) => n + 1); }}>Reouvrir test</button>
-    {['Confort', 'Prestige', 'Équipé', 'Signature'].map((pack) => <button key={pack} onClick={() => {
+    {['Confort', 'Prestige', 'Équipé', 'Signature', 'SMCL', 'SIAE'].map((pack) => <button key={pack} onClick={() => {
       window.savedScene = null;
       setComponents(false);
       setScene({ ...${JSON.stringify(scene)}, offer: pack, items: pack === 'Signature' ? [${JSON.stringify(arch)}] : [] });
@@ -194,7 +194,7 @@ try {
     await editor.getByRole('button', {name:'Réinitialiser le cadrage'}).click();
     assert.deepEqual(await page.evaluate((key) => window.componentFrames[key], key), { imageZoom:1,imageOffsetX:0,imageOffsetY:0 });
   }
-  for (const pack of ['Confort', 'Prestige', 'Équipé', 'Signature']) {
+  for (const pack of ['Confort', 'Prestige', 'Équipé', 'Signature', 'SMCL', 'SIAE']) {
     await page.getByRole('button', { name: `Pack test ${pack}`, exact: true }).click();
     await page.getByRole('button', { name: /^Réserve/ }).click();
     const formula=page.locator('.formula-included-box');
@@ -203,20 +203,25 @@ try {
     await formula.locator('header').click();
     assert.equal(await formula.locator('p').first().isVisible(),true);
     await page.getByRole('button', { name: /^Sol/ }).click();
+    assert.ok(await page.locator(pack === 'Signature' ? '.signature-ground-price.included' : '.color-palette-meta .included').count()>0, `${pack} floor palettes show an included badge`);
     const option = page.locator('.config-toggle-option').filter({ hasText: 'Moquette épaisse' });
     assert.equal(await option.count(), 1, `${pack} exposes just one shared thick-carpet option`);
-    if (['Équipé', 'Signature'].includes(pack)) {
-      assert.equal(await page.locator('.surface-color-option-card').filter({hasText:'MOQUETTE'}).count() >= 1, true, `${pack} uses the shared floor color layout`);
-      await page.getByRole('button', { name: /^Cloison/ }).click();
-      assert.equal(await page.locator('.surface-color-option-card').filter({hasText:'COTON GRATTÉ'}).count(), 1, `${pack} uses the shared wall color layout`);
-      await page.getByRole('button', { name: /^Sol/ }).click();
-    }
+    if (pack === 'Signature') assert.equal(await page.locator('.signature-ground-card').count(), 1, 'Signature uses its dedicated floor reference');
+    if (['Équipé', 'SIAE'].includes(pack)) assert.equal(await page.locator('.surface-color-option-card').filter({hasText:'MOQUETTE'}).count() >= 1, true, `${pack} uses the shared floor color layout`);
+    await page.getByRole('button', {name:/^Cloison/}).click();
+    const wallPalette=page.locator('.surface-color-option-card,.wall-fabric-option-card,.signature-wall-colors').filter({hasText:'COTON GRATTÉ'});
+    assert.ok(await wallPalette.locator(pack === 'Signature' ? '.signature-ground-price.included' : '.color-palette-meta .included').count()>0, `${pack} wall palette shows an included badge`);
+    if (pack === 'Signature') assert.equal(await page.locator('.signature-wall-colors').count(), 1, 'Signature uses its dedicated wall reference');
+    if (['Équipé', 'SIAE'].includes(pack)) assert.equal(await page.locator('.surface-color-option-card').filter({hasText:'COTON GRATTÉ'}).count(), 1, `${pack} keeps the shared wall color layout`);
+    await page.getByRole('button', { name: /^Sol/ }).click();
     await option.click();
     await page.waitForFunction((pack) => window.savedScene?.offer === pack && window.savedScene.options.carpetThick && window.savedScene.options.footprintThick, pack);
     const lines = await page.evaluate(() => window.refinementPricing.lines.filter((line) => line.label.includes('Moquette épaisse')));
     assert.equal(lines.length, 2, `${pack} charges carpet and footprint once each`);
     await page.getByRole('button', { name: 'Reouvrir test', exact: true }).click();
+    await option.waitFor({ state: 'detached' });
     await page.getByRole('button', { name: /^Sol/ }).click();
+    await option.waitFor({ state: 'visible' });
     assert.equal(await option.count(), 1, `${pack} keeps a single option after reopening`);
     assert.equal(await option.getAttribute('aria-pressed'), 'true');
     await option.click();

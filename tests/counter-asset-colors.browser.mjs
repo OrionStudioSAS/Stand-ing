@@ -68,8 +68,9 @@ try {
   await page.getByRole('button', { name: 'Fiche comptoir test' }).click();
   const modal = page.locator('.item-config-modal');
   await modal.waitFor();
-  assert.match(await modal.innerText(), /20 coloris/);
-  const modalColors = modal.locator('.variant-color-options-panel .counter-finish-swatches button');
+  assert.equal(await modal.evaluate((element) => element.classList.contains('counter-variant-modal')), true);
+  assert.match(await modal.innerText(), /20 couleurs incluses/);
+  const modalColors = modal.locator('.reference-counter-panel .counter-finish-swatches button');
   assert.equal(await modalColors.count(), 20);
   assert.equal(await modalColors.nth(1).evaluate((button) => button.classList.contains('active')), true);
   await modalColors.nth(0).click();

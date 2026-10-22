@@ -730,6 +730,10 @@ function technicalSimpleRow(label, detail = '', imageUrl = '') {
 function technicalItemOptionLines(item = {}, entry = {}) {
   const options = item.options || {};
   const lines = [];
+  const doorOpening = { push: 'Poussante', pull: 'Tirante' }[options.reserveDoorOpening];
+  const handleOrientation = { left: 'Gauche', right: 'Droite' }[options.reserveHandleOrientation];
+  if (doorOpening) lines.push(`Ouverture de porte : ${doorOpening}`);
+  if (handleOrientation) lines.push(`Orientation de la poignée : ${handleOrientation}`);
   const optionRefs = Array.isArray(options.optionReferences) ? options.optionReferences : [];
   const colorCandidate = technicalSelectedColorCandidate(options, optionRefs);
   if (options.variantLabel) lines.push(`Variante : ${options.variantLabel}`);
@@ -1424,6 +1428,7 @@ function technicalChildOptions(childOptions = {}, parentOptions = {}, parentDime
   const parentOptionReferences = Array.isArray(parentOptions.optionReferences) ? parentOptions.optionReferences : [];
   const childOptionReferences = Array.isArray(childOptions.optionReferences) ? childOptions.optionReferences : [];
   const inheritedVisuals = index === 0 ? {
+    ...Object.fromEntries(['reserveDoorOpening', 'reserveHandleOrientation'].filter((key) => hasTechnicalValue(parentOptions[key])).map((key) => [key, parentOptions[key]])),
     ...(parentDimensions.smclHeadSide ? { partitionHeadSide: parentDimensions.smclHeadSide } : {}),
     ...Object.fromEntries(['partitionHeadSide', 'headMainImageUrl', 'headMainImageName', 'visualPending', 'posterImageUrl', 'posterImageName', 'posterVisualPending'].filter((key) => hasTechnicalValue(parentOptions[key])).map((key) => [key, parentOptions[key]])),
     ...(hasTechnicalValue(parentOptions.binary3ImageUrl) ? { binary3ImageUrl: parentOptions.binary3ImageUrl } : {}),

@@ -18,7 +18,8 @@ function loadFunction(name, context) {
 test('Signature scenes expose their dedicated arch controls and hide the generic footprint control', () => {
   assert.match(appSource, /function isSignatureScene\(/);
   assert.match(appSource, /function SignatureArchOptionCard\(/);
-  assert.match(appSource, /isSignatureStand \? 'Moquette' : 'Moquette · Empreinte'/);
+  assert.match(appSource, /className=\{isSignatureStand \? 'signature-ground-accordion' : ''\}[^\n]*subtitle="Moquette · Empreinte"/);
+  assert.match(appSource, /onFootprintSelect=\{onSignatureArchColor\}/);
   assert.match(appSource, /!isSignatureStand && \(\s*<FootprintColorOptionCard/);
   assert.match(appSource, /title="Arche" subtitle="Taille · Éclairage · Couleur · Options"/);
   assert.match(stylesSource, /\.signature-arch-variants/);

@@ -118,3 +118,15 @@ test('Uploading and resetting *28 preserve the LED image, the other side and sav
   assert.equal(uploads.length, 2);
   assert.equal(visuals.right.headMainImageUrl, 'top.png');
 });
+
+test('disabled Signature artwork restores automatic company information and the default luminous visual without deleting uploads', () => {
+  const context=visualContext(), custom=new Texture(), information=new Texture();
+  context.shouldUseExhibitorHeadTexture=name=>name==='*28';
+  const item={...head,options:{headMainVisualEnabled:false,headMainImageUrl:'kept-light.png',textureSlotValues:{'signature-head-top-28':{imageUrl:'kept-logo.png',visualEnabled:false}}}};
+  const top=new MeshStandardMaterial({name:'*28'}),lower=new MeshStandardMaterial({name:'LED_5500k#4'});
+  const options={mainImageTexture:custom,exhibitorTexture:information,textureSlotImages:{'signature-head-top-28':custom}};
+  assert.equal(context.applyItemOptionMaterials(top,item,options).map,information);
+  assert.equal(context.applyItemOptionMaterials(lower,item,options),lower);
+  assert.equal(item.options.headMainImageUrl,'kept-light.png');
+  assert.equal(item.options.textureSlotValues['signature-head-top-28'].imageUrl,'kept-logo.png');
+});

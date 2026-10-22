@@ -39,6 +39,7 @@ import {
   Globe2,
   GripVertical,
   HelpCircle,
+  Info,
   KeyRound,
   Layers,
   LayoutDashboard,
@@ -145,7 +146,7 @@ const signatureArchVisualSlots = [
   { id: 'signature-arch-led-30', label: 'Visuel arrière haut — Viscom', format: '1000 × 1000 mm', aspectRatio: 1, targetName: 'LED_5500k#30', kind: 'image', matchMode: 'exact' },
 ];
 const signaturePartitionHeadVisualSlots = [
-  { id: 'signature-head-top-28', label: 'Visuel haut de la tête de cloison', targetName: '*28', kind: 'image', matchMode: 'exact' },
+  { id: 'signature-head-top-28', label: 'Visuel haut de la tête de cloison', format: '500 × 350 mm', aspectRatio: 500 / 350, targetName: '*28', kind: 'image', matchMode: 'exact' },
 ];
 const collisionPadding = 0;
 const partitionHeadEdgeInset = 0.02;
@@ -1075,6 +1076,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [technicalFloorRampX, setTechnicalFloorRampX] = useState(Number(initialOptions.technicalFloorRampX || 0));
   const [ledRailsEnabled, setLedRailsEnabled] = useState(scenePackBenefits(initialScene).mode !== 'allowance' && initialOptions.ledRailsEnabled !== false);
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
+  const [ledRailType, setLedRailType] = useState(initialOptions.ledRailType || '');
   const [reserveItemOverrides, setReserveItemOverrides] = useState(initialOptions.reserveItemOverrides || {});
   const [signatureMeterCoverType, setSignatureMeterCoverType] = useState(initialOptions.signatureMeterCoverType || '');
   const [reserveOptionType, setReserveOptionType] = useState(initialOptions.reserveOptionType || (initialOptions.reserveUpgradeEnabled ? '__legacy__' : ''));
@@ -1284,13 +1286,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     [activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, assetPackLabel, partitionHeadVisuals],
   );
   const autoSpotsBaseRule = useMemo(() => initialOptions.autoSpotsRule || null, [initialOptions]);
-  const autoSpotsRule = autoSpotsBaseRule;
+  const selectedLedRailEntries = useMemo(() => selectLedRailEntries(ledRailEntries, ledRailType), [ledRailEntries, ledRailType]);
+  const autoSpotsRule = useMemo(() => selectedLedRailRule(autoSpotsBaseRule, availableCatalog, ledRailType), [autoSpotsBaseRule, availableCatalog, ledRailType]);
   const automaticLedItems = useMemo(
     () => (ledRailsEnabled && !hasAutoSpotsRule(autoSpotsRule)
-      ? makeAutomaticLedRailItems(ledRailEntries, width, depth, layout, ledSpotCount)
+      ? makeAutomaticLedRailItems(selectedLedRailEntries, width, depth, layout, ledSpotCount)
         .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout))
       : []),
-    [ledRailsEnabled, ledRailEntries, autoSpotsRule, width, depth, layout, ledSpotCount, ledRailOverrides],
+    [ledRailsEnabled, selectedLedRailEntries, autoSpotsRule, width, depth, layout, ledSpotCount, ledRailOverrides],
   );
   const automaticSpotItems = useMemo(
     () => (ledRailsEnabled && hasAutoSpotsRule(autoSpotsRule)
@@ -1509,6 +1512,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       autoSpotsRule: autoSpotsBaseRule,
       ledSpotCount,
       ledRailOverrides,
+      ledRailType,
       reserveOptionType: effectiveReserveOptionType,
       reserveOptions,
       reserveItemOverrides,
@@ -1582,7 +1586,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly, objectBankLoaded]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, ledRailType, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly, objectBankLoaded]);
 
   const persistWallCoversNow = (nextWallCovers) => {
     if (readOnly) return;
@@ -2921,6 +2925,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={ledSpotCount}
             autoSpotsRule={autoSpotsBaseRule}
+            ledRailType={ledRailType}
+            onLedRailType={(type) => !readOnly && setLedRailType(type)}
             reserveRule={activeReserveRuleConfig}
             reserveOptionType={effectiveReserveOptionType}
             reserveOptions={reserveOptions}
@@ -2985,7 +2991,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onPartitionHeadImage={uploadPartitionHeadVisual}
             onPartitionHeadResetImage={resetPartitionHeadVisual}
             onPartitionHeadVisualOptions={updatePartitionHeadVisualOptions}
-            onPartitionHeadDifferentVisuals={(checked) => !readOnly && setPartitionHeadVisuals((current) => withPartitionHeadVisualMode(current, checked))}
+            onPartitionHeadDifferentVisuals={(checked, section) => !readOnly && setPartitionHeadVisuals((current) => withPartitionHeadVisualMode(current, checked, section))}
             onCounterImage={(item, file, optionKeys) => uploadItemImage(item, file, optionKeys)}
             onCounterOptions={updateItemOptions}
             onCounterVisibility={(item, visible) => {
@@ -3660,13 +3666,14 @@ function LogoUploadCard({
 }) {
   const t = useT();
   return (
-    <section className={`counter-logo-card counter-logo-card-v2 ${className}`.trim()}>
+    <section className={`counter-logo-card counter-logo-card-v2 ${className}`.trim()} title={spec || undefined}>
       <header>
         <strong>{title}</strong>
         {showSwitch && (
           <label className="counter-logo-switch" aria-label="Activer le logo">
             <input
               type="checkbox"
+              aria-label="Activer le logo"
               disabled={disabled}
               checked={enabled}
               onChange={(event) => onEnabledChange?.(event.target.checked)}
@@ -3738,6 +3745,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
             <strong>{t('counter_finish_title')}</strong>
             <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : ''}</span>
           </div>
+          {includedFinishes.length > 0 && <>
           <div className="counter-finish-meta-line">
             <small>{includedColorisLabel(includedFinishes.length)}</small>
             <em className="included">Inclus</em>
@@ -3758,6 +3766,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
               ))}
             </div>
           )}
+          </>}
           {optionalFinishes.length > 0 && (
             <>
               <div className="counter-finish-meta-line">
@@ -3798,7 +3807,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
   );
 }
 
-function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadState, onImageChange, onResetImage, onImagePending, onImageEnabled, onFramingChange, onColorChange, onResetColor, onLogoGateChange, logoGateControls = [], counterColors = [], embedded = false }) {
+function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadState, onImageChange, onResetImage, onImagePending, onImageEnabled, onFramingChange, onColorChange, onResetColor, onLogoGateChange, logoGateControls = [], counterColors = [], embedded = false, referenceLayout = false }) {
   const t = useT();
   const slots = Array.isArray(providedSlots) ? providedSlots : normalizeTextureSlots(item?.dimensions?.textureSlots);
   const values = item?.options?.textureSlotValues || {};
@@ -3814,6 +3823,11 @@ function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadSta
           const selectedFinish = finishes.find((finish) => normalizeColorId(finish.id) === normalizeColorId(value.colorId))
             || finishes.find((finish) => normalizeColorId(finish.id) === normalizeColorId(value.color))
             || counterWoodFinish(counterColors);
+          if (referenceLayout && finishes.length) return <React.Fragment key={slot.id}>
+            <CounterFinishCard compact referenceLayout densePalette title={slot.label} finishes={finishes} selectedFinish={selectedFinish}
+              disabled={uploadState?.uploading} onSelect={(finish) => onColorChange?.(slot, textureSlotColorPatch(finish))} />
+            {(value.color || value.colorImage) && <button type="button" className="item-image-reset" disabled={uploadState?.uploading} onClick={() => onResetColor?.(slot)}>Réinitialiser</button>}
+          </React.Fragment>;
           if (finishes.length) {
             return (
               <section key={slot.id} className="counter-color-card counter-finish-card item-counter-finish-card generic-texture-slot">
@@ -3821,23 +3835,22 @@ function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadSta
                   <strong>{slot.label || 'Couleur'}</strong>
                   <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : ''}</span>
                 </div>
-                <div className="counter-finish-swatches optional">
-                  {finishes.map((finish) => (
-                    <CounterFinishSwatch
-                      key={finish.id}
-                      finish={finish}
-                      active={normalizeColorId(selectedFinish.id) === normalizeColorId(finish.id)}
-                      onClick={() => onColorChange?.(slot, textureSlotColorPatch(finish))}
-                    />
-                  ))}
-                </div>
+                {[
+                  [finishes.filter((finish) => finish.included || finish.mode === 'wood'), true],
+                  [finishes.filter((finish) => !finish.included && finish.mode !== 'wood'), false],
+                ].map(([choices, included]) => choices.length > 0 && <React.Fragment key={String(included)}>
+                  <ColorPaletteMeta label={included ? includedColorisLabel(choices.length) : `${choices.length} couleurs en option`} included={included} price={choices.find((finish) => finish.id === selectedFinish.id)?.price || minColorPrice(choices)} />
+                  <div className={`counter-finish-swatches ${included ? 'included' : 'optional'}`}>
+                    {choices.map((finish) => <CounterFinishSwatch key={finish.id} finish={finish} active={normalizeColorId(selectedFinish.id) === normalizeColorId(finish.id)} onClick={() => onColorChange?.(slot, textureSlotColorPatch(finish))} />)}
+                  </div>
+                </React.Fragment>)}
                 {(value.color || value.colorImage) && <button type="button" className="item-image-reset" onClick={() => onResetColor?.(slot)}>Réinitialiser</button>}
               </section>
             );
           }
           return (
             <label key={slot.id} className="item-color-upload generic-texture-slot">
-              <span>{slot.label || 'Couleur'}</span>
+              <ColorPaletteMeta label={slot.label || 'Couleur'} price={value.colorPrice || 0} />
               <input
                 type="color"
                 value={value.color || '#ffffff'}
@@ -4227,7 +4240,7 @@ function CounterOptionCard({ items = [], colors = [], colorCatalog = [], catalog
                 ? includedCounterSizeUpgradePrice(variant)
                 : Math.max(0, Number(variant.price || 0) - baseVariantPrice);
               return (
-                <button key={variant.id} type="button" className={active ? 'active' : ''} disabled={disabled} onClick={() => selectVariant(variant)}>
+                <button key={variant.id} type="button" className={active ? 'active' : ''} aria-pressed={active} disabled={disabled} onClick={() => selectVariant(variant)}>
                   <span><strong>{counterSizeShortLabel(variant)}</strong></span>
                   <em className={supplement > 0 ? 'price' : 'included'}>
                     {supplement > 0 ? `${supplement.toLocaleString('fr-FR')} €` : t('counter_included_badge')}
@@ -4253,6 +4266,7 @@ function CounterOptionCard({ items = [], colors = [], colorCatalog = [], catalog
           <label className="counter-logo-switch" aria-label="Activer le logo">
             <input
               type="checkbox"
+              aria-label="Activer le logo"
               disabled={disabled}
               checked={logoEnabled}
               onChange={(event) => updateSelected(counterLogoTogglePatch(event.target.checked))}
@@ -4313,26 +4327,48 @@ function CounterOptionCard({ items = [], colors = [], colorCatalog = [], catalog
 
 
 
+function ColorPaletteMeta({ label, included = false, price = 0, from = false, unit = '' }) {
+  const free = included || Number(price || 0) <= 0;
+  return <div className="color-palette-meta"><small>{label}</small><em className={`color-palette-badge ${free ? 'included' : 'price'}`}>{free ? 'Inclus' : `${from ? 'Dès ' : ''}+ ${formatNumber(price)} €${unit}`}</em></div>;
+}
+
 function includedColorisLabel(count = 0) {
   const safeCount = Math.max(1, Number(count || 0));
   return `${safeCount} couleur${safeCount > 1 ? 's' : ''} incluse${safeCount > 1 ? 's' : ''}`;
 }
 
-function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = false, onSelect, compact = false }) {
+function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = false, onSelect, compact = false, referenceLayout = false, densePalette = false, title = '' }) {
   const t = useT();
-  const includedFinishes = finishes.filter((finish) => finish.included || finish.mode === 'wood');
+  const includedFinishes = finishes.filter((finish) => referenceLayout ? Number(finish.price || 0) <= 0 : (finish.included || finish.mode === 'wood'));
   const optionalFinishes = finishes.filter((finish) => !includedFinishes.some((included) => included.id === finish.id));
   const optionPrice = optionalFinishes.find((finish) => Number(finish.price || 0) > 0)?.price || 0;
+  const referenceOptionPrice = optionalFinishes.some((finish) => finish.id === selectedFinish.id)
+    ? Number(selectedFinish.price || 0) : minColorPrice(optionalFinishes);
+  const referencePriceVaries = !optionalFinishes.some((finish) => finish.id === selectedFinish.id)
+    && new Set(optionalFinishes.map((finish) => Number(finish.price || 0))).size > 1;
   const selectedCode = selectedFinish.code || selectedFinish.reference || '';
+  if (densePalette) return <section className="counter-color-card counter-finish-card counter-finish-card-v2">
+    <div className="counter-finish-head">
+      <strong>{title || t('counter_finish_title')}</strong>
+      <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedCode) ? ` (${shortFinishCode(selectedCode)})` : ''}</span>
+    </div>
+    {optionalFinishes.length > 0
+      ? <div className="counter-finish-meta-line"><small>{optionalFinishes.length} couleurs en option — {referencePriceVaries ? 'dès ' : ''}{formatNumber(referenceOptionPrice)} €</small></div>
+      : finishes.length > 0 && <ColorPaletteMeta label={includedColorisLabel(finishes.length)} included />}
+    <div className={`counter-finish-swatches ${optionalFinishes.length ? 'optional' : 'included'}`} role="group" aria-label={title || t('counter_finish_title')}>
+      {finishes.map((finish) => <CounterFinishSwatch key={finish.id} finish={finish} active={normalizeColorId(selectedFinish.id) === normalizeColorId(finish.id)} disabled={disabled} onClick={() => onSelect?.(finish)} />)}
+    </div>
+  </section>;
   return (
     <section className={compact ? 'counter-color-card counter-finish-card counter-finish-card-v2' : 'counter-color-card counter-finish-card'}>
       <div className="counter-finish-head">
         <strong>{t('counter_finish_title')}</strong>
         <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedCode) ? ` (${shortFinishCode(selectedCode)})` : ''}</span>
       </div>
-      <div className="counter-finish-meta-line">
-        <small>{includedColorisLabel(includedFinishes.length)}</small>
-      </div>
+      {includedFinishes.length > 0 && <>
+      {referenceLayout && includedFinishes.length === 1
+        ? <small className="counter-included-meta">{includedColorisLabel(includedFinishes.length)}</small>
+        : <ColorPaletteMeta label={includedColorisLabel(includedFinishes.length)} included />}
       {includedFinishes.length > 1 ? (
         <div className="counter-finish-swatches included">
           {includedFinishes.map((finish) => (
@@ -4345,16 +4381,19 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
             <div key={finish.id} className="counter-finish-included-row">
               <CounterFinishSwatch finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
               <strong>{shortFinishName(finish.name)}</strong>
-              <em className="included">Inclus</em>
+              {referenceLayout && <em className="included">{t('counter_included_badge')}</em>}
             </div>
           ))}
         </div>
       )}
+      </>}
       {optionalFinishes.length > 0 && (
         <>
           <div className="counter-finish-meta-line">
-            <small>{optionalFinishes.length} couleurs en option</small>
-            <em className="price">+ {Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0'} €</em>
+            {referenceLayout ? <small>{optionalFinishes.length} couleurs en option — {referencePriceVaries ? 'dès ' : ''}{formatNumber(referenceOptionPrice)} €</small> : <>
+              <small>{optionalFinishes.length} couleurs en option</small>
+              <em className="price">+ {Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0'} €</em>
+            </>}
           </div>
           <div className="counter-finish-swatches optional">
             {optionalFinishes.map((finish) => (
@@ -4374,6 +4413,7 @@ function CounterFinishSwatch({ finish = {}, active = false, disabled = false, on
       className={active ? 'active' : ''}
       style={{ '--swatch-color': finish.hex, '--swatch-image': finish.image ? `url("${finish.image}")` : 'none' }}
       title={`${shortFinishName(finish.name)}${finish.code ? ` (${shortFinishCode(finish.code)})` : ''}`}
+      aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
     >
@@ -4679,6 +4719,9 @@ function OptionsStepPanel({
   technicalFloorTrimType,
   ledRailsEnabled,
   ledSpotCount,
+  ledRailType,
+  onLedRailType,
+  autoSpotsRule = null,
   reserveRule,
   reserveOptionType,
   reserveOptions = {},
@@ -4769,7 +4812,22 @@ function OptionsStepPanel({
   return (
     <>
       <PanelHead title={t('panel_options_title')} step={activeStep} />
-      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle={isSignatureStand ? 'Moquette' : 'Moquette · Empreinte'} icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+      <OptionAccordion {...accordionScrollProps('moquette')} className={isSignatureStand ? 'signature-ground-accordion' : ''} title={t('option_ground')} subtitle="Moquette · Empreinte" icon={isSignatureStand ? undefined : <ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+        {isSignatureStand ? <SignatureGroundOptionCard
+          colors={carpetColors}
+          selectedColor={selectedCarpetColor}
+          defaultColorId={defaultColorOptions.carpetColorId}
+          footprintColors={footprintColors}
+          selectedFootprintColor={signatureArchColor || selectedCarpetFootprintColor}
+          area={area}
+          footprintArea={footprintArea}
+          thick={carpetThick}
+          disabled={readOnly}
+          footprintDisabled={readOnly || !signatureArchItems.length}
+          onSelect={onCarpetColor}
+          onFootprintSelect={onSignatureArchColor}
+          onThickChange={onCarpetThick}
+        /> : <>
         <CarpetColorOptionCard
           uniformLayout={uniformColorSections}
           showThickOption={isSignatureStand}
@@ -4803,9 +4861,17 @@ function OptionsStepPanel({
             onThickChange={onFootprintThick}
           />
         )}
+        </>}
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} subtitle="Coton gratté · Bâche imprimée" icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
-        <ColorOptionCard
+      <OptionAccordion {...accordionScrollProps('coton')} className={isSignatureStand ? 'signature-wall-accordion' : ''} title={t('option_wall')} subtitle="Coton gratté · Bâche imprimée" icon={isSignatureStand ? undefined : <ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+        {isSignatureStand ? <SignatureWallColorOptionCard
+          colors={wallFabricColors}
+          selectedColor={selectedWallFabricColor}
+          defaultColorId={defaultColorOptions.wallFabricColorId}
+          area={wallFabricArea}
+          disabled={readOnly}
+          onSelect={onWallColor}
+        /> : <ColorOptionCard
           uniformLayout={uniformColorSections}
           title="COTON GRATTÉ"
           colors={wallFabricColors}
@@ -4816,8 +4882,9 @@ function OptionsStepPanel({
           area={wallFabricArea}
           disabled={readOnly}
           onSelect={onWallColor}
-        />
+        />}
         <WallCoverOptionCard
+          signatureLayout={isSignatureStand}
           surfaces={wallCoverSurfaces}
           covers={wallCovers}
           previews={wallCoverPreviews}
@@ -4843,15 +4910,18 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       )}
-      {hasIncludedObjects && <OptionAccordion {...accordionScrollProps('led')} title={t('option_led')} icon={<ConfiguratorOptionIcon src="/icons/spots.svg" />} open={openOptions.led} onToggle={() => toggleOption('led')}>
+      {hasIncludedObjects && <OptionAccordion {...accordionScrollProps('led')} className="reference-led-accordion" title={t('led_title')} open={openOptions.led} onToggle={() => toggleOption('led')}>
         <LedRailOptionCard
           enabled={ledRailsEnabled}
           spotCount={ledSpotCount}
+          entries={hasAutoSpotsRule(autoSpotsRule) ? autoSpotsRuleEntries(autoSpotsRule, catalog) : ledRailCatalogEntries(catalog)}
+          selectedType={ledRailType}
+          onTypeChange={onLedRailType}
           disabled={readOnly}
           onEnabledChange={onLedRailsEnabled}
         />
       </OptionAccordion>}
-      <OptionAccordion {...accordionScrollProps('reserve')} title={t('option_reserve')} icon={<ConfiguratorOptionIcon src="/icons/reserve.svg" />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
+      <OptionAccordion {...accordionScrollProps('reserve')} className="reference-reserve-accordion" title={t('option_reserve')} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
         <ReserveOptionCard
           rule={reserveRule}
           selectedOptionType={reserveOptionType}
@@ -4863,7 +4933,7 @@ function OptionsStepPanel({
           onOptions={onReserveOptions}
         />
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('tete')} title={t('option_partition_head')} icon={<ConfiguratorOptionIcon src="/icons/tete_de_cloison.svg" />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
+      <OptionAccordion {...accordionScrollProps('tete')} className={isSignatureStand ? 'signature-head-accordion' : ''} subtitle={isSignatureStand ? 'Partie haute · Visuel lumineux' : undefined} title={t('option_partition_head')} icon={<ConfiguratorOptionIcon src="/icons/tete_de_cloison.svg" />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
         <PartitionHeadOptionCard
           rule={partitionHeadRule}
           sides={partitionHeadSides}
@@ -4880,6 +4950,7 @@ function OptionsStepPanel({
           onResetImage={onPartitionHeadResetImage}
           onVisualOptions={onPartitionHeadVisualOptions}
           onDifferentVisuals={onPartitionHeadDifferentVisuals}
+          onApply={() => toggleOption('tete')}
         />
       </OptionAccordion>
       {isSignatureStand && (
@@ -5364,6 +5435,9 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     if (item) setDraftVisualOptions(item.options || {});
   }, [item?.options]);
   const variants = itemConfigVariants(catalogEntry, salonLabel);
+  const barVariantPopup = isBarVariantGroupEntry(catalogEntry);
+  const tvVariantPopup = !barVariantPopup && isTelevisionVariantGroupEntry(catalogEntry, variants);
+  const podiumVariantPopup = isPodiumVariantGroupEntry(catalogEntry);
   const extraOptions = itemConfigExtraOptions(catalogEntry);
   const colorOptions = itemConfigColorOptions(catalogEntry);
   const defaultVariant = variants.find((variant) => variant.isDefault) || variants[0];
@@ -5387,7 +5461,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     || marketplaceItemDescription(selectedVariant)
     || marketplaceItemDescription(selectedVariant?.entry)
     || marketplaceItemDescription(catalogEntry)
-    || marketplaceItemDescription(item);
+    || (item ? marketplaceItemDescription(item) : '');
   const textureSourceEntry = isVariantGroup
     ? (resolvedEntry || selectedVariant?.entry || {})
     : (item || resolvedEntry || catalogEntry);
@@ -5421,7 +5495,18 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     },
   };
   const canConfigureCounterVisual = isWoodReceptionDeskItem(visualItem) || isWoodReceptionDeskItem(resolvedEntry);
+  const counterVariantPopup = !barVariantPopup && isVariantGroup && isCounterVariantGroup(catalogEntry) && canConfigureCounterVisual;
   const configuredCounterColors = counterColorOptionsForItem(visualItem, catalog, salonLabel, counterColors);
+  const counterPaletteOption = counterVariantPopup
+    ? colorOptions.find((option) => colorConfigOptionUsesCounterPalette(option, catalog, salonLabel))
+    : null;
+  const additionalColorOptions = counterPaletteOption ? colorOptions.filter((option) => option !== counterPaletteOption) : colorOptions;
+  const counterPopupFinishes = counterPaletteOption
+    ? counterFinishOptions(colorChoicesForConfigOption(counterPaletteOption, catalog, salonLabel))
+    : counterFinishOptions(configuredCounterColors).map((finish) => ({ ...finish, price: 0, included: true }));
+  const counterPopupFinish = findColorInPalette(counterPopupFinishes, counterPaletteOption
+    ? resolvedColorSelections[counterPaletteOption.id]?.id
+    : visualOptions.binary2ColorId || counterWoodFinish(configuredCounterColors).id) || counterPopupFinishes[0];
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
   const extras = extraOptions
     .reduce((sum, option) => sum + (selectedExtras[option.id] ? effectiveExtraOptionPrice(option, catalogEntry, selectedVariant) : 0), 0);
@@ -5495,13 +5580,20 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     || textureSlots.length > 0
   );
   const headerImageUrl = optionLink?.entry?.thumbnailUrl || selectedVariant?.imageUrl || catalogEntry.thumbnailUrl;
-  const headerFinishCount = canConfigureCounterVisual ? counterFinishOptions(configuredCounterColors).length : 0;
+  const headerFinishCount = barVariantPopup && colorOptions.length
+    ? (colorConfigOptionUsesCounterPalette(colorOptions[0], catalog, salonLabel)
+      ? counterFinishOptions(colorChoicesForConfigOption(colorOptions[0], catalog, salonLabel))
+      : colorChoicesForConfigOption(colorOptions[0], catalog, salonLabel)).length
+    : (canConfigureCounterVisual || (barVariantPopup && configuredCounterColors.length)) ? counterFinishOptions(configuredCounterColors).length : 0;
+  const headerOptionCount = extraOptions.length + (barVariantPopup ? 0 : colorOptions.length);
   const headerMetaParts = [
     headerFinishCount ? `${headerFinishCount} coloris` : '',
     variants.length > 1 ? (catalogEntry.dimensions?.isSignatureMeterCoverGroup ? `${variants.length} coloris` : `${variants.length} taille${variants.length > 1 ? 's' : ''}`) : '',
-    (extraOptions.length + colorOptions.length) ? `${extraOptions.length + colorOptions.length} option${extraOptions.length + colorOptions.length > 1 ? 's' : ''}` : '',
+    headerOptionCount ? `${headerOptionCount} option${headerOptionCount > 1 ? 's' : ''}` : '',
   ].filter(Boolean);
-  const headerMeta = headerMetaParts.length
+  const headerMeta = podiumVariantPopup
+    ? `${uniqueTextValues(variants.map(podiumVariantColorLabel)).length} coloris · ${new Set(variants.map(podiumVariantHeightCm)).size} hauteurs`
+    : headerMetaParts.length
     ? headerMetaParts.join(' · ')
     : marketCategoryMeta(normalizeMarketCategory(resolvedEntry || catalogEntry)).label;
   const canDeleteCurrentItem = mode !== 'edit' || canDeleteItem?.(item) !== false;
@@ -5548,6 +5640,14 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     setDraftVisualOptions((current) => ({ ...current, ...patch }));
   };
 
+  const selectColorOption = (option, color) => {
+    setSelectedColors((current) => ({ ...current, [option.id]: color }));
+    const isCounterColorOption = colorConfigOptionUsesCounterPalette(option, catalog, salonLabel);
+    const slot = rawTextureSlots.find((candidate) => (option.textureSlotId ? candidate.id === option.textureSlotId : candidate.kind === 'color'));
+    if (isCounterColorOption && canConfigureCounterVisual) updateDraftVisualOptions(counterFinishPatch(color));
+    if (slot) updateDraftVisualOptions(textureSlotPatch(visualItem, slot, textureSlotColorPatch({ ...color, price: 0 })));
+  };
+
   const handleDraftImage = async (file, keys = {}) => {
     if (!file) return;
     const urlKey = keys.urlKey || 'binary3ImageUrl';
@@ -5588,7 +5688,8 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
         key={option.id}
         active={Boolean(selectedExtras[option.id])}
         label={displayConfigOptionLabel(option, catalogEntry)}
-        detail={displayConfigOptionDetail(option, catalogEntry)}
+        detail={tvVariantPopup && isSharedGlobalGroupOption(option) ? option.detail : displayConfigOptionDetail(option, catalogEntry)}
+        hint={tvVariantPopup && isSharedGlobalGroupOption(option) ? displayConfigOptionDetail(option, catalogEntry).join(' · ') : ''}
         price={displayPrice}
         onChange={(checked) => toggleExtra(option.id, checked)}
       />
@@ -5653,29 +5754,63 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
 
   return (
     <div className="item-config-overlay">
-      <section className="item-config-modal">
+      <section className={`item-config-modal${counterVariantPopup ? ' counter-variant-modal' : ''}${tvVariantPopup ? ' tv-variant-modal' : ''}${barVariantPopup ? ' bar-variant-modal reference-counter-panel' : ''}${podiumVariantPopup ? ' podium-variant-modal' : ''}`} role="dialog" aria-modal="true" aria-label={itemConfigTitle(catalogEntry)}>
         <header>
           <div className="item-config-heading-main">
-            <span className="item-config-heading-thumb">
+            {!counterVariantPopup && <span className="item-config-heading-thumb">
               {headerImageUrl ? <img src={headerImageUrl} alt="" /> : <Box size={28} />}
-            </span>
+            </span>}
             <span>
-            <h2>{t(mode === 'add' ? 'item_config_add' : 'item_config_edit', { name: itemConfigTitle(catalogEntry) })}</h2>
-              <small>{headerMeta}</small>
+            <h2>{counterVariantPopup ? t('option_counter') : tvVariantPopup ? 'TV' : barVariantPopup ? 'Bar' : podiumVariantPopup ? 'Podium' : t(mode === 'add' ? 'item_config_add' : 'item_config_edit', { name: itemConfigTitle(catalogEntry) })}</h2>
+              <small>{counterVariantPopup ? `${t('counter_size_title')} · ${t('counter_finish_title')} · Logo` : headerMeta}</small>
             </span>
           </div>
           <button type="button" onClick={onClose} aria-label={t('item_config_close')}><X size={18} /></button>
         </header>
 
-        {productDescription && <p className="item-config-description">{productDescription}</p>}
+        {productDescription && ((tvVariantPopup || barVariantPopup || podiumVariantPopup)
+          ? <ProductDescriptionDisclosure description={productDescription} />
+          : <p className="item-config-description">{productDescription}</p>)}
 
-        {variants.length > 1 && (isPodiumVariantGroupEntry(catalogEntry) ? (
-          <PodiumVariantPicker choices={variants} value={format} onChange={setFormat} />
+        {(tvVariantPopup || barVariantPopup) && variants.length > 0 && <VariantSizePicker choices={variants} value={selectedVariant?.id} onChange={setFormat} kind={tvVariantPopup ? 'tv' : 'bar'} />}
+
+        {counterVariantPopup && <div className="counter-option-panel reference-counter-panel">
+          {variants.length > 0 && <section className="counter-size-card counter-size-card-v2">
+            <strong>{t('counter_size_title')}</strong>
+            <div className="counter-size-grid">
+              {variants.map((variant) => <button key={variant.id} type="button" className={selectedVariant?.id === variant.id ? 'active' : ''}
+                aria-pressed={selectedVariant?.id === variant.id} onClick={() => setFormat(variant.id)}>
+                <span><strong>{counterSizeShortLabel(variant)}</strong></span>
+                <em className={Number(variant.price || 0) > 0 ? 'price' : 'included'}>{Number(variant.price || 0) > 0 ? `${formatNumber(variant.price)} €` : t('counter_included_badge')}</em>
+              </button>)}
+            </div>
+          </section>}
+          <CounterFinishCard compact referenceLayout finishes={counterPopupFinishes} selectedFinish={counterPopupFinish}
+            onSelect={(finish) => counterPaletteOption ? selectColorOption(counterPaletteOption, finish) : updateDraftVisualOptions(counterFinishPatch(finish))} />
+          <LogoUploadCard
+            enabled={counterLogoOptionActive(visualItem)} uploading={modalUploadState?.uploading}
+            priceLabel={counterLogoUnitPrice > 0 ? `+ ${formatNumber(counterLogoUnitPrice)} €` : t('counter_included_badge')}
+            priceTone={counterLogoUnitPrice > 0 ? 'billable' : 'included'}
+            imageUrl={visualOptions.binary3ImageUrl} imageFraming={visualOptions.binary3ImageFraming}
+            spec={(() => { const [w, h] = woodReceptionDeskImageCoverSize(visualItem); return t('img_format_spec', { w: w.toLocaleString('fr-FR'), h: h.toLocaleString('fr-FR') }); })()}
+            visualPending={Boolean(visualOptions.binary3VisualPending)}
+            onEnabledChange={(checked) => updateDraftVisualOptions(counterLogoTogglePatch(checked))}
+            onImageChange={(file) => handleDraftImage(file, { urlKey: 'binary3ImageUrl', nameKey: 'binary3ImageName', extraPatch: { binary3Enabled: true, binary3VisualPending: false } })}
+            onResetImage={() => updateDraftVisualOptions({ binary3ImageUrl: '', binary3ImageName: '', binary3ImageFraming: defaultImageFraming })}
+            onFramingChange={(framing) => updateDraftVisualOptions({ binary3ImageFraming: framing })}
+            onVisualPendingChange={(checked) => updateDraftVisualOptions({ binary3Enabled: true, binary3VisualPending: checked })}
+          />
+          {modalUploadState?.uploading && <p className="counter-status">{t('counter_uploading')}</p>}
+          {modalUploadState?.error && <p className="counter-error">{modalUploadState.error}</p>}
+        </div>}
+
+        {!counterVariantPopup && !tvVariantPopup && !barVariantPopup && variants.length > 1 && (isPodiumVariantGroupEntry(catalogEntry) ? (
+          <PodiumVariantPicker referenceLayout choices={variants} value={format} onChange={setFormat} />
         ) : (
           <ConfigChoiceGrid title={t('item_config_variant_title')} choices={variants} value={format} onChange={setFormat} />
         ))}
 
-        {hasVisualOptions && isPartitionHeadItem(item) && (
+        {hasVisualOptions && item && isPartitionHeadItem(item) && (
           <PartitionHeadOptionsPanel
             item={item}
             visualContext={visualContext}
@@ -5687,7 +5822,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
           />
         )}
 
-        {hasVisualOptions && isPosterItem(item) && (
+        {hasVisualOptions && item && isPosterItem(item) && (
           <PosterOptionsPanel
             item={item}
             items={items}
@@ -5701,7 +5836,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
           />
         )}
 
-        {hasVisualOptions && canConfigureCounterVisual && (
+        {hasVisualOptions && canConfigureCounterVisual && !counterVariantPopup && (
           <WoodReceptionDeskOptionsPanel
             item={visualItem}
             colors={configuredCounterColors}
@@ -5719,19 +5854,14 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
           />
         )}
 
-        {colorOptions.length > 0 && (
+        {additionalColorOptions.length > 0 && (
           <VariantColorOptionsPanel
-            options={colorOptions}
+            referenceLayout={barVariantPopup}
+            options={additionalColorOptions}
             catalog={catalog}
             salonLabel={salonLabel}
             selectedColors={resolvedColorSelections}
-            onSelect={(option, color) => {
-              setSelectedColors((current) => ({ ...current, [option.id]: color }));
-              const isCounterColorOption = colorConfigOptionUsesCounterPalette(option, catalog, salonLabel);
-              const slot = rawTextureSlots.find((candidate) => (option.textureSlotId ? candidate.id === option.textureSlotId : candidate.kind === 'color'));
-              if (isCounterColorOption && canConfigureCounterVisual) updateDraftVisualOptions(counterFinishPatch(color));
-              if (slot) updateDraftVisualOptions(textureSlotPatch(visualItem, slot, textureSlotColorPatch({ ...color, price: 0 })));
-            }}
+            onSelect={selectColorOption}
           />
         )}
 
@@ -5743,6 +5873,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
 
         {hasVisualOptions && textureSlots.length > 0 && (
           <TextureSlotsOptionsPanel
+            referenceLayout={barVariantPopup}
             item={visualItem}
             slots={textureSlots}
             uploadState={modalUploadState}
@@ -5812,17 +5943,65 @@ function ConfigChoiceGrid({ title, choices, value, onChange }) {
   );
 }
 
-function PodiumVariantPicker({ choices = [], value, onChange }) {
+function ProductDescriptionDisclosure({ description }) {
+  const language = useContext(LanguageContext);
+  return <details className="product-description-disclosure">
+    <summary>
+      <strong>Description</strong><Plus size={13} aria-hidden="true" />
+      <span><small>{description}</small><u>{language === 'en' ? 'Read more' : 'En savoir plus'}</u></span>
+    </summary>
+    <p>{description}</p>
+  </details>;
+}
+
+function VariantSizePicker({ choices = [], value, onChange, kind }) {
+  const t = useT();
+  return <section className={`variant-size-picker ${kind}-size-picker`}>
+    <strong>{t('counter_size_title')}</strong>
+    <div>
+      {choices.map((choice) => {
+        const inches = variantInchSize(choice);
+        const meters = barSizeMetersFromVariant(choice) || Number(itemDefaultSize(choice.entry)?.[0] || 0);
+        const label = kind === 'tv' ? (Number.isFinite(inches) ? `${inches}"` : choice.label) : (meters > 0 ? `${formatNumber(meters)} m` : choice.label);
+        return <button key={choice.id} type="button" className={value === choice.id ? 'active' : ''} aria-pressed={value === choice.id} onClick={() => onChange(choice.id)}>
+          <strong>{label}</strong>
+          {kind === 'tv' && <em className={Number(choice.price || 0) > 0 ? 'price' : 'included'}>{Number(choice.price || 0) > 0 ? `${formatNumber(choice.price)} €` : t('counter_included_badge')}</em>}
+        </button>;
+      })}
+    </div>
+  </section>;
+}
+
+function PodiumVariantPicker({ choices = [], value, onChange, referenceLayout = false }) {
   const colors = uniqueTextValues(choices.map(podiumVariantColorLabel));
   const selected = choices.find((choice) => choice.id === value) || choices[0];
   const selectedColor = podiumVariantColorLabel(selected);
   const sizes = choices.filter((choice) => podiumVariantColorLabel(choice) === selectedColor);
+  const sameHeightPrices = choices.filter((choice) => podiumVariantHeightCm(choice) === podiumVariantHeightCm(selected)).map((choice) => Number(choice.price || 0));
+  const colorSupplement = Math.max(0, Number(selected?.price || 0) - Math.min(...sameHeightPrices, Number(selected?.price || 0)));
   const selectColor = (color) => {
     const currentHeight = podiumVariantHeightCm(selected);
     const matching = choices.find((choice) => podiumVariantColorLabel(choice) === color && podiumVariantHeightCm(choice) === currentHeight)
       || choices.find((choice) => podiumVariantColorLabel(choice) === color);
     if (matching) onChange(matching.id);
   };
+
+  if (referenceLayout) return <section className="podium-reference-options">
+    <section className="podium-height-picker" aria-label="Hauteur">
+      <strong>Hauteur</strong>
+      <div>{sizes.map((choice) => <button key={choice.id} type="button" className={choice.id === selected?.id ? 'active' : ''}
+        aria-pressed={choice.id === selected?.id} onClick={() => onChange(choice.id)}>
+        {podiumVariantOptionLabel(choice)}
+      </button>)}</div>
+    </section>
+    <section className="podium-color-picker" aria-label="Couleur">
+      <strong>Couleur</strong>
+      <div>{colors.map((color) => <button key={color} type="button" aria-label={color} title={color}
+        aria-pressed={selectedColor === color} className={selectedColor === color ? 'active' : ''}
+        style={{ '--swatch-color': normalizeTextValue(color).includes('noir') ? '#000000' : '#ffffff' }}
+        onClick={() => selectColor(color)} />)}</div>
+    </section>
+  </section>;
 
   return (
     <section className="podium-config-panel">
@@ -5831,6 +6010,7 @@ function PodiumVariantPicker({ choices = [], value, onChange }) {
           <strong>Couleur</strong>
           <span>{selectedColor}</span>
         </div>
+        <ColorPaletteMeta label={`${colors.length} couleur${colors.length > 1 ? 's' : ''} au choix`} price={colorSupplement} />
         <div className="counter-finish-swatches podium-color-swatches">
           {colors.map((color) => (
             <button
@@ -5862,7 +6042,7 @@ function PodiumVariantPicker({ choices = [], value, onChange }) {
   );
 }
 
-function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '', selectedColors = {}, onSelect }) {
+function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '', selectedColors = {}, onSelect, referenceLayout = false }) {
   const hasCounterColorOption = options.some((option) => colorConfigOptionUsesCounterPalette(option, catalog, salonLabel));
   return (
     <div className={`variant-color-options-panel ${hasCounterColorOption ? 'texture-slots-compact' : ''}`.trim()}>
@@ -5874,6 +6054,8 @@ function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '',
         const normalizedSelected = isCounterColorOption
           ? normalizedChoices.find((choice) => normalizeColorId(choice.id) === normalizeColorId(selected?.id)) || counterWoodFinish(normalizedChoices)
           : selected;
+        if (referenceLayout) return <CounterFinishCard key={option.id} compact referenceLayout densePalette
+          title={isCounterColorOption ? '' : option.label} finishes={normalizedChoices} selectedFinish={normalizedSelected || {}} onSelect={(color) => onSelect?.(option, color)} />;
         const includedChoices = normalizedChoices.filter((choice) => Number(choice.price || 0) <= 0);
         const optionalChoices = normalizedChoices.filter((choice) => Number(choice.price || 0) > 0);
         const optionalPrice = optionalChoices.find((choice) => Number(choice.price || 0) > 0)?.price || 0;
@@ -5946,10 +6128,10 @@ function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '',
   );
 }
 
-function ToggleOption({ active, label, detail, price, onChange, disabled = false }) {
+function ToggleOption({ active, label, detail, price, onChange, disabled = false, hint = '' }) {
   const detailLines = Array.isArray(detail) ? detail : (detail ? [detail] : []);
   return (
-    <button type="button" className={`config-toggle-option ${active ? 'active' : ''}`} disabled={disabled} aria-pressed={active} onClick={() => onChange?.(!active)}>
+    <button type="button" className={`config-toggle-option ${active ? 'active' : ''}`} disabled={disabled} aria-pressed={active} title={hint || undefined} onClick={() => onChange?.(!active)}>
       <i />
       <span>
         <strong>{label}</strong>
@@ -6204,6 +6386,13 @@ function itemConfigExtraOptions(entry) {
 function isBarVariantGroupEntry(entry = {}) {
   const text = normalizeTextValue(`${entry?.type || ''} ${entry?.label || ''}`);
   return isVariantGroupEntry(entry) && /\bbar\b/.test(text);
+}
+
+function isTelevisionVariantGroupEntry(entry = {}, variants = []) {
+  if (!isVariantGroupEntry(entry)) return false;
+  const label = normalizeTextValue(entry.label || '');
+  return /^(tv|televisions?|televiseurs?)$/.test(label)
+    || (variants.length > 0 && variants.every((variant) => isTelevisionItem(variant.entry) || Number.isFinite(variantInchSize(variant))));
 }
 
 function isBarSceneItem(item = {}) {
@@ -7244,7 +7433,7 @@ function ValidationStepPanel({
   const thickCarpetSupplement = optionSupplementTotal((line, label) => label.includes('moquette epaisse'));
   const wallFabricSupplement = optionSupplementTotal((line, label) => label.startsWith('coton') || label.includes('coton cloison'));
   const reserveSupplement = optionSupplementTotal((line, label) => label.includes('reserve'));
-  const reserveOptionDetails = reserveOptionSummary(reserveOptions);
+  const reserveOptionDetails = safeItems.some(isAutomaticReserveItem) ? reserveOptionSummary(reserveOptions) : '';
   const reserveEntry = findCatalogEntry(catalog, reserveOption?.type || reserveRule?.includedType) || null;
   const partitionHeadSupplement = optionSupplementTotal((line, label) => label.includes('tete de cloison'));
   const counterSizeSupplementByItemId = new Map(
@@ -7900,7 +8089,7 @@ function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, 
 
   return (
     <section ref={accordionRef} className={`option-accordion ${open ? 'open' : ''} ${className}`}>
-      <button type="button" onClick={onToggle}>
+      <button type="button" aria-expanded={open} onClick={onToggle}>
         <span className="option-accordion-label">
           {icon}
           <span>
@@ -7908,21 +8097,34 @@ function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, 
             {subtitle && <small>{subtitle}</small>}
           </span>
         </span>
-        {open && className === 'signature-arch-accordion' ? <X size={18} /> : <ChevronUp size={18} />}
+        {open && ['signature-arch-accordion', 'signature-head-accordion', 'signature-wall-accordion', 'reference-reserve-accordion', 'reference-led-accordion'].includes(className) ? <X size={18} /> : <ChevronUp size={18} />}
       </button>
       {open && children}
     </section>
   );
 }
 
-function LedRailOptionCard({ enabled, spotCount, disabled = false, onEnabledChange }) {
+function LedRailOptionCard({ enabled, spotCount, entries = [], selectedType = '', disabled = false, onEnabledChange, onTypeChange }) {
   const t = useT();
+  const choices = uniqueCatalogEntries(entries).sort((a, b) => ledSpotsPerRail(b) - ledSpotsPerRail(a));
+  const selected = choices.find((entry) => entry.type === selectedType) || makeLedRailPlan(choices, spotCount)[0];
+  const installedCount = makeLedRailPlan(selectLedRailEntries(choices, selectedType), spotCount)
+    .reduce((sum, entry) => sum + ledSpotsPerRail(entry), 0);
   return (
     <div className="led-option-card led-option-card-v2">
       <div className="led-info-box">
         <b>i</b>
-        <span>{t('led_count', { count: spotCount })}</span>
+        <span>{t('led_automatic_count', { count: spotCount })}{enabled && installedCount > spotCount && <small>{t('led_installed_count', { count: installedCount })}</small>}</span>
       </div>
+      {choices.length > 0 && <section className="led-rail-picker" aria-label={t('led_rail_type')}>
+        <strong className="led-choice-title">{t('led_rail_type')}</strong>
+        <div className="led-rail-choice-list">{choices.map((entry) => <button type="button" key={entry.type}
+          className={`led-rail-choice${selected?.type === entry.type ? ' active' : ''}`} aria-pressed={selected?.type === entry.type}
+          disabled={disabled || !enabled} onClick={() => onTypeChange?.(entry.type)}>
+          <span className="reserve-choice-radio">{selected?.type === entry.type && <span />}</span>
+          <strong>{t('led_rail_label', { count: ledSpotsPerRail(entry) })}</strong>
+        </button>)}</div>
+      </section>}
       <button
         type="button"
         className={enabled ? 'reserve-remove-button' : 'reserve-remove-button active'}
@@ -8023,6 +8225,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
               key={row.key}
               type="button"
               className={selected ? 'reserve-choice-card active' : 'reserve-choice-card'}
+              aria-pressed={selected}
               disabled={disabled}
               onClick={() => onChange(row.included ? '' : (selected && !rule?.includedType ? '' : row.type))}
             >
@@ -8039,6 +8242,14 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
         })}
       </div>
 
+      {!noneSelected && Boolean(rule?.includedType || selectedOptionType) && <div className="reserve-door-options">
+        <ReserveRadioGroup title={t('reserve_door_opening')} value={options.doorOpening}
+          options={[{ value: 'push', label: t('reserve_door_push') }, { value: 'pull', label: t('reserve_door_pull') }]}
+          disabled={disabled} onChange={(doorOpening) => onOptions?.({ doorOpening })} />
+        <ReserveRadioGroup title={t('reserve_handle_orientation')} value={options.handleOrientation}
+          options={[{ value: 'left', label: t('reserve_handle_left') }, { value: 'right', label: t('reserve_handle_right') }]}
+          disabled={disabled} onChange={(handleOrientation) => onOptions?.({ handleOrientation })} />
+      </div>}
       <button
         type="button"
         className={noneSelected ? 'reserve-remove-button active' : 'reserve-remove-button'}
@@ -8053,7 +8264,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
 
 function ReserveRadioGroup({ title, value = '', options = [], disabled = false, onChange }) {
   return (
-    <div className="reserve-suboption-group">
+    <div className="reserve-suboption-group" role="group" aria-label={title}>
       <strong>{title}</strong>
       <div>
         {options.map((option) => {
@@ -8063,6 +8274,7 @@ function ReserveRadioGroup({ title, value = '', options = [], disabled = false, 
               key={option.value}
               type="button"
               className={selected ? 'reserve-suboption active' : 'reserve-suboption'}
+              aria-pressed={selected}
               disabled={disabled}
               onClick={() => onChange?.(selected ? '' : option.value)}
             >
@@ -8193,8 +8405,88 @@ function reserveSizeDescription(area = 0, label = '') {
   return label || 'Réserve complémentaire';
 }
 
-function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions, onDifferentVisuals }) {
+function SignatureHeadOptionCard({ companyName = '', disabled = false, visualOptions = {}, uploadState = {}, onCompanyName, onImage, onResetImage, onVisualOptions, onDifferentVisuals, onApply }) {
+  const topSlot = signaturePartitionHeadVisualSlots[0];
+  const busy = disabled || Boolean(uploadState.uploading);
+  const sections = [
+    { key: topSlot.id, slot: topSlot, title: 'Votre logo', width: 500, height: 350, price: '+ 97 € HT', uploadLabel: 'Glissez votre logo', kind: 'logo' },
+    { key: 'main', title: 'Visuel lumineux', width: 460, height: 2130, price: 'Inclus', uploadLabel: 'Glissez votre visuel', kind: 'lumineux' },
+  ];
+  const valueFor = (side, section) => section.slot ? visualOptions[side]?.textureSlotValues?.[section.slot.id] || {} : {
+    imageUrl: visualOptions[side]?.headMainImageUrl, imageName: visualOptions[side]?.headMainImageName,
+    ...visualOptions[side]?.headMainImageFraming, visualEnabled: visualOptions[side]?.headMainVisualEnabled,
+    visualPending: visualOptions[side]?.visualPending,
+  };
+  const enabled = (section) => ['left', 'right'].some((side) => {
+    const value = valueFor(side, section);
+    return value.visualEnabled === true || (value.visualEnabled !== false && Boolean(value.imageUrl || value.imageName || value.visualPending));
+  });
+  const logoEnabled = enabled(sections[0]);
+  const setEnabled = (section, checked) => {
+    for (const side of ['left', 'right']) onVisualOptions?.(side, section.slot
+      ? textureSlotPatch({ options: visualOptions[side] || {} }, section.slot, { visualEnabled: checked })
+      : { headMainVisualEnabled: checked });
+  };
+  const upload = (side, section, file) => { if (file && !busy) onImage?.(side, file, section.slot); };
+
+  return <div className="signature-head-v3">
+    <div className="signature-head-v3-info"><Info size={14} /><span>Vos choix s’appliquent aux 2 têtes de cloison.</span></div>
+    <section className="signature-head-v3-section">
+      <h3>Partie haute</h3>
+      {!logoEnabled && <>
+        <label className="signature-head-v3-company"><span>Votre nom et emplacement <small className="signature-head-v3-badge included">Inclus</small></span>
+          <span className="signature-head-v3-input"><input aria-label="Votre nom et emplacement" value={companyName} maxLength={30} disabled={disabled} onChange={(event) => onCompanyName?.(event.target.value)} /><small>{companyName.length} / 30</small></span>
+        </label>
+        <p className="signature-head-v3-or">OU</p>
+      </>}
+      {sections.map((section, index) => {
+        const active = enabled(section);
+        const separate = partitionHeadUsesDifferentVisuals(visualOptions, section.key);
+        const sides = separate ? ['left', 'right'] : ['left'];
+        return <React.Fragment key={section.key}>
+          {index === 1 && !logoEnabled && <h3 className="signature-head-v3-lower-heading">Partie basse</h3>}
+          <section className={`signature-head-v3-option ${section.kind}${active ? ' active' : ''}`}>
+            <header><strong>{section.title}</strong><small className={`signature-head-v3-badge${index === 1 ? ' included' : ''}`}>{section.price}</small>
+              <button type="button" role="switch" aria-label={section.title} aria-checked={active} disabled={busy} onClick={() => setEnabled(section, !active)}><span /></button>
+            </header>
+            <p>{active ? index === 0 ? 'Forfait unique pour les 2 têtes.' : 'Votre visuel remplace le visuel par défaut.' : index === 0 ? 'Format : 500 × 350 mm' : 'Je veux un visuel différent · 460 × 2130 mm'}</p>
+            {active && <>
+              <div className="signature-head-v3-format"><span><strong>Format à respecter</strong><small>PNG, JPG ou PDF</small></span><b><i className={index === 1 ? 'portrait' : ''} />{section.width} × {section.height} mm</b></div>
+              {sides.map((side) => {
+                const value = valueFor(side, section);
+                const sideLabel = separate ? side === 'left' ? 'Gauche' : 'Droite' : 'Deux têtes';
+                return <div key={side} className="signature-head-v3-upload-block">
+                  {separate && <strong className="signature-head-v3-side">{sideLabel}</strong>}
+                  <label className={`signature-head-v3-dropzone${value.imageUrl ? ' has-image' : ''}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); upload(side, section, event.dataTransfer.files?.[0]); }}>
+                    <span className="signature-head-v3-diagram" aria-hidden="true"><span>{section.width}</span><i /><small>{section.height}</small></span>
+                    <span className="signature-head-v3-drop-copy">
+                      {value.imageUrl ? <img src={value.imageUrl} alt={`${section.title} · ${sideLabel}`} /> : <span className="signature-head-v3-file"><FileImage size={20} /></span>}
+                      <strong>{uploadState.uploading === side ? 'Import en cours…' : value.imageUrl ? 'Votre visuel' : section.uploadLabel}</strong>
+                      <span className="signature-head-v3-import">{value.imageUrl ? 'Modifier' : 'Importer'}</span>
+                    </span>
+                    <input type="file" aria-label={`Importer ${section.title.toLowerCase()} — ${sideLabel}`} accept={visualUploadAccept} disabled={busy} onChange={(event) => { upload(side, section, event.target.files?.[0]); event.target.value = ''; }} />
+                  </label>
+                  {value.imageName && <small className="signature-head-v3-filename">{value.imageName}</small>}
+                  {value.imageUrl && <>
+                    <ImageFramingControls imageUrl={value.imageUrl} value={value} aspectRatio={section.width / section.height} disabled={busy} onChange={(framing) => onVisualOptions?.(side, section.slot ? textureSlotPatch({ options: visualOptions[side] || {} }, section.slot, framing) : { headMainImageFraming: framing })} />
+                    <button type="button" className="item-image-reset" disabled={busy} onClick={() => onResetImage?.(side, section.slot)}>Réinitialiser le visuel</button>
+                  </>}
+                </div>;
+              })}
+              <label className="signature-head-v3-separate"><input type="checkbox" aria-label={`Visuel différent sur chaque tête — ${section.title}`} checked={separate} disabled={busy} onChange={(event) => onDifferentVisuals?.(event.target.checked, section.key)} /><span>Je veux un visuel différent sur chaque tête de cloison</span></label>
+            </>}
+          </section>
+        </React.Fragment>;
+      })}
+    </section>
+    {uploadState.error && <p className="item-options-error">{uploadState.error}</p>}
+    {sections.some(enabled) && <footer className="signature-head-v3-footer"><div><span>Suppléments HT<small>{logoEnabled ? 'Logo en partie haute (2 têtes)' : 'Visuel lumineux inclus'}</small></span><strong>{logoEnabled ? '+ 97 €' : '0 €'}</strong></div><button type="button" disabled={busy} onClick={onApply}>Appliquer</button></footer>}
+  </div>;
+}
+
+function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions, onDifferentVisuals, onApply }) {
   const t = useT();
+  if (isSignatureStand) return <SignatureHeadOptionCard companyName={companyName} disabled={disabled} visualOptions={visualOptions} uploadState={uploadState} onCompanyName={onCompanyName} onImage={onImage} onResetImage={onResetImage} onVisualOptions={onVisualOptions} onDifferentVisuals={onDifferentVisuals} onApply={onApply} />;
   const rows = [
     { side: 'left', label: t('partition_left'), visualLabel: partitionHeadVisualLabel('left', salonLabel, findCatalogEntry(catalog, rule?.leftType)), uploadSubtitle: isSignatureStand ? 'Visuel LED · PNG, JPG ou PDF' : 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.leftType, price: rule?.leftPrice },
     { side: 'right', label: t('partition_right'), visualLabel: partitionHeadVisualLabel('right', salonLabel, findCatalogEntry(catalog, rule?.rightType)), uploadSubtitle: isSignatureStand ? 'Visuel LED · PNG, JPG ou PDF' : 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.rightType, price: rule?.rightPrice },
@@ -8426,16 +8718,13 @@ function SurfaceColorOptionCard({ title, iconSrc, colors, selectedColor, default
       <GroundOptionHeading title={title} value={colorLabel(selected)} iconSrc={iconSrc} />
       {!!includedColors.length && (
         <div className="surface-color-group">
-          <small>{`${includedColors.length} couleur${includedColors.length > 1 ? 's incluses' : ' incluse'}`}</small>
+          <ColorPaletteMeta label={includedColorisLabel(includedColors.length)} included />
           {swatches(includedColors, true)}
         </div>
       )}
       {!!optionalColors.length && (
         <div className="surface-color-group">
-          <div className="wall-fabric-option-line">
-            <small>{`${optionalColors.length} couleur${optionalColors.length > 1 ? 's' : ''} en option`}</small>
-            <em>{fromPrice ? 'Dès ' : ''}+ {formatNumber(optionTotal)} €</em>
-          </div>
+          <ColorPaletteMeta label={`${optionalColors.length} couleur${optionalColors.length > 1 ? 's' : ''} en option`} price={area > 0 ? optionTotal : minColorPrice(optionalColors)} from={fromPrice} unit={area > 0 ? '' : '/m²'} />
           {swatches(optionalColors, false)}
         </div>
       )}
@@ -8468,7 +8757,8 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
   return (
     <div className="color-option-card wall-fabric-option-card">
       <GroundOptionHeading title={title} />
-      <small>{`${includedColors.length || 1} couleur${(includedColors.length || 1) > 1 ? 's' : ''} disponible${(includedColors.length || 1) > 1 ? 's' : ''}`}</small>
+      {includedColors.length > 0 && <>
+      <ColorPaletteMeta label={includedColorisLabel(includedColors.length)} included />
       <div className="ground-main-choice wall-fabric-main-choice">
         <button
           type="button"
@@ -8479,7 +8769,6 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
           onClick={() => selectColor(mainIncludedColor.id)}
         />
         <strong>{mainIncludedColor.name} ({mainIncludedColor.code})</strong>
-        <b>{includedLabel}</b>
       </div>
       {includedColors.length > 1 && (
         <div className="carpet-swatch-row premium wall-fabric-swatches included">
@@ -8498,11 +8787,12 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
           ))}
         </div>
       )}
+      </>}
       {!!optionalColors.length && (
         <>
           <div className="wall-fabric-option-line">
             <small>{`${optionalColors.length} couleur${optionalColors.length > 1 ? 's' : ''} en option - ${formatNumber(minOptionPrice)}€/m2`}</small>
-            {optionTotal > 0 && <em>+ {optionTotal.toLocaleString('fr-FR')} €</em>}
+            <em className={`color-palette-badge ${minOptionPrice > 0 ? 'price' : 'included'}`}>{minOptionPrice > 0 ? `+ ${formatNumber(area > 0 ? optionTotal : minOptionPrice)} €${area > 0 ? '' : '/m²'}` : 'Inclus'}</em>
           </div>
           <div className="carpet-swatch-row premium wall-fabric-swatches">
             {optionalColors.map((color) => (
@@ -8525,8 +8815,44 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
   );
 }
 
-function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, onToggle, onPreview, onPreviewReset, onPending, onFramingChange }) {
+function SignatureWallColorOptionCard({ colors = [], selectedColor = {}, defaultColorId = '', area = 0, disabled = false, onSelect }) {
   const t = useT();
+  const language = useContext(LanguageContext);
+  const { selected, includedColors, optionalColors, optionTotal, fromPrice } = surfaceColorOptionGroups(colors, selectedColor, defaultColorId, area);
+  const colorLabel = (color) => `${color.name || ''}${color.code ? ` (${color.code})` : ''}`;
+  const unitPrice = optionalColors.some((color) => normalizeColorId(color.id) === normalizeColorId(selected.id))
+    ? Number(selected.price || 0) : minColorPrice(optionalColors);
+  return <section className="signature-wall-colors">
+    <GroundOptionHeading title="COTON GRATTÉ" iconSrc="/icons/moquette_icon.svg" />
+    {!!includedColors.length && <>
+      <small className="signature-wall-included-label">{language === 'en' ? `${includedColors.length} included colour${includedColors.length > 1 ? 's' : ''}` : `${includedColors.length} couleur${includedColors.length > 1 ? 's incluses' : ' incluse'}`}</small>
+      <div className="signature-wall-included-colors" role="group" aria-label="COTON GRATTÉ : couleurs incluses">
+        {includedColors.map((color) => <div key={color.id} className="signature-ground-main">
+          <button type="button" className={`signature-ground-main-swatch${normalizeColorId(color.id) === normalizeColorId(selected.id) ? ' active' : ''}`}
+            aria-label={colorLabel(color)} aria-pressed={normalizeColorId(color.id) === normalizeColorId(selected.id)}
+            style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }} disabled={disabled} onClick={() => onSelect?.(color.id)} />
+          <strong>{colorLabel(color)}</strong><em className="signature-ground-price included">{t('color_included')}</em>
+        </div>)}
+      </div>
+    </>}
+    {!!optionalColors.length && <div className="signature-wall-optional-colors">
+      <div className="signature-ground-palette-meta">
+        <small>{optionalColors.length} {language === 'en' ? 'optional colours' : 'couleurs en option'} - {formatNumber(unitPrice)}€/m²</small>
+        <em className="signature-ground-price">{fromPrice ? (language === 'en' ? 'From ' : 'Dès ') : '+ '}{formatNumber(optionTotal)} €</em>
+      </div>
+      <div className="signature-ground-swatches" role="group" aria-label="COTON GRATTÉ : couleurs en option">
+        {optionalColors.map((color) => <button key={color.id} type="button" title={`${colorLabel(color)} · ${colorOptionLabel(color, t('color_options_paid'), area)}`}
+          aria-label={colorLabel(color)} aria-pressed={normalizeColorId(color.id) === normalizeColorId(selected.id)}
+          className={normalizeColorId(color.id) === normalizeColorId(selected.id) ? 'active' : ''}
+          style={{ backgroundColor: colorHex(color) }} disabled={disabled} onClick={() => onSelect?.(color.id)} />)}
+      </div>
+    </div>}
+  </section>;
+}
+
+function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, onToggle, onPreview, onPreviewReset, onPending, onFramingChange, signatureLayout = false }) {
+  const t = useT();
+  const language = useContext(LanguageContext);
   const includedLabel = Number(includedMl || 0) > 0 ? `${formatNumber(includedMl)} ml inclus dans votre formule` : '';
   const activeMl = surfaces
     .filter((surface) => wallCoverEnabledForSurface(covers, surface))
@@ -8536,21 +8862,28 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
   const wallCoverTotal = Math.round(billableMl * wallCoverUnitPrice);
 
   return (
-    <div className="wall-cover-card">
-      <div className="wall-cover-head">
+    <div className={`wall-cover-card${signatureLayout ? ' signature-wall-covers' : ''}`}>
+      {signatureLayout ? <div className="signature-wall-cover-heading">
+        <GroundOptionHeading title={t('wall_cover_title')} iconSrc="/icons/moquette_icon.svg" />
+        <em className="signature-ground-price">{wallCoverTotal > 0 ? `+ ${formatNumber(wallCoverTotal)} €` : '+0€'}</em>
+      </div> : <div className="wall-cover-head">
         <div>
           <strong>{t('wall_cover_title')}</strong>
           <em>{wallCoverTotal > 0 ? `+ ${wallCoverTotal.toLocaleString('fr-FR')} €` : '+0€'}</em>
         </div>
-      </div>
+      </div>}
 
       {includedLabel && (
         <div className="wall-cover-info-box success">
-          <strong><b>i</b>{includedLabel}. Au-delà, facturation de {wallCoverUnitPrice}€/m linéaire</strong>
+          {signatureLayout ? <><b aria-hidden="true">i</b><span>{language === 'en'
+            ? `${formatNumber(includedMl)} linear m included. Beyond this, ${wallCoverUnitPrice}€/linear m.`
+            : `${formatNumber(includedMl)} m linéaire${Number(includedMl) > 1 ? 's' : ''} inclus dans votre formule. Au-delà, facturation de ${wallCoverUnitPrice}€/m linéaire`}</span></>
+            : <strong><b>i</b>{includedLabel}. Au-delà, facturation de {wallCoverUnitPrice}€/m linéaire</strong>}
         </div>
       )}
       <div className="wall-cover-info-box">
-        <span><b>!</b>Cliquez sur <strong>importer</strong> pour visualiser votre fichier dans la scène 3D et il nous sera envoyé automatiquement. Vous n’avez pas de fichier ? Pas de panique. Cliquez simplement sur "je fournirai le visuel plus tard" et nous reviendrons vers vous ultérieurement.</span>
+        {signatureLayout ? <><b aria-hidden="true">!</b><span>{language === 'en' ? <>Don’t have the file yet?<br />Our team will get back to you.</> : <>Vous n’avez pas le fichier ?<br />Notre équipe reviendra vers vous.</>}</span></>
+          : <span><b>!</b>Cliquez sur <strong>importer</strong> pour visualiser votre fichier dans la scène 3D et il nous sera envoyé automatiquement. Vous n’avez pas de fichier ? Pas de panique. Cliquez simplement sur "je fournirai le visuel plus tard" et nous reviendrons vers vous ultérieurement.</span>}
       </div>
 
       {activeMl > 0 && (
@@ -8574,6 +8907,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
               <button
                 type="button"
                 className={`wall-cover-toggle ${enabled ? 'active' : ''}`}
+                aria-pressed={enabled}
                 disabled={disabled}
                 aria-label={t(enabled ? 'wall_cover_toggle_remove' : 'wall_cover_toggle_add', { label: surface.label })}
                 onClick={() => onToggle?.(surface.id, !enabled, surface.sourceWall)}
@@ -8589,11 +8923,13 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
             </div>
             <div className="wall-cover-actions">
               <label className={preview ? 'wall-cover-preview-button has-preview' : 'wall-cover-preview-button'} title={t(preview ? 'wall_cover_preview_replace' : 'wall_cover_preview_upload')}>
+                {signatureLayout && preview?.url && <img src={preview.url} alt={preview.name || surface.label} />}
                 <Upload size={15} />
                 <span>Importer</span>
                 <input
                   type="file"
                   accept={visualUploadAccept}
+                  aria-label={`${t('wall_cover_preview_upload')} · ${surface.label}`}
                   disabled={disabled}
                   onChange={(event) => {
                     const file = event.target.files?.[0];
@@ -8603,7 +8939,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
                 />
               </label>
               {preview && (
-                <button type="button" className="wall-cover-remove-preview" disabled={disabled} onClick={() => onPreviewReset?.(surface.id)} title={t('wall_cover_remove_preview')}>
+                <button type="button" className="wall-cover-remove-preview" disabled={disabled} onClick={() => onPreviewReset?.(surface.id)} title={t('wall_cover_remove_preview')} aria-label={t('wall_cover_remove_preview')}>
                   <X size={14} />
                 </button>
               )}
@@ -8623,6 +8959,54 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
       })}
     </div>
   );
+}
+
+function SignatureGroundOptionCard({ colors = [], selectedColor = {}, defaultColorId = '', footprintColors = [], selectedFootprintColor = {}, area = 0, footprintArea = 0, thick = false, disabled = false, footprintDisabled = false, onSelect, onFootprintSelect, onThickChange }) {
+  const t = useT();
+  const language = useContext(LanguageContext);
+  const floor = surfaceColorOptionGroups(colors, selectedColor, defaultColorId, area);
+  const footprint = surfaceColorOptionGroups(footprintColors, selectedFootprintColor);
+  const colorLabel = (color) => `${color.name || ''}${color.code ? ` (${color.code})` : ''}`;
+  const footprintPrice = signatureArchColorOptions({ included: false }).signatureArchColorSupplement;
+  const thickTotal = Math.round(30 * Number(area || 0)) + Math.round(30 * Number(footprintArea || 0));
+  const dirty = [floor.selected, footprint.selected].some((color) => dirtyCarpetColorCodes.includes(color.code));
+  const palette = (title, choices, included, selected, onChange, locked, price) => choices.length > 0 && (
+    <div className={`signature-ground-palette-group ${included ? 'included' : 'optional'}`}>
+      <div className="signature-ground-palette-meta">
+        <small>{choices.length} {language === 'en' ? (included ? 'included colours' : 'optional colours') : `couleur${choices.length > 1 ? 's' : ''} ${included ? 'incluses' : 'en option'}`}</small>
+        {!included && <em className="signature-ground-price">+ {formatNumber(price)} €</em>}
+      </div>
+      <div className="signature-ground-swatches" role="group" aria-label={`${title} : couleurs ${included ? 'incluses' : 'en option'}`}>
+        {choices.map((color) => <button key={color.id} type="button" title={colorLabel(color)} aria-label={colorLabel(color)}
+          aria-pressed={normalizeColorId(color.id) === normalizeColorId(selected.id)}
+          className={normalizeColorId(color.id) === normalizeColorId(selected.id) ? 'active' : ''}
+          style={{ backgroundColor: colorHex(color) }} disabled={disabled || locked} onClick={() => onChange?.(color.id)} />)}
+      </div>
+    </div>
+  );
+  return <div className="signature-ground-card">
+    <section className="signature-ground-carpet">
+      <GroundOptionHeading title="MOQUETTE" iconSrc="/icons/moquette_icon.svg" />
+      <div className="signature-ground-main">
+        <button type="button" className="signature-ground-main-swatch" aria-label={colorLabel(floor.selected)} aria-pressed="true"
+          style={{ '--swatch-color': floor.selected.hex, '--swatch-image': swatchImage(floor.selected) }} disabled={disabled} onClick={() => onSelect?.(floor.selected.id)} />
+        <strong>{colorLabel(floor.selected)}</strong>
+        <em className={`signature-ground-price${floor.selected.included ? ' included' : ''}`}>{floor.selected.included ? t('color_included') : `+ ${formatNumber(floor.optionTotal)} €`}</em>
+      </div>
+      {floor.includedColors.length > 1 && palette('MOQUETTE', floor.includedColors, true, floor.selected, onSelect, false, 0)}
+      {palette('MOQUETTE', floor.optionalColors, false, floor.selected, onSelect, false, floor.optionTotal)}
+    </section>
+    <section className="signature-ground-footprint">
+      <GroundOptionHeading title="EMPREINTE MOQUETTE" value={colorLabel(footprint.selected)} iconSrc="/icons/empreinte_moquette_icon.svg" />
+      {palette('EMPREINTE MOQUETTE', footprint.includedColors, true, footprint.selected, onFootprintSelect, footprintDisabled, 0)}
+      {palette('EMPREINTE MOQUETTE', footprint.optionalColors, false, footprint.selected, onFootprintSelect, footprintDisabled, footprintPrice)}
+      {dirty && <div className="signature-ground-warning" role="note"><span aria-hidden="true">!</span><small>{language === 'en' ? t('carpet_dirty_warning') : "Couleur sensible aux salissures et traces d'usage."}</small></div>}
+    </section>
+    <div className="signature-ground-thick"><ToggleOption active={thick} disabled={disabled}
+      label={language === 'en' ? t('carpet_thick_label') : 'Option Moquette épaisse'}
+      detail={language === 'en' ? 'Applies to the carpet and the carpet footprint' : 'S’applique à la moquette et à l’empreinte moquette'}
+      price={`+ ${formatNumber(thickTotal)} €`} onChange={onThickChange} /></div>
+  </div>;
 }
 
 function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect, uniformLayout = false, showThickOption = true, thick = false, footprintArea = 0, onThickChange }) {
@@ -8662,7 +9046,7 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
         </div>
         {includedColors.length > 1 && (
           <>
-            <small>{`${includedColors.length} couleurs incluses`}</small>
+            <ColorPaletteMeta label={includedColorisLabel(includedColors.length)} included />
             <div className="carpet-swatch-row" role="group" aria-label="Couleurs de moquette incluses">
               {includedColors.map((color) => (
                 <button key={color.id} type="button" className={selectedDisplayColor.id === color.id ? 'active' : ''}
@@ -8735,7 +9119,8 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
         return (
           <section key={group.id} className="carpet-choice-section ground-section">
             <GroundOptionHeading title="EMPREINTE MOQUETTE" value={`${referenceColor?.name} (${referenceColor?.code})`} iconSrc="/icons/empreinte_moquette_icon.svg" />
-            <small>{`${includedColors.length || 1} couleur${(includedColors.length || 1) > 1 ? 's' : ''} incluse${(includedColors.length || 1) > 1 ? 's' : ''}`}</small>
+            {includedColors.length > 0 && <>
+            <ColorPaletteMeta label={includedColorisLabel(includedColors.length)} included />
             <div className="carpet-swatch-row">
               {(includedColors.length ? includedColors : [referenceColor]).filter(Boolean).map((color) => (
                 <button
@@ -8751,9 +9136,10 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
                 </button>
               ))}
             </div>
+            </>}
             {!!paidColors.length && (
               <>
-                <small>{`${paidColors.length} couleur${paidColors.length > 1 ? 's' : ''} en option — ${formatNumber(minPrice)} €`}</small>
+                <ColorPaletteMeta label={`${paidColors.length} couleur${paidColors.length > 1 ? 's' : ''} en option`} price={Math.round(minPrice * (Number(area) > 0 ? Number(area) : 1))} from={new Set(paidColors.map((color) => Number(color.price || 0))).size > 1} />
                 <div className="carpet-swatch-row premium">
                   {paidColors.map((color) => (
                     <button
@@ -15071,8 +15457,8 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
     left: hasOwn(options, 'partitionHeadLeftEnabled') ? Boolean(options.partitionHeadLeftEnabled) : null,
     right: hasOwn(options, 'partitionHeadRightEnabled') ? Boolean(options.partitionHeadRightEnabled) : null,
   });
-  const ledEntries = ledRailCatalogEntries(catalogEntries);
-  const autoSpotsRule = options.autoSpotsRule || null;
+  const ledEntries = selectLedRailEntries(ledRailCatalogEntries(catalogEntries), options.ledRailType);
+  const autoSpotsRule = selectedLedRailRule(options.autoSpotsRule || null, catalogEntries, options.ledRailType);
   const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, packLabel, options.reserveOptions || {})
     .map((item) => applyReserveItemOverride(item, options.reserveItemOverrides || {}, width, depth, layout, options.carpetFootprintEnabled !== false));
   const ledItems = scenePackBenefits(scene).mode === 'allowance' || options.ledRailsEnabled === false
@@ -16872,7 +17258,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
 
   if (isSignatureScene(scene) && safeItems.some((item) => item.autoPartitionHead && (() => {
     const visual = item.options?.textureSlotValues?.['signature-head-top-28'];
-    return visual?.visualEnabled !== false && Boolean(visual?.imageUrl || visual?.imageName || visual?.visualPending);
+    return visual?.visualEnabled === true || (visual?.visualEnabled !== false && Boolean(visual?.imageUrl || visual?.imageName || visual?.visualPending));
   })())) {
     itemsTotal += 97;
     lines.push({ type: 'signature-head-top-logo', label: 'Logo haut — deux têtes de cloison', quantity: 1, unitPrice: 97, total: 97, reference: '' });
@@ -18207,6 +18593,16 @@ function autoSpotsRuleEntries(rule = null, catalogEntries = []) {
   if (!rule) return [];
   const selected = [rule.twoSpotType, rule.threeSpotType, rule.type].filter(Boolean);
   return selected.map((type) => findCatalogEntry(catalogEntries, type)).filter(Boolean);
+}
+
+function selectLedRailEntries(entries = [], selectedType = '') {
+  const selected = entries.find((entry) => entry.type === selectedType);
+  return selected ? [selected] : entries;
+}
+
+function selectedLedRailRule(rule = null, catalogEntries = [], selectedType = '') {
+  const entries = autoSpotsRuleEntries(rule, catalogEntries);
+  return entries.some((entry) => entry.type === selectedType) ? { type: selectedType } : rule;
 }
 
 function freeWallIntervals(range, blockers) {
@@ -21423,7 +21819,7 @@ function GlbModel({ item, selected, hovered, visualContext }) {
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.binary3ImageFraming) });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '', { flipY: false });
   const textureSlotImages = useTextureSlotImages(item);
-  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.headMainImageFraming) });
+  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) && item.options?.headMainVisualEnabled !== false ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.headMainImageFraming) });
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item, { flipY: false }) : null
   ), [item.type, item.label, item.modelUrl, item.options?.partitionHeadSide, item.dimensions?.smclHeadSide, visualContext?.fontRevision, visualContext?.country, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
@@ -21463,7 +21859,7 @@ function useObjModel(modelUrl, materials) {
 
 function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualContext }) {
   const reserveDoorTexture = useReserveDoorFabricTexture(item);
-  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.headMainImageFraming) });
+  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) && item.options?.headMainVisualEnabled !== false ? item.options?.headMainImageUrl : '', { coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.headMainImageFraming) });
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.binary3ImageFraming) });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '');
   const textureSlotImages = useTextureSlotImages(item);
@@ -21810,7 +22206,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   }
 
   if (!isPartitionHeadItem(item)) return material;
-  if (textureOptions.mainImageTexture && isPartitionHeadMainImageMaterial(materialName, material, item)) {
+  if (item.options?.headMainVisualEnabled !== false && textureOptions.mainImageTexture && isPartitionHeadMainImageMaterial(materialName, material, item)) {
     return materialWithTexture(material, textureOptions.mainImageTexture, { luminous: isSignaturePartitionHeadItem(item) });
   }
   const smclExhibitorTexture = smclExhibitorTextureForMaterial(textureOptions.exhibitorTexture, materialName, material, item);
@@ -21899,6 +22295,7 @@ function applyTextureSlotMaterial(material, item = {}, textureOptions = {}, mate
   for (const slot of slots) {
     if (!materialMatchesTextureSlot(materialName, material, slot.targetName, slot.matchMode) && !signatureArchVisualMaterialMatches(materialName, slot, item)) continue;
     const value = values[slot.id] || {};
+    if (slot.id === 'signature-head-top-28' && value.visualEnabled === false) continue;
     const image = textureOptions.textureSlotImages?.[slot.id];
     if (slot.kind === 'color') {
       if (value.colorImage && image) {

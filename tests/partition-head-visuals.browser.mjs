@@ -51,6 +51,7 @@ const server = await createServer({ server: { host: '127.0.0.1', port: 0 }, logL
   load(id) {
     if (id === appId) return source
       .replace("createRoot(document.getElementById('root')).render(<App />);", 'export { ConfiguratorApp };')
+      .replace('  const estimatedTotal = scenePricing.total;', '  window.headPricing = scenePricing;\n  const estimatedTotal = scenePricing.total;')
       .replace('  const autoSpotsBaseRule = useMemo(', '  window.headItems = automaticPartitionHeadItems;\n  const autoSpotsBaseRule = useMemo(');
     if (id === pageId) return harness;
     if (id === storeId) return store;
@@ -73,7 +74,7 @@ try {
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__head-visuals-test__`);
   await page.waitForFunction(() => window.headItems?.length === 2);
-  const openHeads = async () => page.getByRole('button', { name: 'Tête de cloison', exact: true }).click();
+  const openHeads = async () => page.getByRole('button', { name: /^Tête de cloison/ }).click();
   await openHeads();
   assert.equal(await page.locator('.partition-head-activity-info').count(),0,'Equipped heads do not show the sector-color notice');
   const checkbox = page.getByRole('checkbox', { name: 'Je veux un visuel différent', exact: true });
@@ -125,24 +126,44 @@ try {
   await page.getByRole('button', { name: 'Signature test', exact: true }).click();
   await page.waitForFunction(() => window.headItems.length === 2);
   await openHeads();
-  assert.equal(await uploads.count(), 2, 'Signature shares the main image and top image separately');
-  await page.locator('.signature-head-options').screenshot({path:'/tmp/standing-signature-head-options.png'});
-  await page.setViewportSize({width:390,height:844});
-  await page.locator('.signature-head-options').screenshot({path:'/tmp/standing-signature-head-options-mobile.png'});
+  const panel=page.locator('.signature-head-v3');
+  assert.equal(await panel.locator('input[type=file]').count(),0);
+  await panel.getByRole('textbox',{name:'Votre nom et emplacement'}).fill('TEST JULIEN L 2');
+  await page.waitForFunction(()=>window.savedScene?.options.partitionHeadCompany==='TEST JULIEN L 2');
+  await panel.screenshot({path:'/tmp/standing-signature-head-v3-default.png'});
+  const logo=panel.getByRole('switch',{name:'Votre logo',exact:true}),main=panel.getByRole('switch',{name:'Visuel lumineux',exact:true});
+  await logo.click();await main.click();
+  await page.waitForFunction(()=>window.headPricing.lines.filter(l=>l.type==='signature-head-top-logo').length===1);
+  assert.equal(await panel.locator('input[type=file]').count(),2);
+  assert.equal(await panel.getByRole('textbox').count(),0);
+  await panel.screenshot({path:'/tmp/standing-signature-head-v3-custom.png'});
+  const sigUpload=async(label,name,color)=>{await panel.getByLabel(label,{exact:true}).setInputFiles({name,mimeType:'image/svg+xml',buffer:Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="500" height="350"><rect width="500" height="350" fill="${color}"/></svg>`)});await page.waitForFunction((name)=>window.headItems.every(i=>i.options.textureSlotValues?.['signature-head-top-28']?.imageName===name)||window.headItems.every(i=>i.options.headMainImageName===name),name);};
+  await sigUpload('Importer votre logo — Deux têtes','top.svg','green');
+  const splitTop=panel.getByRole('checkbox',{name:'Visuel différent sur chaque tête — Votre logo',exact:true});
+  const splitMain=panel.getByRole('checkbox',{name:'Visuel différent sur chaque tête — Visuel lumineux',exact:true});
+  await splitTop.check();assert.equal(await panel.locator('input[type=file]').count(),3);assert.equal(await splitMain.isChecked(),false);
+  await panel.getByLabel('Importer votre logo — Droite',{exact:true}).setInputFiles({name:'right-top.svg',mimeType:'image/svg+xml',buffer:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="350"><rect width="500" height="350" fill="yellow"/></svg>')});
+  await page.waitForFunction(()=>window.headItems.find(i=>i.options.partitionHeadSide==='right').options.textureSlotValues['signature-head-top-28'].imageName==='right-top.svg');
+  await sigUpload('Importer visuel lumineux — Deux têtes','light.svg','blue');
+  assert.equal(await page.evaluate(()=>window.headItems.find(i=>i.options.partitionHeadSide==='left').options.textureSlotValues['signature-head-top-28'].imageName),'top.svg');
+  assert.equal(await page.evaluate(()=>window.headItems.every(i=>i.options.headMainImageName==='light.svg')),true);
+  await main.click();await logo.click();
+  assert.equal(await panel.getByRole('textbox',{name:'Votre nom et emplacement'}).inputValue(),'TEST JULIEN L 2');
+  await page.waitForFunction(()=>!window.headPricing.lines.some(l=>l.type==='signature-head-top-logo'));
+  assert.equal(await page.evaluate(()=>window.headItems.every(i=>i.options.headMainImageName==='light.svg'&&i.options.headMainVisualEnabled===false)),true);
+  await page.waitForFunction(()=>window.savedScene?.options.partitionHeadVisuals.left?.textureSlotValues?.['signature-head-top-28']?.visualEnabled===false&&window.savedScene.options.partitionHeadVisuals.right?.headMainVisualEnabled===false);
+  await page.getByRole('button',{name:'Reouvrir test',exact:true}).click();await openHeads();
+  assert.equal(await logo.getAttribute('aria-checked'),'false');await logo.click();await main.click();
+  assert.equal(await splitTop.isChecked(),true);assert.equal(await splitMain.isChecked(),false);
+  await splitMain.check();assert.equal(await panel.locator('input[type=file]').count(),4);
+  await page.setViewportSize({width:390,height:844});await panel.screenshot({path:'/tmp/standing-signature-head-v3-mobile.png'});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
   await page.setViewportSize({width:1440,height:1000});
-  await upload(1, 'top.svg', 'green');
-  await page.waitForFunction(() => window.headItems.length === 2 && window.headItems.every((item) => item.options.textureSlotValues?.['signature-head-top-28']?.imageName === 'top.svg'));
-  await checkbox.check();
-  assert.equal(await uploads.count(), 4);
-  await upload(3, 'right-top.svg', 'yellow');
-  await page.waitForFunction(() => window.headItems.find((item) => item.options.partitionHeadSide === 'right').options.textureSlotValues?.['signature-head-top-28']?.imageName === 'right-top.svg');
-  assert.equal(await page.evaluate(() => window.headItems.find((item) => item.options.partitionHeadSide === 'left').options.textureSlotValues['signature-head-top-28'].imageName), 'top.svg');
+  await panel.getByRole('button',{name:'Appliquer',exact:true}).click();assert.equal(await panel.count(),0);await openHeads();
   await page.getByRole('button', { name: 'Lecture seule test', exact: true }).click();
-  assert.equal(await checkbox.isDisabled(), true);
-  assert.equal(await uploads.nth(0).isDisabled(), true);
-  await page.screenshot({ path: '/tmp/stand-ing-head-visuals.png' });
+  assert.equal(await logo.isDisabled(),true);assert.equal(await splitTop.isDisabled(),true);assert.equal(await panel.locator('input[type=file]').first().isDisabled(),true);
   assert.deepEqual(errors, []);
-  console.log('Partition heads browser: shared upload -> independent artwork -> autosave/reopen -> shared reset/pending -> Signature *28 -> read-only OK');
+  console.log('Partition heads browser: shared upload -> independent artwork -> autosave/reopen -> shared reset/pending -> Signature v3 independent sections, toggles, price, persistence, mobile -> read-only OK');
 } finally {
   await browser?.close();
   await server.close();
