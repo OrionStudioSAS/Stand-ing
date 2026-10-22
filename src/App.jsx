@@ -4851,25 +4851,25 @@ function OptionsStepPanel({
           />
         )}
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} subtitle="Coton gratté · Bâche imprimée" icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
-        <ColorOptionCard
-          uniformLayout={uniformColorSections}
-          title="COTON GRATTÉ"
-          colors={wallFabricColors}
-          selectedColor={selectedWallFabricColor}
-          defaultColorId={defaultColorOptions.wallFabricColorId}
-          includedLabel={t('color_included')}
-          optionLabel={t('color_options_paid')}
-          area={wallFabricArea}
-          disabled={readOnly}
-          onSelect={onWallColor}
-        />
-        <WallCoverOptionCard
+      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')}
+        subtitle={(() => {
+          const n = wallCoverSurfaces.filter(s => wallCoverEnabledForSurface(wallCovers, s)).length;
+          const name = selectedWallFabricColor?.name || 'Coton gratté';
+          return n > 0 ? `${name} · ${n} bâche${n > 1 ? 's' : ''}` : name;
+        })()}
+        icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+        <WallsOptionPanel
+          wallFabricColors={wallFabricColors}
+          selectedWallFabricColor={selectedWallFabricColor}
+          defaultWallFabricColorId={defaultColorOptions.wallFabricColorId}
+          wallFabricArea={wallFabricArea}
           surfaces={wallCoverSurfaces}
           covers={wallCovers}
           previews={wallCoverPreviews}
           includedMl={wallCoverIncludedMl}
           disabled={readOnly}
+          layout={layout}
+          onWallColor={onWallColor}
           onToggle={onWallCoverToggle}
           onPreview={onWallCoverPreview}
           onPreviewReset={onWallCoverPreviewReset}
@@ -8674,6 +8674,242 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function WallsDiagram({ surfaces = [], covers = {}, layout = 'u' }) {
+  const backSurfaces = surfaces.filter(s => s.wall === 'back');
+  const leftSurfaces = surfaces.filter(s => s.wall === 'left');
+  const rightSurfaces = surfaces.filter(s => s.wall === 'right');
+  const hasLeft = leftSurfaces.length > 0;
+  const hasRight = rightSurfaces.length > 0;
+  const isActive = (s) => wallCoverEnabledForSurface(covers, s);
+
+  const surfaceNums = {};
+  surfaces.forEach((s, i) => { surfaceNums[s.id] = i + 1; });
+
+  // Isometric anchor points
+  const BLT = { x: 40, y: 15 };
+  const BRT = { x: 220, y: 15 };
+  const BLB = { x: 40, y: 50 };
+  const BRB = { x: 220, y: 50 };
+  const shift = 28;
+  const drop = 27;
+  const FLT = { x: BLT.x - shift, y: BLT.y + drop };
+  const FLB = { x: BLB.x - shift, y: BLB.y + drop };
+  const FRT = { x: BRT.x + shift, y: BRT.y + drop };
+  const FRB = { x: BRB.x + shift, y: BRB.y + drop };
+
+  const backPixW = BRB.x - BLB.x;
+  let backAccum = 0;
+  const backTotalW = backSurfaces.reduce((s, surf) => s + Number(surf.visibleWidth || surf.width || 1), 0) || 1;
+  const backSegs = backSurfaces.map(surf => {
+    const w = Number(surf.visibleWidth || surf.width || 1);
+    const t0 = backAccum / backTotalW;
+    backAccum += w;
+    const t1 = backAccum / backTotalW;
+    return { surf, x0: BLB.x + t0 * backPixW, x1: BLB.x + t1 * backPixW, y0: BLT.y, y1: BLB.y };
+  });
+
+  const makeWallSegs = (wallSurfaces, fromTL, fromBL, toTL, toBL) => {
+    const totalW = wallSurfaces.reduce((s, surf) => s + Number(surf.visibleWidth || surf.width || 1), 0) || 1;
+    let acc = 0;
+    return wallSurfaces.map(surf => {
+      const w = Number(surf.visibleWidth || surf.width || 1);
+      const t0 = acc / totalW; acc += w; const t1 = acc / totalW;
+      const interp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      const tl0 = interp(fromTL, toTL, t0), tl1 = interp(fromTL, toTL, t1);
+      const bl0 = interp(fromBL, toBL, t0), bl1 = interp(fromBL, toBL, t1);
+      const cx = (tl0.x + tl1.x + bl0.x + bl1.x) / 4;
+      const cy = (tl0.y + tl1.y + bl0.y + bl1.y) / 4;
+      return { surf, pts: [tl0, tl1, bl1, bl0], cx, cy };
+    });
+  };
+
+  const leftSegs = makeWallSegs(leftSurfaces, BLT, BLB, FLT, FLB);
+  const rightSegs = makeWallSegs(rightSurfaces, BRT, BRB, FRT, FRB);
+
+  const pp = (arr) => arr.map(p => `${Math.round(p.x * 10) / 10},${Math.round(p.y * 10) / 10}`).join(' ');
+  const wallFill = (surf) => isActive(surf) ? '#cfe3f5' : '#dce2ea';
+  const wallStroke = (surf) => isActive(surf) ? '#5a9ed0' : '#b8c2ce';
+  const badgeFill = (surf) => isActive(surf) ? '#1f4378' : '#7a8fa5';
+
+  const floorPts = [BLB, BRB, ...(hasRight ? [FRB] : []), ...(hasLeft ? [FLB] : [])];
+
+  return (
+    <svg viewBox="0 0 260 92" className="walls-diagram-svg" aria-hidden="true">
+      <polygon points={pp(floorPts)} fill="#edf1f5" stroke="#c0cad5" strokeWidth={0.5} />
+      <line x1={hasLeft ? FLB.x : BLB.x} y1={hasLeft ? FLB.y : BLB.y} x2={hasRight ? FRB.x : BRB.x} y2={hasRight ? FRB.y : BRB.y} stroke="#a0adb8" strokeWidth={1} strokeDasharray="4,3" />
+      {backSegs.map(({ surf, x0, x1, y0, y1 }) => (
+        <g key={surf.id}>
+          <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} fill={wallFill(surf)} stroke={wallStroke(surf)} strokeWidth={1} />
+          <circle cx={(x0 + x1) / 2} cy={(y0 + y1) / 2} r={8} fill={badgeFill(surf)} />
+          <text x={(x0 + x1) / 2} y={(y0 + y1) / 2} textAnchor="middle" dominantBaseline="central" fill="white" fontSize={8.5} fontWeight="bold" fontFamily="system-ui,sans-serif">{surfaceNums[surf.id]}</text>
+        </g>
+      ))}
+      {hasLeft && leftSegs.map(({ surf, pts, cx, cy }) => (
+        <g key={surf.id}>
+          <polygon points={pp(pts)} fill={wallFill(surf)} stroke={wallStroke(surf)} strokeWidth={1} />
+          <circle cx={cx} cy={cy} r={8} fill={badgeFill(surf)} />
+          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fill="white" fontSize={8.5} fontWeight="bold" fontFamily="system-ui,sans-serif">{surfaceNums[surf.id]}</text>
+        </g>
+      ))}
+      {hasRight && rightSegs.map(({ surf, pts, cx, cy }) => (
+        <g key={surf.id}>
+          <polygon points={pp(pts)} fill={wallFill(surf)} stroke={wallStroke(surf)} strokeWidth={1} />
+          <circle cx={cx} cy={cy} r={8} fill={badgeFill(surf)} />
+          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fill="white" fontSize={8.5} fontWeight="bold" fontFamily="system-ui,sans-serif">{surfaceNums[surf.id]}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function WallsOptionPanel({
+  wallFabricColors = [], selectedWallFabricColor = null, defaultWallFabricColorId = '', wallFabricArea = 0,
+  surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, layout = 'u',
+  onWallColor, onToggle, onPreview, onPreviewReset, onPending, onFramingChange,
+}) {
+  const t = useT();
+  const [activeTab, setActiveTab] = useState('cotton');
+  const activeCoverCount = surfaces.filter(s => wallCoverEnabledForSurface(covers, s)).length;
+  const activeMl = surfaces.filter(s => wallCoverEnabledForSurface(covers, s)).reduce((sum, s) => sum + Number(s.visibleWidth || s.width || 0), 0);
+  const includedUsed = Math.min(activeMl, Number(includedMl || 0));
+  const billableMl = Math.max(0, activeMl - includedUsed);
+  const coverTotal = Math.round(billableMl * wallCoverUnitPrice);
+
+  const displayColors = wallFabricColors.map(c => colorWithDefaultIncluded(c, defaultWallFabricColorId));
+  const explicitIncluded = displayColors.filter(c => c.isDefault || c.isFree || (c.included && !c.defaultIncluded));
+  const includedColors = explicitIncluded.length ? explicitIncluded : displayColors.filter(c => c.included);
+  const includedIdSet = new Set(includedColors.map(c => normalizeColorId(c.id)));
+  const optionalColors = displayColors.filter(c => !includedIdSet.has(normalizeColorId(c.id)));
+  const selectedId = normalizeColorId(selectedWallFabricColor?.id);
+  const minOptionPrice = minColorPrice(optionalColors);
+
+  return (
+    <div className="walls-option-panel">
+      <WallsDiagram surfaces={surfaces} covers={covers} layout={layout} />
+
+      <div className="walls-tabs">
+        <button type="button" className={`walls-tab${activeTab === 'cotton' ? ' active' : ''}`} onClick={() => setActiveTab('cotton')}>
+          Coton gratté
+        </button>
+        <button type="button" className={`walls-tab${activeTab === 'covers' ? ' active' : ''}`} onClick={() => setActiveTab('covers')}>
+          Bâches{activeCoverCount > 0 ? ` · ${activeCoverCount}` : ''}
+        </button>
+      </div>
+
+      {activeTab === 'cotton' && (
+        <div className="walls-cotton-tab">
+          <p className="walls-tab-hint">Habille toutes les cloisons sans bâche.</p>
+          {includedColors.length > 0 && (
+            <div className="walls-color-group">
+              <small>{includedColors.length} couleur{includedColors.length > 1 ? 's' : ''} incluse{includedColors.length > 1 ? 's' : ''}</small>
+              <div className="walls-swatches">
+                {includedColors.map(color => (
+                  <button key={color.id} type="button" className={`walls-swatch${selectedId === normalizeColorId(color.id) ? ' active' : ''}`}
+                    style={{ '--sw': color.hex, '--swi': swatchImage(color) }} title={`${color.name} (${color.code})`}
+                    disabled={disabled} onClick={() => !disabled && onWallColor?.(color.id)}>
+                    <span className="walls-swatch-dot" />
+                    <span className="walls-swatch-name">{color.name}</span>
+                    <em className="walls-swatch-badge">Inclus</em>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {optionalColors.length > 0 && (
+            <div className="walls-color-group">
+              <small>
+                {optionalColors.length} couleur{optionalColors.length > 1 ? 's' : ''} en option
+                {Number(minOptionPrice || 0) > 0 && Number(wallFabricArea || 0) > 0 && ` · + ${Math.round(Number(minOptionPrice) * Number(wallFabricArea)).toLocaleString('fr-FR')} €`}
+              </small>
+              <div className="walls-swatches">
+                {optionalColors.map(color => {
+                  const pp = Number(color.pricePerM2 || color.price || minOptionPrice || 0);
+                  const tot = pp > 0 && Number(wallFabricArea || 0) > 0 ? Math.round(pp * Number(wallFabricArea)) : 0;
+                  return (
+                    <button key={color.id} type="button" className={`walls-swatch${selectedId === normalizeColorId(color.id) ? ' active' : ''}`}
+                      style={{ '--sw': color.hex, '--swi': swatchImage(color) }} title={`${color.name} (${color.code})`}
+                      disabled={disabled} onClick={() => !disabled && onWallColor?.(color.id)}>
+                      <span className="walls-swatch-dot" />
+                      <span className="walls-swatch-name">{color.name}</span>
+                      {tot > 0 && <em className="walls-swatch-badge option">+ {tot.toLocaleString('fr-FR')} €</em>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'covers' && (
+        <div className="walls-covers-tab">
+          {Number(includedMl || 0) > 0 && (
+            <div className="walls-included-banner">
+              <strong>{formatNumber(includedMl)} ml inclus dans votre formule.</strong>
+              <span>Au-delà : {wallCoverUnitPrice} €/ml</span>
+            </div>
+          )}
+          {activeMl > 0 && (
+            <div className="walls-cover-summary">
+              <span>{formatNumber(activeMl)} ml · {formatNumber(includedUsed)} ml inclus</span>
+              <strong>{billableMl > 0 ? `+ ${coverTotal.toLocaleString('fr-FR')} € HT` : 'Inclus'}</strong>
+            </div>
+          )}
+          {!surfaces.length && <div className="walls-covers-empty">{t('wall_cover_empty')}</div>}
+          {surfaces.length > 0 && (
+            <button type="button" className="walls-covers-activate-all" disabled={disabled}
+              onClick={() => surfaces.forEach(s => !wallCoverEnabledForSurface(covers, s) && onToggle?.(s.id, true, s.sourceWall))}>
+              + Activer sur toutes les cloisons
+            </button>
+          )}
+          {surfaces.map((surface, idx) => {
+            const enabled = wallCoverEnabledForSurface(covers, surface);
+            const preview = wallCoverPreviewForSurface(previews, surface);
+            const pending = Boolean(covers?.[surface.id]?.visualPending || (surface.sourceWall && covers?.[surface.sourceWall]?.visualPending));
+            return (
+              <div key={surface.id} className={`walls-cover-card${enabled ? ' active' : ''}`}>
+                <div className="walls-cover-card-top">
+                  <div className="walls-cover-num">{idx + 1}</div>
+                  <div className="walls-cover-info">
+                    <strong>{surface.label}</strong>
+                    <span>{formatNumber(surface.visibleWidth || surface.width)} m × {formatNumber(surface.height)} m</span>
+                  </div>
+                  <button type="button" className={`walls-cover-toggle${enabled ? ' active' : ''}`} disabled={disabled}
+                    aria-label={t(enabled ? 'wall_cover_toggle_remove' : 'wall_cover_toggle_add', { label: surface.label })}
+                    onClick={() => onToggle?.(surface.id, !enabled, surface.sourceWall)} />
+                </div>
+                {enabled && (
+                  <div className="walls-cover-card-body">
+                    <div className="walls-cover-upload-row">
+                      <label className={`walls-cover-upload-btn${preview ? ' has-preview' : ''}`}>
+                        <Upload size={13} />
+                        <span>{preview ? 'Remplacer' : 'Importer un visuel'}</span>
+                        <input type="file" accept={visualUploadAccept} disabled={disabled}
+                          onChange={(event) => { const file = event.target.files?.[0]; if (file) onPreview?.(surface.id, file); event.target.value = ''; }} />
+                      </label>
+                      {preview && (
+                        <button type="button" className="walls-cover-remove-btn" disabled={disabled} onClick={() => onPreviewReset?.(surface.id)} title={t('wall_cover_remove_preview')}>
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
+                    {!preview && <small className="walls-cover-format-hint">Format : TIFF, PDF, PNG · 150 dpi min.</small>}
+                    {preview?.url && <ImageFramingControls imageUrl={preview.url} value={preview} fit="cover" aspectRatio={(surface.visibleWidth || surface.width) / surface.height} disabled={disabled || preview.uploading} onChange={(framing) => onFramingChange?.(surface.id, framing)} />}
+                    <label className="walls-cover-pending-check">
+                      <input type="checkbox" disabled={disabled} checked={pending} onChange={(event) => onPending?.(surface.id, event.target.checked)} />
+                      <span>Je fournirai le visuel plus tard</span>
+                    </label>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
