@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeHexColor, recolorPixelData, recolorSvgMarkup } from '../src/imageColorReplacement.js';
+import { normalizeHexColor, recolorImageUrl, recolorPixelData, recolorSvgMarkup } from '../src/imageColorReplacement.js';
 
 test('normalizes short and long hexadecimal colors', () => {
   assert.equal(normalizeHexColor('#F0a'), '#ff00aa');
@@ -28,4 +28,14 @@ test('recolors matching PNG pixels while preserving alpha and unrelated pixels',
     12, 34, 56, 255,
     255, 24, 255, 0,
   ]);
+});
+
+test('inline SVG pictograms are recolored too, without rasterizing or adding a background', async () => {
+  const markup = '<svg xmlns="http://www.w3.org/2000/svg"><path fill="#ff18ff" stroke="#112233" d="M2 2H8V8H2Z"/></svg>';
+  const url = `data:image/svg+xml,${encodeURIComponent(markup)}`;
+  const result = await recolorImageUrl(url, '#ff18ff', '#1a2b3c');
+  const colored = decodeURIComponent(result.slice(result.indexOf(',') + 1));
+  assert.match(colored, /fill="#1a2b3c"/);
+  assert.match(colored, /stroke="#112233"/);
+  assert.doesNotMatch(colored, /<rect|<image/);
 });

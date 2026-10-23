@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import { normalizeImageFraming } from '../src/imageFraming.js';
 import { Euler, Vector3 } from 'three';
 import { scenePackBenefits } from '../supabase/functions/_shared/packBenefits.js';
-import { recoloredImageCacheKey, recolorImageUrl } from '../src/imageColorReplacement.js';
+import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl } from '../src/imageColorReplacement.js';
 
 const source = readFileSync(new URL('../src/technicalExport.js', import.meta.url), 'utf8')
   .replace(/^import .*;$/gm, '')
@@ -28,7 +28,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, recoloredImageCacheKey, recolorImageUrl });
+  const api = vm.createContext({ document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }
@@ -94,6 +94,43 @@ test('variant BAT pictograms use one SVG template per variant and a cache entry 
   assert.equal(descriptor('#cc0000').sourceColor, '#ff18ff');
   assert.equal(descriptor('#cc0000').targetColor, '#cc0000');
   assert.notEqual(descriptor('#cc0000').key, descriptor('#0055aa').key);
+});
+
+test('asset SVG pictograms follow object colors from finishes, texture slots and variants', () => {
+  const { api } = runtime();
+  const entry = { type: 'chair', color: '#112233', dimensions: { batPictoUrl: '/chair.svg', batPictoPath: 'chair.svg', batPictoReplaceColor: '#FF18FF' } };
+  for (const [options, expected] of [
+    [{ binary2Color: '#1a2b3c' }, '#1a2b3c'],
+    [{ textureSlotValues: { fabric: { color: '#aabbcc' } } }, '#aabbcc'],
+    [{ variantColorSelections: { fabric: { hex: '#334455' } } }, '#334455'],
+    [{ variantColorTargetHex: '#ffeedd', binary2Color: '#111111' }, '#ffeedd'],
+    [{}, '#112233'],
+  ]) {
+    const descriptor = api.technicalSvgPictoDescriptor({ type: 'chair', options }, entry);
+    assert.equal(descriptor.sourceColor, '#ff18ff');
+    assert.equal(descriptor.targetColor, expected);
+    assert.equal(descriptor.key, recoloredImageCacheKey('/chair.svg', '#ff18ff', expected));
+  }
+});
+
+test('pictogram color rules never leak to another SVG override or recolor unconfigured assets', () => {
+  const { api } = runtime();
+  const entry = { dimensions: { batPictoUrl: '/chair.svg', batPictoPath: 'chair.svg', batPictoReplaceColor: '#ff18ff' } };
+  const item = { options: { variantBatPictoUrl: '/other.svg', variantBatPictoPath: 'other.svg', variantColorTargetHex: '#aabbcc' } };
+  assert.equal(api.technicalSvgPictoDescriptor(item, entry).sourceColor, '');
+  assert.equal(api.technicalSvgPictoDescriptor(item, entry).key, '/other.svg');
+  assert.equal(api.technicalSvgPictoDescriptor({ color: '#aabbcc' }, { dimensions: { batPictoUrl: '/original.svg' } }).key, '/original.svg');
+  const group = { type: 'chairs', dimensions: { variantMeta: { chair: { ...entry.dimensions, batPictoReplaceColor: '' } } } };
+  assert.equal(api.technicalSvgPictoDescriptor({ type: 'chair', options: { variantGroupType: 'chairs', binary2Color: '#aabbcc' } }, entry, [group]).sourceColor, '');
+});
+
+test('legacy color rules on a variant still apply to its inherited SVG template', () => {
+  const { api } = runtime();
+  const entry = { type: 'chair', dimensions: { batPictoUrl: '/chair.svg', batPictoPath: 'chair.svg' } };
+  const group = { type: 'chairs', dimensions: { variantMeta: { chair: { batPictoReplaceColor: '#ff18ff' } } } };
+  const item = { type: 'chair', options: { variantGroupType: 'chairs', variantColorTargetHex: '#334455' } };
+  assert.equal(api.technicalSvgPictoDescriptor(item, entry, [group]).sourceColor, '#ff18ff');
+  assert.equal(api.technicalSvgPictoDescriptor({ ...item, options: { ...item.options, variantBatPictoUrl: '/different.svg' } }, entry, [group]).sourceColor, '');
 });
 
 test('rotated group child positions and orientations match Three parent transforms', () => {

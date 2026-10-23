@@ -1,4 +1,4 @@
-import { recoloredImageCacheKey, recolorImageUrl } from './imageColorReplacement.js';
+import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl } from './imageColorReplacement.js';
 import { createTechnicalSvgContext, sanitizeTechnicalSvg } from './technicalSvgContext.js';
 import { technicalA3, paginateTechnicalPrintDetails, wrapTechnicalPrintText } from './technicalPrintLayout.js';
 import { normalizeTechnicalPlanEdits } from './technicalPlanEdits.js';
@@ -174,24 +174,28 @@ function technicalSvgPictoUrl(item = {}, entry = {}, catalog = []) {
 function technicalSvgPictoDescriptor(item = {}, entry = {}, catalog = []) {
   const groupEntry = technicalOverrideGroupEntry(item, catalog);
   const variantMeta = groupEntry?.dimensions?.variantMeta?.[item.type] || groupEntry?.dimensions?.variantBatPictos?.[item.type] || {};
-  const url = item.options?.variantBatPictoUrl
-    || variantMeta?.batPictoUrl
-    || groupEntry?.dimensions?.batPictoUrl
-    || item.dimensions?.batPictoUrl
-    || entry?.dimensions?.batPictoUrl
-    || '';
-  const path = item.options?.variantBatPictoPath
-    || variantMeta?.batPictoPath
-    || groupEntry?.dimensions?.batPictoPath
-    || item.dimensions?.batPictoPath
-    || entry?.dimensions?.batPictoPath
-    || url;
-  if (!url || !/\.svg(?:$|[?#])/i.test(path)) return null;
-  const sourceColor = item.options?.variantBatPictoReplaceColor || variantMeta?.batPictoReplaceColor || '';
+  const sources = [{
+    batPictoUrl: item.options?.variantBatPictoUrl,
+    batPictoPath: item.options?.variantBatPictoPath,
+    batPictoReplaceColor: item.options?.variantBatPictoReplaceColor || undefined,
+  }, variantMeta, groupEntry?.dimensions, item.dimensions, entry?.dimensions].filter(Boolean);
+  const picto = sources.find((source) => source.batPictoUrl);
+  const url = picto?.batPictoUrl || '';
+  const path = picto?.batPictoPath || sources.find((source) => source.batPictoUrl === url && source.batPictoPath)?.batPictoPath || url;
+  if (!url || (!/\.svg(?:$|[?#])/i.test(path) && !/^data:image\/svg\+xml/i.test(url))) return null;
+  // A color rule belongs to its SVG, not to an unrelated variant override.
+  const rule = sources.find((source, index) => {
+    const inheritedUrl = source.batPictoUrl || sources.slice(index + 1).find((parent) => parent.batPictoUrl)?.batPictoUrl;
+    return inheritedUrl === url && source.batPictoReplaceColor != null;
+  });
+  const sourceColor = normalizeHexColor(rule?.batPictoReplaceColor);
   const selectedColors = Object.values(item.options?.variantColorSelections || {});
-  const targetColor = item.options?.variantColorTargetHex
-    || selectedColors.map((color) => color?.hex || color?.color || color?.value || '').find(Boolean)
-    || '';
+  const targetColor = [item.options?.variantColorTargetHex,
+    ...selectedColors.map((color) => color?.hex || color?.color || color?.value),
+    item.options?.binary2Color,
+    ...Object.values(item.options?.textureSlotValues || {}).map((value) => value?.color),
+    item.color, entry?.color,
+  ].map((color) => normalizeHexColor(color)).find(Boolean) || '';
   const key = sourceColor && targetColor ? recoloredImageCacheKey(url, sourceColor, targetColor) : url;
   return { key, url, sourceColor, targetColor };
 }
@@ -1443,7 +1447,7 @@ function technicalChildOptions(childOptions = {}, parentOptions = {}, parentDime
     ...(parentOptions.variantBatPictoUrl || parentDimensions.batPictoUrl ? {
       variantBatPictoUrl: parentOptions.variantBatPictoUrl || parentDimensions.batPictoUrl || '',
       variantBatPictoPath: parentOptions.variantBatPictoPath || parentDimensions.batPictoPath || '',
-      variantBatPictoReplaceColor: parentOptions.variantBatPictoReplaceColor || '',
+      variantBatPictoReplaceColor: parentOptions.variantBatPictoReplaceColor || parentDimensions.batPictoReplaceColor || '',
       variantColorTargetHex: parentOptions.variantColorTargetHex || '',
     } : {}),
     ...(parentOptions.variantBatDescription || parentDimensions.batDescription ? {

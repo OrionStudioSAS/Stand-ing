@@ -3,7 +3,7 @@ import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHead
 import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
 import { sceneAdminRequests, sceneQuestions, questionAsRequest } from './sceneRequests.js';
-import React, { Suspense, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
@@ -13280,6 +13280,14 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           />
         </label>
         <BatPictoPreview imageUrl={draft.dimensions?.batPictoUrl} label={draft.label || draft.type} onRemove={removeBatPicto} removeDisabled={batPictoUploading} />
+        <BatPictoColorSettings
+          key={draft.dimensions?.batPictoUrl || ''}
+          imageUrl={draft.dimensions?.batPictoUrl}
+          imagePath={draft.dimensions?.batPictoPath}
+          sourceColor={draft.dimensions?.batPictoReplaceColor}
+          disabled={batPictoUploading}
+          onChange={(value) => setDraft((current) => ({ ...current, dimensions: { ...current.dimensions, batPictoReplaceColor: value } }))}
+        />
         </div>
         )}
         </div>
@@ -14171,6 +14179,18 @@ function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, colorTem
               {index === 0 ? <span className="asset-variant-default">Par défaut</span> : <button type="button" className="asset-variant-set-default" onClick={() => onReorder?.(index, 0)}>Définir par défaut</button>}
               <button type="button" className="asset-variant-remove" onClick={() => onRemove(index)} aria-label={`Retirer ${selectedSource?.label || 'cette variante'}`}><Trash2 size={15} /></button>
             </div>
+            <BatPictoColorSettings
+              key={meta.batPictoUrl || selectedSource?.dimensions?.batPictoUrl || ''}
+              imageUrl={meta.batPictoUrl || selectedSource?.dimensions?.batPictoUrl}
+              imagePath={meta.batPictoPath || selectedSource?.dimensions?.batPictoPath}
+              sourceColor={meta.batPictoReplaceColor ?? selectedSource?.dimensions?.batPictoReplaceColor}
+              disabled={batPictoUploading}
+              onChange={(value) => onMetaChange?.(type, {
+                batPictoUrl: meta.batPictoUrl || selectedSource?.dimensions?.batPictoUrl || '',
+                batPictoPath: meta.batPictoPath || selectedSource?.dimensions?.batPictoPath || '',
+                batPictoReplaceColor: value,
+              })}
+            />
             <details className="asset-variant-advanced"><summary>Choisir l'objet et régler la variante</summary><div className="asset-picker-field"><span>Objet variante</span><AdminAssetPicker assets={sourceAssets} value={type} onChange={(nextType) => onChange(index, nextType)} /></div>
             {onBatPictoChange && !colorTemplatesEnabled && (
               <div className="asset-bat-picto-field">
@@ -14201,6 +14221,7 @@ function AssetVariantSourceRows({ rows, sourceAssets, variantMeta = {}, colorTem
                   format="SVG"
                   imageUrl={meta.batPictoUrl}
                   sourceColor={meta.batPictoReplaceColor}
+                  showColorControl={false}
                   uploading={batPictoUploading}
                   onImageChange={(file) => onBatPictoChange?.(type, file)}
                   onColorChange={(value) => onMetaChange?.(type, { batPictoReplaceColor: value })}
@@ -14243,8 +14264,36 @@ function AssetGroupCompositionSummary({ rows = [], sourceAssets = [], onAdd, onR
   </div>;
 }
 
-function VariantColorTemplateCard({ title, format, imageUrl = '', sourceColor = '', uploading = false, onImageChange, onColorChange }) {
+function BatPictoColorSettings({ imageUrl = '', imagePath = '', sourceColor = '', disabled = false, onChange }) {
+  const [editing, setEditing] = useState(false);
+  const enabled = Boolean(sourceColor) || editing;
+  if (!imageUrl) return null;
+  const isSvg = /\.svg(?:$|[?#])/i.test(imagePath || imageUrl) || /^data:image\/svg\+xml/i.test(imageUrl);
+  return <section className="bat-picto-color-settings" aria-label="Couleur du picto BAT">
+    <strong>Couleur du picto BAT</strong>
+    {isSvg ? <>
+      <p>Indiquez la couleur du SVG à remplacer. Sur le BAT, elle suivra automatiquement la couleur choisie pour l'objet. Les autres couleurs et le fond transparent sont conservés.</p>
+      <label className="bat-picto-color-toggle"><input type="checkbox" checked={enabled} disabled={disabled} onChange={(event) => { setEditing(event.target.checked); onChange?.(event.target.checked ? '#ff18ff' : ''); }} /><span>Adapter à la couleur de l'objet</span></label>
+      {enabled && <ImageColorReplacementField sourceColor={sourceColor} disabled={disabled} onChange={(value) => { setEditing(true); onChange?.(value); }} />}
+      {enabled && <button type="button" disabled={disabled} onClick={() => { setEditing(false); onChange?.(''); }}>Conserver les couleurs d'origine</button>}
+    </> : <p>Importez un picto SVG pour adapter sa couleur à celle de l'objet.</p>}
+  </section>;
+}
+
+function ImageColorReplacementField({ sourceColor = '', disabled = false, onChange }) {
   const normalizedColor = normalizeHexColor(sourceColor);
+  const hintId = useId();
+  return <div className="variant-color-template-color">
+    <span>Couleur présente dans l'image à remplacer</span>
+    <div>
+      <input type="color" aria-label="Choisir la couleur à remplacer" value={normalizedColor || '#ff18ff'} disabled={disabled} onChange={(event) => onChange?.(event.target.value)} />
+      <input aria-label="Code de la couleur à remplacer" value={sourceColor || ''} disabled={disabled} onChange={(event) => onChange?.(event.target.value)} placeholder="#ff18ff" spellCheck="false" aria-invalid={Boolean(sourceColor && !normalizedColor)} aria-describedby={sourceColor && !normalizedColor ? hintId : undefined} />
+    </div>
+    {sourceColor && !normalizedColor && <small id={hintId}>Utilise une couleur hexadécimale, par exemple #ff18ff.</small>}
+  </div>;
+}
+
+function VariantColorTemplateCard({ title, format, imageUrl = '', sourceColor = '', uploading = false, showColorControl = true, onImageChange, onColorChange }) {
   return (
     <section className="variant-color-template-card">
       <header>
@@ -14265,19 +14314,7 @@ function VariantColorTemplateCard({ title, format, imageUrl = '', sourceColor = 
         />
       </label>
       {title === 'Picto BAT' && <BatPictoPreview imageUrl={imageUrl} label="Variante" />}
-      <label className="variant-color-template-color">
-        <span>Couleur présente dans l’image à remplacer</span>
-        <div>
-          <i style={{ '--template-source-color': normalizedColor || 'transparent' }} />
-          <input
-            value={sourceColor || ''}
-            onChange={(event) => onColorChange?.(event.target.value)}
-            placeholder="#ff18ff"
-            spellCheck="false"
-          />
-        </div>
-        {sourceColor && !normalizedColor && <small>Utilise une couleur hexadécimale, par exemple #ff18ff.</small>}
-      </label>
+      {showColorControl && <ImageColorReplacementField sourceColor={sourceColor} disabled={uploading} onChange={onColorChange} />}
     </section>
   );
 }

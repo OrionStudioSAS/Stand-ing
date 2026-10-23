@@ -43,7 +43,7 @@ export function recoloredImageCacheKey(url = '', sourceColor = '', targetColor =
 export async function recolorImageUrl(url = '', sourceColor = '', targetColor = '') {
   const source = normalizeHexColor(sourceColor);
   const target = normalizeHexColor(targetColor);
-  if (!url || !source || !target || source === target || String(url).startsWith('data:')) return url;
+  if (!url || !source || !target || source === target) return url;
   const key = recoloredImageCacheKey(url, source, target);
   if (!recoloredImageCache.has(key)) {
     recoloredImageCache.set(key, createRecoloredImageUrl(url, source, target).catch(() => url));

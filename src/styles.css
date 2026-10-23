@@ -14445,6 +14445,13 @@ img.asset-thumb {
 .asset-library-grid .asset-card-body > span { color: #738094; font-size: 12px; }
 .asset-library-grid .asset-card-body em { color: #9aa5b5; font-size: 11px; }
 .asset-bat-picto-field { display: grid; align-content: start; gap: 9px; min-width: 0; }
+.bat-picto-color-settings { display: grid; gap: 8px; min-width: 0; border: 1px solid #dce2ea; border-radius: 7px; padding: 12px; color: #172236; background: #f7f9fc; font-size: 12px; }
+.bat-picto-color-settings > p { margin: 0; color: #647084; font-size: 11px; line-height: 1.5; }
+.bat-picto-color-settings > button { justify-self: start; border: 0; padding: 4px 0; color: #1f4378; background: transparent; text-align: left; text-decoration: underline; cursor: pointer; }
+.bat-picto-color-settings label.bat-picto-color-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.bat-picto-color-settings .bat-picto-color-toggle input { flex: 0 0 16px; width: 16px; min-height: 16px; height: 16px; margin: 0; padding: 0; accent-color: #1f4378; }
+.variant-color-template-color input[type="color"] { width: 28px; min-width: 0; height: 32px; padding: 2px; border: 1px solid #cfd8e6; border-radius: 5px; cursor: pointer; }
+.variant-color-template-color input[aria-invalid="true"] { border-color: #cf332d; }
 .asset-drawer-upload-grid > .asset-thumbnail-edit { align-self: start; }
 .asset-thumbnail-edit .bat-picto-ok { color: #087653; }
 .bat-picto-preview { display: grid; gap: 7px; min-width: 0; border: 1px solid #dce2ea; border-radius: 7px; padding: 9px; background: #fff; }
