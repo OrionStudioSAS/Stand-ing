@@ -81,7 +81,7 @@ test('variant BAT pictograms use one SVG template per variant and a cache entry 
         'bar-160': {
           batPictoUrl: templateUrl,
           batPictoPath: 'bar-160.svg',
-          batPictoReplaceColor: '#ff18ff',
+          batPictoReplaceColor: '#ff00ff',
         },
       },
     },
@@ -91,14 +91,14 @@ test('variant BAT pictograms use one SVG template per variant and a cache entry 
     options: { variantGroupType: 'bar-group', variantColorTargetHex: targetColor },
   }, {}, catalog);
 
-  assert.equal(descriptor('#cc0000').sourceColor, '#ff18ff');
+  assert.equal(descriptor('#cc0000').sourceColor, '#ff00ff');
   assert.equal(descriptor('#cc0000').targetColor, '#cc0000');
   assert.notEqual(descriptor('#cc0000').key, descriptor('#0055aa').key);
 });
 
 test('asset SVG pictograms follow object colors from finishes, texture slots and variants', () => {
   const { api } = runtime();
-  const entry = { type: 'chair', color: '#112233', dimensions: { batPictoUrl: '/chair.svg', batPictoPath: 'chair.svg', batPictoReplaceColor: '#FF18FF' } };
+  const entry = { type: 'chair', color: '#112233', dimensions: { batPictoUrl: '/chair.svg', batPictoPath: 'chair.svg', batPictoReplaceColor: '#ff00ff' } };
   for (const [options, expected] of [
     [{ binary2Color: '#1a2b3c' }, '#1a2b3c'],
     [{ textureSlotValues: { fabric: { color: '#aabbcc' } } }, '#aabbcc'],
@@ -107,15 +107,15 @@ test('asset SVG pictograms follow object colors from finishes, texture slots and
     [{}, '#112233'],
   ]) {
     const descriptor = api.technicalSvgPictoDescriptor({ type: 'chair', options }, entry);
-    assert.equal(descriptor.sourceColor, '#ff18ff');
+    assert.equal(descriptor.sourceColor, '#ff00ff');
     assert.equal(descriptor.targetColor, expected);
-    assert.equal(descriptor.key, recoloredImageCacheKey('/chair.svg', '#ff18ff', expected));
+    assert.equal(descriptor.key, recoloredImageCacheKey('/chair.svg', '#ff00ff', expected));
   }
 });
 
 test('pictogram color rules never leak to another SVG override or recolor unconfigured assets', () => {
   const { api } = runtime();
-  const entry = { dimensions: { batPictoUrl: '/chair.svg', batPictoPath: 'chair.svg', batPictoReplaceColor: '#ff18ff' } };
+  const entry = { dimensions: { batPictoUrl: '/chair.svg', batPictoPath: 'chair.svg', batPictoReplaceColor: '#ff00ff' } };
   const item = { options: { variantBatPictoUrl: '/other.svg', variantBatPictoPath: 'other.svg', variantColorTargetHex: '#aabbcc' } };
   assert.equal(api.technicalSvgPictoDescriptor(item, entry).sourceColor, '');
   assert.equal(api.technicalSvgPictoDescriptor(item, entry).key, '/other.svg');
@@ -127,9 +127,9 @@ test('pictogram color rules never leak to another SVG override or recolor unconf
 test('legacy color rules on a variant still apply to its inherited SVG template', () => {
   const { api } = runtime();
   const entry = { type: 'chair', dimensions: { batPictoUrl: '/chair.svg', batPictoPath: 'chair.svg' } };
-  const group = { type: 'chairs', dimensions: { variantMeta: { chair: { batPictoReplaceColor: '#ff18ff' } } } };
+  const group = { type: 'chairs', dimensions: { variantMeta: { chair: { batPictoReplaceColor: '#ff00ff' } } } };
   const item = { type: 'chair', options: { variantGroupType: 'chairs', variantColorTargetHex: '#334455' } };
-  assert.equal(api.technicalSvgPictoDescriptor(item, entry, [group]).sourceColor, '#ff18ff');
+  assert.equal(api.technicalSvgPictoDescriptor(item, entry, [group]).sourceColor, '#ff00ff');
   assert.equal(api.technicalSvgPictoDescriptor({ ...item, options: { ...item.options, variantBatPictoUrl: '/different.svg' } }, entry, [group]).sourceColor, '');
 });
 
