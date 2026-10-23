@@ -18,13 +18,10 @@ const colors = [
 ];
 const ids = (list) => Array.from(list, (color) => color.id);
 
-test('all packs use the shared partition panel and retain the shared floor palette helpers', () => {
+test('Signature and SIAE surfaces share one layout', () => {
   const options = source.slice(source.indexOf('function OptionsStepPanel('), source.indexOf('function OptionsStepPanel(') + 22000);
   assert.match(options, /<CarpetColorOptionCard\s+uniformLayout=\{uniformColorSections\}/);
-  assert.match(options, /<WallOptionsPanel\s+standWidth=\{standWidth\}/);
-  const panel = source.slice(source.indexOf('function WallOptionsPanel('), source.indexOf('\nfunction WallCoverOptionCard('));
-  assert.match(panel, /surfaceColorOptionGroups\(colors, selectedColor, defaultColorId, area\)/);
-  assert.doesNotMatch(panel, /isSignatureStand|salonLabel|isPrestigeStand/);
+  assert.match(options, /<ColorOptionCard\s+uniformLayout=\{uniformColorSections\}/);
   for (const name of ['ColorOptionCard', 'CarpetColorOptionCard']) {
     const start = source.indexOf(`function ${name}(`);
     const component = source.slice(start, source.indexOf('\n}\n', start));

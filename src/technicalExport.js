@@ -739,8 +739,6 @@ function technicalItemOptionLines(item = {}, entry = {}) {
   });
   if (options.technician) lines.push('Permanence technicien');
   if (options.fileCheck) lines.push('Vérification fichier');
-  if (['push', 'pull'].includes(options.reserveDoorOpening)) lines.push(`Ouverture de porte : ${options.reserveDoorOpening === 'push' ? 'Poussante' : 'Tirante'}`);
-  if (['left', 'right'].includes(options.reserveHandleOrientation)) lines.push(`Orientation de la poignée : ${options.reserveHandleOrientation === 'left' ? 'Gauche' : 'Droite'}`);
   if (entry?.dimensions?.category) lines.push(`Catégorie : ${entry.dimensions.category}`);
   return uniqueTechnicalLines(lines);
 }
@@ -1427,7 +1425,7 @@ function technicalChildOptions(childOptions = {}, parentOptions = {}, parentDime
   const childOptionReferences = Array.isArray(childOptions.optionReferences) ? childOptions.optionReferences : [];
   const inheritedVisuals = index === 0 ? {
     ...(parentDimensions.smclHeadSide ? { partitionHeadSide: parentDimensions.smclHeadSide } : {}),
-    ...Object.fromEntries(['partitionHeadSide', 'headMainImageUrl', 'headMainImageName', 'visualPending', 'posterImageUrl', 'posterImageName', 'posterVisualPending', 'reserveDoorOpening', 'reserveHandleOrientation'].filter((key) => hasTechnicalValue(parentOptions[key])).map((key) => [key, parentOptions[key]])),
+    ...Object.fromEntries(['partitionHeadSide', 'headMainImageUrl', 'headMainImageName', 'visualPending', 'posterImageUrl', 'posterImageName', 'posterVisualPending'].filter((key) => hasTechnicalValue(parentOptions[key])).map((key) => [key, parentOptions[key]])),
     ...(hasTechnicalValue(parentOptions.binary3ImageUrl) ? { binary3ImageUrl: parentOptions.binary3ImageUrl } : {}),
     ...(hasTechnicalValue(parentOptions.binary3ImageName) ? { binary3ImageName: parentOptions.binary3ImageName } : {}),
     ...(hasTechnicalValue(parentOptions.binary3VisualPending) ? { binary3VisualPending: parentOptions.binary3VisualPending } : {}),

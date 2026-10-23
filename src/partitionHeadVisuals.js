@@ -1,5 +1,5 @@
 const imageFields = ['imageUrl', 'imageName', 'visualPending', 'imageZoom', 'imageOffsetX', 'imageOffsetY', 'visualEnabled'];
-const mainFields = ['headMainImageUrl', 'headMainImageName', 'headMainImageFraming', 'visualPending', 'headMainVisualMode'];
+const mainFields = ['headMainImageUrl', 'headMainImageName', 'headMainImageFraming', 'visualPending'];
 const has = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 const pick = (value, fields) => Object.fromEntries(fields.filter((key) => has(value, key)).map((key) => [key, value[key]]));
 
@@ -41,12 +41,11 @@ export function withPartitionHeadVisualMode(visuals = {}, differentVisuals = fal
   const next = { ...visuals, differentVisuals };
   if (differentVisuals) return next;
   const left = visualPatch(visuals.left), right = visualPatch(visuals.right);
-  const main = left.headMainImageUrl || left.headMainImageName || left.visualPending || left.headMainVisualMode === 'custom' ? left : right;
+  const main = left.headMainImageUrl || left.headMainImageName || left.visualPending ? left : right;
   const common = {
     headMainImageUrl: main.headMainImageUrl || '', headMainImageName: main.headMainImageName || '',
     headMainImageFraming: main.headMainImageFraming || { imageZoom: 1, imageOffsetX: 0, imageOffsetY: 0 },
     visualPending: Boolean(main.visualPending), textureSlotValues: {},
-    ...(has(main, 'headMainVisualMode') ? { headMainVisualMode: main.headMainVisualMode } : {}),
   };
   for (const id of Object.keys({ ...left.textureSlotValues, ...right.textureSlotValues })) {
     const a = left.textureSlotValues?.[id], b = right.textureSlotValues?.[id];

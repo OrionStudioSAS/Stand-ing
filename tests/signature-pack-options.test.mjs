@@ -187,9 +187,8 @@ test('Signature heads use their LED material for each uploaded image, not the ot
   assert.equal(context.isPartitionHeadMainImageMaterial('led_5500k#40', null, head), false);
   assert.equal(context.isPartitionHeadMainImageMaterial('laminate_d02_120cm#2', null, head), false);
   assert.equal(context.isPartitionHeadMainImageMaterial('*28', null, head), false);
-  const quickView = readFileSync(new URL('../src/PartitionHeadQuickView.jsx', import.meta.url), 'utf8');
-  assert.match(quickView, /!signature && <div className="partition-head-choice-grid/);
-  assert.match(quickView, /!signature && <button[\s\S]*className="partition-head-remove-button"/);
+  assert.match(source, /!isSignatureStand && <div className="partition-head-choice-grid">/);
+  assert.match(source, /!isSignatureStand && <button[\s\S]*className="partition-head-remove-button"/);
 });
 
 test('Signature pack editor has one left and one right head selector instead of area bands', () => {

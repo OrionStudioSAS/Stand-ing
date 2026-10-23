@@ -1,13 +1,9 @@
 import { signatureArchVariant, isSignatureLedArch, signatureArchChoice, signatureArchSizeSupplementLines, isLegacySignatureArch, upgradeLegacySignatureArch, signatureArchFitsDepth, signatureArchMinimumDepth } from './signatureArchVariants.js';
-import { wallOptionsMapGeometry, wallCoverPrintSize } from './wallOptionsPresentation.js';
-import { reserveGroupDetails, hasSignatureMeterCoverChoice } from './reserveOptionsPresentation.js';
-import PartitionHeadQuickView from './PartitionHeadQuickView.jsx';
-import { headFormat } from './partitionHeadPresentation.js';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
 import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
 import { sceneAdminRequests, sceneQuestions, questionAsRequest } from './sceneRequests.js';
-import React, { Suspense, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { Suspense, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
@@ -1909,7 +1905,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       const nextCover = {
         ...(wallCovers?.[surfaceId] || {}),
         enabled: true,
-        visualPending: false,
         previewUrl: imageUrl,
         previewName: file.name,
         ...defaultImageFraming,
@@ -1920,7 +1915,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         [surfaceId]: {
           ...(current?.[surfaceId] || {}),
           enabled: true,
-          visualPending: false,
           previewUrl: imageUrl,
           previewName: file.name,
           ...defaultImageFraming,
@@ -2908,7 +2902,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           />
         ) : (
           <OptionsStepPanel
-            standWidth={width}
             standDepth={depth}
             onOpenShop={() => setActiveStep(3)}
             hasIncludedObjects={scenePackBenefits(initialScene).mode !== 'allowance'}
@@ -2941,14 +2934,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             reserveRule={activeReserveRuleConfig}
             reserveOptionType={effectiveReserveOptionType}
             reserveOptions={reserveOptions}
-            reserveItem={automaticReserveItems[0] || visibleSceneItems.find((item) => item.isGroup && isReserveSceneItem(item))}
-            meterCoverItem={visibleSceneItems.find((item) => isMeterCoverItem(item) && isIncludedSceneItem(item))}
             partitionHeadRule={activePartitionHeadRuleConfig}
             partitionHeadSides={effectivePartitionHeadSides}
             partitionHeadCompany={partitionHeadCompany}
             partitionHeadVisuals={partitionHeadVisuals}
             partitionHeadUploadState={itemOptionState}
-            partitionHeadContext={sceneVisualContext}
             counterItems={includedCounterItems}
             counterColors={counterPalette}
             counterColorCatalog={objectBank}
@@ -3000,14 +2990,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
             onReserveOption={(type) => { if (!readOnly) { if (type === '__none__') { removeReserve(); } else { setReserveOptionType(type); } } }}
             onReserveOptions={(patch) => !readOnly && setReserveOptions((current) => ({ ...current, ...patch }))}
-            onMeterCoverChange={(type) => {
-              if (readOnly || !isSignatureStand || area < 9 || area >= 15) return;
-              const entry = signatureMeterCoverEntries(availableCatalog).find((candidate) => candidate.type === type);
-              if (!entry) return;
-              const manualCover = manualHydratedItems.find((item) => isMeterCoverItem(item) && isIncludedSceneItem(item));
-              if (manualCover) replaceItemWithEntry(manualCover, entry, { ...manualCover.options, unitPrice: 0, variantId: type, variantAssetType: type, variantLabel: signatureMeterCoverFinish(entry), variantGroupLabel: 'Cache compteur' });
-              else setSignatureMeterCoverType(type);
-            }}
             onPartitionHeadSide={(side, enabled) => !readOnly && !isSignatureStand && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
             onPartitionHeadCompany={(value) => !readOnly && setPartitionHeadCompany(value)}
             onPartitionHeadImage={uploadPartitionHeadVisual}
@@ -3993,6 +3975,7 @@ function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items =
   const ledWall = isSignatureLedArch(selectedEntry);
   const ledEntry = signatureArchChoice(entries, selectedVariant.size, selectedVariant.lighting, !ledWall);
   const { selected, includedColors, optionalColors } = surfaceColorOptionGroups(colors, selectedColor || {}, '', 1);
+  const supplement = selectedVariant.supplement + (ledWall ? 2570 : 0) + (selected.id && !selected.included ? 285 : 0);
   const busy = disabled || Boolean(uploadState?.uploading);
   const colorLabel = (color) => `${color.name || ''}${color.code ? ` (${color.code})` : ''}`;
 
@@ -4101,6 +4084,7 @@ function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items =
       })}
       {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
       <footer className="signature-arch-footer">
+        <div><span>Suppléments HT<small>{supplement ? 'Options sélectionnées' : 'Configuration standard'}</small></span><strong>{supplement.toLocaleString('fr-FR')} €</strong></div>
         <button type="button" disabled={busy || !selectedItem} onClick={onApply}>Appliquer</button>
       </footer>
     </div>
@@ -4714,7 +4698,6 @@ function useSimulatorImageQualityCheck(imageUrl, recommendedSpec = null) {
 }
 
 function OptionsStepPanel({
-  standWidth = 4,
   standDepth = Infinity,
   onOpenShop,
   hasIncludedObjects = true,
@@ -4746,14 +4729,11 @@ function OptionsStepPanel({
   reserveRule,
   reserveOptionType,
   reserveOptions = {},
-  reserveItem,
-  meterCoverItem,
   partitionHeadRule,
   partitionHeadSides,
   partitionHeadCompany = '',
   partitionHeadVisuals = {},
   partitionHeadUploadState = {},
-  partitionHeadContext = {},
   counterItems = [],
   counterColors = [],
   counterColorCatalog = [],
@@ -4797,7 +4777,6 @@ function OptionsStepPanel({
   onLedRailsEnabled,
   onReserveOption,
   onReserveOptions,
-  onMeterCoverChange,
   onPartitionHeadSide,
   onPartitionHeadCompany,
   onPartitionHeadImage,
@@ -4872,17 +4851,20 @@ function OptionsStepPanel({
           />
         )}
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('coton')} className="wall-section-accordion" title={t('wall_section_title')}
-        subtitle={wallSectionSubtitle(wallCoverSurfaces, wallCovers, selectedWallFabricColor, t)}
-        icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
-        <WallOptionsPanel
-          standWidth={standWidth}
-          standDepth={standDepth}
+      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} subtitle="Coton gratté · Bâche imprimée" icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+        <ColorOptionCard
+          uniformLayout={uniformColorSections}
+          title="COTON GRATTÉ"
           colors={wallFabricColors}
           selectedColor={selectedWallFabricColor}
           defaultColorId={defaultColorOptions.wallFabricColorId}
+          includedLabel={t('color_included')}
+          optionLabel={t('color_options_paid')}
           area={wallFabricArea}
-          onSelectColor={onWallColor}
+          disabled={readOnly}
+          onSelect={onWallColor}
+        />
+        <WallCoverOptionCard
           surfaces={wallCoverSurfaces}
           covers={wallCovers}
           previews={wallCoverPreviews}
@@ -4893,7 +4875,6 @@ function OptionsStepPanel({
           onPreviewReset={onWallCoverPreviewReset}
           onPending={onWallCoverPending}
           onFramingChange={onWallCoverFraming}
-          onApply={() => toggleOption('coton')}
         />
       </OptionAccordion>
       {isAdminViewer && (
@@ -4917,30 +4898,19 @@ function OptionsStepPanel({
           onEnabledChange={onLedRailsEnabled}
         />
       </OptionAccordion>}
-      <OptionAccordion {...accordionScrollProps('reserve')} className="reserve-section-accordion" ariaLabel={t('option_reserve')}
-        title={<>{t('option_reserve')}{!reserveRule?.includedType && !reserveRule?.options?.length && <em className="reserve-unavailable-badge">{t('reserve_unavailable')}</em>}</>}
-        subtitle={hasSignatureMeterCoverChoice(isSignatureStand, area, meterCoverItem) ? t('reserve_meter_included') : t('reserve_section_subtitle')}
-        icon={<ConfiguratorOptionIcon src="/icons/reserve.svg" />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
+      <OptionAccordion {...accordionScrollProps('reserve')} title={t('option_reserve')} icon={<ConfiguratorOptionIcon src="/icons/reserve.svg" />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
         <ReserveOptionCard
           rule={reserveRule}
           selectedOptionType={reserveOptionType}
           options={reserveOptions}
-          item={reserveItem}
-          meterCoverItem={meterCoverItem}
-          isSignatureStand={isSignatureStand}
-          area={area}
           catalog={catalog}
           salonLabel={salonLabel}
           disabled={readOnly}
           onChange={onReserveOption}
           onOptions={onReserveOptions}
-          onMeterCoverChange={onMeterCoverChange}
-          onOpenShop={onOpenShop}
         />
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('tete')} className="head-section-accordion" ariaLabel={t('option_partition_head')} title={t('option_partition_head')}
-        subtitle={t(isSignatureStand ? 'head_signature_subtitle' : 'head_other_subtitle', { count: Object.values(partitionHeadSides || {}).filter(Boolean).length })}
-        icon={<ConfiguratorOptionIcon src="/icons/tete_de_cloison.svg" />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
+      <OptionAccordion {...accordionScrollProps('tete')} title={t('option_partition_head')} icon={<ConfiguratorOptionIcon src="/icons/tete_de_cloison.svg" />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
         <PartitionHeadOptionCard
           rule={partitionHeadRule}
           sides={partitionHeadSides}
@@ -4951,8 +4921,6 @@ function OptionsStepPanel({
           disabled={readOnly}
           visualOptions={partitionHeadVisuals}
           uploadState={partitionHeadUploadState}
-          visualContext={partitionHeadContext}
-          onApply={() => toggleOption('tete')}
           onChange={onPartitionHeadSide}
           onCompanyName={onPartitionHeadCompany}
           onImage={onPartitionHeadImage}
@@ -7971,7 +7939,7 @@ function ConfiguratorOptionIcon({ src }) {
   return <img className="configurator-option-icon" src={src} alt="" aria-hidden="true" loading="eager" />;
 }
 
-function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, title, subtitle = '', icon, open, onToggle, children, className = '', ariaLabel }) {
+function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, title, subtitle = '', icon, open, onToggle, children, className = '' }) {
   const accordionRef = useRef(null);
 
   useEffect(() => {
@@ -7985,7 +7953,7 @@ function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, 
 
   return (
     <section ref={accordionRef} className={`option-accordion ${open ? 'open' : ''} ${className}`}>
-      <button type="button" aria-label={ariaLabel} aria-expanded={open} onClick={onToggle}>
+      <button type="button" aria-expanded={open} onClick={onToggle}>
         <span className="option-accordion-label">
           <span className="option-accordion-icon" aria-hidden="true">{icon}</span>
           <span className="option-accordion-copy">
@@ -8078,31 +8046,29 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
   );
 }
 
-function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, item, meterCoverItem, isSignatureStand = false, area = 0, catalog = [], salonLabel = '', disabled = false, onChange, onOptions, onMeterCoverChange, onOpenShop }) {
+function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalog = [], salonLabel = '', disabled = false, onChange, onOptions }) {
   const t = useT();
   const rows = reserveChoiceRows(rule, catalog, salonLabel);
   const includedRow = rows.find((row) => row.included && row.price === 0) || null;
   const noneSelected = selectedOptionType === '__none__';
-  const selectedRow = noneSelected ? null : rows.find((row) => row.type === (selectedOptionType || rule?.includedType));
-  const entry = findCatalogEntry(catalog, selectedRow?.type);
-  const details = reserveGroupDetails(entry, item, options);
-  const placementLabels = { 'back-left': 'reserve_back_left', 'back-right': 'reserve_back_right', 'front-left': 'reserve_front_left', 'front-right': 'reserve_front_right', 'back-center': 'reserve_back_center', 'outer-left': 'reserve_outer_left', 'outer-right': 'reserve_outer_right', free: 'reserve_free' };
-  const meterAvailable = hasSignatureMeterCoverChoice(isSignatureStand, area, meterCoverItem);
-  const meterEntries = meterAvailable ? signatureMeterCoverEntries(catalog) : [];
-  const selectedMeter = meterEntries.find((entry) => entry.type === meterCoverItem?.type);
-  const meterLabel = (entry) => t(signatureMeterCoverFinish(entry) === 'Noir' ? 'reserve_black' : 'reserve_white');
-  const doorSummary = [
-    details.opening ? t(details.opening === 'push' ? 'reserve_door_push' : 'reserve_door_pull') : '',
-    details.handle ? t(details.handle === 'left' ? 'reserve_handle_left' : 'reserve_handle_right') : '',
-  ].filter(Boolean).join(' · ');
+
+  if (!rule?.includedType && !rows.length) {
+    return (
+      <div className="reserve-choice-panel">
+        <FormulaIncludedBox includedRow={null} />
+        <div className="reserve-empty-card">
+          <strong>{t('reserve_empty_title')}</strong>
+          <span>{t('reserve_empty_detail')}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="reserve-choice-panel reserve-quickview">
-      {!rows.length ? <div className="reserve-unavailable-notice">
-        <span><Ban size={15} /></span><div><strong>{t('reserve_no_storage')}</strong><p>{t('reserve_unavailable_detail', { area: formatAreaValue(area) })}</p></div>
-      </div> : <FormulaIncludedBox includedRow={includedRow} compact />}
-      {rows.length > 0 && <><strong className="reserve-choice-title">{t('reserve_size')}</strong>
-      <div className="reserve-choice-list" role="group" aria-label={t('reserve_size')}>
+    <div className="reserve-choice-panel reserve-choice-panel-v2">
+      <FormulaIncludedBox includedRow={includedRow} compact />
+      <strong className="reserve-choice-title">Taille</strong>
+      <div className="reserve-choice-list">
         {rows.map((row) => {
           const selected = !noneSelected && (row.included ? !selectedOptionType : selectedOptionType === row.type);
           return (
@@ -8110,73 +8076,32 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, item, 
               key={row.key}
               type="button"
               className={selected ? 'reserve-choice-card active' : 'reserve-choice-card'}
-              aria-pressed={selected}
-              aria-label={`${row.areaLabel || row.sizeName} · ${row.price === 0 ? t('reserve_included') : `+ ${row.price.toLocaleString('fr-FR')} €`}`}
               disabled={disabled}
               onClick={() => onChange(row.included ? '' : (selected && !rule?.includedType ? '' : row.type))}
             >
-              <ReserveSizeIcon area={row.area} />
+              <span className="reserve-choice-radio" aria-hidden="true">{selected ? <span /> : null}</span>
               <span className="reserve-choice-copy">
-                <strong><b>{row.areaLabel || row.sizeName}</b></strong>
+                <strong>Réserve <b>{row.areaLabel}</b></strong>
+                <small>{row.description}</small>
               </span>
-              <span className={row.price === 0 ? 'reserve-choice-price included' : 'reserve-choice-price'}>
-                {row.price === 0 ? t('reserve_included') : `+ ${row.price.toLocaleString('fr-FR')} €`}
+              <span className={row.included && row.price === 0 ? 'reserve-choice-price included' : 'reserve-choice-price'}>
+                {row.included && row.price === 0 ? t('reserve_included') : `+ ${row.price.toLocaleString('fr-FR')} €`}
               </span>
             </button>
           );
         })}
-      </div></>}
-      {selectedRow && <div className="reserve-detail-list">
-        <div className="reserve-detail-row"><span className="reserve-detail-icon"><Layers size={20} /></span><div><small>{t('reserve_location')}</small><strong>{t(placementLabels[details.placement] || 'reserve_configured_location')}</strong></div></div>
-        <details className="reserve-detail-expander" key={selectedRow.type}>
-          <summary className="reserve-detail-row"><span className="reserve-detail-icon"><KeyRound size={20} /></span><span><small>{t('reserve_door')}</small><strong>{doorSummary || t('reserve_configured_door')}</strong></span><ChevronDown size={13} /></summary>
-          <div className="reserve-detail-content">
-            <ReserveRadioGroup title={t('reserve_door_opening')} value={options.doorOpening || ''} disabled={disabled}
-              options={[{ value: 'push', label: t('reserve_door_push') }, { value: 'pull', label: t('reserve_door_pull') }]} onChange={(doorOpening) => onOptions?.({ doorOpening })} />
-            <ReserveRadioGroup title={t('reserve_handle_orientation')} value={options.handleOrientation || ''} disabled={disabled}
-              options={[{ value: 'left', label: t('reserve_handle_choice_left') }, { value: 'right', label: t('reserve_handle_choice_right') }]} onChange={(handleOrientation) => onOptions?.({ handleOrientation })} />
-            <p>{t('reserve_door_metadata_hint')}</p>
-          </div>
-        </details>
-        <details className="reserve-detail-expander">
-          <summary className="reserve-detail-row"><span className="reserve-detail-icon"><Box size={20} /></span><span><small>{t('reserve_equipment')}</small><strong>{details.equipmentCount ? t('reserve_equipment_count', { count: details.equipmentCount }) : t('reserve_configured_equipment')}</strong></span><span className="reserve-choice-price included">{t('reserve_included')}</span></summary>
-          <div className="reserve-detail-content"><ul>{details.equipment.map((child, index) => <li key={child.id || `${child.type}-${index}`}>{child.label || child.type}{Number(child.quantity) > 1 ? ` × ${child.quantity}` : ''}</li>)}</ul>{!details.equipment.length && <p>{t('reserve_configured_equipment')}</p>}</div>
-        </details>
-      </div>}
-      {rows.length > 0 && <button
+      </div>
+
+      <button
         type="button"
         className={noneSelected ? 'reserve-remove-button active' : 'reserve-remove-button'}
         disabled={disabled || (!rule?.includedType && !selectedOptionType)}
-        onClick={() => onChange(noneSelected ? (rule?.includedType ? '' : rows[0]?.type || '') : '__none__')}
+        onClick={() => onChange(noneSelected ? '' : '__none__')}
       >
         {noneSelected ? <><Plus size={15} /> {t('reserve_restore')}</> : <><X size={15} /> {t('reserve_remove')}</>}
-      </button>}
-      {meterEntries.length > 0 && <section className="reserve-meter-selector">
-        <div className="reserve-meter-heading"><strong>{t('reserve_meter_color')}</strong><span>{selectedMeter ? meterLabel(selectedMeter) : ''}</span></div>
-        <div className="reserve-meter-choices" role="group" aria-label={t('reserve_meter_color')}>{meterEntries.map((entry) => {
-          const selected = entry.type === meterCoverItem.type;
-          return <button type="button" key={entry.type} className={selected ? 'active' : ''} disabled={disabled} aria-pressed={selected} onClick={() => onMeterCoverChange?.(entry.type)}>
-            <ReserveMeterThumbnail entry={entry} />{selected && <Check className="reserve-meter-check" size={14} />}
-            <span><strong>{meterLabel(entry)}</strong><span className="reserve-choice-price included">{t('reserve_included')}</span></span>
-          </button>;
-        })}</div>
-      </section>}
-      {!rows.length && onOpenShop && <div className="reserve-shop-section"><strong>{t('reserve_more_storage')}</strong><button type="button" onClick={onOpenShop}><span className="reserve-detail-icon"><Box size={22} /></span><span><strong>{t('reserve_shop_title')}</strong><small>{t('reserve_shop_detail')}</small></span><ChevronRight size={15} /></button></div>}
+      </button>
     </div>
   );
-}
-
-function ReserveSizeIcon({ area = 1 }) {
-  const length = Math.min(3, Math.max(1, area));
-  const x = 12 + length * 9;
-  return <svg className="reserve-size-icon" viewBox="0 0 54 32" aria-hidden="true"><path d={`M12 11 22 5 ${x + 10} ${5 + length * 4} ${x} ${11 + length * 4}Z`} fill="#e8effb" stroke="#8faedb" strokeWidth=".8" /><path d={`M12 11 ${x} ${11 + length * 4} ${x} ${27 + length} 12 25Z`} fill="#c1d3ef" stroke="#8faedb" strokeWidth=".8" /><path d={`M${x} ${11 + length * 4} ${x + 10} ${5 + length * 4} ${x + 10} ${21 + length} ${x} ${27 + length}Z`} fill="#f7faff" stroke="#8faedb" strokeWidth=".8" />{Array.from({ length: Math.floor(length) }, (_, index) => <path key={index} d={`M${15 + index * 9} ${13 + index * 4}v13`} stroke="#f7faff" strokeWidth="1" />)}</svg>;
-}
-
-function ReserveMeterThumbnail({ entry }) {
-  const [failedUrl, setFailedUrl] = useState('');
-  const url = entry.thumbnailUrl || entry.thumbnail_url;
-  const black = signatureMeterCoverFinish(entry) === 'Noir';
-  return <span className="reserve-meter-thumbnail">{url && failedUrl !== url ? <img src={url} alt="" onError={() => setFailedUrl(url)} /> : <svg viewBox="0 0 100 90" aria-hidden="true"><path d="M23 16 54 8 80 19 48 29Z" fill={black ? '#343737' : '#f2f3f3'} /><path d="M23 16 48 29 48 79 23 65Z" fill={black ? '#282b2b' : '#dfe1e2'} /><path d="M48 29 80 19 80 68 48 79Z" fill={black ? '#1d2020' : '#f7f8f8'} /><path d="M53 41v6" stroke={black ? '#8b8e8e' : '#b4b7b8'} strokeWidth="1.5" /></svg>}</span>;
 }
 
 function ReserveRadioGroup({ title, value = '', options = [], disabled = false, onChange }) {
@@ -8191,7 +8116,6 @@ function ReserveRadioGroup({ title, value = '', options = [], disabled = false, 
               key={option.value}
               type="button"
               className={selected ? 'reserve-suboption active' : 'reserve-suboption'}
-              aria-pressed={selected}
               disabled={disabled}
               onClick={() => onChange?.(selected ? '' : option.value)}
             >
@@ -8322,45 +8246,168 @@ function reserveSizeDescription(area = 0, label = '') {
   return label || 'Réserve complémentaire';
 }
 
-function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, visualContext = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions, onDifferentVisuals, onApply }) {
+function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions, onDifferentVisuals }) {
   const t = useT();
-  const billableSides = partitionHeadBillableSides(rule, sides);
-  const selectedCount = Object.values(sides).filter(Boolean).length;
-  const rows = ['left', 'right'].map((side) => {
-    const type = side === 'left' ? rule?.leftType : rule?.rightType;
-    const entry = findCatalogEntry(catalog, type) || {};
-    const selected = Boolean(sides[side]);
-    const billable = selected ? billableSides.has(side) : selectedCount >= Math.max(0, Number(rule?.includedCount || 0));
-    return { side, type, selected, entry, label: t(side === 'left' ? 'partition_left' : 'partition_right'),
-      visual: visualOptions[side] || {}, topSlot: signaturePartitionHeadVisualSlots[0],
-      topFormat: headFormat([500, 350]),
-      mainFormat: headFormat(partitionHeadMainImageCoverSize(entry)),
-      price: billable ? firstPriceValue(assetUnitPrice(entry, salonLabel), side === 'left' ? rule?.leftPrice : rule?.rightPrice, 0) : 0,
-    };
-  });
-  const logoCharged = isSignatureStand && rows.some((row) => {
-    const value = row.visual.textureSlotValues?.[row.topSlot.id];
-    return row.selected && value?.visualEnabled !== false && Boolean(value?.imageUrl || value?.imageName || value?.visualPending);
-  });
-  return <PartitionHeadQuickView rows={rows} signature={isSignatureStand}
-    equipped={normalizePackLabel(salonLabel) === 'equipe' || normalizeTextValue(salonLabel).includes('siae')}
-    companyName={companyName} visualContext={visualContext} differentVisuals={partitionHeadUsesDifferentVisuals(visualOptions)}
-    disabled={disabled} uploading={uploadState.uploading} error={uploadState.error} accept={visualUploadAccept} t={t}
-    total={isSignatureStand ? (logoCharged ? 97 : 0) : rows.filter((row) => row.selected).reduce((sum, row) => sum + row.price, 0)} logoCharged={logoCharged}
-    onSide={onChange} onCompanyName={onCompanyName} onDifferentVisuals={onDifferentVisuals} onApply={onApply}
-    onArtwork={(row, file, slot) => {
-      if (slot) onVisualOptions?.(row.side, textureSlotPatch({ options: row.visual }, slot, { visualEnabled: true }));
-      onImage?.(row.side, file, slot);
-    }}
-    onReset={(row, slot) => onResetImage?.(row.side, slot)}
-    onTopEnabled={(row, visualEnabled) => onVisualOptions?.(row.side, textureSlotPatch({ options: row.visual }, row.topSlot, visualEnabled
-      ? { visualEnabled: true }
-      : { visualEnabled: false, imageUrl: '', imageName: '', visualPending: false, ...defaultImageFraming }))}
-    onMainMode={(row, enabled) => onVisualOptions?.(row.side, { headMainVisualMode: enabled ? 'custom' : 'standard' })}
-    onPending={(row, visualPending, slot) => onVisualOptions?.(row.side, slot ? textureSlotPatch({ options: row.visual }, slot, { visualPending }) : { visualPending })}
-    onFraming={(row, framing, slot) => onVisualOptions?.(row.side, slot ? textureSlotPatch({ options: row.visual }, slot, framing) : { headMainImageFraming: framing })}
-    renderFraming={(art, onChange, disabled) => <ImageFramingControls imageUrl={art.url} value={art.framing} disabled={disabled} onChange={onChange} />}
-  />;
+  const rows = [
+    { side: 'left', label: t('partition_left'), visualLabel: partitionHeadVisualLabel('left', salonLabel, findCatalogEntry(catalog, rule?.leftType)), uploadSubtitle: isSignatureStand ? 'Visuel LED · PNG, JPG ou PDF' : 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.leftType, price: rule?.leftPrice },
+    { side: 'right', label: t('partition_right'), visualLabel: partitionHeadVisualLabel('right', salonLabel, findCatalogEntry(catalog, rule?.rightType)), uploadSubtitle: isSignatureStand ? 'Visuel LED · PNG, JPG ou PDF' : 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.rightType, price: rule?.rightPrice },
+  ];
+  const selectedRows = rows.filter((row) => Boolean(sides?.[row.side]));
+  const selectedCount = selectedRows.length;
+  const differentVisuals = partitionHeadUsesDifferentVisuals(visualOptions);
+  const sharedVisual = selectedCount === 2 && !differentVisuals;
+  const visualRows = sharedVisual ? selectedRows.slice(0, 1) : selectedRows;
+  const uploading = Boolean(uploadState?.uploading);
+
+  return (
+    <div className={`partition-head-panel partition-head-panel-v2${isSignatureStand ? ' signature-head-options' : ''}`}>
+      {!isSignatureStand && normalizePackLabel(salonLabel) !== 'equipe' && !normalizeTextValue(salonLabel).includes('siae') && <div className="partition-head-activity-info">
+        <b>i</b>
+        <span>Le fond de couleur correspond à votre secteur d'activité et ne peut être modifié.</span>
+      </div>}
+
+      <div className={isSignatureStand ? 'signature-head-identity' : undefined}>
+      {isSignatureStand && <div className="signature-head-section-heading"><span>Votre enseigne</span><small>Inclus</small></div>}
+      <label className="partition-head-company-field">
+        <span>{isSignatureStand ? 'Nom de votre société' : t('partition_head_company_field')}</span>
+        <input
+          value={companyName || ''}
+          disabled={disabled}
+          onChange={(event) => onCompanyName?.(event.target.value)}
+          placeholder={t('partition_head_company_placeholder')}
+        />
+      </label>
+      {isSignatureStand && <p className="signature-head-note">Le nom, l’allée et l’emplacement s’affichent automatiquement sur les deux têtes de cloison.</p>}
+      </div>
+
+      {!isSignatureStand && <div className="partition-head-choice-grid">
+        {rows.map((row) => {
+          const entry = findCatalogEntry(catalog, row.type);
+          const selected = Boolean(sides?.[row.side]);
+          const currentSelectedCount = Object.values(sides).filter(Boolean).length;
+          const freeSlots = Math.max(0, Number(rule?.includedCount || 0));
+          const billableSides = partitionHeadBillableSides(rule, sides);
+          const billable = selected ? billableSides.has(row.side) : currentSelectedCount >= freeSlots;
+          const price = billable ? firstPriceValue(assetUnitPrice(entry, salonLabel), row.price, 0) : 0;
+          return (
+            <button
+              key={row.side}
+              type="button"
+              className={selected ? 'partition-head-side-card active' : 'partition-head-side-card'}
+              disabled={disabled || !row.type}
+              onClick={() => onChange(row.side, !selected)}
+            >
+              <span className="reserve-choice-radio" aria-hidden="true">{selected ? <span /> : null}</span>
+              <span>
+                <strong>{row.label}</strong>
+                <small className={billable ? 'price' : 'included'}>{row.type ? (billable ? `+ ${price.toLocaleString('fr-FR')} € HT` : t('color_included')) : t('partition_not_configured')}</small>
+              </span>
+            </button>
+          );
+        })}
+      </div>}
+
+      {selectedCount === 2 && <div className="partition-head-visual-mode">
+        <label className="visual-pending-checkbox">
+          <input type="checkbox" checked={differentVisuals} disabled={disabled || uploading} onChange={(event) => onDifferentVisuals?.(event.target.checked)} />
+          <span>{t('partition_different_visuals')}</span>
+        </label>
+        <small>{t(sharedVisual ? 'partition_shared_visual_hint' : 'partition_different_visuals_hint')}</small>
+      </div>}
+
+      {visualRows.length ? visualRows.map((row) => (
+        <React.Fragment key={row.side}>
+          <PartitionHeadVisualUpload
+            row={isSignatureStand ? { ...row, visualLabel: 'Visuel lumineux', badge: sharedVisual ? 'Deux têtes' : row.label, uploadSubtitle: 'PNG, JPG ou PDF' } : sharedVisual ? { ...row, visualLabel: t('partition_visual_shared') } : row}
+            visual={visualOptions?.[row.side] || {}}
+            uploading={sharedVisual ? uploading : uploadState?.uploading === row.side}
+            disabled={disabled || uploading}
+            showPending={!isSignatureStand}
+            onImage={(file) => onImage?.(row.side, file)}
+            onReset={() => onResetImage?.(row.side)}
+            onPending={(checked) => onVisualOptions?.(row.side, { visualPending: checked })}
+            onFramingChange={(framing) => onVisualOptions?.(row.side, { headMainImageFraming: framing })}
+          />
+          {isSignatureStand && signaturePartitionHeadVisualSlots.map((slot) => {
+            const value = visualOptions?.[row.side]?.textureSlotValues?.[slot.id] || {};
+            return (
+              <PartitionHeadVisualUpload
+                key={slot.id}
+                row={{ ...row, visualLabel: sharedVisual ? 'Logo en partie haute' : `Logo en partie haute · ${row.side === 'left' ? 'gauche' : 'droite'}`, badge: '97 € HT / 2 têtes', uploadSubtitle: 'PNG, JPG ou PDF', description: 'Remplace l’enseigne automatique. Forfait unique pour les deux têtes de cloison.' }}
+                visual={{ headMainImageUrl: value.imageUrl, headMainImageName: value.imageName, headMainImageFraming: value }}
+                uploading={sharedVisual ? uploading : uploadState?.uploading === row.side}
+                disabled={disabled || uploading}
+                showPending={false}
+                onImage={(file) => onImage?.(row.side, file, slot)}
+                onReset={() => onResetImage?.(row.side, slot)}
+                onFramingChange={(framing) => onVisualOptions?.(row.side, textureSlotPatch({ options: visualOptions?.[row.side] || {} }, slot, framing))}
+              />
+            );
+          })}
+        </React.Fragment>
+      )) : (
+        <div className="partition-head-empty">{t('partition_select_visual')}</div>
+      )}
+      {uploadState?.error && <small className="partition-head-upload-error">{uploadState.error}</small>}
+
+      {!isSignatureStand && <button
+        type="button"
+        className="partition-head-remove-button"
+        disabled={disabled || !selectedCount}
+        onClick={() => {
+          onChange('left', false);
+          onChange('right', false);
+        }}
+      >
+        <X size={15} /> {t('partition_remove')}
+      </button>}
+    </div>
+  );
+}
+
+function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabled = false, showPending = true, onImage, onReset, onPending, onFramingChange }) {
+  const t = useT();
+  const hasImage = Boolean(visual.headMainImageUrl);
+  const pending = Boolean(visual.visualPending);
+  return (
+    <div className="partition-head-upload-block partition-head-upload-block-v2">
+      <div className="partition-head-upload-title">
+        <div className="partition-head-upload-heading"><strong>{row.visualLabel}</strong>{row.badge && <small>{row.badge}</small>}</div>
+        <span>{row.uploadSubtitle || t('partition_size')}</span>
+        {row.description && <p className="signature-head-note">{row.description}</p>}
+      </div>
+      <label className={hasImage ? 'partition-head-dropzone partition-head-dropzone-v2 has-image' : 'partition-head-dropzone partition-head-dropzone-v2'}>
+        {hasImage ? <img src={visual.headMainImageUrl} alt={row.visualLabel} /> : <FileImage size={24} />}
+        <strong>{uploading ? t('partition_uploading') : ''}</strong>
+        <span>{t('partition_import')}</span>
+        <input
+          type="file"
+          accept={visualUploadAccept}
+          disabled={disabled || uploading}
+          onChange={(event) => {
+            onImage?.(event.target.files?.[0]);
+            event.target.value = '';
+          }}
+        />
+      </label>
+      {hasImage && <ImageFramingControls imageUrl={visual.headMainImageUrl} value={visual.headMainImageFraming || {}} disabled={disabled || uploading} onChange={onFramingChange} />}
+      {showPending && <label className="visual-pending-checkbox partition-head-pending-v2">
+        <input
+          type="checkbox"
+          disabled={disabled}
+          checked={pending}
+          onChange={(event) => onPending?.(event.target.checked)}
+        />
+        <span>{t('visual_pending_label')}</span>
+      </label>}
+      {visual.headMainImageName && <small className="partition-head-file-name">{visual.headMainImageName}</small>}
+      {hasImage && onReset && (
+        <button className="item-image-reset" type="button" disabled={disabled} onClick={onReset}>
+          {t('img_upload_reset')}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function ToggleOptionCard({ enabled, enabledLabel, disabledLabel, disabled = false, onChange }) {
@@ -8529,141 +8576,6 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
       )}
     </div>
   );
-}
-
-function wallSectionSubtitle(surfaces = [], covers = {}, color = {}, t) {
-  const count = surfaces.filter((surface) => wallCoverEnabledForSurface(covers, surface)).length;
-  return count ? `${color?.name || t('wall_section_fabric')} · ${t(count === 1 ? 'wall_section_active_one' : 'wall_section_active_count', { count })}`
-    : `${t('wall_section_fabric')} · ${t('wall_section_covers')} · ${t(surfaces.length === 1 ? 'wall_section_wall_one' : 'wall_section_wall_count', { count: surfaces.length })}`;
-}
-
-function WallOptionsMap({ surfaces, covers, previews, selectedColor, standWidth, standDepth, onLocate }) {
-  const t = useT();
-  const id = useId().replace(/:/g, '');
-  const geometry = useMemo(() => wallOptionsMapGeometry(surfaces, standWidth, standDepth), [surfaces, standWidth, standDepth]);
-  const points = (list) => list.map((point) => point.join(',')).join(' ');
-  const pending = surfaces.some((surface) => {
-    const preview = wallCoverPreviewForSurface(previews, surface);
-    return wallCoverEnabledForSurface(covers, surface) && (!preview?.url || preview.uploadError || covers[surface.id]?.visualPending || (surface.sourceWall && covers[surface.sourceWall]?.visualPending));
-  });
-  return <div className="wall-options-map">
-    <svg viewBox="0 0 320 234" role="group" aria-label={t('wall_section_map')}>
-      <defs><linearGradient id={`${id}-cover`} x1="0" y1="0" x2="1" y2="1"><stop stopColor="#3568ad" /><stop offset=".55" stopColor="#4fbac4" /><stop offset="1" stopColor="#e7b666" /></linearGradient>
-        {geometry.planes.map((plane) => <clipPath key={plane.id} id={`${id}-plane-${plane.number}`}><polygon points={points(plane.points)} /></clipPath>)}
-      </defs>
-      <polygon points={points(geometry.floor.map(([x, y]) => [x, y + 5]))} fill="#dfe4eb" />
-      <polygon points={points(geometry.floor)} fill="#edf0f5" />
-      {geometry.planes.map((plane) => {
-        const surface = surfaces[plane.number - 1];
-        const enabled = wallCoverEnabledForSurface(covers, surface);
-        const preview = wallCoverPreviewForSurface(previews, surface);
-        const missing = enabled && (!preview?.url || preview.uploadError || covers[surface.id]?.visualPending || (surface.sourceWall && covers[surface.sourceWall]?.visualPending));
-        const [bottomLeft, , topRight, topLeft] = plane.points;
-        const imageWidth = Math.max(.01, Number(surface.width)), imageHeight = Math.max(.01, Number(surface.height));
-        const framing = normalizeImageFraming(preview || {});
-        const matrix = [(topRight[0] - topLeft[0]) / imageWidth, (topRight[1] - topLeft[1]) / imageWidth, (bottomLeft[0] - topLeft[0]) / imageHeight, (bottomLeft[1] - topLeft[1]) / imageHeight, ...topLeft].join(' ');
-        return <g key={surface.id} data-surface-id={surface.id}>
-          <polygon points={points(plane.points)} fill={enabled ? (missing ? '#e6edfc' : '#fff') : colorHex(selectedColor, '#e4e5e8')} stroke={missing ? '#6e94df' : '#cbd3df'} strokeWidth="1" strokeDasharray={missing ? '3 2' : undefined} />
-          {enabled && preview?.url && !missing && <g clipPath={`url(#${id}-plane-${plane.number})`}><image href={preview.url}
-            x={imageWidth * ((1 - framing.imageZoom) / 2 + framing.imageOffsetX / 100)} y={imageHeight * ((1 - framing.imageZoom) / 2 + framing.imageOffsetY / 100)}
-            width={imageWidth * framing.imageZoom} height={imageHeight * framing.imageZoom} transform={`matrix(${matrix})`} preserveAspectRatio="xMidYMid slice" /></g>}
-          {!enabled && <polygon points={points(plane.points)} fill="#fff" opacity={surface.wall === 'right' || surface.kind === 'reserve' ? '.26' : '.04'} />}
-        </g>;
-      })}
-      {geometry.planes.map((plane) => {
-        const surface = surfaces[plane.number - 1];
-        const enabled = wallCoverEnabledForSurface(covers, surface);
-        return <g key={`number-${surface.id}`} className="wall-map-number" role="button" tabIndex={0}
-          aria-label={t('wall_section_locate', { number: plane.number, label: surface.label })}
-          onClick={() => onLocate(surface.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onLocate(surface.id); } }}>
-          <circle cx={plane.center[0]} cy={plane.center[1]} r="9" fill={enabled ? '#3d63a4' : '#fff'} stroke="#5f87cf" strokeWidth="1" />
-          <text x={plane.center[0]} y={plane.center[1] + 3.2} textAnchor="middle" fill={enabled ? '#fff' : '#3565ae'}>{plane.number}</text>
-        </g>;
-      })}
-    </svg>
-    <div className="wall-map-legend"><span><i style={{ background: colorHex(selectedColor, '#e4e5e8') }} />{selectedColor?.name || t('wall_section_fabric')}</span><span><i className="cover" />{t('wall_section_cover')}</span>{pending && <span><i className="pending" />{t('wall_cover_missing')}</span>}</div>
-  </div>;
-}
-
-function WallOptionsPanel({ standWidth = 4, standDepth = 3, colors = [], selectedColor = {}, defaultColorId = '', area = 0, surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, onSelectColor, onToggle, onPreview, onPreviewReset, onPending, onFramingChange, onApply }) {
-  const t = useT();
-  const id = useId();
-  const [tab, setTab] = useState(() => surfaces.some((surface) => wallCoverEnabledForSurface(covers, surface)) ? 'covers' : 'fabric');
-  const [focusedSurface, setFocusedSurface] = useState('');
-  const rowRefs = useRef({});
-  const tabRefs = useRef({});
-  const { selected, includedColors, optionalColors, optionTotal, fromPrice } = surfaceColorOptionGroups(colors, selectedColor, defaultColorId, area);
-  const activeSurfaces = surfaces.filter((surface) => wallCoverEnabledForSurface(covers, surface));
-  const quantityMl = roundLinearMeters(activeSurfaces.reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0));
-  const prices = new Map(wallCoverValidationRows(activeSurfaces, includedMl).map((row) => [row.surface.id, row.total]));
-  const allActive = surfaces.length > 0 && activeSurfaces.length === surfaces.length;
-  const colorLabel = (color) => `${color.name || ''}${color.code ? ` (${color.code})` : ''}`;
-  const locate = (surfaceId) => {
-    setTab('covers'); setFocusedSurface(surfaceId);
-    window.requestAnimationFrame(() => { rowRefs.current[surfaceId]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); rowRefs.current[surfaceId]?.focus({ preventScroll: true }); });
-  };
-  const chooseTab = (event) => {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-    event.preventDefault();
-    const next = event.key === 'Home' ? 'fabric' : event.key === 'End' ? 'covers' : tab === 'fabric' ? 'covers' : 'fabric';
-    setTab(next); tabRefs.current[next]?.focus();
-  };
-  const palette = (choices, included) => choices.length > 0 && <div className="wall-fabric-palette-group">
-    <div><small>{t(included ? (choices.length === 1 ? 'wall_section_color_included_one' : 'wall_section_colors_included') : choices.length === 1 ? 'wall_section_color_optional_one' : 'wall_section_colors_optional', { count: choices.length })}</small>
-      <em className={included ? 'included' : ''}>{included ? t('color_included') : `${fromPrice ? t('wall_section_from') : ''}+ ${formatNumber(optionTotal)} €`}</em></div>
-    <div className="wall-fabric-swatches" role="group" aria-label={t(included ? 'wall_section_palette_included' : 'wall_section_palette_optional')}>
-      {choices.map((color) => <button type="button" key={color.id} aria-label={colorLabel(color)} title={colorLabel(color)} aria-pressed={normalizeColorId(selected.id) === normalizeColorId(color.id)}
-        className={normalizeColorId(selected.id) === normalizeColorId(color.id) ? 'active' : ''} style={{ '--swatch-color': colorHex(color), '--swatch-image': swatchImage(color) }} disabled={disabled} onClick={() => onSelectColor?.(color.id)} />)}
-    </div>
-  </div>;
-
-  return <div className="wall-options-panel">
-    <WallOptionsMap surfaces={surfaces} covers={covers} previews={previews} selectedColor={selected} standWidth={standWidth} standDepth={standDepth} onLocate={locate} />
-    <div className="wall-options-tabs" role="tablist" aria-label={t('wall_section_finishes')} onKeyDown={chooseTab}>
-      {['fabric', 'covers'].map((key) => <button type="button" role="tab" id={`${id}-${key}-tab`} key={key} ref={(node) => { tabRefs.current[key] = node; }}
-        aria-selected={tab === key} aria-controls={`${id}-${key}-panel`} tabIndex={tab === key ? 0 : -1} onClick={() => setTab(key)}>
-        {key === 'fabric' ? <Box size={14} /> : <FileImage size={14} />}{t(key === 'fabric' ? 'wall_section_fabric' : 'wall_section_covers')}{key === 'covers' && activeSurfaces.length > 0 && <span>{activeSurfaces.length}</span>}
-      </button>)}
-    </div>
-    {tab === 'fabric' ? <div role="tabpanel" id={`${id}-fabric-panel`} aria-labelledby={`${id}-fabric-tab`}>
-      <section className="wall-fabric-selector surface-color-option-card">
-        <div className="wall-options-heading"><h3>{t('wall_section_fabric')}</h3><strong>{colorLabel(selected)}</strong></div>
-        <p>{t('wall_section_fabric_caption')}</p>
-        {palette(includedColors, true)}{palette(optionalColors, false)}
-      </section>
-    </div> : <div className="wall-options-covers" role="tabpanel" id={`${id}-covers-panel`} aria-labelledby={`${id}-covers-tab`}>
-      <div className="wall-options-allowance"><HelpCircle size={14} /><span>{Number(includedMl) > 0 ? t('wall_section_allowance', { count: formatNumber(includedMl), price: wallCoverUnitPrice }) : t('wall_section_no_allowance', { price: wallCoverUnitPrice })}</span></div>
-      <div><div className="wall-options-heading"><h3>{t('wall_section_printed_covers')}</h3><strong>{t(activeSurfaces.length === 1 ? 'wall_section_wall_one' : 'wall_section_wall_count', { count: activeSurfaces.length })}</strong></div><p className="wall-options-caption">{t('wall_section_covers_caption')}</p></div>
-      {!surfaces.length && <p className="wall-cover-empty">{t('wall_cover_empty')}</p>}
-      <div className="wall-options-cover-list">{surfaces.map((surface, index) => {
-        const enabled = wallCoverEnabledForSurface(covers, surface);
-        const preview = wallCoverPreviewForSurface(previews, surface);
-        const busy = disabled || Boolean(preview?.uploading);
-        const pending = Boolean(covers[surface.id]?.visualPending || (surface.sourceWall && covers[surface.sourceWall]?.visualPending));
-        const size = wallCoverPrintSize(surface);
-        const price = enabled ? prices.get(surface.id) || 0 : wallCoverValidationRows([surface], Math.max(0, includedMl - quantityMl))[0]?.total || 0;
-        return <article key={surface.id} ref={(node) => { if (node) rowRefs.current[surface.id] = node; else delete rowRefs.current[surface.id]; }} tabIndex={-1}
-          data-surface-id={surface.id} className={`wall-cover-row wall-options-cover${enabled ? ' active' : ''}${focusedSurface === surface.id ? ' located' : ''}`}>
-          <div className="wall-options-cover-heading"><span className="wall-options-number">{index + 1}</span><div><strong>{surface.label}</strong><small>{formatNumber(surface.width)} × {formatNumber(surface.height)} m · <b>{price > 0 ? `+ ${formatNumber(price)} €` : t('color_included')}</b></small></div>
-            <label className="wall-options-switch"><input type="checkbox" role="switch" aria-label={t('wall_cover_toggle_add', { label: surface.label })} checked={enabled} disabled={busy} onChange={(event) => onToggle?.(surface.id, event.target.checked, surface.sourceWall)} /><span /></label>
-          </div>
-          {enabled && <>
-            {!preview?.url && <div className="wall-cover-format"><strong>{t('wall_section_required_format')}</strong><span><FileImage size={12} />{size.widthMm} × {size.heightMm} mm</span></div>}
-            <label className={`wall-options-upload${preview?.url ? ' has-preview' : ''}${busy ? ' disabled' : ''}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (!busy && event.dataTransfer.files?.[0]) onPreview?.(surface.id, event.dataTransfer.files[0]); }}>
-              {preview?.url ? <img src={preview.url} alt="" /> : <span className="wall-cover-format-sketch"><small>{size.widthMm}</small><i style={{ aspectRatio: `${Math.max(1, size.widthMm)} / ${Math.max(1, size.heightMm)}` }} /><small>{size.heightMm}</small></span>}
-              <span className="wall-options-upload-copy"><strong>{preview?.url ? preview.name || t('wall_section_imported') : t('wall_section_drop_visual')}</strong><small className={preview?.url && !preview.uploading && !preview.uploadError ? 'ready' : ''}>{preview?.uploading ? t('wall_section_uploading') : preview?.uploadError ? t('wall_section_upload_error') : preview?.url ? <><Check size={12} />{t('wall_section_imported')} · {size.widthMm} × {size.heightMm} mm</> : 'PDF, SVG, JPG ou PNG HD'}</small></span>
-              <span className="wall-options-import">{t(preview?.url ? 'wall_section_replace' : 'wall_section_import')}</span>
-              <input type="file" accept={visualUploadAccept} aria-label={t('wall_section_import_for', { label: surface.label })} disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; if (file) onPreview?.(surface.id, file); event.target.value = ''; }} />
-            </label>
-            {preview?.uploadError && <p className="wall-options-upload-error" role="alert">{t('wall_section_upload_error')}</p>}
-            {preview?.url && <div className="wall-options-image-tools"><ImageFramingControls imageUrl={preview.url} value={preview} fit="cover" aspectRatio={surface.width / surface.height} disabled={busy} onChange={(framing) => onFramingChange?.(surface.id, framing)} /><button type="button" className="wall-options-remove-image" disabled={busy} onClick={() => onPreviewReset?.(surface.id)}><X size={12} />{t('wall_cover_remove_preview')}</button></div>}
-            <label className="visual-pending-checkbox wall-cover-pending wall-options-pending"><input type="checkbox" checked={pending} disabled={busy} onChange={(event) => onPending?.(surface.id, event.target.checked)} /><span>{t('wall_cover_pending_visual')}</span></label>
-          </>}
-        </article>;
-      })}</div>
-      {surfaces.length > 0 && <button type="button" className="wall-options-toggle-all" disabled={disabled || surfaces.some((surface) => wallCoverPreviewForSurface(previews, surface)?.uploading)} onClick={() => { surfaces.forEach((surface) => onToggle?.(surface.id, !allActive, surface.sourceWall)); }}>{allActive ? <Minus size={13} /> : <Plus size={13} />}{t(allActive ? 'wall_section_disable_all' : 'wall_section_enable_all')}</button>}
-    </div>}
-  </div>;
 }
 
 function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, onToggle, onPreview, onPreviewReset, onPending, onFramingChange }) {
