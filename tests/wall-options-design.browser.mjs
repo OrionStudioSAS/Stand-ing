@@ -63,11 +63,15 @@ try {
   assert.equal(await card.locator('.wall-map-number').count(), 6);
   assert.equal(await card.locator('.wall-fabric-swatches button').count(), 21);
   assert.deepEqual(await card.locator('.wall-fabric-swatches button').evaluateAll(buttons=>buttons.map(button=>button.getAttribute('aria-label'))), colors.map(color=>`${color.name} (${color.code})`));
-  assert.match(await card.locator('.wall-options-footer').innerText(), /207 €/);
+  assert.equal(await card.locator('.wall-options-footer').count(), 0);
+  assert.doesNotMatch(await card.innerText(), /Suppléments HT/);
+  assert.match(await card.locator('.wall-fabric-palette-group').last().innerText(), /207 €/);
   const geometry = await card.evaluate(element=>({width:element.offsetWidth,header:element.querySelector(':scope > button').offsetHeight,swatches:[...element.querySelectorAll('.wall-fabric-swatches button')].map(button=>button.offsetWidth)}));
   assert.equal(geometry.width, 360); assert.equal(geometry.header, 62); assert.ok(geometry.swatches.every(width=>width===26));
   await card.screenshot({ path: '/tmp/standing-cloisons-fabric.png' });
-  await card.getByRole('button', { name: 'Coton 1 (F1)', exact: true }).click(); assert.match(await card.locator('.wall-options-footer').innerText(), /0 €/);
+  await card.getByRole('button', { name: 'Coton 1 (F1)', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.wallModel.color.id), 'fabric-1');
+  assert.equal(await card.locator('.wall-options-footer').count(), 0);
   await tab('Bâches').click(); assert.equal(await rows.count(), 6); assert.equal(await rows.locator('input[type=file]').count(), 0, 'Inactive banners remain compact');
   await tab('Coton gratté').click(); await tab('Coton gratté').press('ArrowRight'); assert.equal(await tab('Bâches').getAttribute('aria-selected'), 'true');
   await rows.first().getByRole('switch').check();
@@ -104,6 +108,7 @@ try {
     await page.getByRole('button', { name: `Pack ${pack}`, exact: true }).click();
     await page.getByRole('button', { name: /^Cloisons/ }).click(); await card.locator('.wall-options-map').waitFor();
     assert.equal(await card.locator('.wall-fabric-selector').count(), 1, `${pack} uses the same partition selector`);
+    assert.doesNotMatch(await card.innerText(), /Suppléments HT/);
   }
   for (const layout of ['left','back','right','u']) {
     await page.getByRole('button', { name: `Implantation ${layout}`, exact: true }).click(); await page.getByRole('button', { name: /^Cloisons/ }).click();

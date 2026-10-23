@@ -8608,9 +8608,6 @@ function WallOptionsPanel({ standWidth = 4, standDepth = 3, colors = [], selecte
   const { selected, includedColors, optionalColors, optionTotal, fromPrice } = surfaceColorOptionGroups(colors, selectedColor, defaultColorId, area);
   const activeSurfaces = surfaces.filter((surface) => wallCoverEnabledForSurface(covers, surface));
   const quantityMl = roundLinearMeters(activeSurfaces.reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0));
-  const billableMl = roundLinearMeters(Math.max(0, quantityMl - Number(includedMl || 0)));
-  const coversTotal = Math.round(billableMl * wallCoverUnitPrice);
-  const fabricTotal = selected.included ? 0 : Math.round(Number(selected.price || 0) * Math.max(0, area));
   const prices = new Map(wallCoverValidationRows(activeSurfaces, includedMl).map((row) => [row.surface.id, row.total]));
   const allActive = surfaces.length > 0 && activeSurfaces.length === surfaces.length;
   const colorLabel = (color) => `${color.name || ''}${color.code ? ` (${color.code})` : ''}`;
@@ -8647,7 +8644,6 @@ function WallOptionsPanel({ standWidth = 4, standDepth = 3, colors = [], selecte
         <p>{t('wall_section_fabric_caption')}</p>
         {palette(includedColors, true)}{palette(optionalColors, false)}
       </section>
-      <footer className="wall-options-footer"><div><span>{t('wall_section_supplements')}<small>{colorLabel(selected)} · {activeSurfaces.length ? t(activeSurfaces.length === 1 ? 'wall_section_active_one' : 'wall_section_active_count', { count: activeSurfaces.length }) : t('wall_section_no_covers')}</small></span><strong>{fabricTotal + coversTotal > 0 ? '+ ' : ''}{formatNumber(fabricTotal + coversTotal)} €</strong></div></footer>
     </div> : <div className="wall-options-covers" role="tabpanel" id={`${id}-covers-panel`} aria-labelledby={`${id}-covers-tab`}>
       <div className="wall-options-allowance"><HelpCircle size={14} /><span>{Number(includedMl) > 0 ? t('wall_section_allowance', { count: formatNumber(includedMl), price: wallCoverUnitPrice }) : t('wall_section_no_allowance', { price: wallCoverUnitPrice })}</span></div>
       <div><div className="wall-options-heading"><h3>{t('wall_section_printed_covers')}</h3><strong>{t(activeSurfaces.length === 1 ? 'wall_section_wall_one' : 'wall_section_wall_count', { count: activeSurfaces.length })}</strong></div><p className="wall-options-caption">{t('wall_section_covers_caption')}</p></div>

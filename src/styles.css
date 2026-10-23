@@ -15417,11 +15417,6 @@ img.asset-thumb {
 .wall-options-panel .wall-fabric-swatches { display: grid; grid-template-columns: repeat(8,26px); gap: 9px 12px; }
 .wall-options-panel .wall-fabric-swatches > button { flex: 0 0 26px; width: 26px; height: 26px; min-height: 0; border: 1px solid #0000000c; border-radius: 50%; padding: 0; background-color: var(--swatch-color); background-image: var(--swatch-image); background-position: center; background-size: cover; box-shadow: none; }
 .wall-options-panel .wall-fabric-swatches > button.active { outline: 2px solid #3d63a4; outline-offset: 2px; }
-.wall-options-footer { display: grid; gap: 12px; margin: 20px -18px -18px; border-top: 1px solid #e0e2e8; padding: 16px 18px 22px; }
-.wall-options-footer > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.wall-options-footer > div > span { display: grid; gap: 3px; min-width: 0; color: #8b8f9e; font-size: 12px; font-weight: 400; line-height: 16px; }
-.wall-options-footer small { font-size: 10px; font-weight: 400; line-height: 13px; overflow-wrap: anywhere; }
-.wall-options-footer strong { flex: 0 0 auto; color: var(--wall-text); font-size: 14px; font-weight: 700; line-height: 18px; }
 .wall-options-covers { display: grid; gap: 16px; }
 .wall-options-allowance { display: grid; grid-template-columns: 14px minmax(0,1fr); align-items: center; gap: 8px; border-radius: 8px; padding: 10px 11px; color: var(--wall-text); background: #f4f7fd; font-size: 11px; font-weight: 400; line-height: 14px; }
 .wall-options-allowance > svg { color: #3262af; }
