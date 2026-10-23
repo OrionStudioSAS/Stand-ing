@@ -15333,6 +15333,9 @@ img.asset-thumb {
 .signature-arch-import { flex: 0 0 auto; border-radius: 22px; padding: 8px 13px; color: #fff; background: #3d63a4; font-size: .67rem; font-weight: 650; }
 .signature-arch-pending { display: flex; align-items: center; gap: 7px; color: #8b8f9e; font-size: .68rem; line-height: 1.4; cursor: pointer; }
 .signature-arch-pending input { flex: 0 0 15px; width: 15px; height: 15px; margin: 0; accent-color: #3d63a4; }
+.signature-arch-footer { display: grid; gap: 12px; margin: 0 -18px -18px; padding: 16px 18px 18px; border-top: 1px solid #e2e4ea; }
+.signature-arch-footer > button { min-height: 38px; border: 0; border-radius: 24px; color: #fff; background: #3d63a4; font-size: .77rem; font-weight: 700; cursor: pointer; }
+.signature-arch-footer > button:disabled { opacity: .5; cursor: not-allowed; }
 .signature-arch-design .signature-arch-upload { font-weight: 400; }
 .signature-arch-design .signature-arch-upload-copy strong { color: #414550; }
 .signature-arch-design .signature-arch-upload-copy small { font-weight: 400; }

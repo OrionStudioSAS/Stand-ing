@@ -17,7 +17,7 @@ return <><nav style={{position:'fixed',bottom:0,left:0,zIndex:99999,background:'
 <api.PartitionHeadOptionCard key={key} rule={rule} sides={sides} isSignatureStand={pack==='Signature'} companyName={name} catalog={assets.map(asset=>api.assetToCatalogEntry(asset,assets))} salonLabel={pack} disabled={disabled} visualOptions={visuals} visualContext={{company:name,standNumber:'15',aisleNumber:'A',hall:'3',country:'FR'}} uploadState={{error}}
 onChange={(side,selected)=>setSides(current=>({...current,[side]:selected}))} onCompanyName={setName} onDifferentVisuals={different=>setVisuals(value=>api.withPartitionHeadVisualMode(value,different))} onVisualOptions={patch}
 onImage={(side,file,slot)=>{window.lastHeadFile={side,name:file.name,slot:slot?.id};patch(side,options=>slot?api.textureSlotPatch({options},slot,{imageUrl:art,imageName:file.name,visualPending:false}):{headMainImageUrl:art,headMainImageName:file.name,visualPending:false})}}
-onResetImage={(side,slot)=>patch(side,options=>slot?api.textureSlotPatch({options},slot,{imageUrl:'',imageName:'',visualPending:false}):{headMainImageUrl:'',headMainImageName:'',visualPending:false})}/></api.OptionAccordion></main></>};createRoot(document.getElementById('root')).render(<Test/>);`;
+onResetImage={(side,slot)=>patch(side,options=>slot?api.textureSlotPatch({options},slot,{imageUrl:'',imageName:'',visualPending:false}):{headMainImageUrl:'',headMainImageName:'',visualPending:false})} onApply={()=>setOpen(false)}/></api.OptionAccordion></main></>};createRoot(document.getElementById('root')).render(<Test/>);`;
 const server = await createServer({ logLevel: 'error', server: { host: '127.0.0.1', port: 0 }, plugins: [{
   name: 'head-options-design',
   resolveId(id) { if (id === '/src/__head-design-app.jsx') return `${root}src/__head-design-app.jsx`; if (id === '/src/__head-design-page.jsx') return `${root}src/__head-design-page.jsx`; },
@@ -85,8 +85,7 @@ try {
   await choice(top, 'Nom & emplacement').click();
   assert.equal(await page.evaluate(() => window.headDesignState.visuals.left.textureSlotValues['signature-head-top-28'].imageUrl), '');
   assert.match(await card.locator('.head-options-footer').innerText(), /0 €/);
-  assert.equal(await card.getByRole('button', { name: 'Appliquer', exact: true }).count(), 0);
-  await page.getByRole('button', { name: 'Tête de cloison', exact: true }).click();
+  await card.getByRole('button', { name: 'Appliquer', exact: true }).click();
   assert.equal(await card.locator('.head-quickview').count(), 0);
   await page.getByRole('button', { name: 'Tête de cloison', exact: true }).click();
   assert.equal(await choice(top, 'Nom & emplacement').getAttribute('aria-pressed'), 'true');

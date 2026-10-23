@@ -102,6 +102,7 @@
 .head-options-footer > div > span { color: #9399a6; font-size: 11px; }
 .head-options-footer small { display: block; font-size: 9px; line-height: 14px; }
 .head-options-footer strong { flex: 0 0 auto; color: #42464f; font-size: 13px; font-weight: 650; }
+.head-options-footer > button { min-height: 38px; border: 0; border-radius: 22px; color: white; background: #3965ad; font-size: 12px; font-weight: 600; }
 .head-quickview button:disabled:not(.head-front-head) { cursor: not-allowed; opacity: .5; }
 .head-quickview button:focus-visible, .head-quickview input:focus-visible { outline: 2px solid #3965ad; outline-offset: 3px; }
 .head-quickview .head-art-dropzone:focus-within, .head-quickview .head-file-action:focus-within { outline: 2px solid #3965ad; outline-offset: 3px; }
