@@ -2,7 +2,6 @@ import { signatureArchVariant, isSignatureLedArch, signatureArchChoice, signatur
 import { wallOptionsMapGeometry, wallCoverPrintSize } from './wallOptionsPresentation.js';
 import { reserveGroupDetails, hasSignatureMeterCoverChoice } from './reserveOptionsPresentation.js';
 import PartitionHeadQuickView from './PartitionHeadQuickView.jsx';
-import GroundOptionsQuickView from './GroundOptionsQuickView.jsx';
 import { headFormat } from './partitionHeadPresentation.js';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
 import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
@@ -4830,7 +4829,6 @@ function OptionsStepPanel({
 }) {
   const t = useT();
   const uniformColorSections = isSignatureStand || normalizePackLabel(salonLabel) === 'equipe' || normalizeTextValue(salonLabel).includes('siae');
-  const quickGround = isSignatureStand || ['confort', 'prestige'].includes(normalizePackLabel(salonLabel));
   const accordionScrollProps = (optionKey) => ({
     optionKey,
     scrollTarget: optionScrollTarget,
@@ -4839,25 +4837,8 @@ function OptionsStepPanel({
   return (
     <>
       <PanelHead title={t('panel_options_title')} step={activeStep} />
-      <OptionAccordion {...accordionScrollProps('moquette')} className={quickGround ? 'ground-section-accordion' : ''} ariaLabel={t('option_ground')} title={t('option_ground')} subtitle={isSignatureStand ? 'Moquette' : 'Moquette · Empreinte'} icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
-        {quickGround ? <GroundOptionsQuickView
-          signature={isSignatureStand}
-          carpet={{ ...surfaceColorOptionGroups(carpetColors, selectedCarpetColor, defaultColorOptions.carpetColorId, carpetArea), area: carpetArea }}
-          footprint={{ ...surfaceColorOptionGroups(footprintColors, selectedCarpetFootprintColor, defaultColorOptions.carpetFootprintColorId || defaultColorOptions.carpetColorId, carpetFootprintAreaM2()), area: carpetFootprintAreaM2() }}
-          carpetArea={carpetArea}
-          footprintArea={footprintArea}
-          thick={carpetThick}
-          footprintEnabled={carpetFootprintEnabled}
-          disabled={readOnly}
-          footprintDisabled={Boolean(technicalFloorType)}
-          footprintDisabledReason={technicalFloorType ? t('floor_warning') : ''}
-          dirtyFootprint={dirtyCarpetColorCodes.includes(selectedCarpetFootprintColor?.code)}
-          onCarpet={onCarpetColor}
-          onFootprint={onCarpetFootprintColor}
-          onThick={onCarpetThick}
-          onRestoreFootprint={() => onCarpetFootprintEnabled?.(true)}
-          t={t}
-        /> : <><CarpetColorOptionCard
+      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle={isSignatureStand ? 'Moquette' : 'Moquette · Empreinte'} icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+        <CarpetColorOptionCard
           uniformLayout={uniformColorSections}
           showThickOption={isSignatureStand}
           colors={carpetColors}
@@ -4889,7 +4870,7 @@ function OptionsStepPanel({
             onSelect={onCarpetFootprintColor}
             onThickChange={onFootprintThick}
           />
-        )}</>}
+        )}
       </OptionAccordion>
       <OptionAccordion {...accordionScrollProps('coton')} className="wall-section-accordion" title={t('wall_section_title')}
         subtitle={wallSectionSubtitle(wallCoverSurfaces, wallCovers, selectedWallFabricColor, t)}
