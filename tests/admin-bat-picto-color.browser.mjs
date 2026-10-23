@@ -5,7 +5,7 @@ import { chromium } from 'playwright';
 
 const root = new URL('../', import.meta.url).pathname;
 const source = await readFile(`${root}src/App.jsx`, 'utf8');
-const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill="#ff00ff" stroke="#112233" stroke-width="3" d="M10 10H90V90H10Z"/></svg>';
+const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill="#ff18ff" stroke="#112233" stroke-width="3" d="M10 10H90V90H10Z"/></svg>';
 const object = { type: 'picto-chair', label: 'Chaise BAT', is_active: true, thumbnail_url: '/__picto.svg', dimensions: { category: 'Mobilier', size: [1, 1, .5], reference: 'CHAIR', packs: ['Signature'], batPictoUrl: '/__picto.svg', batPictoPath: 'chair.svg' } };
 const group = { type: 'picto-variants', label: 'Groupe BAT', is_active: true, dimensions: { isVariantGroup: true, packs: ['Signature'], category: 'Mobilier', variantAssetTypes: [object.type], configOptions: [], variantMeta: { [object.type]: { reference: 'VARIANT', batPictoUrl: '/__picto.svg', batPictoPath: 'chair.svg' } } } };
 const harness = `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{AssetDrawer}from'/src/__picto-app.jsx';import{createTechnicalPlanSvgPages}from'/src/technicalExport.js';window.exportPlan=createTechnicalPlanSvgPages;
@@ -41,21 +41,21 @@ try {
   await hex.fill('incorrect'); assert.equal(await hex.getAttribute('aria-invalid'), 'true');
   await settings.locator('input[type=color]').fill('#cc00cc');
   assert.equal(await hex.inputValue(), '#cc00cc');
-  await hex.fill('#ff00ff');
-  assert.equal(await hex.inputValue(), '#ff00ff');
+  await hex.fill('#ff18ff');
+  assert.equal(await hex.inputValue(), '#ff18ff');
   assert.equal(await hex.getAttribute('aria-invalid'), 'false');
   await page.getByRole('button', { name: 'Enregistrer', exact: true }).click();
-  assert.equal((await page.evaluate(() => window.savedAssets['picto-chair'])).dimensions.batPictoReplaceColor, '#ff00ff');
+  assert.equal((await page.evaluate(() => window.savedAssets['picto-chair'])).dimensions.batPictoReplaceColor, '#ff18ff');
   await page.getByRole('button', { name: 'Fermer', exact: true }).click();
   await page.getByRole('button', { name: 'Ouvrir Chaise BAT', exact: true }).click();
-  assert.equal(await hex.inputValue(), '#ff00ff');
+  assert.equal(await hex.inputValue(), '#ff18ff');
   const exported = await page.evaluate(async () => {
     const entry = { type: 'picto-chair', modelSize: [1, 1, .5], dimensions: window.savedAssets['picto-chair'].dimensions };
     const output = [];
     for (const color of ['#1a2b3c', '#bca123']) {
       const pages = await window.exportPlan({ width: 4, depth: 3, layout: 'u', items: [{ id: 'chair', ...entry, x: 0, z: 0, options: { binary2Color: color } }], catalog: [entry] });
       const svg = pages[0];
-      output.push({ target: !!svg.querySelector('[fill="'+color+'"]'), original: !!svg.querySelector('[fill="#ff00ff"]'), stroke: !!svg.querySelector('[stroke="#112233"]') });
+      output.push({ target: !!svg.querySelector('[fill="'+color+'"]'), original: !!svg.querySelector('[fill="#ff18ff"]'), stroke: !!svg.querySelector('[stroke="#112233"]') });
     }
     return output;
   });
@@ -69,10 +69,10 @@ try {
   await settings.waitFor();
   assert.equal(await page.locator('.asset-variant-advanced').getAttribute('open'), null, 'Color controls are not hidden in advanced settings');
   await settings.getByRole('checkbox', { name: "Adapter à la couleur de l'objet" }).check();
-  await hex.fill('#ff00ff');
+  await hex.fill('#ff18ff');
   await page.getByRole('button', { name: 'Enregistrer les modifications', exact: true }).click();
   const savedGroup = await page.evaluate(() => window.savedAssets['picto-variants']);
-  assert.equal(savedGroup.dimensions.variantMeta['picto-chair'].batPictoReplaceColor, '#ff00ff');
+  assert.equal(savedGroup.dimensions.variantMeta['picto-chair'].batPictoReplaceColor, '#ff18ff');
   assert.equal(savedGroup.dimensions.variantMeta['picto-chair'].reference, 'VARIANT');
   assert.deepEqual(savedGroup.dimensions.configOptions, [], 'No color group or new option is required to expose the BAT setting');
   assert.equal(await page.evaluate(async () => {
@@ -82,7 +82,7 @@ try {
   }), true, 'The saved variant rule is used by the real BAT exporter');
   await page.getByRole('button', { name: 'Fermer', exact: true }).click();
   await page.getByRole('button', { name: 'Ouvrir Groupe BAT', exact: true }).click();
-  assert.equal(await hex.inputValue(), '#ff00ff');
+  assert.equal(await hex.inputValue(), '#ff18ff');
   assert.equal(await settings.locator('label.bat-picto-color-toggle').evaluate(label => getComputedStyle(label).display), 'flex');
   await settings.screenshot({ path: '/tmp/standing-bat-picto-color-settings.png' });
   for (const width of [390, 768]) {

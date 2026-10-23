@@ -14273,7 +14273,7 @@ function BatPictoColorSettings({ imageUrl = '', imagePath = '', sourceColor = ''
     <strong>Couleur du picto BAT</strong>
     {isSvg ? <>
       <p>Indiquez la couleur du SVG à remplacer. Sur le BAT, elle suivra automatiquement la couleur choisie pour l'objet. Les autres couleurs et le fond transparent sont conservés.</p>
-      <label className="bat-picto-color-toggle"><input type="checkbox" checked={enabled} disabled={disabled} onChange={(event) => { setEditing(event.target.checked); onChange?.(event.target.checked ? '#ff00ff' : ''); }} /><span>Adapter à la couleur de l'objet</span></label>
+      <label className="bat-picto-color-toggle"><input type="checkbox" checked={enabled} disabled={disabled} onChange={(event) => { setEditing(event.target.checked); onChange?.(event.target.checked ? '#ff18ff' : ''); }} /><span>Adapter à la couleur de l'objet</span></label>
       {enabled && <ImageColorReplacementField sourceColor={sourceColor} disabled={disabled} onChange={(value) => { setEditing(true); onChange?.(value); }} />}
       {enabled && <button type="button" disabled={disabled} onClick={() => { setEditing(false); onChange?.(''); }}>Conserver les couleurs d'origine</button>}
     </> : <p>Importez un picto SVG pour adapter sa couleur à celle de l'objet.</p>}
@@ -14286,10 +14286,10 @@ function ImageColorReplacementField({ sourceColor = '', disabled = false, onChan
   return <div className="variant-color-template-color">
     <span>Couleur présente dans l'image à remplacer</span>
     <div>
-      <input type="color" aria-label="Choisir la couleur à remplacer" value={normalizedColor || '#ff00ff'} disabled={disabled} onChange={(event) => onChange?.(event.target.value)} />
-      <input aria-label="Code de la couleur à remplacer" value={sourceColor || ''} disabled={disabled} onChange={(event) => onChange?.(event.target.value)} placeholder="#ff00ff" spellCheck="false" aria-invalid={Boolean(sourceColor && !normalizedColor)} aria-describedby={sourceColor && !normalizedColor ? hintId : undefined} />
+      <input type="color" aria-label="Choisir la couleur à remplacer" value={normalizedColor || '#ff18ff'} disabled={disabled} onChange={(event) => onChange?.(event.target.value)} />
+      <input aria-label="Code de la couleur à remplacer" value={sourceColor || ''} disabled={disabled} onChange={(event) => onChange?.(event.target.value)} placeholder="#ff18ff" spellCheck="false" aria-invalid={Boolean(sourceColor && !normalizedColor)} aria-describedby={sourceColor && !normalizedColor ? hintId : undefined} />
     </div>
-    {sourceColor && !normalizedColor && <small id={hintId}>Utilise une couleur hexadécimale, par exemple #ff00ff.</small>}
+    {sourceColor && !normalizedColor && <small id={hintId}>Utilise une couleur hexadécimale, par exemple #ff18ff.</small>}
   </div>;
 }
 
