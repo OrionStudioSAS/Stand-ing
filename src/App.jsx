@@ -74,7 +74,7 @@ import {
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
-import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminAuditEvents, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, markSceneSpecialRequestResolved, publicConfiguratorUrl, reopenSceneAsDraft, requestSceneAccessCode, saveAdminUser, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveSceneManualOrderLines, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadColorGroupColors, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
+import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminAuditEvents, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, markSceneSpecialRequestResolved, reopenSceneAsDraft, requestSceneAccessCode, saveAdminUser, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveSceneManualOrderLines, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadColorGroupColors, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
 import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, signatureAllowancePerSquareMeter, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
 import { createTechnicalPlanBlob, exportTechnicalPdf, standWallPanelRequirements } from './technicalExport.js';
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
@@ -210,16 +210,6 @@ const blankTextureDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAA
 const textureRetryAttempts = 6;
 const textureRetryBaseDelay = 320;
 Cache.enabled = true;
-
-const legacyConfiguratorHosts = ['stand-ing.vercel.app'];
-
-function legacyConfiguratorRedirectUrl() {
-  if (typeof window === 'undefined') return '';
-  if (!legacyConfiguratorHosts.includes(window.location.hostname)) return '';
-  const targetOrigin = publicConfiguratorUrl();
-  if (!targetOrigin || targetOrigin === window.location.origin) return '';
-  return `${targetOrigin}${window.location.pathname}${window.location.search}${window.location.hash}`;
-}
 
 // Module-level load caches shared between preload phase and components.
 // Ensures items render synchronously from cache when the scene mounts.
@@ -489,9 +479,6 @@ function moveArrayItem(items = [], fromIndex = 0, toIndex = 0) {
 }
 
 function App() {
-  const legacyRedirectUrl = legacyConfiguratorRedirectUrl();
-  if (legacyRedirectUrl) return <LegacyDomainRedirect url={legacyRedirectUrl} />;
-
   const params = new URLSearchParams(window.location.search);
   const sceneToken = params.get('scene');
   const isAdmin = window.location.pathname.replace(/\/$/, '') === '/admin' || params.get('admin') === '1';
@@ -593,14 +580,6 @@ function App() {
   if (loading || !scene) return <div className="loading-screen">Chargement de la scene...</div>;
 
   return <ConfiguratorApp initialScene={scene} isAdminViewer={sceneAdminViewer} forceReadOnly={sceneForceReadOnly} />;
-}
-
-function LegacyDomainRedirect({ url }) {
-  useEffect(() => {
-    window.location.replace(url);
-  }, [url]);
-
-  return <div className="loading-screen">Redirection vers le configurateur...</div>;
 }
 
 function HomeGate() {

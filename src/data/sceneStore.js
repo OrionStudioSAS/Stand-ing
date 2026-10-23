@@ -2364,10 +2364,11 @@ const defaultPublicAppUrl = 'https://configurateur3d.stand-ing.com';
 
 export function publicConfiguratorUrl() {
   const envUrl = import.meta.env.VITE_PUBLIC_APP_URL || '';
-  const fallbackUrl = typeof window !== 'undefined' && window.location?.origin
+  const browserUrl = typeof window !== 'undefined' && window.location?.origin
     ? window.location.origin
-    : defaultPublicAppUrl;
-  return String(envUrl || defaultPublicAppUrl || fallbackUrl).replace(/\/+$/g, '');
+    : '';
+  // Keep admin scene links on the current deployment, even with production env vars.
+  return String(browserUrl || envUrl || defaultPublicAppUrl).replace(/\/+$/g, '');
 }
 
 export function sceneShareUrl(scene) {
