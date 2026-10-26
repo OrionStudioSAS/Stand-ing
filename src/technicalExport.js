@@ -172,13 +172,18 @@ function technicalSvgPictoUrl(item = {}, entry = {}, catalog = []) {
 }
 
 function technicalSvgPictoDescriptor(item = {}, entry = {}, catalog = []) {
-  const groupEntry = technicalOverrideGroupEntry(item, catalog);
-  const variantMeta = groupEntry?.dimensions?.variantMeta?.[item.type] || groupEntry?.dimensions?.variantBatPictos?.[item.type] || {};
+  const groupEntry = technicalOverrideGroupEntry(item, catalog) || (entry?.dimensions?.isVariantGroup ? entry : null);
+  const variantType = item.options?.variantAssetType || (groupEntry && item.type === groupEntry.type
+    ? groupEntry.dimensions?.variantAssets?.[0]?.type || groupEntry.dimensions?.variantAssetTypes?.[0]
+    : item.type);
+  const variantEntry = catalog.find((candidate) => candidate.type === variantType)
+    || groupEntry?.dimensions?.variantAssets?.find((candidate) => candidate.type === variantType);
+  const variantMeta = groupEntry?.dimensions?.variantMeta?.[variantType] || groupEntry?.dimensions?.variantBatPictos?.[variantType] || {};
   const sources = [{
     batPictoUrl: item.options?.variantBatPictoUrl,
     batPictoPath: item.options?.variantBatPictoPath,
     batPictoReplaceColor: item.options?.variantBatPictoReplaceColor || undefined,
-  }, variantMeta, groupEntry?.dimensions, item.dimensions, entry?.dimensions].filter(Boolean);
+  }, variantMeta, groupEntry?.dimensions, item.dimensions, variantEntry?.dimensions, entry?.dimensions].filter(Boolean);
   const picto = sources.find((source) => source.batPictoUrl);
   const url = picto?.batPictoUrl || '';
   const path = picto?.batPictoPath || sources.find((source) => source.batPictoUrl === url && source.batPictoPath)?.batPictoPath || url;
@@ -194,7 +199,7 @@ function technicalSvgPictoDescriptor(item = {}, entry = {}, catalog = []) {
     ...selectedColors.map((color) => color?.hex || color?.color || color?.value),
     item.options?.binary2Color,
     ...Object.values(item.options?.textureSlotValues || {}).map((value) => value?.color),
-    item.color, entry?.color,
+    item.color, variantEntry?.color, entry?.color,
   ].map((color) => normalizeHexColor(color)).find(Boolean) || '';
   const key = sourceColor && targetColor ? recoloredImageCacheKey(url, sourceColor, targetColor) : url;
   return { key, url, sourceColor, targetColor };
@@ -1167,12 +1172,21 @@ function drawRotatedObject(ctx, x, y, w, h, rotation, color, label) {
 }
 
 function drawRotatedPictoObject(ctx, x, y, w, h, rotation, image, label) {
+  const angle = technicalPlanRotation(rotation);
   ctx.save();
   ctx.translate(x, y);
-  ctx.rotate(technicalPlanRotation(rotation));
+  ctx.rotate(angle);
   drawContainedImage(ctx, image, -w / 2, -h / 2, w, h);
   ctx.restore();
-  drawBadge(ctx, x, y, label);
+  const imageW = image.naturalWidth || image.width || 1;
+  const imageH = image.naturalHeight || image.height || 1;
+  const scale = Math.min(w / imageW, h / imageH);
+  const pictoW = imageW * scale;
+  const pictoH = imageH * scale;
+  // The 34px number badge otherwise hides small electrical pictos entirely.
+  const smallPicto = Math.min(pictoW, pictoH) < 42;
+  const halfHeight = (Math.abs(Math.sin(angle)) * pictoW + Math.abs(Math.cos(angle)) * pictoH) / 2;
+  drawBadge(ctx, x, smallPicto ? y + halfHeight + 23 : y, label);
 }
 
 function drawCeilingObject(ctx, x, y, w, h, rotation, image, color, label) {

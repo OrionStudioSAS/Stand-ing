@@ -133,6 +133,37 @@ test('legacy color rules on a variant still apply to its inherited SVG template'
   assert.equal(api.technicalSvgPictoDescriptor({ ...item, options: { ...item.options, variantBatPictoUrl: '/different.svg' } }, entry, [group]).sourceColor, '');
 });
 
+test('coffee-machine group instances use the pictogram of the selected physical variant', () => {
+  const { api } = runtime();
+  const coffee = { type: 'coffee-100', dimensions: { batPictoUrl: '/coffee-100.svg', batPictoPath: 'coffee-100.svg' } };
+  const large = { type: 'coffee-300', dimensions: { batPictoUrl: '/coffee-300.svg', batPictoPath: 'coffee-300.svg' } };
+  const group = { type: 'coffee-group', dimensions: { isVariantGroup: true, variantAssets: [coffee, large] } };
+  for (const options of [{ variantAssetType: large.type }, { variantGroupType: group.type, variantAssetType: large.type }]) {
+    const descriptor = api.technicalSvgPictoDescriptor({ type: group.type, options }, group, [group]);
+    assert.equal(descriptor.url, '/coffee-300.svg', 'The selected variant can be nested in the group catalogue');
+  }
+  assert.equal(api.technicalSvgPictoDescriptor({ type: group.type }, group, [group]).url, '/coffee-100.svg');
+  assert.equal(api.technicalSvgPictoDescriptor({ type: 'old-coffee', options: { variantAssetType: large.type } }, {}, [large]).url, '/coffee-300.svg');
+  const override = { type: group.type, options: { variantAssetType: large.type, variantBatPictoUrl: '/override.svg' } };
+  assert.equal(api.technicalSvgPictoDescriptor(override, group, [group]).url, '/override.svg');
+});
+
+test('number badges do not cover small power-supply and narrow coffee pictograms', () => {
+  const { api, ctx } = runtime();
+  for (const [w, h, imageW, imageH] of [[22, 22, 100, 100], [95, 60, 25.79, 86.69]]) {
+    for (const rotation of [0, 45, 90, 180, 270]) {
+      const circles = [];
+      ctx.arc = (x, y, radius) => circles.push({ x, y, radius });
+      api.drawRotatedPictoObject(ctx, 200, 300, w, h, rotation, { width: imageW, height: imageH }, '1');
+      const scale = Math.min(w / imageW, h / imageH);
+      const angle = rotation * Math.PI / 180;
+      const bottom = 300 + (Math.abs(Math.sin(angle)) * imageW + Math.abs(Math.cos(angle)) * imageH) * scale / 2;
+      assert.equal(circles.length, 1);
+      assert.ok(circles[0].y - circles[0].radius >= bottom + 5, 'The badge stays below the rotated pictogram, away from its top/right dimensions');
+    }
+  }
+});
+
 test('rotated group child positions and orientations match Three parent transforms', () => {
   const { api } = runtime();
   for (const degrees of [0, 45, 90, -90, 180, 270]) {
