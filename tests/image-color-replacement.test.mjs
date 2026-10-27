@@ -30,6 +30,20 @@ test('recolors matching PNG pixels while preserving alpha and unrelated pixels',
   ]);
 });
 
+test('Illustrator shorthand paint colors match full source colors without altering SVG references', () => {
+  const markup = '<svg><style>.st2{fill:#f0f;stroke:#1d1d1b}.shade{stop-color:#FF00FF}</style><defs><linearGradient id="f0f"/></defs><path fill="#f0f" stroke="#000"/><path style="fill: #F0F !important;stroke:#fff"/><path fill="url(#f0f)"/><use href="#f0f"/><path fill="#f0f0"/><path fill="#ff00ff80"/></svg>';
+  const result = recolorSvgMarkup(markup, '#ff00ff', '#244998');
+  assert.match(result, /\.st2\{fill:#244998;stroke:#1d1d1b\}/);
+  assert.match(result, /stop-color:#244998/);
+  assert.match(result, /fill="#244998" stroke="#000"/);
+  assert.match(result, /fill: #244998 !important;stroke:#fff/);
+  assert.match(result, /id="f0f"/);
+  assert.match(result, /fill="url\(#f0f\)"/);
+  assert.match(result, /href="#f0f"/);
+  assert.match(result, /fill="#f0f0"/);
+  assert.match(result, /fill="#ff00ff80"/);
+});
+
 test('inline SVG pictograms are recolored too, without rasterizing or adding a background', async () => {
   const markup = '<svg xmlns="http://www.w3.org/2000/svg"><path fill="#ff18ff" stroke="#112233" d="M2 2H8V8H2Z"/></svg>';
   const url = `data:image/svg+xml,${encodeURIComponent(markup)}`;

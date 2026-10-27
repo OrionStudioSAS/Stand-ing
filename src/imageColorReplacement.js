@@ -13,8 +13,10 @@ export function recolorSvgMarkup(markup = '', sourceColor = '', targetColor = ''
   const source = normalizeHexColor(sourceColor);
   const target = normalizeHexColor(targetColor);
   if (!source || !target || source === target) return String(markup || '');
-  const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return String(markup || '').replace(new RegExp(`${escaped}(?![0-9a-f])`, 'gi'), target);
+  // Illustrator often writes #f0f even when the configured source is #ff00ff.
+  // Match paint declarations only, leaving SVG IDs and gradient references intact.
+  const paint = /(\b(?:fill|stroke|stop-color|flood-color|lighting-color|color)\s*(?:=\s*["']\s*|:\s*))(#[0-9a-f]{6}|#[0-9a-f]{3})(?![0-9a-f])/gi;
+  return String(markup || '').replace(paint, (match, prefix, color) => normalizeHexColor(color) === source ? `${prefix}${target}` : match);
 }
 
 export function recolorPixelData(data, sourceColor = '', targetColor = '', tolerance = 36) {

@@ -76,6 +76,8 @@ import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAnd
 import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, signatureAllowancePerSquareMeter, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
 import { createTechnicalPlanBlob, exportTechnicalPdf, standWallPanelRequirements } from './technicalExport.js';
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
+import DeploymentUpdateNotice from './DeploymentUpdateNotice.jsx';
+import { deploymentAssetErrorMessage, isDeploymentAssetError } from './deploymentAssets.js';
 import { t as tRaw } from './i18n.js';
 import TechnicalPlanEditor from './TechnicalPlanEditor.jsx';
 import { loadTechnicalPlanEdits } from './data/technicalPlanStore.js';
@@ -487,6 +489,10 @@ function moveArrayItem(items = [], fromIndex = 0, toIndex = 0) {
 }
 
 function App() {
+  return <><AppContent /><DeploymentUpdateNotice /></>;
+}
+
+function AppContent() {
   const legacyRedirectUrl = legacyConfiguratorRedirectUrl();
   if (legacyRedirectUrl) return <LegacyDomainRedirect url={legacyRedirectUrl} />;
 
@@ -14846,6 +14852,16 @@ function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
   const [editor, setEditor] = useState(null);
   const [editorError, setEditorError] = useState('');
   const [loadingId, setLoadingId] = useState('');
+  const [downloadState, setDownloadState] = useState({ sceneId: '', error: '' });
+  const downloadBat = async scene => {
+    setDownloadState({ sceneId: scene.id, error: '' });
+    try {
+      await downloadSceneTechnicalPlan(scene, assets);
+      setDownloadState({ sceneId: '', error: '' });
+    } catch (error) {
+      setDownloadState({ sceneId: '', error: isDeploymentAssetError(error) ? deploymentAssetErrorMessage : error.message || 'Le téléchargement du BAT a échoué. Réessayez.' });
+    }
+  };
   const openEditor = async (scene) => {
     setLoadingId(scene.id); setEditorError('');
     try {
@@ -14865,6 +14881,7 @@ function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
   return (
     <section className="admin-table modern bat-table">
       {editorError && <p role="alert">{editorError}</p>}
+      {downloadState.error && <p role="alert">{downloadState.error}</p>}
       {rows.length ? rows.map((scene) => {
         const order = scenePurchaseOrder(scene, assets);
         const lockedForExhibitor = Boolean(scene.source_payload?.exhibitor_view_only);
@@ -14884,7 +14901,7 @@ function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
             </label>}
             <div className="stand-actions">
               <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a>
-              <button type="button" onClick={() => downloadSceneTechnicalPlan(scene, assets)}>Télécharger BAT</button>
+              <button type="button" disabled={Boolean(downloadState.sceneId)} onClick={() => downloadBat(scene)}>{downloadState.sceneId === scene.id ? 'Préparation du BAT…' : 'Télécharger BAT'}</button>
               <button type="button" disabled={Boolean(loadingId)} onClick={() => openEditor(scene)}>{loadingId === scene.id ? 'Chargement…' : 'Modifier le BAT'}</button>
               <button type="button" onClick={() => downloadScenePurchaseOrder(scene, assets)}>Bon de commande</button>
             </div>

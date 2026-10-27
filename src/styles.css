@@ -15433,3 +15433,11 @@ img.asset-thumb {
 .bat-electrical-preview > button:focus-visible { outline: 2px solid #1f4378; outline-offset: 3px; }
 .bat-electrical-preview > button img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 .bat-electrical-editor > button { justify-self: start; border: 1px solid #dce2ea; border-radius: 5px; padding: 7px 10px; color: #1f4378; background: white; cursor: pointer; font-size: 11px; }
+
+.deployment-update-notice { position: fixed; z-index: 10000; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; align-items: center; gap: 18px; width: min(660px, calc(100vw - 32px)); padding: 16px 18px; border: 1px solid #f1ce8d; border-radius: 12px; color: #59401a; background: #fff8eb; box-shadow: 0 8px 32px #14213d26; font-size: 13px; }
+.deployment-update-notice p { margin: 5px 0 0; line-height: 1.5; }
+.deployment-update-notice button { flex: 0 0 auto; border: 0; border-radius: 7px; padding: 10px 12px; color: #fff; background: #1f4378; font: inherit; cursor: pointer; }
+.deployment-update-notice button:focus-visible { outline: 2px solid #1f4378; outline-offset: 3px; }
+.deployment-update-notice > div { padding-right: 12px; }
+.deployment-update-notice button.deployment-update-dismiss { position: absolute; top: 2px; right: 4px; padding: 2px 6px; color: #59401a; background: transparent; font-size: 20px; }
+@media (max-width: 600px) { .deployment-update-notice { align-items: stretch; flex-direction: column; gap: 12px; } }
