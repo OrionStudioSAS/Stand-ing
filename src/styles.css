@@ -15441,3 +15441,46 @@ img.asset-thumb {
 .deployment-update-notice > div { padding-right: 12px; }
 .deployment-update-notice button.deployment-update-dismiss { position: absolute; top: 2px; right: 4px; padding: 2px 6px; color: #59401a; background: transparent; font-size: 20px; }
 @media (max-width: 600px) { .deployment-update-notice { align-items: stretch; flex-direction: column; gap: 12px; } }
+
+.asset-group-design:has(.group-placement-editor) { width: min(880px, 100%); }
+.group-placement-editor { display: grid; grid-template-columns: minmax(0, 1fr); overflow: hidden; min-width: 0; border: 1px solid #dce2ea; border-radius: 10px; background: #fff; color: #172236; font-size: 12px; }
+.group-placement-editor > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px; border-bottom: 1px solid #e5eaf0; }
+.group-placement-editor > header > div { display: grid; gap: 4px; }
+.group-placement-editor small { color: #69788c; font-size: 11px; line-height: 1.5; }
+.group-placement-editor button { min-height: 32px; border: 1px solid #d6deea; border-radius: 6px; padding: 6px 10px; color: #274f89; background: #fff; font: inherit; cursor: pointer; }
+.group-placement-editor button:hover { background: #edf3fc; }
+.group-placement-editor button:disabled { cursor: not-allowed; opacity: .5; }
+.group-placement-editor button[aria-pressed=true] { border-color: #315fa2; color: #fff; background: #315fa2; }
+.group-placement-editor button:focus-visible, .group-placement-viewport:focus-visible { outline: 2px solid #315fa2; outline-offset: -2px; }
+.group-placement-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 10px 12px; }
+.group-placement-toolbar > div { display: flex; gap: 4px; margin-right: auto; }
+.group-placement-viewport { position: relative; height: 400px; min-height: 240px; overflow: hidden; touch-action: none; background: #f4f6f9; }
+.group-placement-viewport canvas { display: block; touch-action: none; }
+.group-placement-axes { position: absolute; left: 12px; bottom: 10px; padding: 5px 8px; border: 1px solid #dce3ed; border-radius: 5px; background: #ffffffdb; color: #53677f; font-size: 11px; pointer-events: none; }
+.group-placement-loading { display: block; width: 150px; border: 1px solid #dce2ea; border-radius: 5px; padding: 6px; background: #fff; color: #5b6d85; font-size: 11px; text-align: center; pointer-events: none; }
+.group-placement-editor > p.group-placement-help { margin: 0; padding: 10px 13px; border-bottom: 1px solid #e5eaf0; color: #65758c; font-size: 11px; line-height: 1.6; }
+.group-placement-properties { display: grid; gap: 12px; min-width: 0; padding: 14px; }
+.group-placement-properties label { display: grid; gap: 6px; min-width: 0; color: #35465e; font-size: 11px; }
+.group-placement-properties input:not([type=checkbox]), .group-placement-properties select { width: 100%; min-width: 0; min-height: 35px; border: 1px solid #d6deea; border-radius: 6px; padding: 6px 8px; color: #172236; background: #fff; font: inherit; }
+.group-placement-mode { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.group-placement-mode > span { border-radius: 5px; padding: 6px 9px; color: #315fa2; background: #edf3fc; font-size: 11px; }
+.group-placement-mode label { display: flex; align-items: center; gap: 7px; }
+.group-placement-mode input { width: 15px; height: 15px; margin: 0; accent-color: #315fa2; }
+.group-placement-coordinates { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+.group-placement-adjustments { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.group-placement-adjustments > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.group-placement-editor.is-expanded { position: fixed; inset: 16px; z-index: 11000; grid-template-rows: auto auto minmax(200px, 1fr) auto auto; box-shadow: 0 0 0 100vmax #0c1c35a6, 0 16px 64px #0003; }
+.group-placement-editor.is-expanded .group-placement-viewport { height: auto; min-height: 0; }
+.group-placement-editor.is-expanded .group-placement-properties { max-height: 38vh; overflow: auto; }
+@media (max-width: 600px) {
+  .group-placement-editor.is-expanded { inset: 5px; grid-template-rows: auto auto minmax(160px, 1fr) auto auto; }
+  .group-placement-coordinates { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .group-placement-viewport { height: 320px; }
+  .group-placement-editor > header { padding: 10px; }
+  .group-placement-toolbar { gap: 5px; padding: 8px; }
+  .group-placement-toolbar button { padding-inline: 8px; font-size: 11px; }
+}
+@media (max-height: 700px) {
+  .group-placement-editor.is-expanded > p.group-placement-help { display: none; }
+  .group-placement-editor.is-expanded .group-placement-properties { max-height: 32vh; }
+}

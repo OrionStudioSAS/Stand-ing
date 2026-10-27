@@ -2,6 +2,8 @@ import { signatureArchVariant, isSignatureLedArch, signatureArchChoice, signatur
 import { wallCoverPackTariff, wallCoverQuote } from './wallCoverPricing.js';
 import { lastSceneSyncAt, sceneSyncLabel } from './sceneSyncInfo.js';
 import AssetBatElectricalPictoEditor from './AssetBatElectricalPictoEditor.jsx';
+import AssetGroupPlacementEditor from './AssetGroupPlacementEditor.jsx';
+import { nextGroupRowPosition } from './groupPlacement.js';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
 import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
@@ -13059,9 +13061,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
   };
 
   const addGroupRowType = (type) => {
-    const last = [...groupRows].reverse().find((row) => row.type === type);
     const uid = `group-row-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    setGroupRows((current) => [...current, { uid, type, x: Number(last?.x || 0) + 0.2, z: Number(last?.z || 0) + 0.2, rotation: Number(last?.rotation || 0) }]);
+    setGroupRows((current) => [...current, { uid, type, ...nextGroupRowPosition(current, type, sourceAssets.find((asset) => asset.type === type)) }]);
     setSelectedGroupRowUid(uid);
   };
 
@@ -13741,7 +13742,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
             <section className="asset-group-builder">
               <h3>Objets du groupe · {groupRows.length}</h3>
               <AssetGroupCompositionSummary rows={groupRows} sourceAssets={sourceAssets} onAdd={addGroupRowType} onRemove={removeGroupRowType} />
-              <p>Tu peux modifier les objets, leur position X/Z et les déplacer directement sur le mini-plan, avec un pas précis de 1 cm.</p>
+              <p>Placez les vrais modèles : cloisons et portes au pas de 1 m, décalages de 6 cm et accessoires libres au millimètre.</p>
               <MiniGroupPlan
                 rows={groupRows}
                 sourceAssets={sourceAssets}
@@ -13778,7 +13779,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
                     <label><span>X m</span><input type="number" step={assetGroupPlacementStep} value={row.x} onChange={(event) => updateGroupRow(row.uid, { x: event.target.value })} /></label>
                     <label><span>Z m</span><input type="number" step={assetGroupPlacementStep} value={row.z} onChange={(event) => updateGroupRow(row.uid, { z: event.target.value })} /></label>
                     <label><span>Rotation</span><input type="number" step="5" value={row.rotation} onChange={(event) => updateGroupRow(row.uid, { rotation: event.target.value })} /></label>
-                    <label title="Profondeur 6 cm (arrière)"><span>6 cm</span><input type="checkbox" checked={Boolean(row.depthLocked6cm)} onChange={(event) => updateGroupRow(row.uid, { depthLocked6cm: event.target.checked || undefined })} /></label>
+                    <label title="Profondeur solide pour les collisions, sans décaler l'objet"><span>Profondeur solide 6 cm</span><input type="checkbox" checked={Boolean(row.depthLocked6cm)} onChange={(event) => updateGroupRow(row.uid, { depthLocked6cm: event.target.checked || undefined })} /></label>
                     <button type="button" onClick={() => removeGroupRow(row.uid)} disabled={groupRows.length <= 1}><Trash2 size={14} /></button>
                   </article>
                 );
@@ -14587,9 +14588,8 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
   };
 
   const addRowType = (type) => {
-    const last = [...rows].reverse().find((row) => row.type === type);
     const uid = `group-row-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    setRows((current) => [...current, { uid, type, x: Number(last?.x || 0) + 0.2, z: Number(last?.z || 0) + 0.2, rotation: Number(last?.rotation || 0) }]);
+    setRows((current) => [...current, { uid, type, ...nextGroupRowPosition(current, type, sourceAssets.find((asset) => asset.type === type)) }]);
     setSelectedRowUid(uid);
   };
 
@@ -14677,7 +14677,7 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
         <section className="asset-group-builder">
           <h3>Objets du groupe · {rows.length}</h3>
           <AssetGroupCompositionSummary rows={rows} sourceAssets={sourceAssets} onAdd={addRowType} onRemove={removeRowType} />
-          <p>Place les objets sur le plan en vue du dessus ; les champs X/Z restent disponibles pour l'ajustement au centimètre.</p>
+          <p>Placez les vrais modèles : cloisons et portes au pas de 1 m, décalages de 6 cm et accessoires libres au millimètre.</p>
           <MiniGroupPlan
             rows={rows}
             sourceAssets={sourceAssets}
@@ -14746,105 +14746,36 @@ function AssetGroupCreator({ assets, scenes, salons: adminSalons = [], onClose, 
   );
 }
 
-const assetGroupPlacementStep = 0.01;
+const assetGroupPlacementStep = 0.001;
 
 function MiniGroupPlan({ rows, sourceAssets, selectedUid, onSelect, onMove }) {
-  const svgRef = useRef(null);
-  const [draggingUid, setDraggingUid] = useState(null);
-  const snapStep = assetGroupPlacementStep;
-  const planItems = rows.map((row) => {
-    const asset = sourceAssets.find((item) => item.type === row.type);
-    const [width = 0.6, , depth = 0.6] = assetModelSize(asset || {});
-    return {
-      ...row,
-      asset,
-      width,
-      depth,
-      x: Number(row.x || 0),
-      z: Number(row.z || 0),
-      rotation: Number(row.rotation || 0),
-    };
+  const items = rows.map((row) => {
+    const child = buildGroupChildren([row], sourceAssets)[0];
+    return child ? { ...child, uid: row.uid, renderY: groupChildRenderY(child) } : { ...row, label: row.label || row.type };
   });
-  const half = Math.max(1.6, ...planItems.flatMap((item) => [
-    Math.abs(item.x) + item.width / 2 + 0.35,
-    Math.abs(item.z) + item.depth / 2 + 0.35,
-  ]));
-  const viewSize = half * 2;
+  return <AssetGroupPlacementEditor rows={rows} items={items} selectedUid={selectedUid} onSelect={onSelect} onMove={onMove} Model={GroupEditorModel} />;
+}
 
-  const pointerToPosition = (event) => {
-    const rect = svgRef.current.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * viewSize - half;
-    const z = ((event.clientY - rect.top) / rect.height) * viewSize - half;
-    return {
-      x: snapPosition(x, half, snapStep),
-      z: snapPosition(z, half, snapStep),
-    };
-  };
-
-  const moveActive = (event, uid = draggingUid) => {
-    if (!uid) return;
-    event.preventDefault();
-    onMove(uid, pointerToPosition(event));
-  };
-
-  return (
-    <div className="asset-group-plan-card">
-      <div className="asset-group-plan-head">
-        <strong>Mini plan du groupe</strong>
-        <span>Glisse un bloc pour le placer</span>
-      </div>
-      <svg
-        ref={svgRef}
-        className="asset-group-plan"
-        viewBox={`${-half} ${-half} ${viewSize} ${viewSize}`}
-        onPointerMove={(event) => moveActive(event)}
-        onPointerUp={() => setDraggingUid(null)}
-        onPointerLeave={() => setDraggingUid(null)}
-      >
-        <defs>
-          <pattern id="asset-group-grid" width="0.25" height="0.25" patternUnits="userSpaceOnUse">
-            <path d="M 0.25 0 L 0 0 0 0.25" fill="none" stroke="#dbe2ec" strokeWidth="0.01" />
-          </pattern>
-        </defs>
-        <rect x={-half} y={-half} width={viewSize} height={viewSize} rx="0.08" fill="url(#asset-group-grid)" />
-        <line x1={-half} x2={half} y1="0" y2="0" stroke="#94a3b8" strokeWidth="0.018" strokeDasharray="0.08 0.08" />
-        <line x1="0" x2="0" y1={-half} y2={half} stroke="#94a3b8" strokeWidth="0.018" strokeDasharray="0.08 0.08" />
-        <circle cx="0" cy="0" r="0.05" fill="#1f4378" />
-        {planItems.map((item, index) => {
-          const active = selectedUid === item.uid;
-          return (
-            <g
-              key={item.uid}
-              transform={`translate(${item.x} ${item.z}) rotate(${item.rotation})`}
-              onPointerDown={(event) => {
-                event.stopPropagation();
-                event.currentTarget.setPointerCapture(event.pointerId);
-                onSelect(item.uid);
-                setDraggingUid(item.uid);
-                moveActive(event, item.uid);
-              }}
-            >
-              <rect
-                x={-item.width / 2}
-                y={-item.depth / 2}
-                width={item.width}
-                height={item.depth}
-                rx="0.04"
-                fill={active ? '#ffcf5a' : '#dfe8ec'}
-                stroke={active ? '#1f4378' : '#7f8fa4'}
-                strokeWidth={active ? '0.035' : '0.02'}
-              />
-              <text x="0" y="0.035" textAnchor="middle" fontSize="0.16" fill="#172033" fontWeight="700">{index + 1}</text>
-            </g>
-          );
-        })}
-      </svg>
-      <div className="asset-group-plan-legend">
-        <span>Centre du groupe</span>
-        <span>X horizontal · Z vertical</span>
-      </div>
-    </div>
-  );
+function GroupEditorModel({ item }) {
+  const unavailable = <Html center><span className="group-placement-loading" role="status">Modèle indisponible : {item.label || item.type}</span></Html>;
+  if (!item.modelUrl) return ['chair', 'table', 'counter'].includes(item.type) ? <SceneItemContent item={item} selected={false} hovered={false} dragging={false} /> : unavailable;
+  const materialUrl = modelMaterialUrl(item);
+  let entry;
+  if (item.modelUrl.toLowerCase().split('?')[0].endsWith('.glb')) {
+    entry = _ensureGlbCacheEntry(item.modelUrl);
+  } else {
+    let materials = null;
+    if (materialUrl) {
+      const materialEntry = _ensureMtlCacheEntry(materialUrl, item);
+      if (materialEntry.error) return unavailable;
+      if (!materialEntry.result) throw materialEntry.promise;
+      materials = materialEntry.result;
+    }
+    entry = _ensureObjCacheEntry(item.modelUrl, materials);
+  }
+  if (entry.error) return unavailable;
+  if (!entry.result) throw entry.promise;
+  return <><Model3D item={item} selected={false} hovered={false} dragging={false} /><ObjectBaseboards item={item} /></>;
 }
 
 function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
