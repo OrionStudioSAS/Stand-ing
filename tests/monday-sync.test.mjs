@@ -293,7 +293,10 @@ test('full sync skips unchanged scene writes and caches shared board reads while
   assert.equal(columnReads, 1);
   assert.equal(itemReads, 1);
   assert.equal(sceneReads, 2);
-  assert.equal(writes.length, 2); // One changed scene per source; no writes for the other 99.
+  assert.equal(writes.filter(write => write.name === 'patch_scene_from_monday').length, 2);
+  const stamps = writes.filter(write => write.name === 'stamp_scene_monday_sync');
+  assert.equal(stamps.length, 1, 'Sync timestamps use one batch, not one request per scene');
+  assert.equal(stamps[0].args.p_scene_ids.length, 100, 'Scene IDs are deduplicated across sources');
   assert.equal(writes[0].name, 'patch_scene_from_monday');
   assert.equal(writes[0].args.p_source_patch.stand_number, 'NEW');
   assert.equal(writes[0].args.p_source_patch.options, undefined);

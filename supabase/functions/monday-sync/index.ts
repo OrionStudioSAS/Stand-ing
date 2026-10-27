@@ -129,6 +129,7 @@ async function handleMondaySync(req: Request, execution: MondaySyncExecution) {
   const warnings: string[] = [];
   const errors: string[] = [];
 
+  const synchronizedSceneIds = new Set<string>();
   const boardItems = new Map<string, any[]>();
   const boardColumns = new Map<string, Awaited<ReturnType<typeof fetchMondayBoardColumnsSafe>>>();
   for (const source of sources ?? []) {
@@ -248,6 +249,7 @@ async function handleMondaySync(req: Request, execution: MondaySyncExecution) {
           skippedNotFirstSend += 1;
         }
 
+        synchronizedSceneIds.add(existingScene.id);
         continue;
       }
 
@@ -387,12 +389,19 @@ async function handleMondaySync(req: Request, execution: MondaySyncExecution) {
         skippedNotFirstSend += 1;
       }
 
+      synchronizedSceneIds.add(savedScene.id);
       processed += 1;
       clients += 1;
       exhibitors += 1;
     }
   }
 
+  if (synchronizedSceneIds.size) {
+    const { error: stampError } = await supabase.rpc("stamp_scene_monday_sync", {
+      p_scene_ids: [...synchronizedSceneIds], p_direction: "import",
+    });
+    if (stampError) warnings.push(`Horodatage des scènes impossible : ${stampError.message}`);
+  }
   const result = {
     processed,
     created: processed,

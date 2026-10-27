@@ -1,4 +1,6 @@
 import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl } from './imageColorReplacement.js';
+import { normalizeBatElectricalPicto } from './batElectricalPicto.js';
+import { isSignatureLedArch } from './signatureArchVariants.js';
 import { createTechnicalSvgContext, sanitizeTechnicalSvg } from './technicalSvgContext.js';
 import { technicalA3, paginateTechnicalPrintDetails, wrapTechnicalPrintText } from './technicalPrintLayout.js';
 import { normalizeTechnicalPlanEdits } from './technicalPlanEdits.js';
@@ -155,8 +157,22 @@ async function loadTechnicalPictoImages(items = [], catalog = []) {
     const imageUrl = request.sourceColor && request.targetColor
       ? await recolorImageUrl(request.url, request.sourceColor, request.targetColor)
       : request.url;
-    const image = await loadCanvasImage(imageUrl);
+    let image = await loadCanvasImage(imageUrl);
     if (!image && request.isPicto) throw new Error('Impossible de charger un picto BAT. Verifiez le fichier importe puis relancez le BAT.');
+    if (image && request.electrical?.url) {
+      const overlay = await loadCanvasImage(request.electrical.url);
+      if (!overlay) throw new Error('Impossible de charger le picto électrique BAT. Vérifiez le fichier importé.');
+      const viewBox = image.technicalSvg?.viewBox?.baseVal;
+      const width = image.naturalWidth || image.width || viewBox?.width;
+      const height = image.naturalHeight || image.height || viewBox?.height;
+      const context = createTechnicalSvgContext(width, height);
+      context.drawImage(image, 0, 0, width, height);
+      const { x, y, size } = request.electrical;
+      drawContainedImage(context, overlay, (x - size / 2) * width, (y - size / 2) * height, size * width, size * height);
+      const markup = new XMLSerializer().serializeToString(context.svg);
+      image = await loadCanvasImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`);
+      if (!image) throw new Error('Impossible de composer les pictos BAT.');
+    }
     return [request.key, image];
   }));
   return new Map(loaded.filter(([, image]) => image));
@@ -183,11 +199,10 @@ function technicalSvgPictoDescriptor(item = {}, entry = {}, catalog = []) {
     batPictoUrl: item.options?.variantBatPictoUrl,
     batPictoPath: item.options?.variantBatPictoPath,
     batPictoReplaceColor: item.options?.variantBatPictoReplaceColor || undefined,
-  }, variantMeta, groupEntry?.dimensions, item.dimensions, variantEntry?.dimensions, entry?.dimensions].filter(Boolean);
+  }, variantMeta, groupEntry?.dimensions, item.options, item.dimensions, variantEntry?.dimensions, entry?.dimensions].filter(Boolean);
   const picto = sources.find((source) => source.batPictoUrl);
   const url = picto?.batPictoUrl || '';
-  const path = picto?.batPictoPath || sources.find((source) => source.batPictoUrl === url && source.batPictoPath)?.batPictoPath || url;
-  if (!url || (!/\.svg(?:$|[?#])/i.test(path) && !/^data:image\/svg\+xml/i.test(url))) return null;
+  if (!url) return null;
   // A color rule belongs to its SVG, not to an unrelated variant override.
   const rule = sources.find((source, index) => {
     const inheritedUrl = source.batPictoUrl || sources.slice(index + 1).find((parent) => parent.batPictoUrl)?.batPictoUrl;
@@ -201,8 +216,10 @@ function technicalSvgPictoDescriptor(item = {}, entry = {}, catalog = []) {
     ...Object.values(item.options?.textureSlotValues || {}).map((value) => value?.color),
     item.color, variantEntry?.color, entry?.color,
   ].map((color) => normalizeHexColor(color)).find(Boolean) || '';
-  const key = sourceColor && targetColor ? recoloredImageCacheKey(url, sourceColor, targetColor) : url;
-  return { key, url, sourceColor, targetColor };
+  const electrical = normalizeBatElectricalPicto(sources.find((source) => source.batElectricalPictoUrl) || {});
+  const baseKey = sourceColor && targetColor ? recoloredImageCacheKey(url, sourceColor, targetColor) : url;
+  const key = electrical.url ? `${baseKey}|electric:${electrical.url}:${electrical.x}:${electrical.y}:${electrical.size}` : baseKey;
+  return { key, url, sourceColor, targetColor, electrical };
 }
 
 function technicalOverrideGroupEntry(item = {}, catalog = []) {
@@ -830,6 +847,7 @@ function technicalVisualStatus(pending = false, hasImage = false, imageName = ''
 }
 
 function technicalTextureSlotRequiresVisual(item = {}, slot = {}, value = {}) {
+  if (isSignatureLedArch(item) && slot.id === 'signature-arch-led-5') return false;
   if (value.visualEnabled === false) return false;
   if (value.imageUrl || value.imageName || value.visualPending) return true;
   const text = normalizeTechnicalText(`${item.type || ''} ${item.label || ''} ${slot.label || ''}`);
@@ -1467,6 +1485,9 @@ function technicalChildOptions(childOptions = {}, parentOptions = {}, parentDime
     ...(parentOptions.variantBatDescription || parentDimensions.batDescription ? {
       variantBatDescription: parentOptions.variantBatDescription || parentDimensions.batDescription || '',
     } : {}),
+    ...Object.fromEntries(['batElectricalPictoUrl', 'batElectricalPictoPath', 'batElectricalPictoX', 'batElectricalPictoY', 'batElectricalPictoSize']
+      .filter((key) => hasTechnicalValue(parentOptions[key] ?? parentDimensions[key]))
+      .map((key) => [key, parentOptions[key] ?? parentDimensions[key]])),
     ...inheritedVisuals,
   };
 }

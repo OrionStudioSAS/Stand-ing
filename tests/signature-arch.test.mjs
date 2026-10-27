@@ -281,7 +281,7 @@ test('Signature arch image slots replace only their own material, including the 
   assert.equal(context.applyTextureSlotMaterial({ name: 'LED_5500k_11' }, item, images, 'led_5500k_11').map.id, 'first');
   assert.equal(context.applyTextureSlotMaterial({ name: '_28' }, item, images, '_28').map.id, 'second');
   const ledItem = {...item,label:'Mur LED Signature 2m + Spot 210'};
-  assert.equal(context.applyTextureSlotMaterial({name:'LED_5500k_15'},ledItem,images,'led_5500k_15').map.id,'first');
+  assert.equal(context.applyTextureSlotMaterial({name:'LED_5500k_15'},ledItem,images,'led_5500k_15').map,undefined, 'LED wall replaces the luminous facade visual');
   for(const name of ['led_5500k_11','_28','led_5500k_150']) assert.equal(context.applyTextureSlotMaterial({name},ledItem,images,name).map,undefined);
   assert.equal(context.applyTextureSlotMaterial({ name: '_280' }, item, images, '_280').map, undefined);
   assert.equal(context.applyTextureSlotMaterial({ name: 'LED_5500k#50' }, item, images, 'led_5500k#50').map, undefined);

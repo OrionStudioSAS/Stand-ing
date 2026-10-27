@@ -1,3 +1,4 @@
+import { wallCoverPackTariff, wallCoverQuote } from '../src/wallCoverPricing.js';
 import { signatureArchSizeSupplementLines } from '../src/signatureArchVariants.js';
 import { signatureFootprintSupplementLine } from '../src/signatureFootprint.js';
 import assert from 'node:assert/strict';
@@ -11,7 +12,7 @@ const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const money = (value) => Math.round(Number(value) * 100) / 100;
 
 function pricingApi() {
-  const api = vm.createContext({ signatureArchSizeSupplementLines, signatureFootprintSupplementLine,
+  const api = vm.createContext({ wallCoverPackTariff, wallCoverQuote, signatureArchSizeSupplementLines, signatureFootprintSupplementLine,
     scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance,
     manualOrderRowsToPricingLines, replaceManualOrderPricingLines, roundCurrency: money,
     isSignatureScene: (scene) => scene.offer === 'Signature',

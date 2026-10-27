@@ -33,7 +33,7 @@ const source = await readFile('src/App.jsx','utf8');
 const appId = resolve('src/__arch-variants-app.jsx'), pageId = resolve('src/__arch-variants-page.jsx'), storeId = resolve('src/data/sceneStore.js');
 const harness = `import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {ConfiguratorApp} from '/src/__arch-variants-app.jsx';
 localStorage.setItem('standing-config-intro:arch-variants','started');localStorage.setItem('standing-config-tutorial:arch-variants','done');
-function Test(){const [scene,setScene]=useState(${JSON.stringify(scene)}),[revision,setRevision]=useState(0);return <><button style={{position:'fixed',bottom:0,left:0,zIndex:99999}} onClick={()=>{setScene(window.savedScene);setRevision(n=>n+1)}}>Reouvrir test</button><button style={{position:'fixed',bottom:0,left:140,zIndex:99999}} onClick={()=>{setScene({...window.savedScene,dimensions:{...window.savedScene.dimensions,depth:2.99}});setRevision(n=>n+1)}}>Profondeur courte test</button><button style={{position:'fixed',bottom:0,left:340,zIndex:99999}} onClick={()=>{setScene({...window.savedScene,dimensions:{...window.savedScene.dimensions,depth:3.3}});setRevision(n=>n+1)}}>Profondeur 3m30 test</button><ConfiguratorApp key={revision} initialScene={scene} isAdminViewer /></>};createRoot(document.getElementById('root')).render(<Test/>);`;
+function Test(){const [scene,setScene]=useState(${JSON.stringify(scene)}),[revision,setRevision]=useState(0);return <><button style={{position:'fixed',bottom:0,left:0,zIndex:99999}} onClick={()=>{setScene(window.savedScene);setRevision(n=>n+1)}}>Reouvrir test</button><button style={{position:'fixed',bottom:0,left:140,zIndex:99999}} onClick={()=>{setScene({...window.savedScene,dimensions:{...window.savedScene.dimensions,depth:2.99}});setRevision(n=>n+1)}}>Profondeur courte test</button><button style={{position:'fixed',bottom:0,left:340,zIndex:99999}} onClick={()=>{setScene({...window.savedScene,dimensions:{...window.savedScene.dimensions,depth:3.45}});setRevision(n=>n+1)}}>Profondeur 3m45 test</button><ConfiguratorApp key={revision} initialScene={scene} isAdminViewer /></>};createRoot(document.getElementById('root')).render(<Test/>);`;
 // Inspect the materials and carpet plane actually mounted in the Three.js scene.
 const probe = `useFrame(({scene})=>{const paints=[],images=[],footprints=[];scene.traverse(node=>{
   for(const material of (Array.isArray(node.material)?node.material:[node.material])){
@@ -74,12 +74,13 @@ try{
   }
   const ledSwitch=page.getByRole('switch',{name:'Mur LED',exact:true});
   await ledSwitch.click();
+  assert.equal(await page.getByText('Visuel lumineux façade', {exact:true}).count(),0);
   for(const index of [8,9,7,6]){
     const size=variants[index][3],lighting=index%2?'Suspension':'Spot';
     await sizeGroup.getByRole('button',{name:new RegExp(`^${size} m`)}).click();
     await lightingGroup.getByRole('button',{name:lighting,exact:true}).click();
     await page.waitForFunction(type=>window.savedScene?.items.some(i=>i.type===type),entries[index].type);
-    await page.waitForFunction(()=>window.archRender?.images.some(i=>i.name==='LED_5500k_15'&&i.custom)&&window.archRender.paints.length&&window.archRender.paints.every(p=>p.hex==='d20014'&&!p.map)&&window.archRender.footprints.some(f=>f.textured),null,{timeout:60000});
+    await page.waitForFunction(()=>window.archRender?.images.some(i=>i.name==='LED_5500k_15'&&!i.custom)&&window.archRender.paints.length&&window.archRender.paints.every(p=>p.hex==='d20014'&&!p.map)&&window.archRender.footprints.some(f=>f.textured),null,{timeout:60000});
     const result=await page.evaluate(()=>({arches:window.savedScene.items.filter(i=>i.options?.signatureBaseKey==='arche'),lines:window.archPricing.lines.filter(l=>l.type.startsWith('signature-arch-'))}));
     assert.equal(result.arches.length,1);assert.deepEqual(result.arches[0].options.textureSlotValues,slots);
     assert.equal(result.lines.filter(l=>l.type.startsWith('signature-arch-led-wall-')).length,1);
@@ -93,7 +94,7 @@ try{
   assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).getAttribute('aria-pressed'),'true');assert.equal(await lightingGroup.getByRole('button',{name:'Spot',exact:true}).getAttribute('aria-pressed'),'true');
   const pending=page.getByRole('checkbox',{name:'Je fournirai le visuel plus tard',exact:true});
   await pending.first().check();
-  await page.waitForFunction(()=>window.savedScene?.items.some(i=>i.options.textureSlotValues?.['signature-arch-led-5']?.visualPending));
+  await page.waitForFunction(()=>window.savedScene?.items.some(i=>i.options.textureSlotValues?.['signature-arch-led-30']?.visualPending));
   await page.getByRole('button',{name:'Reouvrir test',exact:true}).click();await page.getByRole('button',{name:/^Arche/}).click();
   assert.equal(await pending.first().isChecked(),true);
   await page.getByRole('button',{name:'Appliquer',exact:true}).click();assert.equal(await page.locator('.signature-arch-card').count(),0);
@@ -105,13 +106,13 @@ try{
   await page.waitForFunction(()=>window.savedScene?.dimensions.depth===2.99&&window.savedScene.items.some(i=>i.options.signatureArchSizeM===2));
   await page.getByRole('button',{name:/^Arche/}).click();
   assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).isDisabled(),true);assert.equal(await ledSwitch.getAttribute('aria-checked'),'true');assert.equal(await page.evaluate(()=>window.archPricing.lines.filter(l=>l.type.startsWith('signature-arch-led-wall-')).length),1);
-  assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).getAttribute('title'),'Disponible à partir de 3,30 m de profondeur');
+  assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).getAttribute('title'),'Disponible à partir de 3,45 m de profondeur');
   assert.match(await sizeGroup.getByRole('button',{name:/^3 m/}).innerText(),/Non disponible/);
-  assert.deepEqual(await page.evaluate(()=>window.savedScene.items.find(i=>i.options.signatureBaseKey==='arche').options.textureSlotValues['signature-arch-led-30']),slots['signature-arch-led-30']);
+  assert.deepEqual(await page.evaluate(()=>window.savedScene.items.find(i=>i.options.signatureBaseKey==='arche').options.textureSlotValues['signature-arch-led-30']),{...slots['signature-arch-led-30'],visualPending:true});
   assert.equal(await page.evaluate(()=>window.archPricing.lines.filter(l=>l.type.startsWith('signature-arch-size-')).length),0);
-  await page.getByRole('button',{name:'Profondeur 3m30 test',exact:true}).click();await page.getByRole('button',{name:/^Arche/}).click();
+  await page.getByRole('button',{name:'Profondeur 3m45 test',exact:true}).click();await page.getByRole('button',{name:/^Arche/}).click();
   assert.equal(await sizeGroup.getByRole('button',{name:/^3 m/}).isEnabled(),true);
   await sizeGroup.getByRole('button',{name:/^3 m/}).click();
-  await page.waitForFunction(()=>window.savedScene?.dimensions.depth===3.3&&window.savedScene.items.some(i=>i.options.signatureArchSizeM===3));
+  await page.waitForFunction(()=>window.savedScene?.dimensions.depth===3.45&&window.savedScene.items.some(i=>i.options.signatureArchSizeM===3));
   assert.deepEqual(errors,[]);console.log('Eight arch models + legacy migration: LED toggle/pricing/depth, size + lighting selection, single supplement, image framing/color preservation and reopening OK');
 }finally{await browser?.close();await server.close();}

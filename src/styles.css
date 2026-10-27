@@ -1098,7 +1098,7 @@ select {
   position: relative;
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 108px minmax(0, 1fr) minmax(280px, 430px) repeat(5, auto);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 430px) minmax(0, 1fr);
   align-items: center;
   column-gap: clamp(6px, 1vw, 16px);
   min-width: 0;
@@ -15400,3 +15400,36 @@ img.asset-thumb {
   .signature-arch-alternative-icon { width: 30px; height: 32px; }
   .signature-arch-alternative-category { padding-inline: 4px; font-size: 8px; }
 }
+
+/* Equal side tracks keep the four steps centered independently of the stand name. */
+.configurator-topbar-identity { display: flex; align-items: center; gap: 14px; min-width: 0; height: 100%; overflow: hidden; }
+.configurator-topbar-identity .config-logo { flex: 0 0 108px; }
+.configurator-topbar-identity .config-breadcrumb { flex: 1; }
+.configurator-topbar-actions { display: flex; justify-content: flex-end; align-items: center; gap: clamp(4px, .7vw, 12px); min-width: 0; }
+@media (min-width: 761px) and (max-width: 1239px) {
+  .configurator-shell, .configurator-shell.intro-step, .configurator-shell.has-cart-bar { grid-template-rows: 112px minmax(0, 1fr); }
+  .configurator-topbar { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 64px 48px; padding: 0 12px; }
+  .configurator-topbar .stepper { grid-column: 1 / -1; grid-row: 2; width: min(430px, 100%); justify-self: center; }
+  .configurator-topbar-actions { grid-column: 2; grid-row: 1; }
+  .configurator-topbar-identity .config-logo { flex-basis: 82px; }
+  .configurator-topbar-identity .config-logo img { width: 78px; }
+}
+@media (max-width: 760px) {
+  .configurator-topbar-identity { flex: 1; gap: 4px; }
+  .configurator-topbar-identity .config-logo { flex-basis: 64px; }
+  .configurator-topbar-identity .config-logo img { width: 60px; }
+  .configurator-topbar-actions { flex: 0 0 auto; gap: 4px; }
+}
+.bat-electrical-editor { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; min-width: 0; border: 1px solid #dce2ea; border-radius: 7px; padding: 12px; color: #172236; background: #f7f9fc; font-size: 12px; }
+.bat-electrical-editor > * { min-width: 0; max-width: 100%; }
+.bat-electrical-editor label { display: grid; gap: 5px; font-size: 12px; }
+.bat-electrical-editor input[type=range] { width: 100%; margin-inline: 0; }
+.bat-electrical-editor p { margin: 0; color: #647084; font-size: 11px; line-height: 1.5; }
+.bat-electrical-editor .bat-electrical-upload { display: grid; gap: 5px; }
+.bat-electrical-upload input { width: 100%; min-width: 0; font-size: 11px; }
+.bat-electrical-preview { position: relative; justify-self: center; max-width: 100%; background: repeating-conic-gradient(#edf0f4 0% 25%, #fff 0% 50%) 0 0 / 16px 16px; }
+.bat-electrical-preview > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.bat-electrical-preview > button { position: absolute; padding: 0; border: 1px dashed #3865b1; background: transparent; transform: translate(-50%, -50%); touch-action: none; cursor: grab; }
+.bat-electrical-preview > button:focus-visible { outline: 2px solid #1f4378; outline-offset: 3px; }
+.bat-electrical-preview > button img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.bat-electrical-editor > button { justify-self: start; border: 1px solid #dce2ea; border-radius: 5px; padding: 7px 10px; color: #1f4378; background: white; cursor: pointer; font-size: 11px; }

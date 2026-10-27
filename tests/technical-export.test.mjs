@@ -1,3 +1,5 @@
+import { isSignatureLedArch } from '../src/signatureArchVariants.js';
+import { normalizeBatElectricalPicto } from '../src/batElectricalPicto.js';
 import { sceneHeadCountry } from '../src/equippedHeadInformation.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -28,7 +30,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl });
+  const api = vm.createContext({ isSignatureLedArch, normalizeBatElectricalPicto, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }
@@ -175,6 +177,18 @@ test('rotated group child positions and orientations match Three parent transfor
     assert.ok(Math.abs(child.z - (group.z + expected.z)) < 1e-10);
     assert.equal(child.rotation, degrees + 30);
   }
+});
+
+test('electrical BAT overlays survive group flattening and use position-specific cache keys', () => {
+  const { api } = runtime();
+  const dimensions = { batPictoUrl: '/base.svg', batElectricalPictoUrl: '/electric.svg', batElectricalPictoX: .75, batElectricalPictoY: .3, batElectricalPictoSize: .2 };
+  const [child] = api.flattenTechnicalItems([{ id: 'group', type: 'group', isGroup: true, dimensions,
+    children: [{ id: 'coffee', type: 'coffee' }] }], []);
+  const descriptor = api.technicalSvgPictoDescriptor(child, {}, []);
+  assert.equal(descriptor.electrical.url, '/electric.svg');
+  assert.equal(descriptor.electrical.x, .75);
+  const other = api.technicalSvgPictoDescriptor({ ...child, options: { ...child.options, batElectricalPictoX: .25 } }, {}, []);
+  assert.notEqual(other.key, descriptor.key);
 });
 
 test('each counter has its own visual and numbered placement, even with the same image', () => {

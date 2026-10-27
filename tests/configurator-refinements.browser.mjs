@@ -121,11 +121,13 @@ try {
   for (const width of [1920, 1440, 1280, 1100, 1024, 900, 820, 768]) {
     await page.setViewportSize({ width, height: 1000 });
     const bounds = await page.evaluate(() => {
-      const rect = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return { left: r.left, right: r.right }; };
+      const rect = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
       return { info: rect('.config-breadcrumb'), steps: rect('.stepper'), tools: rect('.language-pill'), header: rect('.configurator-topbar'), cart: rect('.topbar-cart') };
     });
-    assert.ok(bounds.info.right <= bounds.steps.left + 1, `Information does not overlap steps at ${width}px`);
-    assert.ok(bounds.steps.right <= bounds.tools.left + 1, `Steps do not overlap tools at ${width}px`);
+    const separated = (a, b) => a.right <= b.left + 1 || b.right <= a.left + 1 || a.bottom <= b.top + 1 || b.bottom <= a.top + 1;
+    assert.ok(separated(bounds.info, bounds.steps), `Information does not overlap steps at ${width}px`);
+    assert.ok(separated(bounds.steps, bounds.tools), `Steps do not overlap tools at ${width}px`);
+    assert.ok(Math.abs((bounds.steps.left + bounds.steps.right) / 2 - width / 2) <= 1, `Steps are centered at ${width}px`);
     assert.ok(bounds.cart.right <= width, `Header fits at ${width}px`);
   }
   await page.setViewportSize({ width: 390, height: 844 });

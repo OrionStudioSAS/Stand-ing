@@ -1,3 +1,4 @@
+import { wallCoverPackTariff, wallCoverQuote } from '../src/wallCoverPricing.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -16,7 +17,7 @@ function loadFunction(context, name) {
 }
 
 test('SMCL partition heads show aisle before stand number without duplicating an existing prefix', () => {
-  const api = vm.createContext({});
+  const api = vm.createContext({ wallCoverPackTariff, wallCoverQuote,});
   loadFunction(api, 'smclStandCode');
   assert.equal(api.smclStandCode('12', 'C'), 'C12');
   assert.equal(api.smclStandCode('12C', 'C'), 'C12');
@@ -25,7 +26,7 @@ test('SMCL partition heads show aisle before stand number without duplicating an
 });
 
 test('Signature wall-cover allowance follows its area bands; SMCL Confort and Prestige stay unchanged', () => {
-  const api = vm.createContext({
+  const api = vm.createContext({ wallCoverPackTariff, wallCoverQuote,
     scenePackBenefits,
     isSignatureScene: (scene) => scene.offer === 'Signature',
     normalizeTextValue: (value) => String(value).toLowerCase(),
@@ -39,7 +40,7 @@ test('Signature wall-cover allowance follows its area bands; SMCL Confort and Pr
 });
 
 test('manual admin lines are distinct BDC rows and Signature discount is recalculated after them', () => {
-  const api = vm.createContext({
+  const api = vm.createContext({ wallCoverPackTariff, wallCoverQuote,
     manualOrderRowsToPricingLines,
     roundCurrency: (value) => Math.round(Number(value) * 100) / 100,
     packAllowanceLineType,
@@ -70,7 +71,7 @@ test('manual admin lines are distinct BDC rows and Signature discount is recalcu
 });
 
 test('admin request action opens a mail draft addressed to the exhibitor', () => {
-  const api = vm.createContext({ encodeURIComponent });
+  const api = vm.createContext({ wallCoverPackTariff, wallCoverQuote, encodeURIComponent });
   for (const name of ['adminRequestEmail', 'sceneSpecialRequest', 'requestReplyMailto']) loadFunction(api, name);
   const url = api.requestReplyMailto({ client_email: 'client@example.com', project_name: 'Stand 12' });
   assert.match(url, /^mailto:client@example\.com\?subject=/);
@@ -79,7 +80,7 @@ test('admin request action opens a mail draft addressed to the exhibitor', () =>
 });
 
 test('request mailto preserves the full request, accents and reserved characters in its body', () => {
-  const api = vm.createContext({ encodeURIComponent });
+  const api = vm.createContext({ wallCoverPackTariff, wallCoverQuote, encodeURIComponent });
   for (const name of ['adminRequestEmail', 'sceneSpecialRequest', 'requestReplyMailto']) loadFunction(api, name);
   const request = 'Une étagère & un frigo ?\nEmplacement #12 + café à 50 %.';
   const scene = { project_name: 'Société & associés', event_name: 'SMCL 2026', source_payload: { contactDetails: { email: 'contact+salon@example.com' }, specialRequest: { text: request } } };
@@ -94,7 +95,7 @@ test('request mailto preserves the full request, accents and reserved characters
 
 test('the generated BDC contains each manual line and the recalculated Signature reduction', async () => {
   const template = readFileSync(new URL('../public/templates/bon-commande-template.pdf', import.meta.url));
-  const api = vm.createContext({
+  const api = vm.createContext({ wallCoverPackTariff, wallCoverQuote,
     PDFDocument, StandardFonts, rgb, Blob, Uint8Array, console, packAllowanceLineType,
     roundCurrency: (value) => Math.round(Number(value) * 100) / 100,
     uniqueTextValues: (values) => [...new Set(values)],

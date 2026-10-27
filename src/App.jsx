@@ -1,4 +1,7 @@
 import { signatureArchVariant, isSignatureLedArch, signatureArchChoice, signatureArchSizeSupplementLines, isLegacySignatureArch, upgradeLegacySignatureArch, signatureArchFitsDepth, signatureArchMinimumDepth } from './signatureArchVariants.js';
+import { wallCoverPackTariff, wallCoverQuote } from './wallCoverPricing.js';
+import { lastSceneSyncAt, sceneSyncLabel } from './sceneSyncInfo.js';
+import AssetBatElectricalPictoEditor from './AssetBatElectricalPictoEditor.jsx';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
 import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
@@ -2595,6 +2598,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     <LanguageContext.Provider value={language}>
     <main className={`configurator-shell ${activeStep === 1 ? 'intro-step' : ''} ${showCartBar ? 'has-cart-bar' : ''} ${readOnly ? 'readonly-mode' : ''}`}>
       <header className="configurator-topbar">
+        <div className="configurator-topbar-identity">
         <a className="config-logo" href="/">
           <img src="/images/logo.png" alt="Stand-ING" />
         </a>
@@ -2603,6 +2607,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           {offerLabel && <span className="config-offer-chip">{offerLabel}</span>}
           <span>{standLabel}</span>
           <span>{area.toFixed(0)} m²</span>
+        </div>
         </div>
         <nav className="stepper" aria-label={tRaw(language, 'step_home')}>
           {[
@@ -2617,6 +2622,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             </button>
           ))}
         </nav>
+        <div className="configurator-topbar-actions">
         <button className={`language-pill ${headerPanel === 'language' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('language')} aria-label={tRaw(language, 'aria_language')}>
           <span className="flag-dot"><img src={selectedLanguage.flagSrc} alt="" aria-hidden="true" /></span>
         </button>
@@ -2634,6 +2640,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         {activeStep > 1 && (
           <HeaderCartMenu
             items={cartItems}
+            pricingItems={visibleSceneItems}
             catalog={availableCatalog}
             selectedId={selectedId}
             total={scenePricing.total || 0}
@@ -2649,6 +2656,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onValidate={() => setActiveStep(4)}
           />
         )}
+        </div>
       </header>
 
       {placementMessage && (
@@ -3984,7 +3992,7 @@ function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items =
       <div className="signature-arch-space-notice" role="status">
         <span><Ban size={15} /></span>
         <div><strong>L’arche ne tient pas sur ce stand</strong>
-          <p>Votre stand{standArea > 0 ? <> de <b>{formatNumber(standArea)} m²</b></> : ''} ne dispose pas des 2,30 m de profondeur nécessaires pour installer l’arche sans déborder sur l’allée.</p>
+          <p>Votre stand{standArea > 0 ? <> de <b>{formatNumber(standArea)} m²</b></> : ''} ne dispose pas des 2,45 m de profondeur nécessaires pour installer l’arche sans déborder sur l’allée.</p>
         </div>
       </div>
       <section className="signature-arch-alternatives" aria-label="Alternatives à l’arche">
@@ -4063,7 +4071,7 @@ function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items =
         ))}
       </section>
 
-      {signatureArchVisualSlots.map((slot) => {
+      {signatureArchVisualSlots.filter((slot) => !ledWall || slot.id !== 'signature-arch-led-5').map((slot) => {
         const value = selectedItem?.options?.textureSlotValues?.[slot.id] || {};
         const label = slot.id === 'signature-arch-led-5' ? 'Visuel lumineux façade' : 'Visuel arrière haut';
         return (
@@ -4865,6 +4873,7 @@ function OptionsStepPanel({
           onSelect={onWallColor}
         />
         <WallCoverOptionCard
+          unitPrice={wallCoverPackTariff(salonLabel).unitPrice}
           surfaces={wallCoverSurfaces}
           covers={wallCovers}
           previews={wallCoverPreviews}
@@ -5161,7 +5170,7 @@ function PackAllowanceSummary({ pricing }) {
   </section>;
 }
 
-function HeaderCartMenu({ items, catalog, selectedId, total, pricing, salonLabel, readOnly, onSelectItem, onOpenItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onValidate }) {
+function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, total, pricing, salonLabel, readOnly, onSelectItem, onOpenItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onValidate }) {
   const t = useT();
   const itemRefs = useRef(new Map());
   const [cartOpen, setCartOpen] = useState(false);
@@ -5216,7 +5225,7 @@ function HeaderCartMenu({ items, catalog, selectedId, total, pricing, salonLabel
               const removableItems = group.items.filter((groupItem) => canRemoveItem?.(groupItem) ?? true);
               const decrementItem = [...removableItems].pop();
               const optionLines = itemOptionLines(item).filter((line) => line !== item.options?.variantLabel);
-              const groupTotal = group.items.reduce((sum, groupItem) => sum + cartItemPrice(groupItem, entry, salonLabel), 0);
+              const groupTotal = group.items.reduce((sum, groupItem) => sum + cartItemPrice(groupItem, entry, salonLabel, pricing, pricingItems, catalog), 0);
               return (
                 <article
                   key={group.key}
@@ -5237,7 +5246,7 @@ function HeaderCartMenu({ items, catalog, selectedId, total, pricing, salonLabel
                           {optionLines.map((line, index) => <em key={`${line}-${index}`}>{line}</em>)}
                         </span>
                       )}
-                      <b>{groupTotal.toLocaleString('fr-FR')} € HT</b>
+                      <b>{groupTotal > 0 ? `${groupTotal.toLocaleString('fr-FR')} € HT` : 'Inclus'}</b>
                     </span>
                   </button>
                   <div className="cart-item-controls" onClick={(event) => event.stopPropagation()}>
@@ -6584,7 +6593,7 @@ function placeSignatureArchAgainstBackWall(item, items, width, depth) {
 
 function itemTextureSlots(item = {}) {
   const configuredSlots = normalizeTextureSlots(item?.dimensions?.textureSlots);
-  if (isSignatureArchItem(item)) return [...signatureArchVisualSlots, ...configuredSlots];
+  if (isSignatureArchItem(item)) return [...signatureArchVisualSlots, ...configuredSlots].filter((slot) => !isSignatureLedArch(item) || slot.id !== 'signature-arch-led-5');
   if (item && isSignaturePartitionHeadItem(item)) {
     return [...signaturePartitionHeadVisualSlots, ...configuredSlots.filter((slot) => !signaturePartitionHeadVisualSlots.some((builtIn) => builtIn.id === slot.id))];
   }
@@ -6801,7 +6810,14 @@ function itemCartLabel(item) {
   return item?.label || item?.type || 'Objet';
 }
 
-function cartItemPrice(item, entry, salonLabel) {
+function cartItemPrice(item, entry, salonLabel, pricing = null, allItems = [], catalogEntries = []) {
+  if (pricing?.includedCounts instanceof Map) {
+    const index = allItems.filter((candidate) => candidate.type === item.type).findIndex((candidate) => candidate.id === item.id);
+    const included = index >= 0 && index < (pricing.includedCounts.get(item.type) || 0);
+    const base = included ? 0 : cartItemBasePrice(item, entry, salonLabel, catalogEntries) + textureSlotColorSupplement(item);
+    const supplements = (pricing.lines || []).filter((line) => line.optionForItemId === item.id && !line.mandatory).reduce((sum, line) => sum + Number(line.total || 0), 0);
+    return roundCurrency(base + supplements);
+  }
   const basePrice = cartItemBasePrice(item, entry, salonLabel, []);
   const colorSupplement = isWoodReceptionDeskItem({ ...entry, ...item })
     ? Number(item.options?.binary2ColorPrice || 0)
@@ -7414,7 +7430,7 @@ function ValidationStepPanel({
     });
   });
 
-  wallCoverValidationRows(activeCovers, pricing?.wallCoverIncludedMl).forEach(({ surface, includedMl, billableMl, total }) => {
+  wallCoverValidationRows(activeCovers, 0, pricing?.wallCoverUnitPrice || wallCoverPackTariff(isSignatureStand ? 'Signature' : '').unitPrice).forEach(({ surface, includedMl, billableMl, total }) => {
     const cover = wallCovers?.[surface.id] || (surface.sourceWall ? wallCovers?.[surface.sourceWall] : null) || {};
     const preview = wallCoverPreviewForSurface(wallCoverPreviewsFromCovers(wallCovers), surface);
     pushRow('signage', {
@@ -7612,16 +7628,17 @@ function ValidationOptionLine({ label, value, tone = 'green' }) {
 function validationMoney(value = 0, cents = false) {
   return Number(value || 0).toLocaleString('fr-FR', {
     minimumFractionDigits: cents ? 2 : 0,
-    maximumFractionDigits: cents ? 2 : 0,
+    maximumFractionDigits: 2,
   });
 }
 
 function validationBadgeText(amount = 0, showZeroPrice = false) {
   const safeAmount = Number(amount || 0);
+  if (safeAmount < 0) return `− ${validationMoney(-safeAmount)}€`;
   return safeAmount > 0 || showZeroPrice ? `+ ${validationMoney(safeAmount)}€` : 'Inclus';
 }
 
-function wallCoverValidationRows(surfaces = [], includedMl = 0) {
+function wallCoverValidationRows(surfaces = [], includedMl = 0, unitPrice = wallCoverUnitPrice) {
   let remainingIncluded = Math.max(0, Number(includedMl || 0));
   return surfaces.map((surface) => {
     const quantityMl = roundLinearMeters(Number(surface.visibleWidth || surface.width || 0));
@@ -7633,7 +7650,7 @@ function wallCoverValidationRows(surfaces = [], includedMl = 0) {
       quantityMl,
       includedMl: appliedIncluded,
       billableMl,
-      total: Math.round(billableMl * wallCoverUnitPrice),
+      total: roundCurrency(billableMl * unitPrice),
     };
   });
 }
@@ -8578,18 +8595,15 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
   );
 }
 
-function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includedMl = 0, disabled = false, onToggle, onPreview, onPreviewReset, onPending, onFramingChange }) {
+function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includedMl = 0, unitPrice = wallCoverUnitPrice, disabled = false, onToggle, onPreview, onPreviewReset, onPending, onFramingChange }) {
   const t = useT();
   const includedLabel = Number(includedMl || 0) > 0 ? `${formatNumber(includedMl)} ml inclus dans votre formule` : '';
-  const activeMl = surfaces
-    .filter((surface) => wallCoverEnabledForSurface(covers, surface))
-    .reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0);
-  const includedUsed = Math.min(activeMl, Number(includedMl || 0));
-  const billableMl = Math.max(0, activeMl - includedUsed);
-  const wallCoverTotal = Math.round(billableMl * wallCoverUnitPrice);
+  const quote = wallCoverQuote(surfaces.filter((surface) => wallCoverEnabledForSurface(covers, surface)), includedMl, unitPrice);
+  const { quantity: activeMl, billable: billableMl, total: wallCoverTotal } = quote;
 
   return (
     <div className="wall-cover-card">
+      {includedLabel && <div className="wall-cover-info-box success"><strong><b>i</b>{includedLabel}. Au-delà, facturation de {unitPrice} €/m linéaire.</strong></div>}
       <div className="wall-cover-head">
         <div>
           <strong>{t('wall_cover_title')}</strong>
@@ -8597,18 +8611,13 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
         </div>
       </div>
 
-      {includedLabel && (
-        <div className="wall-cover-info-box success">
-          <strong><b>i</b>{includedLabel}. Au-delà, facturation de {wallCoverUnitPrice}€/m linéaire</strong>
-        </div>
-      )}
       <div className="wall-cover-info-box">
         <span><b>!</b>Cliquez sur <strong>importer</strong> pour visualiser votre fichier dans la scène 3D et il nous sera envoyé automatiquement. Vous n’avez pas de fichier ? Pas de panique. Cliquez simplement sur "je fournirai le visuel plus tard" et nous reviendrons vers vous ultérieurement.</span>
       </div>
 
       {activeMl > 0 && (
         <div className="wall-cover-price-summary">
-          <span>{formatNumber(activeMl)} ml sélectionnés · {formatNumber(includedUsed)} ml inclus</span>
+          <span>{formatNumber(activeMl)} ml × {unitPrice} € · forfait inclus déduit : −{quote.discount.toLocaleString('fr-FR')} €</span>
           <strong>{billableMl > 0 ? `+ ${wallCoverTotal.toLocaleString('fr-FR')} € HT` : 'Inclus'}</strong>
         </div>
       )}
@@ -10157,7 +10166,7 @@ function AdminSalonExhibitorTable({ salon, scenes, allScenes, packs, filter, onF
     const rows = [['Exposant', 'Email', 'Hall', 'Allée', 'Stand', 'Pack', 'Surface m²', 'Configuration', 'BAT'], ...sortedScenes.map((scene) => [scene.project_name || scene.client_name, scene.client_email, sceneHallLabel(scene, scene.source_payload?.contactDetails || {}), sceneAisleNumber(scene), sceneStandNumber(scene, scene.source_payload?.contactDetails || {}), adminScenePackName(scene, salon), sceneArea(scene), clientStatusLabel(scene.client_status || scene.status), adminSalonBatLabel(scene)])];
     downloadBlob(new Blob([`\uFEFF${rows.map((row) => row.map(csvCell).join(';')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' }), `exposants-${slugForType(salon.name)}.csv`);
   };
-  return <div className="admin-salon-exhibitors"><div className="admin-salon-detail-section-heading"><div><h3>Exposants inscrits <span>{allScenes.length}</span></h3><p>Liste complète des configurations avec leur statut</p></div><div className="admin-salon-exhibitors-tools"><select className="admin-salon-hall-filter" aria-label="Filtrer par numéro de hall" value={effectiveHall} onChange={(event) => setHallFilter(event.target.value)}><option value="">Tous les halls</option>{hallOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><select className="admin-salon-stand-sort" aria-label="Trier par numéro de stand" value={standSort} onChange={(event) => setStandSort(event.target.value)}><option value="default">Ordre actuel</option><option value="stand-asc">Stand : croissant</option><option value="stand-desc">Stand : décroissant</option></select><label><Search size={15} /><input aria-label="Rechercher un exposant" placeholder="Rechercher un exposant..." value={search} onChange={(event) => onSearch(event.target.value)} /></label><button type="button" className="admin-outline-v2" onClick={exportRows}>Exporter</button></div></div><div className="admin-salon-exhibitors-filters">{[['', `Tous · ${allScenes.length}`], ...packs.map((pack) => [pack.key, `${pack.name} · ${pack.scenes.length}`]), ['progress', `En cours · ${allScenes.length - adminSalonCompletedScenes({ scenes: allScenes }).length}`], ['complete', `Terminé · ${adminSalonCompletedScenes({ scenes: allScenes }).length}`]].map(([id, label]) => <button type="button" key={id} aria-pressed={filter === id} onClick={() => onFilter(id)}>{label}</button>)}</div><div className="admin-salon-exhibitors-table-wrap"><table><thead><tr><th>Exposant</th><th>Hall · stand</th><th>Type</th><th>Surface</th><th>Config</th><th>BAT</th><th>Mise à jour</th><th><span className="sr-only">Ouvrir</span></th></tr></thead><tbody>{sortedScenes.slice((currentPage - 1) * 12, currentPage * 12).map((scene) => <tr key={scene.id}><td><span className="admin-salon-exhibitor-avatar">{String(scene.project_name || scene.client_name || '?').trim().slice(0, 2).toUpperCase()}</span><strong>{scene.project_name || scene.client_name || 'Exposant'}</strong></td><td><strong>{sceneHallLabel(scene, scene.source_payload?.contactDetails || {})}</strong><small>Stand {clientSceneEmplacement(scene) || 'à définir'}</small></td><td><span className="admin-salon-v2-pack-pill">{adminScenePackName(scene, salon)}</span></td><td>{sceneArea(scene) || '—'} m²</td><td><span className={`admin-salon-config-pill ${sceneStatusKind(scene)}`}>{clientStatusLabel(scene.client_status || scene.status)}</span></td><td><span className={`admin-salon-config-pill ${adminSalonBatKind(scene)}`}>{adminSalonBatLabel(scene)}</span></td><td>{scene.updated_at ? formatDate(scene.updated_at) : '—'}</td><td><a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer" aria-label={`Ouvrir ${scene.project_name || scene.client_name || 'la scène'}`}><ArrowRight size={16} /></a></td></tr>)}</tbody></table>{!sortedScenes.length && <p className="admin-empty-row">Aucun exposant avec ces filtres.</p>}</div>{pageCount > 1 && <nav className="admin-pagination" aria-label="Pagination des exposants"><span>Page {currentPage}/{pageCount}</span><div><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Précédent</button><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</button></div></nav>}</div>;
+  return <div className="admin-salon-exhibitors"><div className="admin-salon-detail-section-heading"><div><h3>Exposants inscrits <span>{allScenes.length}</span></h3><p>Liste complète des configurations avec leur statut</p></div><div className="admin-salon-exhibitors-tools"><select className="admin-salon-hall-filter" aria-label="Filtrer par numéro de hall" value={effectiveHall} onChange={(event) => setHallFilter(event.target.value)}><option value="">Tous les halls</option>{hallOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><select className="admin-salon-stand-sort" aria-label="Trier par numéro de stand" value={standSort} onChange={(event) => setStandSort(event.target.value)}><option value="default">Ordre actuel</option><option value="stand-asc">Stand : croissant</option><option value="stand-desc">Stand : décroissant</option></select><label><Search size={15} /><input aria-label="Rechercher un exposant" placeholder="Rechercher un exposant..." value={search} onChange={(event) => onSearch(event.target.value)} /></label><button type="button" className="admin-outline-v2" onClick={exportRows}>Exporter</button></div></div><div className="admin-salon-exhibitors-filters">{[['', `Tous · ${allScenes.length}`], ...packs.map((pack) => [pack.key, `${pack.name} · ${pack.scenes.length}`]), ['progress', `En cours · ${allScenes.length - adminSalonCompletedScenes({ scenes: allScenes }).length}`], ['complete', `Terminé · ${adminSalonCompletedScenes({ scenes: allScenes }).length}`]].map(([id, label]) => <button type="button" key={id} aria-pressed={filter === id} onClick={() => onFilter(id)}>{label}</button>)}</div><div className="admin-salon-exhibitors-table-wrap"><table><thead><tr><th>Exposant</th><th>Hall · stand</th><th>Type</th><th>Surface</th><th>Config</th><th>BAT</th><th>Mise à jour</th><th>Synchro Monday</th><th><span className="sr-only">Ouvrir</span></th></tr></thead><tbody>{sortedScenes.slice((currentPage - 1) * 12, currentPage * 12).map((scene) => <tr key={scene.id}><td><span className="admin-salon-exhibitor-avatar">{String(scene.project_name || scene.client_name || '?').trim().slice(0, 2).toUpperCase()}</span><strong>{scene.project_name || scene.client_name || 'Exposant'}</strong></td><td><strong>{sceneHallLabel(scene, scene.source_payload?.contactDetails || {})}</strong><small>Stand {clientSceneEmplacement(scene) || 'à définir'}</small></td><td><span className="admin-salon-v2-pack-pill">{adminScenePackName(scene, salon)}</span></td><td>{sceneArea(scene) || '—'} m²</td><td><span className={`admin-salon-config-pill ${sceneStatusKind(scene)}`}>{clientStatusLabel(scene.client_status || scene.status)}</span></td><td><span className={`admin-salon-config-pill ${adminSalonBatKind(scene)}`}>{adminSalonBatLabel(scene)}</span></td><td>{scene.updated_at ? formatDate(scene.updated_at) : '—'}</td><td><SceneSyncTime scene={scene} /></td><td><a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer" aria-label={`Ouvrir ${scene.project_name || scene.client_name || 'la scène'}`}><ArrowRight size={16} /></a></td></tr>)}</tbody></table>{!sortedScenes.length && <p className="admin-empty-row">Aucun exposant avec ces filtres.</p>}</div>{pageCount > 1 && <nav className="admin-pagination" aria-label="Pagination des exposants"><span>Page {currentPage}/{pageCount}</span><div><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Précédent</button><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</button></div></nav>}</div>;
 }
 
 function adminSalonBatKind(scene) {
@@ -13175,6 +13184,18 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     }
   };
 
+  const changeElectricalPicto = async (file) => {
+    if (batPictoUploading) return;
+    setBatPictoUploading(true); setBatPictoError('');
+    try {
+      const uploaded = file ? await uploadObjectAssetScopedImage(draft, file, 'bat-electrical', 'picto') : null;
+      const updated = { ...draft, dimensions: { ...draft.dimensions, batElectricalPictoUrl: uploaded?.publicUrl || '', batElectricalPictoPath: uploaded?.path || '', batElectricalPictoX: .5, batElectricalPictoY: .5, batElectricalPictoSize: .25 } };
+      const saved = await onSave(updated);
+      setDraft(saved || updated);
+    } catch (error) { setBatPictoError(error.message || 'Impossible de mettre à jour le picto électrique.'); }
+    finally { setBatPictoUploading(false); }
+  };
+
 
   const updateVariantMeta = (assetType, patch) => {
     if (!assetType) return;
@@ -13280,6 +13301,9 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           />
         </label>
         <BatPictoPreview imageUrl={draft.dimensions?.batPictoUrl} label={draft.label || draft.type} onRemove={removeBatPicto} removeDisabled={batPictoUploading} />
+        <AssetBatElectricalPictoEditor primaryUrl={draft.dimensions?.batPictoUrl} metadata={draft.dimensions} disabled={batPictoUploading}
+          onUpload={changeElectricalPicto} onRemove={() => changeElectricalPicto(null)}
+          onChange={(patch) => setDraft((current) => ({ ...current, dimensions: { ...current.dimensions, ...patch } }))} />
         <BatPictoColorSettings
           key={draft.dimensions?.batPictoUrl || ''}
           imageUrl={draft.dimensions?.batPictoUrl}
@@ -15195,16 +15219,24 @@ function resolveTechnicalWallSurfaces(items = []) {
 
 function scenePurchaseOrder(scene = {}, assets = []) {
   const catalogEntries = sceneAdminCatalog(assets, scene);
+  const sceneItems = sceneAllAdminItems(scene, catalogEntries);
+  const covers = scene.options?.wallCovers ?? scene.source_payload?.options?.wallCovers;
+  const coverPricing = covers ? {
+    wallCovers: covers,
+    wallCoverSurfaces: wallCoverSurfaceOptions(scene.layout || 'back', Number(scene.dimensions?.width || scene.width_m || 4), Number(scene.dimensions?.depth || scene.depth_m || 3), sceneItems, { splitForCovers: true }),
+  } : {};
   const savedLines = scene?.source_payload?.pricing?.lines || scene?.pricing?.lines || [];
   const fallbackPricing = calculateScenePricing({
     catalog: catalogEntries,
-    items: sceneAllAdminItems(scene, catalogEntries),
+    items: sceneItems,
     salonLabel: sceneOfferLabel(scene),
     scene,
+    ...coverPricing,
   });
-  const sourceLines = savedLines.length
+  let sourceLines = savedLines.length
     ? enrichPurchaseOrderLinesWithFallback(savedLines, fallbackPricing.lines)
     : fallbackPricing.lines;
+  if (covers) sourceLines = [...sourceLines.filter((line) => !['wall-cover', 'wall-cover-allowance'].includes(line.type)), ...fallbackPricing.lines.filter((line) => ['wall-cover', 'wall-cover-allowance'].includes(line.type))];
   const lines = normalizePurchaseOrderLines(withPackAllowance(replaceManualOrderPricingLines(sourceLines, scene.source_payload?.manualPurchaseOrderLines), scenePackBenefits(scene)), catalogEntries);
   const total = lines.reduce((sum, line) => sum + line.total, 0);
   return { lines, total: roundCurrency(total), header: purchaseOrderHeaderInfo(scene) };
@@ -15265,7 +15297,7 @@ function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
     .map((line) => {
       const entry = findCatalogEntry(catalogEntries, line.type);
       const quantity = Math.max(0, Number(line.quantity || line.qty || 0));
-      const isAllowance = line.type === packAllowanceLineType;
+      const isAllowance = line.type === packAllowanceLineType || line.type === 'wall-cover-allowance';
       const total = (isAllowance ? Math.min : Math.max)(0, roundCurrency(line.total ?? line.price ?? 0));
       const unitPrice = (isAllowance ? Math.min : Math.max)(0, roundCurrency(line.unitPrice ?? line.unit_price ?? (quantity ? total / quantity : 0)));
       const optionLines = uniqueTextValues(Array.isArray(line.optionLines) ? line.optionLines : []);
@@ -15281,7 +15313,7 @@ function normalizePurchaseOrderLines(lines = [], catalogEntries = []) {
         mandatory: Boolean(line.mandatory),
       };
     })
-    .filter((line) => line.quantity > 0 && (line.total > 0 || (line.type === packAllowanceLineType && line.total < 0) || line.type.startsWith('admin-manual-')));
+    .filter((line) => line.quantity > 0 && (line.total > 0 || ([packAllowanceLineType, 'wall-cover-allowance'].includes(line.type) && line.total < 0) || line.type.startsWith('admin-manual-')));
 }
 
 function purchaseOrderBaseLabel(label = '') {
@@ -15569,10 +15601,10 @@ async function fillPurchaseOrderTemplate(order = {}) {
   }
 
   const totalHt = Number(order.total || 0);
-  const totalTva = Math.round(totalHt * 0.2);
+  const totalTva = roundCurrency(totalHt * 0.2);
   setPdfFieldAny(form, ['TOTAL', templateFields.total], moneyPdf(totalHt), 9);
   setPdfFieldAny(form, ['TVA', templateFields.tva], moneyPdf(totalTva), 9);
-  setPdfFieldAny(form, ['TOTAL_TTC', templateFields.totalTtc], moneyPdf(totalHt + totalTva), 9);
+  setPdfFieldAny(form, ['TOTAL_TTC', templateFields.totalTtc], moneyPdf(roundCurrency(totalHt + totalTva)), 9);
   form.updateFieldAppearances(font);
 
   return new Blob([await pdfDoc.save()], { type: 'application/pdf' });
@@ -15798,6 +15830,11 @@ function relativeTime(value) {
   const days = Math.round(diffHours / 24);
   if (days === 1) return 'hier';
   return `il y a ${days}j`;
+}
+
+function SceneSyncTime({ scene }) {
+  const at = lastSceneSyncAt(scene);
+  return at ? <time dateTime={at} title="Dernière synchronisation Monday — heure de Paris">{sceneSyncLabel(scene)}</time> : <span>Non renseignée</span>;
 }
 
 function formatDate(value) {
@@ -16925,7 +16962,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     const billableItems = typeItems.slice(includedCount);
     const itemPrices = billableItems.map((item) => cartItemBasePrice(item, entry, salonLabel, catalog) + textureSlotColorSupplement(item));
     const lineTotal = itemPrices.reduce((sum, price) => sum + price, 0);
-    const unitPrice = billableCount ? Math.round(lineTotal / billableCount) : assetUnitPrice(entry, salonLabel);
+    const unitPrice = billableCount ? roundCurrency(lineTotal / billableCount) : assetUnitPrice(entry, salonLabel);
     billableCounts.set(type, billableCount);
     itemsTotal += lineTotal;
     if (billableItems.some((item) => isFurnitureInsuranceEligible(entry, item))) furnitureInsuranceBase += lineTotal;
@@ -17039,23 +17076,22 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
 
   const activeWallCovers = wallCoverSurfaces.filter((surface) => wallCoverEnabledForSurface(wallCovers, surface));
   if (activeWallCovers.length) {
-    const unitPrice = wallCoverUnitPrice;
-    const quantity = roundLinearMeters(activeWallCovers.reduce((sum, surface) => sum + Number(surface.visibleWidth || surface.width || 0), 0));
-    const includedQuantity = roundLinearMeters(Math.min(quantity, wallCoverIncludedLinearMeters(scene)));
-    const billableQuantity = roundLinearMeters(Math.max(0, quantity - includedQuantity));
-    if (billableQuantity > 0) {
-      const lineTotal = Math.round(billableQuantity * unitPrice);
-      itemsTotal += lineTotal;
+    const unitPrice = wallCoverPackTariff(scene).unitPrice;
+    const quote = wallCoverQuote(activeWallCovers, wallCoverIncludedLinearMeters(scene), unitPrice);
+    const { quantity, included: includedQuantity } = quote;
+    if (quantity > 0) {
+      itemsTotal += quote.total;
       lines.push({
         type: 'wall-cover',
-        label: `Bâche sur cloisons (${formatNumber(billableQuantity)} ml facturés${includedQuantity > 0 ? `, ${formatNumber(includedQuantity)} ml inclus` : ''})`,
-        quantity: billableQuantity,
+        label: `Bâches sur cloisons (${formatNumber(quantity)} ml × ${unitPrice} €)`,
+        quantity,
         unitPrice,
-        total: lineTotal,
+        total: quote.subtotal,
         reference: 'BACHE-CLOISON',
         includedQuantity,
         totalQuantity: quantity,
       });
+      if (quote.discount > 0) lines.push({ type: 'wall-cover-allowance', label: `Forfait bâches inclus — déduction ${formatNumber(includedQuantity)} ml`, quantity: 1, unitPrice: -quote.discount, total: -quote.discount, reference: 'BACHE-INCLUSE' });
     }
   }
 
@@ -17089,6 +17125,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     furnitureInsuranceBase,
     lines,
     wallCoverIncludedMl: wallCoverIncludedLinearMeters(scene),
+    wallCoverUnitPrice: wallCoverPackTariff(scene).unitPrice,
     total: roundCurrency(basePrice + itemsTotal),
   };
 }
@@ -17100,37 +17137,7 @@ function pricingLineLabelForItems(items = [], entry = {}, fallbackType = '') {
 }
 
 function wallCoverIncludedLinearMeters(scene = {}) {
-  if (isSignatureScene(scene)) {
-    const area = Number(scene.dimensions?.width || scene.width_m || 0) * Number(scene.dimensions?.depth || scene.depth_m || 0);
-    if (area < 9) return 0;
-    if (area < 15) return 2;
-    if (area < 24) return 3;
-    if (area < 36) return 3.5;
-    return 4;
-  }
-  if (scenePackBenefits(scene).mode === 'allowance') return 0;
-  const boardId = String(scene.source_payload?.board_id || scene.source_payload?.boardId || scene.monday_board_id || '');
-  const key = normalizeTextValue([
-    scene.offer,
-    scene.offer_name,
-    scene.pack,
-    scene.pack_name,
-    scene.event_name,
-    scene.salon,
-    scene.salon_name,
-    scene.source_payload?.offer,
-    scene.source_payload?.pack,
-    scene.source_payload?.includedPack,
-    scene.source_payload?.options?.includedPack,
-    scene.source_payload?.salon,
-    scene.source_payload?.event_name,
-    scene.options?.includedPack,
-  ].filter(Boolean).join(' '));
-  const isSmcl = key.includes('smcl') || ['18395911999', '18395912050'].includes(boardId);
-  if (!isSmcl) return 0;
-  if (key.includes('prestige') || boardId === '18395912050') return 4;
-  if (key.includes('confort') || boardId === '18395911999') return 2;
-  return 0;
+  return wallCoverPackTariff(scene).includedMl;
 }
 
 function isIncludedColorSelection(selection = {}) {

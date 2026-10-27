@@ -44,7 +44,7 @@ export function upgradeLegacySignatureArch(item, entries = []) {
 }
 
 export function signatureArchMinimumDepth(size = 2) {
-  return Number(size) === 3 ? 3.3 : 2.3;
+  return Number(size) === 3 ? 3.45 : 2.45;
 }
 
 export function signatureArchFitsDepth(item = {}, standDepth = Infinity) {
