@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
-import { MeshStandardMaterial, Texture } from 'three';
+import { BufferGeometry, Float32BufferAttribute, MeshStandardMaterial, Texture } from 'three';
 import { defaultImageFraming } from '../src/imageFraming.js';
 import { patchPartitionHeadVisuals } from '../src/partitionHeadVisuals.js';
 
@@ -40,6 +40,7 @@ function visualContext() {
     'signatureArchVisualMaterialMatches', 'materialTextureCanvasSize', 'applyTextureSlotMaterial',
     'materialWithTexture', 'partitionHeadMainImageMaterial', 'isPartitionHeadMainImageMaterial',
     'partitionHeadMainImageUrl', 'partitionHeadMainImageTextureOptions', 'partitionHeadMainImageCoverSize', 'collectSceneTextureUrls',
+    'fitSignatureHeadStandardImage',
     'applyItemOptionMaterials', 'applyPartitionHeadVisualOptions',
   ]) loadFunction(name, context);
   return context;
@@ -54,8 +55,11 @@ test('new and existing Signature heads use SIGNA-32 only as their standard lower
     { label: 'Tête de cloison gauche', dimensions: { packs: ['Signature'] } }]) {
     const saved = JSON.stringify(item);
     assert.equal(api.partitionHeadMainImageUrl(item), standard);
-    assert.deepEqual(Object.keys(api.partitionHeadMainImageTextureOptions(item, false)), ['flipY']);
-    assert.equal(api.partitionHeadMainImageTextureOptions(item, false).flipY, false);
+    const options = api.partitionHeadMainImageTextureOptions(item, false);
+    assert.equal(options.flipY, false);
+    assert.equal(options.fit, 'cover');
+    assert.equal(options.coverSize.join(','), '460,2130');
+    assert.equal(options.imageZoom, undefined, 'Standard artwork ignores stale framing from a removed upload');
     assert.equal(JSON.stringify(item), saved, 'A standard visual must not become a saved customer upload or clear its pending state');
   }
   for (const label of ['Tête de cloison SMCL', 'Tête de cloison SIAE', 'Arche Signature']) {
@@ -71,6 +75,35 @@ test('new and existing Signature heads use SIGNA-32 only as their standard lower
   const png = readFileSync(new URL('../public/images/signature/partition-head-standard-signa-32.png', import.meta.url));
   assert.equal(png.readUInt32BE(16), 174);
   assert.equal(png.readUInt32BE(20), 805);
+});
+
+test('the standard Signature visual fills its actual UV panel instead of cropping its top under the name plate', () => {
+  const api = visualContext();
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('uv', new Float32BufferAttribute([
+    -23, .1345192194, -22, .1345192194, -22, 1.0005626678, -23, 1.0005626678,
+    -100, -100, 100, -100, 100, 100,
+  ], 2));
+  geometry.setIndex([0, 1, 2, 2, 3, 0, 4, 5, 6]);
+  geometry.addGroup(0, 6, 0);
+  geometry.addGroup(6, 3, 1);
+  const texture = new Texture();
+  const panel = new MeshStandardMaterial({ name: 'LED_5500k#4', map: texture, emissiveMap: texture });
+  const other = new MeshStandardMaterial({ name: 'LED_5500k#40', map: texture });
+  const mesh = { geometry, material: [panel, other] };
+  api.fitSignatureHeadStandardImage(mesh, head, texture);
+  assert.notEqual(panel.map, texture);
+  assert.equal(panel.emissiveMap, panel.map);
+  assert.equal(other.map, texture, 'Do not change adjacent materials or include their UV bounds');
+  assert.equal(texture.repeat.y, 1, 'Cached/shared textures stay unchanged');
+  for (const [vertex, expected] of [[0, [0, 0]], [2, [1, 1]]]) {
+    const mapped = [geometry.attributes.uv.getX(vertex) * panel.map.repeat.x + panel.map.offset.x,
+      geometry.attributes.uv.getY(vertex) * panel.map.repeat.y + panel.map.offset.y];
+    assert.ok(mapped.every((value, axis) => Math.abs(value - expected[axis]) < .00001));
+  }
+  const custom = new MeshStandardMaterial({ name: 'LED_5500k#4', map: texture });
+  api.fitSignatureHeadStandardImage({ geometry, material: custom }, { ...head, options: { headMainImageUrl: 'client.png' } }, texture);
+  assert.equal(custom.map, texture, 'Existing customer image framing stays unchanged');
 });
 
 test('Signature heads expose an independent built-in *28 image slot, but other heads do not', () => {

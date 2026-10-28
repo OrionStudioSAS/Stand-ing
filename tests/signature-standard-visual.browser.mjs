@@ -9,7 +9,7 @@ const appId = resolve('src/__signature-standard-app.jsx');
 const pageId = resolve('src/__signature-standard-page.jsx');
 const names = ['LED_5500k#4', '*28', 'LED_5500k#40'];
 const positions = new Float32Array([-.23, 0, 0, .23, 0, 0, .23, 2.13, 0, -.23, 0, 0, .23, 2.13, 0, -.23, 2.13, 0]);
-const uvs = new Float32Array([0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0]);
+const uvs = new Float32Array([-23, 1.0005626678, -22, 1.0005626678, -22, .1345192194, -23, 1.0005626678, -22, .1345192194, -23, .1345192194]);
 const normals = new Float32Array(Array.from({ length: 6 }, () => [0, 0, 1]).flat());
 const bytes = Buffer.concat([Buffer.from(positions.buffer), Buffer.from(uvs.buffer), Buffer.from(normals.buffer)]);
 const gltf = JSON.stringify({ asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0, 1, 2] }],
@@ -46,7 +46,7 @@ const harness = `
 import React, { Suspense, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Model3D } from '/src/__signature-standard-app.jsx';
+import { Model3D, createCoverImageTexture } from '/src/__signature-standard-app.jsx';
 const custom = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="460" height="2130"><rect width="460" height="2130" fill="red"/></svg>');
 function Probe() {
   useFrame(({scene}) => {
@@ -59,7 +59,8 @@ function Probe() {
           const canvas = material.map?.image;
           results.push({ id:node.userData.headTest, name:material.name, width:canvas?.width, height:canvas?.height,
             pixels:canvas?.getContext ? Array.from(canvas.getContext('2d').getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data) : null,
-            image:canvas?.toDataURL?.(), flipY:material.map?.flipY, luminous:material.emissiveIntensity });
+            image:canvas?.toDataURL?.(), flipY:material.map?.flipY, luminous:material.emissiveIntensity,
+            repeat:material.map?.repeat.toArray(), offset:material.map?.offset.toArray() });
         }
       });
     });
@@ -85,16 +86,14 @@ function Test() {
     </Suspense></Canvas></div></>;
 }
 const image = new Image(); image.src='/images/signature/partition-head-standard-signa-32.png'; await image.decode();
-const reference = document.createElement('canvas'); reference.width=image.width; reference.height=image.height;
-reference.getContext('2d').fillStyle='white'; reference.getContext('2d').fillRect(0,0,image.width,image.height); reference.getContext('2d').drawImage(image,0,0);
-window.standardReference = reference.toDataURL();
+window.standardReference = createCoverImageTexture(image,460,2130,{fit:'cover'}).image.toDataURL();
 createRoot(document.getElementById('root')).render(<Test/>);
 `;
 const server = await createServer({ logLevel: 'error', server: { host: '127.0.0.1', port: 0 }, plugins: [{
   name: 'signature-standard-visual',
   resolveId(id) { if (id === '/src/__signature-standard-app.jsx') return appId; if (id === '/src/__signature-standard-page.jsx') return pageId; },
   load(id) {
-    if (id === appId) return source.replace("createRoot(document.getElementById('root')).render(<App />);", 'export { Model3D };');
+    if (id === appId) return source.replace("createRoot(document.getElementById('root')).render(<App />);", 'export { Model3D, createCoverImageTexture };');
     if (id === pageId) return harness;
   },
   configureServer(vite) { vite.middlewares.use((req, res, next) => {
@@ -121,7 +120,11 @@ try {
   });
   await standardReady();
   const panels = await page.evaluate(() => window.materials.filter(material => material.name === 'LED_5500k#4'));
-  assert.ok(panels.every(panel => panel.width === 174 && panel.height === 805 && panel.luminous === .72));
+  assert.ok(panels.every(panel => panel.width === 460 && panel.height === 2130 && panel.luminous === .72));
+  for (const panel of panels.filter(panel => panel.id.startsWith('glb'))) {
+    assert.ok(Math.abs(.1345192194 * panel.repeat[1] + panel.offset[1]) < .00001, 'The real GLB panel top maps to the artwork top');
+    assert.ok(Math.abs(1.0005626678 * panel.repeat[1] + panel.offset[1] - 1) < .00001, 'The real GLB panel bottom maps to the artwork bottom');
+  }
   assert.deepEqual(panels.map(panel => panel.flipY).sort(), [false, false, true, true, true, true]);
   const neighbors = await page.evaluate(() => window.materials.filter(material => material.name === 'LED_5500k#40'));
   assert.ok(neighbors.every(material => !material.image), 'Neighboring materials never receive the standard image');

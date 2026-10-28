@@ -21724,6 +21724,7 @@ function ObjModel({ item, selected, hovered, dragging }) {
         child.receiveShadow = true;
         child.renderOrder = modelRenderOrderForItem(item);
         child.material = Array.isArray(child.material) ? child.material.map(finishMaterial) : finishMaterial(child.material);
+        fitSignatureHeadStandardImage(child, item, mainImageTexture);
       }
     });
 
@@ -21742,6 +21743,7 @@ function prepareLoadedModel(source, item = null, textureOptions = {}) {
       child.renderOrder = modelRenderOrderForItem(item);
       child.material = cloneMeshMaterial(child.material, item);
       child.material = applyItemOptionMaterials(child.material, item, textureOptions, child.name);
+      fitSignatureHeadStandardImage(child, item, textureOptions.mainImageTexture);
     }
   });
   return centerModel(clone, item);
@@ -22119,9 +22121,40 @@ function partitionHeadMainImageUrl(item = {}) {
 }
 
 function partitionHeadMainImageTextureOptions(item = {}, flipY = true) {
-  // The standard artwork replaces the embedded model texture without custom-image framing.
-  if (isSignaturePartitionHeadItem(item) && !item.options?.headMainImageUrl) return { flipY };
+  if (isSignaturePartitionHeadItem(item) && !item.options?.headMainImageUrl) return { flipY, coverSize: [460, 2130], fit: 'cover', backgroundColor: '#ffffff' };
   return { flipY, coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.headMainImageFraming) };
+}
+
+function fitSignatureHeadStandardImage(mesh, item = {}, texture = null) {
+  if (!texture || !isSignaturePartitionHeadItem(item) || item.options?.headMainImageUrl) return;
+  const geometry = mesh.geometry;
+  const uv = geometry?.getAttribute('uv');
+  if (!uv) return;
+  const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  materials.forEach((material, materialIndex) => {
+    if (material?.map !== texture || !isPartitionHeadMainImageMaterial(normalizeMaterialName(material.name), material, item)) return;
+    const groups = geometry.groups.length ? geometry.groups.filter((group) => group.materialIndex === materialIndex)
+      : [{ start: 0, count: geometry.index?.count || uv.count }];
+    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+    groups.forEach((group) => {
+      const end = Math.min(group.start + group.count, geometry.index?.count || uv.count);
+      for (let index = group.start; index < end; index += 1) {
+        const vertex = geometry.index ? geometry.index.getX(index) : index;
+        const u = uv.getX(vertex), v = uv.getY(vertex);
+        if (!Number.isFinite(u) || !Number.isFinite(v)) continue;
+        minU = Math.min(minU, u); maxU = Math.max(maxU, u);
+        minV = Math.min(minV, v); maxV = Math.max(maxV, v);
+      }
+    });
+    if (!(maxU - minU > 0.000001 && maxV - minV > 0.000001)) return;
+    // The imported panel uses only part of a tiled UV atlas; fit artwork to the panel, not the atlas.
+    const fitted = texture.clone();
+    fitted.repeat.set(1 / (maxU - minU), 1 / (maxV - minV));
+    fitted.offset.set(-minU / (maxU - minU), -minV / (maxV - minV));
+    fitted.needsUpdate = true;
+    material.map = fitted;
+    if (material.emissiveMap === texture) material.emissiveMap = fitted;
+  });
 }
 
 function partitionHeadMainImageCoverSize(item = {}) {
