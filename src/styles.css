@@ -15428,6 +15428,9 @@ img.asset-thumb {
 .bat-electrical-editor .bat-electrical-upload { display: grid; gap: 5px; }
 .bat-electrical-upload input { width: 100%; min-width: 0; font-size: 11px; }
 .bat-electrical-preview { position: relative; justify-self: center; max-width: 100%; background: repeating-conic-gradient(#edf0f4 0% 25%, #fff 0% 50%) 0 0 / 16px 16px; }
+.bat-electrical-workspace { display: grid; place-items: center; height: 260px; overflow: hidden; border: 1px solid #dce2ea; border-radius: 6px; background: #fff; }
+.bat-electrical-coordinates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.bat-electrical-coordinates input { width: 100%; min-width: 0; }
 .bat-electrical-preview > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .bat-electrical-preview > button { position: absolute; padding: 0; border: 1px dashed #3865b1; background: transparent; transform: translate(-50%, -50%); touch-action: none; cursor: grab; }
 .bat-electrical-preview > button:focus-visible { outline: 2px solid #1f4378; outline-offset: 3px; }

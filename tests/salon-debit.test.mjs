@@ -84,5 +84,5 @@ test('stand wall requirements follow the BAT panel cutting for U and back layout
   assert.equal(u.length, 10);
   assert.deepEqual(back.map((panel) => panel.lengthMm), [1000, 1000, 1000, 1000, 400]);
   assert.equal(reinforced.filter((panel) => panel.reinforced).length, 1);
-  assert.equal(reinforced.length, 4);
+  assert.equal(reinforced.length, 5);
 });

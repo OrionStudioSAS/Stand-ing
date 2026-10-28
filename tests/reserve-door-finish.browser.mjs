@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 const appId = resolve('src/__reserve-door-app.jsx');
 const pageId = resolve('src/__reserve-door-page.jsx');
 const source = await readFile('src/App.jsx', 'utf8');
-const materialNames = ['MeshFabric_B01_18cm_3', 'MeshFabric_B01_18cm_1', 'Metallic_Paint_Silver', 'Porte_trad', 'Menuiserie', 'door_paint'];
+const materialNames = ['MeshFabric_B01_18cm_3', 'MeshFabric_B01_18cm_1', 'Metallic_Paint_Silver', 'Porte_trad', 'Menuiserie', 'Plastic_Simple_Shiny_Black_2', 'door_paint'];
 const model = {
   id: 'reserve', type: 'reserve-model', label: 'Réserve 2 m²', x: -1, z: 0, rotation: 0,
   modelUrl: '/__reserve-door.obj', materialUrl: '/__reserve-door.mtl',
@@ -107,6 +107,9 @@ f 1 2 3
 o WoodFrame
 usemtl Menuiserie
 f 1 2 3
+o Skirting
+usemtl Plastic_Simple_Shiny_Black_2
+f 1 2 3
 o OtherPaint
 usemtl door_paint
 f 1 2 3
@@ -159,11 +162,14 @@ try {
         && window.wallFabricReference?.textured;
     }, enabled);
     const materials = await page.evaluate(() => window.materials);
-    assert.equal(materials.length, 24);
-    const frames = materials.filter((material) => ['MeshFabric_B01_18cm_1', 'Menuiserie'].includes(material.name));
-    assert.equal(frames.length, 8);
-    assert.ok(frames.every((material) => material.hex === (enabled ? '787878' : 'ffffff') && !material.textured), 'Reserve panels and door surrounds use anthracite only on Signature and Equipe');
-    const otherMaterials = materials.filter((material) => !['MeshFabric_B01_18cm_3', 'MeshFabric_B01_18cm_1', 'Menuiserie'].includes(material.name));
+    assert.equal(materials.length, 28);
+    const panels = materials.filter((material) => material.name === 'MeshFabric_B01_18cm_1');
+    assert.equal(panels.length, 4);
+    assert.ok(panels.every((material) => material.hex === (enabled ? '787878' : 'ffffff') && !material.textured), 'Reserve partition bodies still use anthracite only on Signature and Equipe');
+    const trims = materials.filter((material) => ['Menuiserie', 'Plastic_Simple_Shiny_Black_2'].includes(material.name));
+    assert.equal(trims.length, 8);
+    assert.ok(trims.every((material) => material.hex === 'ffffff' && !material.textured), 'Door surrounds and skirting stay white even when the reserve has an anthracite frame override');
+    const otherMaterials = materials.filter((material) => !['MeshFabric_B01_18cm_3', 'MeshFabric_B01_18cm_1'].includes(material.name));
     unchangedMaterials ??= otherMaterials;
     assert.deepEqual(otherMaterials, unchangedMaterials, 'Hardware and other materials keep their original finish');
     if (enabled) {

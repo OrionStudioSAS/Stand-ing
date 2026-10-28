@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { demoScenes } from './seed.js';
 import { supabase } from './supabaseClient.js';
 import { catalog, layouts } from '../config/catalog.js';
-import { normalizePackBenefits, scenePackBenefits, inheritCurrentPackBenefits, isSignaturePackScene } from '../../supabase/functions/_shared/packBenefits.js';
+import { normalizePackBenefits, scenePackBenefits, inheritCurrentPackBenefits, isSignaturePackScene, sceneLightingOptions } from '../../supabase/functions/_shared/packBenefits.js';
 import { mergeManualOrderPricing } from '../manualOrderLines.js';
 import { sceneDraftPatch } from '../sceneReopening.js';
 
@@ -211,12 +211,12 @@ function applyPresetDefaultColorOptions(row) {
   ));
 
   if (scenePackBenefits(row).mode === 'allowance') {
-    sourcePayload.options = { ...(sourcePayload.options || {}), autoSpotsRule: null, ledRailsEnabled: false };
     if (!hasCurrentReserveRules && presetReserveRules && typeof presetReserveRules === 'object') {
       sourcePayload.reserveRules = presetReserveRules;
       sourcePayload.pricing = { ...(sourcePayload.pricing || {}), reserveRules: presetReserveRules };
     }
   }
+  sourcePayload.options = sceneLightingOptions(row, sourcePayload.options || {}, presetAutoSpotsRule);
   if ((!presetDefaults || typeof presetDefaults !== 'object') && !presetAutoSpotsRule) return sourcePayload;
 
   const currentOptions = { ...(sourcePayload.options || {}) };
@@ -228,8 +228,6 @@ function applyPresetDefaultColorOptions(row) {
     ? { ...currentOptions, ...defaultPayload }
     : mergePresetDefaultsIntoDraftOptions(currentOptions, presetDefaults);
 
-  if (scenePackBenefits(row).mode === 'allowance') nextOptions.autoSpotsRule = null;
-  else if (presetAutoSpotsRule && !nextOptions.autoSpotsRule) nextOptions.autoSpotsRule = presetAutoSpotsRule;
   sourcePayload.options = nextOptions;
 
   return sourcePayload;

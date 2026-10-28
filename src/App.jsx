@@ -4,6 +4,8 @@ import { lastSceneSyncAt, sceneSyncLabel } from './sceneSyncInfo.js';
 import AssetBatElectricalPictoEditor from './AssetBatElectricalPictoEditor.jsx';
 import AssetGroupPlacementEditor from './AssetGroupPlacementEditor.jsx';
 import { nextGroupRowPosition } from './groupPlacement.js';
+import { includedCounterPowerItems } from './includedCounterPower.js';
+import { prioritizeUnderArchIntersections } from './scenePicking.js';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
 import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
@@ -11,7 +13,7 @@ import { sceneAdminRequests, sceneQuestions, questionAsRequest } from './sceneRe
 import React, { Suspense, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
-import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
+import { Canvas, events as createSceneEvents, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
 import { Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MOUSE, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -75,7 +77,7 @@ import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
 import { carpetColors, wallFabricColors } from './config/colorOptions.js';
 import { createPackDefinition, createSalon, deleteAuthAdminUser, deleteClientAndScenes, deleteObjectBankItem, deletePackGlobally, deleteSalon, deleteSalonOffer, deleteSceneAndRemote, ensureSalonOffer, getSceneByToken, listAdminAuditEvents, listAdminUsers, listClients, listObjectBank, listSalons, listScenes, listScenesForSalonDebit, markSceneSpecialRequestResolved, publicConfiguratorUrl, reopenSceneAsDraft, requestSceneAccessCode, saveAdminUser, saveMondayBoardForPack, saveObjectBankItem, saveSalonOfferBaseItems, saveScene, saveSceneManualOrderLines, saveStandPresetConfig, sceneShareUrl, sendSceneCompletionEmail, sendSceneQuestionEmail, syncMondayScenes, syncSceneConfigToMonday, syncSceneContactToMonday, uploadColorGroupFolder, uploadColorGroupColors, uploadObjectAssetBatPicto, uploadObjectAssetFolder, uploadObjectAssetScopedImage, uploadObjectAssetThumbnail, uploadSceneItemOptionImage, verifySceneAccessCode } from './data/sceneStore.js';
-import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, signatureAllowancePerSquareMeter, withPackAllowance } from '../supabase/functions/_shared/packBenefits.js';
+import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, signatureAllowancePerSquareMeter, withPackAllowance, hasAutomaticPackLighting, sceneLightingOptions } from '../supabase/functions/_shared/packBenefits.js';
 import { createTechnicalPlanBlob, exportTechnicalPdf, standWallPanelRequirements } from './technicalExport.js';
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
 import DeploymentUpdateNotice from './DeploymentUpdateNotice.jsx';
@@ -999,10 +1001,10 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
 }
 
 function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = false }) {
-  const initialOptions = {
+  const initialOptions = sceneLightingOptions(initialScene, {
     ...(initialScene.source_payload?.options || {}),
     ...(initialScene.options || {}),
-  };
+  }, initialScene.stand_presets?.base_config?.autoSpotsRule || initialScene.stand_presets?.base_config?.options?.autoSpotsRule);
   const initialPrestigeStand = isPrestigeScene(initialScene);
   const initialPrestigeArchVisible = initialPrestigeStand && (initialScene.items || []).some((item) => isPrestigeArchControlItem(item, true) && item?.options?.prestigeHidden !== true);
   const initialPrestigeSignageVisible = initialPrestigeStand && (initialScene.items || []).some((item) => isPrestigeHighSignControlItem(item, true) && item?.options?.prestigeHidden !== true);
@@ -1085,7 +1087,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [technicalFloorType, setTechnicalFloorType] = useState(initialOptions.technicalFloorType || '');
   const [technicalFloorTrimType, setTechnicalFloorTrimType] = useState(initialOptions.technicalFloorTrimType || 'straight');
   const [technicalFloorRampX, setTechnicalFloorRampX] = useState(Number(initialOptions.technicalFloorRampX || 0));
-  const [ledRailsEnabled, setLedRailsEnabled] = useState(scenePackBenefits(initialScene).mode !== 'allowance' && initialOptions.ledRailsEnabled !== false);
+  const [ledRailsEnabled, setLedRailsEnabled] = useState(initialOptions.ledRailsEnabled !== false);
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
   const [reserveItemOverrides, setReserveItemOverrides] = useState(initialOptions.reserveItemOverrides || {});
   const [signatureMeterCoverType, setSignatureMeterCoverType] = useState(initialOptions.signatureMeterCoverType || '');
@@ -1271,7 +1273,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item) && !isAutomaticReserveItem(item) && !isAutomaticPartitionHeadItem(item) && !item.autoMeterCover), [hydratedItems]);
   const automaticMeterCoverItems = useMemo(() => makeAutomaticMeterCoverItems(assetPackLabel, signatureMeterCoverType, availableCatalog, width, depth, layout, manualHydratedItems), [assetPackLabel, signatureMeterCoverType, availableCatalog, width, depth, layout, manualHydratedItems]);
   const meterCoverConfiguratorEntry = useMemo(() => signatureMeterCoverConfiguratorEntry(availableCatalog), [availableCatalog]);
-  const ledRailEntries = useMemo(() => scenePackBenefits(initialScene).mode === 'allowance' ? [] : ledRailCatalogEntries(availableCatalog), [availableCatalog, initialScene]);
+  const ledRailEntries = useMemo(() => hasAutomaticPackLighting(initialScene) ? ledRailCatalogEntries(availableCatalog) : [], [availableCatalog, initialScene]);
   const ledSpotCount = ledSpotCountForArea(area);
   const reserveRules = useMemo(() => sceneReserveRules(initialScene), [initialScene]);
   const activeReserveRuleConfig = useMemo(() => reserveRuleWithPackChoices(
@@ -1522,6 +1524,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       ledRailsEnabled,
       ledRailMode: 'auto',
       autoSpotsRule: autoSpotsBaseRule,
+      ...(isSignatureStand ? { signatureLightingVersion: 1 } : {}),
       ledSpotCount,
       ledRailOverrides,
       reserveOptionType: effectiveReserveOptionType,
@@ -2728,6 +2731,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           </button>
         )}
         <Canvas
+          events={standSceneEvents}
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
           dpr={[1, 1.5]}
           className={sceneCanvasClassName}
@@ -2755,6 +2759,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 height={height}
                 layout={layout}
                 items={visibleSceneItems}
+                catalog={availableCatalog}
                 selectedId={selectedId}
                 setSelectedId={selectSceneItem}
                 draggingId={draggingId}
@@ -4908,7 +4913,7 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       )}
-      {hasIncludedObjects && <OptionAccordion {...accordionScrollProps('led')} title={t('option_led')} icon={<ConfiguratorOptionIcon src="/icons/spots.svg" />} open={openOptions.led} onToggle={() => toggleOption('led')}>
+      {(hasIncludedObjects || isSignatureStand) && <OptionAccordion {...accordionScrollProps('led')} title={t('option_led')} icon={<ConfiguratorOptionIcon src="/icons/spots.svg" />} open={openOptions.led} onToggle={() => toggleOption('led')}>
         <LedRailOptionCard
           enabled={ledRailsEnabled}
           spotCount={ledSpotCount}
@@ -11136,6 +11141,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
         <div className="preset-view-switch"><button type="button" className={viewMode === '3d' ? 'active' : ''} onClick={() => setViewMode('3d')}>3D</button><button type="button" className={viewMode === 'plan' ? 'active' : ''} onClick={() => setViewMode('plan')}>Plan</button></div>
         <div className="preset-canvas-container" style={{ visibility: viewMode === 'plan' ? 'hidden' : 'visible' }}>
         <Canvas
+          events={standSceneEvents}
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
           dpr={[1, 1.5]}
           className={!presetAssetsReady ? 'scene-canvas-loading' : ''}
@@ -11156,6 +11162,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
               height={height}
               layout={layout}
               items={previewItems}
+              catalog={availableCatalog}
               selectedId={selectedId}
               setSelectedId={setSelectedId}
               draggingId={draggingId}
@@ -13197,7 +13204,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     setBatPictoUploading(true); setBatPictoError('');
     try {
       const uploaded = file ? await uploadObjectAssetScopedImage(draft, file, 'bat-electrical', 'picto') : null;
-      const updated = { ...draft, dimensions: { ...draft.dimensions, batElectricalPictoUrl: uploaded?.publicUrl || '', batElectricalPictoPath: uploaded?.path || '', batElectricalPictoX: .5, batElectricalPictoY: .5, batElectricalPictoSize: .25 } };
+      const updated = { ...draft, dimensions: { ...draft.dimensions, batElectricalPictoUrl: uploaded?.publicUrl || '', batElectricalPictoPath: uploaded?.path || '', batElectricalPictoX: .5, batElectricalPictoY: .5, batElectricalPictoSizeMeters: .2 } };
       const saved = await onSave(updated);
       setDraft(saved || updated);
     } catch (error) { setBatPictoError(error.message || 'Impossible de mettre à jour le picto électrique.'); }
@@ -13309,7 +13316,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           />
         </label>
         <BatPictoPreview imageUrl={draft.dimensions?.batPictoUrl} label={draft.label || draft.type} onRemove={removeBatPicto} removeDisabled={batPictoUploading} />
-        <AssetBatElectricalPictoEditor primaryUrl={draft.dimensions?.batPictoUrl} metadata={draft.dimensions} disabled={batPictoUploading}
+        <AssetBatElectricalPictoEditor primaryUrl={draft.dimensions?.batPictoUrl} metadata={draft.dimensions} modelSize={assetModelSize(draft)} disabled={batPictoUploading}
           onUpload={changeElectricalPicto} onRemove={() => changeElectricalPicto(null)}
           onChange={(patch) => setDraft((current) => ({ ...current, dimensions: { ...current.dimensions, ...patch } }))} />
         <BatPictoColorSettings
@@ -15123,7 +15130,8 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const layout = scene.layout || 'back';
   const area = width * depth;
   const packLabel = sceneOfferLabel(scene);
-  const options = { ...(scene.source_payload?.options || {}), ...(scene.options || {}) };
+  const options = sceneLightingOptions(scene, { ...(scene.source_payload?.options || {}), ...(scene.options || {}) },
+    scene.stand_presets?.base_config?.autoSpotsRule || scene.stand_presets?.base_config?.options?.autoSpotsRule);
   const manualItems = sceneAdminItems(scene, catalogEntries).filter((item) => !item.autoMeterCover
     && (!isSignatureScene(scene) || !isSignatureArchItem(item) || signatureArchFitsDepth(item, depth)));
   const automaticMeterCoverItems = makeAutomaticMeterCoverItems(packLabel, options.signatureMeterCoverType, catalogEntries, width, depth, layout, manualItems);
@@ -15139,7 +15147,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const autoSpotsRule = options.autoSpotsRule || null;
   const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, packLabel, options.reserveOptions || {})
     .map((item) => applyReserveItemOverride(item, options.reserveItemOverrides || {}, width, depth, layout, options.carpetFootprintEnabled !== false));
-  const ledItems = scenePackBenefits(scene).mode === 'allowance' || options.ledRailsEnabled === false
+  const ledItems = options.ledRailsEnabled === false
     ? []
     : hasAutoSpotsRule(autoSpotsRule)
       ? makeAutomaticSpotItems(autoSpotsRule, catalogEntries, width, depth, layout, [...automaticReserveItems, ...manualItems])
@@ -16866,7 +16874,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
   const baseItems = sceneBaseItems(scene);
   const baseItemsConfigured = sceneHasBaseItems(scene);
   const includedSceneCounts = isSignatureScene(scene)
-    ? countSceneItems(safeItems.filter((item) => item.autoMeterCover))
+    ? countSceneItems(safeItems.filter((item) => item.autoMeterCover || item.autoLedRail || item.dimensions?.autoLedRail))
     : countSceneItems(safeItems.filter(isIncludedSceneItem));
   const baseItemCounts = baseItemsToCountMap(baseItems);
   const includedCounts = baseItemsConfigured
@@ -17858,6 +17866,7 @@ function isWallTopSnapItem(item = {}, entry = null) {
 }
 
 function floorItemBaseY(item = {}, entry = null) {
+  if (item.autoCounterPower) return Number(item.y || 0);
   if (isCountertopAccessory(item) && item.surfaceHostId) return Number(item.y || 0);
   if (isWallTopSnapItem(item, entry)) {
     const h = wallTopSnapItemHeight(item, entry);
@@ -20315,7 +20324,7 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03, renderedBou
   };
 }
 
-function StandScene({ width, depth, height, layout, items, selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, reserveDoorColorHex = '', wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
+function StandScene({ width, depth, height, layout, items, catalog = [], selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, reserveDoorColorHex = '', wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const dragPointerOffset = useRef({ x: 0, z: 0 });
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
@@ -20346,7 +20355,8 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
     setSelectedId(null);
   };
 
-  const floorItems = items.filter((item) => !isWallItem(item));
+  const counterPowerItems = includedCounterPowerItems(items, catalog);
+  const floorItems = [...items, ...counterPowerItems].filter((item) => !isWallItem(item));
   const wallItems = items.filter((item) => isWallItem(item));
   const renderSceneItem = (item) => (
     <Suspense key={item.id} fallback={null}>
@@ -20358,12 +20368,13 @@ function StandScene({ width, depth, height, layout, items, selectedId, setSelect
         selected={item.id === selectedId}
         hovered={item.id === hoveredId}
         dragging={item.id === draggingId}
-        onSelect={() => interactive && setSelectedId(item.id)}
+        onSelect={() => interactive && setSelectedId(item.autoCounterPower ? item.surfaceHostId : item.id)}
         onHover={hoverEnabled ? ((hovered) => setItemHover(item.id, hovered)) : null}
         onDragStart={(event) => {
           event.stopPropagation();
           if (!interactive) return;
-          setSelectedId(item.id);
+          setSelectedId(item.autoCounterPower ? item.surfaceHostId : item.id);
+          if (item.autoCounterPower) return;
           if (!canDragSceneItem(item, canEditLockedItems)) return;
           dragPointerOffset.current = sceneItemDragPointerOffset(
             item,
@@ -21243,6 +21254,10 @@ function SignatureArchFootprint({ item, standDepth = 0 }) {
   );
 }
 
+function standSceneEvents(state) {
+  return { ...createSceneEvents(state), filter: prioritizeUnderArchIntersections };
+}
+
 function SceneItem({ item, items = [], selected, hovered, dragging, width, depth, onSelect, onHover, onDragStart, onDragEnd, onDragMove, visualContext }) {
   const rotationY = (item.rotation * Math.PI) / 180;
   const spinning = itemTurntableActive(item);
@@ -21252,6 +21267,7 @@ function SceneItem({ item, items = [], selected, hovered, dragging, width, depth
   return (
     <group
       ref={rotationRef}
+      userData={{ standSceneItem: true, itemId: item.id, ...(isSignatureArchItem(item) ? { archPickBounds: itemGroupBounds(item) } : {}) }}
       position={[item.x, floorItemBaseY(item), item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
@@ -21276,6 +21292,7 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, standD
   return (
     <group
       ref={rotationRef}
+      userData={{ standSceneItem: true, itemId: item.id, ...(isSignatureArchItem(item) ? { archPickBounds: groupBounds } : {}) }}
       position={[item.x, floorItemBaseY(item), item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
@@ -21350,7 +21367,7 @@ function SceneItemContent({ item, selected, hovered, dragging, visualContext }) 
       {item.type === 'counter' && <Counter selected={selected} hovered={hovered} dragging={dragging} />}
       {item.modelUrl && (
         <>
-          <ObjHitbox bounds={bounds} centerY={centerY} minSize={hitboxMinimum} />
+          {!isSignatureArchItem(item) && <ObjHitbox bounds={bounds} centerY={centerY} minSize={hitboxMinimum} />}
           <Model3D item={item} selected={selected} hovered={hovered} dragging={dragging} visualContext={visualContext} />
           <ObjectBaseboards item={item} />
         </>
@@ -21875,7 +21892,8 @@ function isReserveDoorPaintMaterial(materialName = '') {
 }
 
 function isReserveFramePaintMaterial(materialName = '') {
-  return /^(meshfabric_b01_18cm_?1|menuiserie|plastic_simple_shiny_black_2)(?:\.\d+)?$/.test(normalizeMaterialName(materialName));
+  // Only the partition body: door joinery and skirting keep their original white finish.
+  return /^meshfabric_b01_18cm_?1(?:\.\d+)?$/.test(normalizeMaterialName(materialName));
 }
 
 function reserveFramePaintMaterial(material, item) {
@@ -22926,6 +22944,7 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
     <group
       position={offset}
       rotation={[0, rotation, 0]}
+      userData={{ standSceneItem: true, itemId: item.id }}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
       onPointerOver={onHover ? ((event) => { event.stopPropagation(); onHover(true); }) : undefined}
       onPointerOut={onHover ? ((event) => { event.stopPropagation(); onHover(false); }) : undefined}

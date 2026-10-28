@@ -77,10 +77,10 @@ test('real purchase-order PDF retains centimes in HT, VAT, TTC and the wall-cove
   assert.equal(form.getTextField(fields.rows[1].total).getText(), '-747,00 €');
 });
 
-test('electrical pictograms default to the center and stay within the main pictogram', () => {
-  assert.deepEqual(normalizeBatElectricalPicto({ batElectricalPictoUrl: '/electric.svg' }), { url: '/electric.svg', path: '', x: .5, y: .5, size: .25 });
+test('electrical pictograms use a common physical size and may extend beyond the main pictogram', () => {
+  assert.deepEqual(normalizeBatElectricalPicto({ batElectricalPictoUrl: '/electric.svg' }), { url: '/electric.svg', path: '', x: .5, y: .5, size: .2 });
   const icon = normalizeBatElectricalPicto({ batElectricalPictoX: 100, batElectricalPictoY: -1, batElectricalPictoSize: .4 });
-  assert.equal(icon.x, .8); assert.equal(icon.y, .2);
+  assert.equal(icon.x, 5); assert.equal(icon.y, -1); assert.equal(icon.size, .2);
   assert.equal(normalizeBatElectricalPicto({ batElectricalPictoX: 'invalid' }).x, .5);
 });
 

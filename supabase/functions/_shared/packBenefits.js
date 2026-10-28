@@ -19,6 +19,23 @@ export function isSignaturePackScene(scene = {}) {
   return labels.some((label) => /(^|[^a-z])signature([^a-z]|$)/i.test(String(label || '')));
 }
 
+export function hasAutomaticPackLighting(scene = {}) {
+  return isSignaturePackScene(scene) || scenePackBenefits(scene).mode !== 'allowance';
+}
+
+export function sceneLightingOptions(scene = {}, options = {}, presetRule = null) {
+  if (!hasAutomaticPackLighting(scene)) return { ...options, autoSpotsRule: null, ledRailsEnabled: false };
+  // Older allowance handling saved this pair even when nobody removed the Signature lights.
+  const restoreSignatureLights = isSignaturePackScene(scene) && !options.signatureLightingVersion
+    && options.ledRailsEnabled === false && options.autoSpotsRule === null;
+  return {
+    ...options,
+    ...(presetRule && !options.autoSpotsRule ? { autoSpotsRule: presetRule } : {}),
+    ...(isSignaturePackScene(scene) ? { signatureLightingVersion: 1 } : {}),
+    ...(restoreSignatureLights ? { ledRailsEnabled: true } : {}),
+  };
+}
+
 export function packBenefitsForScene(scene = {}, benefits = {}) {
   if (!isSignaturePackScene(scene)) return normalizePackBenefits(benefits);
   const width = Number(scene.dimensions?.width || scene.width_m);

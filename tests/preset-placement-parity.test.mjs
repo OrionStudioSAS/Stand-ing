@@ -4,6 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { wallFabricColors } from '../src/config/colorOptions.js';
 import { closestSpotWallTarget, spotTargetPatch, spotWallTargets } from '../src/spotPlacement.js';
+import { sceneLightingOptions } from '../supabase/functions/_shared/packBenefits.js';
 
 const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
@@ -147,7 +148,7 @@ test('Shared manual edits include automatic reserve/head blockers without duplic
 });
 
 test('Pack rail/reserve positions are inherited only when a client has not saved its own overrides', () => {
-  const context = vm.createContext({ scenePackBenefits: () => ({ mode: 'included' }) });
+  const context = vm.createContext({ sceneLightingOptions, scenePackBenefits: () => ({ mode: 'included' }) });
   loadFunction('applyPresetDefaultColorOptions', context, storeSource);
   const defaults = { ledRailOverrides: { rail: { wall: 'object-wall:reserve', x: 0.5 } }, reserveItemOverrides: { reserve: { x: 1 } } };
   const preset = { base_config: { options: defaults } };

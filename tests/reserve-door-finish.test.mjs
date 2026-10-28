@@ -8,7 +8,7 @@ import { wallFabricColors } from '../src/config/colorOptions.js';
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 function runtime() {
   const api = vm.createContext({ wallFabricColors, MeshStandardMaterial });
-  for (const name of ['normalizeTextValue', 'normalizePackLabel', 'isSignaturePackLabel', 'signatureReserveWallFabricColor', 'reserveDoorColorForPack', 'reserveChildWithFinish', 'normalizedItemText', 'normalizeMaterialName', 'isReserveDoorPaintMaterial', 'colorHex', 'wallFabricMaterialProps', 'reserveDoorFabricColor', 'reserveDoorFabricMaterial']) {
+  for (const name of ['normalizeTextValue', 'normalizePackLabel', 'isSignaturePackLabel', 'signatureReserveWallFabricColor', 'reserveDoorColorForPack', 'reserveChildWithFinish', 'normalizedItemText', 'normalizeMaterialName', 'isReserveDoorPaintMaterial', 'isReserveFramePaintMaterial', 'colorHex', 'wallFabricMaterialProps', 'reserveDoorFabricColor', 'reserveDoorFabricMaterial']) {
     const start = app.indexOf(`function ${name}(`);
     assert.ok(start >= 0, name);
     vm.runInContext(app.slice(start, app.indexOf('\n}\n', start) + 2), api);
@@ -53,6 +53,16 @@ test('monolithic reserves target MeshFabric_B01_18cm_3 without painting other fa
   }
   for (const name of ['MeshFabric_B01_18cm_1', 'MeshFabric_B01_18cm_30', 'MeshFabric_B01_18cm_3.001', 'MeshFabric_B01_18cm_3#1', 'MeshFabric_B01_18cm', 'Metallic_Paint_Silver']) {
     assert.equal(api.isReserveDoorPaintMaterial(name), false, name);
+  }
+});
+
+test('reserve frame paint targets partition bodies but never door surrounds or skirting', () => {
+  const api = runtime();
+  for (const name of ['MeshFabric_B01_18cm_1', 'meshfabric_b01_18cm1', 'MeshFabric_B01_18cm_1.001']) {
+    assert.equal(api.isReserveFramePaintMaterial(name), true, name);
+  }
+  for (const name of ['Menuiserie', 'Menuiserie.001', 'Plastic_Simple_Shiny_Black_2', 'Plastic_Simple_Shiny_Black_2.002', 'MeshFabric_B01_18cm_3', 'Porte_trad', 'Metallic_Paint_Silver']) {
+    assert.equal(api.isReserveFramePaintMaterial(name), false, name);
   }
 });
 

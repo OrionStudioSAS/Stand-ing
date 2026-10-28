@@ -15,13 +15,14 @@ export function createTechnicalSvgContext(width, height) {
   const defs = element('defs');
   svg.append(defs);
   const measure = document.createElement('canvas').getContext('2d');
-  let state = { fillStyle: '#000', strokeStyle: '#000', lineWidth: 1, font: 'normal 16px Arial', textAlign: 'left', textBaseline: 'alphabetic', matrix: new DOMMatrix(), dash: [], clips: [] };
+  let state = { fillStyle: '#000', strokeStyle: '#000', globalAlpha: 1, lineWidth: 1, font: 'normal 16px Arial', textAlign: 'left', textBaseline: 'alphabetic', matrix: new DOMMatrix(), dash: [], clips: [] };
   const stack = [];
   let path = [];
   let serial = 0;
   let objectGroup = null;
   const transform = () => `matrix(${[state.matrix.a, state.matrix.b, state.matrix.c, state.matrix.d, state.matrix.e, state.matrix.f].join(' ')})`;
   const append = (node) => {
+    if (state.globalAlpha !== 1) node.setAttribute('opacity', state.globalAlpha);
     node.setAttribute('transform', transform());
     let wrapped = node;
     state.clips.forEach((id) => { const group = element('g', { 'clip-path': `url(#${id})` }); group.append(wrapped); wrapped = group; });
@@ -115,7 +116,7 @@ export function createTechnicalSvgContext(width, height) {
       }
     },
   };
-  ['fillStyle', 'strokeStyle', 'lineWidth', 'font', 'textAlign', 'textBaseline'].forEach((key) => Object.defineProperty(ctx, key, { get: () => state[key], set: (value) => { state[key] = value; } }));
+  ['fillStyle', 'strokeStyle', 'globalAlpha', 'lineWidth', 'font', 'textAlign', 'textBaseline'].forEach((key) => Object.defineProperty(ctx, key, { get: () => state[key], set: (value) => { state[key] = value; } }));
   return ctx;
 }
 

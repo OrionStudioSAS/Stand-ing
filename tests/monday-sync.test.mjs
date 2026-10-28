@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import { transformSync } from 'esbuild';
-import { normalizePackBenefits, packBenefitsForScene, isSignaturePackScene } from '../supabase/functions/_shared/packBenefits.js';
+import { normalizePackBenefits, packBenefitsForScene, isSignaturePackScene, sceneLightingOptions } from '../supabase/functions/_shared/packBenefits.js';
 
 const edgeSource = readFileSync(new URL('../supabase/functions/monday-sync/index.ts', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '');
 const compiled = transformSync(edgeSource, { loader: 'ts', format: 'cjs' }).code;
@@ -30,7 +30,7 @@ function requestHandler(sourceError = null, sources = []) {
   const context = vm.createContext({
     Deno: { serve(value) { handler = value; }, env: { get: (key) => ({ SUPABASE_URL: 'https://test.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'test-service-key', MONDAY_API_TOKEN: 'test-monday-token' }[key]) } },
     createClient: () => database, Response, console: { error() {} },
-    normalizePackBenefits, packBenefitsForScene, isSignaturePackScene,
+    normalizePackBenefits, packBenefitsForScene, isSignaturePackScene, sceneLightingOptions,
   });
   vm.runInContext(compiled, context);
   return { handler, database, history, context };
@@ -77,7 +77,7 @@ test('Monday authentication remains required and rejected requests retain CORS',
 });
 
 function runtime(fetch = () => { throw new Error('Unexpected network request'); }) {
-  const context = vm.createContext({ Deno: { serve() {} }, fetch, console, normalizePackBenefits, packBenefitsForScene, isSignaturePackScene });
+  const context = vm.createContext({ Deno: { serve() {} }, fetch, console, normalizePackBenefits, packBenefitsForScene, isSignaturePackScene, sceneLightingOptions });
   vm.runInContext(compiled, context);
   return context;
 }
@@ -125,6 +125,8 @@ test('allowance scene creation keeps preset reserve rules without restoring incl
   assert.match(edgeSource, /base_preset_id:\s*preset\?\.id\s*\|\|\s*null/);
   assert.match(edgeSource, /reserveRules:\s*presetReserveRules\(preset\)/);
   assert.doesNotMatch(edgeSource, /reserveRules:\s*hasAllowance\s*\?\s*\{\}/);
+  assert.match(edgeSource, /const defaultOptions = sceneLightingOptions\(/, 'Creation uses the same pack lighting policy as existing scenes');
+  assert.doesNotMatch(edgeSource, /hasAllowance\s*\?\s*\{ autoSpotsRule: null, ledRailsEnabled: false \}/, 'The allowance must not disable Signature lighting');
   assert.match(edgeSource, /if\s*\(!hasAllowance\s*&&\s*savedScene\?\.id\s*&&\s*preset\?\.stand_preset_items\?\.length\)/);
 });
 

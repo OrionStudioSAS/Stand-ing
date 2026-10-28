@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { normalizePackBenefits, packBenefitsForScene, isSignaturePackScene } from "../_shared/packBenefits.js";
+import { normalizePackBenefits, packBenefitsForScene, isSignaturePackScene, sceneLightingOptions } from "../_shared/packBenefits.js";
 
 const mondayApiUrl = "https://api.monday.com/v2";
 const wallThickness = 0.06;
@@ -310,7 +310,7 @@ async function handleMondaySync(req: Request, execution: MondaySyncExecution) {
       const partitionHeadRules = hasAllowance && !isSignatureOffer ? {} : isSignatureOffer
         ? signaturePartitionHeadRules(preset)
         : presetPartitionHeadRules(preset);
-      const defaultOptions = presetDefaultOptions(preset);
+      const defaultOptions = sceneLightingOptions({ ...sceneDraft, source_payload: { ...sceneDraft.source_payload, packBenefits } }, presetDefaultOptions(preset));
       const scene = {
         ...sceneDraft,
         // Allowance packs still use the preset for automatic choices such as reserves;
@@ -321,7 +321,6 @@ async function handleMondaySync(req: Request, execution: MondaySyncExecution) {
           options: {
             ...((sceneDraft.source_payload || {}).options || {}),
             ...defaultOptions,
-            ...(hasAllowance ? { autoSpotsRule: null, ledRailsEnabled: false } : {}),
           },
           baseItems,
           packBenefits,

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance, inheritCurrentPackBenefits, isSignaturePackScene, packBenefitsForScene } from '../supabase/functions/_shared/packBenefits.js';
+import { normalizePackBenefits, scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance, inheritCurrentPackBenefits, isSignaturePackScene, packBenefitsForScene, hasAutomaticPackLighting, sceneLightingOptions } from '../supabase/functions/_shared/packBenefits.js';
 
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 function loadFunction(api, source, name) {
@@ -74,7 +74,7 @@ test('Signature allowance is always 40 euros per square meter, including existin
 
 test('scene loading resolves pack benefits before automatic objects and preset defaults', () => {
   const store = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
-  const api = vm.createContext({ wallCoverPackTariff, wallCoverQuote, signatureArchSizeSupplementLines, signatureFootprintSupplementLine, inheritCurrentPackBenefits, scenePackBenefits,
+  const api = vm.createContext({ sceneLightingOptions, wallCoverPackTariff, wallCoverQuote, signatureArchSizeSupplementLines, signatureFootprintSupplementLine, inheritCurrentPackBenefits, scenePackBenefits,
     dedupeIncludedReceptionDesks: (items) => items,
     fixedWallHeight: 2.5,
     normalizeSceneItem: (item) => item,
@@ -154,6 +154,12 @@ test('scene pricing deducts the allowance after objects, shared options, covers,
   assert.equal(signature.allowanceAmount, 1000);
   assert.equal(signature.allowanceApplied, 725);
   assert.equal(signature.total, 0);
+  const lighting = api.calculateScenePricing({ catalog: [], items: [
+    { id: 'automatic', type: 'rail', included: true, autoLedRail: true },
+    { id: 'shop', type: 'rail' },
+  ], scene: { offer: 'Signature', dimensions: { width: 5, depth: 5 }, source_payload: { baseItems: [] } } });
+  assert.equal(lighting.billableCounts.get('rail'), 1, 'Only a shop-added rail consumes the accessories allowance, not the automatic pack lighting');
+  assert.equal(lighting.lines.find((line) => line.type === 'rail').quantity, 1);
 });
 
 test('BDC keeps the negative allowance, including fully covered orders, without accepting arbitrary negative prices', () => {
@@ -175,7 +181,7 @@ test('BDC keeps the negative allowance, including fully covered orders, without 
 
 test('allowance scenes cannot regain automatic pack LEDs from preset defaults on reload', () => {
   const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
-  const api = vm.createContext({ wallCoverPackTariff, wallCoverQuote, signatureArchSizeSupplementLines, signatureFootprintSupplementLine, scenePackBenefits });
+  const api = vm.createContext({ sceneLightingOptions, wallCoverPackTariff, wallCoverQuote, signatureArchSizeSupplementLines, signatureFootprintSupplementLine, scenePackBenefits });
   for (const name of ['applyPresetDefaultColorOptions', 'mergePresetDefaultsIntoDraftOptions']) loadFunction(api, storeSource, name);
   const result = api.applyPresetDefaultColorOptions({ client_status: 'in_progress',
     source_payload: { packBenefits: { mode: 'allowance', allowanceAmount: 1000 } },
@@ -185,10 +191,57 @@ test('allowance scenes cannot regain automatic pack LEDs from preset defaults on
   assert.equal(result.options.autoSpotsRule, null);
 });
 
+test('Signature automatic lighting is independent from its accessories allowance and repairs legacy disabled scenes once', () => {
+  const rule = { twoSpotType: 'rail-2', threeSpotType: 'rail-3' };
+  const scene = { offer: 'Signature', dimensions: { width: 6, depth: 3 } };
+  assert.equal(scenePackBenefits(scene).mode, 'allowance');
+  assert.equal(hasAutomaticPackLighting(scene), true);
+  const legacy = { ledRailsEnabled: false, autoSpotsRule: null, language: 'fr', ledRailOverrides: { spot: { x: 1 } } };
+  const restored = sceneLightingOptions(scene, legacy, rule);
+  assert.equal(restored.ledRailsEnabled, true);
+  assert.equal(restored.autoSpotsRule, rule);
+  assert.equal(restored.signatureLightingVersion, 1);
+  assert.equal(restored.language, 'fr');
+  assert.equal(restored.ledRailOverrides, legacy.ledRailOverrides);
+  assert.equal(legacy.ledRailsEnabled, false, 'Loading must not mutate saved scene options');
+  assert.deepEqual(sceneLightingOptions(scene, restored, rule), restored);
+  assert.equal(sceneLightingOptions(scene, { ...restored, ledRailsEnabled: false }, rule).ledRailsEnabled, false, 'An explicit removal after restoration survives reload');
+  const fallback = sceneLightingOptions(scene, legacy);
+  assert.equal(fallback.ledRailsEnabled, true, 'Existing Signature scenes can use the catalog rails without a preset rule');
+  assert.equal(sceneLightingOptions(scene, { ...fallback, ledRailsEnabled: false }).ledRailsEnabled, false);
+  assert.equal(sceneLightingOptions(scene, { ledRailsEnabled: false, autoSpotsRule: rule }).ledRailsEnabled, false, 'Do not undo an existing intentional removal with its configured rule');
+  const otherAllowance = { source_payload: { packBenefits: { mode: 'allowance', allowanceAmount: 1000 } } };
+  assert.equal(hasAutomaticPackLighting(otherAllowance), false);
+  assert.equal(sceneLightingOptions(otherAllowance, { ledRailsEnabled: true, autoSpotsRule: rule }).ledRailsEnabled, false);
+  for (const offer of ['Confort', 'Prestige', 'Équipé']) {
+    assert.equal(hasAutomaticPackLighting({ offer }), true);
+    assert.equal(sceneLightingOptions({ offer }, { ledRailsEnabled: false }, rule).ledRailsEnabled, false);
+  }
+});
+
+test('Signature loading restores preset lighting on both draft and validated scenes without restoring included furniture', () => {
+  const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
+  const api = vm.createContext({ sceneLightingOptions, scenePackBenefits });
+  for (const name of ['applyPresetDefaultColorOptions', 'mergePresetDefaultsIntoDraftOptions']) loadFunction(api, storeSource, name);
+  const rule = { threeSpotType: 'rail-3' };
+  for (const client_status of ['draft', 'configured', 'not_started']) {
+    const row = { offer: 'Signature', client_status,
+      source_payload: { baseItems: [], options: { ledRailsEnabled: false, autoSpotsRule: null } },
+      stand_presets: { base_config: { autoSpotsRule: rule } },
+    };
+    const restored = api.applyPresetDefaultColorOptions(row);
+    assert.equal(restored.options.ledRailsEnabled, true);
+    assert.equal(restored.options.autoSpotsRule, rule);
+    assert.deepEqual(restored.baseItems, []);
+    const removed = api.applyPresetDefaultColorOptions({ ...row, source_payload: { ...restored, options: { ...restored.options, ledRailsEnabled: false } } });
+    assert.equal(removed.options.ledRailsEnabled, false);
+  }
+});
+
 test('allowance scenes inherit automatic reserve rules and charge the default reserve against the allowance', () => {
   const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
   const presetReserveRules = { small: { includedType: 'reserve-2m2', includedLabel: 'Réserve 2 m²', options: [] } };
-  const storeApi = vm.createContext({ wallCoverPackTariff, wallCoverQuote, signatureArchSizeSupplementLines, signatureFootprintSupplementLine, scenePackBenefits });
+  const storeApi = vm.createContext({ sceneLightingOptions, wallCoverPackTariff, wallCoverQuote, signatureArchSizeSupplementLines, signatureFootprintSupplementLine, scenePackBenefits });
   for (const name of ['applyPresetDefaultColorOptions', 'mergePresetDefaultsIntoDraftOptions']) loadFunction(storeApi, storeSource, name);
   const sourcePayload = storeApi.applyPresetDefaultColorOptions({
     client_status: 'draft',

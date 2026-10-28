@@ -98,6 +98,14 @@ try {
   await page.getByRole('button', { name: 'Fermer', exact: true }).click();
   await page.getByRole('button', { name: 'Test asset', exact: true }).click();
   assert.ok(Math.abs(Number.parseFloat(await marker.evaluate(node=>node.style.left)) - 75) < 1);
+  await editor.getByLabel('Position électrique Y', { exact: true }).fill('0');
+  await editor.getByRole('slider', { name: 'Taille du picto électrique', exact: true }).press('ArrowRight');
+  await page.getByRole('button', { name: 'Enregistrer', exact: true }).click();
+  const outsideMetadata = await page.evaluate(() => window.savedAsset.dimensions);
+  assert.equal(outsideMetadata.batElectricalPictoY, 0, 'The symbol may sit halfway outside the primary object');
+  assert.equal(outsideMetadata.batElectricalPictoSizeMeters, .21, 'The size control saves physical meters rather than an object-relative fraction');
+  const outsideBounds = await marker.boundingBox(), primaryBounds = await editor.locator('.bat-electrical-preview').boundingBox();
+  assert.ok(outsideBounds.y < primaryBounds.y);
   await editor.getByRole('button', { name: 'Recentrer le picto électrique', exact: true }).click();
   assert.equal(await marker.evaluate(node=>node.style.left), '50%');
   await editor.getByRole('button', { name: 'Supprimer uniquement le picto électrique', exact: true }).click();

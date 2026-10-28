@@ -1,6 +1,7 @@
 import { isSignatureLedArch } from '../src/signatureArchVariants.js';
 import { groupStructuralAsset } from '../src/groupPlacement.js';
-import { normalizeBatElectricalPicto } from '../src/batElectricalPicto.js';
+import { normalizeBatElectricalPicto, electricalPictoPoint } from '../src/batElectricalPicto.js';
+import { includedCounterPowerItems } from '../src/includedCounterPower.js';
 import { sceneHeadCountry } from '../src/equippedHeadInformation.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -8,7 +9,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { normalizeImageFraming } from '../src/imageFraming.js';
 import { Euler, Vector3 } from 'three';
-import { scenePackBenefits } from '../supabase/functions/_shared/packBenefits.js';
+import { scenePackBenefits, sceneLightingOptions } from '../supabase/functions/_shared/packBenefits.js';
 import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor } from '../src/imageColorReplacement.js';
 
 const source = readFileSync(new URL('../src/technicalExport.js', import.meta.url), 'utf8')
@@ -31,7 +32,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor });
+  const api = vm.createContext({ includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }
@@ -377,16 +378,38 @@ test('a long BAT includes all gallery images below the details without clipping'
   assert.ok(images.every(([, , y, , height]) => y + height < canvas.height - 34));
 });
 
-test('stand reinforcement replaces the existing panel containing the TV, without adding a centred panel', () => {
+test('stand reinforcement is centered on the TV and replaces, rather than extends, the wall', () => {
   const { api } = runtime();
-  const panels = api.wallPanelSegments(api.wallDescriptor('back', 4, 3, [{ type: 'screen', wall: 'back', x: -1.2 }]));
-  assert.equal(panels.length, 4);
-  assert.equal(panels[0].kind, 'reinforcement');
-  assert.ok(panels.every((panel) => panel.mm === 1000));
+  const panels = api.wallPanelSegments(api.wallDescriptor('back', 4, 3, [{ type: 'screen', wall: 'back', x: 0 }]));
+  assert.equal(panels.length, 5);
+  assert.equal(panels[2].kind, 'reinforcement');
+  assert.equal(panels.reduce((sum, panel) => sum + panel.mm, 0), 4000);
   const last = api.reinforcementPanelForAxis(2.3, 0, 2.4);
-  assert.equal(last.start, 2);
+  assert.equal(last.start, 1.4);
   assert.equal(last.end, 2.4);
   assert.equal(api.screenReinforcements('back', 4, 3, [{ type: 'tv-on-stand', label: 'TV sur pied', x: 0 }], 4).length, 0);
+});
+
+test('the 3m wall and TV at 1.25m produce the requested quarter-meter panel sequence', () => {
+  const { api } = runtime();
+  const panels = api.wallPanelSegments(api.wallDescriptor('back', 3, 3, [{ type: 'screen', wall: 'back', x: -.25 }]));
+  assert.deepEqual(Array.from(panels, panel => [panel.mm, panel.kind]), [[250, 'standard'], [500, 'standard'], [1000, 'reinforcement'], [1000, 'standard'], [250, 'standard']]);
+  assert.equal(api.reinforcementPanelForAxis(1.25, 0, 3).start, .75);
+});
+
+test('BAT dimension labels round to 5cm without altering physical panel sizes', () => {
+  const { api } = runtime();
+  for (const [meters, label] of [[1.54, '1550'], [.481, '500'], [.06, '50'], [1.274, '1250']]) assert.equal(api.dimensionMm(meters), label);
+  assert.equal(api.mm(.06), '60');
+  assert.equal(api.splitWallPanels(1.54)[1].mm, 540);
+});
+
+test('electrical cotations reach the two closest orthogonal stand boundaries', () => {
+  const { api, ctx, text, points } = runtime();
+  api.drawElectricalDimensions(ctx, { x: 25, y: 175, index: 1 }, { minX: 0, maxX: 300, minY: 0, maxY: 200 }, 100);
+  assert.ok(text.some(row => row.value === 'E2 · 250'));
+  assert.ok(points.some(([x, y]) => x === 0 && y === 175));
+  assert.ok(points.some(([x, y]) => x === 25 && y === 200));
 });
 
 test('reserve TV reinforcement stays on the selected lateral face and does not affect stand walls', () => {
@@ -410,6 +433,7 @@ test('a missing reserve surface cannot create reinforcement at the scene origin'
 
 test('the BAT uses the moved reserve and refreshes the TV surface from its current walls', () => {
   const { api } = runtime();
+  api.sceneLightingOptions = sceneLightingOptions;
   api.resolveSpotWallAttachments = (items) => items;
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
   for (const name of ['sceneAllAdminItems', 'resolveTechnicalWallSurfaces', 'isObjectWallId', 'serializeObjectWallSurface', 'safeObjectWallSide', 'protectedObjectOutsideSide']) {
