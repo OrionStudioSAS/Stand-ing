@@ -11943,7 +11943,8 @@ function presetMetaLabel(preset, presets = []) {
   return `${area ? `${area} m²` : 'Surface à définir'} · ${presetFaceCount(preset)} face${presetFaceCount(preset) > 1 ? 's' : ''} · ${modules} module${modules > 1 ? 's' : ''}`;
 }
 
-function AdminUsersView({ users = [], usersError = '', auditEvents = [], auditError = '', auditHasMore = false, auditLoading = false, auditFilters = {}, onAuditFiltersChange, onLoadMoreAudit, search = '', canManage = false, currentUserId, onSaveUser, onDeleteUser }) {
+function AdminUsersView({ users: rawUsers = [], usersError = '', auditEvents = [], auditError = '', auditHasMore = false, auditLoading = false, auditFilters = {}, onAuditFiltersChange, onLoadMoreAudit, search = '', canManage = false, currentUserId, onSaveUser, onDeleteUser }) {
+  const users = useMemo(() => rawUsers.map((userRow) => ({ ...userRow, role: adminEditableRole(userRow.role) || userRow.role || 'Exposant' })), [rawUsers]);
   const [activeTab, setActiveTab] = useState('users');
   const [roleFilter, setRoleFilter] = useState('');
   const [kindFilter, setKindFilter] = useState('all');
@@ -11968,11 +11969,11 @@ function AdminUsersView({ users = [], usersError = '', auditEvents = [], auditEr
   useEffect(() => { setPage(1); }, [kindFilter, roleFilter, search]);
   useEffect(() => { setPage((current) => Math.min(current, pageCount)); }, [pageCount]);
   useEffect(() => {
-    if (!editor && !selectedExhibitor) return undefined;
+    if (saving || (!editor && !selectedExhibitor)) return undefined;
     const closeOnEscape = (event) => { if (event.key === 'Escape') { setEditor(null); setSelectedExhibitor(null); } };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [editor, selectedExhibitor]);
+  }, [editor, selectedExhibitor, saving]);
 
   const showHistory = (filters) => {
     onAuditFiltersChange({ sceneId: filters.sceneId || '', actorId: filters.actorId || '', salon: filters.salon || '' });
@@ -11989,17 +11990,30 @@ function AdminUsersView({ users = [], usersError = '', auditEvents = [], auditEr
       organization: userRow.organization || '',
       role: adminEditableRole(userRow.role),
       isActive: userRow.is_active !== false,
+      password: '',
+      passwordConfirmation: '',
       original: userRow,
-    } : { email: '', fullName: '', organization: '', role: 'Prestataire', isActive: true });
+    } : { email: '', fullName: '', organization: '', role: 'Prestataire', isActive: true, password: '', passwordConfirmation: '' });
   };
 
   const save = async (draft) => {
+    if ((!draft.userId || draft.password) && (!draft.password || draft.password.length < 8 || draft.password.length > 128)) {
+      setError('Le mot de passe doit contenir entre 8 et 128 caractères.');
+      return;
+    }
+    if ((draft.password || draft.passwordConfirmation) && draft.password !== draft.passwordConfirmation) {
+      setError('Les deux mots de passe ne correspondent pas.');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
-      const result = await onSaveUser(draft);
+      const { passwordConfirmation, original, ...input } = draft;
+      if (!input.password) delete input.password;
+      const result = await onSaveUser(input);
       setEditor(null);
-      setMessage(`${result?.invited ? 'Invitation envoyée et compte créé.' : 'Utilisateur enregistré.'}${result?.auditWarning ? ` ${result.auditWarning}` : ''}`);
+      const confirmation = result?.created ? 'Utilisateur créé. Le mot de passe défini permet de se connecter à l’admin.' : result?.passwordUpdated ? 'Utilisateur et mot de passe enregistrés.' : 'Utilisateur enregistré.';
+      setMessage(`${confirmation}${result?.auditWarning ? ` ${result.auditWarning}` : ''}`);
     } catch (saveError) {
       setError(saveError.message || 'Enregistrement impossible.');
     } finally {
@@ -12049,7 +12063,7 @@ function AdminUsersView({ users = [], usersError = '', auditEvents = [], auditEr
           ].map(([kind, label]) => <button key={kind} type="button" aria-pressed={kindFilter === kind} onClick={() => setKindFilter(kind)}>{label}</button>)}
           <label><span className="sr-only">Filtrer par rôle</span><select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}><option value="">Tous les rôles</option>{[...new Set(users.map((row) => row.role).filter(Boolean))].sort().map((role) => <option key={role} value={role}>{role}</option>)}</select></label>
         </div>
-        <button className="admin-primary-v2" type="button" disabled={!canManage} title={!canManage ? 'Réservé aux super admins' : undefined} onClick={() => openEditor(null)}>Ajouter un utilisateur</button>
+        <button className="admin-primary-v2" type="button" disabled={!canManage} title={!canManage ? 'Réservé aux admins' : undefined} onClick={() => openEditor(null)}>Ajouter un utilisateur</button>
       </div>
       <div className="admin-users-v2-table-scroll"><div className="admin-users-v2-table">
         <div className="admin-users-v2-head"><span>Utilisateur</span><span>E-mail</span><span>Rôle</span><span>Salons</span><span>Dernière connexion</span><span>Accès</span><span className="sr-only">Actions</span></div>
@@ -12062,7 +12076,7 @@ function AdminUsersView({ users = [], usersError = '', auditEvents = [], auditEr
           return <div className="admin-users-v2-row" key={userRow.id}>
             <span className="admin-users-v2-person"><i>{initials}</i><span><strong>{name}</strong><small>{isStaff ? adminUserOrganization(userRow) : `${userRow.scenes_count || 0} scène${userRow.scenes_count > 1 ? 's' : ''}`}</small></span></span>
             <span className="admin-users-v2-email" title={userRow.email || ''}>{userRow.email || '—'}</span>
-            <span><em className={`admin-users-v2-role ${adminEditableRole(userRow.role) === 'Super admin' ? 'super' : ''}`}>{userRow.role || 'Exposant'}</em></span>
+            <span><em className={`admin-users-v2-role ${adminEditableRole(userRow.role) === 'Admin' ? 'super' : ''}`}>{userRow.role || 'Exposant'}</em></span>
             <span title={salonsLabel}>{salonsLabel}</span>
             <span className="admin-users-v2-date">{userRow.auth_user_id ? adminUserDateTime(userRow.last_sign_in_at) : '—'}</span>
             <span>{isStaff ? <button className="admin-users-v2-switch" type="button" role="switch" aria-checked={userRow.is_active !== false} aria-label={`Accès de ${name}`} disabled={!canChangeAccess} onClick={() => toggleAccess(userRow)}><span /></button> : <em className="admin-users-v2-access">{userRow.auth_user_id ? 'Compte créé' : 'Sans compte'}</em>}</span>
@@ -12085,7 +12099,33 @@ function AdminUsersView({ users = [], usersError = '', auditEvents = [], auditEr
       {auditHasMore && <button className="admin-outline-v2 admin-users-v2-more" type="button" disabled={auditLoading} onClick={onLoadMoreAudit}>{auditLoading ? 'Chargement...' : 'Charger plus d’actions'}</button>}
     </>}
     {selectedExhibitor && createPortal(<div className="admin-users-v2-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedExhibitor(null); }}><section className="admin-users-v2-editor admin-users-v2-scenes" role="dialog" aria-modal="true" aria-label={`Scènes de ${selectedExhibitor.display_name || selectedExhibitor.email}`}><header><div><h2>{selectedExhibitor.display_name || selectedExhibitor.email}</h2><p>{selectedExhibitor.email || 'Exposant'} · {selectedExhibitor.scenes_count || 0} scène(s)</p></div><button type="button" aria-label="Fermer" onClick={() => setSelectedExhibitor(null)}><X size={18} /></button></header><div className="admin-users-v2-scenes-list">{(selectedExhibitor.scenes || []).length ? selectedExhibitor.scenes.map((scene) => <article key={scene.id}><div><strong>{scene.client_name || scene.project_name || 'Scène'}</strong><small>{scene.event_name || scene.salon} · {clientStatusLabel(scene.client_status || scene.status)}</small></div><div><a className="admin-outline-v2" href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Ouvrir</a><button className="admin-primary-v2" type="button" onClick={() => showHistory({ sceneId: scene.id })}>Historique</button></div></article>) : <p>Aucune scène associée à cet exposant.</p>}</div></section></div>, document.body)}
-    {editor && createPortal(<div className="admin-users-v2-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditor(null); }}><form className="admin-users-v2-editor" onSubmit={(event) => { event.preventDefault(); save(editor); }}><header><div><h2>{editor.userId ? 'Modifier l’utilisateur' : 'Ajouter un utilisateur'}</h2><p>{editor.userId ? 'Rôle et accès au back-office' : 'Une invitation sera envoyée par e-mail.'}</p></div><button type="button" aria-label="Fermer" onClick={() => setEditor(null)}><X size={18} /></button></header><div className="admin-users-v2-fields"><label>Nom complet<input required value={editor.fullName} onChange={(event) => setEditor((current) => ({ ...current, fullName: event.target.value }))} /></label><label>E-mail<input type="email" required disabled={Boolean(editor.userId)} value={editor.email} onChange={(event) => setEditor((current) => ({ ...current, email: event.target.value }))} /></label><label>Organisation<input value={editor.organization} onChange={(event) => setEditor((current) => ({ ...current, organization: event.target.value }))} /></label><label>Rôle<select required value={editor.role} onChange={(event) => setEditor((current) => ({ ...current, role: event.target.value }))}><option value="" disabled>Choisir un rôle</option><option value="Super admin">Super admin</option><option value="Prestataire">Prestataire</option><option value="Dessinateur">Dessinateur</option></select></label><label className="admin-users-v2-active"><input type="checkbox" checked={editor.isActive} disabled={editor.userId === currentUserId} onChange={(event) => setEditor((current) => ({ ...current, isActive: event.target.checked }))} /> Accès actif</label><p>Accès aux salons : tous les salons pour ce rôle.</p></div>{error && <div className="sync-result error" role="alert">{error}</div>}<footer>{editor.userId && editor.userId !== currentUserId && <button className="admin-danger-v2" type="button" disabled={saving} onClick={remove}>Supprimer</button>}<button className="admin-outline-v2" type="button" onClick={() => setEditor(null)}>Annuler</button><button className="admin-primary-v2" type="submit" disabled={saving}>{saving ? 'Enregistrement...' : editor.userId ? 'Enregistrer' : 'Envoyer l’invitation'}</button></footer></form></div>, document.body)}
+    {editor && createPortal(
+      <div className="admin-users-v2-backdrop" onMouseDown={(event) => { if (!saving && event.target === event.currentTarget) setEditor(null); }}>
+        <form className="admin-users-v2-editor" role="dialog" aria-modal="true" aria-label={editor.userId ? 'Modifier l’utilisateur' : 'Ajouter un utilisateur'} aria-busy={saving} onSubmit={(event) => { event.preventDefault(); save(editor); }}>
+          <header>
+            <div><h2>{editor.userId ? 'Modifier l’utilisateur' : 'Ajouter un utilisateur'}</h2><p>{editor.userId ? 'Rôle, accès et mot de passe du back-office' : 'Définissez les identifiants de connexion au back-office.'}</p></div>
+            <button type="button" aria-label="Fermer" disabled={saving} onClick={() => setEditor(null)}><X size={18} /></button>
+          </header>
+          <div className="admin-users-v2-fields">
+            <label>Nom complet<input required autoFocus autoComplete="name" value={editor.fullName} onChange={(event) => setEditor((current) => ({ ...current, fullName: event.target.value }))} /></label>
+            <label>E-mail<input type="email" autoComplete="off" required disabled={Boolean(editor.userId)} value={editor.email} onChange={(event) => setEditor((current) => ({ ...current, email: event.target.value }))} /></label>
+            <label>Organisation<input value={editor.organization} onChange={(event) => setEditor((current) => ({ ...current, organization: event.target.value }))} /></label>
+            <label>Rôle<select required value={editor.role} onChange={(event) => setEditor((current) => ({ ...current, role: event.target.value }))}><option value="" disabled>Choisir un rôle</option><option value="Admin">Admin</option><option value="Prestataire">Prestataire</option><option value="Dessinateur">Dessinateur</option></select></label>
+            <label>{editor.userId ? 'Nouveau mot de passe' : 'Mot de passe'}<input type="password" autoComplete="new-password" required={!editor.userId} minLength={8} maxLength={128} aria-describedby="admin-user-password-help" disabled={saving} value={editor.password} onChange={(event) => setEditor((current) => ({ ...current, password: event.target.value }))} /></label>
+            <p id="admin-user-password-help">{editor.userId ? 'Laissez vide pour conserver le mot de passe actuel. Sinon, 8 caractères minimum.' : '8 caractères minimum. Transmettez ce mot de passe à l’utilisateur de manière sécurisée.'}</p>
+            <label>Confirmer le mot de passe<input type="password" autoComplete="new-password" required={!editor.userId || Boolean(editor.password)} minLength={8} maxLength={128} disabled={saving} value={editor.passwordConfirmation} onChange={(event) => setEditor((current) => ({ ...current, passwordConfirmation: event.target.value }))} /></label>
+            <label className="admin-users-v2-active"><input type="checkbox" checked={editor.isActive} disabled={editor.userId === currentUserId} onChange={(event) => setEditor((current) => ({ ...current, isActive: event.target.checked }))} /> Accès actif</label>
+            <p>Accès aux salons : tous les salons pour ce rôle.</p>
+          </div>
+          {error && <div className="sync-result error" role="alert">{error}</div>}
+          <footer>
+            {editor.userId && editor.userId !== currentUserId && <button className="admin-danger-v2" type="button" disabled={saving} onClick={remove}>Supprimer</button>}
+            <button className="admin-outline-v2" type="button" disabled={saving} onClick={() => setEditor(null)}>Annuler</button>
+            <button className="admin-primary-v2" type="submit" disabled={saving}>{saving ? 'Enregistrement...' : editor.userId ? 'Enregistrer' : 'Créer l’utilisateur'}</button>
+          </footer>
+        </form>
+      </div>, document.body,
+    )}
   </section>;
 }
 
@@ -12112,8 +12152,9 @@ function AdminAuditTable({ events = [], users = [], onSceneFilter }) {
 }
 
 function adminEditableRole(role = '') {
-  if (['admin', 'super admin', 'super administrateur'].includes(normalizeTextValue(role))) return 'Super admin';
-  if (['prestataire', 'dessinateur'].includes(normalizeTextValue(role))) return role;
+  if (['admin', 'super admin', 'super administrateur'].includes(normalizeTextValue(role))) return 'Admin';
+  if (normalizeTextValue(role) === 'prestataire') return 'Prestataire';
+  if (normalizeTextValue(role) === 'dessinateur') return 'Dessinateur';
   return '';
 }
 
@@ -17411,7 +17452,8 @@ function collectSceneTextureUrls(items = [], extraUrls = []) {
   const urls = new Set((extraUrls || []).filter(Boolean));
   const visit = (item) => {
     if (!item) return;
-    if (item.options?.headMainImageUrl) urls.add(item.options.headMainImageUrl);
+    const headImageUrl = item.options?.headMainImageUrl || partitionHeadMainImageUrl(item);
+    if (headImageUrl) urls.add(headImageUrl);
     if (item.options?.posterImageUrl) urls.add(item.options.posterImageUrl);
     if (item.options?.binary3ImageUrl) urls.add(item.options.binary3ImageUrl);
     if (item.options?.signatureArchColorImage) urls.add(item.options.signatureArchColorImage);
@@ -21487,7 +21529,7 @@ function GlbModel({ item, selected, hovered, visualContext }) {
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.binary3ImageFraming) });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '', { flipY: false });
   const textureSlotImages = useTextureSlotImages(item);
-  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { flipY: false, coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.headMainImageFraming) });
+  const mainImageTexture = useExternalTexture(partitionHeadMainImageUrl(item), partitionHeadMainImageTextureOptions(item, false));
   const exhibitorTexture = useMemo(() => (
     isPartitionHeadItem(item) ? createPartitionHeadInfoTexture(visualContext, item, { flipY: false }) : null
   ), [item.type, item.label, item.modelUrl, item.options?.partitionHeadSide, item.dimensions?.smclHeadSide, visualContext?.fontRevision, visualContext?.country, visualContext?.language, visualContext?.company, visualContext?.standNumber, visualContext?.aisleNumber, visualContext?.hall, visualContext?.sector]);
@@ -21527,7 +21569,7 @@ function useObjModel(modelUrl, materials) {
 
 function ObjModelWithMaterials({ item, materialUrl, selected, hovered, visualContext }) {
   const reserveDoorTexture = useReserveDoorFabricTexture(item);
-  const mainImageTexture = useExternalTexture(isPartitionHeadItem(item) ? item.options?.headMainImageUrl : '', { coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.headMainImageFraming) });
+  const mainImageTexture = useExternalTexture(partitionHeadMainImageUrl(item), partitionHeadMainImageTextureOptions(item));
   const customImageTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary3ImageUrl : '', { flipY: false, coverSize: woodReceptionDeskImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.binary3ImageFraming) });
   const counterColorTexture = useExternalTexture(isWoodReceptionDeskItem(item) ? item.options?.binary2ColorImage : '');
   const textureSlotImages = useTextureSlotImages(item);
@@ -21656,6 +21698,7 @@ function modelMaterialUrl(item) {
 function ObjModel({ item, selected, hovered, dragging }) {
   const obj = useObjModel(item.modelUrl, null);
   const reserveDoorTexture = useReserveDoorFabricTexture(item);
+  const mainImageTexture = useExternalTexture(partitionHeadMainImageUrl(item), partitionHeadMainImageTextureOptions(item));
   const model = useMemo(() => {
     if (!obj) return null;
     const clone = obj.clone(true);
@@ -21668,6 +21711,9 @@ function ObjModel({ item, selected, hovered, dragging }) {
     });
 
     const finishMaterial = (source) => {
+      if (mainImageTexture && isPartitionHeadItem(item) && isPartitionHeadMainImageMaterial(normalizeMaterialName(source?.name), source, item)) {
+        return materialWithTexture(source, mainImageTexture, { luminous: isSignaturePartitionHeadItem(item) });
+      }
       if (item.options?.reserveDoorColorHex && isReserveDoorPaintMaterial(source?.name)) return reserveDoorFabricMaterial(source, item, reserveDoorTexture);
       if (item.options?.reserveFrameColorHex && isReserveFramePaintMaterial(source?.name)) return reserveFramePaintMaterial(source, item);
       return material;
@@ -21682,7 +21728,7 @@ function ObjModel({ item, selected, hovered, dragging }) {
     });
 
     return centerModel(clone, item);
-  }, [obj, item, reserveDoorTexture, selected, hovered, dragging]);
+  }, [obj, item, reserveDoorTexture, mainImageTexture, selected, hovered, dragging]);
 
   return model ? <primitive object={model} dispose={null} /> : <MissingModelFallback item={item} selected={selected} hovered={hovered} dragging={dragging} />;
 }
@@ -22064,6 +22110,18 @@ function isWoodReceptionDeskColorMaterial(materialName = '', material = null) {
 function partitionHeadMainImageMaterial(item = {}) {
   if (isSignaturePartitionHeadItem(item)) return 'led_5500k#4';
   return isSmclPartitionHeadItem(item) ? 'led_5500k_8' : 'led_5500k_1';
+}
+
+function partitionHeadMainImageUrl(item = {}) {
+  if (!isPartitionHeadItem(item)) return '';
+  return item.options?.headMainImageUrl || (isSignaturePartitionHeadItem(item)
+    ? '/images/signature/partition-head-standard-signa-32.png' : '');
+}
+
+function partitionHeadMainImageTextureOptions(item = {}, flipY = true) {
+  // The standard artwork replaces the embedded model texture without custom-image framing.
+  if (isSignaturePartitionHeadItem(item) && !item.options?.headMainImageUrl) return { flipY };
+  return { flipY, coverSize: partitionHeadMainImageCoverSize(item), fit: 'contain', backgroundColor: '#ffffff', ...normalizeImageFraming(item.options?.headMainImageFraming) };
 }
 
 function partitionHeadMainImageCoverSize(item = {}) {

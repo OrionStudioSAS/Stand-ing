@@ -26,6 +26,7 @@ function visualContext() {
     isElectricalWhiteItem: () => false,
     smclExhibitorTextureForMaterial: () => null,
     shouldUseExhibitorHeadTexture: () => false,
+    isTextureResource: () => false,
     defaultImageFraming,
     patchPartitionHeadVisuals,
   });
@@ -38,12 +39,39 @@ function visualContext() {
     'normalizeMaterialName', 'escapeRegExp', 'materialMatchesTextureSlot', 'textureSlotNeedsExactMaterialMatch',
     'signatureArchVisualMaterialMatches', 'materialTextureCanvasSize', 'applyTextureSlotMaterial',
     'materialWithTexture', 'partitionHeadMainImageMaterial', 'isPartitionHeadMainImageMaterial',
+    'partitionHeadMainImageUrl', 'partitionHeadMainImageTextureOptions', 'partitionHeadMainImageCoverSize', 'collectSceneTextureUrls',
     'applyItemOptionMaterials', 'applyPartitionHeadVisualOptions',
   ]) loadFunction(name, context);
   return context;
 }
 
 const head = { label: 'Tete De Cloison - Signature', options: { partitionHeadSide: 'left' } };
+
+test('new and existing Signature heads use SIGNA-32 only as their standard lower visual', () => {
+  const api = visualContext();
+  const standard = '/images/signature/partition-head-standard-signa-32.png';
+  for (const item of [head, { ...head, options: {} }, { ...head, options: { visualPending: true } },
+    { label: 'Tête de cloison gauche', dimensions: { packs: ['Signature'] } }]) {
+    const saved = JSON.stringify(item);
+    assert.equal(api.partitionHeadMainImageUrl(item), standard);
+    assert.deepEqual(Object.keys(api.partitionHeadMainImageTextureOptions(item, false)), ['flipY']);
+    assert.equal(api.partitionHeadMainImageTextureOptions(item, false).flipY, false);
+    assert.equal(JSON.stringify(item), saved, 'A standard visual must not become a saved customer upload or clear its pending state');
+  }
+  for (const label of ['Tête de cloison SMCL', 'Tête de cloison SIAE', 'Arche Signature']) {
+    assert.equal(api.partitionHeadMainImageUrl({ label }), '', label);
+  }
+  const custom = { ...head, options: { headMainImageUrl: 'client.png', headMainImageFraming: { imageZoom: 1.4 } } };
+  assert.equal(api.partitionHeadMainImageUrl(custom), 'client.png');
+  assert.equal(api.partitionHeadMainImageTextureOptions(custom).imageZoom, 1.4);
+  assert.equal(api.partitionHeadMainImageTextureOptions(custom).coverSize.join(','), '546,2908', 'Custom uploads retain their existing UV framing');
+  assert.equal(api.partitionHeadMainImageUrl({ ...custom, options: { ...custom.options, headMainImageUrl: '' } }), standard, 'Resetting a custom visual restores the new standard');
+  const urls = Array.from(api.collectSceneTextureUrls([{ children: [head, head, custom, { label: 'Enseigne haute', options: { headMainImageUrl: 'sign.png' } }] }]));
+  assert.deepEqual(urls, [standard, 'client.png', 'sign.png'], 'Preloading includes the standard, customer uploads and existing non-head signage');
+  const png = readFileSync(new URL('../public/images/signature/partition-head-standard-signa-32.png', import.meta.url));
+  assert.equal(png.readUInt32BE(16), 174);
+  assert.equal(png.readUInt32BE(20), 805);
+});
 
 test('Signature heads expose an independent built-in *28 image slot, but other heads do not', () => {
   const context = visualContext();

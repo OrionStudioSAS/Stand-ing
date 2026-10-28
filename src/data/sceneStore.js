@@ -662,6 +662,7 @@ export async function saveAdminUser(input = {}) {
       organization: input.organization,
       role: input.role,
       isActive: input.isActive,
+      ...(input.password ? { password: input.password } : {}),
     },
   });
   const functionError = await getFunctionError(error, data);

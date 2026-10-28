@@ -55,8 +55,14 @@ Deno.serve(async (req) => {
       return json({ events: (data || []).slice(0, 100), hasMore: (data || []).length > 100 });
     }
 
-    const canManage = isSuperAdmin(adminUser.role_label);
-    if (["create", "update", "delete"].includes(action) && !canManage) return json({ error: "Accès réservé aux super admins." }, 403);
+    const canManage = isManagingAdmin(adminUser.role_label);
+    if (["create", "update", "delete"].includes(action) && !canManage) return json({ error: "Accès réservé aux admins." }, 403);
+    const password = typeof body.password === "string" ? body.password : "";
+    const invalidPasswordType = body.password != null && typeof body.password !== "string";
+    const invalidPasswordLength = (action === "create" || password !== "") && (password.length < 8 || password.length > 128);
+    if (["create", "update"].includes(action) && (invalidPasswordType || invalidPasswordLength)) {
+      return json({ error: "Le mot de passe doit contenir entre 8 et 128 caractères." }, 400);
+    }
 
     if (action === "create") {
       const email = clean(body.email).toLowerCase();
@@ -66,24 +72,33 @@ Deno.serve(async (req) => {
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !fullName || !role) return json({ error: "Nom, e-mail et rôle valides requis." }, 400);
       const existing = (await listAuthUsers(admin)).find((user: any) => clean(user.email).toLowerCase() === email);
       let userId = existing?.id;
-      let invited = false;
+      if (userId) {
+        const { data: existingAdmin, error: existingError } = await admin.from("admin_users").select("user_id").eq("user_id", userId).maybeSingle();
+        if (existingError) throw existingError;
+        if (existingAdmin) return json({ error: "Ce compte administrateur existe déjà." }, 409);
+      }
       if (!userId) {
-        const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-          data: { full_name: fullName },
-          redirectTo: `${(Deno.env.get("PUBLIC_APP_URL") || "https://configurateur3d.stand-ing.com").replace(/\/$/, "")}/admin`,
+        const { data, error } = await admin.auth.admin.createUser({
+          email, password, email_confirm: true, user_metadata: { full_name: fullName },
         });
         if (error) return json({ error: error.message }, 400);
         userId = data.user?.id;
-        invited = true;
       }
       if (!userId) return json({ error: "Création du compte impossible." }, 500);
-      const { data: existingAdmin, error: existingError } = await admin.from("admin_users").select("user_id").eq("user_id", userId).maybeSingle();
-      if (existingError) throw existingError;
-      if (existingAdmin) return json({ error: "Ce compte administrateur existe déjà." }, 409);
-      const { error: saveError } = await admin.from("admin_users").insert({ user_id: userId, email, full_name: fullName, role_label: role, is_active: true, profile_metadata: { organization } });
-      if (saveError) return json({ error: saveError.message }, 500);
+      const { error: saveError } = await admin.from("admin_users").insert({ user_id: userId, email, full_name: fullName, role_label: role, is_active: body.isActive !== false, profile_metadata: { organization } });
+      if (saveError) {
+        if (!existing) await admin.auth.admin.deleteUser(userId);
+        return json({ error: saveError.message }, 500);
+      }
+      if (existing) {
+        const { error: passwordError } = await admin.auth.admin.updateUserById(userId, { password, email_confirm: true });
+        if (passwordError) {
+          await admin.from("admin_users").delete().eq("user_id", userId);
+          return json({ error: passwordError.message }, 400);
+        }
+      }
       const auditWarning = await writeAudit(admin, currentUserId, adminUser, "Utilisateur créé", `${fullName} — ${role}`, userId);
-      return json({ created: true, invited, userId, auditWarning });
+      return json({ created: true, userId, auditWarning });
     }
 
     if (action === "update") {
@@ -96,13 +111,17 @@ Deno.serve(async (req) => {
       const { data: target, error: targetError } = await admin.from("admin_users").select("user_id, full_name, email, role_label, is_active, profile_metadata").eq("user_id", userId).maybeSingle();
       if (targetError) throw targetError;
       if (!target) return json({ error: "Compte admin introuvable." }, 404);
-      if (userId === currentUserId && (!isActive || !isSuperAdmin(role))) return json({ error: "Impossible de retirer tes propres droits super admin." }, 400);
-      if (isSuperAdmin(target.role_label) && (!isActive || !isSuperAdmin(role)) && !(await hasAnotherSuperAdmin(admin, userId))) return json({ error: "Conserve au moins un super admin actif." }, 400);
+      if (userId === currentUserId && (!isActive || !isManagingAdmin(role))) return json({ error: "Impossible de retirer tes propres droits admin." }, 400);
+      if (isManagingAdmin(target.role_label) && (!isActive || !isManagingAdmin(role)) && !(await hasAnotherAdmin(admin, userId))) return json({ error: "Conserve au moins un admin actif." }, 400);
+      if (password) {
+        const { error: passwordError } = await admin.auth.admin.updateUserById(userId, { password });
+        if (passwordError) return json({ error: passwordError.message }, 400);
+      }
       const { error } = await admin.from("admin_users").update({ full_name: fullName, role_label: role, is_active: isActive, profile_metadata: { ...(target.profile_metadata || {}), organization } }).eq("user_id", userId);
-      if (error) throw error;
+      if (error) return json({ error: password ? "Le mot de passe a été modifié, mais la mise à jour du profil a échoué. Réessaie d’enregistrer le profil." : error.message }, 500);
       const actionName = target.is_active !== isActive ? (isActive ? "Accès activé" : "Accès désactivé") : "Utilisateur modifié";
-      const auditWarning = await writeAudit(admin, currentUserId, adminUser, actionName, `${fullName} — ${role}`, userId);
-      return json({ updated: true, userId, auditWarning });
+      const auditWarning = await writeAudit(admin, currentUserId, adminUser, actionName, `${fullName} — ${role}${password ? " — Mot de passe modifié" : ""}`, userId);
+      return json({ updated: true, userId, passwordUpdated: Boolean(password), auditWarning });
     }
 
     if (action === "delete") {
@@ -112,7 +131,7 @@ Deno.serve(async (req) => {
       const { data: target, error: targetError } = await admin.from("admin_users").select("full_name, email, role_label").eq("user_id", userId).maybeSingle();
       if (targetError) throw targetError;
       if (!target) return json({ error: "Compte admin introuvable." }, 404);
-      if (target && isSuperAdmin(target.role_label) && !(await hasAnotherSuperAdmin(admin, userId))) return json({ error: "Conserve au moins un super admin actif." }, 400);
+      if (target && isManagingAdmin(target.role_label) && !(await hasAnotherAdmin(admin, userId))) return json({ error: "Conserve au moins un admin actif." }, 400);
       const { error } = await admin.auth.admin.deleteUser(userId);
       if (error) return json({ error: error.message }, 500);
       const auditWarning = await writeAudit(admin, currentUserId, adminUser, "Utilisateur supprimé", target.full_name || target.email || userId, userId);
@@ -155,7 +174,7 @@ async function listUsers(admin: any, currentUserId: string, canManage: boolean) 
       client_ids: linkedClients.map((client: any) => client.id).filter(Boolean),
       email: user.email || linkedClients[0]?.email || "",
       display_name: adminProfile?.full_name || user.user_metadata?.full_name || user.user_metadata?.name || linkedClients[0]?.display_name || linkedClients[0]?.company_name || user.email || "Utilisateur",
-      role: adminProfile ? (adminProfile.role_label || "Admin") : "Exposant",
+      role: adminProfile ? (allowedRole(adminProfile.role_label) || "Admin") : "Exposant",
       kind: adminProfile ? "admin" : "exposant",
       organization: adminProfile?.profile_metadata?.organization || "",
       is_active: adminProfile ? adminProfile.is_active !== false : true,
@@ -197,19 +216,21 @@ async function listUsers(admin: any, currentUserId: string, canManage: boolean) 
   return rows.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 }
 
-function isSuperAdmin(role: unknown) {
+function isManagingAdmin(role: unknown) {
   return ["admin", "super admin", "super administrateur"].includes(clean(role).toLowerCase());
 }
 
 function allowedRole(role: unknown) {
-  const value = clean(role);
-  return ["Super admin", "Prestataire", "Dessinateur"].includes(value) ? value : "";
+  if (isManagingAdmin(role)) return "Admin";
+  const value = clean(role).toLowerCase();
+  if (value === "prestataire") return "Prestataire";
+  return value === "dessinateur" ? "Dessinateur" : "";
 }
 
-async function hasAnotherSuperAdmin(admin: any, excludedUserId: string) {
+async function hasAnotherAdmin(admin: any, excludedUserId: string) {
   const { data, error } = await admin.from("admin_users").select("user_id, role_label").eq("is_active", true).neq("user_id", excludedUserId);
   if (error) throw error;
-  return (data || []).some((row: any) => isSuperAdmin(row.role_label));
+  return (data || []).some((row: any) => isManagingAdmin(row.role_label));
 }
 
 async function writeAudit(admin: any, actorId: string, actor: any, action: string, detail: string, targetId: string) {

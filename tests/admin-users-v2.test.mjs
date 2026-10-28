@@ -19,13 +19,14 @@ test('user directory keeps the design tabs, real access controls and editor', ()
   assert.match(css, /\.admin-users-v2-editor/);
 });
 
-test('only active superadmins can mutate staff accounts', () => {
+test('only active managing admins can mutate staff accounts', () => {
   assert.match(api, /\.eq\("is_active", true\)/);
   assert.match(api, /\["create", "update", "delete"\]\.includes\(action\) && !canManage/);
-  assert.match(api, /Impossible de retirer tes propres droits super admin/);
-  assert.match(api, /Conserve au moins un super admin actif/);
+  assert.match(api, /Impossible de retirer tes propres droits admin/);
+  assert.match(api, /Conserve au moins un admin actif/);
   assert.match(api, /if \(!target\) return json\(\{ error: "Compte admin introuvable\." \}, 404\)/);
-  assert.match(api, /inviteUserByEmail/);
+  assert.match(api, /admin\.auth\.admin\.createUser/);
+  assert.match(api, /admin\.auth\.admin\.updateUserById/);
 });
 
 test('audit is persisted, private, and access revocation reaches RLS', () => {
