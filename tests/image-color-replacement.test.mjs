@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeHexColor, recolorImageUrl, recolorPixelData, recolorSvgMarkup } from '../src/imageColorReplacement.js';
+import { normalizeHexColor, recolorImageUrl, recolorPixelData, recolorSvgMarkup, averageOpaquePixelColor } from '../src/imageColorReplacement.js';
+
+test('texture swatch colors average the visible pixels, not transparent RGB values', () => {
+  assert.equal(averageOpaquePixelColor([0, 80, 160, 255, 0, 100, 180, 255, 255, 0, 0, 0]), '#005aaa');
+  assert.equal(averageOpaquePixelColor([255, 255, 255, 255]), '#ffffff');
+  assert.equal(averageOpaquePixelColor([0, 0, 0, 255]), '#000000');
+  assert.throws(() => averageOpaquePixelColor([255, 0, 0, 0]), /transparente/);
+});
 
 test('normalizes short and long hexadecimal colors', () => {
   assert.equal(normalizeHexColor('#F0a'), '#ff00aa');

@@ -1,4 +1,36 @@
 const recoloredImageCache = new Map();
+const sampledImageColors = new Map();
+
+export function averageOpaquePixelColor(data) {
+  let alpha = 0;
+  const channels = [0, 0, 0];
+  for (let index = 0; index < data.length; index += 4) {
+    const weight = data[index + 3] / 255;
+    alpha += weight;
+    for (let channel = 0; channel < 3; channel += 1) channels[channel] += data[index + channel] * weight;
+  }
+  if (!alpha) throw new Error('La texture de couleur est entièrement transparente.');
+  return `#${channels.map(value => Math.round(value / alpha).toString(16).padStart(2, '0')).join('')}`;
+}
+
+export async function sampleImageColor(url) {
+  if (!sampledImageColors.has(url)) {
+    const request = (async () => {
+      const response = await fetch(url, { mode: 'cors', signal: AbortSignal.timeout(20000) });
+      if (!response.ok) throw new Error(`Texture HTTP ${response.status}`);
+      const image = await imageFromBlob(await response.blob());
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 24;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) throw new Error('Impossible de lire la texture de couleur.');
+      // Sample the central surface, avoiding borders and averaging the material grain.
+      context.drawImage(image, image.naturalWidth * .1, image.naturalHeight * .1, image.naturalWidth * .8, image.naturalHeight * .8, 0, 0, 24, 24);
+      return averageOpaquePixelColor(context.getImageData(0, 0, 24, 24).data);
+    })().catch(error => { sampledImageColors.delete(url); throw error; });
+    sampledImageColors.set(url, request);
+  }
+  return sampledImageColors.get(url);
+}
 
 export function normalizeHexColor(value = '') {
   const raw = String(value || '').trim().replace(/^#/, '');

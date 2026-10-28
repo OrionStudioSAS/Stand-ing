@@ -9,7 +9,7 @@ import vm from 'node:vm';
 import { normalizeImageFraming } from '../src/imageFraming.js';
 import { Euler, Vector3 } from 'three';
 import { scenePackBenefits } from '../supabase/functions/_shared/packBenefits.js';
-import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl } from '../src/imageColorReplacement.js';
+import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor } from '../src/imageColorReplacement.js';
 
 const source = readFileSync(new URL('../src/technicalExport.js', import.meta.url), 'utf8')
   .replace(/^import .*;$/gm, '')
@@ -31,7 +31,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl });
+  const api = vm.createContext({ groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }
@@ -141,10 +141,35 @@ test('reception BAT pictos use each live finish rather than a cached grey modal 
     keys.add(descriptor.key);
   }
   assert.equal(keys.size, 2);
-  const textured = api.technicalSvgPictoDescriptor({ ...entry, options: {
+  const textured = api.technicalSvgPictoDescriptor({ ...entry, dimensions: { ...entry.dimensions, textureSlots: [{ id: 'finish', kind: 'color', targetName: 'Binary_2' }] }, options: {
     textureSlotValues: { finish: { color: '#1122cc' } }, binary2Color: '#cccccc',
   } }, entry);
   assert.equal(textured.targetColor, '#1122cc', 'Match the material priority used by the 3D renderer');
+});
+
+test('image-based melamine finishes do not use their imported grey placeholder as the BAT color', () => {
+  const { api } = runtime();
+  const entry = { type: 'asset-banque-accueil-1m', label: 'Comptoir accueil bois 1m', dimensions: { batPictoUrl: '/counter.svg', batPictoReplaceColor: '#ff00ff' } };
+  const blue = api.technicalSvgPictoDescriptor({ ...entry, options: {
+    binary2Color: '#b8b8b8', binary2ColorImage: '/blue-delft.jpeg', variantColorTargetHex: '#b8b8b8',
+    variantColorSelections: { finish: { hex: '#b8b8b8', image: '/blue-delft.jpeg' } },
+  } }, entry);
+  assert.equal(blue.targetImageUrl, '/blue-delft.jpeg');
+  const yellow = api.technicalSvgPictoDescriptor({ ...entry, options: { binary2Color: '#b8b8b8', binary2ColorImage: '/yellow.jpeg' } }, entry);
+  assert.notEqual(blue.key, yellow.key, 'Imported swatches can all share the same placeholder HEX');
+  const disabled = api.technicalSvgPictoDescriptor({ ...entry, options: { binary2ColorImage: '/blue.jpeg' } }, { ...entry, dimensions: { ...entry.dimensions, batPictoReplaceColor: '' } });
+  assert.equal(disabled.targetImageUrl, '');
+});
+
+test('native wood counters ignore unapplied modal colors and orphaned texture slot values', () => {
+  const { api } = runtime();
+  const entry = { type: 'asset-banque-accueil-1m', label: 'Comptoir accueil bois 1m', dimensions: { batPictoUrl: '/counter.svg', batPictoReplaceColor: '#ff00ff' } };
+  const item = { ...entry, options: {
+    variantColorTargetHex: '#b8b8b8', variantColorSelections: { finish: { name: 'Brun taupe', hex: '#b8b8b8' } },
+    textureSlotValues: { removed: { color: '#b8b8b8' } },
+  } };
+  assert.equal(api.technicalSvgPictoDescriptor(item, entry).targetColor, '#c49b63');
+  assert.equal(api.technicalSvgPictoDescriptor({ ...item, label: 'Comptoir accueil blanc 0.5m' }, entry).targetColor, '#ffffff');
 });
 
 test('the counter picker also refreshes the stored thumbnail and BAT target color', () => {

@@ -1,4 +1,4 @@
-import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl } from './imageColorReplacement.js';
+import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor } from './imageColorReplacement.js';
 import { normalizeBatElectricalPicto } from './batElectricalPicto.js';
 import { isSignatureLedArch } from './signatureArchVariants.js';
 import { createTechnicalSvgContext, sanitizeTechnicalSvg } from './technicalSvgContext.js';
@@ -155,8 +155,13 @@ async function loadTechnicalPictoImages(items = [], catalog = []) {
     if (visual.imageUrl && !imageRequests.has(visual.imageUrl)) imageRequests.set(visual.imageUrl, { key: visual.imageUrl, url: visual.imageUrl, sourceColor: '', targetColor: '' });
   });
   const loaded = await Promise.all([...imageRequests.values()].map(async (request) => {
-    const imageUrl = request.sourceColor && request.targetColor
-      ? await recolorImageUrl(request.url, request.sourceColor, request.targetColor)
+    let targetColor = request.targetColor;
+    if (request.sourceColor && request.targetImageUrl) {
+      try { targetColor = await sampleImageColor(request.targetImageUrl); }
+      catch (cause) { throw new Error('Impossible de lire la texture de couleur d’un objet pour le BAT. Réessayez après avoir vérifié son image de finition.', { cause }); }
+    }
+    const imageUrl = request.sourceColor && targetColor
+      ? await recolorImageUrl(request.url, request.sourceColor, targetColor)
       : request.url;
     let image = await loadCanvasImage(imageUrl);
     if (!image && request.isPicto) throw new Error('Impossible de charger un picto BAT. Verifiez le fichier importe puis relancez le BAT.');
@@ -214,17 +219,39 @@ function technicalSvgPictoDescriptor(item = {}, entry = {}, catalog = []) {
   const textureColors = Object.values(item.options?.textureSlotValues || {}).map((value) => value?.color);
   const counterText = [item.type, item.label, variantEntry?.label, entry?.label].join(' ').toLowerCase();
   const isReceptionCounter = /(?:banque|comptoir).*accueil/.test(counterText);
-  // The step-2 counter picker updates the live finish, not the modal's cached template color.
-  const targetColor = [...(isReceptionCounter ? [...textureColors, item.options?.binary2Color] : []), item.options?.variantColorTargetHex,
+  const counterFinish = isReceptionCounter ? technicalReceptionCounterFinish(item, variantEntry || entry) : null;
+  // Imported palette HEX values can be grey placeholders; 3D uses the finish image instead.
+  const targetColor = counterFinish?.color || [item.options?.variantColorTargetHex,
     ...selectedColors.map((color) => color?.hex || color?.color || color?.value),
     item.options?.binary2Color,
     ...textureColors,
     item.color, variantEntry?.color, entry?.color,
   ].map((color) => normalizeHexColor(color)).find(Boolean) || '';
+  const targetImageUrl = sourceColor ? counterFinish?.image || '' : '';
   const electrical = normalizeBatElectricalPicto(sources.find((source) => source.batElectricalPictoUrl) || {});
-  const baseKey = sourceColor && targetColor ? recoloredImageCacheKey(url, sourceColor, targetColor) : url;
+  const colorKey = sourceColor && targetColor ? recoloredImageCacheKey(url, sourceColor, targetColor) : url;
+  const baseKey = targetImageUrl ? `${colorKey}|finish-image:${targetImageUrl}` : colorKey;
   const key = electrical.url ? `${baseKey}|electric:${electrical.url}:${electrical.x}:${electrical.y}:${electrical.size}` : baseKey;
-  return { key, url, sourceColor, targetColor, electrical };
+  return { key, url, sourceColor, targetColor, targetImageUrl, electrical };
+}
+
+function technicalReceptionCounterFinish(item = {}, entry = {}) {
+  const options = item.options || {};
+  const rawSlots = item.dimensions?.textureSlots || entry.dimensions?.textureSlots;
+  const slots = Array.isArray(rawSlots) ? rawSlots : [];
+  for (const slot of slots) {
+    const value = options.textureSlotValues?.[slot.id];
+    if (slot.kind === 'color' && value && (value.colorImage || normalizeHexColor(value.color))) {
+      return { color: normalizeHexColor(value.color) || '#c49b63', image: value.colorImage || '' };
+    }
+  }
+  if (options.binary2ColorImage || normalizeHexColor(options.binary2Color)) {
+    return { color: normalizeHexColor(options.binary2Color) || '#c49b63', image: options.binary2ColorImage || '' };
+  }
+  // Without a live finish override, the renderer keeps the model's original wood (or white).
+  // variantColorSelections alone is a modal selection, not an applied 3D material.
+  const whiteModel = /\bblanc\b/.test(`${item.label || ''} ${entry.label || ''}`.toLowerCase());
+  return { color: whiteModel ? '#ffffff' : '#c49b63', image: '' };
 }
 
 function technicalOverrideGroupEntry(item = {}, catalog = []) {
