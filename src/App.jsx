@@ -4593,6 +4593,7 @@ function counterFinishPatch(finish = {}) {
   const isWhite = finish.mode === 'white' || finish.id === counterWhiteFinish().id;
   const isWood = finish.mode === 'wood';
   return {
+    variantColorTargetHex: isWood ? '' : (finish.hex || '#ffffff'),
     binary2Color: isWood ? '' : (finish.hex || '#ffffff'),
     binary2ColorImage: isWood ? '' : (finish.image || ''),
     binary2ColorId: finish.id || '',

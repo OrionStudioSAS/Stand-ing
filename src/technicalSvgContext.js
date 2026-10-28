@@ -105,11 +105,12 @@ export function createTechnicalSvgContext(width, height) {
         });
         copy.setAttribute('x', x); copy.setAttribute('y', y);
         copy.setAttribute('width', width); copy.setAttribute('height', height);
+        copy.setAttribute('preserveAspectRatio', 'none');
         const group = element('g', { id });
         group.append(copy);
         append(group);
       } else {
-        const node = element('image', { x, y, width, height, href: image.technicalDataUrl || image.src, preserveAspectRatio: 'xMidYMid meet' });
+        const node = element('image', { x, y, width, height, href: image.technicalDataUrl || image.src, preserveAspectRatio: 'none' });
         append(node);
       }
     },

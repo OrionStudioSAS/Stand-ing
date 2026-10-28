@@ -1,4 +1,5 @@
 import { isSignatureLedArch } from '../src/signatureArchVariants.js';
+import { groupStructuralAsset } from '../src/groupPlacement.js';
 import { normalizeBatElectricalPicto } from '../src/batElectricalPicto.js';
 import { sceneHeadCountry } from '../src/equippedHeadInformation.js';
 import assert from 'node:assert/strict';
@@ -30,7 +31,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ isSignatureLedArch, normalizeBatElectricalPicto, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl });
+  const api = vm.createContext({ groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }
@@ -124,6 +125,54 @@ test('pictogram color rules never leak to another SVG override or recolor unconf
   assert.equal(api.technicalSvgPictoDescriptor({ color: '#aabbcc' }, { dimensions: { batPictoUrl: '/original.svg' } }).key, '/original.svg');
   const group = { type: 'chairs', dimensions: { variantMeta: { chair: { ...entry.dimensions, batPictoReplaceColor: '' } } } };
   assert.equal(api.technicalSvgPictoDescriptor({ type: 'chair', options: { variantGroupType: 'chairs', binary2Color: '#aabbcc' } }, entry, [group]).sourceColor, '');
+});
+
+test('reception BAT pictos use each live finish rather than a cached grey modal selection', () => {
+  const { api } = runtime();
+  const entry = { type: 'asset-banque-accueil-1m', label: 'Comptoir accueil', dimensions: { batPictoUrl: '/counter.svg', batPictoReplaceColor: '#ff00ff' } };
+  const keys = new Set();
+  for (const color of ['#0057a8', '#f0dc0a']) {
+    const descriptor = api.technicalSvgPictoDescriptor({ ...entry,
+      dimensions: { ...entry.dimensions, batPictoReplaceColor: '' },
+      options: { binary2Color: color, variantColorTargetHex: '#cccccc', variantColorSelections: { finish: { hex: '#cccccc' } } },
+    }, entry, [entry]);
+    assert.equal(descriptor.sourceColor, '#ff00ff', 'Current admin configuration supersedes the saved asset snapshot');
+    assert.equal(descriptor.targetColor, color);
+    keys.add(descriptor.key);
+  }
+  assert.equal(keys.size, 2);
+  const textured = api.technicalSvgPictoDescriptor({ ...entry, options: {
+    textureSlotValues: { finish: { color: '#1122cc' } }, binary2Color: '#cccccc',
+  } }, entry);
+  assert.equal(textured.targetColor, '#1122cc', 'Match the material priority used by the 3D renderer');
+});
+
+test('the counter picker also refreshes the stored thumbnail and BAT target color', () => {
+  const { api } = runtime();
+  const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const start = appSource.indexOf('function counterFinishPatch(');
+  const end = appSource.indexOf('\n}\n', start) + 2;
+  api.counterWhiteFinish = () => ({ id: 'white' });
+  vm.runInContext(appSource.slice(start, end), api);
+  assert.equal(api.counterFinishPatch({ id: 'blue', hex: '#0057a8' }).variantColorTargetHex, '#0057a8');
+  assert.equal(api.counterFinishPatch({ mode: 'wood' }).variantColorTargetHex, '');
+});
+
+test('reserve wall and door pictos fill their exact footprint without shrinking their length', () => {
+  const { api, ctx, images } = runtime();
+  // Actual Illustrator wall: aspect ratio 284.17/18.1 differs from the 1000/60 mm panel.
+  const image = { width: 284.17, height: 18.1 };
+  api.drawRotatedPictoObject(ctx, 0, 0, 1000, 60, 90, image, '1', true);
+  assert.deepEqual(images[0].slice(1), [-500, -30, 1000, 60]);
+  api.drawRotatedPictoObject(ctx, 0, 0, 1000, 60, 90, image, '1');
+  assert.ok(images[1][3] < 950, 'The furniture contain mode previously left a gap between touching wall panels');
+  for (const rotation of [0, 90, 33]) {
+    const group = { id: 'reserve', type: 'reserve', isGroup: true, x: 1.234, z: -.456, rotation,
+      children: [0, 1].map((index) => ({ type: 'cloison', x: .06 + index, z: .06, modelSize: [1, 2.5, .06] })),
+    };
+    const [left, right] = api.flattenTechnicalItems([group], []);
+    assert.ok(Math.abs(Math.hypot(right.x - left.x, right.z - left.z) - 1) < 1e-12);
+  }
 });
 
 test('legacy color rules on a variant still apply to its inherited SVG template', () => {

@@ -4,6 +4,7 @@ import { isSignatureLedArch } from './signatureArchVariants.js';
 import { createTechnicalSvgContext, sanitizeTechnicalSvg } from './technicalSvgContext.js';
 import { technicalA3, paginateTechnicalPrintDetails, wrapTechnicalPrintText } from './technicalPrintLayout.js';
 import { normalizeTechnicalPlanEdits } from './technicalPlanEdits.js';
+import { groupStructuralAsset } from './groupPlacement.js';
 
 const sheet = {
   width: 1800,
@@ -199,7 +200,7 @@ function technicalSvgPictoDescriptor(item = {}, entry = {}, catalog = []) {
     batPictoUrl: item.options?.variantBatPictoUrl,
     batPictoPath: item.options?.variantBatPictoPath,
     batPictoReplaceColor: item.options?.variantBatPictoReplaceColor || undefined,
-  }, variantMeta, groupEntry?.dimensions, item.options, item.dimensions, variantEntry?.dimensions, entry?.dimensions].filter(Boolean);
+  }, variantMeta, groupEntry?.dimensions, item.options, variantEntry?.dimensions, entry?.dimensions, item.dimensions].filter(Boolean);
   const picto = sources.find((source) => source.batPictoUrl);
   const url = picto?.batPictoUrl || '';
   if (!url) return null;
@@ -210,10 +211,14 @@ function technicalSvgPictoDescriptor(item = {}, entry = {}, catalog = []) {
   });
   const sourceColor = normalizeHexColor(rule?.batPictoReplaceColor);
   const selectedColors = Object.values(item.options?.variantColorSelections || {});
-  const targetColor = [item.options?.variantColorTargetHex,
+  const textureColors = Object.values(item.options?.textureSlotValues || {}).map((value) => value?.color);
+  const counterText = [item.type, item.label, variantEntry?.label, entry?.label].join(' ').toLowerCase();
+  const isReceptionCounter = /(?:banque|comptoir).*accueil/.test(counterText);
+  // The step-2 counter picker updates the live finish, not the modal's cached template color.
+  const targetColor = [...(isReceptionCounter ? [...textureColors, item.options?.binary2Color] : []), item.options?.variantColorTargetHex,
     ...selectedColors.map((color) => color?.hex || color?.color || color?.value),
     item.options?.binary2Color,
-    ...Object.values(item.options?.textureSlotValues || {}).map((value) => value?.color),
+    ...textureColors,
     item.color, variantEntry?.color, entry?.color,
   ].map((color) => normalizeHexColor(color)).find(Boolean) || '';
   const electrical = normalizeBatElectricalPicto(sources.find((source) => source.batElectricalPictoUrl) || {});
@@ -469,7 +474,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
       return;
     }
 
-    if (pictoImage) drawRotatedPictoObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, pictoImage, label);
+    if (pictoImage) drawRotatedPictoObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, pictoImage, label, groupStructuralAsset(item));
     else drawRotatedObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, color, label);
     drawObjectDimensions(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, dims, item.rotation || 0);
     ctx.endObject?.();
@@ -1189,18 +1194,20 @@ function drawRotatedObject(ctx, x, y, w, h, rotation, color, label) {
   drawBadge(ctx, x, y, label);
 }
 
-function drawRotatedPictoObject(ctx, x, y, w, h, rotation, image, label) {
+function drawRotatedPictoObject(ctx, x, y, w, h, rotation, image, label, fillFootprint = false) {
   const angle = technicalPlanRotation(rotation);
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
-  drawContainedImage(ctx, image, -w / 2, -h / 2, w, h);
+  // Thin wall symbols must span the panel's full length, regardless of the SVG aspect ratio.
+  if (fillFootprint) ctx.drawImage(image, -w / 2, -h / 2, w, h);
+  else drawContainedImage(ctx, image, -w / 2, -h / 2, w, h);
   ctx.restore();
   const imageW = image.naturalWidth || image.width || 1;
   const imageH = image.naturalHeight || image.height || 1;
   const scale = Math.min(w / imageW, h / imageH);
-  const pictoW = imageW * scale;
-  const pictoH = imageH * scale;
+  const pictoW = fillFootprint ? w : imageW * scale;
+  const pictoH = fillFootprint ? h : imageH * scale;
   // The 34px number badge otherwise hides small electrical pictos entirely.
   const smallPicto = Math.min(pictoW, pictoH) < 42;
   const halfHeight = (Math.abs(Math.sin(angle)) * pictoW + Math.abs(Math.cos(angle)) * pictoH) / 2;
