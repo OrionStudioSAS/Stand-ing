@@ -15414,6 +15414,23 @@ function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = [])
       id: '__technical-options__',
       type: '__technical-options__',
       sourceOptions: options,
+      sourceFloor: {
+        signature: isSignatureScene(scene),
+        footprintEnabled: options.carpetFootprintEnabled !== false,
+        footprints: items.filter(isSignatureArchItem).map((item) => {
+          const footprint = signatureArchFootprintDimensions(item, depth);
+          const localZ = signatureArchFootprintLocalZ(item);
+          const angle = Number(item.rotation || 0) * Math.PI / 180;
+          return {
+            width: footprint.width, depth: footprint.depth,
+            x: Number(item.x || 0) + footprint.centerX * Math.cos(angle) + localZ * Math.sin(angle),
+            z: Number(item.z || 0) - footprint.centerX * Math.sin(angle) + localZ * Math.cos(angle),
+            rotation: Number(item.rotation || 0),
+            color: item.options?.signatureArchColorHex || '#bebebe',
+            colorName: item.options?.signatureArchColorName || '',
+          };
+        }),
+      },
       sourceProductReferences,
       sourceVisualSurfaces,
       sourceHeadInformation: technicalPartitionHeadInformation(items, scene),
@@ -18049,16 +18066,8 @@ function wallCoverSurfaceOptions(layout, width, depth, items = [], options = {})
 }
 
 function wallCoverDisplaySegments(surface, items, width, depth, layout = 'back') {
-  const measuredIntervals = wallCoverDisplayIntervals(surface, items, width, depth, layout);
-  const rawSegments = wallCoverDisplayIntervals(surface, items, width, depth, layout, { physicalReserveBounds: true })
-    .map((interval, index) => {
-      // Render up to the actual reserve wall; retain the commercial metre deduction.
-      const measured = measuredIntervals.reduce((best, candidate) => {
-        const overlap = Math.max(0, Math.min(interval.max, candidate.max) - Math.max(interval.min, candidate.min));
-        return overlap > best.overlap ? { interval: candidate, overlap } : best;
-      }, { interval: null, overlap: 0 }).interval || interval;
-      return { ...wallCoverSegmentFromInterval(surface, interval, width, depth, index), visibleWidth: roundM2(measured.max - measured.min) };
-    });
+  const rawSegments = wallCoverDisplayIntervals(surface, items, width, depth, layout)
+    .map((interval, index) => ({ ...wallCoverSegmentFromInterval(surface, interval, width, depth, index), visibleWidth: roundM2(interval.max - interval.min) }));
   const segments = rawSegments.filter((segment) => Number(segment.width || 0) >= minWallCoverDisplayWidth);
   if (!segments.length) return [];
   if (segments.length === 1) {
@@ -18093,17 +18102,17 @@ function wallCoverBaseAvailableWidth(surface, width, depth, layout = 'back') {
   return Math.max(0, availableWidth);
 }
 
-function wallCoverDisplayIntervals(surface, items, width, depth, layout = 'back', options = {}) {
+function wallCoverDisplayIntervals(surface, items, width, depth, layout = 'back') {
   if (!surface || surface.kind === 'reserve') return [];
   const wall = surface.wall || surface.id;
   const range = wallAxisLimits(wall, width, depth);
-  const blockers = wallCoverDisplayBlockers(wall, items, width, depth, layout, options)
+  const blockers = wallCoverDisplayBlockers(wall, items, width, depth, layout)
     .map((blocker) => ({ min: clamp(blocker.min, range.min, range.max), max: clamp(blocker.max, range.min, range.max) }))
     .filter((blocker) => blocker.max > blocker.min);
   return freeWallIntervals(range, blockers).filter((interval) => interval.max - interval.min >= minWallCoverDisplayWidth);
 }
 
-function wallCoverDisplayBlockers(wall, items, width, depth, layout = 'back', options = {}) {
+function wallCoverDisplayBlockers(wall, items, width, depth, layout = 'back') {
   const range = wallAxisLimits(wall, width, depth);
   const blockers = [];
   if (wall === 'back') {
@@ -18114,7 +18123,7 @@ function wallCoverDisplayBlockers(wall, items, width, depth, layout = 'back', op
     const partitionBlocker = wallCoverPartitionHeadBlocker(item, wall, width, depth, 0);
     if (partitionBlocker) blockers.push(partitionBlocker);
     if (isReserveSceneItem(item)) {
-      const reserveBlocker = wallCoverReserveDisplayBlocker(item, wall, width, depth, options);
+      const reserveBlocker = wallCoverReserveDisplayBlocker(item, wall, width, depth);
       if (reserveBlocker) blockers.push(reserveBlocker);
     }
   });
@@ -18183,7 +18192,7 @@ function reserveWallCoverBounds(item = {}) {
     maxZ: Math.max(...childBounds.map((bounds) => bounds.maxZ)),
   } : fixedFrame || itemGroupBounds(item);
   // Three.js rotates the X/Z plane with the opposite sign to the legacy placement helper.
-  // Use the rendered door frame for banners, retaining existing placement and pricing bounds.
+  // Use the rendered door frame for banners without changing object placement bounds.
   const corners = [[local.minX, local.minZ], [local.minX, local.maxZ], [local.maxX, local.minZ], [local.maxX, local.maxZ]]
     .map(([x, z]) => rotatePoint(x, z, -Number(item.rotation || 0)));
   return {
@@ -18194,32 +18203,19 @@ function reserveWallCoverBounds(item = {}) {
   };
 }
 
-function wallCoverReserveDisplayBlocker(item, wall, width, depth, options = {}) {
-  const blocker = reserveWallBlocker(item, wall, width, depth, 0, options.physicalReserveBounds ? reserveWallCoverBounds(item) : null);
+function wallCoverReserveDisplayBlocker(item, wall, width, depth) {
+  const blocker = reserveWallBlocker(item, wall, width, depth, 0, reserveWallCoverBounds(item));
   if (!blocker) return null;
   const limits = wallAxisLimits(wall, width, depth);
   const rawMin = clamp(Number(blocker.min || 0), limits.min, limits.max);
   const rawMax = clamp(Number(blocker.max || 0), limits.min, limits.max);
-  if (options.physicalReserveBounds) return rawMax > rawMin ? { min: rawMin, max: rawMax } : null;
-  const length = normalizeWallCoverDeductionLength(rawMax - rawMin);
-  if (length <= 0) return null;
-
-  if (Math.abs(rawMin - limits.min) <= 0.12) return { min: limits.min, max: Math.min(limits.max, limits.min + length) };
-  if (Math.abs(rawMax - limits.max) <= 0.12) return { min: Math.max(limits.min, limits.max - length), max: limits.max };
-
-  const center = (rawMin + rawMax) / 2;
-  return {
-    min: Math.max(limits.min, center - length / 2),
-    max: Math.min(limits.max, center + length / 2),
-  };
+  return rawMax > rawMin ? { min: rawMin, max: rawMax } : null;
 }
 
 function normalizeWallCoverDeductionLength(value = 0) {
   const length = Number(value || 0);
   if (!Number.isFinite(length) || length <= 0) return 0;
-  const nearestMeter = Math.round(length);
-  if (nearestMeter > 0 && Math.abs(length - nearestMeter) <= 0.15) return nearestMeter;
-  return Math.round(length * 10) / 10;
+  return roundM2(length);
 }
 
 function wallCoverSegmentsForSurface(surface, items = [], width = 0, depth = 0) {

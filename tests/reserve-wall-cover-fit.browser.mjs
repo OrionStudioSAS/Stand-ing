@@ -20,9 +20,10 @@ try{
  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__reserve-cover-test__`);
  for(const area of [1,2]) {
   await page.getByRole('button',{name:'Réserve '+area+' m²',exact:true}).click();
-  await page.waitForFunction(area=>window.measured===5-area&&window.coverProbe?.planes.length===1&&Math.abs(window.coverProbe.planes[0].x-window.coverProbe.planes[0].width/2-window.coverProbe.expected)<1e-8,area);
-  assert.equal(await page.evaluate(()=>window.measured),5-area);
+  await page.waitForFunction(()=>window.coverProbe?.planes.length===1&&window.measured===Math.round(window.coverProbe.planes[0].width*100)/100&&Math.abs(window.coverProbe.planes[0].x-window.coverProbe.planes[0].width/2-window.coverProbe.expected)<1e-8);
+  const measurement=await page.evaluate(()=>({displayed:window.measured,physical:Math.round(window.coverProbe.planes[0].width*100)/100}));
+  assert.equal(measurement.displayed,measurement.physical);
  }
  await page.screenshot({path:'/tmp/standing-reserve-2m-cover-fit.png'});assert.deepEqual(errors,[]);
- console.log('Reserve covers browser: actual 3D plane meets 6cm door boundary for 1m² and 2m²; measured metres unchanged OK');
+ console.log('Reserve covers browser: actual 3D plane meets 6cm door boundary for 1m² and 2m²; displayed metres equal physical dimensions OK');
 }finally{await browser?.close();await server.close();}

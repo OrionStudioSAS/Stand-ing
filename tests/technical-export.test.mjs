@@ -40,6 +40,38 @@ function runtime() {
 const imageUrl = 'https://storage.example/scene-options/counter-preview.jpg';
 const counter = (id, options = {}) => ({ id, type: 'counter', label: 'Comptoir accueil', x: 0, z: 0, dimensions: { width: 1, depth: 0.5 }, options: { binary3Enabled: true, binary3ImageUrl: imageUrl, ...options } });
 
+test('Signature BAT footprint follows the arch color and stand depth instead of the generic square', () => {
+  const { api, ctx, rectangles } = runtime();
+  const arch = { id: 'arch', type: 'arche-signature', label: 'Arche Signature', x: -.7, z: -.8, modelSize: [1.1, 3, 2], options: { signatureArchColorHex: '#2255aa' } };
+  const floor = api.technicalFloorContext([arch], [], 4);
+  assert.equal(floor.signature, true);
+  assert.equal(floor.footprints[0].width, 1.1);
+  assert.equal(floor.footprints[0].depth, 4.5);
+  assert.ok(Math.abs(floor.footprints[0].z - .25) < 1e-9, 'The strip stays aligned with the stand, independently from the arch depth');
+  const transforms = [];
+  ctx.translate = (...point) => transforms.push(point);
+  api.drawCarpetFootprint(ctx, 100, 200, 600, 400, 'back', 100, floor);
+  assert.equal(rectangles.length, 1);
+  assert.equal(rectangles[0].color, '#2255aa');
+  assert.ok(Math.abs(rectangles[0].width - 110) < 1e-9);
+  assert.equal(rectangles[0].height, 450);
+  assert.deepEqual(transforms[0], [330, 425]);
+});
+
+test('Signature without an arch and disabled generic footprints never draw the square', () => {
+  const { api, ctx, rectangles } = runtime();
+  for (const floor of [{ signature: true, footprints: [] }, { footprintEnabled: false }]) {
+    api.drawCarpetFootprint(ctx, 0, 0, 600, 400, 'back', 100, floor);
+  }
+  assert.equal(rectangles.length, 0);
+  api.drawCarpetFootprint(ctx, 0, 0, 600, 400, 'back', 100);
+  assert.equal(rectangles.length, 1, 'Confort, Prestige and Equipe retain their existing footprint');
+  assert.equal(rectangles[0].width, 100);
+  assert.equal(rectangles[0].height, 100);
+  const sourceFloor = { signature: true, footprints: [{ width: 1.4, depth: 4.5, x: .3, z: .25, rotation: 0, color: '#445566' }] };
+  assert.equal(api.technicalFloorContext([{ sourceOptions: { carpetFootprintEnabled: false }, sourceFloor }], [], 4), sourceFloor, 'Exact 3D group bounds take priority over flattened BAT children');
+});
+
 test('BAT furniture and SVG pictos turn in the same direction as the 3D scene', () => {
   const { api, ctx } = runtime();
   const image = { width: 100, height: 50 };
@@ -293,6 +325,8 @@ test('the admin/email marker exports enabled surfaces with database preview URLs
   api.assetReference = (entry, pack) => entry.dimensions?.packPricing?.[pack.toLowerCase()]?.reference || '';
   api.technicalPartitionHeadInformation = () => [];
   api.sceneConstraintsFromPayload = () => [];
+  api.isSignatureScene = (scene) => scene.offer === 'Signature';
+  api.isSignatureArchItem = (item) => item.options?.signatureBaseKey === 'arche';
   for (const name of ['withTechnicalOptionsMarker', 'wallCoverPreviewsFromCovers', 'wallCoverPreviewForSurface', 'wallCoverEnabledForSurface']) {
     const start = appSource.indexOf(`function ${name}(`);
     const end = appSource.indexOf('\n}\n', start) + 2;
@@ -410,6 +444,41 @@ test('electrical cotations reach the two closest orthogonal stand boundaries', (
   assert.ok(text.some(row => row.value === 'E2 · 250'));
   assert.ok(points.some(([x, y]) => x === 0 && y === 175));
   assert.ok(points.some(([x, y]) => x === 25 && y === 200));
+});
+
+test('wall-mounted spots have no electrical cotation normal to their attached wall', () => {
+  const { api, ctx, text } = runtime();
+  for (const [wall, expected] of [['back', 'y'], ['left', 'x'], ['right', 'x']]) {
+    const spot = { label: 'Spot LED Blanc 30W', isWallItem: true, wall };
+    assert.equal(api.spotElectricalWallNormalAxis(spot), expected);
+    text.length = 0;
+    api.drawElectricalDimensions(ctx, { x: 25, y: 170, index: 0, wallNormalAxis: expected }, { minX: 0, maxX: 300, minY: 0, maxY: 200 }, 100);
+    assert.equal(text.filter(row => /^E1 ·/.test(row.value)).length, 1, 'Keep the useful along-wall dimension only');
+  }
+  for (const [orientation, expected] of [['x', 'y'], ['z', 'x']]) {
+    const spot = { label: 'Rail LED 3 spots', isWallItem: true, wall: 'object-wall:reserve', wallSurface: { orientation, normalAxis: -.5, centerAxis: 0, length: 2 } };
+    assert.equal(api.spotElectricalWallNormalAxis(spot), expected);
+  }
+  assert.equal(api.spotElectricalWallNormalAxis({ type: 'screen', wall: 'back' }), null, 'TV and furniture electrical coordinates stay unchanged');
+  assert.equal(api.spotElectricalWallNormalAxis({ label: 'Spot LED', x: 0, z: 0 }), null, 'A freestanding light retains two coordinates');
+  text.length = 0;
+  api.drawElectricalDimensions(ctx, { x: 0, y: 70, index: 0 }, { minX: 0, maxX: 300, minY: 0, maxY: 200 }, 100);
+  assert.equal(text.filter(row => /^E1 ·/.test(row.value)).length, 1, 'Do not print a redundant zero-length dimension');
+});
+
+test('wide spot pictograms anchor to every wall face instead of floating within their physical bounding box', () => {
+  const { api, ctx } = runtime();
+  const images = [];
+  api.drawRotatedContainedImage = (_ctx, _image, x, y, width, height, angle) => images.push({ x, y, width, height, angle });
+  const image = { width: 100, height: 20 };
+  for (const orientation of ['x', 'z']) for (const side of [-1, 1]) {
+    const width = orientation === 'x' ? 80 : 24, height = orientation === 'x' ? 24 : 80;
+    api.drawAttachedSpotPicto(ctx, image, 10, 20, width, height, orientation === 'x' ? (side > 0 ? 0 : Math.PI) : (side > 0 ? -Math.PI/2 : Math.PI/2), orientation, side);
+    const drawn = images.at(-1);
+    const edge = orientation === 'x' ? drawn.y + (side < 0 ? drawn.height : 0) : drawn.x + (side < 0 ? drawn.width : 0);
+    const expected = orientation === 'x' ? 20 + (side < 0 ? height : 0) : 10 + (side < 0 ? width : 0);
+    assert.ok(Math.abs(edge - expected) < 1e-9);
+  }
 });
 
 test('reserve TV reinforcement stays on the selected lateral face and does not affect stand walls', () => {
@@ -580,7 +649,7 @@ test('BAT keeps a reserve-mounted LED assembly on its object wall, without flatt
     rectangles.length = 0;
     api.drawWallItemTop(ctx, items[0], 5, 4, 100, 8, (x) => x * 100, (z) => z * 100, '1', dims, 'RAIL');
     assert.equal(rectangles.length, 1);
-    if (orientation === 'x') assert.equal(rectangles[0].y, -56);
-    else assert.equal(rectangles[0].x, -56);
+    if (orientation === 'x') assert.equal(rectangles[0].y, -57);
+    else assert.equal(rectangles[0].x, -57);
   }
 });

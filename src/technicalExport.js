@@ -43,6 +43,7 @@ const technicalRenderScale = 2.75;
 // Legacy raster preview only; downloads and email attachments use the A3 PDF.
 export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems: providedTechnicalItems = null, pictoImages = new Map() }) {
   const technicalItems = providedTechnicalItems || technicalItemsForPlan(items, width, depth, catalog);
+  const floor = technicalFloorContext(providedTechnicalItems || items, catalog, depth);
   const drawableTechnicalItems = technicalItems.filter((item) => !item?.sourceOptions);
   const sections = technicalTableSections(technicalItems, catalog);
   const visuals = technicalPlanVisuals(technicalItems, catalog, width, depth);
@@ -63,8 +64,8 @@ export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, sheet.width, sheet.height);
   drawFrame(ctx);
-  drawSidebar(ctx, width, depth, fixedWallHeight, layout, drawableTechnicalItems);
-  drawPlan(ctx, width, depth, layout, drawableTechnicalItems, catalog, pictoImages, visuals, constraints);
+  drawSidebar(ctx, width, depth, fixedWallHeight, layout, drawableTechnicalItems, floor);
+  drawPlan(ctx, width, depth, layout, drawableTechnicalItems, catalog, pictoImages, visuals, constraints, false, {}, floor);
   drawItemTable(ctx, sections);
   drawVisualGallery(ctx, visuals, pictoImages, technicalTableY + tableHeight + 20);
   return canvas;
@@ -85,6 +86,7 @@ export async function createTechnicalPlanBlob(options) {
 export async function createTechnicalPlanSvgPages({ width, depth, layout, items, catalog, documentInfo = {}, batEdits = {} }) {
   const edits = normalizeTechnicalPlanEdits(batEdits);
   const technicalItems = technicalItemsForPlan(items, width, depth, catalog);
+  const floor = technicalFloorContext(items, catalog, depth);
   const extraItems = edits.extras.map((extra) => ({ ...extra, dimensions: catalog.find((entry) => entry.type === extra.type)?.dimensions }));
   const pictoImages = await loadTechnicalPictoImages([...technicalItems, ...extraItems], catalog);
   const drawable = technicalItems.filter((item) => !item?.sourceOptions);
@@ -102,8 +104,8 @@ export async function createTechnicalPlanSvgPages({ width, depth, layout, items,
     ctx.lineWidth = 2;
     ctx.strokeRect(technicalA3.margin, technicalA3.margin, technicalA3.width - 2 * technicalA3.margin, technicalA3.height - 2 * technicalA3.margin);
     if (page.kind === 'plan') {
-      drawPrintSidebar(ctx, width, depth, layout, drawable);
-      drawPlan(ctx, width, depth, layout, drawable, catalog, pictoImages, visuals, constraints, true, edits);
+      drawPrintSidebar(ctx, width, depth, layout, drawable, floor);
+      drawPlan(ctx, width, depth, layout, drawable, catalog, pictoImages, visuals, constraints, true, edits, floor);
     } else drawPrintDetails(ctx, page, pictoImages);
     drawPrintPageHeader(ctx, documentInfo, page.kind === 'plan');
     drawText(ctx, `BAT - A3 paysage - Imprimer a 100 % / taille reelle`, technicalA3.margin + 16, technicalA3.height - 48, 15, '#555555');
@@ -319,7 +321,7 @@ function drawPrintPageHeader(ctx, info, plan) {
   drawText(ctx, details || (plan ? 'Vue de dessus - cotes en millimetres' : 'Detail des elements et visuels'), x, 116, 16, '#555555');
 }
 
-function drawPrintSidebar(ctx, width, depth, layout, items) {
+function drawPrintSidebar(ctx, width, depth, layout, items, floor = {}) {
   const x = sheet.margin + 14;
   const w = sheet.left - sheet.margin - 28;
   ctx.strokeStyle = technicalColors.ink;
@@ -346,7 +348,7 @@ function drawPrintSidebar(ctx, width, depth, layout, items) {
   [
     [technicalColors.panel1000, 'Cloison 1000mm'], [technicalColors.panel750, 'Cloison 750mm'],
     [technicalColors.panel500, 'Cloison 500mm'], [technicalColors.panelOther, 'Autre largeur'],
-    [technicalColors.reinforcement, 'Renfort TV'], [technicalColors.footprint, 'Empreinte moquette +200mm'],
+    [technicalColors.reinforcement, 'Renfort TV'], [floor.signature ? floor.footprints?.[0]?.color || technicalColors.footprint : technicalColors.footprint, floor.signature ? 'Empreinte sous arche' : 'Empreinte moquette +200mm'],
   ].forEach(([color, label], index) => legendSwatch(ctx, x + 18, 980 + index * 28, color, label));
   drawText(ctx, 'Echelle automatique - cotes faisant foi', x + 14, 1172, 15, '#555555');
 }
@@ -385,7 +387,7 @@ function drawPrintDetails(ctx, page, imageMap) {
   }
 }
 
-function drawSidebar(ctx, width, depth, height, layout, items) {
+function drawSidebar(ctx, width, depth, height, layout, items, floor = {}) {
   const x = sheet.margin + 14;
   let y = sheet.margin + 12;
   const w = sheet.left - sheet.margin - 28;
@@ -432,7 +434,7 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   legendSwatch(ctx, x + 18, y + 186, technicalColors.panel500, 'Cloison 500mm');
   legendSwatch(ctx, x + 18, y + 214, technicalColors.panelOther, 'Autre largeur');
   legendSwatch(ctx, x + 18, y + 242, technicalColors.reinforcement, 'Renfort TV');
-  legendSwatch(ctx, x + 18, y + 270, technicalColors.footprint, 'Empreinte moquette +200mm');
+  legendSwatch(ctx, x + 18, y + 270, floor.signature ? floor.footprints?.[0]?.color || technicalColors.footprint : technicalColors.footprint, floor.signature ? 'Empreinte sous arche' : 'Empreinte moquette +200mm');
 
   const footerY = sheet.height - sheet.margin - 86;
   ctx.strokeRect(x, footerY, w, 32);
@@ -441,7 +443,7 @@ function drawSidebar(ctx, width, depth, height, layout, items) {
   drawText(ctx, 'Generateur : StandING configurateur 3D', x + 12, footerY + 64, 15);
 }
 
-function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map(), visuals = [], constraints = [], print = false, edits = {}) {
+function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map(), visuals = [], constraints = [], print = false, edits = {}, floor = technicalFloorContext(items, catalog, depth)) {
   const bounds = { x: sheet.left + 58, y: 130, w: 1260, h: 760 };
   const scale = Math.min(bounds.w / (width + 1.1), bounds.h / (depth + 1.1));
   const planW = width * scale;
@@ -457,7 +459,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
 
   ctx.fillStyle = technicalColors.floor;
   ctx.fillRect(planX, planY, planW, planH);
-  drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale);
+  drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale, floor);
   drawGrid(ctx, planX, planY, planW, planH, width, depth, scale);
 
   ctx.strokeStyle = technicalColors.ink;
@@ -489,7 +491,10 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     }
     if (icon?.url || /electric/.test(normalizeTechnicalText(item.dimensions?.category || entry?.dimensions?.category || ''))) {
       const edit = edits.items?.[item.id] || {};
-      if (!edit.hidden) electricalDimensions.push({ x: point.x + Number(edit.dx || 0) * technicalA3.width, y: point.y + Number(edit.dy || 0) * technicalA3.height, index });
+      const wallNormalAxis = spotElectricalWallNormalAxis(item);
+      const movedOffWall = wallNormalAxis === 'x' ? Number(edit.dx || 0) !== 0 : Number(edit.dy || 0) !== 0;
+      if (!edit.hidden) electricalDimensions.push({ x: point.x + Number(edit.dx || 0) * technicalA3.width, y: point.y + Number(edit.dy || 0) * technicalA3.height, index,
+        wallNormalAxis: movedOffWall ? null : wallNormalAxis });
     }
   };
   // Draw overhead structures first, preserving the numbering from the original item order.
@@ -548,7 +553,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     ctx.fillRect(x - 19, y - 12, 38, 24);
     drawText(ctx, visual.reference, x, y + 5, 13, '#ffffff', 'bold', 'center');
   });
-  drawText(ctx, 'Allee', planX + planW / 2, planY + planH + 62, 58, technicalColors.ink, 'normal', 'center');
+  drawText(ctx, 'Allee', planX + planW / 2, planY + planH + (floor.signature && floor.footprints?.length ? .5 * scale : 0) + 62, 58, technicalColors.ink, 'normal', 'center');
 }
 
 function isTechnicalArch(item = {}) {
@@ -563,12 +568,23 @@ function drawElectricalDimensions(ctx, point, bounds, scale) {
   const directionX = point.x < bounds.minX ? -1 : point.x > bounds.maxX ? 1 : edgeX === bounds.minX ? 1 : -1;
   const directionY = point.y < bounds.minY ? -1 : point.y > bounds.maxY ? 1 : edgeY === bounds.minY ? 1 : -1;
   const lineX = point.x + directionX * offset, lineY = point.y + directionY * offset;
+  const horizontal = point.wallNormalAxis !== 'x' && dimensionMm(Math.abs(point.x - edgeX) / scale) !== '0';
+  const vertical = point.wallNormalAxis !== 'y' && dimensionMm(Math.abs(point.y - edgeY) / scale) !== '0';
   ctx.save(); ctx.strokeStyle = technicalColors.red; ctx.lineWidth = 1;
-  line(ctx, point.x, point.y, point.x, lineY); line(ctx, edgeX, point.y, edgeX, lineY);
-  line(ctx, point.x, point.y, lineX, point.y); line(ctx, point.x, edgeY, lineX, edgeY);
+  if (horizontal) { line(ctx, point.x, point.y, point.x, lineY); line(ctx, edgeX, point.y, edgeX, lineY); }
+  if (vertical) { line(ctx, point.x, point.y, lineX, point.y); line(ctx, point.x, edgeY, lineX, edgeY); }
   ctx.restore();
-  drawDimension(ctx, Math.min(point.x, edgeX), lineY, Math.max(point.x, edgeX), lineY, `${label} · ${dimensionMm(Math.abs(point.x - edgeX) / scale)}`, 'horizontal', technicalColors.red, 12, true);
-  drawDimension(ctx, lineX, Math.min(point.y, edgeY), lineX, Math.max(point.y, edgeY), `${label} · ${dimensionMm(Math.abs(point.y - edgeY) / scale)}`, 'vertical', technicalColors.red, 12, true);
+  if (horizontal) drawDimension(ctx, Math.min(point.x, edgeX), lineY, Math.max(point.x, edgeX), lineY, `${label} · ${dimensionMm(Math.abs(point.x - edgeX) / scale)}`, 'horizontal', technicalColors.red, 12, true);
+  if (vertical) drawDimension(ctx, lineX, Math.min(point.y, edgeY), lineX, Math.max(point.y, edgeY), `${label} · ${dimensionMm(Math.abs(point.y - edgeY) / scale)}`, 'vertical', technicalColors.red, 12, true);
+}
+
+function spotElectricalWallNormalAxis(item = {}) {
+  if (!isLedRailItem(item) || !isWallItem(item)) return null;
+  if (isObjectWallItem(item)) {
+    const surface = objectWallSurfaceForTechnicalItem(item);
+    return surface ? surface.orientation === 'x' ? 'y' : 'x' : null;
+  }
+  return item.wall === 'back' ? 'y' : ['left', 'right'].includes(item.wall) ? 'x' : null;
 }
 
 function drawTechnicalConstraints(ctx, constraints = [], scale, toX, toY) {
@@ -595,7 +611,46 @@ function drawTechnicalConstraints(ctx, constraints = [], scale, toX, toY) {
   });
 }
 
-function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale) {
+function technicalFloorContext(items = [], catalog = [], standDepth = 0) {
+  items = (items || []).filter(Boolean);
+  const marker = items.find((item) => item?.sourceOptions);
+  if (marker?.sourceFloor) return marker.sourceFloor;
+  const arches = items.filter((item) => {
+    const entry = catalog.find((candidate) => candidate.type === item?.type);
+    const text = normalizeTechnicalText(`${item?.type || ''} ${item?.label || ''} ${entry?.label || ''}`);
+    return item?.options?.signatureBaseKey === 'arche' || isSignatureLedArch(item)
+      || (isTechnicalArch(item) && (text.includes('signature') || text.includes('totem') && text.includes('plafond')));
+  });
+  return {
+    signature: arches.length > 0,
+    footprintEnabled: marker?.sourceOptions?.carpetFootprintEnabled !== false,
+    footprints: arches.map((item) => {
+      const dims = itemDimensions(item, catalog.find((entry) => entry.type === item.type));
+      const angle = Number(item.rotation || 0) * Math.PI / 180;
+      const localZ = .25 - Number(item.z || 0);
+      return { width: dims.width, depth: standDepth + .5,
+        x: Number(item.x || 0) + localZ * Math.sin(angle), z: Number(item.z || 0) + localZ * Math.cos(angle),
+        rotation: Number(item.rotation || 0), color: item.options?.signatureArchColorHex || '#bebebe' };
+    }),
+  };
+}
+
+function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale, floor = {}) {
+  if (floor.signature) {
+    (floor.footprints || []).forEach((footprint) => {
+      const w = footprint.width * scale, h = footprint.depth * scale;
+      ctx.save();
+      ctx.translate(planX + planW / 2 + footprint.x * scale, planY + planH / 2 + footprint.z * scale);
+      ctx.rotate(-Number(footprint.rotation || 0) * Math.PI / 180);
+      ctx.fillStyle = footprint.color || '#bebebe';
+      ctx.strokeStyle = '#777777'; ctx.lineWidth = 1.5; ctx.setLineDash([10, 6]);
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+      ctx.strokeRect(-w / 2, -h / 2, w, h);
+      ctx.restore();
+    });
+    return;
+  }
+  if (floor.footprintEnabled === false) return;
   const overflow = carpetFootprintOverflow * scale;
   const tile = scale;
   const maxY = planY + planH + overflow;
@@ -699,10 +754,14 @@ function technicalItemSection(item = {}, entry = {}) {
 
 function technicalCoveringRows(items = []) {
   const rows = [];
-  const sourceOptions = (items || []).find((item) => item?.sourceOptions)?.sourceOptions || null;
+  const marker = (items || []).find((item) => item?.sourceOptions);
+  const sourceOptions = marker?.sourceOptions || null;
   if (sourceOptions) {
     rows.push(technicalSimpleRow('Moquette', [sourceOptions.carpetColorName, sourceOptions.carpetColorCode].filter(Boolean).join(' ')));
-    if (sourceOptions.carpetFootprintEnabled !== false) rows.push(technicalSimpleRow('Empreinte moquette', [sourceOptions.carpetFootprintColorName, sourceOptions.carpetFootprintColorCode].filter(Boolean).join(' ')));
+    if (marker.sourceFloor?.signature) {
+      (marker.sourceFloor.footprints || []).forEach((footprint) => rows.push(technicalSimpleRow('Empreinte sous arche',
+        [footprint.colorName || footprint.color, `${formatNumber(footprint.width)} x ${formatNumber(footprint.depth)} m`].filter(Boolean).join(' - '))));
+    } else if (sourceOptions.carpetFootprintEnabled !== false) rows.push(technicalSimpleRow('Empreinte moquette', [sourceOptions.carpetFootprintColorName, sourceOptions.carpetFootprintColorCode].filter(Boolean).join(' ')));
     rows.push(technicalSimpleRow('Coton cloison', [sourceOptions.wallFabricColorName, sourceOptions.wallFabricColorCode].filter(Boolean).join(' ')));
   }
   return rows;
@@ -1339,6 +1398,17 @@ function drawObjectDimensions(ctx, x, y, w, h, dims, rotation) {
   drawDimension(ctx, x + w / 2 + 18, y - h / 2, x + w / 2 + 18, y + h / 2, dimensionMm(dims.depth), 'vertical', technicalColors.red, 12);
 }
 
+function drawAttachedSpotPicto(ctx, image, x, y, w, h, angle, orientation, side) {
+  const sideways = Math.abs(Math.sin(angle)) > .5;
+  const imageW = image.naturalWidth || image.width || 1, imageH = image.naturalHeight || image.height || 1;
+  const scale = Math.min(w / (sideways ? imageH : imageW), h / (sideways ? imageW : imageH));
+  const drawW = (sideways ? imageH : imageW) * scale, drawH = (sideways ? imageW : imageH) * scale;
+  // Anchor the wall-facing edge instead of centering the SVG in the model depth.
+  const drawX = orientation === 'z' ? (side >= 0 ? x : x + w - drawW) : x + (w - drawW) / 2;
+  const drawY = orientation === 'x' ? (side >= 0 ? y : y + h - drawH) : y + (h - drawH) / 2;
+  drawRotatedContainedImage(ctx, image, drawX, drawY, drawW, drawH, angle);
+}
+
 function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, defaultLabel, pictoImage = null) {
   const isCustomWallModel = Boolean(item.modelUrl) && !['screen', 'poster'].includes(item.type);
   const itemWidth = (item.type === 'poster' ? Number(item.posterWidth || 1) : isCustomWallModel || isLedRailItem(item) ? dims.width : 0.95) * scale;
@@ -1357,7 +1427,10 @@ function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY
     const y = toY(-depth / 2) + wallThickness + wallItemPlanGap(item);
     if (!pictoImage) ctx.fillRect(x, y, itemWidth, itemDepth);
     if (!pictoImage) ctx.strokeRect(x, y, itemWidth, itemDepth);
-    if (pictoImage) drawContainedImage(ctx, pictoImage, x + 2, y + 2, itemWidth - 4, itemDepth - 4);
+    if (pictoImage) {
+      if (isLedRailItem(item)) drawAttachedSpotPicto(ctx, pictoImage, x, y, itemWidth, itemDepth, 0, 'x', 1);
+      else drawContainedImage(ctx, pictoImage, x + 2, y + 2, itemWidth - 4, itemDepth - 4);
+    }
     drawText(ctx, wallLabelText, x + itemWidth / 2, y + itemDepth + 58, 15, '#22364d', 'bold', 'center');
     drawBadge(ctx, x + itemWidth / 2, y + itemDepth + 22, label);
     return { x: x + itemWidth / 2, y: y + itemDepth / 2, width: itemWidth, height: itemDepth, angle: 0 };
@@ -1368,7 +1441,10 @@ function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY
   const y = toY(item.x) - itemWidth / 2;
   if (!pictoImage) ctx.fillRect(x, y, itemDepth, itemWidth);
   if (!pictoImage) ctx.strokeRect(x, y, itemDepth, itemWidth);
-  if (pictoImage) drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4, sideWallPictoAngle(item));
+  if (pictoImage) {
+    if (isLedRailItem(item)) drawAttachedSpotPicto(ctx, pictoImage, x, y, itemDepth, itemWidth, sideWallPictoAngle(item), 'z', item.wall === 'left' ? 1 : -1);
+    else drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4, sideWallPictoAngle(item));
+  }
   drawSideTvLabel(ctx, wallLabelText, item.wall, x, y + itemWidth / 2, itemDepth);
   drawBadge(ctx, x + itemDepth + 22, y + itemWidth / 2, label);
   return { x: x + itemDepth / 2, y: y + itemWidth / 2, width: itemWidth, height: itemDepth, angle: sideWallPictoAngle(item) };
@@ -1379,7 +1455,7 @@ function drawObjectWallItemTop(ctx, item, scale, toX, toY, label, itemWidth, ite
   if (!surface) return;
   const axis = clampValue(Number(item.x ?? surface.centerAxis ?? 0), Number(surface.centerAxis || 0) - Number(surface.length || 0) / 2, Number(surface.centerAxis || 0) + Number(surface.length || 0) / 2);
   const side = objectWallSideForTechnicalItem(item, surface);
-  const gap = 4;
+  const gap = isLedRailItem(item) ? wallThicknessMeters * scale / 2 : 4;
 
   if (surface.orientation === 'x') {
     const x = toX(axis) - itemWidth / 2;
@@ -1387,7 +1463,10 @@ function drawObjectWallItemTop(ctx, item, scale, toX, toY, label, itemWidth, ite
     const y = side >= 0 ? wallY + gap : wallY - itemDepth - gap;
     if (!pictoImage) ctx.fillRect(x, y, itemWidth, itemDepth);
     if (!pictoImage) ctx.strokeRect(x, y, itemWidth, itemDepth);
-    if (pictoImage) drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemWidth - 4, itemDepth - 4, side >= 0 ? 0 : Math.PI);
+    if (pictoImage) {
+      if (isLedRailItem(item)) drawAttachedSpotPicto(ctx, pictoImage, x, y, itemWidth, itemDepth, side >= 0 ? 0 : Math.PI, 'x', side);
+      else drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemWidth - 4, itemDepth - 4, side >= 0 ? 0 : Math.PI);
+    }
     drawText(ctx, wallLabelText, x + itemWidth / 2, side >= 0 ? y + itemDepth + 58 : y - 48, 15, '#22364d', 'bold', 'center');
     drawBadge(ctx, x + itemWidth / 2, side >= 0 ? y + itemDepth + 22 : y - 22, label);
     return { x: x + itemWidth / 2, y: y + itemDepth / 2, width: itemWidth, height: itemDepth, angle: side >= 0 ? 0 : Math.PI };
@@ -1398,10 +1477,14 @@ function drawObjectWallItemTop(ctx, item, scale, toX, toY, label, itemWidth, ite
   const y = toY(axis) - itemWidth / 2;
   if (!pictoImage) ctx.fillRect(x, y, itemDepth, itemWidth);
   if (!pictoImage) ctx.strokeRect(x, y, itemDepth, itemWidth);
-  if (pictoImage) drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4, side >= 0 ? Math.PI / 2 : -Math.PI / 2);
+  const angle = isLedRailItem(item) ? (side >= 0 ? -Math.PI / 2 : Math.PI / 2) : (side >= 0 ? Math.PI / 2 : -Math.PI / 2);
+  if (pictoImage) {
+    if (isLedRailItem(item)) drawAttachedSpotPicto(ctx, pictoImage, x, y, itemDepth, itemWidth, angle, 'z', side);
+    else drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4, angle);
+  }
   drawSideTvLabel(ctx, wallLabelText, side >= 0 ? 'left' : 'right', x, y + itemWidth / 2, itemDepth);
   drawBadge(ctx, x + itemDepth + 22, y + itemWidth / 2, label);
-  return { x: x + itemDepth / 2, y: y + itemWidth / 2, width: itemWidth, height: itemDepth, angle: side >= 0 ? Math.PI / 2 : -Math.PI / 2 };
+  return { x: x + itemDepth / 2, y: y + itemWidth / 2, width: itemWidth, height: itemDepth, angle };
 }
 
 function drawSideTvLabel(ctx, label, wall, x, y, screenDepth) {
@@ -1423,7 +1506,7 @@ function wallItemPlanGap(item = {}) {
 
 function isLedRailItem(item = {}) {
   const text = `${item.type || ''} ${item.label || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  return Boolean(item.isLedSpotOption || item.dimensions?.isLedSpotOption || item.autoLedRail || item.autoSpot || (text.includes('rail') && text.includes('spot')));
+  return Boolean(item.isLedSpotOption || item.dimensions?.isLedSpotOption || item.autoLedRail || item.autoSpot || (text.includes('rail') && text.includes('spot')) || /\bspots?\s+led\b/.test(text));
 }
 
 function isTechnicalScreenItem(item = {}) {
