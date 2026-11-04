@@ -1,0 +1,191 @@
+[
+  {
+    "type": "asset-tete-de-cloison-mub9t9vw",
+    "label": "Tete De Cloison - Signature",
+    "is_active": true,
+    "dimensions": {
+      "size": [
+        0.16,
+        2.5,
+        0.5
+      ]
+    }
+  },
+  {
+    "type": "group-reserve-1m2-arriere-droite-mqrv4cbu",
+    "label": "Réserve 1m2 arrière droite",
+    "is_active": true,
+    "dimensions": {
+      "isGroup": true,
+      "groupSize": [
+        1.86,
+        2.5,
+        0.72
+      ],
+      "placementRule": {
+        "id": "back-right",
+        "locked": true
+      },
+      "children": [
+        {
+          "id": "asset-porte-trad-droite-1000x2500mm-ht-poignee-droite-mr39jc1z-child-1",
+          "type": "asset-porte-trad-droite-1000x2500mm-ht-poignee-droite-mr39jc1z",
+          "label": "Porte Trad Droite 1000x2500mm Ht + PoignéE Droite",
+          "x": -0.36,
+          "y": 0,
+          "z": -0.03,
+          "rotation": 90,
+          "dimensions": {
+            "size": [
+              1,
+              2.5,
+              0.24
+            ],
+            "wallCoverFrameBounds": {
+              "maxX": 0.5,
+              "maxZ": 0.118895,
+              "minX": -0.5,
+              "minZ": 0.058895
+            },
+            "depthLocked6cm": true
+          }
+        },
+        {
+          "id": "asset-cloison-trad-1000x2500mm-ht-mqqgzewt-child-2",
+          "type": "asset-cloison-trad-1000x2500mm-ht-mqqgzewt",
+          "label": "Cloison 1x2.5m",
+          "x": 0.2,
+          "y": 0,
+          "z": 0.5,
+          "rotation": 0,
+          "dimensions": {
+            "size": [
+              1,
+              2.5,
+              0.06
+            ],
+            "depthLocked6cm": false
+          }
+        },
+        {
+          "id": "asset-bloc-3-etageres-1-muwrjruf-child-3",
+          "type": "asset-bloc-3-etageres-1-muwrjruf",
+          "label": "Bloc 3 Étagères ",
+          "x": 0.524,
+          "y": 0,
+          "z": -0.025,
+          "rotation": 90,
+          "dimensions": {
+            "size": [
+              0.95,
+              1.8,
+              0.33
+            ],
+            "depthLocked6cm": false
+          }
+        },
+        {
+          "id": "asset-patere-mqsbbhzv-child-4",
+          "type": "asset-patere-mqsbbhzv",
+          "label": "Patère",
+          "x": 0.064,
+          "y": 1.6,
+          "z": 0.429,
+          "rotation": 180,
+          "dimensions": {
+            "size": [
+              0.46,
+              0.06,
+              0.07
+            ],
+            "depthLocked6cm": false
+          }
+        },
+        {
+          "id": "asset-triplette-mqsb0l9j-child-5",
+          "type": "asset-triplette-mqsb0l9j",
+          "label": "Triplette",
+          "x": 0.049,
+          "y": 0,
+          "z": -0.079,
+          "rotation": 0,
+          "dimensions": {
+            "size": [
+              0.23,
+              0.05,
+              0.13
+            ],
+            "depthLocked6cm": false
+          }
+        }
+      ]
+    }
+  },
+  {
+    "type": "asset-porte-trad-droite-1000x2500mm-ht-poignee-droite-mr39jc1z",
+    "label": "Porte Trad Droite 1000x2500mm Ht + PoignéE Droite",
+    "is_active": true,
+    "dimensions": {
+      "size": [
+        1,
+        2.5,
+        0.24
+      ],
+      "wallCoverFrameBounds": {
+        "maxX": 0.5,
+        "maxZ": 0.118895,
+        "minX": -0.5,
+        "minZ": 0.058895
+      },
+      "depthLocked6cm": true
+    }
+  },
+  {
+    "type": "asset-cloison-trad-1000x2500mm-ht-mqqgzewt",
+    "label": "Cloison 1x2.5m",
+    "is_active": true,
+    "dimensions": {
+      "size": [
+        1,
+        2.5,
+        0.06
+      ]
+    }
+  },
+  {
+    "type": "asset-bloc-3-etageres-1-muwrjruf",
+    "label": "Bloc 3 Étagères ",
+    "is_active": true,
+    "dimensions": {
+      "size": [
+        0.95,
+        1.8,
+        0.33
+      ]
+    }
+  },
+  {
+    "type": "asset-patere-mqsbbhzv",
+    "label": "Patère",
+    "is_active": true,
+    "dimensions": {
+      "size": [
+        0.46,
+        0.06,
+        0.07
+      ]
+    }
+  },
+  {
+    "type": "asset-triplette-mqsb0l9j",
+    "label": "Triplette",
+    "is_active": true,
+    "dimensions": {
+      "size": [
+        0.23,
+        0.05,
+        0.13
+      ]
+    }
+  }
+]

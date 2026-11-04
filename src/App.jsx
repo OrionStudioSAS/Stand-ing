@@ -2,6 +2,7 @@ import { signatureArchVariant, isSignatureLedArch, signatureArchChoice, signatur
 import { wallCoverPackTariff, wallCoverQuote } from './wallCoverPricing.js';
 import { lastSceneSyncAt, sceneSyncLabel } from './sceneSyncInfo.js';
 import AssetBatElectricalPictoEditor from './AssetBatElectricalPictoEditor.jsx';
+import { batElectricalPictosMetadata, normalizeBatElectricalPictos } from './batElectricalPicto.js';
 import AssetGroupPlacementEditor from './AssetGroupPlacementEditor.jsx';
 import { nextGroupRowPosition } from './groupPlacement.js';
 import { includedCounterPowerItems } from './includedCounterPower.js';
@@ -13240,12 +13241,17 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
     }
   };
 
-  const changeElectricalPicto = async (file) => {
+  const changeElectricalPicto = async (file, index) => {
     if (batPictoUploading) return;
     setBatPictoUploading(true); setBatPictoError('');
     try {
       const uploaded = file ? await uploadObjectAssetScopedImage(draft, file, 'bat-electrical', 'picto') : null;
-      const updated = { ...draft, dimensions: { ...draft.dimensions, batElectricalPictoUrl: uploaded?.publicUrl || '', batElectricalPictoPath: uploaded?.path || '', batElectricalPictoX: .5, batElectricalPictoY: .5, batElectricalPictoSizeMeters: .2 } };
+      const icons = normalizeBatElectricalPictos(draft.dimensions);
+      const next = uploaded ? { ...(icons[index] || { x: .5, y: .5, size: .2 }), url: uploaded.publicUrl, path: uploaded.path } : null;
+      if (index == null && next) icons.push(next);
+      else if (next) icons[index] = next;
+      else icons.splice(index, 1);
+      const updated = { ...draft, dimensions: { ...draft.dimensions, ...batElectricalPictosMetadata(icons) } };
       const saved = await onSave(updated);
       setDraft(saved || updated);
     } catch (error) { setBatPictoError(error.message || 'Impossible de mettre à jour le picto électrique.'); }
@@ -13358,7 +13364,7 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
         </label>
         <BatPictoPreview imageUrl={draft.dimensions?.batPictoUrl} label={draft.label || draft.type} onRemove={removeBatPicto} removeDisabled={batPictoUploading} />
         <AssetBatElectricalPictoEditor primaryUrl={draft.dimensions?.batPictoUrl} metadata={draft.dimensions} modelSize={assetModelSize(draft)} disabled={batPictoUploading}
-          onUpload={changeElectricalPicto} onRemove={() => changeElectricalPicto(null)}
+          onUpload={changeElectricalPicto} onRemove={(index) => changeElectricalPicto(null, index)}
           onChange={(patch) => setDraft((current) => ({ ...current, dimensions: { ...current.dimensions, ...patch } }))} />
         <BatPictoColorSettings
           key={draft.dimensions?.batPictoUrl || ''}
@@ -19112,7 +19118,7 @@ function closestPlacementInRegions(item, regions) {
 function wallItemAxisRange(item, wall, width, depth) {
   const limits = wallAxisLimits(wall, width, depth);
   const bounds = wallItemAxisBounds(item, wall);
-  const sideMargin = isPartitionHeadItem(item) && wall !== 'back' ? partitionHeadEdgeInset : 0;
+  const sideMargin = isPartitionHeadItem(item) && !isSignaturePartitionHeadItem(item) && wall !== 'back' ? partitionHeadEdgeInset : 0;
   return {
     min: limits.min - bounds.min + sideMargin,
     max: limits.max - bounds.max - sideMargin,
@@ -19529,6 +19535,8 @@ function applyWallPlacementRule(item, width, depth, layout) {
 }
 
 function smclPartitionHeadWallAxis(item, wall, rawAxis, range) {
+  // Fixed Signature heads must meet the wall end, not the accessory snap grid.
+  if (isSignaturePartitionHeadItem(item)) return rawAxis;
   if (!isSmclPartitionHeadItem(item)) return isPartitionHeadItem(item) && wall === 'back' ? rawAxis : snapWallAxis(rawAxis, item);
   const axis = Number(rawAxis || 0);
   const middle = (Number(range.min || 0) + Number(range.max || 0)) / 2;

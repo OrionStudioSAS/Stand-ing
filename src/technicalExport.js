@@ -1,5 +1,5 @@
 import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor } from './imageColorReplacement.js';
-import { normalizeBatElectricalPicto, electricalPictoPoint } from './batElectricalPicto.js';
+import { normalizeBatElectricalPicto, normalizeBatElectricalPictos, electricalPictoPoint } from './batElectricalPicto.js';
 import { includedCounterPowerItems } from './includedCounterPower.js';
 import { isSignatureLedArch } from './signatureArchVariants.js';
 import { createTechnicalSvgContext, sanitizeTechnicalSvg } from './technicalSvgContext.js';
@@ -153,7 +153,7 @@ async function loadTechnicalPictoImages(items = [], catalog = []) {
     const entry = catalog.find((candidate) => candidate.type === item.type);
     const descriptor = technicalSvgPictoDescriptor(item, entry, catalog);
     if (descriptor) imageRequests.set(descriptor.key, { ...descriptor, isPicto: true });
-    if (descriptor?.electrical.url) imageRequests.set(descriptor.electrical.url, { key: descriptor.electrical.url, url: descriptor.electrical.url, isPicto: true });
+    descriptor?.electricalPictos.forEach(icon => imageRequests.set(icon.url, { key: icon.url, url: icon.url, isPicto: true }));
   });
   technicalPlanVisuals(items, catalog).forEach((visual) => {
     if (visual.imageUrl && !imageRequests.has(visual.imageUrl)) imageRequests.set(visual.imageUrl, { key: visual.imageUrl, url: visual.imageUrl, sourceColor: '', targetColor: '' });
@@ -218,11 +218,12 @@ function technicalSvgPictoDescriptor(item = {}, entry = {}, catalog = []) {
     item.color, variantEntry?.color, entry?.color,
   ].map((color) => normalizeHexColor(color)).find(Boolean) || '';
   const targetImageUrl = sourceColor ? counterFinish?.image || '' : '';
-  const electrical = normalizeBatElectricalPicto(sources.find((source) => source.batElectricalPictoUrl) || {});
+  const electricalPictos = normalizeBatElectricalPictos(sources.find((source) => Array.isArray(source.batElectricalPictos) || source.batElectricalPictoUrl) || {});
+  const electrical = electricalPictos[0] || normalizeBatElectricalPicto();
   const colorKey = sourceColor && targetColor ? recoloredImageCacheKey(url, sourceColor, targetColor) : url;
   const baseKey = targetImageUrl ? `${colorKey}|finish-image:${targetImageUrl}` : colorKey;
-  const key = electrical.url ? `${baseKey}|electric:${electrical.url}:${electrical.x}:${electrical.y}:${electrical.size}` : baseKey;
-  return { key, url, sourceColor, targetColor, targetImageUrl, electrical };
+  const key = electricalPictos.length ? `${baseKey}|electric:${JSON.stringify(electricalPictos)}` : baseKey;
+  return { key, url, sourceColor, targetColor, targetImageUrl, electrical, electricalPictos };
 }
 
 function technicalReceptionCounterFinish(item = {}, entry = {}) {
@@ -478,24 +479,28 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
   const annotateElectricity = (item, entry, frame, index) => {
     if (!frame) return;
     const descriptor = technicalSvgPictoDescriptor(item, entry, catalog);
-    const icon = descriptor?.electrical;
-    const point = icon?.url ? electricalPictoPoint(frame, icon) : { x: frame.x, y: frame.y };
-    const overlay = icon?.url ? pictoImages.get(icon.url) : null;
-    if (overlay) {
-      const imageWidth = overlay.naturalWidth || overlay.width || 1;
-      const imageHeight = overlay.naturalHeight || overlay.height || 1;
-      ctx.save(); ctx.translate(point.x, point.y); ctx.rotate(frame.angle || 0);
-      const w = icon.size * scale, h = w * imageHeight / imageWidth;
-      drawContainedImage(ctx, overlay, -w / 2, -h / 2, w, h);
-      ctx.restore();
-    }
-    if (icon?.url || /electric/.test(normalizeTechnicalText(item.dimensions?.category || entry?.dimensions?.category || ''))) {
-      const edit = edits.items?.[item.id] || {};
-      const wallNormalAxis = spotElectricalWallNormalAxis(item);
-      const movedOffWall = wallNormalAxis === 'x' ? Number(edit.dx || 0) !== 0 : Number(edit.dy || 0) !== 0;
-      if (!edit.hidden) electricalDimensions.push({ x: point.x + Number(edit.dx || 0) * technicalA3.width, y: point.y + Number(edit.dy || 0) * technicalA3.height, index,
-        wallNormalAxis: movedOffWall ? null : wallNormalAxis });
-    }
+    const icons = descriptor?.electricalPictos || [];
+    const isElectricalObject = /electric/.test(normalizeTechnicalText(item.dimensions?.category || entry?.dimensions?.category || ''));
+    (icons.length ? icons : isElectricalObject ? [null] : []).forEach((icon, electricalIndex) => {
+      const point = icon?.url ? electricalPictoPoint(frame, icon) : { x: frame.x, y: frame.y };
+      const overlay = icon?.url ? pictoImages.get(icon.url) : null;
+      if (overlay) {
+        const imageWidth = overlay.naturalWidth || overlay.width || 1;
+        const imageHeight = overlay.naturalHeight || overlay.height || 1;
+        ctx.save(); ctx.translate(point.x, point.y); ctx.rotate(frame.angle || 0);
+        const w = icon.size * scale, h = w * imageHeight / imageWidth;
+        drawContainedImage(ctx, overlay, -w / 2, -h / 2, w, h);
+        ctx.restore();
+      }
+      if (icon?.url || isElectricalObject) {
+        const edit = edits.items?.[item.id] || {};
+        const wallNormalAxis = spotElectricalWallNormalAxis(item);
+        const movedOffWall = wallNormalAxis === 'x' ? Number(edit.dx || 0) !== 0 : Number(edit.dy || 0) !== 0;
+        if (!edit.hidden) electricalDimensions.push({ x: point.x + Number(edit.dx || 0) * technicalA3.width, y: point.y + Number(edit.dy || 0) * technicalA3.height, index,
+          electricalIndex: icons.length > 1 ? electricalIndex : null,
+          wallNormalAxis: movedOffWall ? null : wallNormalAxis });
+      }
+    });
   };
   // Draw overhead structures first, preserving the numbering from the original item order.
   items.map((item, index) => ({ item, index })).sort((a, b) => Number(isTechnicalArch(b.item)) - Number(isTechnicalArch(a.item))).forEach(({ item, index }) => {
@@ -563,7 +568,7 @@ function isTechnicalArch(item = {}) {
 function drawElectricalDimensions(ctx, point, bounds, scale) {
   const edgeX = Math.abs(point.x - bounds.minX) <= Math.abs(point.x - bounds.maxX) ? bounds.minX : bounds.maxX;
   const edgeY = Math.abs(point.y - bounds.minY) <= Math.abs(point.y - bounds.maxY) ? bounds.minY : bounds.maxY;
-  const label = `E${point.index + 1}`;
+  const label = `E${point.index + 1}${point.electricalIndex == null ? '' : `.${point.electricalIndex + 1}`}`;
   const offset = 18 + (point.index % 5) * 14;
   const directionX = point.x < bounds.minX ? -1 : point.x > bounds.maxX ? 1 : edgeX === bounds.minX ? 1 : -1;
   const directionY = point.y < bounds.minY ? -1 : point.y > bounds.maxY ? 1 : edgeY === bounds.minY ? 1 : -1;
@@ -1661,6 +1666,8 @@ function technicalChildOptions(childOptions = {}, parentOptions = {}, parentDime
     ...Object.fromEntries(['batElectricalPictoUrl', 'batElectricalPictoPath', 'batElectricalPictoX', 'batElectricalPictoY', 'batElectricalPictoSize', 'batElectricalPictoSizeMeters']
       .filter((key) => hasTechnicalValue(parentOptions[key] ?? parentDimensions[key]))
       .map((key) => [key, parentOptions[key] ?? parentDimensions[key]])),
+    ...(Array.isArray(parentOptions.batElectricalPictos ?? parentDimensions.batElectricalPictos)
+      ? { batElectricalPictos: parentOptions.batElectricalPictos ?? parentDimensions.batElectricalPictos } : {}),
     ...inheritedVisuals,
   };
 }

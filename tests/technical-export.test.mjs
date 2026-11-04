@@ -1,6 +1,6 @@
 import { isSignatureLedArch } from '../src/signatureArchVariants.js';
 import { groupStructuralAsset } from '../src/groupPlacement.js';
-import { normalizeBatElectricalPicto, electricalPictoPoint } from '../src/batElectricalPicto.js';
+import { normalizeBatElectricalPicto, normalizeBatElectricalPictos, electricalPictoPoint } from '../src/batElectricalPicto.js';
 import { includedCounterPowerItems } from '../src/includedCounterPower.js';
 import { sceneHeadCountry } from '../src/equippedHeadInformation.js';
 import assert from 'node:assert/strict';
@@ -32,7 +32,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor });
+  const api = vm.createContext({ includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }
@@ -296,6 +296,22 @@ test('electrical BAT overlays survive group flattening and use position-specific
   assert.equal(descriptor.electrical.x, .75);
   const other = api.technicalSvgPictoDescriptor({ ...child, options: { ...child.options, batElectricalPictoX: .25 } }, {}, []);
   assert.notEqual(other.key, descriptor.key);
+});
+
+test('all electrical overlays survive flattening and clearing the list overrides stale scene metadata', () => {
+  const { api } = runtime();
+  const icons = [{ url: '/a.svg', x: .25, y: -.5, size: .2 }, { url: '/b.svg', x: .75, y: 1.5, size: .3 }];
+  const dimensions = { batPictoUrl: '/base.svg', batElectricalPictos: icons };
+  const [child] = api.flattenTechnicalItems([{ id: 'group', type: 'group', isGroup: true, dimensions, children: [{ id: 'tv', type: 'tv' }] }], []);
+  const descriptor = api.technicalSvgPictoDescriptor(child, {}, []);
+  assert.equal(descriptor.electricalPictos.length, 2);
+  assert.equal(descriptor.electricalPictos[1].y, 1.5);
+  const edited = api.technicalSvgPictoDescriptor({ ...child, options: { ...child.options, batElectricalPictos: [icons[0], { ...icons[1], x: 1.5 }] } }, {}, []);
+  assert.notEqual(edited.key, descriptor.key, 'Changing any overlay invalidates the BAT cache');
+  const cleared = api.technicalSvgPictoDescriptor({ ...child, options: { ...child.options, batElectricalPictos: [], batElectricalPictoUrl: '/old.svg' } }, {}, []);
+  assert.equal(cleared.electricalPictos.length, 0);
+  const [emptyChild] = api.flattenTechnicalItems([{ id: 'group', type: 'group', isGroup: true, dimensions: { ...dimensions, batElectricalPictos: [] }, children: [{ ...child, options: { batElectricalPictoUrl: '/old.svg' } }] }], []);
+  assert.equal(api.technicalSvgPictoDescriptor(emptyChild, {}, []).electricalPictos.length, 0);
 });
 
 test('each counter has its own visual and numbered placement, even with the same image', () => {

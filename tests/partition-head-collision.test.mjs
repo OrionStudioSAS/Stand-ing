@@ -366,3 +366,15 @@ test('Signature heads touch the inner wall face on both sides of every layout',(
   assert.ok(Math.abs(gap)<1e-9,`${layout} ${width} ${side}: gap ${gap}`);
  }
 });
+
+test('fixed Signature heads meet the exact wall end instead of the 10cm accessory grid', () => {
+  const api = collisionContext();
+  for (const depth of [3, 3.015, 3.5]) for (const wall of ['left', 'right']) {
+    const item = { label: 'Tête de cloison Signature', dimensions: { size: [.16, 2.5, .5] }, placementRule: { id: `outer-${wall}`, locked: true } };
+    const placed = api.applyWallPlacementRule(item, 6, depth, wall);
+    const limits = api.wallAxisLimits(wall, 6, depth);
+    const bounds = api.wallItemAxisBounds(placed, wall);
+    assert.ok(Math.abs(placed.x + bounds.max - limits.max) < 1e-9, 'No artificial gap beyond the 50cm head');
+    if (depth === 3) assert.equal(placed.x, 1.31);
+  }
+});

@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
+import { PDFDocument } from 'pdf-lib';
 
 const root = new URL('../', import.meta.url).pathname;
 const source = await readFile(`${root}src/App.jsx`, 'utf8');
 const primary = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><path data-primary="yes" fill="#939598" d="M0 0H200V100H0Z"/></svg>';
 const electric = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path data-electric="yes" fill="#ffb300" d="M40 0L10 60H45L35 100L90 35H55L70 0Z"/></svg>';
 const asset = { type: 'machine', label: 'Machine BAT', is_active: true, thumbnail_url: '/__base.svg', dimensions: { size: [1, 1, .5], category: 'Mobilier', batPictoUrl: '/__base.svg', batPictoPath: 'base.svg' } };
-const harness = `import React,{useState}from'react';import{createRoot}from'react-dom/client';import * as api from'/src/__batch-app.jsx';import{createTechnicalPlanSvgPages}from'/src/technicalExport.js';window.api=api;window.exportPlan=createTechnicalPlanSvgPages;
+const harness = `import React,{useState}from'react';import{createRoot}from'react-dom/client';import * as api from'/src/__batch-app.jsx';import{createTechnicalPlanSvgPages,createTechnicalPlanBlob}from'/src/technicalExport.js';window.api=api;window.exportPlan=createTechnicalPlanSvgPages;window.exportPdf=createTechnicalPlanBlob;
 const original=${JSON.stringify(asset)};const surfaces=[{id:'back',label:'Cloison arrière',width:4.5,visibleWidth:4.41,height:2.5}];
 function Test(){const[mode,setMode]=useState('covers'),[covers,setCovers]=useState({back:{enabled:true}}),[asset,setAsset]=useState(original),[open,setOpen]=useState(true);window.asset=asset;window.covers=covers;
 const items=[{id:'included',type:'chair',label:'Chaise incluse',included:true,priceMode:'included',options:{}},{id:'paid',type:'table',label:'Table supplémentaire',options:{unitPrice:85.5}}];const catalog=[{type:'chair',label:'Chaise incluse',price:100},{type:'table',label:'Table supplémentaire',price:85.5}];
@@ -20,10 +21,10 @@ const server = await createServer({ logLevel: 'error', server: { host: '127.0.0.
     if (id === `${root}src/__batch-app.jsx`) return source.replace("createRoot(document.getElementById('root')).render(<App />);", 'export {WallCoverOptionCard,HeaderCartMenu,AssetDrawer,SceneSyncTime,calculateScenePricing,scenePurchaseOrder};');
     if (id === `${root}src/__batch-page.jsx`) return harness;
     if (id === `${root}src/data/supabaseClient.js`) return 'export const supabase=null;';
-    if (id === `${root}src/data/sceneStore.js`) return `export * from '/src/data/sceneStore.js?batch-original';export async function uploadObjectAssetScopedImage(){return{publicUrl:'/__electric.svg',path:'electric.svg'}};`;
+    if (id === `${root}src/data/sceneStore.js`) return `export * from '/src/data/sceneStore.js?batch-original';export async function uploadObjectAssetScopedImage(_asset,file){return{publicUrl:file.name==='another-electric.svg'?'/__electric-2.svg':file.name==='replacement-electric.svg'?'/__electric-3.svg':'/__electric.svg',path:file.name}};`;
   },
   configureServer(vite) {
-    for (const [url, svg] of [['/__base.svg', primary], ['/__electric.svg', electric]]) vite.middlewares.use(url, (_req, res) => { res.setHeader('Content-Type', 'image/svg+xml'); res.end(svg); });
+    for (const [url, svg] of [['/__base.svg', primary], ['/__electric.svg', electric], ['/__electric-2.svg', electric.replace('#ffb300','#ff6600')], ['/__electric-3.svg', electric.replace('#ffb300','#ffaa00')]]) vite.middlewares.use(url, (_req, res) => { res.setHeader('Content-Type', 'image/svg+xml'); res.end(svg); });
     vite.middlewares.use('/__batch__', (_req, res) => { res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><div id="root"></div><script type="module" src="/src/__batch-page.jsx"></script>'); });
   },
 }] });
@@ -61,7 +62,7 @@ try {
   assert.equal(await included.locator('.cart-item-copy > b').innerText(), 'Inclus');
   assert.match(await page.locator('.cart-item-card').filter({ hasText: 'Table supplémentaire' }).innerText(), /85,5 € HT/);
   await page.getByRole('button', { name: 'Test asset', exact: true }).click();
-  const editor = page.getByRole('region', { name: 'Second picto électrique BAT', exact: true });
+  const editor = page.getByRole('region', { name: 'Pictos électriques BAT', exact: true });
   await editor.getByLabel('Importer le picto électrique', { exact: true }).setInputFiles({ name: 'electric.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(electric) });
   const marker = editor.getByRole('button', { name: 'Déplacer le picto électrique', exact: true }); await marker.waitFor();
   assert.equal(await marker.evaluate(node => node.style.left), '50%');
@@ -108,10 +109,57 @@ try {
   assert.ok(outsideBounds.y < primaryBounds.y);
   await editor.getByRole('button', { name: 'Recentrer le picto électrique', exact: true }).click();
   assert.equal(await marker.evaluate(node=>node.style.left), '50%');
-  await editor.getByRole('button', { name: 'Supprimer uniquement le picto électrique', exact: true }).click();
+  await editor.getByRole('button', { name: 'Ajouter un picto identique', exact: true }).click();
+  await editor.getByLabel('Position électrique X', { exact: true }).fill('120');
+  await editor.getByLabel('Position électrique Y', { exact: true }).fill('-30');
+  await editor.getByLabel('Taille du picto électrique', { exact: true }).focus();
+  await page.keyboard.press('ArrowRight');
+  await editor.getByLabel('Importer le picto électrique', { exact: true }).setInputFiles({ name: 'another-electric.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(electric) });
+  await page.getByRole('button', { name: 'Enregistrer', exact: true }).click();
+  const multiple = await page.evaluate(() => window.savedAsset.dimensions.batElectricalPictos);
+  assert.equal(multiple.length, 3);
+  assert.notEqual(multiple[0].url,multiple[2].url,'Different uploaded symbols coexist on the same object');
+  assert.deepEqual(multiple.map(icon => [icon.x, icon.y, icon.size]), [[.5,.5,.21],[1.2,-.3,.22],[.5,.5,.2]], 'Each overlay retains its own position and physical size');
+  await page.getByRole('button', { name: 'Fermer', exact: true }).click();
+  await page.getByRole('button', { name: 'Test asset', exact: true }).click();
+  assert.equal(await editor.getByRole('button', { name: /^Déplacer le picto électrique/ }).count(), 3);
+  await editor.getByRole('button', { name: 'Picto 2', exact: true }).click();
+  await editor.getByLabel('Remplacer le picto électrique sélectionné', { exact: true }).setInputFiles({name:'replacement-electric.svg',mimeType:'image/svg+xml',buffer:Buffer.from(electric)});
+  const replaced=await page.evaluate(()=>window.savedAsset.dimensions.batElectricalPictos);
+  assert.deepEqual(replaced[0],multiple[0]);assert.deepEqual(replaced[2],multiple[2]);
+  assert.deepEqual([replaced[1].x,replaced[1].y,replaced[1].size],[1.2,-.3,.22],'Replacing one file preserves its placement');
+  assert.equal(replaced[1].url,'/__electric-3.svg');
+  const multiPlan = await page.evaluate(async () => {
+    const dimensions=window.savedAsset.dimensions,entry={type:'multi',dimensions,modelSize:[1,1,.5]},item={...entry,id:'multi',x:0,z:0,rotation:90};
+    const input={width:4,depth:3,layout:'u',catalog:[entry],items:[item]};
+    const pages=await window.exportPlan(input);
+    const cleared={...dimensions,batElectricalPictos:[],batElectricalPictoUrl:''};
+    const plain=await window.exportPlan({...input,catalog:[{...entry,dimensions:cleared}],items:[{...item,dimensions:cleared}]});
+    const pdf=await window.exportPdf(input);
+    return {count:pages[0].querySelectorAll('[data-electric]').length,labels:pages[0].textContent,primary:pages[0].querySelector('[data-primary]').closest('[transform]').getAttribute('transform'),plainPrimary:plain[0].querySelector('[data-primary]').closest('[transform]').getAttribute('transform'),pdf:[...new Uint8Array(await pdf.arrayBuffer())]};
+  });
+  assert.equal(multiPlan.count,3);
+  for(const n of [1,2,3])assert.ok(multiPlan.labels.includes(`E1.${n}`),'Each electrical point has independent red dimensions');
+  assert.equal(multiPlan.primary,multiPlan.plainPrimary,'Overlays do not change the parent object footprint or placement');
+  const pdf=await PDFDocument.load(Uint8Array.from(multiPlan.pdf));
+  assert.ok(Math.abs(pdf.getPage(0).getWidth()/pdf.getPage(0).getHeight()-420/297)<.001,'Multiple symbols export to A3 PDF too');
+  await editor.getByRole('button', { name: 'Picto 2', exact: true }).click();
+  await editor.getByRole('button', { name: 'Supprimer uniquement le picto électrique sélectionné', exact: true }).click();
+  const remaining=await page.evaluate(()=>window.savedAsset.dimensions.batElectricalPictos);
+  assert.equal(remaining.length,2);
+  assert.deepEqual(remaining,[multiple[0],multiple[2]],'Deleting one icon preserves its neighbours');
+  for (const width of [1440,390]) {
+    await page.setViewportSize({width,height:1100});
+    assert.equal(await editor.evaluate(node=>node.scrollWidth<=node.clientWidth),true);
+  }
+  await page.setViewportSize({width:1440,height:1100});
+  await editor.screenshot({path:'/tmp/standing-multiple-electrical-pictos.png'});
+  await editor.getByRole('button', { name: 'Supprimer uniquement le picto électrique sélectionné', exact: true }).click();
+  await editor.getByRole('button', { name: 'Supprimer uniquement le picto électrique sélectionné', exact: true }).click();
   await marker.waitFor({ state: 'detached' });
   assert.equal(await page.evaluate(() => window.savedAsset.dimensions.batPictoUrl), '/__base.svg');
   assert.equal(await page.evaluate(() => window.savedAsset.dimensions.batElectricalPictoUrl), '');
+  assert.deepEqual(await page.evaluate(() => window.savedAsset.dimensions.batElectricalPictos), []);
   assert.deepEqual(errors, []);
-  console.log('Batch browser: exact pack tariffs and capped deductions, stable cover toggles, same included cart items, Paris sync timestamps, electrical upload/drag/keyboard/save/reopen/remove and vector BAT overlay OK');
+  console.log('Batch browser: tariffs/cart unchanged; multiple independent electrical uploads, duplicates, replacement, drag/keyboard, sizes, save/reopen, deletion, individual cotations and vector A3 PDF OK');
 } finally { await browser?.close(); await server.close(); }
