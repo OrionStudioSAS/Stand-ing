@@ -116,3 +116,50 @@ test('Confort and Prestige send the matched footprint label to the proper Monday
     assert.deepEqual(JSON.parse(requests[0].variables.value), { label: 'ORANGE REWIND - 0450' });
   }
 });
+
+test('Prestige counter logos use SIGNA COMPTOIR 2 before and after the old column is deleted', async () => {
+  const choices = ['NON', 'OUI - FICHIER OK', 'OUI - ATT FICHIER'];
+  const oldColumn = statusColumn('color_mksf24j7', 'SIGNA COMPTOIR', choices);
+  const newColumn = statusColumn('color_mm8rkt6m', 'SIGNA COMPTOIR 2', choices);
+  const states = [
+    [{ binary3ImageUrl: 'https://example.test/logo.png' }, 'OUI - FICHIER OK'],
+    [{ binary3VisualPending: true }, 'OUI - ATT FICHIER'],
+    [{}, 'NON'],
+    [{ counterHidden: true, binary3ImageUrl: 'https://example.test/logo.png' }, 'NON'],
+  ];
+  for (const columns of [[oldColumn, newColumn], [newColumn], [oldColumn, { ...newColumn, title: 'Logo comptoir' }]]) {
+    for (const [options, expected] of states) {
+      const requests = [];
+      const api = colorRuntime(async (_url, request) => {
+        requests.push(JSON.parse(request.body));
+        return { ok: true, json: async () => ({ data: { change_column_value: { id: 'test-item' } } }) };
+      });
+      const scene = { offer: 'Prestige', scene_items: [{ type: 'counter', label: 'Comptoir accueil', config: { options } }] };
+      const counterColumn = statusColumn('color_mm7d1pfe', 'COMPTOIR 2', ['BOIS', 'BLANC', 'NON']);
+      const tasks = api.updates(scene, [counterColumn, ...columns], 'test-token', '18395912050', 'test-item');
+      await Promise.all(tasks.map((task) => task.promise));
+      const logoRequests = requests.filter((request) => ['color_mksf24j7', 'color_mm8rkt6m'].includes(request.variables.columnId));
+      assert.equal(logoRequests.length, 1);
+      assert.equal(logoRequests[0].variables.boardId, '18395912050');
+      assert.equal(logoRequests[0].variables.columnId, 'color_mm8rkt6m');
+      assert.deepEqual(JSON.parse(logoRequests[0].variables.value), { label: expected });
+    }
+  }
+});
+
+test('other boards retain their original counter logo columns', async () => {
+  for (const title of ['SIGNA COMPTOIR', 'SIGNA BANQUE']) {
+    const requests = [];
+    const api = colorRuntime(async (_url, request) => {
+      requests.push(JSON.parse(request.body));
+      return { ok: true, json: async () => ({ data: { change_column_value: { id: 'test-item' } } }) };
+    });
+    const column = statusColumn('original-sign', title, ['NON', 'OUI - FICHIER OK']);
+    const scene = { offer: 'Confort', scene_items: [{ label: 'Banque accueil', config: { options: { binary3ImageUrl: 'https://example.test/logo.png' } } }] };
+    const tasks = api.updates(scene, [column], 'test-token', '18395911999', 'test-item');
+    await Promise.all(tasks.map((task) => task.promise));
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].variables.columnId, 'original-sign');
+    assert.deepEqual(JSON.parse(requests[0].variables.value), { label: 'OUI - FICHIER OK' });
+  }
+});
