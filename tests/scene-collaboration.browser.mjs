@@ -88,9 +88,10 @@ try {
   };
 
   const owner = await open('?scene=owner-link', true);
-  await owner.locator('.user-pill').click();
-  await owner.getByRole('button', { name: 'Inviter un collaborateur' }).click();
+  const inviteButton = (page) => page.locator('.configurator-topbar').getByRole('button', { name: 'Inviter un collaborateur' });
+  await inviteButton(owner).click();
   const dialog = owner.getByRole('dialog', { name: 'Collaborateurs du stand' });
+  assert.equal(await inviteButton(owner).getAttribute('aria-expanded'), 'true');
   for (const email of ['guest@example.test', 'second@example.test']) {
     await dialog.getByRole('textbox', { name: 'Adresse e-mail du collaborateur' }).fill(email);
     await dialog.getByRole('button', { name: 'Envoyer l’invitation' }).click();
@@ -101,6 +102,13 @@ try {
   await dialog.getByRole('button', { name: 'Retirer l’accès : second@example.test' }).click();
   await dialog.getByText('Accès retiré.', { exact: true }).waitFor();
   assert.equal(await dialog.getByRole('textbox').count(), 1);
+  await inviteButton(owner).click();
+  await dialog.waitFor({ state: 'hidden' });
+  await owner.setViewportSize({ width: 320, height: 740 });
+  const headerBounds = await owner.locator('.configurator-topbar-actions').boundingBox();
+  assert.ok(headerBounds.x >= 0 && headerBounds.x + headerBounds.width <= 320, 'Header actions fit on mobile');
+  await inviteButton(owner).click();
+  await dialog.waitFor();
   await owner.close();
 
   const openGuest = async () => {
@@ -113,6 +121,7 @@ try {
   };
   const guest = await openGuest();
   await guest.locator('.user-pill').click();
+  assert.equal(await inviteButton(guest).count(), 0);
   assert.equal(await guest.getByRole('button', { name: 'Inviter un collaborateur' }).count(), 0);
   await guest.locator('.client-info-modal .modal-head-actions button').click();
   await guest.getByRole('button', { name: /^Sol/ }).click();

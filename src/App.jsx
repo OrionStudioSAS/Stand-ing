@@ -1028,6 +1028,7 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
 
 function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = false, sceneRole = '' }) {
   const isCollaborator = sceneRole === 'collaborator';
+  const canManageCollaborators = sceneRole === 'owner' && Number.isInteger(initialScene.configuration_revision);
   const initialOptions = sceneLightingOptions(initialScene, {
     ...(initialScene.source_payload?.options || {}),
     ...(initialScene.options || {}),
@@ -2700,6 +2701,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         <button className={`user-pill ${headerPanel === 'client' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('client')} aria-label={tRaw(language, 'aria_client')}>
           <img className="topbar-tool-icon" src="/icons/account.svg" alt="" aria-hidden="true" />
         </button>
+        {canManageCollaborators && (
+          <button className={`round-tool ${headerPanel === 'collaborators' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('collaborators')} aria-label={tr('Inviter un collaborateur')} title={tr('Inviter un collaborateur')} aria-haspopup="dialog" aria-expanded={headerPanel === 'collaborators'}>
+            <UserPlus size={23} aria-hidden="true" />
+          </button>
+        )}
         <button className={`round-tool ${headerPanel === 'question' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('question')} aria-label={tRaw(language, 'aria_questions')}>
           <img className="topbar-tool-icon" src="/icons/qr.svg" alt="" aria-hidden="true" />
         </button>
@@ -2750,12 +2756,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             contactDetails={contactDetails}
             onClose={() => setHeaderPanel(null)}
             onReportCorrection={isCollaborator ? undefined : submitContactCorrection}
-            onOpenCollaborators={sceneRole === 'owner' && Number.isInteger(initialScene.configuration_revision) ? () => setHeaderPanel('collaborators') : undefined}
+            onOpenCollaborators={canManageCollaborators ? () => setHeaderPanel('collaborators') : undefined}
           />
         </div>
       )}
 
-      {headerPanel === 'collaborators' && sceneRole === 'owner' && (
+      {headerPanel === 'collaborators' && canManageCollaborators && (
         <div className="header-modal-layer" onMouseDown={(event) => event.target === event.currentTarget && setHeaderPanel(null)}>
           <SceneCollaboratorsModal sceneId={initialScene.id} salonLabel={salonLabel} onClose={() => setHeaderPanel(null)} />
         </div>

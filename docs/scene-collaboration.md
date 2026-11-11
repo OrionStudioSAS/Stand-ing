@@ -1,6 +1,6 @@
 # Collaborateurs des scènes
 
-Le contact principal accède aux invitations depuis **Renseignements client → Inviter un collaborateur**. Une invitation est liée à une scène et à une adresse normalisée. Une scène a deux emplacements au maximum, invitations en attente comprises. Les invitations en attente expirent après sept jours et peuvent être retirées pour libérer un emplacement.
+Le contact principal accède aux invitations depuis l'icône **Inviter un collaborateur** dans l'en-tête ou depuis **Renseignements client**. Une invitation est liée à une scène et à une adresse normalisée. Une scène a deux emplacements au maximum, invitations en attente comprises. Les invitations en attente expirent après sept jours et peuvent être retirées pour libérer un emplacement.
 
 Le lien d'invitation et le code sont deux éléments distincts : le code est envoyé uniquement à l'adresse invitée. Après vérification, le membre peut modifier le brouillon, importer ses visuels et soumettre la configuration. La confirmation est envoyée à l'adresse de contact de la scène. Seul le contact principal gère les accès. Les restrictions sont appliquées côté serveur et la révocation bloque aussi les sessions existantes.
 
