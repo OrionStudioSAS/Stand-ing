@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { sceneActor, sceneEmail } from "../_shared/scenePermissions.ts";
+import { canManageScene, sceneActor, sceneEmail } from "../_shared/scenePermissions.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -26,8 +26,8 @@ Deno.serve(async (req) => {
   if (typeof body.scene_id !== "string") return json({ error: "Scène introuvable." }, 400);
   const { data: scene } = await admin.from("scenes")
     .select("id, client_email, project_name, event_name, salon").eq("id", body.scene_id).maybeSingle();
-  if (!scene || sceneEmail(user.email) !== sceneEmail(scene.client_email)) {
-    return json({ error: "Seul le contact principal peut gérer les invitations." }, 403);
+  if (!scene || !await canManageScene(admin, user, scene)) {
+    return json({ error: "Seul le contact principal ou un administrateur peut gérer les invitations." }, 403);
   }
 
   if (body.action === "list") {

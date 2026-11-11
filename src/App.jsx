@@ -1028,7 +1028,8 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
 
 function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = false, sceneRole = '' }) {
   const isCollaborator = sceneRole === 'collaborator';
-  const canManageCollaborators = sceneRole === 'owner' && Number.isInteger(initialScene.configuration_revision);
+  const canManageCollaborators = (sceneRole === 'owner' || (isAdminViewer && !forceReadOnly))
+    && Number.isInteger(initialScene.configuration_revision);
   const initialOptions = sceneLightingOptions(initialScene, {
     ...(initialScene.source_payload?.options || {}),
     ...(initialScene.options || {}),

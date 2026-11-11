@@ -21,6 +21,7 @@ export const englishUi = {
   'Impossible d’envoyer l’invitation. Réessayez.': 'Could not send the invitation. Please try again.',
   'Impossible de charger les invitations.': 'Could not load the invitations.',
   'Impossible de retirer cet accès.': 'Could not remove this access.',
+  'Seul le contact principal ou un administrateur peut gérer les invitations.': 'Only the main contact or an administrator can manage invitations.',
   'Cette scène a été modifiée ailleurs. Rechargez-la avant de continuer.': 'This stand was edited elsewhere. Reload it before continuing.',
   'Accès refusé à cette scène.': 'Access to this stand was denied.',
   'Votre accès à cette scène a été retiré.': 'Your access to this stand was revoked.',

@@ -19,13 +19,22 @@ function fixture() {
   const scene = { id: 'scene', share_token: 'owner-token', client_email: 'owner@example.test', project_name: 'Signature test', status: 'created', client_status: 'draft', source_payload: {} };
   const owner = { id: 'owner', email: scene.client_email, email_confirmed_at: 'now' };
   const guest = { id: 'guest', email: 'guest@example.test', email_confirmed_at: 'now' };
+  const admins = [
+    { user_id: 'admin', role_label: 'Admin', is_active: true },
+    { user_id: 'designer', role_label: 'Dessinateur', is_active: true },
+    { user_id: 'inactive', role_label: 'Admin', is_active: false },
+  ];
   const invites = [];
   const mails = [];
   const codes = [];
   const authCreations = [];
   const admin = {
     auth: {
-      async getUser(token) { return { data: { user: token === 'owner' ? owner : token === 'guest' ? guest : null } }; },
+      async getUser(token) {
+        const user = token === 'owner' ? owner : token === 'guest' ? guest : admins.some(row => row.user_id === token)
+          ? { id: token, email: token + '@example.test', email_confirmed_at: 'now' } : null;
+        return { data: { user } };
+      },
       admin: { async createUser(payload) { authCreations.push(structuredClone(payload)); return { data: { user: guest } }; } },
       async signInWithOtp({ email }) { codes.push(email); return { error: null }; },
       async verifyOtp({ email, token }) {
@@ -35,7 +44,7 @@ function fixture() {
       },
     },
     from(table) {
-      const rows = table === 'scenes' ? [scene] : table === 'scene_collaborators' ? invites : [];
+      const rows = table === 'scenes' ? [scene] : table === 'scene_collaborators' ? invites : table === 'admin_users' ? admins : [];
       const filters = [];
       let insert, update, remove;
       const apply = () => {
@@ -130,4 +139,19 @@ test('owner invites up to two addresses; OTP goes only to the invited email, and
   const pending = h.invites[0];
   pending.expires_at = '2000-01-01';
   assert.equal((await h.request('scene-access-verify', { invitation_token: pending.id, code: '123456' })).status, 404);
+});
+
+test('an active administrator can invite and revoke on a scene they do not own', async () => {
+  const h = fixture();
+  const manage = (body, actor) => h.request('scene-collaborators', { scene_id: 'scene', ...body }, actor);
+  const invited = await manage({ action: 'invite', email: 'guest@example.test' }, 'admin');
+  assert.equal(invited.status, 201);
+  const member = (await invited.json()).member;
+  assert.equal((await manage({ action: 'list' }, 'admin')).status, 200);
+  for (const actor of ['designer', 'inactive', 'guest']) {
+    assert.equal((await manage({ action: 'remove', invitation_id: member.id }, actor)).status, 403);
+  }
+  assert.equal(h.invites.length, 1);
+  assert.equal((await manage({ action: 'remove', invitation_id: member.id }, 'admin')).status, 200);
+  assert.equal(h.invites.length, 0);
 });

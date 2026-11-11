@@ -17,7 +17,10 @@ const server = await createServer({ server: { host: '127.0.0.1', port: 0 }, logL
     if (id === clientId) return `
       export const supabase = {
         auth: { async getSession() { return { data: { session: window.testUser ? { user: window.testUser } : null } }; } },
-        from() { return { select(){return this}, eq(){return this}, async maybeSingle(){return {data:null}} }; },
+        from(table) { return { select(){return this}, eq(){return this}, async maybeSingle(){
+          const role = { admin: 'Admin', designer: 'Dessinateur' }[window.testUser?.id];
+          return { data: table === 'admin_users' && role ? { user_id: window.testUser.id, role_label: role } : null };
+        } }; },
       };
       export const hasSupabase = true;
     `;
@@ -42,7 +45,7 @@ const server = await createServer({ server: { host: '127.0.0.1', port: 0 }, logL
         return { scene_token: scene.share_token };
       }
       export async function manageSceneCollaborators(id, action, details) {
-        if (window.testUser?.id !== 'owner' || id !== scene.id) throw new Error('Access denied');
+        if (!['owner', 'admin'].includes(window.testUser?.id) || id !== scene.id) throw new Error('Access denied');
         if (action === 'list') return { members };
         if (action === 'remove') { members = members.filter(entry => entry.id !== details.invitation_id); return { removed: true }; }
         const member = { id: details.email, email: details.email, expires_at: '2100-01-01T00:00:00Z' };
@@ -72,22 +75,22 @@ try {
   browser = await chromium.launch({ headless: true });
   const url = `http://127.0.0.1:${server.httpServer.address().port}/`;
   const errors = [];
-  const open = async (query, owner) => {
+  const open = async (query, role) => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     page.on('pageerror', (err) => errors.push(err.message));
-    await page.addInitScript(owner => {
+    await page.addInitScript(role => {
       localStorage.setItem('standing-config-intro:collaborative', 'started');
       localStorage.setItem('standing-config-tutorial:collaborative', 'done');
-      if (owner) {
-        window.testUser = { id: 'owner', email: 'owner@example.test' };
+      if (role) window.testUser = { id: role, email: role + '@example.test' };
+      if (role === 'owner') {
         sessionStorage.setItem('standing-scene-access:owner-link', 'verified');
       }
-    }, owner);
+    }, role);
     await page.goto(url + query);
     return page;
   };
 
-  const owner = await open('?scene=owner-link', true);
+  const owner = await open('?scene=owner-link', 'owner');
   const inviteButton = (page) => page.locator('.configurator-topbar').getByRole('button', { name: 'Inviter un collaborateur' });
   await inviteButton(owner).click();
   const dialog = owner.getByRole('dialog', { name: 'Collaborateurs du stand' });
@@ -111,8 +114,21 @@ try {
   await dialog.waitFor();
   await owner.close();
 
+  const admin = await open('?scene=owner-link', 'admin');
+  await inviteButton(admin).click();
+  const adminDialog = admin.getByRole('dialog', { name: 'Collaborateurs du stand' });
+  await adminDialog.getByRole('textbox', { name: 'Adresse e-mail du collaborateur' }).fill('new@example.test');
+  await adminDialog.getByRole('button', { name: 'Envoyer l’invitation' }).click();
+  await adminDialog.getByText('new@example.test', { exact: true }).waitFor();
+  await admin.close();
+
+  const designer = await open('?scene=owner-link', 'designer');
+  await designer.locator('.user-pill').waitFor();
+  assert.equal(await inviteButton(designer).count(), 0, 'Designer in read-only mode cannot manage invitations');
+  await designer.close();
+
   const openGuest = async () => {
-    const page = await open('?invite=guest-link', false);
+    const page = await open('?invite=guest-link', '');
     await page.getByText('gu***@example.test').waitFor();
     assert.equal(await page.evaluate(() => window.requestedInvite), 'guest-link');
     await page.getByRole('textbox', { name: 'Code de connexion' }).fill('123456');
@@ -148,7 +164,7 @@ try {
   await submitter.getByText(/Votre scène est confirmée/).waitFor();
   assert.equal(await confirm.isDisabled(), true, 'Collaborator cannot submit a second time');
   assert.deepEqual(errors, []);
-  console.log('Owner invites and revokes; guest edits and submits the draft; stale draft and repeat submission blocked.');
+  console.log('Owner and active admin manage invitations; designer cannot; guest edits and submits the draft; stale draft and repeat submission blocked.');
 } finally {
   await browser?.close();
   await server.close();
