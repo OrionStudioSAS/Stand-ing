@@ -1,3 +1,4 @@
+import { electricalWallClearance, electricalClearanceRect, applyElectricalClearance } from '../src/electricalClearance.js';
 import { isSignatureLedArch } from '../src/signatureArchVariants.js';
 import { groupStructuralAsset } from '../src/groupPlacement.js';
 import { normalizeBatElectricalPicto, normalizeBatElectricalPictos, electricalPictoPoint } from '../src/batElectricalPicto.js';
@@ -32,7 +33,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor });
+  const api = vm.createContext({ electricalWallClearance, electricalClearanceRect, applyElectricalClearance, includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }
@@ -447,6 +448,43 @@ test('the 3m wall and TV at 1.25m produce the requested quarter-meter panel sequ
   assert.equal(api.reinforcementPanelForAxis(1.25, 0, 3).start, .75);
 });
 
+test('side-wall TV reinforcements do not create 60mm and 190mm cuts on a 3m wall', () => {
+  const { api } = runtime();
+  for (const side of ['left', 'right']) for (const x of [0, .25, -.75]) {
+    const tv = { id: 'tv', type: 'screen', isWallItem: true, wall: side, x };
+    const before = JSON.stringify(tv);
+    const descriptor = api.wallDescriptor(side, 4, 3, [tv]);
+    const panels = api.wallPanelSegments(descriptor);
+    assert.ok(panels.every(panel => [250, 500, 750, 1000].includes(panel.mm)));
+    assert.equal(panels.reduce((sum, panel) => sum + panel.mm, 0), 3000);
+    const center = api.screenAxisOffset(tv, side, 4, 3);
+    assert.ok(descriptor.reinforcements.some(panel => panel.start <= center && panel.end >= center));
+    assert.equal(JSON.stringify(tv), before);
+  }
+});
+
+test('quarter-meter walls use only stock panels for arbitrary TV positions, including overlapping reinforcements', () => {
+  const { api } = runtime();
+  for (const length of [1, 1.25, 2, 3, 4.75, 5.25]) for (const x of [-length / 2, -.37, 0, .13, .75, length / 2]) {
+    const items = [{ type: 'screen', wall: 'back', x }, { type: 'screen', wall: 'back', x: x + .3 }];
+    const panels = api.wallPanelSegments(api.wallDescriptor('back', length, 3, items));
+    assert.ok(panels.every(panel => [250, 500, 750, 1000].includes(panel.mm)), JSON.stringify({ length, x, panels }));
+    assert.equal(panels.reduce((sum, panel) => sum + panel.mm, 0), length * 1000);
+  }
+});
+
+test('only non-modular wall dimensions retain a single necessary custom cut', () => {
+  const { api } = runtime();
+  for (const length of [2.19, 3.06, 3.19, 4.13]) for (const axis of [0, .2, 1.1, length - .05]) {
+    const items = [{ type: 'screen', wall: 'back', x: axis - length / 2 }, { type: 'screen', wall: 'back', x: length / 2 - .1 }];
+    const panels = api.wallPanelSegments(api.wallDescriptor('back', length, 3, items));
+    assert.equal(panels.reduce((sum, panel) => sum + panel.mm, 0), Math.round(length * 1000));
+    const custom = panels.filter(panel => ![250, 500, 750, 1000].includes(panel.mm));
+    assert.equal(custom.length, 1, JSON.stringify({ length, axis, panels }));
+    assert.equal(custom[0].mm, Math.round(length * 1000) % 250);
+  }
+});
+
 test('BAT dimension labels round to 5cm without altering physical panel sizes', () => {
   const { api } = runtime();
   for (const [meters, label] of [[1.54, '1550'], [.481, '500'], [.06, '50'], [1.274, '1250']]) assert.equal(api.dimensionMm(meters), label);
@@ -457,29 +495,23 @@ test('BAT dimension labels round to 5cm without altering physical panel sizes', 
 test('electrical cotations reach the two closest orthogonal stand boundaries', () => {
   const { api, ctx, text, points } = runtime();
   api.drawElectricalDimensions(ctx, { x: 25, y: 175, index: 1 }, { minX: 0, maxX: 300, minY: 0, maxY: 200 }, 100);
-  assert.ok(text.some(row => row.value === 'E2 · 250'));
+  assert.ok(text.some(row => row.value === '250'));
   assert.ok(points.some(([x, y]) => x === 0 && y === 175));
   assert.ok(points.some(([x, y]) => x === 25 && y === 200));
 });
 
-test('wall-mounted spots have no electrical cotation normal to their attached wall', () => {
-  const { api, ctx, text } = runtime();
-  for (const [wall, expected] of [['back', 'y'], ['left', 'x'], ['right', 'x']]) {
-    const spot = { label: 'Spot LED Blanc 30W', isWallItem: true, wall };
-    assert.equal(api.spotElectricalWallNormalAxis(spot), expected);
-    text.length = 0;
-    api.drawElectricalDimensions(ctx, { x: 25, y: 170, index: 0, wallNormalAxis: expected }, { minX: 0, maxX: 300, minY: 0, maxY: 200 }, 100);
-    assert.equal(text.filter(row => /^E1 ·/.test(row.value)).length, 1, 'Keep the useful along-wall dimension only');
+test('wall-mounted electrical symbols stay visible without cotations; floor cotations are plain and transparent', () => {
+  const { api, ctx, text, rectangles } = runtime();
+  for (const wall of ['back', 'left', 'right', 'object-wall:reserve']) {
+    for (const item of [{ label:'Spot LED', isWallItem:true,wall },{type:'screen',wall},{label:'Tête de cloison Signature',wall}]) assert.equal(api.electricalDimensionAllowed(item),false);
   }
-  for (const [orientation, expected] of [['x', 'y'], ['z', 'x']]) {
-    const spot = { label: 'Rail LED 3 spots', isWallItem: true, wall: 'object-wall:reserve', wallSurface: { orientation, normalAxis: -.5, centerAxis: 0, length: 2 } };
-    assert.equal(api.spotElectricalWallNormalAxis(spot), expected);
-  }
-  assert.equal(api.spotElectricalWallNormalAxis({ type: 'screen', wall: 'back' }), null, 'TV and furniture electrical coordinates stay unchanged');
-  assert.equal(api.spotElectricalWallNormalAxis({ label: 'Spot LED', x: 0, z: 0 }), null, 'A freestanding light retains two coordinates');
-  text.length = 0;
-  api.drawElectricalDimensions(ctx, { x: 0, y: 70, index: 0 }, { minX: 0, maxX: 300, minY: 0, maxY: 200 }, 100);
-  assert.equal(text.filter(row => /^E1 ·/.test(row.value)).length, 1, 'Do not print a redundant zero-length dimension');
+  assert.equal(api.electricalDimensionAllowed({label:'Alimentation électrique',x:0,z:0}),true);
+  api.drawElectricalDimensions(ctx,{x:25,y:175,index:1},{minX:0,maxX:300,minY:0,maxY:200},100);
+  assert.deepEqual(text.map(row=>row.value),['250','250']);
+  assert.equal(rectangles.length,0,'Dimension text has no white backdrop');
+  text.length=0;
+  api.drawElectricalDimensions(ctx,{x:0,y:70,index:0},{minX:0,maxX:300,minY:0,maxY:200},100);
+  assert.equal(text.length,1,'A zero-length dimension is not printed');
 });
 
 test('wide spot pictograms anchor to every wall face instead of floating within their physical bounding box', () => {

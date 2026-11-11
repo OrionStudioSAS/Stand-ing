@@ -159,7 +159,7 @@ test('the header cart only shows the HT price next to its icon', () => {
   const start = appSource.indexOf('function HeaderCartMenu(');
   const end = appSource.indexOf('\nfunction FurnitureCartBar(', start);
   const source = appSource.slice(start, end);
-  assert.match(source, /className="topbar-cart-total">\s*<strong>\{total\.toLocaleString\('fr-FR'\)\} € HT<\/strong>\s*<\/div>/);
+  assert.match(source, /className="topbar-cart-total">\s*<strong>\{tr\(total\.toLocaleString\('fr-FR'\)\)\} \{tr\("€ HT"\)\}<\/strong>\s*<\/div>/);
   assert.doesNotMatch(source, /topbar-cart-total[\s\S]*total_ht_estimated/);
 });
 
@@ -202,7 +202,7 @@ test('admins can preview the actual exhibitor permissions without logging out', 
 test('step 3 counter options show the finish before the logo and podium uses height', () => {
   assert.match(stylesSource, /item-config-modal[\s\S]*item-counter-finish-card[\s\S]*order: 1/);
   assert.match(stylesSource, /item-config-modal[\s\S]*item-counter-logo-card[\s\S]*order: 2/);
-  assert.match(appSource, /function PodiumVariantPicker[\s\S]*<strong>Hauteur<\/strong>/);
+  assert.match(appSource, /function PodiumVariantPicker[\s\S]*<strong>\{tr\("Hauteur"\)\}<\/strong>/);
 });
 
 test('dragging preserves the pointer offset instead of snapping the object under the cursor', () => {

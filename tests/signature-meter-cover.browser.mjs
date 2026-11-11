@@ -106,9 +106,9 @@ try {
   assert.equal(saved.bat.find((item)=>item.autoMeterCover).type,assets[1].type);
   await page.getByRole('button',{name:'Reouvrir',exact:true}).click();
   await page.waitForFunction(()=>window.meterItems?.length===1&&window.meterItems[0].type==='asset-cache-compteur-noir');
-  for(const [layout,x] of [['left',-1.675],['right',1.675],['back',0],['u',0]]) {
+  for(const [layout,x] of [['left',-1.65],['right',1.65],['back',0],['u',0]]) {
     await page.getByRole('button',{name:layout,exact:true}).click();
-    await page.waitForFunction((x)=>window.meterItems?.length===1&&Math.abs(window.meterItems[0].x-x)<1e-8&&Math.abs(window.meterItems[0].z+1.19)<1e-8,x);
+    await page.waitForFunction((x)=>window.meterItems?.length===1&&Math.abs(window.meterItems[0].x-x)<1e-8&&Math.abs(window.meterItems[0].z+1.165)<1e-8,x);
     assert.equal(await page.evaluate(()=>window.meterItems[0].type),assets[1].type);
   }
   await page.getByRole('button',{name:'Lecture seule',exact:true}).click();

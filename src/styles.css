@@ -1132,6 +1132,10 @@ select {
   color: #f59e0b;
 }
 
+.scene-save-feedback { width: max-content; flex-wrap: wrap; }
+.scene-save-feedback span { flex: 1 1 230px; }
+.scene-save-feedback button { border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+
 .config-logo {
   display: flex;
   align-items: center;
@@ -1444,6 +1448,14 @@ select {
   font-size: 0.8rem;
   line-height: 1.25;
 }
+
+.scene-collaborators-trigger { display: inline-flex; align-items: center; gap: 8px; justify-self: start; }
+.scene-collaborators-modal .client-info-content p { color: #536178; line-height: 1.45; }
+.scene-collaborators-form, .scene-collaborators-list { display: grid; gap: 8px; margin: 0; padding: 0; }
+.scene-collaborators-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px; border: 1px solid #dce2ea; border-radius: 8px; }
+.scene-collaborators-list li div { min-width: 0; overflow-wrap: anywhere; }
+.scene-collaborators-list small { display: block; margin-top: 3px; }
+.scene-collaborators-list button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; color: #a52a2a; font: inherit; cursor: pointer; }
 
 .form-grid {
   display: grid;

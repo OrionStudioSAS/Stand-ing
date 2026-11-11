@@ -20,7 +20,7 @@ test('Signature scenes expose their dedicated arch controls and hide the generic
   assert.match(appSource, /function SignatureArchOptionCard\(/);
   assert.match(appSource, /isSignatureStand \? 'Moquette' : 'Moquette · Empreinte'/);
   assert.match(appSource, /!isSignatureStand && \(\s*<FootprintColorOptionCard/);
-  assert.match(appSource, /className="signature-arch-title">Arche/);
+  assert.match(appSource, /className="signature-arch-title">\{tr\("Arche"\)\}/);
   assert.match(appSource, /Espace insuffisant.*Taille · Éclairage · Couleur · Options/);
   assert.match(stylesSource, /\.signature-arch-variants/);
 });

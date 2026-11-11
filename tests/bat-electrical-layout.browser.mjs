@@ -44,7 +44,7 @@ try {
     const counterElectric = bounds(pages[0].querySelector('[data-bat-id="base"] [data-electric]'));
     const archNode = pages[0].querySelector('[data-bat-id="arch"] [data-arch]');
     const archOpacity = archNode.closest('g[opacity]')?.getAttribute('opacity');
-    const dimensions = [...pages[0].querySelectorAll('text')].map(node => node.textContent).filter(text => /^E\d+ · /.test(text));
+    const dimensions = [...pages[0].querySelectorAll('text')].filter(node=>node.getAttribute('data-bat-text-role')==='electrical-dimension').map(node=>node.textContent);
     const requirements = window.bat.standWallPanelRequirements(input).map(panel => [panel.lengthMm, panel.reinforced]);
     const glyphs = [...pages[0].querySelectorAll('[data-bat-id]')].map(node => node.dataset.batId);
     const noElectric = await window.bat.createTechnicalPlanSvgPages({ ...input, items: items.map(item => ({ ...item, dimensions: { ...item.dimensions, batElectricalPictoUrl: '' } })), catalog: [tv, counter, power, arch].map(entry => ({ ...entry, dimensions: { ...entry.dimensions, batElectricalPictoUrl: '' } })) });
@@ -63,8 +63,8 @@ try {
   assert.deepEqual(result.requirements, [[250, false], [500, false], [1000, true], [1000, false], [250, false]]);
   assert.ok(result.glyphs.includes('included-counter-power-base'));
   assert.ok(!result.glyphs.includes('included-counter-power-shop'));
-  assert.equal(result.dimensions.length, 8, 'Two cotations for each of three electrical overlays and the included power strip');
-  assert.ok(result.dimensions.every(text => Number(text.split(' · ')[1]) % 50 === 0));
+  assert.equal(result.dimensions.length, 6, 'Only floor objects and the included power strip have electrical cotations');
+  assert.ok(result.dimensions.every(text => Number(text) % 50 === 0));
   assert.equal(result.archFill, '#cc4422'); assert.equal(result.archOpacity, '0.5'); assert.equal(result.firstObject, 'arch');
   const pdf = await PDFDocument.load(Uint8Array.from(result.bytes));
   assert.equal(pdf.getPage(0).node.Resources().lookupMaybe(PDFName.of('XObject'), PDFDict)?.entries().length || 0, 0);

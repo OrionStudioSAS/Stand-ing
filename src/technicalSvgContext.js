@@ -76,6 +76,7 @@ export function createTechnicalSvgContext(width, height) {
       const [, weight = 'normal', size = '16', family = 'Arial'] = state.font.match(/^(.*?)\s*(\d+(?:\.\d+)?)px\s+(.+)$/) || [];
       const node = element('text', { x, y, fill: state.fillStyle, 'font-size': size, 'font-family': family, 'font-weight': weight.trim() || 'normal', 'text-anchor': state.textAlign === 'center' ? 'middle' : state.textAlign === 'right' ? 'end' : 'start', 'xml:space': 'preserve' });
       node.textContent = String(text);
+      if (ctx.textRole) node.setAttribute('data-bat-text-role', ctx.textRole);
       append(node);
     },
     drawImage(image, x, y, width, height) {

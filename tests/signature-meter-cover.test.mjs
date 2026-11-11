@@ -1,3 +1,4 @@
+import { applyElectricalClearance } from '../src/electricalClearance.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -7,7 +8,7 @@ const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const assets = ['Noir', 'Blanc'].map((finish) => ({ type: `cache-${finish}`, label: `Cache Compteur ${finish} 500x500x750ht`,
   modelUrl: `/${finish}.glb`, dimensions: { size: [0.53, 0.75, 0.5], packPricing: { signature: { price: 95, reference: finish } } } }));
 function runtime() {
-  const api = vm.createContext({
+  const api = vm.createContext({ applyElectricalClearance,
     wallThickness: 0.06,
     normalizePackLabel: (label) => String(label || '').toLowerCase(),
     makeItem: (_type, _width, _depth, _layout, entry) => ({ ...entry, id: 'temporary', x: 0, z: 0 }),
@@ -39,12 +40,12 @@ test('Signature gets exactly one white meter cover from 9 m2 to below 15 m2, but
   for (const width of [5, 6, 0, 2, 2.99]) assert.equal(api.makeAutomaticMeterCoverItems('Signature', '', assets, width, 3, 'u').length, 0);
 });
 
-test('left/right layouts place the cover in the back corner, while back/U keep it centred against the wall', () => {
+test('meter covers stay in their configured corner or centre with 25mm clearance from the walls', () => {
   const api = runtime();
-  for (const [layout, x] of [['left', -1.675], ['right', 1.675], ['back', 0], ['u', 0]]) {
+  for (const [layout, x] of [['left', -1.65], ['right', 1.65], ['back', 0], ['u', 0]]) {
     const item = api.makeAutomaticMeterCoverItems('Signature', '', assets, 4, 3, layout)[0];
     assert.ok(Math.abs(item.x - x) < 1e-9, layout);
-    assert.ok(Math.abs(item.z + 1.19) < 1e-9, layout);
+    assert.ok(Math.abs(item.z + 1.165) < 1e-9, layout);
     assert.equal(item.rotation, 0);
     assert.equal(api.itemSystemTransformLocked(item), true);
     assert.equal(api.canDeleteSceneItem(item, false), false);

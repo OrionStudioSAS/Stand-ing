@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canManageScene, sceneActor } from "../_shared/scenePermissions.ts";
 
 const mondayApiUrl = "https://api.monday.com/v2";
 
@@ -29,14 +30,16 @@ Deno.serve(async (req) => {
 
   let sceneQuery = supabase
     .from("scenes")
-    .select("id, share_token, monday_item_id, monday_board_id, monday_group_id, salon, offer, client_id, exhibitor_user_id, source_payload")
+    .select("id, share_token, monday_item_id, monday_board_id, monday_group_id, salon, offer, client_id, client_email, exhibitor_user_id, source_payload")
     .limit(1);
   sceneQuery = sceneId ? sceneQuery.eq("id", sceneId) : sceneQuery.eq("share_token", shareToken);
   const { data: scenes, error: sceneError } = await sceneQuery;
   if (sceneError) return json({ error: sceneError.message }, 500);
   const scene = scenes?.[0];
   if (!scene) return json({ error: "Scene not found" }, 404);
-  if (shareToken && scene.share_token !== shareToken) return json({ error: "Forbidden" }, 403);
+  if (!await canManageScene(supabase, await sceneActor(supabase, req), scene)) {
+    return json({ error: "Forbidden" }, 403);
+  }
 
   const { data: source } = await supabase
     .from("monday_sources")

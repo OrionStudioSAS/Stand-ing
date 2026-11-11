@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { getSceneExhibitorState } from './data/sceneStore.js';
 
-export function useSceneExhibitorReadOnly(scene, isAdminViewer = false, forceReadOnly = false, onReopen) {
-  const initialLocked = Boolean(scene.source_payload?.exhibitor_view_only);
+function collaboratorLocked(status, clientStatus) {
+  return (status && status !== 'created') || !['not_started', 'draft'].includes(clientStatus);
+}
+
+export function useSceneExhibitorReadOnly(scene, isAdminViewer = false, forceReadOnly = false, onReopen, isCollaborator = false) {
+  const initialLocked = Boolean(scene.source_payload?.exhibitor_view_only || (isCollaborator && collaboratorLocked(scene.status, scene.client_status)));
   const initialLockUpdatedAt = scene.source_payload?.exhibitor_view_only_updated_at || '';
   const [locked, setLocked] = useState(initialLocked);
   const lastAccess = useRef({ locked: initialLocked, lockUpdatedAt: initialLockUpdatedAt });
@@ -19,7 +23,8 @@ export function useSceneExhibitorReadOnly(scene, isAdminViewer = false, forceRea
       if (checking || document.hidden) return;
       checking = true;
       try {
-        const next = await getSceneExhibitorState(scene);
+        const state = await getSceneExhibitorState(scene);
+        const next = { ...state, locked: state.locked || (isCollaborator && collaboratorLocked(state.status, state.clientStatus)) };
         if (cancelled) return;
         const previous = lastAccess.current;
         lastAccess.current = next;
@@ -28,6 +33,7 @@ export function useSceneExhibitorReadOnly(scene, isAdminViewer = false, forceRea
         if (!next.locked && next.clientStatus === 'draft'
           && (previous.locked || previous.lockUpdatedAt !== next.lockUpdatedAt)) onReopen?.();
       } catch (error) {
+        if (!cancelled && isCollaborator && error.code === 'PGRST116') setLocked(true);
         console.warn('Scene read-only status refresh failed', error);
       } finally {
         checking = false;
@@ -43,7 +49,7 @@ export function useSceneExhibitorReadOnly(scene, isAdminViewer = false, forceRea
       window.removeEventListener('focus', refresh);
       document.removeEventListener('visibilitychange', refresh);
     };
-  }, [scene.id, isAdminViewer, forceReadOnly, onReopen]);
+  }, [scene.id, isAdminViewer, forceReadOnly, onReopen, isCollaborator]);
 
   return Boolean(forceReadOnly) || (!isAdminViewer && locked);
 }

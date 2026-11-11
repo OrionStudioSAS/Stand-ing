@@ -1,3 +1,5 @@
+import { englishUi, uiTranslationKey, translateCatalogLabel, translateGeneratedUi } from './uiTranslations.js';
+
 export const translations = {
   fr: {
     // Loading
@@ -782,9 +784,24 @@ export const translations = {
 
 export function t(lang, key, vars = {}) {
   const dict = translations[lang] || translations.fr;
-  let str = dict[key] ?? translations.fr[key] ?? key;
+  let str = dict[key] ?? translations.fr[key] ?? uiText(lang, key);
   for (const [k, v] of Object.entries(vars)) {
     str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
   }
   return str;
+}
+
+const englishText = new Map([
+  ...Object.entries(translations.fr).filter(([id, value]) => typeof value === 'string' && typeof translations.en[id] === 'string').map(([id, value]) => [uiTranslationKey(value), translations.en[id]]),
+  ...Object.entries(englishUi).map(([text, value]) => [uiTranslationKey(text), value]),
+]);
+
+export function uiText(lang, value) {
+  if (lang !== 'en' || typeof value !== 'string' || !value) return value;
+  const exact = englishUi[value] ?? englishText.get(uiTranslationKey(value));
+  if (exact != null) return exact;
+  const generated = translateGeneratedUi(value, text => uiText(lang, text));
+  if (generated != null) return generated;
+  const label = translateCatalogLabel(value.includes('€') ? value.replace(/\bHT\b/g, 'excl. VAT') : value);
+  return label.replace(/\bHT\b/g, 'excl. VAT').replace(/(\d),(\d)/g, '$1.$2');
 }

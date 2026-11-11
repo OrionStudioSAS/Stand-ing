@@ -43,27 +43,27 @@ try {
         ? (axis==='y'?floor.y+depth/2*scale:floor.x+width/2*scale)+(-.5+side*.03)*scale
         : item.wall==='back'?floor.top+Math.max(8,scale*.06):item.wall==='left'?floor.left+Math.max(8,scale*.06):floor.right-Math.max(8,scale*.06);
       const edge = axis==='y'?(side>0?contact.top:contact.bottom):(side>0?contact.left:contact.right);
-      const cotations = [...pages[0].querySelectorAll('text')].filter(node=>/^E\d+ ·/.test(node.textContent));
+      const cotations = [...pages[0].querySelectorAll('text')].filter(node=>node.getAttribute('data-bat-text-role')==='electrical-dimension');
       results.push({name:item.wallSurface?item.wallSurface.orientation+side:item.wall,gap:Math.abs(edge-wallFace),cotations:cotations.length,unchanged:before===JSON.stringify(items),raster:pages[0].querySelectorAll('image').length});
     }
     const overlay = {...base.dimensions,batElectricalPictoUrl:'/__spot-electric.svg',batElectricalPictoY:-1};
     const extraCases = [
-      {item:{...base,wall:'back',dimensions:overlay},expected:1},
-      {item:{...base,type:'spot-led',label:'Spot LED Blanc 30W',autoLedRail:false,wall:'left'},expected:1},
-      {item:{...base,id:'tv',type:'screen',label:'TV 43 pouces',autoLedRail:false,wall:'back',dimensions:overlay},expected:2},
+      {item:{...base,wall:'back',dimensions:overlay},expected:0},
+      {item:{...base,type:'spot-led',label:'Spot LED Blanc 30W',autoLedRail:false,wall:'left'},expected:0},
+      {item:{...base,id:'tv',type:'screen',label:'TV 43 pouces',autoLedRail:false,wall:'back',dimensions:overlay},expected:0},
       {item:{id:'power',type:'power',label:'Alimentation',x:0,z:0,modelSize:[.2,.1,.2],dimensions:{category:'Électricité',batPictoUrl:'/__spot-electric.svg'}},expected:2},
     ];
     for (const {item,expected} of extraCases) {
       const svg = (await window.bat.createTechnicalPlanSvgPages({width,depth,layout:'u',items:[item],catalog:[]}))[0];
-      results.push({name:item.id+' overlay/control',expected,cotations:[...svg.querySelectorAll('text')].filter(node=>/^E\d+ ·/.test(node.textContent)).length});
+      results.push({name:item.id+' overlay/control',expected,cotations:[...svg.querySelectorAll('text')].filter(node=>node.getAttribute('data-bat-text-role')==='electrical-dimension').length});
     }
     const moved = (await window.bat.createTechnicalPlanSvgPages({width,depth,layout:'u',items:[{...base,wall:'back'}],catalog:[],batEdits:{items:{spot:{dy:.05}}}}))[0];
-    results.push({name:'admin moves spot away from wall',expected:2,cotations:[...moved.querySelectorAll('text')].filter(node=>/^E\d+ ·/.test(node.textContent)).length});
+    results.push({name:'admin moves spot away from wall',expected:0,cotations:[...moved.querySelectorAll('text')].filter(node=>node.getAttribute('data-bat-text-role')==='electrical-dimension').length});
     const pdf = await window.bat.createTechnicalPlanBlob({width,depth,layout:'u',items:[{...base,wall:'back'}],catalog:[]});
     return {cases:results,pdf:Array.from(new Uint8Array(await pdf.arrayBuffer()))};
   });
   for (const result of results.cases) {
-    assert.equal(result.cotations,result.expected||1,JSON.stringify(result));
+    assert.equal(result.cotations,result.expected??0,JSON.stringify(result));
     if ('gap' in result) {
       assert.ok(result.gap<.05,JSON.stringify(result));
       assert.equal(result.unchanged,true);
@@ -74,5 +74,5 @@ try {
   assert.ok(Math.abs(pdf.getPage(0).getWidth()/pdf.getPage(0).getHeight()-420/297)<.001);
   await page.screenshot({path:'/tmp/standing-spot-bat-wall-contact.png'});
   assert.deepEqual(errors,[]);
-  console.log('BAT spots: proportional SVGs touch back/left/right and both reserve wall faces, only along-wall electrical cotations, free power/TV unchanged, admin offsets respected, vector A3 PDF OK.');
+  console.log('BAT spots: proportional SVGs touch back/left/right and both reserve wall faces, wall-mounted electrical cotations omitted, floor power cotations retained, admin offsets respected, vector A3 PDF OK.');
 } finally { await browser?.close(); await server.close(); }

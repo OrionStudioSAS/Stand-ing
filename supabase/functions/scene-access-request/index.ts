@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { findSceneInvitation } from "../_shared/scenePermissions.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,13 +15,38 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const { scene_token: sceneToken } = await req.json().catch(() => ({}));
+  const { scene_token: sceneToken, invitation_token: invitationToken } = await req.json().catch(() => ({}));
+  const admin = createClient(supabaseUrl, serviceRoleKey);
+
+  if (invitationToken) {
+    const invite = await findSceneInvitation(admin, invitationToken);
+    if (!invite) return json({ error: "Cette invitation a expiré ou a été retirée." }, 404);
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - 60000).toISOString();
+    const { data: claimed, error } = await admin.from("scene_collaborators")
+      .update({ code_requested_at: now.toISOString() }).eq("id", invite.id)
+      .or(`code_requested_at.is.null,code_requested_at.lte.${cutoff}`).select("id").maybeSingle();
+    if (error) return json({ error: "Impossible d’envoyer le code de connexion." }, 500);
+    if (!claimed) return json({ error: "Un code vient déjà d’être envoyé. Réessayez dans une minute." }, 429);
+
+    const auth = createClient(supabaseUrl, anonKey);
+    // Do not pre-confirm invited addresses: only possession of the code grants membership.
+    try {
+      const { error: createError } = await admin.auth.admin.createUser({ email: invite.email });
+      if (createError && !["email_exists", "user_already_exists"].includes(createError.code || "")) throw createError;
+      const { error: otpError } = await auth.auth.signInWithOtp({ email: invite.email, options: { shouldCreateUser: false } });
+      if (otpError) throw otpError;
+    } catch (sendError) {
+      console.error("Invitation code delivery failed", sendError);
+      return json({ error: "Impossible d’envoyer le code de connexion." }, 400);
+    }
+    return json({ masked_email: maskEmail(invite.email) });
+  }
 
   if (!sceneToken || typeof sceneToken !== "string") {
     return json({ error: "Lien de configuration invalide." }, 400);
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey);
   const { data: scene, error: sceneError } = await admin
     .from("scenes")
     .select("id, client_email")
@@ -133,6 +159,6 @@ function maskEmail(email: string) {
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }

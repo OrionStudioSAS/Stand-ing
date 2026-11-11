@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canManageScene, isSceneCollaborator, sceneActor } from "../_shared/scenePermissions.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -33,13 +34,9 @@ Deno.serve(async (req) => {
   const scene = scenes?.[0];
   if (!scene) return json({ error: "Scene not found" }, 404);
 
-  // Le lien de partage autorise l’exposant ; les admins sont vérifiés côté serveur.
-  if (!shareToken || shareToken !== scene.share_token) {
-    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-    const { data: authData } = await supabase.auth.getUser(token);
-    if (!authData?.user?.id) return json({ error: "Unauthorized" }, 401);
-    const { data: adminUser } = await supabase.from("admin_users").select("user_id").eq("user_id", authData.user.id).eq("is_active", true).maybeSingle();
-    if (!adminUser) return json({ error: "Forbidden" }, 403);
+  const actor = await sceneActor(supabase, req);
+  if (!await canManageScene(supabase, actor, scene) && !await isSceneCollaborator(supabase, actor, scene.id)) {
+    return json({ error: "Forbidden" }, 403);
   }
   if (!clean(body.subject) && !clean(body.message)) return json({ error: "Objet ou message requis." }, 400);
   if (clean(body.subject).length > 200 || clean(body.message).length > 10000) return json({ error: "Message trop long." }, 400);

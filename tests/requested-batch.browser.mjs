@@ -136,10 +136,10 @@ try {
     const cleared={...dimensions,batElectricalPictos:[],batElectricalPictoUrl:''};
     const plain=await window.exportPlan({...input,catalog:[{...entry,dimensions:cleared}],items:[{...item,dimensions:cleared}]});
     const pdf=await window.exportPdf(input);
-    return {count:pages[0].querySelectorAll('[data-electric]').length,labels:pages[0].textContent,primary:pages[0].querySelector('[data-primary]').closest('[transform]').getAttribute('transform'),plainPrimary:plain[0].querySelector('[data-primary]').closest('[transform]').getAttribute('transform'),pdf:[...new Uint8Array(await pdf.arrayBuffer())]};
+    return {count:pages[0].querySelectorAll('[data-electric]').length,labels:pages[0].textContent,cotations:[...pages[0].querySelectorAll('text')].filter(n=>n.getAttribute('data-bat-text-role')==='electrical-dimension').length,primary:pages[0].querySelector('[data-primary]').closest('[transform]').getAttribute('transform'),plainPrimary:plain[0].querySelector('[data-primary]').closest('[transform]').getAttribute('transform'),pdf:[...new Uint8Array(await pdf.arrayBuffer())]};
   });
   assert.equal(multiPlan.count,3);
-  for(const n of [1,2,3])assert.ok(multiPlan.labels.includes(`E1.${n}`),'Each electrical point has independent red dimensions');
+  assert.equal(multiPlan.cotations,6,'Each floor electrical point has independent plain numeric dimensions');assert.doesNotMatch(multiPlan.labels,/E1[.·]/);
   assert.equal(multiPlan.primary,multiPlan.plainPrimary,'Overlays do not change the parent object footprint or placement');
   const pdf=await PDFDocument.load(Uint8Array.from(multiPlan.pdf));
   assert.ok(Math.abs(pdf.getPage(0).getWidth()/pdf.getPage(0).getHeight()-420/297)<.001,'Multiple symbols export to A3 PDF too');

@@ -342,7 +342,7 @@ function drawPrintSidebar(ctx, width, depth, layout, items, floor = {}) {
   wallRows(width, depth, layout, items).forEach((row, index) => drawText(ctx, row.label, x + 14, 580 + index * 26, 16));
   drawText(ctx, 'Decoupe detaillee aux pages suivantes.', x + 14, 672, 15, '#555555');
   drawText(ctx, 'REPERES ATELIER', x + 14, 724, 20, technicalColors.blue, 'bold');
-  ['Numeros rouges : tableau des elements.', 'Cotes en mm, arrondies a 50 mm.', 'Origine X/Z au centre du stand.', 'Rectangle barre : poteau de contrainte.', "E : point electrique / numero de l'objet."].forEach((text, index) => drawText(ctx, text, x + 14, 754 + index * 26, 15));
+  ['Numeros rouges : tableau des elements.', 'Cotes en mm, arrondies a 50 mm.', 'Origine X/Z au centre du stand.', 'Rectangle barre : poteau de contrainte.', "Cotes electriques : valeurs en mm."].forEach((text, index) => drawText(ctx, text, x + 14, 754 + index * 26, 15));
   drawText(ctx, 'LEGENDE', x + 14, 890, 20, technicalColors.blue, 'bold');
   legendLine(ctx, x + 18, 920, technicalColors.blue, 'Cotes stand');
   legendLine(ctx, x + 18, 952, technicalColors.red, 'Cotes objet');
@@ -422,7 +422,7 @@ function drawSidebar(ctx, width, depth, height, layout, items, floor = {}) {
   drawText(ctx, 'au tableau des elements.', x + 16, y + 102, 17);
   drawText(ctx, 'Cotes principales exprimees en mm.', x + 16, y + 142, 17);
   drawText(ctx, 'Origine X/Z au centre du stand.', x + 16, y + 168, 17);
-  drawText(ctx, "E : point electrique / numero de l'objet.", x + 16, y + 192, 13);
+  drawText(ctx, "Cotes electriques : valeurs en mm.", x + 16, y + 192, 13);
   drawText(ctx, 'Rectangle barré : poteau de contrainte.', x + 16, y + 192, 13);
   y += 224;
 
@@ -481,7 +481,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     const descriptor = technicalSvgPictoDescriptor(item, entry, catalog);
     const icons = descriptor?.electricalPictos || [];
     const isElectricalObject = /electric/.test(normalizeTechnicalText(item.dimensions?.category || entry?.dimensions?.category || ''));
-    (icons.length ? icons : isElectricalObject ? [null] : []).forEach((icon, electricalIndex) => {
+    (icons.length ? icons : isElectricalObject ? [null] : []).forEach(icon => {
       const point = icon?.url ? electricalPictoPoint(frame, icon) : { x: frame.x, y: frame.y };
       const overlay = icon?.url ? pictoImages.get(icon.url) : null;
       if (overlay) {
@@ -494,11 +494,10 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
       }
       if (icon?.url || isElectricalObject) {
         const edit = edits.items?.[item.id] || {};
-        const wallNormalAxis = spotElectricalWallNormalAxis(item);
-        const movedOffWall = wallNormalAxis === 'x' ? Number(edit.dx || 0) !== 0 : Number(edit.dy || 0) !== 0;
-        if (!edit.hidden) electricalDimensions.push({ x: point.x + Number(edit.dx || 0) * technicalA3.width, y: point.y + Number(edit.dy || 0) * technicalA3.height, index,
-          electricalIndex: icons.length > 1 ? electricalIndex : null,
-          wallNormalAxis: movedOffWall ? null : wallNormalAxis });
+        if (!edit.hidden && electricalDimensionAllowed(item)) electricalDimensions.push({
+          x: point.x + Number(edit.dx || 0) * technicalA3.width,
+          y: point.y + Number(edit.dy || 0) * technicalA3.height, index,
+        });
       }
     });
   };
@@ -566,9 +565,10 @@ function isTechnicalArch(item = {}) {
 }
 
 function drawElectricalDimensions(ctx, point, bounds, scale) {
+  const previousRole = ctx.textRole;
+  ctx.textRole = 'electrical-dimension';
   const edgeX = Math.abs(point.x - bounds.minX) <= Math.abs(point.x - bounds.maxX) ? bounds.minX : bounds.maxX;
   const edgeY = Math.abs(point.y - bounds.minY) <= Math.abs(point.y - bounds.maxY) ? bounds.minY : bounds.maxY;
-  const label = `E${point.index + 1}${point.electricalIndex == null ? '' : `.${point.electricalIndex + 1}`}`;
   const offset = 18 + (point.index % 5) * 14;
   const directionX = point.x < bounds.minX ? -1 : point.x > bounds.maxX ? 1 : edgeX === bounds.minX ? 1 : -1;
   const directionY = point.y < bounds.minY ? -1 : point.y > bounds.maxY ? 1 : edgeY === bounds.minY ? 1 : -1;
@@ -579,17 +579,14 @@ function drawElectricalDimensions(ctx, point, bounds, scale) {
   if (horizontal) { line(ctx, point.x, point.y, point.x, lineY); line(ctx, edgeX, point.y, edgeX, lineY); }
   if (vertical) { line(ctx, point.x, point.y, lineX, point.y); line(ctx, point.x, edgeY, lineX, edgeY); }
   ctx.restore();
-  if (horizontal) drawDimension(ctx, Math.min(point.x, edgeX), lineY, Math.max(point.x, edgeX), lineY, `${label} · ${dimensionMm(Math.abs(point.x - edgeX) / scale)}`, 'horizontal', technicalColors.red, 12, true);
-  if (vertical) drawDimension(ctx, lineX, Math.min(point.y, edgeY), lineX, Math.max(point.y, edgeY), `${label} · ${dimensionMm(Math.abs(point.y - edgeY) / scale)}`, 'vertical', technicalColors.red, 12, true);
+  if (horizontal) drawDimension(ctx, Math.min(point.x, edgeX), lineY, Math.max(point.x, edgeX), lineY, dimensionMm(Math.abs(point.x - edgeX) / scale), 'horizontal', technicalColors.red, 12);
+  if (vertical) drawDimension(ctx, lineX, Math.min(point.y, edgeY), lineX, Math.max(point.y, edgeY), dimensionMm(Math.abs(point.y - edgeY) / scale), 'vertical', technicalColors.red, 12);
+  ctx.textRole = previousRole;
 }
 
-function spotElectricalWallNormalAxis(item = {}) {
-  if (!isLedRailItem(item) || !isWallItem(item)) return null;
-  if (isObjectWallItem(item)) {
-    const surface = objectWallSurfaceForTechnicalItem(item);
-    return surface ? surface.orientation === 'x' ? 'y' : 'x' : null;
-  }
-  return item.wall === 'back' ? 'y' : ['left', 'right'].includes(item.wall) ? 'x' : null;
+function electricalDimensionAllowed(item = {}) {
+  const label = normalizeTechnicalText(`${item.type || ''} ${item.label || ''}`).replace(/[-_]/g, ' ');
+  return !isWallItem(item) && !isObjectWallItem(item) && !label.includes('tete de cloison');
 }
 
 function drawTechnicalConstraints(ctx, constraints = [], scale, toX, toY) {
@@ -1217,7 +1214,7 @@ function wallPanelSegments(wall) {
     const start = Math.max(cursor, reinforcement.start);
     if (start > cursor) panels.push(...splitWallPanels(start - cursor, true).reverse());
     const length = Math.max(0, reinforcement.end - start);
-    if (length > 0) panels.push({ mm: Math.round(length * 1000), meters: length, kind: 'reinforcement' });
+    if (length > 0) panels.push(...splitWallPanels(length, true).map((panel) => ({ ...panel, kind: 'reinforcement' })));
     cursor = Math.max(cursor, reinforcement.end);
   });
 
@@ -1252,7 +1249,10 @@ function screenReinforcements(wall, width, depth, items, wallLength) {
 
 function reinforcementPanelForAxis(axis, min, max) {
   const length = Math.min(reinforcementWidth, Math.max(0, max - min));
-  const start = clampValue(Number(axis) - length / 2, min, max - length);
+  // Anchor to the actual wall start, including the side-wall 6cm offset.
+  // Only a non-modular wall end may require a cut; the TV never moves.
+  const module = .25;
+  const start = clampValue(min + Math.round((Number(axis) - length / 2 - min) / module) * module, min, max - length);
   return { start, end: start + length };
 }
 

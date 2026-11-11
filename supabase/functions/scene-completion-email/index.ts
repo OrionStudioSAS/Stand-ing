@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canDeliverSceneSubmission, canManageScene, sceneActor } from "../_shared/scenePermissions.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -29,24 +30,20 @@ Deno.serve(async (req) => {
   const requestedSpecialText = clean(body.specialRequest);
   if (!sceneId && !shareToken) return json({ error: "Missing scene identifier" }, 400);
 
-  let query = supabase.from("scenes").select("id, share_token, client_name, client_email, project_name, event_name, salon, offer, source_payload").limit(1);
+  let query = supabase.from("scenes").select("id, share_token, client_name, client_email, project_name, event_name, salon, offer, status, client_status, source_payload").limit(1);
   query = sceneId ? query.eq("id", sceneId) : query.eq("share_token", shareToken);
   const { data: scenes, error } = await query;
   if (error) return json({ error: error.message }, 500);
   const scene = scenes?.[0];
   if (!scene) return json({ error: "Scene not found" }, 404);
 
-  const accessToken = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-  const authData = accessToken ? (await supabase.auth.getUser(accessToken)).data : null;
-  const userId = authData?.user?.id || "";
-  const userEmail = clean(authData?.user?.email).toLowerCase();
-  const { data: adminUser } = userId
-    ? await supabase.from("admin_users").select("user_id").eq("user_id", userId).eq("is_active", true).maybeSingle()
-    : { data: null };
-  const isAdmin = Boolean(adminUser);
-  const isSceneOwner = userEmail && userEmail === clean(scene.client_email).toLowerCase();
-  const hasShareToken = shareToken && shareToken === scene.share_token;
-  if (!isAdmin && !isSceneOwner && !hasShareToken) return json({ error: "Forbidden" }, 403);
+  const actor = await sceneActor(supabase, req);
+  const allowed = mode === "completed" || mode === "special_request_received"
+    ? await canDeliverSceneSubmission(supabase, actor, scene, mode === "completed" ? "configured" : "bat_pending")
+    : await canManageScene(supabase, actor, scene);
+  if (!allowed) {
+    return json({ error: "Forbidden" }, 403);
+  }
 
   const toEmail = clean(scene.client_email).toLowerCase();
   if (!toEmail && mode !== 'special_request_received') return json({ sent: false, reason: "Scene has no client email" }, 200);

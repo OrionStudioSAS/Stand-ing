@@ -1,3 +1,4 @@
+import { electricalWallClearance, electricalClearanceRect, applyElectricalClearance } from '../src/electricalClearance.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -12,7 +13,7 @@ function loadFunction(name, context) {
 }
 
 function placementContext() {
-  const context = vm.createContext({
+  const context = vm.createContext({ electricalWallClearance, electricalClearanceRect, applyElectricalClearance,
     collisionPadding: 0,
     isWallItem: () => false,
     isCeilingMountedItem: () => false,

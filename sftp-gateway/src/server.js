@@ -250,7 +250,7 @@ async function loadSceneForUpload(body = {}, auth = {}) {
 
   let query = db
     .from('scenes')
-    .select('id, share_token, salon, offer, client_name, client_email, project_name, event_name, source_payload');
+    .select('id, share_token, salon, offer, client_name, client_email, project_name, event_name, status, client_status, source_payload');
   query = sceneId ? query.eq('id', sceneId) : query.eq('share_token', sceneToken);
   const { data, error } = await query.maybeSingle();
   if (error) throw error;
@@ -260,13 +260,13 @@ async function loadSceneForUpload(body = {}, auth = {}) {
 
 function assertCanUploadToScene(auth, scene) {
   if (auth.admin) return;
-  // The scene was loaded with the user's Supabase session, so RLS already
-  // decided whether this exhibitor/admin can access it. Avoid a second
-  // email-only check because some scenes are reached by token/admin flows.
-  if (auth.mode === 'supabase-user' && auth.db && scene?.id) return;
+  if (scene.source_payload?.exhibitor_view_only) throw httpError(403, 'Cette scène est en lecture seule.');
   const userEmail = String(auth.user?.email || '').trim().toLowerCase();
   const sceneEmail = String(scene.client_email || '').trim().toLowerCase();
   if (userEmail && sceneEmail && userEmail === sceneEmail) return;
+  // RLS already established membership when reading this scene as the user.
+  if (auth.mode === 'supabase-user' && auth.db && scene.status === 'created'
+    && ['not_started', 'draft'].includes(scene.client_status)) return;
   throw httpError(403, 'Accès refusé pour cette scène.');
 }
 

@@ -1,3 +1,4 @@
+import { electricalWallClearance, electricalClearanceRect, applyElectricalClearance } from '../src/electricalClearance.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -16,7 +17,7 @@ function loadFunction(name, context, code = source) {
 const normalized = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 test('Equipe reserve fabric matches Signature anthracite even when a saved default is white', () => {
-  const context = vm.createContext({ wallFabricColors, normalizePackLabel: normalized,
+  const context = vm.createContext({ electricalWallClearance, electricalClearanceRect, applyElectricalClearance, wallFabricColors, normalizePackLabel: normalized,
     findColorInPalette: (palette, id) => palette.find((color) => color.id === id) });
   for (const name of ['signatureReserveWallFabricColor', 'reserveWallFabricColorForPack', 'isSignaturePackLabel']) loadFunction(name, context);
   const white = wallFabricColors.find((color) => color.code === '303');
@@ -30,7 +31,7 @@ test('Equipe reserve fabric matches Signature anthracite even when a saved defau
 });
 
 test('SIAE head upload labels do not claim to be luminous; other heads keep their labels', () => {
-  const context = vm.createContext({ normalizePackLabel: normalized });
+  const context = vm.createContext({ electricalWallClearance, electricalClearanceRect, applyElectricalClearance, normalizePackLabel: normalized });
   for (const name of ['normalizedItemText', 'partitionHeadVisualLabel']) loadFunction(name, context);
   for (const [side, label] of [['left', 'gauche'], ['right', 'droite']]) {
     assert.equal(context.partitionHeadVisualLabel(side, 'Équipé'), `VISUEL tête de cloison ${label}`);
@@ -41,7 +42,7 @@ test('SIAE head upload labels do not claim to be luminous; other heads keep thei
 });
 
 function surfaceContext() {
-  const context = vm.createContext({
+  const context = vm.createContext({ electricalWallClearance, electricalClearanceRect, applyElectricalClearance,
     closestSpotWallTarget, spotTargetPatch, spotWallTargets,
     objectWallAxisPadding: 0.1, objectWallSnapThreshold: 0.3,
     clamp: (value, min, max) => Math.max(min, Math.min(max, value)),
@@ -100,7 +101,7 @@ test('Viscom posters and LED rails snap to the outside of automatic reserve wall
 test('Automatic rails ignore Viscom posters, retaining reserve blockers in every scene context', () => {
   const contexts = [];
   const rail = { type: 'rail', label: 'Rail LED 3 spots' };
-  const context = vm.createContext({
+  const context = vm.createContext({ electricalWallClearance, electricalClearanceRect, applyElectricalClearance,
     autoSpotsRuleEntries: () => [rail], makeLedRailPlan: () => [rail, rail], ledSpotCountForArea: () => 6,
     availableWalls: () => [{ id: 'back' }], wallLength: () => 7,
     makeItem: (type) => ({ type, dimensions: {} }), ledRailCenterY: () => 2.5,
@@ -127,7 +128,7 @@ test('Automatic rails ignore Viscom posters, retaining reserve blockers in every
 
 test('Shared manual edits include automatic reserve/head blockers without duplicating or saving generated objects', () => {
   let collisionContext;
-  const context = vm.createContext({
+  const context = vm.createContext({ electricalWallClearance, electricalClearanceRect, applyElectricalClearance,
     isAutomaticLedRailItem: (item) => Boolean(item.autoLedRail),
     updateSceneItemWithCollision: (items, id, patch) => {
       collisionContext = items;
@@ -148,7 +149,7 @@ test('Shared manual edits include automatic reserve/head blockers without duplic
 });
 
 test('Pack rail/reserve positions are inherited only when a client has not saved its own overrides', () => {
-  const context = vm.createContext({ sceneLightingOptions, scenePackBenefits: () => ({ mode: 'included' }) });
+  const context = vm.createContext({ electricalWallClearance, electricalClearanceRect, applyElectricalClearance, sceneLightingOptions, scenePackBenefits: () => ({ mode: 'included' }) });
   loadFunction('applyPresetDefaultColorOptions', context, storeSource);
   const defaults = { ledRailOverrides: { rail: { wall: 'object-wall:reserve', x: 0.5 } }, reserveItemOverrides: { reserve: { x: 1 } } };
   const preset = { base_config: { options: defaults } };

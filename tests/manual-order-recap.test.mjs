@@ -119,14 +119,14 @@ test('asset link uses the scene pack reference and price, and maps the configure
   assert.equal(other.unitPrice, 450);
 });
 
-function persistenceApi(remote = false) {
-  let scenes = [{ id: 'scene-one', offer: 'Confort', source_payload: { specialRequest: { text: 'Please add coffee' }, options: { carpet: 'blue' }, pricing: { lines: [] } }, dimensions: { width: 4, depth: 3 } }];
+function persistenceApi(remote = false, migrated = true) {
+  let scenes = [{ id: 'scene-one', offer: 'Confort', ...(migrated ? { configuration_revision: 0 } : {}), source_payload: { specialRequest: { text: 'Please add coffee' }, options: { carpet: 'blue' }, pricing: { lines: [] } }, dimensions: { width: 4, depth: 3 } }];
   let readError = null;
   const api = vm.createContext({ wallCoverPackTariff, wallCoverQuote, signatureArchSizeSupplementLines, signatureFootprintSupplementLine, mergeManualOrderPricing, scenePackBenefits, fixedWallHeight: 2.5,
-    readLocalScenes: () => scenes, writeLocalScenes: (next) => { scenes = next; }, saveSceneItems: async () => {},
+    readLocalScenes: () => scenes, writeLocalScenes: (next) => { scenes = next; }, dedupeIncludedReceptionDesks: (items) => items, saveSceneItems: async () => {},
     supabase: remote ? { from(table) {
       assert.equal(table, 'scenes');
-      return { select() { return { eq(column, id) { assert.equal(column, 'id'); return { async single() { return { data: scenes.find((scene) => scene.id === id), error: readError }; } }; } }; },
+      return { select() { return { eq(column, id) { assert.equal(column, 'id'); const read = async () => ({ data: scenes.find((scene) => scene.id === id), error: readError }); return { single: read, maybeSingle: read }; } }; },
         update(payload) {
           const filters = [];
           const apply = () => {
@@ -138,15 +138,23 @@ function persistenceApi(remote = false) {
           const query = { eq(column,value) { filters.push([column,value]); return query; }, select() { return query; }, maybeSingle: async () => apply(), then(resolve,reject) { return Promise.resolve(apply()).then(resolve,reject); } };
           return query;
         } };
+    }, async rpc(name, params) {
+      assert.equal(migrated, true, 'No RPC on the pre-migration schema');
+      assert.equal(name, 'save_configurator_scene');
+      const current = scenes.find((scene) => scene.id === params.p_scene_id);
+      if (current.configuration_revision !== params.p_revision) return { error: Object.assign(new Error('Conflict'), { code: 'PT409' }) };
+      const source_payload = { ...current.source_payload, ...params.p_scene.source_payload };
+      Object.assign(current, { source_payload, configuration_revision: current.configuration_revision + 1 });
+      return { data: { source_payload, configuration_revision: current.configuration_revision } };
     } } : null,
   });
-  for (const name of ['sceneWithManualOrderLines', 'saveSceneManualOrderLines', 'preserveSceneReadOnly', 'persistScene']) load(api, store, name);
+  for (const name of ['sceneWithManualOrderLines', 'saveSceneManualOrderLines', 'preserveSceneReadOnly', 'sceneItemPayload', 'persistLegacyScene', 'persistScene']) load(api, store, name);
   return { api, getScenes: () => scenes, failRead: (error) => { readError = error; } };
 }
 
-for (const remote of [false, true]) {
-  test(`manual order persistence survives stale scene saves (${remote ? 'Supabase adapter' : 'local storage'})`, async () => {
-    const { api, getScenes } = persistenceApi(remote);
+for (const [remote, migrated, name] of [[false, true, 'local storage'], [true, true, 'Supabase RPC'], [true, false, 'before Supabase migration']]) {
+  test(`manual order persistence survives stale scene saves (${name})`, async () => {
+    const { api, getScenes } = persistenceApi(remote, migrated);
     const staleScene = structuredClone(getScenes()[0]);
     const saved = await api.saveSceneManualOrderLines(staleScene, [row]);
     assert.equal(saved.source_payload.pricing.total, 150);
@@ -158,11 +166,18 @@ for (const remote of [false, true]) {
     assert.equal(resaved.source_payload.manualPurchaseOrderLines[0].assetType, row.assetType);
     assert.equal(getScenes()[0].source_payload.options.carpet, 'red');
     await api.saveSceneManualOrderLines(staleScene, []);
-    const final = await api.persistScene(saved);
+    const final = await api.persistScene({ ...saved, configuration_revision: resaved.configuration_revision });
     assert.equal(final.source_payload.manualPurchaseOrderLines.length, 0);
     assert.equal(final.source_payload.pricing.total, 0);
   });
 }
+
+test('a scene opened before the migration must reload once the new revision is available', async () => {
+  const { api, getScenes } = persistenceApi(true);
+  const { configuration_revision, ...oldTab } = getScenes()[0];
+  await assert.rejects(api.persistScene(oldTab), { code: 'PT409' });
+  assert.equal(getScenes()[0].configuration_revision, configuration_revision);
+});
 
 test('read failures abort scene writes instead of discarding unknown manual order rows', async () => {
   const { api, getScenes, failRead } = persistenceApi(true);

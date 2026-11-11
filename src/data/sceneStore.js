@@ -315,10 +315,14 @@ export async function getSceneByToken(token) {
 
 const sceneSaveQueues = new Map();
 
-export async function saveScene(scene) {
+export async function saveScene(scene, revisionRef) {
   const queueKey = scene?.id || scene?.share_token || '__local_scene__';
   const previousSave = sceneSaveQueues.get(queueKey) || Promise.resolve();
-  const nextSave = previousSave.catch(() => {}).then(() => persistScene(scene));
+  const nextSave = previousSave.catch(() => {}).then(async () => {
+    const saved = await persistScene(scene, revisionRef?.current ?? scene.configuration_revision);
+    if (revisionRef) revisionRef.current = saved.configuration_revision;
+    return saved;
+  });
   sceneSaveQueues.set(queueKey, nextSave);
 
   try {
@@ -408,13 +412,13 @@ export async function getSceneExhibitorReadOnly(scene) {
 export async function getSceneExhibitorState(scene) {
   if (!supabase) {
     const current = readLocalScenes().find((item) => item.id === scene.id) || scene;
-    return { locked: Boolean(current.source_payload?.exhibitor_view_only), clientStatus: current.client_status,
+    return { locked: Boolean(current.source_payload?.exhibitor_view_only), status: current.status, clientStatus: current.client_status,
       lockUpdatedAt: current.source_payload?.exhibitor_view_only_updated_at || '' };
   }
   const { data, error } = await supabase.from('scenes')
-    .select('client_status,source_payload->exhibitor_view_only,source_payload->exhibitor_view_only_updated_at').eq('id', scene.id).single();
+    .select('status,client_status,source_payload->exhibitor_view_only,source_payload->exhibitor_view_only_updated_at').eq('id', scene.id).single();
   if (error) throw error;
-  return { locked: Boolean(data.exhibitor_view_only), clientStatus: data.client_status,
+  return { locked: Boolean(data.exhibitor_view_only), status: data.status, clientStatus: data.client_status,
     lockUpdatedAt: data.exhibitor_view_only_updated_at || '' };
 }
 
@@ -449,7 +453,7 @@ function preserveSceneReadOnly(scene, current = {}) {
   return { ...scene, source_payload: sourcePayload };
 }
 
-async function persistScene(scene) {
+async function persistScene(scene, revision = scene.configuration_revision) {
   if (!supabase) {
     const scenes = readLocalScenes();
     const current = scenes.find((item) => item.id === scene.id);
@@ -464,9 +468,64 @@ async function persistScene(scene) {
     return scene;
   }
 
+  // Support production before the collaboration migration, never as an RPC error fallback.
+  if (!Number.isInteger(revision)) return persistLegacyScene(scene);
+
   // A scene opened before an admin edit must not overwrite the latest order rows.
-  const { data: current, error: readError } = await supabase.from('scenes').select('source_payload,updated_at').eq('id', scene.id).single();
+  const { data: current, error: readError } = await supabase.from('scenes').select('source_payload').eq('id', scene.id).maybeSingle();
   if (readError) throw readError;
+  if (!current) throw Object.assign(new Error('Accès refusé à cette scène.'), { code: '42501' });
+  const orderLines = current.source_payload?.manualPurchaseOrderLines;
+  if (Object.hasOwn(current.source_payload || {}, 'manualPurchaseOrderLines')) {
+    scene = sceneWithManualOrderLines(scene, orderLines);
+  }
+  const items = dedupeIncludedReceptionDesks(Array.isArray(scene.items) ? scene.items : [])
+    .filter((item) => item?.id && item?.type).map((item) => sceneItemPayload(scene.id, item));
+  const { data, error } = await supabase.rpc('save_configurator_scene', {
+    p_scene_id: scene.id,
+    p_revision: revision,
+    p_scene: {
+      status: scene.status,
+      client_status: scene.client_status,
+      client_name: scene.client_name,
+      client_email: scene.client_email,
+      project_name: scene.project_name,
+      event_name: scene.event_name,
+      width_m: scene.dimensions.width,
+      depth_m: scene.dimensions.depth,
+      height_m: fixedWallHeight,
+      layout: scene.layout,
+      source_payload: scene.source_payload || {},
+    },
+    p_items: items,
+    p_manual_order_lines: orderLines ?? null,
+  });
+  if (error) throw error;
+  return { ...scene, ...data };
+}
+
+function sceneItemPayload(sceneId, item) {
+  return {
+    scene_id: sceneId,
+    item_uid: item.id,
+    type: item.type,
+    label: item.label,
+    x: Number(item.x || 0),
+    y: Number(item.y || 0),
+    z: Number(item.z || 0),
+    rotation: Number(item.rotation || 0),
+    wall: item.wall,
+    config: item,
+  };
+}
+
+async function persistLegacyScene(scene) {
+  // A scene opened before an admin edit must not overwrite the latest order rows.
+  const { data: current, error: readError } = await supabase.from('scenes').select('*').eq('id', scene.id).single();
+  if (readError) throw readError;
+  if (Number.isInteger(current.configuration_revision)) {
+    throw Object.assign(new Error('Cette scène a été modifiée ailleurs. Rechargez-la avant de continuer.'), { code: 'PT409' });
+  }
   if (Object.hasOwn(current?.source_payload || {}, 'manualPurchaseOrderLines')) {
     scene = sceneWithManualOrderLines(scene, current.source_payload.manualPurchaseOrderLines);
   }
@@ -506,21 +565,6 @@ async function persistScene(scene) {
   await saveSceneItems(scene);
 
   return scene;
-}
-
-function sceneItemPayload(sceneId, item) {
-  return {
-    scene_id: sceneId,
-    item_uid: item.id,
-    type: item.type,
-    label: item.label,
-    x: item.x,
-    y: item.y || 0,
-    z: item.z,
-    rotation: item.rotation || 0,
-    wall: item.wall,
-    config: item,
-  };
 }
 
 async function saveSceneItems(scene) {
@@ -1636,11 +1680,11 @@ function sceneItemToPackTemplateItem(item = {}) {
   };
 }
 
-export async function requestSceneAccessCode(sceneToken) {
+export async function requestSceneAccessCode(sceneToken, invitationToken) {
   if (!supabase) return { masked_email: 'mode local' };
 
   const { data, error } = await supabase.functions.invoke('scene-access-request', {
-    body: { scene_token: sceneToken },
+    body: { scene_token: sceneToken, invitation_token: invitationToken },
   });
 
   const functionError = await getFunctionError(error, data);
@@ -1648,11 +1692,11 @@ export async function requestSceneAccessCode(sceneToken) {
   return data;
 }
 
-export async function verifySceneAccessCode(sceneToken, code) {
+export async function verifySceneAccessCode(sceneToken, code, invitationToken) {
   if (!supabase) return { local: true };
 
   const { data, error } = await supabase.functions.invoke('scene-access-verify', {
-    body: { scene_token: sceneToken, code },
+    body: { scene_token: sceneToken, invitation_token: invitationToken, code },
   });
 
   const functionError = await getFunctionError(error, data);
@@ -1664,6 +1708,16 @@ export async function verifySceneAccessCode(sceneToken, code) {
     refresh_token: data.refresh_token,
   });
   if (sessionError) throw sessionError;
+  return data;
+}
+
+export async function manageSceneCollaborators(sceneId, action, details = {}) {
+  if (!supabase) throw new Error('Les invitations sont indisponibles en mode local.');
+  const { data, error } = await supabase.functions.invoke('scene-collaborators', {
+    body: { ...details, scene_id: sceneId, action },
+  });
+  const functionError = await getFunctionError(error, data);
+  if (functionError) throw functionError;
   return data;
 }
 

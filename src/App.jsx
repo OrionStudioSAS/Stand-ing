@@ -6,6 +6,8 @@ import { batElectricalPictosMetadata, normalizeBatElectricalPictos } from './bat
 import AssetGroupPlacementEditor from './AssetGroupPlacementEditor.jsx';
 import { nextGroupRowPosition } from './groupPlacement.js';
 import { includedCounterPowerItems } from './includedCounterPower.js';
+import { signageExtraOptions, normalizedExtraChoices } from './signageExtras.js';
+import { electricalWallClearance, electricalClearanceRect, applyElectricalClearance } from './electricalClearance.js';
 import { prioritizeUnderArchIntersections } from './scenePicking.js';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
 import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
@@ -83,9 +85,11 @@ import { createTechnicalPlanBlob, exportTechnicalPdf, standWallPanelRequirements
 import { normalizeHexColor, recolorImageUrl } from './imageColorReplacement.js';
 import DeploymentUpdateNotice from './DeploymentUpdateNotice.jsx';
 import { deploymentAssetErrorMessage, isDeploymentAssetError } from './deploymentAssets.js';
-import { t as tRaw } from './i18n.js';
+import { t as tRaw, uiText } from './i18n.js';
+import { translateCatalogLabel } from './uiTranslations.js';
 import TechnicalPlanEditor from './TechnicalPlanEditor.jsx';
 import { loadTechnicalPlanEdits } from './data/technicalPlanStore.js';
+import { manageSceneCollaborators } from './data/sceneStore.js';
 import './signatureHeadInformation.css';
 import './styles.css';
 
@@ -95,9 +99,14 @@ function useT() {
   const lang = useContext(LanguageContext);
   return (key, vars) => tRaw(lang, key, vars);
 }
+function useUiText() {
+  const lang = useContext(LanguageContext);
+  return value => uiText(lang, value);
+}
 function localizeItemLabel(entry = {}, lang = 'fr') {
   if (lang === 'en' && entry?.dimensions?.labelEn) return entry.dimensions.labelEn;
   const label = normalizeCounterDisplayLabel(entry?.label || '');
+  if (lang === 'en') return translateCatalogLabel(label);
   if (normalizeMarketCategory(entry) === 'electricity') return sentenceCaseProductLabel(label);
   return label;
 }
@@ -502,7 +511,9 @@ function AppContent() {
   if (legacyRedirectUrl) return <LegacyDomainRedirect url={legacyRedirectUrl} />;
 
   const params = new URLSearchParams(window.location.search);
-  const sceneToken = params.get('scene');
+  const invitationToken = params.get('invite');
+  const invitationKey = `standing-scene-invitation:${invitationToken}`;
+  const sceneToken = invitationToken ? window.sessionStorage.getItem(invitationKey) : params.get('scene');
   const isAdmin = window.location.pathname.replace(/\/$/, '') === '/admin' || params.get('admin') === '1';
   const [scene, setScene] = useState(null);
   const [loading, setLoading] = useState(Boolean(sceneToken) && !isAdmin);
@@ -510,6 +521,8 @@ function AppContent() {
   const [sceneError, setSceneError] = useState('');
   const [sceneAdminViewer, setSceneAdminViewer] = useState(false);
   const [sceneForceReadOnly, setSceneForceReadOnly] = useState(false);
+  const [sceneRole, setSceneRole] = useState('');
+  const contactOwnsScene = (user, loaded) => Boolean(user?.email && user.email.trim().toLowerCase() === String(loaded.client_email || '').trim().toLowerCase());
 
   useEffect(() => {
     if (isAdmin) return;
@@ -561,7 +574,11 @@ function AppContent() {
         }
 
         const loaded = await getSceneByToken(sceneToken);
-        if (mounted) setScene(loaded);
+        if (mounted) {
+          setSceneRole(adminUser ? '' : contactOwnsScene(session.user, loaded) ? 'owner' : 'collaborator');
+          setScene(loaded);
+          setSceneAccessRequired(false);
+        }
       } catch (error) {
         window.sessionStorage.removeItem(`standing-scene-access:${sceneToken}`);
         if (mounted) {
@@ -582,17 +599,24 @@ function AppContent() {
   }, [isAdmin, sceneToken]);
 
   if (isAdmin) return <AdminGate />;
-  if (!sceneToken) return <HomeGate />;
-  if (sceneAccessRequired && !scene) {
+  if (!sceneToken && !invitationToken) return <HomeGate />;
+  if (!scene && (sceneAccessRequired || (!sceneToken && invitationToken))) {
     return (
       <SceneAccessGate
         sceneToken={sceneToken}
+        invitationToken={invitationToken}
+        language={params.get('lang') === 'en' ? 'en' : 'fr'}
         initialError={sceneError}
-        onVerified={async () => {
-          window.sessionStorage.setItem(`standing-scene-access:${sceneToken}`, 'verified');
+        onVerified={async (verification) => {
+          const verifiedToken = invitationToken ? verification.scene_token : sceneToken;
+          if (!verifiedToken) throw new Error('Scène introuvable.');
+          const loaded = await getSceneByToken(verifiedToken);
+          const { data } = await supabase.auth.getSession();
+          window.sessionStorage.setItem(`standing-scene-access:${verifiedToken}`, 'verified');
+          if (invitationToken) window.sessionStorage.setItem(invitationKey, verifiedToken);
           setSceneAdminViewer(false);
           setSceneForceReadOnly(false);
-          const loaded = await getSceneByToken(sceneToken);
+          setSceneRole(contactOwnsScene(data.session?.user, loaded) ? 'owner' : 'collaborator');
           setScene(loaded);
           setSceneAccessRequired(false);
         }}
@@ -601,7 +625,7 @@ function AppContent() {
   }
   if (loading || !scene) return <div className="loading-screen">Chargement de la scene...</div>;
 
-  return <ConfiguratorApp initialScene={scene} isAdminViewer={sceneAdminViewer} forceReadOnly={sceneForceReadOnly} />;
+  return <ConfiguratorApp initialScene={scene} isAdminViewer={sceneAdminViewer} forceReadOnly={sceneForceReadOnly} sceneRole={sceneRole} />;
 }
 
 function LegacyDomainRedirect({ url }) {
@@ -789,7 +813,8 @@ function LoginHero() {
   );
 }
 
-function SceneAccessGate({ sceneToken, initialError = '', onVerified }) {
+function SceneAccessGate({ sceneToken, invitationToken, language = 'fr', initialError = '', onVerified }) {
+  const tr = (text) => uiText(language, text);
   const requested = useRef(false);
   const [code, setCode] = useState('');
   const [maskedEmail, setMaskedEmail] = useState('');
@@ -803,7 +828,7 @@ function SceneAccessGate({ sceneToken, initialError = '', onVerified }) {
     setError('');
     setMessage('');
     try {
-      const result = await requestSceneAccessCode(sceneToken);
+      const result = await requestSceneAccessCode(sceneToken, invitationToken);
       setMaskedEmail(result.masked_email || '');
       setMessage('Un code de connexion vient de vous être envoyé.');
     } catch (requestError) {
@@ -817,7 +842,7 @@ function SceneAccessGate({ sceneToken, initialError = '', onVerified }) {
     if (requested.current) return;
     requested.current = true;
     sendCode();
-  }, [sceneToken]);
+  }, [sceneToken, invitationToken]);
 
   const verifyCode = async (event) => {
     event.preventDefault();
@@ -829,8 +854,8 @@ function SceneAccessGate({ sceneToken, initialError = '', onVerified }) {
     setVerifying(true);
     setError('');
     try {
-      await verifySceneAccessCode(sceneToken, code.trim());
-      await onVerified();
+      const verification = await verifySceneAccessCode(sceneToken, code.trim(), invitationToken);
+      await onVerified(verification);
     } catch (verifyError) {
       setError(verifyError.message || 'Code incorrect ou expiré.');
     } finally {
@@ -845,12 +870,12 @@ function SceneAccessGate({ sceneToken, initialError = '', onVerified }) {
         <form className="admin-login-card scene-access-card" onSubmit={verifyCode}>
           <div className="scene-access-icon"><KeyRound size={24} /></div>
           <div className="login-form-heading">
-            <h1>Vérifiez votre accès</h1>
-            <p>Pour protéger votre configuration, saisissez le code envoyé à l'adresse liée à votre stand.</p>
+            <h1>{tr('Vérifiez votre accès')}</h1>
+            <p>{tr(invitationToken ? 'Saisissez le code reçu sur votre adresse invitée pour accéder à ce stand.' : "Pour protéger votre configuration, saisissez le code envoyé à l'adresse liée à votre stand.")}</p>
           </div>
-          {maskedEmail && <div className="scene-access-email"><Mail size={16} /> Code envoyé à <strong>{maskedEmail}</strong></div>}
+          {maskedEmail && <div className="scene-access-email"><Mail size={16} /> {tr('Code envoyé à')} <strong>{maskedEmail}</strong></div>}
           <label>
-            Code de connexion
+            {tr('Code de connexion')}
             <input
               className="scene-access-code"
               type="text"
@@ -864,13 +889,13 @@ function SceneAccessGate({ sceneToken, initialError = '', onVerified }) {
               autoFocus
             />
           </label>
-          {message && <div className="scene-access-message">{message}</div>}
-          {error && <div className="admin-login-error">{error}</div>}
+          {message && <div className="scene-access-message">{tr(message)}</div>}
+          {error && <div className="admin-login-error">{tr(error)}</div>}
           <button className="login-submit" type="submit" disabled={verifying || sending}>
-            {verifying ? 'Vérification...' : 'Accéder à ma configuration'}
+            {tr(verifying ? 'Vérification...' : 'Accéder à ma configuration')}
           </button>
           <button className="scene-access-resend" type="button" onClick={sendCode} disabled={sending}>
-            {sending ? 'Envoi en cours...' : 'Renvoyer un code'}
+            {tr(sending ? 'Envoi en cours...' : 'Renvoyer un code')}
           </button>
         </form>
       </section>
@@ -1001,7 +1026,8 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
   );
 }
 
-function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = false }) {
+function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = false, sceneRole = '' }) {
+  const isCollaborator = sceneRole === 'collaborator';
   const initialOptions = sceneLightingOptions(initialScene, {
     ...(initialScene.source_payload?.options || {}),
     ...(initialScene.options || {}),
@@ -1029,6 +1055,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (/^en(g(lish)?)?$/i.test(mondayLang) || /^anglais$/i.test(mondayLang)) return 'en';
     return 'fr';
   });
+  const tr = value => uiText(language, value);
   const [fontRevision, setFontRevision] = useState(0);
   const [headerPanel, setHeaderPanel] = useState(null);
   const [adminExhibitorPreview, setAdminExhibitorPreview] = useState(false);
@@ -1111,6 +1138,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   ));
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [saveState, setSaveState] = useState(initialScene.client_status || 'not_started');
+  const [sceneSaveError, setSceneSaveError] = useState(null);
+  const revisionRef = useRef(initialScene.configuration_revision);
+  const lastDraftKey = useRef(null);
+  const confirming = useRef(false);
   const [confirmState, setConfirmState] = useState({ loading: false, message: '', error: '' });
   const [placementMessage, setPlacementMessage] = useState('');
   const [specialRequest, setSpecialRequest] = useState(() => initialScene.source_payload?.specialRequest?.text || initialOptions.specialRequest?.text || '');
@@ -1157,7 +1188,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [objectBank, setObjectBank] = useState([]);
   const [objectBankLoaded, setObjectBankLoaded] = useState(false);
   const [viewAngle] = useState(35);
-  const hasMounted = useRef(false);
 
   const area = width * depth;
   const salonLabel = initialScene.salon || clientInfo.event || 'SMCL 2026';
@@ -1196,7 +1226,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
   const effectiveAdminViewer = Boolean(isAdminViewer && !adminExhibitorPreview);
   const handleSceneReopened = useCallback(() => setSaveState('draft'), []);
-  const readOnly = useSceneExhibitorReadOnly(initialScene, effectiveAdminViewer, forceReadOnly, handleSceneReopened);
+  const remotelyReadOnly = useSceneExhibitorReadOnly(initialScene, effectiveAdminViewer, forceReadOnly, handleSceneReopened, isCollaborator);
+  const readOnly = remotelyReadOnly || (isCollaborator && saveState === 'configured');
   const headCountry = sceneHeadCountry(initialScene);
   const sceneVisualContext = useMemo(() => ({
     fontRevision,
@@ -1269,8 +1300,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     [availableCatalog, effectiveAdminViewer],
   );
   const hydratedItems = useMemo(() => resolveSurfaceAttachments(
-    objectBankLoaded ? items.map((item) => hydrateSceneItemFromCatalog(item, availableCatalog)) : items,
-  ), [items, availableCatalog, objectBankLoaded]);
+    objectBankLoaded ? items.map((item) => {
+      const hydrated = hydrateSceneItemFromCatalog(item, availableCatalog);
+      return electricalWallClearance(hydrated) ? constrainItem(hydrated, width, depth, layout, genericCarpetFootprintEnabled) : hydrated;
+    }) : items,
+  ), [items, availableCatalog, objectBankLoaded, width, depth, layout, genericCarpetFootprintEnabled]);
   const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item) && !isAutomaticReserveItem(item) && !isAutomaticPartitionHeadItem(item) && !item.autoMeterCover), [hydratedItems]);
   const automaticMeterCoverItems = useMemo(() => makeAutomaticMeterCoverItems(assetPackLabel, signatureMeterCoverType, availableCatalog, width, depth, layout, manualHydratedItems), [assetPackLabel, signatureMeterCoverType, availableCatalog, width, depth, layout, manualHydratedItems]);
   const meterCoverConfiguratorEntry = useMemo(() => signatureMeterCoverConfiguratorEntry(availableCatalog), [availableCatalog]);
@@ -1328,7 +1362,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     () => wallCoverSurfaceOptions(layout, width, depth, [...manualVisibleItems, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems], { splitForCovers: true }),
     [layout, width, depth, manualVisibleItems, automaticReserveItems, automaticPartitionHeadItems],
   );
-  const sceneItems = useMemo(() => resolveSpotWallAttachments([...manualHydratedItems, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], width, depth, layout), [manualHydratedItems, automaticReserveItems, automaticMeterCoverItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems, width, depth, layout]);
+  const sceneItems = useMemo(() => resolveSpotWallAttachments(applyElectricalClearance([...manualHydratedItems, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], width, depth, layout), width, depth, layout), [manualHydratedItems, automaticReserveItems, automaticMeterCoverItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems, width, depth, layout]);
   const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)
     && (!isSignatureStand || !isSignatureArchItem(item) || signatureArchFitsDepth(item, depth))), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand, isSignatureStand, depth]);
   const signatureArchItems = useMemo(() => visibleSceneItems.filter(isSignatureArchItem), [visibleSceneItems]);
@@ -1583,17 +1617,35 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     };
   };
 
+  const saveConfiguration = async (payload) => {
+    try {
+      const saved = await saveScene(payload, revisionRef);
+      setSceneSaveError(null);
+      return saved;
+    } catch (error) {
+      const stale = error.code === 'PT409' || error.code === '42501';
+      setSceneSaveError({ stale, message: error.message || 'Sauvegarde impossible.' });
+      throw error;
+    }
+  };
+
   useEffect(() => {
-    if (!hasMounted.current) {
-      hasMounted.current = true;
+    if (readOnly || !objectBankLoaded || sceneSaveError?.stale || confirmState.loading) return undefined;
+    const alreadyConfigured = saveState === 'configured';
+    const payload = currentScenePayload(alreadyConfigured ? 'configured' : 'created', alreadyConfigured ? 'configured' : 'draft');
+    const { updatedAt, ...request } = payload.options.specialRequest;
+    const draftKey = JSON.stringify([payload.items, payload.dimensions, payload.layout, clientInfo, contactDetails,
+      { ...payload.options, specialRequest: request }]);
+    if (lastDraftKey.current === null) {
+      lastDraftKey.current = draftKey;
       return undefined;
     }
-
-    if (readOnly || !objectBankLoaded) return undefined;
+    if (lastDraftKey.current === draftKey) return undefined;
 
     const timer = window.setTimeout(() => {
-      const alreadyConfigured = saveState === 'configured';
-      saveScene(currentScenePayload(alreadyConfigured ? 'configured' : 'created', alreadyConfigured ? 'configured' : 'draft'))
+      if (confirming.current) return;
+      lastDraftKey.current = draftKey;
+      saveConfiguration(payload)
         .then(() => {
           if (!alreadyConfigured) setSaveState('draft');
         })
@@ -1601,16 +1653,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly, objectBankLoaded]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly, objectBankLoaded, sceneSaveError?.stale, confirmState.loading]);
 
   const persistWallCoversNow = (nextWallCovers) => {
-    if (readOnly) return;
+    if (readOnly || sceneSaveError?.stale || confirming.current) return;
     const alreadyConfigured = saveState === 'configured';
     const status = alreadyConfigured ? 'configured' : 'created';
     const clientStatus = alreadyConfigured ? 'configured' : 'draft';
     const payload = currentScenePayload(status, clientStatus);
     const options = { ...(payload.options || {}), wallCovers: nextWallCovers };
-    saveScene({
+    saveConfiguration({
       ...payload,
       options,
       source_payload: {
@@ -1637,12 +1689,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   }, []);
 
   const validateConfiguration = async () => {
-    if (confirmState.loading) return;
+    if (readOnly || sceneSaveError?.stale || confirming.current) return;
+    confirming.current = true;
     setConfirmState({ loading: true, message: '', error: '' });
     try {
       const requestText = String(specialRequest || '').trim();
       const hasSpecialRequest = Boolean(requestText);
-      const confirmedScene = await saveScene(currentScenePayload(hasSpecialRequest ? 'bat_pending' : 'configured', 'configured'));
+      const confirmedScene = await saveConfiguration(currentScenePayload(hasSpecialRequest ? 'bat_pending' : 'configured', 'configured'));
+      setSaveState('configured');
+      setDraggingId(null);
+      setActiveStep(4);
       const confirmedPricing = confirmedScene.source_payload?.pricing || scenePricing;
 
       if (hasSpecialRequest) {
@@ -1685,14 +1741,17 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           emailMessage = 'La demande est enregistrée, mais l’email de prise en compte n’a pas pu être envoyé automatiquement.';
           console.warn('Special request email failed', error);
         }
-        setSaveState('configured');
-        setDraggingId(null);
-        setActiveStep(4);
         setConfirmState({ loading: false, message: `Votre configuration est sauvegardée. ${emailMessage}`, error: '' });
         return;
       }
 
-      await syncSceneConfigToMonday(confirmedScene);
+      let mondayWarning = '';
+      try {
+        await syncSceneConfigToMonday(confirmedScene);
+      } catch (error) {
+        console.warn('Confirmed scene Monday sync failed', error);
+        mondayWarning = ` ${tr('La synchronisation Monday n’a pas pu être effectuée.')}`;
+      }
       let emailMessage = 'Un email de confirmation vient d’être envoyé à l’adresse de contact de la scène.';
       try {
         const purchaseOrderScene = confirmedScene;
@@ -1712,12 +1771,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         emailMessage = 'La scène est confirmée, mais l’email de confirmation n’a pas pu être envoyé automatiquement.';
         console.warn('Completion email failed', error);
       }
-      setSaveState('configured');
-      setDraggingId(null);
-      setActiveStep(4);
-      setConfirmState({ loading: false, message: `Votre scène est confirmée. ${emailMessage}`, error: '' });
+      setConfirmState({ loading: false, message: `Votre scène est confirmée. ${emailMessage}${mondayWarning}`, error: '' });
     } catch (error) {
       setConfirmState({ loading: false, message: '', error: error.message || 'Confirmation impossible.' });
+    } finally {
+      confirming.current = false;
     }
   };
 
@@ -2535,6 +2593,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   };
 
   const validateContactDetails = async () => {
+    if (isCollaborator || sceneSaveError?.stale) return;
     const nextClientInfo = {
       client: contactDetails.company,
       project: `Stand ${contactDetails.emplacement}`,
@@ -2544,7 +2603,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     const nextClientStatus = saveState === 'configured' ? 'configured' : 'draft';
     setClientInfo(nextClientInfo);
     try {
-      await saveScene(currentScenePayload(nextStatus, nextClientStatus, { clientInfo: nextClientInfo, contactDetails }));
+      await saveConfiguration(currentScenePayload(nextStatus, nextClientStatus, { clientInfo: nextClientInfo, contactDetails }));
       await syncSceneContactToMonday(initialScene, contactDetails);
       if (saveState !== 'configured') setSaveState('draft');
     } catch (error) {
@@ -2612,13 +2671,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       <header className="configurator-topbar">
         <div className="configurator-topbar-identity">
         <a className="config-logo" href="/">
-          <img src="/images/logo.png" alt="Stand-ING" />
+          <img src="/images/logo.png" alt={tr("Stand-ING")} />
         </a>
         <div className="config-breadcrumb" title={`${salonLabel} · ${offerLabel} · ${standLabel} · ${area} m²`}>
           <span>{salonLabel}</span>
           {offerLabel && <span className="config-offer-chip">{offerLabel}</span>}
           <span>{standLabel}</span>
-          <span>{area.toFixed(0)} m²</span>
+          <span>{tr(area.toFixed(0))} m²</span>
         </div>
         </div>
         <nav className="stepper" aria-label={tRaw(language, 'step_home')}>
@@ -2645,7 +2704,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           <img className="topbar-tool-icon" src="/icons/qr.svg" alt="" aria-hidden="true" />
         </button>
         {!readOnly && (
-          <button className={`round-tool tutorial-trigger ${tutorialOpen ? 'active' : ''}`} type="button" onClick={openTutorial} aria-label="Relancer le tutoriel">
+          <button className={`round-tool tutorial-trigger ${tutorialOpen ? 'active' : ''}`} type="button" onClick={openTutorial} aria-label={tr("Relancer le tutoriel")}>
             <img className="topbar-tool-icon" src="/icons/tuto.svg" alt="" aria-hidden="true" />
           </button>
         )}
@@ -2671,10 +2730,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         </div>
       </header>
 
-      {placementMessage && (
+      {sceneSaveError ? (
+        <div className="placement-feedback scene-save-feedback" role="alert">
+          <AlertTriangle size={17} />
+          <span>{tr(sceneSaveError.message)} {tr('Vos dernières modifications ne sont pas enregistrées.')}</span>
+          {sceneSaveError.stale && <button type="button" onClick={() => window.location.reload()}>{tr('Recharger la scène')}</button>}
+        </div>
+      ) : placementMessage && (
         <div className="placement-feedback" role="status" aria-live="polite">
           <AlertTriangle size={17} />
-          <span>{placementMessage}</span>
+          <span>{tr(placementMessage)}</span>
         </div>
       )}
 
@@ -2684,8 +2749,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             salonLabel={salonLabel}
             contactDetails={contactDetails}
             onClose={() => setHeaderPanel(null)}
-            onReportCorrection={submitContactCorrection}
+            onReportCorrection={isCollaborator ? undefined : submitContactCorrection}
+            onOpenCollaborators={sceneRole === 'owner' && Number.isInteger(initialScene.configuration_revision) ? () => setHeaderPanel('collaborators') : undefined}
           />
+        </div>
+      )}
+
+      {headerPanel === 'collaborators' && sceneRole === 'owner' && (
+        <div className="header-modal-layer" onMouseDown={(event) => event.target === event.currentTarget && setHeaderPanel(null)}>
+          <SceneCollaboratorsModal sceneId={initialScene.id} salonLabel={salonLabel} onClose={() => setHeaderPanel(null)} />
         </div>
       )}
 
@@ -2728,7 +2800,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             }}
           >
             {adminExhibitorPreview ? <Settings2 size={16} /> : <Eye size={16} />}
-            <span>{adminExhibitorPreview ? 'Revenir à la vue admin' : 'Voir comme l’exposant'}</span>
+            <span>{tr(adminExhibitorPreview ? 'Revenir à la vue admin' : 'Voir comme l’exposant')}</span>
           </button>
         )}
         <Canvas
@@ -2751,7 +2823,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           <color attach="background" args={['#050506']} />
           <ambientLight intensity={1.42} />
           <directionalLight position={[3, 7, 4]} intensity={0.72} castShadow shadow-mapSize={[2048, 2048]} />
-          <Suspense fallback={<Html center>Chargement</Html>}>
+          <Suspense fallback={<Html center>{tr("Chargement")}</Html>}>
             <PresentationGround />
             {shouldRenderScene && (
               <StandScene
@@ -2786,8 +2858,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 visualContext={sceneVisualContext}
                 sceneConstraints={sceneConstraints}
                 selectedToolbar={selected && !readOnly && !itemConfigModal ? (
-                  <div className={`view-toolbar selection-mode ${rotationPanelOpen && canRotateSceneItem(selected, effectiveAdminViewer) ? 'rotation-open' : ''}`} aria-label="Actions objet selectionne">
-                    <button type="button" disabled={!canRotateSceneItem(selected, effectiveAdminViewer)} onClick={() => setRotationPanelOpen((open) => !open)} title="Rotation"><RotateCcw size={15} /></button>
+                  <div className={`view-toolbar selection-mode ${rotationPanelOpen && canRotateSceneItem(selected, effectiveAdminViewer) ? 'rotation-open' : ''}`} aria-label={tr("Actions objet selectionne")}>
+                    <button type="button" disabled={!canRotateSceneItem(selected, effectiveAdminViewer)} onClick={() => setRotationPanelOpen((open) => !open)} title={tr("Rotation")}><RotateCcw size={15} /></button>
                     <button type="button" disabled={!itemToolbarSettingsAvailable(selected, itemConfiguratorEntry(selected), assetPackLabel)} onClick={openSelectedItemConfigurator} title={tRaw(language, 'toolbar_settings')}><Pencil size={15} /></button>
                     <button
                       type="button"
@@ -2849,8 +2921,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
               <div className="intro-card-body">
                 <p>{tRaw(language, 'intro_subtitle')}</p>
                 <ul>
-                  <li><span>🏛</span>{standLabel} · Hall 1 · {faceLabel}</li>
-                  <li><span>📐</span>{area.toFixed(0)} m²</li>
+                  <li><span>🏛</span>{standLabel} {tr("· Hall 1 ·")} {tr(faceLabel)}</li>
+                  <li><span>📐</span>{tr(area.toFixed(0))} m²</li>
                   <li><span>📅</span>{salonLabel}</li>
                 </ul>
                 <button type="button" onClick={() => setActiveStep(2)}>
@@ -2913,6 +2985,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             saveState={saveState}
             confirmState={confirmState}
             readOnly={readOnly}
+            canConfirm={!sceneSaveError?.stale}
             isAdminViewer={effectiveAdminViewer}
             specialRequest={specialRequest}
             specialRequestTags={specialRequestTags}
@@ -3120,7 +3193,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       <footer className="configurator-footer">
         <div>
           <span>{tRaw(language, 'total_ht_estimated')}</span>
-          <strong>{estimatedTotal.toLocaleString('fr-FR')} €</strong>
+          <strong>{tr(estimatedTotal.toLocaleString('fr-FR'))} €</strong>
         </div>
         <nav>
           <button type="button" onClick={() => setActiveStep((step) => Math.max(1, step - 1))}>{tRaw(language, 'back')}</button>
@@ -3213,6 +3286,7 @@ const tutorialSlides = {
 };
 
 function ConfiguratorTutorial({ step = 0, language = 'fr', onStep, onClose, onSkip }) {
+  const tr = useUiText();
   const slides = tutorialSlides[language] || tutorialSlides.fr;
   const currentIndex = Math.max(0, Math.min(slides.length - 1, step));
   const slide = slides[currentIndex];
@@ -3222,9 +3296,9 @@ function ConfiguratorTutorial({ step = 0, language = 'fr', onStep, onClose, onSk
   const skipLabel = language === 'en' ? 'Skip tutorial' : 'Passer le tutoriel';
 
   return (
-    <div className={`tutorial-layer tutorial-step-${currentIndex}`} role="dialog" aria-modal="true" aria-label="Tutoriel configurateur">
+    <div className={`tutorial-layer tutorial-step-${currentIndex}`} role="dialog" aria-modal="true" aria-label={tr("Tutoriel configurateur")}>
       <article className="tutorial-card">
-        <button type="button" className="tutorial-close" onClick={onClose} aria-label="Fermer le tutoriel"><X size={17} /></button>
+        <button type="button" className="tutorial-close" onClick={onClose} aria-label={tr("Fermer le tutoriel")}><X size={17} /></button>
         <div className="tutorial-progress">
           {slides.map((item, index) => (
             <button key={item.title} type="button" className={index === currentIndex ? 'active' : index < currentIndex ? 'done' : ''} onClick={() => onStep(index)}>
@@ -3235,18 +3309,18 @@ function ConfiguratorTutorial({ step = 0, language = 'fr', onStep, onClose, onSk
         <div className="tutorial-content">
           <TutorialVisual type={slide.visual} />
           <section>
-            <span className="tutorial-eyebrow">{slide.eyebrow}</span>
-            <h2>{slide.title}</h2>
-            <p>{slide.text}</p>
-            <div className="tutorial-hint"><Sparkles size={15} />{slide.hint}</div>
+            <span className="tutorial-eyebrow">{tr(slide.eyebrow)}</span>
+            <h2>{tr(slide.title)}</h2>
+            <p>{tr(slide.text)}</p>
+            <div className="tutorial-hint"><Sparkles size={15} />{tr(slide.hint)}</div>
           </section>
         </div>
         <footer className="tutorial-actions">
-          <button type="button" className="tutorial-skip" onClick={onSkip}>{skipLabel}</button>
+          <button type="button" className="tutorial-skip" onClick={onSkip}>{tr(skipLabel)}</button>
           <div>
-            {currentIndex > 0 && <button type="button" className="tutorial-back" onClick={() => onStep(currentIndex - 1)}>{backLabel}</button>}
+            {currentIndex > 0 && <button type="button" className="tutorial-back" onClick={() => onStep(currentIndex - 1)}>{tr(backLabel)}</button>}
             <button type="button" className="tutorial-next" onClick={() => (isLast ? onClose() : onStep(currentIndex + 1))}>
-              {slide.cta || nextLabel} <ChevronDown size={15} />
+              {tr(slide.cta || nextLabel)} <ChevronDown size={15} />
             </button>
           </div>
         </footer>
@@ -3256,6 +3330,7 @@ function ConfiguratorTutorial({ step = 0, language = 'fr', onStep, onClose, onSk
 }
 
 function TutorialVisual({ type }) {
+  const tr = useUiText();
   return (
     <div className={`tutorial-visual tutorial-visual-${type}`} aria-hidden="true">
       <div className="tutorial-mini-scene">
@@ -3268,24 +3343,24 @@ function TutorialVisual({ type }) {
         <span className="mini-screen" />
         <span className="mini-object moving" />
         <span className="mini-toolbar"><Pencil size={13} /><RotateCcw size={13} /><Lock size={13} /></span>
-        <span className="mini-cart"><ShoppingCart size={13} /> Panier</span>
+        <span className="mini-cart"><ShoppingCart size={13} /> {tr("Panier")}</span>
         <span className="mini-check"><Check size={16} /></span>
       </div>
       <div className="tutorial-mini-panel">
-        <span className="mini-panel-title">Configuration</span>
-        <span className="mini-panel-row active">Sol <i /></span>
-        <span className="mini-panel-row">Réserve <i /></span>
-        <span className="mini-panel-row">Tête de cloison <i /></span>
+        <span className="mini-panel-title">{tr("Configuration")}</span>
+        <span className="mini-panel-row active">{tr("Sol")} <i /></span>
+        <span className="mini-panel-row">{tr("Réserve")} <i /></span>
+        <span className="mini-panel-row">{tr("Tête de cloison")} <i /></span>
       </div>
       <div className="tutorial-mini-shop">
-        <span className="mini-shop-tab active">Mobilier</span>
+        <span className="mini-shop-tab active">{tr("Mobilier")}</span>
         <span className="mini-shop-card" />
         <span className="mini-shop-card" />
         <span className="mini-shop-card dark" />
       </div>
       <div className="tutorial-mini-validation">
-        <span>Total options</span>
-        <strong>2 183 € HT</strong>
+        <span>{tr("Total options")}</span>
+        <strong>{tr("2 183 € HT")}</strong>
         <i />
         <i />
         <i />
@@ -3295,12 +3370,13 @@ function TutorialVisual({ type }) {
 }
 
 function ModalHead({ icon, title, salonLabel, onClose }) {
+  const tr = useUiText();
   const t = useT();
   return (
     <header className="modal-head">
       <div className="modal-title-group">
-        {icon && <span className="modal-title-icon">{icon}</span>}
-        <h2>{title}</h2>
+        {icon && <span className="modal-title-icon">{tr(icon)}</span>}
+        <h2>{tr(title)}</h2>
       </div>
       <div className="modal-head-actions">
         <span>{salonLabel}</span>
@@ -3312,7 +3388,71 @@ function ModalHead({ icon, title, salonLabel, onClose }) {
   );
 }
 
-function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrection }) {
+function SceneCollaboratorsModal({ sceneId, salonLabel, onClose }) {
+  const tr = useUiText();
+  const language = useContext(LanguageContext);
+  const [members, setMembers] = useState(null);
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    manageSceneCollaborators(sceneId, 'list')
+      .then((result) => { if (active) setMembers(result.members); })
+      .catch((err) => { if (active) setError(err.message); });
+    return () => { active = false; };
+  }, [sceneId]);
+
+  const changeMembership = async (action, member) => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await manageSceneCollaborators(sceneId, action, action === 'invite'
+        ? { email: email.trim(), language }
+        : { invitation_id: member.id });
+      if (action === 'invite') {
+        setMembers((current) => [...current, result.member]);
+        setEmail('');
+        setMessage('Invitation envoyée.');
+      } else {
+        setMembers((current) => current.filter((entry) => entry.id !== member.id));
+        setMessage('Accès retiré.');
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="client-info-modal scene-collaborators-modal" role="dialog" aria-modal="true" aria-label={tr('Collaborateurs du stand')}>
+      <ModalHead icon={<Users size={19} />} title={tr('Collaborateurs du stand')} salonLabel={salonLabel} onClose={onClose} />
+      <div className="client-info-content" aria-busy={busy || (!members && !error)}>
+        <p>{tr('Invitez jusqu’à deux personnes à modifier et à valider la configuration de ce stand.')}</p>
+        {!members && !error && <div role="status">{tr('Chargement')}</div>}
+        {members?.length > 0 && <ul className="scene-collaborators-list">
+          {members.map((member) => <li key={member.id}>
+            <div><strong>{member.email}</strong><small>{tr(member.accepted_at ? 'Accès actif' : Date.parse(member.expires_at) < Date.now() ? 'Invitation expirée' : 'En attente de confirmation')}</small></div>
+            <button type="button" disabled={busy} onClick={() => changeMembership('remove', member)} aria-label={`${tr('Retirer l’accès')} : ${member.email}`}><Trash2 size={15} /> {tr('Retirer')}</button>
+          </li>)}
+        </ul>}
+        {members && (members.length < 2 ? <form className="scene-collaborators-form" onSubmit={(event) => { event.preventDefault(); changeMembership('invite'); }}>
+          <label className="form-row">{tr('Adresse e-mail du collaborateur')}<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required maxLength={254} disabled={busy} /></label>
+          <button className="client-correction-button" type="submit" disabled={busy || !email.trim()}>{tr('Envoyer l’invitation')}</button>
+        </form> : <p>{tr('Deux collaborateurs maximum par scène.')}</p>)}
+        {message && <div className="validation-message success" role="status">{tr(message)}</div>}
+        {error && <div className="validation-message error" role="alert">{tr(error)}</div>}
+      </div>
+    </section>
+  );
+}
+
+function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrection, onOpenCollaborators }) {
+  const tr = useUiText();
   const t = useT();
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [correctionText, setCorrectionText] = useState('');
@@ -3339,7 +3479,8 @@ function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrecti
     <section className="client-info-modal client-info-modal-locked">
       <ModalHead title={t('client_title')} salonLabel={salonLabel} onClose={onClose} />
       <div className="client-info-content">
-        <button className="client-correction-button" type="button" onClick={() => setCorrectionOpen(true)}>{t('client_correction_cta')}</button>
+        {onOpenCollaborators && <button className="client-correction-button scene-collaborators-trigger" type="button" onClick={onOpenCollaborators}><Users size={16} /> {tr('Inviter un collaborateur')}</button>}
+        {onReportCorrection && <button className="client-correction-button" type="button" onClick={() => setCorrectionOpen(true)}>{t('client_correction_cta')}</button>}
         <div className="form-grid two">
           <label>{t('client_firstname')}<input value={contactDetails.firstName || ''} {...lockedInputProps} /></label>
           <label>{t('client_lastname')}<input value={contactDetails.lastName || ''} {...lockedInputProps} /></label>
@@ -3376,9 +3517,9 @@ function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrecti
             <div className="client-correction-content">
               <p>{t('client_correction_intro')}</p>
               <textarea value={correctionText} onChange={(event) => setCorrectionText(event.target.value)} placeholder={t('client_correction_placeholder')} rows={6} />
-              {correctionState.message && <div className="question-submit-feedback success">{correctionState.message}</div>}
-              {correctionState.error && <div className="question-submit-feedback error">{correctionState.error}</div>}
-              <button className="modal-primary-button centered" type="submit" disabled={correctionState.loading}><Mail size={15} /> {correctionState.loading ? 'Envoi...' : t('client_correction_send')}</button>
+              {correctionState.message && <div className="question-submit-feedback success">{tr(correctionState.message)}</div>}
+              {correctionState.error && <div className="question-submit-feedback error">{tr(correctionState.error)}</div>}
+              <button className="modal-primary-button centered" type="submit" disabled={correctionState.loading}><Mail size={15} /> {tr(correctionState.loading ? 'Envoi...' : t('client_correction_send'))}</button>
             </div>
           </form>
         </div>
@@ -3388,6 +3529,7 @@ function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrecti
 }
 
 function QuestionFaq() {
+  const tr = useUiText();
   const t = useT();
   const [openIndex, setOpenIndex] = React.useState(null);
   const faq = [
@@ -3402,10 +3544,10 @@ function QuestionFaq() {
       {faq.map((entry, index) => (
         <div key={index} className={openIndex === index ? 'faq-item open' : 'faq-item'}>
           <button type="button" onClick={() => setOpenIndex(openIndex === index ? null : index)}>
-            <span>{entry.q}</span>
+            <span>{tr(entry.q)}</span>
             {openIndex === index ? <Minus size={14} /> : <Plus size={14} />}
           </button>
-          {openIndex === index && <p>{entry.a}</p>}
+          {openIndex === index && <p>{tr(entry.a)}</p>}
         </div>
       ))}
     </div>
@@ -3413,6 +3555,7 @@ function QuestionFaq() {
 }
 
 function QuestionModal({ salonLabel, form, state = {}, onFormChange, onClose, onSubmit }) {
+  const tr = useUiText();
   const t = useT();
   return (
     <form className="question-modal" onSubmit={onSubmit}>
@@ -3432,7 +3575,7 @@ function QuestionModal({ salonLabel, form, state = {}, onFormChange, onClose, on
             onChange={(event) => onFormChange('message', event.target.value)}
             maxLength={500}
           />
-          <em>{form.message.length} / 500</em>
+          <em>{tr(form.message.length)} / 500</em>
         </label>
 
         <span className="form-section-label">{t('question_attachments')}</span>
@@ -3445,9 +3588,9 @@ function QuestionModal({ salonLabel, form, state = {}, onFormChange, onClose, on
         </label>
 
         <div className="question-note">{t('question_note')}</div>
-        {state.message && <div className="question-submit-feedback success">{state.message}</div>}
-        {state.error && <div className="question-submit-feedback error">{state.error}</div>}
-        <button className="modal-primary-button centered" type="submit" disabled={state.loading}><Mail size={15} /> {state.loading ? 'Envoi...' : t('question_send')}</button>
+        {state.message && <div className="question-submit-feedback success">{tr(state.message)}</div>}
+        {state.error && <div className="question-submit-feedback error">{tr(state.error)}</div>}
+        <button className="modal-primary-button centered" type="submit" disabled={state.loading}><Mail size={15} /> {tr(state.loading ? 'Envoi...' : t('question_send'))}</button>
         <button className="modal-cancel-button" type="button" onClick={onClose}>{t('question_cancel')}</button>
       </div>
     </form>
@@ -3455,6 +3598,7 @@ function QuestionModal({ salonLabel, form, state = {}, onFormChange, onClose, on
 }
 
 function LanguageMenu({ language, onSelect }) {
+  const tr = useUiText();
   const t = useT();
   return (
     <section className="language-menu" onMouseDown={(event) => event.stopPropagation()}>
@@ -3463,10 +3607,10 @@ function LanguageMenu({ language, onSelect }) {
         <button key={entry.id} className={language === entry.id ? 'active' : ''} type="button" onClick={() => onSelect(entry.id)}>
           <span className="language-flag"><img src={entry.flagSrc} alt="" aria-hidden="true" /></span>
           <span>
-            <strong>{entry.label}</strong>
-            <small>{entry.sublabel}</small>
+            <strong>{tr(entry.label)}</strong>
+            <small>{tr(entry.sublabel)}</small>
           </span>
-          <em>{entry.short}</em>
+          <em>{tr(entry.short)}</em>
           {language === entry.id && <Check size={14} />}
         </button>
       ))}
@@ -3476,13 +3620,14 @@ function LanguageMenu({ language, onSelect }) {
 }
 
 function VisualUploadDropzone({ imageUrl = '', alt = '', disabled = false, uploading = false, onImage, label = '', browseLabel = '' }) {
+  const tr = useUiText();
   const t = useT();
   const hasImage = Boolean(imageUrl);
   return (
     <label className={hasImage ? 'partition-head-dropzone visual-upload-dropzone has-image' : 'partition-head-dropzone visual-upload-dropzone'}>
-      {hasImage ? <img src={imageUrl} alt={alt} /> : <FileImage size={24} />}
-      <strong>{uploading ? t('partition_uploading') : (label || t('partition_upload_drag'))}</strong>
-      <span>{browseLabel || t('partition_browse')}</span>
+      {hasImage ? <img src={imageUrl} alt={tr(alt)} /> : <FileImage size={24} />}
+      <strong>{tr(uploading ? t('partition_uploading') : (label || t('partition_upload_drag')))}</strong>
+      <span>{tr(browseLabel || t('partition_browse'))}</span>
       <input
         type="file"
         accept={visualUploadAccept}
@@ -3497,6 +3642,7 @@ function VisualUploadDropzone({ imageUrl = '', alt = '', disabled = false, uploa
 }
 
 function ImageFramingControls({ imageUrl, value = {}, disabled = false, onChange, fit = 'contain', aspectRatio = 420 / 250 }) {
+  const tr = useUiText();
   const canvasRef = useRef(null);
   const dragRef = useRef(null);
   const [image, setImage] = useState(null);
@@ -3548,13 +3694,13 @@ function ImageFramingControls({ imageUrl, value = {}, disabled = false, onChange
 
   return (
     <details className="image-framing-controls">
-      <summary>Recadrer l’image</summary>
-      <p>Glissez le visuel, puis ajustez sa taille (100 % = cadrage initial). Le rendu exact est visible sur l’objet après avoir relâché.</p>
+      <summary>{tr("Recadrer l’image")}</summary>
+      <p>{tr("Glissez le visuel, puis ajustez sa taille (100 % = cadrage initial). Le rendu exact est visible sur l’objet après avoir relâché.")}</p>
       <canvas
         ref={canvasRef}
         width={420}
         height={Math.max(80, Math.round(420 / Math.max(0.1, Number(aspectRatio) || 420 / 250)))}
-        aria-label="Aperçu du cadrage, faites glisser pour déplacer l’image"
+        aria-label={tr("Aperçu du cadrage, faites glisser pour déplacer l’image")}
         onPointerDown={(event) => {
           if (disabled) return;
           dragRef.current = { pointerX: event.clientX, pointerY: event.clientY, x: framing.imageOffsetX, y: framing.imageOffsetY };
@@ -3571,15 +3717,16 @@ function ImageFramingControls({ imageUrl, value = {}, disabled = false, onChange
         onPointerCancel={() => { dragRef.current = null; if (!disabled) onChange?.(framingRef.current); }}
       />
       <label>
-        <span>Taille du visuel <strong>{Math.round(framing.imageZoom * 100)} %</strong></span>
+        <span>{tr("Taille du visuel")} <strong>{tr(Math.round(framing.imageZoom * 100))} %</strong></span>
         <input type="range" min="50" max="300" step="5" value={Math.round(framing.imageZoom * 100)} disabled={disabled} onChange={(event) => previewFraming({ ...framingRef.current, imageZoom: Number(event.target.value) / 100 })} onPointerUp={() => onChange?.(framingRef.current)} onKeyUp={() => onChange?.(framingRef.current)} onBlur={() => onChange?.(framingRef.current)} />
       </label>
-      <button type="button" disabled={disabled} onClick={() => { previewFraming(defaultImageFraming); onChange?.(defaultImageFraming); }}>Réinitialiser le cadrage</button>
+      <button type="button" disabled={disabled} onClick={() => { previewFraming(defaultImageFraming); onChange?.(defaultImageFraming); }}>{tr("Réinitialiser le cadrage")}</button>
     </details>
   );
 }
 
 function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageChange, onResetImage, onFramingChange, embedded = false }) {
+  const tr = useUiText();
   const t = useT();
   return (
     <aside className={embedded ? 'item-visual-config' : 'item-options-panel'}>
@@ -3592,7 +3739,7 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
       </div>
 
       <div className="item-dynamic-preview">
-        <span className="preview-flag">{languageFlag(visualContext?.language)}</span>
+        <span className="preview-flag">{tr(languageFlag(visualContext?.language))}</span>
         <strong>{visualContext?.company || t('partition_head_company')}</strong>
         <span>{isSmclPartitionHeadItem(item) ? smclPartitionHeadDisplayCode(visualContext) : (visualContext?.standNumber || 'A-14')}</span>
       </div>
@@ -3610,12 +3757,13 @@ function PartitionHeadOptionsPanel({ item, visualContext, uploadState, onImageCh
         <button className="item-image-reset" type="button" onClick={onResetImage}>{t('img_upload_reset')}</button>
       )}
       {uploadState?.uploading && <p className="item-options-status">{t('img_uploading')}</p>}
-      {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
+      {uploadState?.error && <p className="item-options-error">{tr(uploadState.error)}</p>}
     </aside>
   );
 }
 
 function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageChange, onResetImage, onFramingChange, embedded = false }) {
+  const tr = useUiText();
   const t = useT();
   const printSize = posterSurfaceRegion(item, items, width, depth);
   const recommendedSpec = recommendedSimulatorImageSpec(printSize.width, printSize.height);
@@ -3645,9 +3793,9 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
 
       {item.options?.posterImageUrl && imageQuality && (
         <div className={`poster-print-quality ${imageQuality.level}`}>
-          <strong>{imageQuality.level === 'good' ? t('img_quality_ok') : imageQuality.level === 'warning' ? t('img_quality_warning') : t('img_quality_danger')}</strong>
-          <span>{imageQuality.pixelText} importés · conseillé {recommendedSpec.pixelText}</span>
-          <small>{imageQuality.level === 'good' ? t('img_quality_ok_detail') : t('img_quality_low_detail')}</small>
+          <strong>{tr(imageQuality.level === 'good' ? t('img_quality_ok') : imageQuality.level === 'warning' ? t('img_quality_warning') : t('img_quality_danger'))}</strong>
+          <span>{tr(imageQuality.pixelText)} {tr("importés · conseillé")} {tr(recommendedSpec.pixelText)}</span>
+          <small>{tr(imageQuality.level === 'good' ? t('img_quality_ok_detail') : t('img_quality_low_detail'))}</small>
         </div>
       )}
 
@@ -3664,7 +3812,7 @@ function PosterOptionsPanel({ item, items, width, depth, uploadState, onImageCha
         <button className="item-image-reset" type="button" onClick={onResetImage}>{t('poster_reset')}</button>
       )}
       {uploadState?.uploading && <p className="item-options-status">{t('img_uploading')}</p>}
-      {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
+      {uploadState?.error && <p className="item-options-error">{tr(uploadState.error)}</p>}
     </aside>
   );
 }
@@ -3690,13 +3838,14 @@ function LogoUploadCard({
   showSwitch = true,
   className = '',
 }) {
+  const tr = useUiText();
   const t = useT();
   return (
     <section className={`counter-logo-card counter-logo-card-v2 ${className}`.trim()}>
       <header>
-        <strong>{title}</strong>
+        <strong>{tr(title)}</strong>
         {showSwitch && (
-          <label className="counter-logo-switch" aria-label="Activer le logo">
+          <label className="counter-logo-switch" aria-label={tr("Activer le logo")}>
             <input
               type="checkbox"
               disabled={disabled}
@@ -3709,11 +3858,11 @@ function LogoUploadCard({
       </header>
       {enabled && (
         <>
-          {priceLabel && <em className={priceTone}>{priceLabel}</em>}
+          {priceLabel && <em className={priceTone}>{tr(priceLabel)}</em>}
 
           <VisualUploadDropzone
             imageUrl={imageUrl}
-            alt={alt}
+            alt={tr(alt)}
             disabled={disabled || uploading}
             uploading={uploading}
             onImage={onImageChange}
@@ -3721,7 +3870,7 @@ function LogoUploadCard({
             browseLabel="Importer"
           />
           {imageUrl && onFramingChange && <ImageFramingControls imageUrl={imageUrl} value={imageFraming || {}} disabled={disabled || uploading} onChange={onFramingChange} />}
-          {spec && <small className="visual-upload-spec">{spec}</small>}
+          {spec && <small className="visual-upload-spec">{tr(spec)}</small>}
           <label className="visual-pending-checkbox">
             <input
               type="checkbox"
@@ -3733,7 +3882,7 @@ function LogoUploadCard({
           </label>
           {imageUrl && onResetImage && (
             <button className="item-image-reset" type="button" disabled={disabled} onClick={onResetImage}>
-              {resetLabel || t('wood_desk_reset_image')}
+              {tr(resetLabel || t('wood_desk_reset_image'))}
             </button>
           )}
         </>
@@ -3743,6 +3892,7 @@ function LogoUploadCard({
 }
 
 function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImageChange, onResetImage, onColorChange, onVisualPendingChange, onLogoEnabledChange, onFramingChange, embedded = false, optionsFree = false, logoPrice = 0, hideColors = false }) {
+  const tr = useUiText();
   const t = useT();
   const finishes = counterFinishOptions(colors);
   const woodFinish = counterWoodFinish(colors);
@@ -3768,11 +3918,11 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
         <section className="counter-color-card counter-finish-card item-counter-finish-card">
           <div className="counter-finish-head">
             <strong>{t('counter_finish_title')}</strong>
-            <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : ''}</span>
+            <span>{tr(shortFinishName(selectedFinish.name))}{tr(shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : '')}</span>
           </div>
           <div className="counter-finish-meta-line">
-            <small>{includedColorisLabel(includedFinishes.length)}</small>
-            <em className="included">Inclus</em>
+            <small>{tr(includedColorisLabel(includedFinishes.length))}</small>
+            <em className="included">{tr("Inclus")}</em>
           </div>
           {includedFinishes.length > 1 ? (
             <div className="counter-finish-swatches included">
@@ -3785,7 +3935,7 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
               {(includedFinishes.length ? includedFinishes : [woodFinish]).map((finish) => (
                 <div key={finish.id} className="counter-finish-included-row">
                   <CounterFinishSwatch finish={finish} active={selectedFinish.id === finish.id} onClick={() => onColorChange?.(optionsFree ? { ...finish, price: 0 } : finish)} />
-                  <strong>{shortFinishName(finish.name)}</strong>
+                  <strong>{tr(shortFinishName(finish.name))}</strong>
                 </div>
               ))}
             </div>
@@ -3793,8 +3943,8 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
           {optionalFinishes.length > 0 && (
             <>
               <div className="counter-finish-meta-line">
-                <small>{optionalFinishes.length} couleurs en option</small>
-                <em className="price">+ {Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0'} €</em>
+                <small>{tr(optionalFinishes.length)} {tr("couleurs en option")}</small>
+                <em className="price">+ {tr(Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0')} €</em>
               </div>
               <div className="counter-finish-swatches optional">
                 {optionalFinishes.map((finish) => (
@@ -3825,12 +3975,13 @@ function WoodReceptionDeskOptionsPanel({ item, colors = [], uploadState, onImage
       />
 
       {uploadState?.uploading && <p className="item-options-status">{t('img_uploading')}</p>}
-      {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
+      {uploadState?.error && <p className="item-options-error">{tr(uploadState.error)}</p>}
     </aside>
   );
 }
 
 function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadState, onImageChange, onResetImage, onImagePending, onImageEnabled, onFramingChange, onColorChange, onResetColor, onLogoGateChange, logoGateControls = [], counterColors = [], embedded = false }) {
+  const tr = useUiText();
   const t = useT();
   const slots = Array.isArray(providedSlots) ? providedSlots : normalizeTextureSlots(item?.dimensions?.textureSlots);
   const values = item?.options?.textureSlotValues || {};
@@ -3850,8 +4001,8 @@ function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadSta
             return (
               <section key={slot.id} className="counter-color-card counter-finish-card item-counter-finish-card generic-texture-slot">
                 <div className="counter-finish-head">
-                  <strong>{slot.label || 'Couleur'}</strong>
-                  <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : ''}</span>
+                  <strong>{tr(slot.label || 'Couleur')}</strong>
+                  <span>{tr(shortFinishName(selectedFinish.name))}{tr(shortFinishCode(selectedFinish.code || selectedFinish.reference) ? ` (${shortFinishCode(selectedFinish.code || selectedFinish.reference)})` : '')}</span>
                 </div>
                 <div className="counter-finish-swatches optional">
                   {finishes.map((finish) => (
@@ -3863,19 +4014,19 @@ function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadSta
                     />
                   ))}
                 </div>
-                {(value.color || value.colorImage) && <button type="button" className="item-image-reset" onClick={() => onResetColor?.(slot)}>Réinitialiser</button>}
+                {(value.color || value.colorImage) && <button type="button" className="item-image-reset" onClick={() => onResetColor?.(slot)}>{tr("Réinitialiser")}</button>}
               </section>
             );
           }
           return (
             <label key={slot.id} className="item-color-upload generic-texture-slot">
-              <span>{slot.label || 'Couleur'}</span>
+              <span>{tr(slot.label || 'Couleur')}</span>
               <input
                 type="color"
                 value={value.color || '#ffffff'}
                 onChange={(event) => onColorChange?.(slot, { color: event.target.value })}
               />
-              {value.color && <button type="button" className="item-image-reset" onClick={() => onResetColor?.(slot)}>Réinitialiser</button>}
+              {value.color && <button type="button" className="item-image-reset" onClick={() => onResetColor?.(slot)}>{tr("Réinitialiser")}</button>}
             </label>
           );
         }
@@ -3894,12 +4045,12 @@ function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadSta
               disabled={uploadState?.uploading}
               uploading={uploadState?.uploading}
               className="texture-slot-logo-card"
-              title={logoGate?.label || (isHighSignageVisual ? 'Logo' : textureSlotDisplayLabel(slot, item))}
+              title={tr(logoGate?.label || (isHighSignageVisual ? 'Logo' : textureSlotDisplayLabel(slot, item)))}
               priceLabel={logoGate?.priceLabel || ''}
               priceTone={logoGate?.priceTone || 'included'}
               imageUrl={value.imageUrl}
               imageFraming={value}
-              alt={textureSlotDisplayLabel(slot, item)}
+              alt={tr(textureSlotDisplayLabel(slot, item))}
               visualPending={Boolean(value.visualPending)}
               onEnabledChange={logoGate
                 ? (checked) => onLogoGateChange?.(logoGate.id, checked, slot)
@@ -3918,7 +4069,7 @@ function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadSta
             {logoGateActive && (
               <div className="generic-texture-slot compact-image-slot">
                 <div className="partition-head-upload-title visual-upload-title">
-                  <strong>{textureSlotDisplayLabel(slot, item)}</strong>
+                  <strong>{tr(textureSlotDisplayLabel(slot, item))}</strong>
                 </div>
                 <VisualUploadDropzone
                   imageUrl={value.imageUrl}
@@ -3938,31 +4089,32 @@ function TextureSlotsOptionsPanel({ item, slots: providedSlots = null, uploadSta
                     <span>{t('visual_pending_label')}</span>
                   </label>
                 )}
-                {value.imageUrl && <button type="button" className="item-image-reset" onClick={() => onResetImage?.(slot)}>Réinitialiser</button>}
+                {value.imageUrl && <button type="button" className="item-image-reset" onClick={() => onResetImage?.(slot)}>{tr("Réinitialiser")}</button>}
               </div>
             )}
           </React.Fragment>
         );
       })}
-      {uploadState?.uploading && <p className="item-options-status">Import de l'image...</p>}
-      {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
+      {uploadState?.uploading && <p className="item-options-status">{tr("Import de l'image...")}</p>}
+      {uploadState?.error && <p className="item-options-error">{tr(uploadState.error)}</p>}
     </aside>
   );
 }
 
 function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = false, onEnabledChange, onTvChange, onSelect }) {
+  const tr = useUiText();
   return (
     <div className="prestige-base-card">
       <div className="prestige-base-info">
         <b>i</b>
-        <span>L'arche Prestige est comprise dans la scène de base. Elle se retire uniquement depuis ce menu.</span>
+        <span>{tr("L'arche Prestige est comprise dans la scène de base. Elle se retire uniquement depuis ce menu.")}</span>
       </div>
 
       {enabled && (
         <label className="prestige-switch-row">
           <span>
-            <strong>Option TV</strong>
-            <small>{tvEnabled ? 'TV conservée sur l’arche' : 'TV non souhaitée'}</small>
+            <strong>{tr("Option TV")}</strong>
+            <small>{tr(tvEnabled ? 'TV conservée sur l’arche' : 'TV non souhaitée')}</small>
           </span>
           <button
             type="button"
@@ -3983,13 +4135,14 @@ function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = 
         disabled={disabled}
         onClick={() => onEnabledChange?.(!enabled)}
       >
-        {enabled ? <><X size={15} /> Retirer l'arche</> : <><Plus size={15} /> Remettre l'arche</>}
+        {enabled ? <><X size={15} /> {tr("Retirer l'arche")}</> : <><Plus size={15} /> {tr("Remettre l'arche")}</>}
       </button>
     </div>
   );
 }
 
 function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage, onFramingChange, onVisualPending, onApply, onAlternative }) {
+  const tr = useUiText();
   const selectedItem = items[0] || null;
   const selectedType = selectedItem?.options?.signatureArchVariantType || selectedItem?.type || '';
   const selectedEntry = entries.find((entry) => entry.type === selectedType) || selectedItem || entries[0];
@@ -4005,20 +4158,20 @@ function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items =
     <div className="signature-arch-unavailable">
       <div className="signature-arch-space-notice" role="status">
         <span><Ban size={15} /></span>
-        <div><strong>L’arche ne tient pas sur ce stand</strong>
-          <p>Votre stand{standArea > 0 ? <> de <b>{formatNumber(standArea)} m²</b></> : ''} ne dispose pas des 2,45 m de profondeur nécessaires pour installer l’arche sans déborder sur l’allée.</p>
+        <div><strong>{tr("L’arche ne tient pas sur ce stand")}</strong>
+          <p>{tr("Votre stand")}{standArea > 0 ? <> {tr("de")} <b>{tr(formatNumber(standArea))} m²</b></> : ''} {tr("ne dispose pas des 2,45 m de profondeur nécessaires pour installer l’arche sans déborder sur l’allée.")}</p>
         </div>
       </div>
-      <section className="signature-arch-alternatives" aria-label="Alternatives à l’arche">
-        <h3>Mettez votre marque en avant autrement</h3>
+      <section className="signature-arch-alternatives" aria-label={tr("Alternatives à l’arche")}>
+        <h3>{tr("Mettez votre marque en avant autrement")}</h3>
         {[
           { id: 'coton', label: 'Bâches imprimées', detail: 'Votre visuel sur les cloisons', category: 'Cloison' },
           { id: 'tete', label: 'Visuel lumineux', detail: 'Sur les 2 têtes de cloison', category: 'Tête de cloison' },
           { id: 'shop', label: 'Enseigne haute', detail: 'Cube en tissu diffusant', category: 'Boutique' },
         ].map((alternative) => <button type="button" key={alternative.id} onClick={() => onAlternative?.(alternative.id)}>
           <span className={`signature-arch-alternative-icon ${alternative.id}`}><SignatureArchAlternativeIcon kind={alternative.id} /></span>
-          <span className="signature-arch-alternative-copy"><strong>{alternative.label}</strong><small>{alternative.detail}</small></span>
-          <span className="signature-arch-alternative-category">{alternative.category}</span><ChevronRight size={14} />
+          <span className="signature-arch-alternative-copy"><strong>{tr(alternative.label)}</strong><small>{tr(alternative.detail)}</small></span>
+          <span className="signature-arch-alternative-category">{tr(alternative.category)}</span><ChevronRight size={14} />
         </button>)}
       </section>
     </div>
@@ -4029,21 +4182,21 @@ function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items =
       {entries.length ? (
         <div className="signature-arch-variants signature-arch-controls">
           <fieldset className="signature-arch-choice-group">
-            <legend>Taille <span className="signature-arch-selected-size" aria-hidden="true">{selectedVariant.size} m</span></legend>
+            <legend>{tr("Taille")} <span className="signature-arch-selected-size" aria-hidden="true">{tr(selectedVariant.size)} m</span></legend>
             <div>
               {[2, 3].map((size) => {
                 const entry = signatureArchChoice(entries, size, selectedVariant.lighting, ledWall);
                 const unavailable = !entry || !signatureArchFitsDepth(entry, standDepth);
                 const active = !unavailable && selectedVariant.size === size;
                 return <button key={size} type="button" className={unavailable ? 'unavailable' : active ? 'active' : ''}
-                  aria-pressed={active} title={unavailable ? (!entry ? 'Cette variante n’est pas configurée pour ce pack' : `Disponible à partir de ${signatureArchMinimumDepth(size).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} m de profondeur`) : undefined} disabled={busy || unavailable} onClick={() => onVariantChange?.(entry)}>
-                  <strong>{size} m</strong><small className={`arch-badge${unavailable ? ' unavailable' : size === 2 ? ' included' : ''}`}>{unavailable ? <><Ban size={10} /> Non disponible</> : size === 2 ? 'Inclus' : '+ 249 €'}</small>
+                  aria-pressed={active} title={tr(unavailable ? (!entry ? 'Cette variante n’est pas configurée pour ce pack' : `Disponible à partir de ${signatureArchMinimumDepth(size).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} m de profondeur`) : undefined)} disabled={busy || unavailable} onClick={() => onVariantChange?.(entry)}>
+                  <strong>{tr(size)} m</strong><small className={`arch-badge${unavailable ? ' unavailable' : size === 2 ? ' included' : ''}`}>{unavailable ? <><Ban size={10} /> {tr("Non disponible")}</> : size === 2 ? 'Inclus' : '+ 249 €'}</small>
                 </button>;
               })}
             </div>
           </fieldset>
           <fieldset className="signature-arch-choice-group signature-arch-lighting">
-            <legend>Éclairage du plafond</legend>
+            <legend>{tr("Éclairage du plafond")}</legend>
             <div>
               {['spot', 'suspension'].map((lighting) => {
                 const entry = signatureArchChoice(entries, selectedVariant.size, lighting, ledWall);
@@ -4051,34 +4204,34 @@ function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items =
                 return <button key={lighting} type="button" className={active ? 'active' : ''}
                   aria-pressed={active} disabled={busy || !entry || !signatureArchFitsDepth(entry, standDepth)} onClick={() => onVariantChange?.(entry)}>
                   <span className="signature-arch-lighting-image"><img src={`/images/signature/arche-${lighting}.png`} alt="" />{active && <i><Check size={13} strokeWidth={3} /></i>}</span>
-                  <strong>{lighting === 'spot' ? 'Spot' : 'Suspension'}</strong>
+                  <strong>{tr(lighting === 'spot' ? 'Spot' : 'Suspension')}</strong>
                 </button>;
               })}
             </div>
           </fieldset>
         </div>
-      ) : <p className="signature-arch-empty">Aucune arche Signature n'est encore associée à ce pack.</p>}
+      ) : <p className="signature-arch-empty">{tr("Aucune arche Signature n'est encore associée à ce pack.")}</p>}
 
       <section className="signature-arch-led-option">
-        <strong>Option</strong>
+        <strong>{tr("Option")}</strong>
         <div className="signature-arch-led-panel">
-          <button type="button" role="switch" aria-label="Mur LED" aria-checked={ledWall} disabled={busy || !selectedItem || !ledEntry || !signatureArchFitsDepth(ledEntry, standDepth)} onClick={() => onVariantChange?.(ledEntry)}>
+          <button type="button" role="switch" aria-label={tr("Mur LED")} aria-checked={ledWall} disabled={busy || !selectedItem || !ledEntry || !signatureArchFitsDepth(ledEntry, standDepth)} onClick={() => onVariantChange?.(ledEntry)}>
             <img src="/images/signature/arche-mur-led.png" alt="" />
-            <strong>Mur LED</strong><span className="arch-badge">+ 2 570 €</span>
+            <strong>{tr("Mur LED")}</strong><span className="arch-badge">+ 2 570 €</span>
             <span className="signature-arch-led-toggle" aria-hidden="true"><i /></span>
           </button>
-          <p>Résolution vidéo : 384 × 1152 px</p>
+          <p>{tr("Résolution vidéo : 384 × 1152 px")}</p>
         </div>
       </section>
 
       <section className="signature-arch-palette surface-color-option-card">
-        <div className="signature-arch-palette-heading"><strong>Couleur</strong><span>{colorLabel(selected)}</span></div>
-        <p>S’applique à l’arche et à son empreinte moquette.</p>
+        <div className="signature-arch-palette-heading"><strong>{tr("Couleur")}</strong><span>{tr(colorLabel(selected))}</span></div>
+        <p>{tr("S’applique à l’arche et à son empreinte moquette.")}</p>
         {[[includedColors, true], [optionalColors, false]].map(([choices, included]) => choices.length > 0 && (
           <div key={String(included)} className="signature-arch-palette-group">
-            <div><small>{choices.length} couleurs {included ? 'incluses' : 'en option'}</small><span className={included ? 'arch-badge included' : 'arch-badge'}>{included ? 'Inclus' : '+ 285 €'}</span></div>
-            <div className="signature-arch-swatches" role="group" aria-label={`EMPREINTE MOQUETTE : couleurs ${included ? 'incluses' : 'en option'}`}>
-              {choices.map((color) => <button key={color.id} type="button" title={colorLabel(color)} aria-label={colorLabel(color)} aria-pressed={normalizeColorId(selected.id) === normalizeColorId(color.id)}
+            <div><small>{tr(choices.length)} {tr("couleurs")} {tr(included ? 'incluses' : 'en option')}</small><span className={included ? 'arch-badge included' : 'arch-badge'}>{tr(included ? 'Inclus' : '+ 285 €')}</span></div>
+            <div className="signature-arch-swatches" role="group" aria-label={tr(`EMPREINTE MOQUETTE : couleurs ${included ? 'incluses' : 'en option'}`)}>
+              {choices.map((color) => <button key={color.id} type="button" title={tr(colorLabel(color))} aria-label={tr(colorLabel(color))} aria-pressed={normalizeColorId(selected.id) === normalizeColorId(color.id)}
                 className={normalizeColorId(selected.id) === normalizeColorId(color.id) ? 'active' : ''} style={{ backgroundColor: colorHex(color) }} disabled={busy || !selectedItem} onClick={() => onColorChange?.(color.id)} />)}
             </div>
           </div>
@@ -4090,24 +4243,24 @@ function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items =
         const label = slot.id === 'signature-arch-led-5' ? 'Visuel lumineux façade' : 'Visuel arrière haut';
         return (
           <section key={slot.id} className="signature-arch-section signature-arch-visual-section">
-            <div className="signature-arch-upload-heading"><strong>{label}</strong><span>{slot.format}</span><small className="arch-badge included">Inclus</small></div>
+            <div className="signature-arch-upload-heading"><strong>{tr(label)}</strong><span>{tr(slot.format)}</span><small className="arch-badge included">{tr("Inclus")}</small></div>
             <label className={`signature-arch-upload${value.imageUrl ? ' has-image' : ''}${busy ? ' disabled' : ''}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const file = event.dataTransfer.files?.[0]; if (!busy && selectedItem && file) onImage?.(selectedItem, slot, file); }}>
-              {value.imageUrl ? <img src={value.imageUrl} alt={label} /> : <span className="signature-arch-file-icon"><FileImage size={19} /></span>}
-              <span className="signature-arch-upload-copy"><strong>{uploadState?.uploading ? 'Import en cours…' : value.imageUrl ? 'Votre visuel' : 'Glissez votre logo'}</strong><small>PDF, SVG, PNG ou JPG HD</small></span>
-              <span className="signature-arch-import">{value.imageUrl ? 'Modifier' : 'Importer'}</span>
-              <input type="file" aria-label={`Importer — ${label}`} accept={visualUploadAccept} disabled={busy || !selectedItem} onChange={(event) => { const file = event.target.files?.[0]; if (file && selectedItem) onImage?.(selectedItem, slot, file); event.target.value = ''; }} />
+              {value.imageUrl ? <img src={value.imageUrl} alt={tr(label)} /> : <span className="signature-arch-file-icon"><FileImage size={19} /></span>}
+              <span className="signature-arch-upload-copy"><strong>{tr(uploadState?.uploading ? 'Import en cours…' : value.imageUrl ? 'Votre visuel' : 'Glissez votre logo')}</strong><small>{tr("PDF, SVG, PNG ou JPG HD")}</small></span>
+              <span className="signature-arch-import">{tr(value.imageUrl ? 'Modifier' : 'Importer')}</span>
+              <input type="file" aria-label={tr(`Importer — ${label}`)} accept={visualUploadAccept} disabled={busy || !selectedItem} onChange={(event) => { const file = event.target.files?.[0]; if (file && selectedItem) onImage?.(selectedItem, slot, file); event.target.value = ''; }} />
             </label>
             {value.imageUrl && <ImageFramingControls imageUrl={value.imageUrl} value={value} aspectRatio={slot.aspectRatio} disabled={busy} onChange={(framing) => onFramingChange?.(selectedItem, slot, framing)} />}
-            <label className="signature-arch-pending"><input type="checkbox" checked={Boolean(value.visualPending)} disabled={busy || !selectedItem} onChange={(event) => onVisualPending?.(selectedItem, slot, event.target.checked)} /><span>Je fournirai le visuel plus tard</span></label>
+            <label className="signature-arch-pending"><input type="checkbox" checked={Boolean(value.visualPending)} disabled={busy || !selectedItem} onChange={(event) => onVisualPending?.(selectedItem, slot, event.target.checked)} /><span>{tr("Je fournirai le visuel plus tard")}</span></label>
             {value.imageName && <small className="signature-arch-image-name">{value.imageName}</small>}
-            {value.imageUrl && <button type="button" className="item-image-reset" disabled={busy} onClick={() => onResetImage?.(selectedItem, slot)}>Réinitialiser</button>}
+            {value.imageUrl && <button type="button" className="item-image-reset" disabled={busy} onClick={() => onResetImage?.(selectedItem, slot)}>{tr("Réinitialiser")}</button>}
           </section>
         );
       })}
-      {uploadState?.error && <p className="item-options-error">{uploadState.error}</p>}
+      {uploadState?.error && <p className="item-options-error">{tr(uploadState.error)}</p>}
       <footer className="signature-arch-footer">
-        <div><span>Suppléments HT<small>{supplement ? 'Options sélectionnées' : 'Configuration standard'}</small></span><strong>{supplement.toLocaleString('fr-FR')} €</strong></div>
-        <button type="button" disabled={busy || !selectedItem} onClick={onApply}>Appliquer</button>
+        <div><span>{tr("Suppléments HT")}<small>{tr(supplement ? 'Options sélectionnées' : 'Configuration standard')}</small></span><strong>{tr(supplement.toLocaleString('fr-FR'))} €</strong></div>
+        <button type="button" disabled={busy || !selectedItem} onClick={onApply}>{tr("Appliquer")}</button>
       </footer>
     </div>
   );
@@ -4126,6 +4279,7 @@ function SignatureArchAlternativeIcon({ kind }) {
 }
 
 function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = {}, disabled = false, onEnabledChange, onImage, onResetImage, onVisualPending, onVisualEnabled, onFramingChange, onSelect }) {
+  const tr = useUiText();
   const item = items[0] || null;
   const slot = firstImageTextureSlot(item);
   const value = slot ? item?.options?.textureSlotValues?.[slot.id] || {} : {};
@@ -4137,7 +4291,7 @@ function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = 
     <div className="prestige-base-card prestige-signage-card">
       <div className="prestige-base-info">
         <b>i</b>
-        <span>L'enseigne haute Prestige est comprise dans la scène de base. Visuel : 1500 × 1300 mm ht · RECTO VERSO.</span>
+        <span>{tr("L'enseigne haute Prestige est comprise dans la scène de base. Visuel : 1500 × 1300 mm ht · RECTO VERSO.")}</span>
       </div>
 
       {enabled && item && (
@@ -4146,11 +4300,11 @@ function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = 
           disabled={disabled || uploading}
           uploading={uploading}
           className="texture-slot-logo-card prestige-signage-upload"
-          title="Logo"
+          title={tr("Logo")}
           spec="Visuel 1500 × 1300 mm ht · RECTO VERSO"
           imageUrl={imageUrl}
           imageFraming={slot ? value : item.options?.headMainImageFraming}
-          alt={slot?.label || 'Logo enseigne haute'}
+          alt={tr(slot?.label || 'Logo enseigne haute')}
           visualPending={Boolean(value.visualPending)}
           onEnabledChange={(checked) => onVisualEnabled?.(item, slot, checked)}
           onImageChange={(file) => onImage?.(item, file, slot)}
@@ -4161,14 +4315,14 @@ function PrestigeSignageOptionCard({ items = [], enabled = false, uploadState = 
         />
       )}
 
-      {uploadState?.error && <small className="partition-head-upload-error">{uploadState.error}</small>}
+      {uploadState?.error && <small className="partition-head-upload-error">{tr(uploadState.error)}</small>}
       <button
         type="button"
         className={enabled ? 'reserve-remove-button' : 'reserve-remove-button active'}
         disabled={disabled}
         onClick={() => onEnabledChange?.(!enabled)}
       >
-        {enabled ? <><X size={15} /> Retirer l'enseigne haute</> : <><Plus size={15} /> Remettre l'enseigne haute</>}
+        {enabled ? <><X size={15} /> {tr("Retirer l'enseigne haute")}</> : <><Plus size={15} /> {tr("Remettre l'enseigne haute")}</>}
       </button>
     </div>
   );
@@ -4188,6 +4342,7 @@ function textureSlotColorPatch(finish = {}) {
 }
 
 function CounterOptionCard({ items = [], colors = [], colorCatalog = [], catalog = [], salonLabel = '', uploadState = {}, disabled = false, onImage, onOptions, onVisibility, onRestore, onVariant, onSelect }) {
+  const tr = useUiText();
   const t = useT();
   const [selectedCounterId, setSelectedCounterId] = useState(items[0]?.id || '');
 
@@ -4259,7 +4414,7 @@ function CounterOptionCard({ items = [], colors = [], colorCatalog = [], catalog
         <div className="counter-empty-card">
           <strong>{t('counter_empty_title')}</strong>
           <span>{t('counter_empty_detail')}</span>
-          <button type="button" className="reserve-remove-button counter-scene-toggle restore" disabled={disabled} onClick={() => onRestore?.()}>Remettre le comptoir accueil</button>
+          <button type="button" className="reserve-remove-button counter-scene-toggle restore" disabled={disabled} onClick={() => onRestore?.()}>{tr("Remettre le comptoir accueil")}</button>
         </div>
       </div>
     );
@@ -4278,7 +4433,7 @@ function CounterOptionCard({ items = [], colors = [], colorCatalog = [], catalog
                 className={item.id === selectedItem?.id ? 'active' : ''}
                 onClick={() => selectCounter(item.id)}
               >
-                {item.label || `Comptoir ${index + 1}`}
+                {tr(item.label || `Comptoir ${index + 1}`)}
               </button>
             ))}
           </div>
@@ -4296,9 +4451,9 @@ function CounterOptionCard({ items = [], colors = [], colorCatalog = [], catalog
                 : Math.max(0, Number(variant.price || 0) - baseVariantPrice);
               return (
                 <button key={variant.id} type="button" className={active ? 'active' : ''} disabled={disabled} onClick={() => selectVariant(variant)}>
-                  <span><strong>{counterSizeShortLabel(variant)}</strong></span>
+                  <span><strong>{tr(counterSizeShortLabel(variant))}</strong></span>
                   <em className={supplement > 0 ? 'price' : 'included'}>
-                    {supplement > 0 ? `${supplement.toLocaleString('fr-FR')} €` : t('counter_included_badge')}
+                    {tr(supplement > 0 ? `${supplement.toLocaleString('fr-FR')} €` : t('counter_included_badge'))}
                   </em>
                 </button>
               );
@@ -4317,8 +4472,8 @@ function CounterOptionCard({ items = [], colors = [], colorCatalog = [], catalog
 
       <section className="counter-logo-card counter-logo-card-v2">
         <header>
-          <strong>Logo</strong>
-          <label className="counter-logo-switch" aria-label="Activer le logo">
+          <strong>{tr("Logo")}</strong>
+          <label className="counter-logo-switch" aria-label={tr("Activer le logo")}>
             <input
               type="checkbox"
               disabled={disabled}
@@ -4331,7 +4486,7 @@ function CounterOptionCard({ items = [], colors = [], colorCatalog = [], catalog
         {logoEnabled && (
           <>
             <em className={logoPrice > 0 ? 'billable' : 'included'}>
-              {logoPrice > 0 ? `+ ${logoPrice.toLocaleString('fr-FR')} €` : t('counter_included_badge')}
+              {tr(logoPrice > 0 ? `+ ${logoPrice.toLocaleString('fr-FR')} €` : t('counter_included_badge'))}
             </em>
 
             <VisualUploadDropzone
@@ -4373,7 +4528,7 @@ function CounterOptionCard({ items = [], colors = [], colorCatalog = [], catalog
       </section>
 
       {uploadState?.uploading && <p className="counter-status">{t('counter_uploading')}</p>}
-      {uploadState?.error && <p className="counter-error">{uploadState.error}</p>}
+      {uploadState?.error && <p className="counter-error">{tr(uploadState.error)}</p>}
     </div>
   );
 }
@@ -4387,6 +4542,7 @@ function includedColorisLabel(count = 0) {
 }
 
 function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = false, onSelect, compact = false }) {
+  const tr = useUiText();
   const t = useT();
   const includedFinishes = finishes.filter((finish) => finish.included || finish.mode === 'wood');
   const optionalFinishes = finishes.filter((finish) => !includedFinishes.some((included) => included.id === finish.id));
@@ -4396,10 +4552,10 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
     <section className={compact ? 'counter-color-card counter-finish-card counter-finish-card-v2' : 'counter-color-card counter-finish-card'}>
       <div className="counter-finish-head">
         <strong>{t('counter_finish_title')}</strong>
-        <span>{shortFinishName(selectedFinish.name)}{shortFinishCode(selectedCode) ? ` (${shortFinishCode(selectedCode)})` : ''}</span>
+        <span>{tr(shortFinishName(selectedFinish.name))}{tr(shortFinishCode(selectedCode) ? ` (${shortFinishCode(selectedCode)})` : '')}</span>
       </div>
       <div className="counter-finish-meta-line">
-        <small>{includedColorisLabel(includedFinishes.length)}</small>
+        <small>{tr(includedColorisLabel(includedFinishes.length))}</small>
       </div>
       {includedFinishes.length > 1 ? (
         <div className="counter-finish-swatches included">
@@ -4412,8 +4568,8 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
           {(includedFinishes.length ? includedFinishes : [counterWoodFinish()]).map((finish) => (
             <div key={finish.id} className="counter-finish-included-row">
               <CounterFinishSwatch finish={finish} active={selectedFinish.id === finish.id} disabled={disabled} onClick={() => onSelect?.(finish)} />
-              <strong>{shortFinishName(finish.name)}</strong>
-              <em className="included">Inclus</em>
+              <strong>{tr(shortFinishName(finish.name))}</strong>
+              <em className="included">{tr("Inclus")}</em>
             </div>
           ))}
         </div>
@@ -4421,8 +4577,8 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
       {optionalFinishes.length > 0 && (
         <>
           <div className="counter-finish-meta-line">
-            <small>{optionalFinishes.length} couleurs en option</small>
-            <em className="price">+ {Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0'} €</em>
+            <small>{tr(optionalFinishes.length)} {tr("couleurs en option")}</small>
+            <em className="price">+ {tr(Number(optionPrice || 0) > 0 ? Number(optionPrice).toLocaleString('fr-FR') : '0')} €</em>
           </div>
           <div className="counter-finish-swatches optional">
             {optionalFinishes.map((finish) => (
@@ -4436,17 +4592,18 @@ function CounterFinishCard({ finishes = [], selectedFinish = {}, disabled = fals
 }
 
 function CounterFinishSwatch({ finish = {}, active = false, disabled = false, onClick }) {
+  const tr = useUiText();
   return (
     <button
       type="button"
       className={active ? 'active' : ''}
       style={{ '--swatch-color': finish.hex, '--swatch-image': finish.image ? `url("${finish.image}")` : 'none' }}
-      title={`${shortFinishName(finish.name)}${finish.code ? ` (${shortFinishCode(finish.code)})` : ''}`}
+      title={tr(`${shortFinishName(finish.name)}${finish.code ? ` (${shortFinishCode(finish.code)})` : ''}`)}
       disabled={disabled}
       onClick={onClick}
     >
       <i className={finish.mode === 'wood' ? 'wood' : ''} />
-      <span>{shortFinishName(finish.name)}</span>
+      <span>{tr(shortFinishName(finish.name))}</span>
     </button>
   );
 }
@@ -4829,6 +4986,7 @@ function OptionsStepPanel({
   onSelectPrestigeItem,
   isAdminViewer = false,
 }) {
+  const tr = useUiText();
   const t = useT();
   const uniformColorSections = isSignatureStand || normalizePackLabel(salonLabel) === 'equipe' || normalizeTextValue(salonLabel).includes('siae');
   const accordionScrollProps = (optionKey) => ({
@@ -4839,7 +4997,7 @@ function OptionsStepPanel({
   return (
     <>
       <PanelHead title={t('panel_options_title')} step={activeStep} />
-      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle={isSignatureStand ? 'Moquette' : 'Moquette · Empreinte'} icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle={tr(isSignatureStand ? 'Moquette' : 'Moquette · Empreinte')} icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
           uniformLayout={uniformColorSections}
           showThickOption={isSignatureStand}
@@ -4874,10 +5032,10 @@ function OptionsStepPanel({
           />
         )}
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} subtitle="Coton gratté · Bâche imprimée" icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} subtitle={tr("Coton gratté · Bâche imprimée")} icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
         <ColorOptionCard
           uniformLayout={uniformColorSections}
-          title="COTON GRATTÉ"
+          title={tr("COTON GRATTÉ")}
           colors={wallFabricColors}
           selectedColor={selectedWallFabricColor}
           defaultColorId={defaultColorOptions.wallFabricColorId}
@@ -4955,8 +5113,8 @@ function OptionsStepPanel({
       </OptionAccordion>
       {isSignatureStand && (
         <OptionAccordion {...accordionScrollProps('arche')} className="signature-arch-accordion"
-          title={<span className="signature-arch-title">Arche{Number(standDepth) < signatureArchMinimumDepth(2) && <small>Non disponible</small>}</span>}
-          subtitle={Number(standDepth) < signatureArchMinimumDepth(2) ? `Espace insuffisant · ${formatNumber(area)} m²` : 'Taille · Éclairage · Couleur · Options'}
+          title={<span className="signature-arch-title">{tr("Arche")}{Number(standDepth) < signatureArchMinimumDepth(2) && <small>{tr("Non disponible")}</small>}</span>}
+          subtitle={tr(Number(standDepth) < signatureArchMinimumDepth(2) ? `Espace insuffisant · ${formatNumber(area)} m²` : 'Taille · Éclairage · Couleur · Options')}
           icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
           <SignatureArchOptionCard
             standDepth={standDepth}
@@ -4979,7 +5137,7 @@ function OptionsStepPanel({
         </OptionAccordion>
       )}
       {isPrestigeStand && (
-        <OptionAccordion {...accordionScrollProps('arche')} title="Arche" subtitle="TV · Présence" icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
+        <OptionAccordion {...accordionScrollProps('arche')} title={tr("Arche")} subtitle={tr("TV · Présence")} icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
           <PrestigeArchOptionCard
             enabled={prestigeArchEnabled && prestigeArchItems.length > 0}
             tvEnabled={prestigeArchTvEnabled}
@@ -4991,7 +5149,7 @@ function OptionsStepPanel({
         </OptionAccordion>
       )}
       {isPrestigeStand && (
-        <OptionAccordion {...accordionScrollProps('enseigne')} title="Enseigne haute" subtitle="Visuel" icon={<ConfiguratorOptionIcon src="/icons/enseigne_haute.svg" />} open={openOptions.enseigne} onToggle={() => toggleOption('enseigne')}>
+        <OptionAccordion {...accordionScrollProps('enseigne')} title={tr("Enseigne haute")} subtitle={tr("Visuel")} icon={<ConfiguratorOptionIcon src="/icons/enseigne_haute.svg" />} open={openOptions.enseigne} onToggle={() => toggleOption('enseigne')}>
           <PrestigeSignageOptionCard
             items={prestigeSignageItems}
             enabled={prestigeSignageEnabled && prestigeSignageItems.length > 0}
@@ -5007,7 +5165,7 @@ function OptionsStepPanel({
           />
         </OptionAccordion>
       )}
-      {!isSignatureStand && <OptionAccordion {...accordionScrollProps('comptoir')} title={t('option_counter')} subtitle="Taille · Couleur · Logo" icon={<ConfiguratorOptionIcon src="/icons/comptoir_accueil.svg" />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
+      {!isSignatureStand && <OptionAccordion {...accordionScrollProps('comptoir')} title={t('option_counter')} subtitle={tr("Taille · Couleur · Logo")} icon={<ConfiguratorOptionIcon src="/icons/comptoir_accueil.svg" />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
         <CounterOptionCard
           items={counterItems}
           colors={counterColors}
@@ -5030,6 +5188,7 @@ function OptionsStepPanel({
 }
 
 function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, readOnly = false, onAdd, onRemove, onSelectItem, onConfigureItem, onNext }) {
+  const tr = useUiText();
   const t = useT();
   const [activeCategory, setActiveCategory] = useState('all');
   const [search, setSearch] = useState('');
@@ -5064,7 +5223,7 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
       <nav className="marketplace-tabs" aria-label={t('furniture_aria_filter')}>
         {categories.map((category) => (
           <button key={category.id} type="button" className={selectedCategory?.id === category.id ? 'active' : ''} onClick={() => setActiveCategory(category.id)}>
-            <span>{category.icon}</span>{category.label}<em>{category.count}</em>
+            <span>{tr(category.icon)}</span>{tr(category.label)}<em>{tr(category.count)}</em>
           </button>
         ))}
       </nav>
@@ -5092,6 +5251,7 @@ function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, r
 }
 
 function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, includedCount = 0, billableCount = 0, onAdd, onRemoveOne }) {
+  const tr = useUiText();
   const t = useT();
   const lang = useContext(LanguageContext);
   const Icon = entry.icon || Box;
@@ -5105,21 +5265,21 @@ function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, included
         {entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Icon size={42} />}
       </div>
       <div className="marketplace-card-body">
-        <strong>{label}</strong>
-        {price ? <em>{marketplacePriceLabel(entry, price, t)}</em> : null}
-        {subtitle ? <small>{subtitle}</small> : null}
+        <strong>{tr(label)}</strong>
+        {price ? <em>{tr(marketplacePriceLabel(entry, price, t))}</em> : null}
+        {subtitle ? <small>{tr(subtitle)}</small> : null}
         {billableCount > 0 ? (
           <div className="marketplace-card-counter">
-            <button type="button" disabled={readOnly} onClick={() => onRemoveOne?.()} aria-label={`- ${label}`}>
+            <button type="button" disabled={readOnly} onClick={() => onRemoveOne?.()} aria-label={tr(`- ${label}`)}>
               <Minus size={14} />
             </button>
-            <span>{billableCount}</span>
-            <button type="button" disabled={readOnly} onClick={onAdd} aria-label={`+ ${label}`}>
+            <span>{tr(billableCount)}</span>
+            <button type="button" disabled={readOnly} onClick={onAdd} aria-label={tr(`+ ${label}`)}>
               <Plus size={14} />
             </button>
           </div>
         ) : (
-          <button type="button" disabled={readOnly} onClick={onAdd} aria-label={`+ ${label}`}>
+          <button type="button" disabled={readOnly} onClick={onAdd} aria-label={tr(`+ ${label}`)}>
             <Plus size={18} />
           </button>
         )}
@@ -5154,38 +5314,42 @@ function groupCartItems(items = []) {
 }
 
 function PanelStepActions({ previousLabel, nextLabel, onPrevious, onNext }) {
+  const tr = useUiText();
   return (
     <footer className="config-panel-actions">
-      <button type="button" className="panel-step-button secondary" onClick={onPrevious}>{previousLabel}</button>
-      <button type="button" className="panel-step-button primary" onClick={onNext}>{nextLabel} <ArrowRight size={14} /></button>
+      <button type="button" className="panel-step-button secondary" onClick={onPrevious}>{tr(previousLabel)}</button>
+      <button type="button" className="panel-step-button primary" onClick={onNext}>{tr(nextLabel)} <ArrowRight size={14} /></button>
     </footer>
   );
 }
 
 function PackAllowanceProgress({ pricing }) {
+  const tr = useUiText();
   if (pricing?.packBenefits?.mode !== 'allowance') return null;
   const amount = Number(pricing.allowanceAmount || 0);
   const used = Math.min(amount, Number(pricing.allowanceApplied || 0));
-  return <section className="pack-allowance-progress" aria-label="Utilisation du forfait accessoires">
-    <div><strong>Forfait accessoires</strong><b>{validationMoney(amount)} € HT</b></div>
-    <progress max={Math.max(1, amount)} value={used} aria-label="Montant du forfait utilisé" />
-    <div><span>{validationMoney(used)} € utilisés</span><span>{validationMoney(pricing.allowanceRemaining || 0)} € disponibles</span></div>
+  return <section className="pack-allowance-progress" aria-label={tr("Utilisation du forfait accessoires")}>
+    <div><strong>{tr("Forfait accessoires")}</strong><b>{tr(validationMoney(amount))} {tr("€ HT")}</b></div>
+    <progress max={Math.max(1, amount)} value={used} aria-label={tr("Montant du forfait utilisé")} />
+    <div><span>{tr(validationMoney(used))} {tr("€ utilisés")}</span><span>{tr(validationMoney(pricing.allowanceRemaining || 0))} {tr("€ disponibles")}</span></div>
   </section>;
 }
 
 function PackAllowanceSummary({ pricing }) {
+  const tr = useUiText();
   if (pricing?.packBenefits?.mode !== 'allowance') return null;
-  return <section className="pack-allowance-summary" aria-label="Forfait accessoires">
+  return <section className="pack-allowance-summary" aria-label={tr("Forfait accessoires")}>
     <PackAllowanceProgress pricing={pricing} />
-    <div><span>Total avant forfait</span><b>{validationMoney(pricing.grossTotal || 0, true)} € HT</b></div>
-    <div><span>Forfait offert : {validationMoney(pricing.allowanceAmount || 0)} € HT</span><b>− {validationMoney(pricing.allowanceApplied || 0, true)} €</b></div>
-    <div><span>Solde disponible</span><b>{validationMoney(pricing.allowanceRemaining || 0, true)} € HT</b></div>
-    <div><span>Supplément à payer</span><b>{validationMoney(pricing.total || 0, true)} € HT</b></div>
-    <small>Objets, options et assurance mobilier compris dans le forfait. Solde non remboursable.</small>
+    <div><span>{tr("Total avant forfait")}</span><b>{tr(validationMoney(pricing.grossTotal || 0, true))} {tr("€ HT")}</b></div>
+    <div><span>{tr("Forfait offert :")} {tr(validationMoney(pricing.allowanceAmount || 0))} {tr("€ HT")}</span><b>− {tr(validationMoney(pricing.allowanceApplied || 0, true))} €</b></div>
+    <div><span>{tr("Solde disponible")}</span><b>{tr(validationMoney(pricing.allowanceRemaining || 0, true))} {tr("€ HT")}</b></div>
+    <div><span>{tr("Supplément à payer")}</span><b>{tr(validationMoney(pricing.total || 0, true))} {tr("€ HT")}</b></div>
+    <small>{tr("Objets, options et assurance mobilier compris dans le forfait. Solde non remboursable.")}</small>
   </section>;
 }
 
 function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, total, pricing, salonLabel, readOnly, onSelectItem, onOpenItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onValidate }) {
+  const tr = useUiText();
   const t = useT();
   const itemRefs = useRef(new Map());
   const [cartOpen, setCartOpen] = useState(false);
@@ -5207,17 +5371,17 @@ function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, tota
   return (
     <div className="topbar-cart">
       <div className="topbar-cart-total">
-        <strong>{total.toLocaleString('fr-FR')} € HT</strong>
+        <strong>{tr(total.toLocaleString('fr-FR'))} {tr("€ HT")}</strong>
       </div>
       <button
         type="button"
         className={`topbar-cart-button ${cartOpen ? 'active' : ''}`}
         onClick={() => setCartOpen((open) => !open)}
         aria-expanded={cartOpen}
-        aria-label="Ouvrir le panier"
+        aria-label={tr("Ouvrir le panier")}
       >
         <ShoppingCart size={20} />
-        <span>{items.length}</span>
+        <span>{tr(items.length)}</span>
       </button>
 
       {cartOpen && (
@@ -5227,12 +5391,12 @@ function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, tota
               <strong>{t('cart_my_stand')}</strong>
               <small>{t('cart_articles', { count: items.length, s: items.length > 1 ? 's' : '' })}</small>
             </div>
-            <button type="button" className="cart-popover-close" onClick={() => setCartOpen(false)} aria-label="Fermer le panier">
+            <button type="button" className="cart-popover-close" onClick={() => setCartOpen(false)} aria-label={tr("Fermer le panier")}>
               <X size={16} />
             </button>
           </header>
           <div className="cart-item-strip">
-            {items.length === 0 && <p className="cart-empty-state">Aucun objet AMCO ajouté pour le moment.</p>}
+            {items.length === 0 && <p className="cart-empty-state">{tr("Aucun objet AMCO ajouté pour le moment.")}</p>}
             {cartGroups.map((group) => {
               const item = group.items[0];
               const entry = findCatalogEntry(catalog, item.type) || item;
@@ -5254,27 +5418,27 @@ function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, tota
                   <button type="button" className="cart-item-main" onClick={(event) => { event.stopPropagation(); openCartItem(item); }}>
                     <CartItemThumb item={item} entry={entry} catalog={catalog} />
                     <span className="cart-item-copy">
-                      <strong>{itemCartLabel(item)}</strong>
-                      <small>Quantité : {group.items.length}</small>
+                      <strong>{tr(itemCartLabel(item))}</strong>
+                      <small>{tr("Quantité :")} {tr(group.items.length)}</small>
                       {optionLines.length > 0 && (
                         <span className="cart-item-options">
-                          {optionLines.map((line, index) => <em key={`${line}-${index}`}>{line}</em>)}
+                          {optionLines.map((line, index) => <em key={`${line}-${index}`}>{tr(line)}</em>)}
                         </span>
                       )}
-                      <b>{groupTotal > 0 ? `${groupTotal.toLocaleString('fr-FR')} € HT` : 'Inclus'}</b>
+                      <b>{tr(groupTotal > 0 ? `${groupTotal.toLocaleString('fr-FR')} € HT` : 'Inclus')}</b>
                     </span>
                   </button>
                   <div className="cart-item-controls" onClick={(event) => event.stopPropagation()}>
                     <div className="cart-quantity-controls">
-                      <button type="button" disabled={readOnly || !decrementItem} onClick={() => decrementItem && onDecrementItem?.(decrementItem.id)} aria-label="-1">
+                      <button type="button" disabled={readOnly || !decrementItem} onClick={() => decrementItem && onDecrementItem?.(decrementItem.id)} aria-label={tr("-1")}>
                         <Minus size={13} />
                       </button>
-                      <span>{group.items.length}</span>
-                    <button type="button" disabled={readOnly || item.autoMeterCover} onClick={() => onIncrementItem?.(item)} aria-label="+1">
+                      <span>{tr(group.items.length)}</span>
+                    <button type="button" disabled={readOnly || item.autoMeterCover} onClick={() => onIncrementItem?.(item)} aria-label={tr("+1")}>
                         <Plus size={13} />
                       </button>
                     </div>
-                    <button type="button" className="danger" disabled={readOnly || !removableItems.length} onClick={() => onDeleteItems?.(removableItems.map((groupItem) => groupItem.id))} aria-label="Supprimer">
+                    <button type="button" className="danger" disabled={readOnly || !removableItems.length} onClick={() => onDeleteItems?.(removableItems.map((groupItem) => groupItem.id))} aria-label={tr("Supprimer")}>
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -5285,8 +5449,7 @@ function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, tota
 
           <PackAllowanceSummary pricing={pricing} />
           <button type="button" className="cart-validate-button" onClick={() => { setCartOpen(false); onValidate?.(); }}>
-            Valider le panier
-          </button>
+            {tr("Valider le panier")} </button>
         </div>
       )}
     </div>
@@ -5294,6 +5457,7 @@ function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, tota
 }
 
 function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readOnly, nextLabel, nextDetail, onSelectItem, onOpenItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onPrevious, onNext }) {
+  const tr = useUiText();
   const t = useT();
   const itemRefs = useRef(new Map());
   const [cartOpen, setCartOpen] = useState(false);
@@ -5319,15 +5483,15 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
           {t('back')}
         </button>
         <button type="button" className="cart-step-button primary" onClick={onNext}>
-          {nextLabel}
-          <span>{nextDetail}</span>
+          {tr(nextLabel)}
+          <span>{tr(nextDetail)}</span>
         </button>
       </div>
 
       <div className="cart-right-actions">
         <div className="cart-total-inline">
           <span>{t('total_ht_estimated')}</span>
-          <strong>{total.toLocaleString('fr-FR')} € HT</strong>
+          <strong>{tr(total.toLocaleString('fr-FR'))} {tr("€ HT")}</strong>
         </div>
         <button
           type="button"
@@ -5336,7 +5500,7 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
           aria-expanded={cartOpen}
         >
           <ShoppingCart size={18} />
-          <span>{items.length}</span>
+          <span>{tr(items.length)}</span>
         </button>
       </div>
 
@@ -5347,12 +5511,12 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
               <strong>{t('cart_my_stand')}</strong>
               <small>{t('cart_articles', { count: items.length, s: items.length > 1 ? 's' : '' })}</small>
             </div>
-            <button type="button" className="cart-popover-close" onClick={() => setCartOpen(false)} aria-label="Fermer le panier">
+            <button type="button" className="cart-popover-close" onClick={() => setCartOpen(false)} aria-label={tr("Fermer le panier")}>
               <X size={16} />
             </button>
           </header>
           <div className="cart-item-strip">
-            {items.length === 0 && <p className="cart-empty-state">Aucun objet AMCO ajouté pour le moment.</p>}
+            {items.length === 0 && <p className="cart-empty-state">{tr("Aucun objet AMCO ajouté pour le moment.")}</p>}
             {cartGroups.map((group) => {
               const item = group.items[0];
               const entry = findCatalogEntry(catalog, item.type) || item;
@@ -5374,27 +5538,27 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
                   <button type="button" className="cart-item-main" onClick={(event) => { event.stopPropagation(); openCartItem(item); }}>
                     <CartItemThumb item={item} entry={entry} catalog={catalog} />
                     <span className="cart-item-copy">
-                      <strong>{itemCartLabel(item)}</strong>
-                      <small>Quantité : {group.items.length}</small>
+                      <strong>{tr(itemCartLabel(item))}</strong>
+                      <small>{tr("Quantité :")} {tr(group.items.length)}</small>
                       {optionLines.length > 0 && (
                         <span className="cart-item-options">
-                          {optionLines.map((line, index) => <em key={`${line}-${index}`}>{line}</em>)}
+                          {optionLines.map((line, index) => <em key={`${line}-${index}`}>{tr(line)}</em>)}
                         </span>
                       )}
-                      <b>{groupTotal.toLocaleString('fr-FR')} € HT</b>
+                      <b>{tr(groupTotal.toLocaleString('fr-FR'))} {tr("€ HT")}</b>
                     </span>
                   </button>
                   <div className="cart-item-controls" onClick={(event) => event.stopPropagation()}>
                     <div className="cart-quantity-controls">
-                      <button type="button" disabled={readOnly || !decrementItem} onClick={() => decrementItem && onDecrementItem?.(decrementItem.id)} aria-label="-1">
+                      <button type="button" disabled={readOnly || !decrementItem} onClick={() => decrementItem && onDecrementItem?.(decrementItem.id)} aria-label={tr("-1")}>
                         <Minus size={13} />
                       </button>
-                      <span>{group.items.length}</span>
-                      <button type="button" disabled={readOnly || item.autoMeterCover} onClick={() => onIncrementItem?.(item)} aria-label="+1">
+                      <span>{tr(group.items.length)}</span>
+                      <button type="button" disabled={readOnly || item.autoMeterCover} onClick={() => onIncrementItem?.(item)} aria-label={tr("+1")}>
                         <Plus size={13} />
                       </button>
                     </div>
-                    <button type="button" className="danger" disabled={readOnly || !removableItems.length} onClick={() => onDeleteItems?.(removableItems.map((groupItem) => groupItem.id))} aria-label="Supprimer">
+                    <button type="button" className="danger" disabled={readOnly || !removableItems.length} onClick={() => onDeleteItems?.(removableItems.map((groupItem) => groupItem.id))} aria-label={tr("Supprimer")}>
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -5404,8 +5568,7 @@ function FurnitureCartBar({ items, catalog, selectedId, total, salonLabel, readO
           </div>
 
           <button type="button" className="cart-validate-button" onClick={() => { setCartOpen(false); onNext?.(); }}>
-            Valider le panier
-          </button>
+            {tr("Valider le panier")} </button>
         </div>
       )}
     </div>
@@ -5431,6 +5594,8 @@ function ClockIcon() {
 }
 
 function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualContext, items, width, depth, uploadState, onImageChange, onUpdateItemOptions, counterColors = [], catalog = [], onClose, onConfirm, onDeleteItem, canDeleteItem }) {
+  const tr = useUiText();
+  const language = useContext(LanguageContext);
   const t = useT();
   const catalogEntry = entry || item || {};
   const isVariantGroup = isVariantGroupEntry(catalogEntry);
@@ -5446,11 +5611,11 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const [format, setFormat] = useState(initialOptions.variantId || initialOptions.format || defaultVariant?.id || 'standard');
   const [selectedExtras, setSelectedExtras] = useState(() => {
     const previous = initialOptions.extraOptions || {};
-    return extraOptions.reduce((acc, option) => {
+    return normalizedExtraChoices(extraOptions, extraOptions.reduce((acc, option) => {
       const sharedValue = sharedGlobalExtraValue(option, catalogEntry, item, items, initialOptions);
       acc[option.id] = sharedValue ?? previous[option.id] ?? initialOptions[option.id] ?? Boolean(option.defaultChecked);
       return acc;
-    }, {});
+    }, {}));
   });
   const [selectedColors, setSelectedColors] = useState(() => (initialOptions.variantColorSelections || {}));
   const [quantity, setQuantity] = useState(1);
@@ -5459,7 +5624,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const selectedVariant = variants.find((variant) => variant.id === format) || variants[0];
   const optionLink = resolveVariantOptionLink(selectedVariant, selectedExtras);
   const resolvedEntry = optionLink?.entry || selectedVariant?.entry || catalogEntry;
-  const productDescription = marketplaceItemDescription(resolvedEntry)
+  const productDescription = (language === 'en' && (resolvedEntry?.dimensions?.descriptionEn || catalogEntry?.dimensions?.descriptionEn)) || marketplaceItemDescription(resolvedEntry)
     || marketplaceItemDescription(selectedVariant)
     || marketplaceItemDescription(selectedVariant?.entry)
     || marketplaceItemDescription(catalogEntry)
@@ -5663,8 +5828,8 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
       <ToggleOption
         key={option.id}
         active={Boolean(selectedExtras[option.id])}
-        label={displayConfigOptionLabel(option, catalogEntry)}
-        detail={displayConfigOptionDetail(option, catalogEntry)}
+        label={tr(displayConfigOptionLabel(option, catalogEntry))}
+        detail={tr(displayConfigOptionDetail(option, catalogEntry))}
         price={displayPrice}
         onChange={(checked) => toggleExtra(option.id, checked)}
       />
@@ -5736,14 +5901,14 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
               {headerImageUrl ? <img src={headerImageUrl} alt="" /> : <Box size={28} />}
             </span>
             <span>
-            <h2>{t(mode === 'add' ? 'item_config_add' : 'item_config_edit', { name: itemConfigTitle(catalogEntry) })}</h2>
-              <small>{headerMeta}</small>
+            <h2>{t(mode === 'add' ? 'item_config_add' : 'item_config_edit', { name: localizeItemLabel({ ...catalogEntry, label: itemConfigTitle(catalogEntry) }, language) })}</h2>
+              <small>{tr(headerMeta)}</small>
             </span>
           </div>
           <button type="button" onClick={onClose} aria-label={t('item_config_close')}><X size={18} /></button>
         </header>
 
-        {productDescription && <p className="item-config-description">{productDescription}</p>}
+        {productDescription && <p className="item-config-description">{tr(productDescription)}</p>}
 
         {variants.length > 1 && (isPodiumVariantGroupEntry(catalogEntry) ? (
           <PodiumVariantPicker choices={variants} value={format} onChange={setFormat} />
@@ -5813,6 +5978,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
 
         {regularExtraOptions.length > 0 && (
           <div className="item-config-options">
+            {regularExtraOptions.some(option => option.exclusiveGroup === 'signage-drive-or-lighting') && <p>{tr('Choisissez le kit tournette ou l’éclairage, pas les deux.')}</p>}
             {regularExtraOptions.map(renderExtraOption)}
           </div>
         )}
@@ -5849,7 +6015,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
           <div className="item-config-quantity">
             <span>{t('item_config_quantity')}</span>
             <button type="button" onClick={() => setQuantity((value) => Math.max(1, value - 1))}>−</button>
-            <strong>{quantity}</strong>
+            <strong>{tr(quantity)}</strong>
             <button type="button" onClick={() => setQuantity((value) => value + 1)}>+</button>
           </div>
         )}
@@ -5857,12 +6023,12 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
         <footer>
           <div className="item-config-footer-total">
             <span>{t('item_config_total')}</span>
-            <strong>{total.toLocaleString('fr-FR')} €</strong>
-            {quantity > 1 && <small>{quantity} × {perItemTotal.toLocaleString('fr-FR')} €</small>}
+            <strong>{tr(total.toLocaleString('fr-FR'))} €</strong>
+            {quantity > 1 && <small>{tr(quantity)} × {tr(perItemTotal.toLocaleString('fr-FR'))} €</small>}
           </div>
           <div className="item-config-footer-actions">
             <button type="button" className="item-config-delete" disabled={!canDeleteCurrentItem} onClick={deleteFromModal}>{t('item_config_delete')}</button>
-            <button type="button" className="item-config-apply" disabled={modalUploadState?.uploading} onClick={submit}>{modalUploadState?.uploading ? t('item_config_uploading') : t('item_config_apply')}</button>
+            <button type="button" className="item-config-apply" disabled={modalUploadState?.uploading} onClick={submit}>{tr(modalUploadState?.uploading ? t('item_config_uploading') : t('item_config_apply'))}</button>
           </div>
         </footer>
       </section>
@@ -5871,15 +6037,16 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
 }
 
 function ConfigChoiceGrid({ title, choices, value, onChange }) {
+  const tr = useUiText();
   return (
     <section className="config-choice-section">
-      <h3>{title}</h3>
+      <h3>{tr(title)}</h3>
       <div>
         {choices.map((choice) => (
           <button key={choice.id} type="button" className={value === choice.id ? 'active' : ''} onClick={() => onChange(choice.id)}>
             {choice.imageUrl && <img src={choice.imageUrl} alt="" />}
-            <strong>{choice.label}</strong>
-            <em>{choice.price ? `${choice.price.toLocaleString('fr-FR')} €` : 'Inclus'}</em>
+            <strong>{tr(choice.label)}</strong>
+            <em>{tr(choice.price ? `${choice.price.toLocaleString('fr-FR')} €` : 'Inclus')}</em>
             {value === choice.id && <span><Check size={12} /></span>}
           </button>
         ))}
@@ -5889,6 +6056,7 @@ function ConfigChoiceGrid({ title, choices, value, onChange }) {
 }
 
 function PodiumVariantPicker({ choices = [], value, onChange }) {
+  const tr = useUiText();
   const colors = uniqueTextValues(choices.map(podiumVariantColorLabel));
   const selected = choices.find((choice) => choice.id === value) || choices[0];
   const selectedColor = podiumVariantColorLabel(selected);
@@ -5904,8 +6072,8 @@ function PodiumVariantPicker({ choices = [], value, onChange }) {
     <section className="podium-config-panel">
       <div className="counter-finish-card podium-config-card">
         <div className="counter-finish-head">
-          <strong>Couleur</strong>
-          <span>{selectedColor}</span>
+          <strong>{tr("Couleur")}</strong>
+          <span>{tr(selectedColor)}</span>
         </div>
         <div className="counter-finish-swatches podium-color-swatches">
           {colors.map((color) => (
@@ -5914,22 +6082,22 @@ function PodiumVariantPicker({ choices = [], value, onChange }) {
               type="button"
               className={selectedColor === color ? 'active' : ''}
               style={{ '--swatch-color': normalizeTextValue(color).includes('noir') ? '#101319' : '#ffffff' }}
-              title={color}
+              title={tr(color)}
               onClick={() => selectColor(color)}
             >
               <i aria-hidden="true" />
-              <span>{color}</span>
+              <span>{tr(color)}</span>
             </button>
           ))}
         </div>
       </div>
       <section className="counter-size-card podium-size-card">
-        <strong>Hauteur</strong>
+        <strong>{tr("Hauteur")}</strong>
         <div>
           {sizes.map((choice) => (
             <button key={choice.id} type="button" className={choice.id === value ? 'active' : ''} onClick={() => onChange(choice.id)}>
-              <span>{podiumVariantOptionLabel(choice)}</span>
-              <small>{choice.price ? `${choice.price.toLocaleString('fr-FR')} €` : 'Inclus'}</small>
+              <span>{tr(podiumVariantOptionLabel(choice))}</span>
+              <small>{tr(choice.price ? `${choice.price.toLocaleString('fr-FR')} €` : 'Inclus')}</small>
             </button>
           ))}
         </div>
@@ -5939,6 +6107,7 @@ function PodiumVariantPicker({ choices = [], value, onChange }) {
 }
 
 function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '', selectedColors = {}, onSelect }) {
+  const tr = useUiText();
   const hasCounterColorOption = options.some((option) => colorConfigOptionUsesCounterPalette(option, catalog, salonLabel));
   return (
     <div className={`variant-color-options-panel ${hasCounterColorOption ? 'texture-slots-compact' : ''}`.trim()}>
@@ -5956,19 +6125,19 @@ function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '',
         return (
           <section key={option.id} className={isCounterColorOption ? 'counter-color-card counter-finish-card item-counter-finish-card generic-texture-slot' : 'counter-color-card counter-finish-card item-counter-finish-card variant-color-card'}>
             <div className="counter-finish-head">
-              <strong>{isCounterColorOption ? 'Couleur' : option.label || 'Couleur'}</strong>
+              <strong>{tr(isCounterColorOption ? 'Couleur' : option.label || 'Couleur')}</strong>
               {normalizedSelected && (
                 <span>
-                  {shortFinishName(normalizedSelected.name || normalizedSelected.code)}
-                  {shortFinishCode(normalizedSelected.code || normalizedSelected.reference) ? ` (${shortFinishCode(normalizedSelected.code || normalizedSelected.reference)})` : ''}
+                  {tr(shortFinishName(normalizedSelected.name || normalizedSelected.code))}
+                  {tr(shortFinishCode(normalizedSelected.code || normalizedSelected.reference) ? ` (${shortFinishCode(normalizedSelected.code || normalizedSelected.reference)})` : '')}
                 </span>
               )}
             </div>
             {includedChoices.length > 0 && (
               <>
                 <div className="counter-finish-meta-line">
-                  <small>{includedColorisLabel(includedChoices.length)}</small>
-                  <em className="included">Inclus</em>
+                  <small>{tr(includedColorisLabel(includedChoices.length))}</small>
+                  <em className="included">{tr("Inclus")}</em>
                 </div>
                 {isCounterColorOption && includedChoices.length <= 1 ? (
                   <div className="counter-finish-included-list">
@@ -5979,7 +6148,7 @@ function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '',
                           active={normalizeColorId(normalizedSelected?.id) === normalizeColorId(choice.id)}
                           onClick={() => onSelect?.(option, choice)}
                         />
-                        <strong>{shortFinishName(choice.name)}</strong>
+                        <strong>{tr(shortFinishName(choice.name))}</strong>
                       </div>
                     ))}
                   </div>
@@ -6000,8 +6169,8 @@ function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '',
             {optionalChoices.length > 0 && (
               <>
                 <div className="counter-finish-meta-line">
-                  <small>{optionalChoices.length} couleurs en option</small>
-                  <em className="price">+ {Number(optionalPrice || 0).toLocaleString('fr-FR')} €</em>
+                  <small>{tr(optionalChoices.length)} {tr("couleurs en option")}</small>
+                  <em className="price">+ {tr(Number(optionalPrice || 0).toLocaleString('fr-FR'))} €</em>
                 </div>
                 <div className="counter-finish-swatches optional">
                   {optionalChoices.map((choice) => (
@@ -6023,20 +6192,22 @@ function VariantColorOptionsPanel({ options = [], catalog = [], salonLabel = '',
 }
 
 function ToggleOption({ active, label, detail, price, onChange, disabled = false }) {
+  const tr = useUiText();
   const detailLines = Array.isArray(detail) ? detail : (detail ? [detail] : []);
   return (
     <button type="button" className={`config-toggle-option ${active ? 'active' : ''}`} disabled={disabled} aria-pressed={active} onClick={() => onChange?.(!active)}>
       <i />
       <span>
-        <strong>{label}</strong>
-        {detailLines.map((line, index) => <small key={`${line}-${index}`}>{line}</small>)}
+        <strong>{tr(label)}</strong>
+        {detailLines.map((line, index) => <small key={`${line}-${index}`}>{tr(line)}</small>)}
       </span>
-      <em className={normalizeTextValue(price).includes('inclus') ? 'included' : ''}>{price}</em>
+      <em className={/inclus|included/.test(normalizeTextValue(price)) ? 'included' : ''}>{tr(price)}</em>
     </button>
   );
 }
 
 function RotationDial({ value = 0, onChange }) {
+  const tr = useUiText();
   const dialRef = useRef(null);
   const normalizedValue = normalizeRotationDegrees(value);
 
@@ -6069,13 +6240,13 @@ function RotationDial({ value = 0, onChange }) {
 
   return (
     <div className="toolbar-rotation-slider toolbar-rotation-dial-panel">
-      <span>{normalizedValue}°</span>
+      <span>{tr(normalizedValue)}°</span>
       <div
         ref={dialRef}
         className="toolbar-rotation-dial"
         role="slider"
         tabIndex={0}
-        aria-label="Rotation"
+        aria-label={tr("Rotation")}
         aria-valuemin={-180}
         aria-valuemax={180}
         aria-valuenow={normalizedValue}
@@ -6274,7 +6445,7 @@ function batDescriptionForItem(item = {}, entry = {}) {
 
 function itemConfigExtraOptions(entry) {
   const options = (entry?.dimensions?.configOptions || []).filter((o) => !['select', 'color'].includes(o.type || 'toggle'));
-  return normalizeAssetConfigOptions(options);
+  return signageExtraOptions(entry, normalizeAssetConfigOptions(options));
 }
 
 function isBarVariantGroupEntry(entry = {}) {
@@ -7288,6 +7459,7 @@ function ValidationStepPanel({
   saveState,
   confirmState,
   readOnly,
+  canConfirm = true,
   isAdminViewer,
   specialRequest = '',
   specialRequestTags = [],
@@ -7297,6 +7469,7 @@ function ValidationStepPanel({
   onRemoveItem,
   onOpenItem,
 }) {
+  const tr = useUiText();
   const t = useT();
   const safeItems = (items || []).filter(Boolean);
   const lines = pricing?.lines || [];
@@ -7525,11 +7698,11 @@ function ValidationStepPanel({
 
   return (
     <>
-      <PanelHead title="Validation" step={4} />
+      <PanelHead title={tr("Validation")} step={4} />
 
       <section className="validation-modern-total-card">
-        <span>Total options et mobilier</span>
-        <strong>{validationMoney(pricing?.total || 0, true)} € HT</strong>
+        <span>{tr("Total options et mobilier")}</span>
+        <strong>{tr(validationMoney(pricing?.total || 0, true))} {tr("€ HT")}</strong>
       </section>
 
       <PackAllowanceSummary pricing={pricing} />
@@ -7537,72 +7710,74 @@ function ValidationStepPanel({
       {insuranceLine && (
         <section className="validation-modern-insurance-card">
           <div>
-            <strong><HelpCircle size={14} /> Assurance mobilier obligatoire</strong>
-            <span>{pricing?.packBenefits?.mode === 'allowance' ? 'Prise en compte dans le forfait accessoires. ' : ''}Calculée sur {validationMoney(insuranceLine.insuranceBase || pricing?.furnitureInsuranceBase || 0)} € HT de mobilier</span>
+            <strong><HelpCircle size={14} /> {tr("Assurance mobilier obligatoire")}</strong>
+            <span>{tr(pricing?.packBenefits?.mode === 'allowance' ? 'Prise en compte dans le forfait accessoires. ' : '')}{tr("Calculée sur")} {tr(validationMoney(insuranceLine.insuranceBase || pricing?.furnitureInsuranceBase || 0))} {tr("€ HT de mobilier")}</span>
           </div>
-          <b>{pricing?.packBenefits?.mode === 'allowance' ? '' : '+ '}{validationMoney(insuranceLine.total || 0, true)} €</b>
+          <b>{tr(pricing?.packBenefits?.mode === 'allowance' ? '' : '+ ')}{tr(validationMoney(insuranceLine.total || 0, true))} €</b>
         </section>
       )}
 
       {pendingVisuals.length > 0 && (
         <section className="validation-modern-alert-card">
-          <strong><AlertTriangle size={15} /> {pendingVisuals.length} visuel{pendingVisuals.length > 1 ? 's' : ''} manquant{pendingVisuals.length > 1 ? 's' : ''} - Vous n’avez pas le fichier ?</strong>
-          <span>Pas de panique, notre équipe reviendra vers vous ultérieurement.</span>
+          <strong><AlertTriangle size={15} /> {tr(pendingVisuals.length)} {tr("visuel")}{tr(pendingVisuals.length > 1 ? 's' : '')} {tr("manquant")}{tr(pendingVisuals.length > 1 ? 's' : '')} {tr("- Vous n’avez pas le fichier ?")}</strong>
+          <span>{tr("Pas de panique, notre équipe reviendra vers vous ultérieurement.")}</span>
         </section>
       )}
 
       {sectionOrder.map(([id, title]) => sectionRows[id].length > 0 && (
-        <ValidationModernSection key={id} title={title}>
+        <ValidationModernSection key={id} title={tr(title)}>
           {sectionRows[id].map((row) => <ValidationModernRow key={row.id} {...row} />)}
         </ValidationModernSection>
       ))}
 
       <section className="validation-modern-request-box">
-        <h3>UNE DEMANDE PARTICULIÈRE ?</h3>
-        <p>Indiquez toute information utile à notre équipe.</p>
-        <textarea value={specialRequestText} onChange={(event) => onSpecialRequest?.(event.target.value)} disabled={readOnly} placeholder="Ajouter une remarque ou une demande particulière..." rows={6} />
+        <h3>{tr("UNE DEMANDE PARTICULIÈRE ?")}</h3>
+        <p>{tr("Indiquez toute information utile à notre équipe.")}</p>
+        <textarea value={specialRequestText} onChange={(event) => onSpecialRequest?.(event.target.value)} disabled={readOnly} placeholder={tr("Ajouter une remarque ou une demande particulière...")} rows={6} />
         {hasSpecialRequest && (
           <div className="validation-warning-note">
-            <strong>Demande détectée</strong>
-            <span>Votre demande sera transmise à Stand-ING. Si votre commande contient des éléments AMCO, votre bon de commande sera joint à l’e-mail de confirmation.</span>
+            <strong>{tr("Demande détectée")}</strong>
+            <span>{tr("Votre demande sera transmise à Stand-ING. Si votre commande contient des éléments AMCO, votre bon de commande sera joint à l’e-mail de confirmation.")}</span>
           </div>
         )}
       </section>
 
-      {confirmState.message && <div className="validation-message success">{confirmState.message}</div>}
-      {confirmState.error && <div className="validation-message error">{confirmState.error}</div>}
+      {confirmState.message && <div className="validation-message success">{tr(confirmState.message)}</div>}
+      {confirmState.error && <div className="validation-message error">{tr(confirmState.error)}</div>}
 
-      {confirmed && <div className="validation-message success"><Check size={16} /> {isAdminViewer ? t('validation_confirmed_admin_note') : t('validation_confirmed_client_note')}</div>}
-      <button className="validation-confirm-button dark" type="button" disabled={confirmState.loading || readOnly} onClick={onConfirm}>
-        {confirmState.loading ? t('validation_confirm_loading') : hasSpecialRequest ? 'Envoyer ma demande →' : 'Envoyer ma configuration →'}
+      {confirmed && !confirmState.message && !confirmState.loading && <div className="validation-message success"><Check size={16} /> {tr(isAdminViewer ? t('validation_confirmed_admin_note') : t('validation_confirmed_client_note'))}</div>}
+      <button className="validation-confirm-button dark" type="button" disabled={confirmState.loading || readOnly || !canConfirm} onClick={onConfirm}>
+        {tr(confirmState.loading ? t('validation_confirm_loading') : hasSpecialRequest ? 'Envoyer ma demande →' : 'Envoyer ma configuration →')}
       </button>
     </>
   );
 }
 
 function ValidationModernSection({ title, children }) {
+  const tr = useUiText();
   return (
     <details className="validation-modern-section" open>
-      <summary><span>{title}</span><ChevronUp size={14} /></summary>
-      <div className="validation-modern-list">{children}</div>
+      <summary><span>{tr(title)}</span><ChevronUp size={14} /></summary>
+      <div className="validation-modern-list">{tr(children)}</div>
     </details>
   );
 }
 
 function ValidationModernRow({ label, detail, imageUrl, imageReplaceColor, imageTargetColor, swatchColor, swatchImage, badge, badgeTone = 'included', visualStatus = null, option = false, onRemove = null, onOpen = null }) {
+  const tr = useUiText();
   return (
     <article className={`validation-modern-row ${option ? 'option' : ''} ${onOpen ? 'clickable' : ''}`} onClick={onOpen || undefined}>
       {!option && <ValidationModernThumb imageUrl={imageUrl} imageReplaceColor={imageReplaceColor} imageTargetColor={imageTargetColor} color={swatchColor} image={swatchImage} />}
       <div className="validation-modern-row-copy">
-        <strong>{label}</strong>
-        {detail && <span>{detail}</span>}
+        <strong>{tr(label)}</strong>
+        {detail && <span>{tr(detail)}</span>}
       </div>
       <div className="validation-modern-row-side">
-        {badge && <b className={`validation-modern-badge ${badgeTone}`}>{badge}</b>}
-        {visualStatus && <em className={`validation-modern-visual-status ${visualStatus.tone}`}>{visualStatus.label}</em>}
+        {badge && <b className={`validation-modern-badge ${badgeTone}`}>{tr(badge)}</b>}
+        {visualStatus && <em className={`validation-modern-visual-status ${visualStatus.tone}`}>{tr(visualStatus.label)}</em>}
       </div>
       {onRemove && (
-        <button type="button" className="validation-modern-remove" aria-label="Retirer" onClick={(event) => { event.stopPropagation(); onRemove(); }}><Trash2 size={14} /></button>
+        <button type="button" className="validation-modern-remove" aria-label={tr("Retirer")} onClick={(event) => { event.stopPropagation(); onRemove(); }}><Trash2 size={14} /></button>
       )}
     </article>
   );
@@ -7632,10 +7807,11 @@ function useRecoloredImageUrl(imageUrl = '', sourceColor = '', targetColor = '')
 }
 
 function ValidationOptionLine({ label, value, tone = 'green' }) {
+  const tr = useUiText();
   return (
     <div className={`validation-option-row modern ${tone}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
+      <span>{tr(label)}</span>
+      <strong>{tr(value)}</strong>
     </div>
   );
 }
@@ -7874,58 +8050,62 @@ function basePackItemLabel(label = 'Objet', quantity = 1) {
 }
 
 function PanelHead({ title, step }) {
+  const tr = useUiText();
   const t = useT();
   return (
     <div className="config-panel-head">
-      <h1>{title}</h1>
+      <h1>{tr(title)}</h1>
       <span>{t('panel_step', { step })}</span>
     </div>
   );
 }
 
 function CameraModeToolbar({ mode = 'orbit', onChange }) {
+  const tr = useUiText();
   return (
-    <div className="camera-mode-toolbar" aria-label="Mode de navigation camera">
+    <div className="camera-mode-toolbar" aria-label={tr("Mode de navigation camera")}>
       <button
         type="button"
         className={mode === 'orbit' ? 'active' : ''}
         onClick={() => onChange?.('orbit')}
-        title="Incliner et tourner la vue"
+        title={tr("Incliner et tourner la vue")}
       >
         <Orbit size={16} />
-        <span>Incliner</span>
+        <span>{tr("Incliner")}</span>
       </button>
       <button
         type="button"
         className={mode === 'pan' ? 'active' : ''}
         onClick={() => onChange?.('pan')}
-        title="Déplacer la vue"
+        title={tr("Déplacer la vue")}
       >
         <Move3D size={16} />
-        <span>Déplacer</span>
+        <span>{tr("Déplacer")}</span>
       </button>
     </div>
   );
 }
 
 function RulesSummary({ ledSpotCount, ledRailsEnabled, reserveRule, partitionHeadRule }) {
+  const tr = useUiText();
   const t = useT();
   const headCount = partitionHeadRule?.includedCount || 0;
   return (
     <div className="rules-card">
       <strong>{t('rules_title')}</strong>
-      <span>{reserveRule?.includedType ? '✓' : '−'} {reserveRule?.includedLabel || t('rules_no_reserve')}</span>
-      <span>✓ {headCount} {t('rules_head', { count: headCount, s: headCount > 1 ? 's' : '' })}</span>
-      <span>{ledRailsEnabled ? '✓' : '−'} {t('rules_led', { count: ledSpotCount })}</span>
+      <span>{tr(reserveRule?.includedType ? '✓' : '−')} {tr(reserveRule?.includedLabel || t('rules_no_reserve'))}</span>
+      <span>✓ {tr(headCount)} {t('rules_head', { count: headCount, s: headCount > 1 ? 's' : '' })}</span>
+      <span>{tr(ledRailsEnabled ? '✓' : '−')} {t('rules_led', { count: ledSpotCount })}</span>
     </div>
   );
 }
 
 function FurnitureCatalogSection({ title, entries, counts, salonLabel, readOnly = false, onAdd, onRemove }) {
+  const tr = useUiText();
   if (!entries.length) return null;
   return (
     <section className="furniture-panel-section">
-      <h2>{title}</h2>
+      <h2>{tr(title)}</h2>
       <div className="furniture-catalog-list">
         {entries.map((entry) => (
           <FurnitureCatalogRow
@@ -7944,6 +8124,7 @@ function FurnitureCatalogSection({ title, entries, counts, salonLabel, readOnly 
 }
 
 function FurnitureCatalogRow({ entry, count, salonLabel, readOnly = false, onAdd, onRemove }) {
+  const tr = useUiText();
   const Icon = entry.icon || Box;
   return (
     <article className={`furniture-catalog-row ${count > 0 ? 'selected' : ''}`}>
@@ -7951,12 +8132,12 @@ function FurnitureCatalogRow({ entry, count, salonLabel, readOnly = false, onAdd
         {entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Icon size={24} />}
       </span>
       <div>
-        <strong>{entry.label}</strong>
+        <strong>{tr(entry.label)}</strong>
         <em>{formatFurniturePrice(entry, salonLabel)}</em>
       </div>
       <div className="quantity-control">
         <button type="button" onClick={onRemove} disabled={readOnly || count <= 0}>−</button>
-        <span>{count}</span>
+        <span>{tr(count)}</span>
         <button type="button" onClick={onAdd} disabled={readOnly}>+</button>
       </div>
       <button type="button" className={`row-add-button ${count > 0 ? 'active' : ''}`} onClick={onAdd} disabled={readOnly}>
@@ -7972,6 +8153,7 @@ function ConfiguratorOptionIcon({ src }) {
 }
 
 function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, title, subtitle = '', icon, open, onToggle, children, className = '' }) {
+  const tr = useUiText();
   const accordionRef = useRef(null);
 
   useEffect(() => {
@@ -7987,15 +8169,15 @@ function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, 
     <section ref={accordionRef} className={`option-accordion ${open ? 'open' : ''} ${className}`}>
       <button type="button" aria-expanded={open} onClick={onToggle}>
         <span className="option-accordion-label">
-          <span className="option-accordion-icon" aria-hidden="true">{icon}</span>
+          <span className="option-accordion-icon" aria-hidden="true">{tr(icon)}</span>
           <span className="option-accordion-copy">
-            <strong className="option-accordion-title">{title}</strong>
-            {subtitle && <small className="option-accordion-subtitle">{subtitle}</small>}
+            <strong className="option-accordion-title">{tr(title)}</strong>
+            {subtitle && <small className="option-accordion-subtitle">{tr(subtitle)}</small>}
           </span>
         </span>
         <span className="option-accordion-toggle" aria-hidden="true"><ChevronDown size={16} /></span>
       </button>
-      {open && children}
+      {tr(open && children)}
     </section>
   );
 }
@@ -8021,6 +8203,7 @@ function LedRailOptionCard({ enabled, spotCount, disabled = false, onEnabledChan
 }
 
 function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled = false, onFloorType, onTrimType }) {
+  const tr = useUiText();
   const t = useT();
   const selectedFloor = technicalFloorOptions.find((option) => option.id === floorType) || null;
   const openEdges = openTechnicalFloorEdges(layout);
@@ -8044,8 +8227,8 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
           return (
             <button key={option.id} type="button" className={active ? 'active' : ''} disabled={disabled} onClick={() => onFloorType(option.id)}>
               <span className="reserve-choice-radio" aria-hidden="true">{active ? <span /> : null}</span>
-              <span><strong>{option.label.replace('Plancher technique ', '')}</strong><small>{option.detail}</small></span>
-              <em>{option.price} € HT/m²</em>
+              <span><strong>{tr(option.label.replace('Plancher technique ', ''))}</strong><small>{tr(option.detail)}</small></span>
+              <em>{tr(option.price)} {tr("€ HT/m²")}</em>
             </button>
           );
         })}
@@ -8054,22 +8237,22 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
       {selectedFloor && (
         <>
           <div className="technical-floor-detail">
-            <strong>{selectedFloor.reference}</strong>
-            <span>{formatNumber(area)} m² × {selectedFloor.price} € HT/m² = {estimated.toLocaleString('fr-FR')} € HT</span>
-            <small>{t('floor_open_edges')} {openEdges.map(technicalFloorEdgeLabel).join(', ')}</small>
+            <strong>{tr(selectedFloor.reference)}</strong>
+            <span>{tr(formatNumber(area))} m² × {tr(selectedFloor.price)} {tr("€ HT/m² =")} {tr(estimated.toLocaleString('fr-FR'))} {tr("€ HT")}</span>
+            <small>{t('floor_open_edges')} {tr(openEdges.map(technicalFloorEdgeLabel).join(', '))}</small>
           </div>
           <div className="technical-floor-actions">
             <span>{t('floor_trim_type')}</span>
             {technicalTrimOptions.map((option) => (
               <button key={option.id} type="button" className={trimType === option.id ? 'active' : ''} disabled={disabled} onClick={() => onTrimType(option.id)}>
-                {option.label}
+                {tr(option.label)}
               </button>
             ))}
           </div>
           <div className="technical-floor-ramp-required">
             <span>
               <strong>{t('floor_ramp_title')}</strong>
-              <small>{selectedFloor.rampLabel} · {t('floor_ramp_detail')}</small>
+              <small>{tr(selectedFloor.rampLabel)} · {t('floor_ramp_detail')}</small>
             </span>
           </div>
         </>
@@ -8079,6 +8262,7 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled 
 }
 
 function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalog = [], salonLabel = '', disabled = false, onChange, onOptions }) {
+  const tr = useUiText();
   const t = useT();
   const rows = reserveChoiceRows(rule, catalog, salonLabel);
   const includedRow = rows.find((row) => row.included && row.price === 0) || null;
@@ -8099,7 +8283,7 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
   return (
     <div className="reserve-choice-panel reserve-choice-panel-v2">
       <FormulaIncludedBox includedRow={includedRow} compact />
-      <strong className="reserve-choice-title">Taille</strong>
+      <strong className="reserve-choice-title">{tr("Taille")}</strong>
       <div className="reserve-choice-list">
         {rows.map((row) => {
           const selected = !noneSelected && (row.included ? !selectedOptionType : selectedOptionType === row.type);
@@ -8113,11 +8297,11 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
             >
               <span className="reserve-choice-radio" aria-hidden="true">{selected ? <span /> : null}</span>
               <span className="reserve-choice-copy">
-                <strong>Réserve <b>{row.areaLabel}</b></strong>
-                <small>{row.description}</small>
+                <strong>{tr("Réserve")} <b>{tr(row.areaLabel)}</b></strong>
+                <small>{tr(row.description)}</small>
               </span>
               <span className={row.included && row.price === 0 ? 'reserve-choice-price included' : 'reserve-choice-price'}>
-                {row.included && row.price === 0 ? t('reserve_included') : `+ ${row.price.toLocaleString('fr-FR')} €`}
+                {tr(row.included && row.price === 0 ? t('reserve_included') : `+ ${row.price.toLocaleString('fr-FR')} €`)}
               </span>
             </button>
           );
@@ -8137,9 +8321,10 @@ function ReserveOptionCard({ rule, selectedOptionType = '', options = {}, catalo
 }
 
 function ReserveRadioGroup({ title, value = '', options = [], disabled = false, onChange }) {
+  const tr = useUiText();
   return (
     <div className="reserve-suboption-group">
-      <strong>{title}</strong>
+      <strong>{tr(title)}</strong>
       <div>
         {options.map((option) => {
           const selected = value === option.value;
@@ -8152,7 +8337,7 @@ function ReserveRadioGroup({ title, value = '', options = [], disabled = false, 
               onClick={() => onChange?.(selected ? '' : option.value)}
             >
               <span className="reserve-choice-radio" aria-hidden="true">{selected ? <span /> : null}</span>
-              <span>{option.label}</span>
+              <span>{tr(option.label)}</span>
             </button>
           );
         })}
@@ -8279,6 +8464,7 @@ function reserveSizeDescription(area = 0, label = '') {
 }
 
 function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, companyName = '', catalog = [], salonLabel = '', disabled = false, visualOptions = {}, uploadState = {}, onChange, onCompanyName, onImage, onResetImage, onVisualOptions, onDifferentVisuals }) {
+  const tr = useUiText();
   const t = useT();
   const rows = [
     { side: 'left', label: t('partition_left'), visualLabel: partitionHeadVisualLabel('left', salonLabel, findCatalogEntry(catalog, rule?.leftType)), uploadSubtitle: isSignatureStand ? 'Visuel LED · PNG, JPG ou PDF' : 'Format : 800 x 500 mm (pdf, jpeg et png)', type: rule?.leftType, price: rule?.leftPrice },
@@ -8295,13 +8481,13 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
     <div className={`partition-head-panel partition-head-panel-v2${isSignatureStand ? ' signature-head-options' : ''}`}>
       {!isSignatureStand && normalizePackLabel(salonLabel) !== 'equipe' && !normalizeTextValue(salonLabel).includes('siae') && <div className="partition-head-activity-info">
         <b>i</b>
-        <span>Le fond de couleur correspond à votre secteur d'activité et ne peut être modifié.</span>
+        <span>{tr("Le fond de couleur correspond à votre secteur d'activité et ne peut être modifié.")}</span>
       </div>}
 
       <div className={isSignatureStand ? 'signature-head-identity' : undefined}>
-      {isSignatureStand && <div className="signature-head-section-heading"><span>Votre enseigne</span><small>Inclus</small></div>}
+      {isSignatureStand && <div className="signature-head-section-heading"><span>{tr("Votre enseigne")}</span><small>{tr("Inclus")}</small></div>}
       <label className="partition-head-company-field">
-        <span>{isSignatureStand ? 'Nom de votre société' : t('partition_head_company_field')}</span>
+        <span>{tr(isSignatureStand ? 'Nom de votre société' : t('partition_head_company_field'))}</span>
         <input
           value={companyName || ''}
           disabled={disabled}
@@ -8309,7 +8495,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
           placeholder={t('partition_head_company_placeholder')}
         />
       </label>
-      {isSignatureStand && <p className="signature-head-note">Le nom, l’allée et l’emplacement s’affichent automatiquement sur les deux têtes de cloison.</p>}
+      {isSignatureStand && <p className="signature-head-note">{tr("Le nom, l’allée et l’emplacement s’affichent automatiquement sur les deux têtes de cloison.")}</p>}
       </div>
 
       {!isSignatureStand && <div className="partition-head-choice-grid">
@@ -8331,8 +8517,8 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
             >
               <span className="reserve-choice-radio" aria-hidden="true">{selected ? <span /> : null}</span>
               <span>
-                <strong>{row.label}</strong>
-                <small className={billable ? 'price' : 'included'}>{row.type ? (billable ? `+ ${price.toLocaleString('fr-FR')} € HT` : t('color_included')) : t('partition_not_configured')}</small>
+                <strong>{tr(row.label)}</strong>
+                <small className={billable ? 'price' : 'included'}>{tr(row.type ? (billable ? `+ ${price.toLocaleString('fr-FR')} € HT` : t('color_included')) : t('partition_not_configured'))}</small>
               </span>
             </button>
           );
@@ -8380,7 +8566,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
       )) : (
         <div className="partition-head-empty">{t('partition_select_visual')}</div>
       )}
-      {uploadState?.error && <small className="partition-head-upload-error">{uploadState.error}</small>}
+      {uploadState?.error && <small className="partition-head-upload-error">{tr(uploadState.error)}</small>}
 
       {!isSignatureStand && <button
         type="button"
@@ -8398,19 +8584,20 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
 }
 
 function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabled = false, showPending = true, onImage, onReset, onPending, onFramingChange }) {
+  const tr = useUiText();
   const t = useT();
   const hasImage = Boolean(visual.headMainImageUrl);
   const pending = Boolean(visual.visualPending);
   return (
     <div className="partition-head-upload-block partition-head-upload-block-v2">
       <div className="partition-head-upload-title">
-        <div className="partition-head-upload-heading"><strong>{row.visualLabel}</strong>{row.badge && <small>{row.badge}</small>}</div>
-        <span>{row.uploadSubtitle || t('partition_size')}</span>
-        {row.description && <p className="signature-head-note">{row.description}</p>}
+        <div className="partition-head-upload-heading"><strong>{tr(row.visualLabel)}</strong>{row.badge && <small>{tr(row.badge)}</small>}</div>
+        <span>{tr(row.uploadSubtitle || t('partition_size'))}</span>
+        {row.description && <p className="signature-head-note">{tr(row.description)}</p>}
       </div>
       <label className={hasImage ? 'partition-head-dropzone partition-head-dropzone-v2 has-image' : 'partition-head-dropzone partition-head-dropzone-v2'}>
-        {hasImage ? <img src={visual.headMainImageUrl} alt={row.visualLabel} /> : <FileImage size={24} />}
-        <strong>{uploading ? t('partition_uploading') : ''}</strong>
+        {hasImage ? <img src={visual.headMainImageUrl} alt={tr(row.visualLabel)} /> : <FileImage size={24} />}
+        <strong>{tr(uploading ? t('partition_uploading') : '')}</strong>
         <span>{t('partition_import')}</span>
         <input
           type="file"
@@ -8443,6 +8630,7 @@ function PartitionHeadVisualUpload({ row, visual = {}, uploading = false, disabl
 }
 
 function ToggleOptionCard({ enabled, enabledLabel, disabledLabel, disabled = false, onChange }) {
+  const tr = useUiText();
   return (
     <div className="toggle-option-card">
       <button
@@ -8451,7 +8639,7 @@ function ToggleOptionCard({ enabled, enabledLabel, disabledLabel, disabled = fal
         disabled={disabled}
         onClick={() => onChange(true)}
       >
-        {enabledLabel}
+        {tr(enabledLabel)}
       </button>
       <button
         type="button"
@@ -8459,7 +8647,7 @@ function ToggleOptionCard({ enabled, enabledLabel, disabledLabel, disabled = fal
         disabled={disabled}
         onClick={() => onChange(false)}
       >
-        {disabledLabel}
+        {tr(disabledLabel)}
       </button>
     </div>
   );
@@ -8485,19 +8673,20 @@ function surfaceColorOptionGroups(colors = [], selectedColor = {}, defaultColorI
 }
 
 function SurfaceColorOptionCard({ title, iconSrc, colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect }) {
+  const tr = useUiText();
   const { selected, includedColors, optionalColors, optionTotal, fromPrice } = surfaceColorOptionGroups(colors, selectedColor, defaultColorId, area);
   const selectedId = normalizeColorId(selected.id);
   const colorLabel = (color) => `${color.name || ''}${color.code ? ` (${color.code})` : ''}`;
   const swatches = (choices, included) => (
-    <div className="carpet-swatch-row surface-color-swatches" role="group" aria-label={`${title} : couleurs ${included ? 'incluses' : 'en option'}`}>
+    <div className="carpet-swatch-row surface-color-swatches" role="group" aria-label={tr(`${title} : couleurs ${included ? 'incluses' : 'en option'}`)}>
       {choices.map((color) => (
         <button
           key={color.id}
           type="button"
           className={selectedId === normalizeColorId(color.id) ? 'active' : ''}
           style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
-          title={`${colorLabel(color)} · ${included ? 'Inclus' : colorOptionLabel(color, 'En option', area)}`}
-          aria-label={colorLabel(color)}
+          title={tr(`${colorLabel(color)} · ${included ? 'Inclus' : colorOptionLabel(color, 'En option', area)}`)}
+          aria-label={tr(colorLabel(color))}
           aria-pressed={selectedId === normalizeColorId(color.id)}
           disabled={disabled}
           onClick={() => { if (!disabled) onSelect?.(color.id); }}
@@ -8508,20 +8697,20 @@ function SurfaceColorOptionCard({ title, iconSrc, colors, selectedColor, default
 
   return (
     <section className="surface-color-option-card">
-      <GroundOptionHeading title={title} value={colorLabel(selected)} iconSrc={iconSrc} />
+      <GroundOptionHeading title={tr(title)} value={colorLabel(selected)} iconSrc={iconSrc} />
       {!!includedColors.length && (
         <div className="surface-color-group">
-          <small>{`${includedColors.length} couleur${includedColors.length > 1 ? 's incluses' : ' incluse'}`}</small>
-          {swatches(includedColors, true)}
+          <small>{tr(`${includedColors.length} couleur${includedColors.length > 1 ? 's incluses' : ' incluse'}`)}</small>
+          {tr(swatches(includedColors, true))}
         </div>
       )}
       {!!optionalColors.length && (
         <div className="surface-color-group">
           <div className="wall-fabric-option-line">
-            <small>{`${optionalColors.length} couleur${optionalColors.length > 1 ? 's' : ''} en option`}</small>
-            <em>{fromPrice ? 'Dès ' : ''}+ {formatNumber(optionTotal)} €</em>
+            <small>{tr(`${optionalColors.length} couleur${optionalColors.length > 1 ? 's' : ''} en option`)}</small>
+            <em>{tr(fromPrice ? 'Dès ' : '')}+ {tr(formatNumber(optionTotal))} €</em>
           </div>
-          {swatches(optionalColors, false)}
+          {tr(swatches(optionalColors, false))}
         </div>
       )}
     </section>
@@ -8529,8 +8718,9 @@ function SurfaceColorOptionCard({ title, iconSrc, colors, selectedColor, default
 }
 
 function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', includedLabel = 'Inclus', optionLabel, area = 0, disabled = false, onSelect, uniformLayout = false }) {
+  const tr = useUiText();
   if (uniformLayout) {
-    return <SurfaceColorOptionCard title={title} iconSrc="/icons/cloison.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />;
+    return <SurfaceColorOptionCard title={tr(title)} iconSrc="/icons/cloison.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />;
   }
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
@@ -8552,19 +8742,19 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
 
   return (
     <div className="color-option-card wall-fabric-option-card">
-      <GroundOptionHeading title={title} />
-      <small>{`${includedColors.length || 1} couleur${(includedColors.length || 1) > 1 ? 's' : ''} disponible${(includedColors.length || 1) > 1 ? 's' : ''}`}</small>
+      <GroundOptionHeading title={tr(title)} />
+      <small>{tr(`${includedColors.length || 1} couleur${(includedColors.length || 1) > 1 ? 's' : ''} disponible${(includedColors.length || 1) > 1 ? 's' : ''}`)}</small>
       <div className="ground-main-choice wall-fabric-main-choice">
         <button
           type="button"
           className={selectedId === normalizeColorId(mainIncludedColor.id) ? 'ground-main-swatch active' : 'ground-main-swatch'}
           style={{ '--swatch-color': mainIncludedColor.hex, '--swatch-image': swatchImage(mainIncludedColor) }}
-          aria-label={`Sélectionner ${mainIncludedColor.name}`}
+          aria-label={tr(`Sélectionner ${mainIncludedColor.name}`)}
           disabled={disabled}
           onClick={() => selectColor(mainIncludedColor.id)}
         />
-        <strong>{mainIncludedColor.name} ({mainIncludedColor.code})</strong>
-        <b>{includedLabel}</b>
+        <strong>{tr(mainIncludedColor.name)} ({tr(mainIncludedColor.code)})</strong>
+        <b>{tr(includedLabel)}</b>
       </div>
       {includedColors.length > 1 && (
         <div className="carpet-swatch-row premium wall-fabric-swatches included">
@@ -8574,11 +8764,11 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
               className={selectedId === normalizeColorId(color.id) ? 'active' : ''}
               type="button"
               style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
-              title={`${color.name} (${color.code}) · ${includedLabel}`}
+              title={tr(`${color.name} (${color.code}) · ${includedLabel}`)}
               disabled={disabled}
               onClick={() => selectColor(color.id)}
             >
-              <span>{color.name}</span>
+              <span>{tr(color.name)}</span>
             </button>
           ))}
         </div>
@@ -8586,8 +8776,8 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
       {!!optionalColors.length && (
         <>
           <div className="wall-fabric-option-line">
-            <small>{`${optionalColors.length} couleur${optionalColors.length > 1 ? 's' : ''} en option - ${formatNumber(minOptionPrice)}€/m2`}</small>
-            {optionTotal > 0 && <em>+ {optionTotal.toLocaleString('fr-FR')} €</em>}
+            <small>{tr(`${optionalColors.length} couleur${optionalColors.length > 1 ? 's' : ''} en option - ${formatNumber(minOptionPrice)}€/m2`)}</small>
+            {optionTotal > 0 && <em>+ {tr(optionTotal.toLocaleString('fr-FR'))} €</em>}
           </div>
           <div className="carpet-swatch-row premium wall-fabric-swatches">
             {optionalColors.map((color) => (
@@ -8596,11 +8786,11 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
                 className={selectedId === normalizeColorId(color.id) ? 'active' : ''}
                 type="button"
                 style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
-                title={`${color.name} (${color.code}) · ${colorOptionLabel(color, optionLabel, area)}`}
+                title={tr(`${color.name} (${color.code}) · ${colorOptionLabel(color, optionLabel, area)}`)}
                 disabled={disabled}
                 onClick={() => selectColor(color.id)}
               >
-                <span>{color.name}</span>
+                <span>{tr(color.name)}</span>
               </button>
             ))}
           </div>
@@ -8611,6 +8801,7 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
 }
 
 function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includedMl = 0, unitPrice = wallCoverUnitPrice, disabled = false, onToggle, onPreview, onPreviewReset, onPending, onFramingChange }) {
+  const tr = useUiText();
   const t = useT();
   const includedLabel = Number(includedMl || 0) > 0 ? `${formatNumber(includedMl)} ml inclus dans votre formule` : '';
   const quote = wallCoverQuote(surfaces.filter((surface) => wallCoverEnabledForSurface(covers, surface)), includedMl, unitPrice);
@@ -8618,22 +8809,22 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
 
   return (
     <div className="wall-cover-card">
-      {includedLabel && <div className="wall-cover-info-box success"><strong><b>i</b>{includedLabel}. Au-delà, facturation de {unitPrice} €/m linéaire.</strong></div>}
+      {includedLabel && <div className="wall-cover-info-box success"><strong><b>i</b>{tr(includedLabel)}{tr(". Au-delà, facturation de")} {tr(unitPrice)} {tr("€/m linéaire.")}</strong></div>}
       <div className="wall-cover-head">
         <div>
           <strong>{t('wall_cover_title')}</strong>
-          <em>{wallCoverTotal > 0 ? `+ ${wallCoverTotal.toLocaleString('fr-FR')} €` : '+0€'}</em>
+          <em>{tr(wallCoverTotal > 0 ? `+ ${wallCoverTotal.toLocaleString('fr-FR')} €` : '+0€')}</em>
         </div>
       </div>
 
       <div className="wall-cover-info-box">
-        <span><b>!</b>Cliquez sur <strong>importer</strong> pour visualiser votre fichier dans la scène 3D et il nous sera envoyé automatiquement. Vous n’avez pas de fichier ? Pas de panique. Cliquez simplement sur "je fournirai le visuel plus tard" et nous reviendrons vers vous ultérieurement.</span>
+        <span><b>!</b>{tr("Cliquez sur")} <strong>{tr("importer")}</strong> {tr("pour visualiser votre fichier dans la scène 3D et il nous sera envoyé automatiquement. Vous n’avez pas de fichier ? Pas de panique. Cliquez simplement sur \"je fournirai le visuel plus tard\" et nous reviendrons vers vous ultérieurement.")}</span>
       </div>
 
       {activeMl > 0 && (
         <div className="wall-cover-price-summary">
-          <span>{formatNumber(activeMl)} ml × {unitPrice} € · forfait inclus déduit : −{quote.discount.toLocaleString('fr-FR')} €</span>
-          <strong>{billableMl > 0 ? `+ ${wallCoverTotal.toLocaleString('fr-FR')} € HT` : 'Inclus'}</strong>
+          <span>{tr(formatNumber(activeMl))} {tr("ml ×")} {tr(unitPrice)} {tr("€ · forfait inclus déduit : −")}{tr(quote.discount.toLocaleString('fr-FR'))} €</span>
+          <strong>{tr(billableMl > 0 ? `+ ${wallCoverTotal.toLocaleString('fr-FR')} € HT` : 'Inclus')}</strong>
         </div>
       )}
 
@@ -8657,17 +8848,17 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
               >
                 <span />
               </button>
-              <em>Option</em>
+              <em>{tr("Option")}</em>
               <div>
-                <strong>{surface.label}</strong>
-                <span>{formatNumber(surface.visibleWidth || surface.width)} m × {formatNumber(surface.height)} m · Image générique affichée sur la scène</span>
-                {preview?.name && <small>{preview.name}</small>}
+                <strong>{tr(surface.label)}</strong>
+                <span>{tr(formatNumber(surface.visibleWidth || surface.width))} m × {tr(formatNumber(surface.height))} {tr("m · Image générique affichée sur la scène")}</span>
+                {preview?.name && <small>{tr(preview.name)}</small>}
               </div>
             </div>
             <div className="wall-cover-actions">
               <label className={preview ? 'wall-cover-preview-button has-preview' : 'wall-cover-preview-button'} title={t(preview ? 'wall_cover_preview_replace' : 'wall_cover_preview_upload')}>
                 <Upload size={15} />
-                <span>Importer</span>
+                <span>{tr("Importer")}</span>
                 <input
                   type="file"
                   accept={visualUploadAccept}
@@ -8703,13 +8894,14 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
 }
 
 function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect, uniformLayout = false, showThickOption = true, thick = false, footprintArea = 0, onThickChange }) {
+  const tr = useUiText();
   const t = useT();
   const thickOption = <div className="carpet-thick-option"><ToggleOption active={thick} disabled={disabled} label={t('carpet_thick_label')}
-    detail="S’applique à la moquette et à l’empreinte moquette."
+    detail={tr("S’applique à la moquette et à l’empreinte moquette.")}
     price={thickCarpetPriceFromCarpetTab(area, footprintArea, t)} onChange={onThickChange} /></div>;
   // Other packs already show this shared option below the footprint palette.
   if (uniformLayout) {
-    return <><SurfaceColorOptionCard title="MOQUETTE" iconSrc="/icons/moquette_icon.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />{showThickOption && thickOption}</>;
+    return <><SurfaceColorOptionCard title={tr("MOQUETTE")} iconSrc="/icons/moquette_icon.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />{tr(showThickOption && thickOption)}</>;
   }
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
@@ -8724,29 +8916,29 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
   return (
     <div className="carpet-choice-card ground-choice-card ground-carpet-card">
       <section className="carpet-choice-section ground-section">
-        <GroundOptionHeading title="MOQUETTE" iconSrc="/icons/moquette_icon.svg" />
+        <GroundOptionHeading title={tr("MOQUETTE")} iconSrc="/icons/moquette_icon.svg" />
         <div className="ground-main-choice">
           <button
             type="button"
             className="ground-main-swatch active"
             style={{ '--swatch-color': selectedDisplayColor.hex, '--swatch-image': swatchImage(selectedDisplayColor) }}
-            aria-label={`${selectedDisplayColor.name} (${selectedDisplayColor.code})`}
+            aria-label={tr(`${selectedDisplayColor.name} (${selectedDisplayColor.code})`)}
             disabled={disabled}
             onClick={() => selectColor(selectedDisplayColor)}
           />
-          <strong>{selectedDisplayColor.name} ({selectedDisplayColor.code})</strong>
-          {selectedDisplayColor.included ? <b>{t('color_included')}</b> : <em className="ground-price-pill">+ {formatNumber(selectedPrice)} €</em>}
+          <strong>{tr(selectedDisplayColor.name)} ({tr(selectedDisplayColor.code)})</strong>
+          {selectedDisplayColor.included ? <b>{t('color_included')}</b> : <em className="ground-price-pill">+ {tr(formatNumber(selectedPrice))} €</em>}
         </div>
         {includedColors.length > 1 && (
           <>
-            <small>{`${includedColors.length} couleurs incluses`}</small>
-            <div className="carpet-swatch-row" role="group" aria-label="Couleurs de moquette incluses">
+            <small>{tr(`${includedColors.length} couleurs incluses`)}</small>
+            <div className="carpet-swatch-row" role="group" aria-label={tr("Couleurs de moquette incluses")}>
               {includedColors.map((color) => (
                 <button key={color.id} type="button" className={selectedDisplayColor.id === color.id ? 'active' : ''}
                   style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
-                  title={`${color.name} (${color.code})`} aria-label={`${color.name} (${color.code})`}
+                  title={tr(`${color.name} (${color.code})`)} aria-label={tr(`${color.name} (${color.code})`)}
                   aria-pressed={selectedDisplayColor.id === color.id} disabled={disabled} onClick={() => selectColor(color)}>
-                  <span>{color.name}</span>
+                  <span>{tr(color.name)}</span>
                 </button>
               ))}
             </div>
@@ -8755,17 +8947,17 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
         {!!paidColors.length && (
           <>
             <div className="wall-fabric-option-line">
-              <small>{`${paidColors.length} couleurs en option`}</small>
-              <em>+ {formatNumber(minPaidPrice)} €/m²</em>
+              <small>{tr(`${paidColors.length} couleurs en option`)}</small>
+              <em>+ {tr(formatNumber(minPaidPrice))} €/m²</em>
             </div>
-            <div className="carpet-swatch-row premium" role="group" aria-label="Couleurs de moquette en option">
+            <div className="carpet-swatch-row premium" role="group" aria-label={tr("Couleurs de moquette en option")}>
               {paidColors.map((color) => (
                 <button key={color.id} type="button" className={selectedDisplayColor.id === color.id ? 'active' : ''}
                   style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
-                  title={`${color.name} (${color.code}) · ${colorOptionLabel(color, 'Option', area)}`}
-                  aria-label={`${color.name} (${color.code})`} aria-pressed={selectedDisplayColor.id === color.id}
+                  title={tr(`${color.name} (${color.code}) · ${colorOptionLabel(color, 'Option', area)}`)}
+                  aria-label={tr(`${color.name} (${color.code})`)} aria-pressed={selectedDisplayColor.id === color.id}
                   disabled={disabled} onClick={() => selectColor(color)}>
-                  <span>{color.name}</span>
+                  <span>{tr(color.name)}</span>
                 </button>
               ))}
             </div>
@@ -8777,18 +8969,20 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
 }
 
 function GroundOptionHeading({ title, value = '', iconSrc = '' }) {
+  const tr = useUiText();
   return (
     <div className="ground-section-heading">
       <span>
         {iconSrc && <img className="ground-section-icon" src={iconSrc} alt="" aria-hidden="true" />}
-        {title}
+        {tr(title)}
       </span>
-      {value && <strong>{value}</strong>}
+      {value && <strong>{tr(value)}</strong>}
     </div>
   );
 }
 
 function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColorId = '', area = 1, disabled = false, disabledReason = '', thick = false, carpetArea = 0, onEnabledChange, onSelect, onThickChange }) {
+  const tr = useUiText();
   const t = useT();
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
@@ -8811,8 +9005,8 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
         const minPrice = minColorPrice(paidColors);
         return (
           <section key={group.id} className="carpet-choice-section ground-section">
-            <GroundOptionHeading title="EMPREINTE MOQUETTE" value={`${referenceColor?.name} (${referenceColor?.code})`} iconSrc="/icons/empreinte_moquette_icon.svg" />
-            <small>{`${includedColors.length || 1} couleur${(includedColors.length || 1) > 1 ? 's' : ''} incluse${(includedColors.length || 1) > 1 ? 's' : ''}`}</small>
+            <GroundOptionHeading title={tr("EMPREINTE MOQUETTE")} value={`${referenceColor?.name} (${referenceColor?.code})`} iconSrc="/icons/empreinte_moquette_icon.svg" />
+            <small>{tr(`${includedColors.length || 1} couleur${(includedColors.length || 1) > 1 ? 's' : ''} incluse${(includedColors.length || 1) > 1 ? 's' : ''}`)}</small>
             <div className="carpet-swatch-row">
               {(includedColors.length ? includedColors : [referenceColor]).filter(Boolean).map((color) => (
                 <button
@@ -8820,17 +9014,17 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
                   type="button"
                   className={selectedDisplayColor.id === color.id ? 'active' : ''}
                   style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
-                  title={`${color.name} (${color.code})`}
+                  title={tr(`${color.name} (${color.code})`)}
                   disabled={disabled || !enabled}
                   onClick={() => selectColor(color.id)}
                 >
-                  <span>{color.name}</span>
+                  <span>{tr(color.name)}</span>
                 </button>
               ))}
             </div>
             {!!paidColors.length && (
               <>
-                <small>{`${paidColors.length} couleur${paidColors.length > 1 ? 's' : ''} en option — ${formatNumber(minPrice)} €`}</small>
+                <small>{tr(`${paidColors.length} couleur${paidColors.length > 1 ? 's' : ''} en option — ${formatNumber(minPrice)} €`)}</small>
                 <div className="carpet-swatch-row premium">
                   {paidColors.map((color) => (
                     <button
@@ -8838,11 +9032,11 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
                       type="button"
                       className={selectedDisplayColor.id === color.id ? 'active' : ''}
                       style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
-                      title={`${color.name} (${color.code}) · ${colorOptionLabel(color, 'Option')}`}
+                      title={tr(`${color.name} (${color.code}) · ${colorOptionLabel(color, 'Option')}`)}
                       disabled={disabled || !enabled}
                       onClick={() => selectColor(color.id)}
                     >
-                      <span>{color.name}</span>
+                      <span>{tr(color.name)}</span>
                     </button>
                   ))}
                 </div>
@@ -8866,18 +9060,18 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
         return (
           <section key={group.id} className={`carpet-choice-section premium ${selectedInGroup ? 'active' : ''}`}>
             <div className="carpet-choice-head">
-              <h4>{colorGroupTitle(group.label, 'Moquette épaisse Salsa')}</h4>
+              <h4>{tr(colorGroupTitle(group.label, 'Moquette épaisse Salsa'))}</h4>
               <span>{t('carpet_premium')}</span>
             </div>
-            <p>{carpetGroupDescription(group.label)}</p>
+            <p>{tr(carpetGroupDescription(group.label))}</p>
             <div className="carpet-premium-facts">
               <span>{t('carpet_velvet')}</span>
               <span>{t('carpet_dense')}</span>
-              <span>◆ {group.colors.length} coloris</span>
+              <span>◆ {tr(group.colors.length)} {tr("coloris")}</span>
             </div>
             <div className="carpet-premium-price">
               <span>{t('carpet_starting', { price: formatNumber(price) })}</span>
-              <em>{Number(area || 0) > 1 ? t('carpet_for_area', { area: formatNumber(area), extra: formatNumber(Math.round(price * Number(area || 0))) }) : ''}</em>
+              <em>{tr(Number(area || 0) > 1 ? t('carpet_for_area', { area: formatNumber(area), extra: formatNumber(Math.round(price * Number(area || 0))) }) : '')}</em>
             </div>
             <div className="carpet-swatch-row premium">
               {group.colors.map((color) => (
@@ -8886,11 +9080,11 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
                   type="button"
                   className={selectedDisplayColor.id === color.id ? 'active' : ''}
                   style={{ '--swatch-color': color.hex, '--swatch-image': swatchImage(color) }}
-                  title={`${color.name} (${color.code}) · ${colorOptionLabel(color, 'Option')}`}
+                  title={tr(`${color.name} (${color.code}) · ${colorOptionLabel(color, 'Option')}`)}
                   disabled={disabled || !enabled}
                   onClick={() => selectColor(color.id)}
                 >
-                  <span>{color.name}</span>
+                  <span>{tr(color.name)}</span>
                 </button>
               ))}
             </div>
@@ -8902,7 +9096,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
         <ToggleOption
           active={thick}
           label={t('carpet_thick_label')}
-          detail="S’applique à la moquette et à l’empreinte moquette."
+          detail={tr("S’applique à la moquette et à l’empreinte moquette.")}
           price={thickCarpetPriceFromFootprintTab(carpetArea, area, t)}
           onChange={(v) => onThickChange?.(v)}
         />
@@ -10241,21 +10435,29 @@ function salonDebitLeafItems(items = [], catalogEntries = [], assets = []) {
   return leaves;
 }
 
+function salonDebitAisle(scene = {}) {
+  return String(sceneAisleNumber(scene, scene.source_payload?.contactDetails || {}) || '')
+    .trim().replace(/^all[ée]e\s*/i, '').trim().replace(/\s+/g, ' ').toLocaleUpperCase('fr-FR');
+}
+
 function salonDebitCsv(salon = {}, scenes = [], assets = []) {
   const selectedScenes = salonDebitScenes(salon, scenes);
-  const packNames = [...new Set(selectedScenes.map((scene) => sceneOfferLabel(scene) || 'Sans pack'))].sort((a, b) => a.localeCompare(b, 'fr'));
+  const aisleNames = [...new Set(selectedScenes.map(salonDebitAisle))]
+    .sort((a, b) => !a ? 1 : !b ? -1 : a.localeCompare(b, 'fr', { numeric: true }));
   const lines = new Map();
-  const add = (detail, pack, quantity = 1) => {
+  const add = (detail, aisle, quantity = 1) => {
     const key = [detail.type, detail.reference, detail.finish, detail.unit].join('|');
-    if (!lines.has(key)) lines.set(key, { ...detail, total: 0, packs: new Map(), sources: new Set() });
+    if (!lines.has(key)) lines.set(key, { ...detail, total: 0, aisles: new Map(), sources: new Set(), checks: new Set() });
     const line = lines.get(key);
     line.total += quantity;
-    line.packs.set(pack, (line.packs.get(pack) || 0) + quantity);
+    line.aisles.set(aisle, (line.aisles.get(aisle) || 0) + quantity);
     if (detail.source) line.sources.add(detail.source);
+    if (detail.check) line.checks.add(detail.check);
   };
 
   selectedScenes.forEach((scene) => {
     const pack = sceneOfferLabel(scene) || 'Sans pack';
+    const aisle = salonDebitAisle(scene);
     const catalogEntries = sceneAdminCatalog(assets, scene);
     const options = scene.options || scene.source_payload?.options || {};
     const prestigeState = {
@@ -10292,7 +10494,7 @@ function salonDebitCsv(salon = {}, scenes = [], assets = []) {
         unit: 'pièce',
         source: group || 'Objet de scène',
         cloison,
-      }, pack, Math.max(1, Number(item.quantity) || 1));
+      }, aisle, Math.max(1, Number(item.quantity) || 1));
     });
 
     const width = Number(scene.dimensions?.width || scene.width_m || 0);
@@ -10300,30 +10502,40 @@ function salonDebitCsv(salon = {}, scenes = [], assets = []) {
     if (width <= 0 || depth <= 0) return;
     standWallPanelRequirements({ width, depth, layout: scene.layout || 'back', items: visibleItems, catalog: catalogEntries }).forEach((panel) => {
       if (panel.lengthMm <= 0) return;
+      const nonStandard = ![250, 500, 750, 1000].includes(panel.lengthMm);
+      const wallLabel = { back: 'fond', left: 'gauche', right: 'droite' }[panel.wall] || panel.wall;
+      const stand = [aisle, sceneStandNumber(scene, scene.source_payload?.contactDetails || {})].filter(Boolean).join(' ');
       add({
         type: `stand-wall-${panel.reinforced ? 'reinforced' : 'standard'}-${panel.lengthMm}`,
-        category: 'Cloisons',
+        category: nonStandard ? 'Ajustements à vérifier' : 'Cloisons',
         reference: '',
-        label: `${panel.reinforced ? 'Cloison renforcée TV' : 'Cloison stand'} ${panel.lengthMm} × 2500 mm`,
+        label: `${nonStandard ? (panel.reinforced ? 'Renfort TV hors standard' : 'Ajustement cloison hors standard') : (panel.reinforced ? 'Cloison renforcée TV' : 'Cloison stand')} ${panel.lengthMm} × 2500 mm`,
         finish: '',
         unit: 'pièce',
         source: 'Structure du stand',
         cloison: true,
-      }, pack);
+        nonStandard,
+        check: nonStandard ? `${scene.project_name || scene.client_name || scene.id || 'Stand'}${stand ? ` (stand ${stand})` : ''} : mur ${wallLabel} de ${Math.round((panel.wall === 'back' ? width : depth) * 1000)} mm, ajustement de ${panel.lengthMm} mm à vérifier` : '',
+      }, aisle);
     });
   });
 
   const details = [...lines.values()].sort((a, b) => a.category.localeCompare(b.category, 'fr') || a.label.localeCompare(b.label, 'fr') || a.reference.localeCompare(b.reference, 'fr'));
   const totalCloisons = details.filter((line) => line.cloison).reduce((total, line) => total + line.total, 0);
+  const totalAdjustments = details.filter((line) => line.nonStandard).reduce((total, line) => total + line.total, 0);
   const rows = [
     ['Salon', salon.name || 'Salon'],
     ['Périmètre', 'Scènes configurées par les exposants uniquement (brouillons exclus)'],
+    ['Répartition', 'Par allée, tous packs confondus'],
     ['Nombre de scènes', selectedScenes.length],
     ['Total cloisons (stand et groupes)', totalCloisons],
+    ['Dont ajustements hors standard à vérifier', totalAdjustments],
+    ...(totalAdjustments ? [['Attention', 'Les ajustements sont des reliquats de découpe théoriques à valider en atelier, pas des formats catalogue. Largeurs standard : 250 / 500 / 750 / 1000 mm.']] : []),
     ['Date export', new Date().toLocaleDateString('fr-FR')],
     [],
-    ['Catégorie', 'Référence', 'Produit', 'Finition', 'Unité', 'Quantité totale', ...packNames, 'Provenance'],
-    ...details.map((line) => [line.category, line.reference, line.label, line.finish, line.unit, line.total, ...packNames.map((pack) => line.packs.get(pack) || 0), [...line.sources].sort().join(' / ')]),
+    ['Catégorie', 'Référence', 'Produit', 'Finition', 'Unité', 'Provenance', 'Contrôle atelier', ...aisleNames.map((aisle) => aisle ? `Allée ${aisle}` : 'Allée non renseignée'), 'Total global'],
+    ...details.map((line) => [line.category, line.reference, line.label, line.finish, line.unit, [...line.sources].sort().join(' / '), [...line.checks].sort().join(' / '), ...aisleNames.map((aisle) => line.aisles.get(aisle) || 0), line.total]),
+    ['TOTAL PIÈCES', '', '', '', 'pièce', '', '', ...aisleNames.map((aisle) => details.reduce((total, line) => total + (line.aisles.get(aisle) || 0), 0)), details.reduce((total, line) => total + line.total, 0)],
   ];
   const escape = (value) => {
     const raw = String(value ?? '');
@@ -11048,7 +11260,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
     const automaticSpots = hasAutoSpotsRule(autoSpotsRule)
       ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...presetItems, ...automaticReserves])
         .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout)) : [];
-    return resolveSpotWallAttachments(resolveSurfaceAttachments([...presetItems, ...automaticReserves, ...automaticMeterCovers, ...automaticHeads, ...automaticSpots]), width, depth, layout);
+    return resolveSpotWallAttachments(applyElectricalClearance(resolveSurfaceAttachments([...presetItems, ...automaticReserves, ...automaticMeterCovers, ...automaticHeads, ...automaticSpots]), width, depth, layout), width, depth, layout);
   }, [presetItems, width, depth, layout, reserveRules, partitionHeadRules, autoSpotsRule, availableCatalog, packReserveBands, offer?.name, reserveItemOverrides, ledRailOverrides, isSignaturePack, presetMeterCoverType]);
   const presetTextureLoad = useSceneTexturePreload(previewItems, [
     selectedCarpetColor.image,
@@ -15179,7 +15391,9 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const packLabel = sceneOfferLabel(scene);
   const options = sceneLightingOptions(scene, { ...(scene.source_payload?.options || {}), ...(scene.options || {}) },
     scene.stand_presets?.base_config?.autoSpotsRule || scene.stand_presets?.base_config?.options?.autoSpotsRule);
-  const manualItems = sceneAdminItems(scene, catalogEntries).filter((item) => !item.autoMeterCover
+  const manualItems = sceneAdminItems(scene, catalogEntries)
+    .map((item) => electricalWallClearance(item) ? constrainItem(item, width, depth, layout, options.carpetFootprintEnabled !== false) : item)
+    .filter((item) => !item.autoMeterCover
     && (!isSignatureScene(scene) || !isSignatureArchItem(item) || signatureArchFitsDepth(item, depth)));
   const automaticMeterCoverItems = makeAutomaticMeterCoverItems(packLabel, options.signatureMeterCoverType, catalogEntries, width, depth, layout, manualItems);
   const reserveRules = sceneReserveRules(scene);
@@ -15201,14 +15415,14 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
         .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout))
       : makeAutomaticLedRailItems(ledEntries, width, depth, layout, ledSpotCountForArea(area))
         .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout));
-  return resolveTechnicalWallSurfaces(resolveSpotWallAttachments([
+  return resolveTechnicalWallSurfaces(resolveSpotWallAttachments(applyElectricalClearance([
     ...manualItems,
     ...automaticReserveItems,
     ...automaticMeterCoverItems,
     ...makeAutomaticPartitionHeadItems(partitionRule, partitionSides, catalogEntries, width, depth, layout, packLabel)
       .map((item) => applyPartitionHeadVisualOptions(item, options.partitionHeadVisuals || {})),
     ...ledItems,
-  ], width, depth, layout));
+  ], width, depth, layout), width, depth, layout));
 }
 
 function resolveTechnicalWallSurfaces(items = []) {
@@ -16725,13 +16939,13 @@ function makeAutomaticMeterCoverItems(packLabel, variantType, catalogEntries = [
   const bounds = itemGroupBounds(base);
   const x = layout === 'left' ? -width / 2 + wallThickness - bounds.minX
     : layout === 'right' ? width / 2 - wallThickness - bounds.maxX : -Number(bounds.centerX || 0);
-  return [{ ...base, id: 'auto-signature-meter-cover', label: entry.label,
+  return applyElectricalClearance([{ ...base, id: 'auto-signature-meter-cover', label: entry.label,
     x, z: -depth / 2 + wallThickness - bounds.minZ, rotation: 0,
     placementRule: null, lockedPlacement: true, movementLocked: true, rotationLocked: true, deleteLocked: true,
     autoMeterCover: true, included: true, priceMode: 'included',
     options: { ...(base.options || {}), unitPrice: 0, variantId: entry.type,
       variantAssetType: entry.type, variantLabel: signatureMeterCoverFinish(entry), variantGroupLabel: 'Cache compteur' },
-  }];
+  }], width, depth, layout);
 }
 
 function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = [], width, depth, layout, salonLabel, reserveOptions = {}) {
@@ -16769,7 +16983,7 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
     },
   }, width, depth, layout);
 
-  return [item];
+  return applyElectricalClearance([item], width, depth, layout);
 }
 
 function scenePartitionHeadRules(scene = {}) {
@@ -19055,11 +19269,12 @@ function rectSize(rect) {
   };
 }
 
-function placementRegions(width, depth, layout, itemBounds, carpetFootprintEnabled = true) {
-  const regions = [standFloorBounds(width, depth, layout)];
+function placementRegions(width, depth, layout, itemBounds, carpetFootprintEnabled = true, clearance = 0) {
+  const bounds = standFloorBounds(width, depth, layout);
+  const regions = [bounds];
   if (carpetFootprintEnabled) regions.push(carpetFootprintBounds(width, depth, layout));
   return regions
-    .map((rect) => itemAllowedRegion(rect, itemBounds))
+    .map((rect) => itemAllowedRegion(electricalClearanceRect(rect, bounds, layout, clearance), itemBounds))
     .filter(Boolean);
 }
 
@@ -19593,7 +19808,7 @@ function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true
     };
   }
 
-  const placement = closestPlacementInRegions(positionedItem, placementRegions(width, depth, layout, bounds, carpetFootprintEnabled));
+  const placement = closestPlacementInRegions(positionedItem, placementRegions(width, depth, layout, bounds, carpetFootprintEnabled, electricalWallClearance(positionedItem)));
 
   return {
     ...positionedItem,
@@ -19726,7 +19941,7 @@ function placeItemInFreeSpot(item, items, width, depth, layout, carpetFootprintE
   const bounds = itemPlacementBounds(firstCandidate);
   const regions = isCeilingMountedItem(firstCandidate)
     ? ceilingPlacementRegions(width, depth, layout, bounds)
-    : placementRegions(width, depth, layout, bounds, carpetFootprintEnabled);
+    : placementRegions(width, depth, layout, bounds, carpetFootprintEnabled, electricalWallClearance(firstCandidate));
   const candidates = [];
 
   for (const region of regions) {
