@@ -30,9 +30,6 @@ $$;
 revoke all on function private.is_scene_collaborator(text) from public, anon;
 grant execute on function private.is_scene_collaborator(text) to authenticated;
 
-create policy "collaborators read their scene" on public.scenes
-  for select to authenticated using ((select private.is_scene_collaborator(id)));
-
 create policy "collaborators read their scene items" on public.scene_items
   for select to authenticated using ((select private.is_scene_collaborator(scene_id)));
 
@@ -58,6 +55,47 @@ as $$
 $$;
 revoke all on function private.scene_configuration_editable(text, text, jsonb) from public, anon;
 grant execute on function private.scene_configuration_editable(text, text, jsonb) to authenticated;
+
+-- The existing HD gateway must be able to read a scene directly before uploading.
+-- Locked scenes are instead served to exhibitors by the scoped read-only RPC.
+drop policy "client or admin read scenes" on public.scenes;
+create policy "staff or draft exhibitors read scenes" on public.scenes
+  for select to authenticated using (
+    (select private.is_admin())
+    or (private.scene_configuration_editable(status, client_status, source_payload)
+      and (lower(client_email) = (select private.current_email()) or (select private.is_scene_collaborator(id))))
+  );
+
+create function private.read_locked_configurator_scene(p_share_token text, p_scene_id text)
+returns jsonb language sql stable security definer set search_path = ''
+as $$
+  select case when p_share_token is null then
+    jsonb_build_object('status', s.status, 'client_status', s.client_status,
+      'exhibitor_view_only', s.source_payload->'exhibitor_view_only',
+      'exhibitor_view_only_updated_at', s.source_payload->'exhibitor_view_only_updated_at')
+  else
+    to_jsonb(s) || jsonb_build_object(
+      'scene_items', coalesce((select jsonb_agg(to_jsonb(i) order by i.created_at, i.id) from public.scene_items i where i.scene_id = s.id), '[]'::jsonb),
+      'scene_files', coalesce((select jsonb_agg(to_jsonb(f) order by f.created_at, f.id) from public.scene_files f where f.scene_id = s.id), '[]'::jsonb),
+      'stand_presets', (select jsonb_build_object('base_config', p.base_config) from public.stand_presets p where p.id = s.base_preset_id),
+      'salon_offers', (select jsonb_build_object('metadata', o.metadata) from public.salon_offers o where o.id = s.offer_id))
+  end
+  from public.scenes s
+  where (select auth.uid()) is not null
+    and ((p_scene_id is null and s.share_token = p_share_token) or (p_share_token is null and s.id = p_scene_id))
+    and not private.scene_configuration_editable(s.status, s.client_status, s.source_payload)
+    and (lower(s.client_email) = (select private.current_email()) or (select private.is_scene_collaborator(s.id)));
+$$;
+revoke all on function private.read_locked_configurator_scene(text, text) from public, anon;
+grant execute on function private.read_locked_configurator_scene(text, text) to authenticated;
+
+create function public.read_locked_configurator_scene(p_share_token text default null, p_scene_id text default null)
+returns jsonb language sql stable security invoker set search_path = ''
+as $$
+  select private.read_locked_configurator_scene(p_share_token, p_scene_id);
+$$;
+revoke all on function public.read_locked_configurator_scene(text, text) from public, anon;
+grant execute on function public.read_locked_configurator_scene(text, text) to authenticated;
 
 -- Also protect the direct writes used by tabs still running the pre-migration client.
 create or replace function private.guard_scene_exhibitor_lock()
@@ -95,10 +133,8 @@ begin
       if tg_op <> 'INSERT' then old_scene_id := old.scene_id; end if;
       if tg_op <> 'DELETE' then new_scene_id := new.scene_id; end if;
       perform 1 from public.scenes where id in (old_scene_id, new_scene_id) order by id for share;
-      if exists (
-        select 1 from public.scenes where id in (old_scene_id, new_scene_id)
-          and not private.scene_configuration_editable(status, client_status, source_payload)
-      ) then
+      if (old_scene_id is not null and not private.can_upload_scene_visual(old_scene_id))
+        or (new_scene_id is not null and not private.can_upload_scene_visual(new_scene_id)) then
         raise exception using errcode = '42501', message = 'Cette scène est en lecture seule.';
       end if;
     end if;

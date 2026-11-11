@@ -307,10 +307,18 @@ export async function getSceneByToken(token) {
     .from('scenes')
     .select('*, scene_items(*), scene_files(*), stand_presets(base_config), salon_offers(metadata)')
     .eq('share_token', token)
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
-  return dbSceneToScene(data);
+  return dbSceneToScene(data || await readLockedConfiguratorScene({ p_share_token: token }));
+}
+
+async function readLockedConfiguratorScene(selector) {
+  const { data, error } = await supabase.rpc('read_locked_configurator_scene', selector);
+  // Before the migration, a missing direct row means there is no accessible scene.
+  if (error && error.code !== 'PGRST202') throw error;
+  if (!data) throw Object.assign(new Error('Accès refusé à cette scène.'), { code: 'PGRST116' });
+  return data;
 }
 
 const sceneSaveQueues = new Map();
@@ -415,9 +423,10 @@ export async function getSceneExhibitorState(scene) {
     return { locked: Boolean(current.source_payload?.exhibitor_view_only), status: current.status, clientStatus: current.client_status,
       lockUpdatedAt: current.source_payload?.exhibitor_view_only_updated_at || '' };
   }
-  const { data, error } = await supabase.from('scenes')
-    .select('status,client_status,source_payload->exhibitor_view_only,source_payload->exhibitor_view_only_updated_at').eq('id', scene.id).single();
+  const { data: direct, error } = await supabase.from('scenes')
+    .select('status,client_status,source_payload->exhibitor_view_only,source_payload->exhibitor_view_only_updated_at').eq('id', scene.id).maybeSingle();
   if (error) throw error;
+  const data = direct || await readLockedConfiguratorScene({ p_scene_id: scene.id });
   return { locked: Boolean(data.exhibitor_view_only), status: data.status, clientStatus: data.client_status,
     lockUpdatedAt: data.exhibitor_view_only_updated_at || '' };
 }

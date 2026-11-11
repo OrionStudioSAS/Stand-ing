@@ -115,9 +115,14 @@ select pg_temp.check_test((public.save_configurator_scene('collab-other-scene', 
 
 set local request.jwt.claims = '{"sub":"b0000000-0000-0000-0000-000000000002","email":"collab-guest@example.test"}';
 select pg_temp.check_test((public.save_configurator_scene('collab-test-scene', 1,
-  '{"status":"configured","client_status":"configured"}', '[]', null) #>> '{source_payload,configuration_submitted_by}')
+  '{"status":"configured","client_status":"configured"}',
+  '[{"item_uid":"chair-1","type":"chair","label":"Chair","x":0,"y":0,"z":0,"rotation":0,"config":{}}]', null) #>> '{source_payload,configuration_submitted_by}')
   = 'b0000000-0000-0000-0000-000000000002', 'guest submits the latest revision as themselves');
 select pg_temp.check_test(not private.can_upload_scene_visual('collab-test-scene'), 'guest cannot upload after submission');
+select pg_temp.check_test(not exists(select id, share_token from public.scenes where id = 'collab-test-scene'), 'HD gateway cannot directly read a submitted scene as guest');
+select pg_temp.check_test((public.read_locked_configurator_scene(p_share_token => 'collab-test-token')->>'status') = 'configured', 'guest can still consult submitted scene');
+select pg_temp.check_test((public.read_locked_configurator_scene(p_share_token => 'collab-test-token')#>>'{scene_items,0,item_uid}') = 'chair-1', 'locked scene still returns its configured objects');
+select pg_temp.check_test(public.read_locked_configurator_scene(p_scene_id => 'collab-other-scene') is null, 'guest cannot query another scene status');
 do $$ begin
   begin
     perform public.save_configurator_scene('collab-test-scene', 2, '{"status":"created","client_status":"draft"}', '[]', null);
@@ -128,6 +133,8 @@ end $$;
 
 set local request.jwt.claims = '{"sub":"b0000000-0000-0000-0000-000000000001","email":"collab-owner@example.test"}';
 select pg_temp.check_test(not private.can_upload_scene_visual('collab-test-scene'), 'owner cannot upload after guest submission either');
+select pg_temp.check_test(not exists(select id, share_token from public.scenes where id = 'collab-test-scene'), 'HD gateway cannot directly read a submitted scene as owner');
+select pg_temp.check_test((public.read_locked_configurator_scene(p_scene_id => 'collab-test-scene')->>'client_status') = 'configured', 'owner can poll submitted scene status');
 do $$ begin
   begin
     perform public.save_configurator_scene('collab-test-scene', 2, '{"status":"created","client_status":"draft"}', '[]', null);
@@ -136,7 +143,12 @@ do $$ begin
   end;
   begin
     update public.scenes set layout = 'u' where id = 'collab-test-scene';
-    raise exception 'Owner bypassed the scene lock with a direct update';
+    if found then raise exception 'Owner bypassed the scene lock with a direct update'; end if;
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.scene_items (scene_id, item_uid, type) values ('collab-test-scene', 'after-lock', 'chair');
+    raise exception 'Owner added an item after submission';
   exception when insufficient_privilege then null;
   end;
   begin
@@ -152,6 +164,7 @@ delete from public.scene_collaborators where scene_id = 'collab-test-scene' and 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"b0000000-0000-0000-0000-000000000002","email":"collab-guest@example.test"}';
 select pg_temp.check_test(not exists(select 1 from public.scenes where id = 'collab-test-scene'), 'revocation invalidates existing session access');
+select pg_temp.check_test(public.read_locked_configurator_scene(p_share_token => 'collab-test-token') is null, 'revocation also blocks read-only RPC');
 do $$ begin
   begin
     perform public.save_configurator_scene('collab-test-scene', 2, '{"status":"created","client_status":"draft"}', '[]', null);
