@@ -66,17 +66,18 @@ select pg_temp.check_test(exists(select 1 from public.scene_uploaded_files where
   and original_filename = 'artwork.pdf' and not is_active), 'guest can replace but not rewrite an uploaded visual');
 
 select pg_temp.check_test((public.save_configurator_scene('collab-test-scene', 0,
-  '{"status":"created","client_status":"draft","client_email":"attacker@example.test","width_m":99,"source_payload":{"options":{"carpet":"red"},"contactDetails":{"email":"attacker@example.test"},"exhibitor_view_only":true}}',
+  '{"status":"created","client_status":"draft","client_email":"attacker@example.test","width_m":6,"layout":"right","source_payload":{"options":{"carpet":"red"},"contactDetails":{"email":"attacker@example.test","phone":"0123456789"},"exhibitor_view_only":true}}',
   '[{"item_uid":"chair-1","type":"chair","label":"Chair","x":0,"y":0,"z":0,"rotation":0,"config":{}}]', null)
   ->> 'configuration_revision') = '1', 'guest edits draft atomically');
 select pg_temp.check_test(exists(
-  select 1 from public.scenes where id = 'collab-test-scene' and width_m = 4
+  select 1 from public.scenes where id = 'collab-test-scene' and width_m = 6 and layout = 'right'
     and client_email = 'collab-owner@example.test'
     and source_payload#>>'{contactDetails,email}' = 'collab-owner@example.test'
+    and source_payload#>>'{contactDetails,phone}' = '0123456789'
     and source_payload#>>'{options,carpet}' = 'red'
     and source_payload#>>'{questions,0,id}' = 'keep'
     and not (source_payload ? 'exhibitor_view_only')
-), 'guest changes config but not contact, stand dimensions or lock');
+), 'guest can edit the same configuration and contact details as owner, without changing identity or lock');
 select pg_temp.check_test(exists(select 1 from public.scene_items where scene_id = 'collab-test-scene' and item_uid = 'chair-1'), 'guest reads edited item');
 
 do $$ begin
@@ -100,6 +101,7 @@ end $$;
 select pg_temp.check_test(exists(select 1 from public.scenes where id = 'collab-test-scene' and configuration_revision = 1), 'failed item save rolls back scene revision');
 
 set local request.jwt.claims = '{"sub":"b0000000-0000-0000-0000-000000000001","email":"collab-owner@example.test"}';
+select pg_temp.check_test(private.can_upload_scene_visual('collab-test-scene'), 'owner can also upload visual in draft');
 do $$ begin
   begin
     perform public.save_configurator_scene('collab-test-scene', 0, '{"status":"created","client_status":"draft"}', '[]', null);
@@ -124,9 +126,31 @@ do $$ begin
   end;
 end $$;
 
+set local request.jwt.claims = '{"sub":"b0000000-0000-0000-0000-000000000001","email":"collab-owner@example.test"}';
+select pg_temp.check_test(not private.can_upload_scene_visual('collab-test-scene'), 'owner cannot upload after guest submission either');
+do $$ begin
+  begin
+    perform public.save_configurator_scene('collab-test-scene', 2, '{"status":"created","client_status":"draft"}', '[]', null);
+    raise exception 'Owner reopened a submitted stand';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.scenes set layout = 'u' where id = 'collab-test-scene';
+    raise exception 'Owner bypassed the scene lock with a direct update';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.scene_uploaded_files (scene_id, surface_key, original_filename, uploaded_by)
+      values ('collab-test-scene', 'wall', 'late.pdf', 'b0000000-0000-0000-0000-000000000001');
+    raise exception 'Owner registered a production file after submission';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+
 reset role;
 delete from public.scene_collaborators where scene_id = 'collab-test-scene' and slot = 1;
 set local role authenticated;
+set local request.jwt.claims = '{"sub":"b0000000-0000-0000-0000-000000000002","email":"collab-guest@example.test"}';
 select pg_temp.check_test(not exists(select 1 from public.scenes where id = 'collab-test-scene'), 'revocation invalidates existing session access');
 do $$ begin
   begin

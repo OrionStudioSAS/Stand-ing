@@ -59,8 +59,9 @@ test('locking fails atomically if the database rejects the scene update', async 
 test('read-only hook respects admin editing, forced previews and initial client lock', () => {
   for (const [isAdmin, forced, locked, expected] of [[false, false, true, true], [true, false, true, false], [true, true, true, true], [false, false, false, false]]) {
     const api = vm.createContext({ useState: (value) => [value, () => {}], useRef: (value) => ({ current: value }), useEffect: () => {} });
-    vm.runInContext(hook.slice(hook.indexOf('export function')).replace('export function', 'function'), api);
+    vm.runInContext(hook.slice(hook.indexOf('function configurationLocked')).replace('export function', 'function'), api);
     assert.equal(api.useSceneExhibitorReadOnly({ id: 'test', source_payload: { exhibitor_view_only: locked } }, isAdmin, forced), expected);
+    assert.equal(api.useSceneExhibitorReadOnly({ id: 'submitted', status: 'configured', client_status: 'configured' }, isAdmin, forced), forced || !isAdmin);
   }
   assert.match(hook, /setInterval\(refresh, 15000\)/);
   assert.match(hook, /removeEventListener\('focus', refresh\)/);

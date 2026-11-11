@@ -65,7 +65,7 @@ app.use(
 );
 
 app.get('/', (_req, res) => {
-  res.json({ service: 'Stand-ING SFTP gateway', ok: true });
+  res.json({ service: 'Stand-ING SFTP gateway', ok: true, sceneUploadLock: true });
 });
 
 app.get('/health', (_req, res) => {
@@ -228,13 +228,15 @@ async function authenticateUploadRequest(req) {
   const { data, error } = await supabaseUserClient.auth.getUser(bearer);
   if (error || !data?.user) throw httpError(401, 'Session Supabase invalide.');
 
-  const { data: profile } = await supabaseUserClient
-    .from('user_profiles')
-    .select('role')
-    .or(`auth_user_id.eq.${data.user.id},email.eq.${data.user.email}`)
+  const { data: staff } = await supabaseUserClient
+    .from('admin_users')
+    .select('role_label')
+    .eq('user_id', data.user.id)
+    .eq('is_active', true)
     .maybeSingle();
 
-  return { mode: 'supabase-user', user: data.user, admin: profile?.role === 'admin', db: supabaseUserClient };
+  const admin = Boolean(staff) && !/dessinateur|dessinatrice/i.test(staff.role_label || '');
+  return { mode: 'supabase-user', user: data.user, admin, db: supabaseUserClient };
 }
 
 function gatewayTokenFromRequest(req) {
@@ -260,13 +262,12 @@ async function loadSceneForUpload(body = {}, auth = {}) {
 
 function assertCanUploadToScene(auth, scene) {
   if (auth.admin) return;
-  if (scene.source_payload?.exhibitor_view_only) throw httpError(403, 'Cette scène est en lecture seule.');
-  const userEmail = String(auth.user?.email || '').trim().toLowerCase();
-  const sceneEmail = String(scene.client_email || '').trim().toLowerCase();
-  if (userEmail && sceneEmail && userEmail === sceneEmail) return;
+  if (scene.status !== 'created' || !['not_started', 'draft'].includes(scene.client_status)
+    || String(scene.source_payload?.exhibitor_view_only) === 'true') {
+    throw httpError(403, 'Cette scène est en lecture seule.');
+  }
   // RLS already established membership when reading this scene as the user.
-  if (auth.mode === 'supabase-user' && auth.db && scene.status === 'created'
-    && ['not_started', 'draft'].includes(scene.client_status)) return;
+  if (auth.mode === 'supabase-user' && auth.db && auth.user?.id) return;
   throw httpError(403, 'Accès refusé pour cette scène.');
 }
 

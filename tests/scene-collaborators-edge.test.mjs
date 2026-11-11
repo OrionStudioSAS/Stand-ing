@@ -12,7 +12,7 @@ const transpile = (name) => ts.transpileModule(
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
 ).outputText;
 
-const sources = Object.fromEntries(['scene-collaborators', 'scene-access-request', 'scene-access-verify', 'scene-completion-email', 'scene-config-sync']
+const sources = Object.fromEntries(['scene-collaborators', 'scene-access-request', 'scene-access-verify', 'scene-completion-email', 'scene-config-sync', 'scene-contact-sync']
   .map(name => [name, transpile(name)]));
 
 function fixture() {
@@ -122,6 +122,10 @@ test('owner invites up to two addresses; OTP goes only to the invited email, and
 
   const sceneRequest = { sceneId: 'scene', shareToken: 'owner-token' };
   const delivery = (mode) => h.request('scene-completion-email', { ...sceneRequest, mode }, 'guest');
+  for (const actor of ['owner', 'guest']) {
+    assert.equal((await h.request('scene-contact-sync', sceneRequest, actor)).status, 200, 'Both exhibitors can sync draft details');
+    assert.equal((await h.request('scene-completion-email', sceneRequest, actor)).status, 403, 'Neither can deliver a draft');
+  }
   assert.equal((await delivery()).status, 403, 'Cannot send confirmation for a draft');
   Object.assign(h.scene, { status: 'configured', client_status: 'configured', source_payload: { configuration_submitted_by: 'owner' } });
   assert.equal((await delivery()).status, 403, 'Cannot deliver someone else’s submission');
@@ -129,6 +133,9 @@ test('owner invites up to two addresses; OTP goes only to the invited email, and
   assert.equal((await h.request('scene-config-sync', sceneRequest, 'guest')).status, 200);
   assert.equal((await delivery()).status, 200);
   assert.deepEqual(h.mails[2].to, ['owner@example.test'], 'Confirmation still goes to the main contact');
+  for (const actor of ['owner', 'guest']) {
+    assert.equal((await h.request('scene-contact-sync', sceneRequest, actor)).status, 403, 'Neither exhibitor can sync changes after submission');
+  }
   assert.equal((await delivery('special_request_completed')).status, 403, 'Cannot send admin approval');
   h.scene.status = 'bat_pending';
   assert.equal((await delivery('special_request_received')).status, 200);
@@ -141,14 +148,17 @@ test('owner invites up to two addresses; OTP goes only to the invited email, and
   assert.equal((await h.request('scene-access-verify', { invitation_token: pending.id, code: '123456' })).status, 404);
 });
 
-test('an active administrator can invite and revoke on a scene they do not own', async () => {
+test('an active admin can invite and revoke on a submitted scene without granting access management to guests', async () => {
   const h = fixture();
+  Object.assign(h.scene, { status: 'configured', client_status: 'configured' });
   const manage = (body, actor) => h.request('scene-collaborators', { scene_id: 'scene', ...body }, actor);
   const invited = await manage({ action: 'invite', email: 'guest@example.test' }, 'admin');
   assert.equal(invited.status, 201);
   const member = (await invited.json()).member;
   assert.equal((await manage({ action: 'list' }, 'admin')).status, 200);
   for (const actor of ['designer', 'inactive', 'guest']) {
+    assert.equal((await manage({ action: 'list' }, actor)).status, 403);
+    assert.equal((await manage({ action: 'invite', email: 'new@example.test' }, actor)).status, 403);
     assert.equal((await manage({ action: 'remove', invitation_id: member.id }, actor)).status, 403);
   }
   assert.equal(h.invites.length, 1);

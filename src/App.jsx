@@ -575,7 +575,7 @@ function AppContent() {
 
         const loaded = await getSceneByToken(sceneToken);
         if (mounted) {
-          setSceneRole(adminUser ? '' : contactOwnsScene(session.user, loaded) ? 'owner' : 'collaborator');
+          setSceneRole(contactOwnsScene(session.user, loaded) ? 'owner' : adminUser ? '' : 'collaborator');
           setScene(loaded);
           setSceneAccessRequired(false);
         }
@@ -1027,7 +1027,6 @@ function AdminLogin({ authError = '', mode = 'admin' }) {
 }
 
 function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = false, sceneRole = '' }) {
-  const isCollaborator = sceneRole === 'collaborator';
   const canManageCollaborators = (sceneRole === 'owner' || (isAdminViewer && !forceReadOnly))
     && Number.isInteger(initialScene.configuration_revision);
   const initialOptions = sceneLightingOptions(initialScene, {
@@ -1228,8 +1227,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
   const effectiveAdminViewer = Boolean(isAdminViewer && !adminExhibitorPreview);
   const handleSceneReopened = useCallback(() => setSaveState('draft'), []);
-  const remotelyReadOnly = useSceneExhibitorReadOnly(initialScene, effectiveAdminViewer, forceReadOnly, handleSceneReopened, isCollaborator);
-  const readOnly = remotelyReadOnly || (isCollaborator && saveState === 'configured');
+  const remotelyReadOnly = useSceneExhibitorReadOnly(initialScene, effectiveAdminViewer, forceReadOnly, handleSceneReopened);
+  const readOnly = remotelyReadOnly || (!effectiveAdminViewer && saveState === 'configured');
   const headCountry = sceneHeadCountry(initialScene);
   const sceneVisualContext = useMemo(() => ({
     fontRevision,
@@ -2595,7 +2594,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   };
 
   const validateContactDetails = async () => {
-    if (isCollaborator || sceneSaveError?.stale) return;
+    if (readOnly || sceneSaveError?.stale) return;
     const nextClientInfo = {
       client: contactDetails.company,
       project: `Stand ${contactDetails.emplacement}`,
@@ -2756,7 +2755,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             salonLabel={salonLabel}
             contactDetails={contactDetails}
             onClose={() => setHeaderPanel(null)}
-            onReportCorrection={isCollaborator ? undefined : submitContactCorrection}
+            onReportCorrection={submitContactCorrection}
             onOpenCollaborators={canManageCollaborators ? () => setHeaderPanel('collaborators') : undefined}
           />
         </div>

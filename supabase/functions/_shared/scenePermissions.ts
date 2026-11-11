@@ -9,12 +9,20 @@ export async function sceneActor(admin: any, req: Request) {
   return error || !data?.user?.email_confirmed_at ? null : data.user;
 }
 
-export async function canManageScene(admin: any, user: any, scene: any) {
+export function isSceneOwner(user: any, scene: any) {
+  const email = sceneEmail(user?.email);
+  return Boolean(user?.id && email && email === sceneEmail(scene?.client_email));
+}
+
+export async function isSceneAdministrator(admin: any, user: any) {
   if (!user?.id) return false;
-  if (sceneEmail(user.email) && sceneEmail(user.email) === sceneEmail(scene.client_email)) return true;
   const { data } = await admin.from("admin_users").select("user_id, role_label")
     .eq("user_id", user.id).eq("is_active", true).maybeSingle();
   return !!data && !/dessinateur|dessinatrice/.test(String(data.role_label || "").toLowerCase());
+}
+
+export async function canManageScene(admin: any, user: any, scene: any) {
+  return isSceneOwner(user, scene) || await isSceneAdministrator(admin, user);
 }
 
 export async function isSceneCollaborator(admin: any, user: any, sceneId: string) {
@@ -26,10 +34,13 @@ export async function isSceneCollaborator(admin: any, user: any, sceneId: string
 }
 
 export async function canDeliverSceneSubmission(admin: any, user: any, scene: any, status: string) {
-  if (await canManageScene(admin, user, scene)) return true;
-  return Boolean(user?.id && scene.status === status && scene.client_status === "configured"
-    && scene.source_payload?.configuration_submitted_by === user.id
-    && await isSceneCollaborator(admin, user, scene.id));
+  if (user?.id && scene.status === status && scene.client_status === "configured") {
+    const submittedBy = scene.source_payload?.configuration_submitted_by;
+    // Legacy submissions predate attribution; only the main contact may deliver those.
+    if (isSceneOwner(user, scene) && (!submittedBy || submittedBy === user.id)) return true;
+    if (submittedBy === user.id && await isSceneCollaborator(admin, user, scene.id)) return true;
+  }
+  return await isSceneAdministrator(admin, user);
 }
 
 export async function findSceneInvitation(admin: any, token: unknown) {

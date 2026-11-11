@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { canDeliverSceneSubmission, canManageScene, sceneActor } from "../_shared/scenePermissions.ts";
+import { canDeliverSceneSubmission, isSceneAdministrator, sceneActor } from "../_shared/scenePermissions.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
   const actor = await sceneActor(supabase, req);
   const allowed = mode === "completed" || mode === "special_request_received"
     ? await canDeliverSceneSubmission(supabase, actor, scene, mode === "completed" ? "configured" : "bat_pending")
-    : await canManageScene(supabase, actor, scene);
+    : await isSceneAdministrator(supabase, actor);
   if (!allowed) {
     return json({ error: "Forbidden" }, 403);
   }

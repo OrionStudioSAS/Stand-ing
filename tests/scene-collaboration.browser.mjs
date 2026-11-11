@@ -27,6 +27,9 @@ const server = await createServer({ server: { host: '127.0.0.1', port: 0 }, logL
     if (id === storeId) return `
       export * from '/src/data/sceneStore.js?collaboration-original';
       let scene = ${JSON.stringify(scene)};
+      if (new URLSearchParams(window.location.search).has('submitted')) {
+        scene = { ...scene, status: 'configured', client_status: 'configured' };
+      }
       let members = [];
       export async function getSceneByToken(token) {
         if (token !== scene.share_token || !window.testUser) throw new Error('Access denied');
@@ -92,6 +95,17 @@ try {
 
   const owner = await open('?scene=owner-link', 'owner');
   const inviteButton = (page) => page.locator('.configurator-topbar').getByRole('button', { name: 'Inviter un collaborateur' });
+  const validate = async (page) => {
+    await page.locator('.stepper').getByRole('button', { name: /Validation/ }).click();
+    const confirm = page.locator('.validation-confirm-button');
+    assert.equal(await confirm.isEnabled(), true);
+    await confirm.click();
+    await page.waitForFunction(() => window.notifiedContact === 'owner@example.test');
+    assert.deepEqual(await page.evaluate(() => [window.savedScene.client_status, window.syncedStatus]), ['configured', 'configured']);
+    await page.getByText(/Votre scène est confirmée/).waitFor();
+    assert.equal(await confirm.isDisabled(), true, 'Exhibitor cannot submit a second time');
+    await page.locator('.configurator-shell.readonly-mode').waitFor();
+  };
   await inviteButton(owner).click();
   const dialog = owner.getByRole('dialog', { name: 'Collaborateurs du stand' });
   assert.equal(await inviteButton(owner).getAttribute('aria-expanded'), 'true');
@@ -112,14 +126,20 @@ try {
   assert.ok(headerBounds.x >= 0 && headerBounds.x + headerBounds.width <= 320, 'Header actions fit on mobile');
   await inviteButton(owner).click();
   await dialog.waitFor();
+  await inviteButton(owner).click();
+  await owner.setViewportSize({ width: 1280, height: 900 });
+  await validate(owner);
+  assert.equal(await inviteButton(owner).isVisible(), true, 'Owner can still manage access after submission');
   await owner.close();
 
-  const admin = await open('?scene=owner-link', 'admin');
+  const admin = await open('?scene=owner-link&submitted=1', 'admin');
   await inviteButton(admin).click();
   const adminDialog = admin.getByRole('dialog', { name: 'Collaborateurs du stand' });
   await adminDialog.getByRole('textbox', { name: 'Adresse e-mail du collaborateur' }).fill('new@example.test');
   await adminDialog.getByRole('button', { name: 'Envoyer l’invitation' }).click();
   await adminDialog.getByText('new@example.test', { exact: true }).waitFor();
+  await adminDialog.getByRole('button', { name: 'Retirer l’accès : new@example.test' }).click();
+  await adminDialog.getByText('Accès retiré.', { exact: true }).waitFor();
   await admin.close();
 
   const designer = await open('?scene=owner-link', 'designer');
@@ -139,6 +159,7 @@ try {
   await guest.locator('.user-pill').click();
   assert.equal(await inviteButton(guest).count(), 0);
   assert.equal(await guest.getByRole('button', { name: 'Inviter un collaborateur' }).count(), 0);
+  assert.equal(await guest.locator('.client-correction-button').isVisible(), true, 'Guest can report incorrect contact details');
   await guest.locator('.client-info-modal .modal-head-actions button').click();
   await guest.getByRole('button', { name: /^Sol/ }).click();
   const thickCarpet = guest.locator('.config-toggle-option').filter({ hasText: 'Moquette épaisse' });
@@ -155,16 +176,9 @@ try {
   await guest.close();
 
   const submitter = await openGuest();
-  await submitter.locator('.stepper').getByRole('button', { name: /Validation/ }).click();
-  const confirm = submitter.locator('.validation-confirm-button');
-  assert.equal(await confirm.isEnabled(), true);
-  await confirm.click();
-  await submitter.waitForFunction(() => window.notifiedContact === 'owner@example.test');
-  assert.deepEqual(await submitter.evaluate(() => [window.savedScene.client_status, window.syncedStatus]), ['configured', 'configured']);
-  await submitter.getByText(/Votre scène est confirmée/).waitFor();
-  assert.equal(await confirm.isDisabled(), true, 'Collaborator cannot submit a second time');
+  await validate(submitter);
   assert.deepEqual(errors, []);
-  console.log('Owner and active admin manage invitations; designer cannot; guest edits and submits the draft; stale draft and repeat submission blocked.');
+  console.log('Owner and admin manage invitations, including on a submitted scene; owner and guest become read-only after submission.');
 } finally {
   await browser?.close();
   await server.close();

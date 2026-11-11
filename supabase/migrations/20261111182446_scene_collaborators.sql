@@ -39,16 +39,84 @@ create policy "collaborators read their scene items" on public.scene_items
 create policy "collaborators read their scene files" on public.scene_files
   for select to authenticated using ((select private.is_scene_collaborator(scene_id)));
 
+create function private.is_scene_configuration_admin()
+returns boolean language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1 from public.admin_users
+    where user_id = (select auth.uid()) and is_active and lower(role_label) !~ 'dessinateur|dessinatrice'
+  );
+$$;
+revoke all on function private.is_scene_configuration_admin() from public, anon;
+grant execute on function private.is_scene_configuration_admin() to authenticated;
+
+create function private.scene_configuration_editable(scene_status text, client_status text, source_payload jsonb)
+returns boolean language sql immutable set search_path = ''
+as $$
+  select scene_status = 'created' and client_status in ('not_started', 'draft')
+    and source_payload->>'exhibitor_view_only' is distinct from 'true';
+$$;
+revoke all on function private.scene_configuration_editable(text, text, jsonb) from public, anon;
+grant execute on function private.scene_configuration_editable(text, text, jsonb) to authenticated;
+
+-- Also protect the direct writes used by tabs still running the pre-migration client.
+create or replace function private.guard_scene_exhibitor_lock()
+returns trigger language plpgsql security invoker set search_path = ''
+as $$
+begin
+  if current_user in ('postgres', 'service_role', 'supabase_admin') then return new; end if;
+  if (select private.is_scene_configuration_admin()) then return new; end if;
+
+  if not private.scene_configuration_editable(old.status, old.client_status, old.source_payload) then
+    raise exception using errcode = '42501', message = 'Cette scène est en lecture seule.';
+  end if;
+  if old.source_payload->'exhibitor_view_only' is distinct from new.source_payload->'exhibitor_view_only'
+    or old.source_payload->'exhibitor_view_only_updated_at' is distinct from new.source_payload->'exhibitor_view_only_updated_at'
+    or old.source_payload->'configuration_submitted_by' is distinct from new.source_payload->'configuration_submitted_by'
+  then
+    raise exception using errcode = '42501', message = 'Ce changement de statut n’est pas autorisé.';
+  end if;
+  if not private.scene_configuration_editable(new.status, new.client_status, new.source_payload) then
+    raise exception using errcode = '42501', message = 'Rechargez la scène pour utiliser la validation du configurateur.';
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function private.guard_locked_scene_children()
+returns trigger language plpgsql security invoker set search_path = ''
+as $$
+declare
+  old_scene_id text;
+  new_scene_id text;
+begin
+  if current_user not in ('postgres', 'service_role', 'supabase_admin') then
+    if not (select private.is_scene_configuration_admin()) then
+      if tg_op <> 'INSERT' then old_scene_id := old.scene_id; end if;
+      if tg_op <> 'DELETE' then new_scene_id := new.scene_id; end if;
+      perform 1 from public.scenes where id in (old_scene_id, new_scene_id) order by id for share;
+      if exists (
+        select 1 from public.scenes where id in (old_scene_id, new_scene_id)
+          and not private.scene_configuration_editable(status, client_status, source_payload)
+      ) then
+        raise exception using errcode = '42501', message = 'Cette scène est en lecture seule.';
+      end if;
+    end if;
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end;
+$$;
+
 create function private.can_upload_scene_visual(target_scene_id text)
 returns boolean language sql stable security definer set search_path = ''
 as $$
-  select (select private.is_admin()) or exists (
+  select (select private.is_scene_configuration_admin()) or exists (
     select 1 from public.scenes s where s.id = target_scene_id
-      and s.source_payload->>'exhibitor_view_only' is distinct from 'true'
+      and private.scene_configuration_editable(s.status, s.client_status, s.source_payload)
       and (
         lower(s.client_email) = (select private.current_email())
-        or (s.status = 'created' and s.client_status in ('not_started', 'draft')
-          and (select private.is_scene_collaborator(target_scene_id)))
+        or (select private.is_scene_collaborator(target_scene_id))
       )
   );
 $$;
@@ -78,34 +146,34 @@ create policy "collaborators read option uploads" on storage.objects
 
 create policy "collaborators read uploaded visuals" on public.scene_uploaded_files
   for select to authenticated using ((select private.is_scene_collaborator(scene_id)));
-create policy "collaborators insert uploaded visuals" on public.scene_uploaded_files
+drop policy "client or admin insert scene uploaded files" on public.scene_uploaded_files;
+drop policy "client or admin update scene uploaded files" on public.scene_uploaded_files;
+create policy "scene editors insert uploaded visuals" on public.scene_uploaded_files
   for insert to authenticated with check (
-    (select private.is_scene_collaborator(scene_id)) and (select private.can_upload_scene_visual(scene_id))
+    (select private.can_upload_scene_visual(scene_id))
     and uploaded_by = (select auth.uid())
   );
-create policy "collaborators update uploaded visuals" on public.scene_uploaded_files
-  for update to authenticated using (
-    (select private.is_scene_collaborator(scene_id)) and (select private.can_upload_scene_visual(scene_id))
-  ) with check (
-    (select private.is_scene_collaborator(scene_id)) and (select private.can_upload_scene_visual(scene_id))
-  );
+create policy "scene editors update uploaded visuals" on public.scene_uploaded_files
+  for update to authenticated using ((select private.can_upload_scene_visual(scene_id)))
+  with check ((select private.can_upload_scene_visual(scene_id)));
+create trigger guard_locked_scene_uploaded_visuals before insert or update or delete on public.scene_uploaded_files
+  for each row execute function private.guard_locked_scene_children();
 
--- Collaborators may replace an artwork, but not rewrite the previous file's metadata.
-create function private.guard_collaborator_visual_replacement()
+-- Exhibitors may replace an artwork, but not rewrite the previous file's metadata.
+create function private.guard_scene_visual_replacement()
 returns trigger language plpgsql set search_path = ''
 as $$
 begin
-  if current_user = 'authenticated' and (select private.is_scene_collaborator(old.scene_id))
-    and not (select private.can_access_scene(old.scene_id))
+  if current_user = 'authenticated' and not (select private.is_scene_configuration_admin())
     and (new.is_active or (to_jsonb(new) - 'is_active') is distinct from (to_jsonb(old) - 'is_active'))
   then
-    raise exception using errcode = '42501', message = 'Un collaborateur peut seulement remplacer un visuel.';
+    raise exception using errcode = '42501', message = 'Un exposant peut seulement remplacer un visuel.';
   end if;
   return new;
 end;
 $$;
-create trigger guard_collaborator_visual_replacement before update on public.scene_uploaded_files
-  for each row execute function private.guard_collaborator_visual_replacement();
+create trigger guard_scene_visual_replacement before update on public.scene_uploaded_files
+  for each row execute function private.guard_scene_visual_replacement();
 
 alter table public.scenes add column configuration_revision integer not null default 0;
 
@@ -144,7 +212,6 @@ declare
   actor_id uuid := auth.uid();
   actor_email text := private.current_email();
   administrator boolean;
-  collaborator boolean;
   source_patch jsonb;
 begin
   if actor_id is null or not (select private.can_access_scene(p_scene_id) or private.is_scene_collaborator(p_scene_id)) then
@@ -156,18 +223,17 @@ begin
     raise exception using errcode = '42501', message = 'Accès refusé à cette scène.';
   end if;
 
-  select exists (
-    select 1 from public.admin_users where user_id = actor_id and is_active and lower(role_label) !~ 'dessinateur|dessinatrice'
-  ) into administrator;
-  collaborator := not administrator and lower(coalesce(current_scene.client_email, '')) <> actor_email;
-  if collaborator then
+  administrator := private.is_scene_configuration_admin();
+  if not administrator and (actor_email = '' or lower(coalesce(current_scene.client_email, '')) <> actor_email) then
     perform 1 from public.scene_collaborators where scene_id = p_scene_id and user_id = actor_id
       and email = actor_email and accepted_at is not null for share;
     if not found then
       raise exception using errcode = '42501', message = 'Votre accès à cette scène a été retiré.';
     end if;
-    if current_scene.status <> 'created' or current_scene.client_status not in ('not_started', 'draft') then
-      raise exception using errcode = '42501', message = 'Ce stand a déjà été validé. Le brouillon n’est plus modifiable.';
+  end if;
+  if not administrator then
+    if not private.scene_configuration_editable(current_scene.status, current_scene.client_status, current_scene.source_payload) then
+      raise exception using errcode = '42501', message = 'Cette scène est en lecture seule.';
     end if;
     if not coalesce(
       (p_scene->>'status' = 'created' and p_scene->>'client_status' = 'draft')
@@ -175,13 +241,8 @@ begin
     ) then
       raise exception using errcode = '42501', message = 'Ce changement de statut n’est pas autorisé.';
     end if;
-  elsif not administrator and actor_email = '' then
-    raise exception using errcode = '42501', message = 'Accès refusé à cette scène.';
   end if;
 
-  if not administrator and current_scene.source_payload->>'exhibitor_view_only' = 'true' then
-    raise exception using errcode = '42501', message = 'Cette scène est en lecture seule.';
-  end if;
   if current_scene.configuration_revision is distinct from p_revision
     or current_scene.source_payload->'manualPurchaseOrderLines' is distinct from nullif(p_manual_order_lines, 'null'::jsonb)
   then
@@ -191,9 +252,13 @@ begin
   proposed := jsonb_populate_record(current_scene, p_scene);
   select coalesce(jsonb_object_agg(key, value), '{}'::jsonb) into source_patch
   from jsonb_each(coalesce(p_scene->'source_payload', '{}'::jsonb))
-  where key in ('options', 'pricing', 'packBenefits', 'partitionHeadCompany', 'specialRequest')
-    or (not collaborator and key = 'contactDetails');
-  if collaborator and source_patch->'specialRequest' ? 'status' then
+  where key in ('options', 'pricing', 'packBenefits', 'partitionHeadCompany', 'specialRequest', 'contactDetails');
+  if not administrator and source_patch ? 'contactDetails' then
+    source_patch := jsonb_set(source_patch, '{contactDetails}',
+      (case when jsonb_typeof(source_patch->'contactDetails') = 'object' then source_patch->'contactDetails' else '{}'::jsonb end)
+      || jsonb_build_object('email', current_scene.client_email));
+  end if;
+  if not administrator and jsonb_typeof(source_patch->'specialRequest') = 'object' then
     source_patch := jsonb_set(source_patch, '{specialRequest,status}',
       to_jsonb(case when coalesce(source_patch#>>'{specialRequest,text}', '') = '' then '' else 'pending' end));
     if source_patch ? 'options' then
@@ -208,14 +273,14 @@ begin
 
   update public.scenes set
     status = proposed.status, client_status = proposed.client_status,
-    client_name = case when collaborator then current_scene.client_name else proposed.client_name end,
+    client_name = proposed.client_name,
     client_email = case when administrator then proposed.client_email else current_scene.client_email end,
-    project_name = case when collaborator then current_scene.project_name else proposed.project_name end,
-    event_name = case when collaborator then current_scene.event_name else proposed.event_name end,
-    width_m = case when collaborator then current_scene.width_m else proposed.width_m end,
-    depth_m = case when collaborator then current_scene.depth_m else proposed.depth_m end,
-    height_m = case when collaborator then current_scene.height_m else proposed.height_m end,
-    layout = case when collaborator then current_scene.layout else proposed.layout end,
+    project_name = proposed.project_name,
+    event_name = proposed.event_name,
+    width_m = proposed.width_m,
+    depth_m = proposed.depth_m,
+    height_m = proposed.height_m,
+    layout = proposed.layout,
     source_payload = current_scene.source_payload || source_patch,
     updated_at = clock_timestamp(),
     configuration_revision = current_scene.configuration_revision + 1
