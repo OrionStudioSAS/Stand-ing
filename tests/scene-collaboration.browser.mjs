@@ -95,6 +95,9 @@ try {
 
   const owner = await open('?scene=owner-link', 'owner');
   const inviteButton = (page) => page.locator('.configurator-topbar').getByRole('button', { name: 'Inviter un collaborateur' });
+  const inviteIcon = inviteButton(owner).locator('img.topbar-tool-icon');
+  assert.equal(await inviteIcon.getAttribute('src'), '/icons/account-add.svg');
+  await owner.waitForFunction(() => document.querySelector('img[src="/icons/account-add.svg"]')?.naturalWidth === 36);
   const validate = async (page) => {
     await page.locator('.stepper').getByRole('button', { name: /Validation/ }).click();
     const confirm = page.locator('.validation-confirm-button');

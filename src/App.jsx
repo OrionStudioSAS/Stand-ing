@@ -2703,7 +2703,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         </button>
         {canManageCollaborators && (
           <button className={`round-tool ${headerPanel === 'collaborators' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('collaborators')} aria-label={tr('Inviter un collaborateur')} title={tr('Inviter un collaborateur')} aria-haspopup="dialog" aria-expanded={headerPanel === 'collaborators'}>
-            <UserPlus size={23} aria-hidden="true" />
+            <img className="topbar-tool-icon" src="/icons/account-add.svg" alt="" aria-hidden="true" />
           </button>
         )}
         <button className={`round-tool ${headerPanel === 'question' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('question')} aria-label={tRaw(language, 'aria_questions')}>
