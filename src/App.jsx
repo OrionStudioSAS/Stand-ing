@@ -95,6 +95,7 @@ import './signatureHeadInformation.css';
 import './styles.css';
 
 const visualUploadAccept = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf,.svg,.pdf,.psd,image/vnd.adobe.photoshop';
+const wallCoverUploadAccept = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf,.svg,.pdf';
 const LanguageContext = createContext('fr');
 function useT() {
   const lang = useContext(LanguageContext);
@@ -358,7 +359,7 @@ function textureRetryUrl(url = '', attempt = 1) {
 }
 
 function cacheBustedUrl(url = '') {
-  if (!url) return '';
+  if (!url || /^(?:data|blob):/i.test(url)) return url;
   try {
     const nextUrl = new URL(url, window.location.origin);
     nextUrl.searchParams.set('standing_cache', Date.now().toString(36));
@@ -1150,8 +1151,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [specialRequestTags, setSpecialRequestTags] = useState(() => initialScene.source_payload?.specialRequest?.tags || initialOptions.specialRequest?.tags || []);
   const [itemOptionState, setItemOptionState] = useState({ uploading: false, error: '' });
   const [wallCovers, setWallCovers] = useState(initialOptions.wallCovers || {});
-  const [wallCoverPreviews, setWallCoverPreviews] = useState(() => wallCoverPreviewsFromCovers(initialOptions.wallCovers));
-  const wallCoverPreviewUrls = useRef(new Set());
+  const [wallCoverUploadState, setWallCoverUploadState] = useState({});
+  const pendingWallCoverUploads = useRef(new Set());
+  const wallCoverPreviews = useMemo(() => wallCoverPreviewsFromCovers(wallCovers), [wallCovers]);
   const [itemConfigModal, setItemConfigModal] = useState(null);
   const [sceneHasRendered, setSceneHasRendered] = useState(false);
   const [clientInfo, setClientInfo] = useState({
@@ -1657,32 +1659,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     return () => window.clearTimeout(timer);
   }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly, objectBankLoaded, sceneSaveError?.stale, confirmState.loading]);
 
-  const persistWallCoversNow = (nextWallCovers) => {
-    if (readOnly || sceneSaveError?.stale || confirming.current) return;
-    const alreadyConfigured = saveState === 'configured';
-    const status = alreadyConfigured ? 'configured' : 'created';
-    const clientStatus = alreadyConfigured ? 'configured' : 'draft';
-    const payload = currentScenePayload(status, clientStatus);
-    const options = { ...(payload.options || {}), wallCovers: nextWallCovers };
-    saveConfiguration({
-      ...payload,
-      options,
-      source_payload: {
-        ...(payload.source_payload || {}),
-        options: { ...((payload.source_payload || {}).options || {}), wallCovers: nextWallCovers },
-      },
-    })
-      .then(() => {
-        if (!alreadyConfigured) setSaveState('draft');
-      })
-      .catch((error) => console.error('Wall cover save failed', error));
-  };
-
-  useEffect(() => () => {
-    wallCoverPreviewUrls.current.forEach((url) => URL.revokeObjectURL(url));
-    wallCoverPreviewUrls.current.clear();
-  }, []);
-
   useEffect(() => {
     listObjectBank()
       .then((assets) => setObjectBank(assets || []))
@@ -1691,7 +1667,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   }, []);
 
   const validateConfiguration = async () => {
-    if (readOnly || sceneSaveError?.stale || confirming.current) return;
+    if (readOnly || sceneSaveError?.stale || confirming.current || pendingWallCoverUploads.current.size) return;
     confirming.current = true;
     setConfirmState({ loading: true, message: '', error: '' });
     try {
@@ -1944,17 +1920,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   };
 
   const setWallCoverPreview = async (surfaceId, file) => {
-    if (readOnly || !surfaceId || !file) return;
-    const localPreviewUrl = URL.createObjectURL(file);
-    wallCoverPreviewUrls.current.add(localPreviewUrl);
-    setWallCoverPreviews((current) => ({
-      ...current,
-      [surfaceId]: { url: localPreviewUrl, name: file.name, uploading: true },
-    }));
-    setWallCovers((current) => ({
-      ...current,
-      [surfaceId]: { ...(current?.[surfaceId] || {}), enabled: true },
-    }));
+    if (readOnly || confirming.current || !surfaceId || !file || pendingWallCoverUploads.current.has(surfaceId)) return;
+    pendingWallCoverUploads.current.add(surfaceId);
+    setWallCoverUploadState((current) => ({ ...current, [surfaceId]: { uploading: true } }));
 
     try {
       const surface = wallCoverSurfaces.find((candidate) => candidate.id === surfaceId) || {};
@@ -1965,65 +1933,40 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         visualLabel: surface.label || '',
       }, file);
       const imageUrl = cacheBustedUrl(uploadedUrl);
-      await preloadImage(imageUrl);
-      setWallCoverPreviews((current) => {
-        const previousUrl = current?.[surfaceId]?.url;
-        if (previousUrl && wallCoverPreviewUrls.current.has(previousUrl)) {
-          URL.revokeObjectURL(previousUrl);
-          wallCoverPreviewUrls.current.delete(previousUrl);
-        }
-        return {
-          ...current,
-          [surfaceId]: { url: imageUrl, name: file.name },
-        };
-      });
-      const nextCover = {
-        ...(wallCovers?.[surfaceId] || {}),
-        enabled: true,
-        previewUrl: imageUrl,
-        previewName: file.name,
-        ...defaultImageFraming,
-      };
-      const nextWallCovers = { ...(wallCovers || {}), [surfaceId]: nextCover };
+      const { ok } = await preloadImage(imageUrl);
+      if (!ok) throw new Error('Aperçu indisponible. Réessayez l’import.');
+
       setWallCovers((current) => ({
         ...current,
         [surfaceId]: {
           ...(current?.[surfaceId] || {}),
           enabled: true,
+          visualPending: false,
           previewUrl: imageUrl,
           previewName: file.name,
           ...defaultImageFraming,
         },
       }));
-      persistWallCoversNow(nextWallCovers);
+      setWallCoverUploadState((current) => ({ ...current, [surfaceId]: {} }));
     } catch (error) {
-      console.error('Wall cover preview upload failed', error);
-      setWallCoverPreviews((current) => ({
+      setWallCoverUploadState((current) => ({
         ...current,
-        [surfaceId]: { url: localPreviewUrl, name: file.name, uploadError: true },
+        [surfaceId]: { error: error.message || 'Import du visuel impossible.' },
       }));
+    } finally {
+      pendingWallCoverUploads.current.delete(surfaceId);
     }
   };
 
   const setWallCoverFraming = (surfaceId, framing) => {
     if (readOnly || !surfaceId) return;
     const patch = normalizeImageFraming(framing);
-    setWallCoverPreviews((current) => ({ ...current, [surfaceId]: { ...current[surfaceId], ...patch } }));
     setWallCovers((current) => ({ ...current, [surfaceId]: { ...current[surfaceId], ...patch } }));
   };
 
   const resetWallCoverPreview = (surfaceId) => {
-    if (readOnly || !surfaceId) return;
-    setWallCoverPreviews((current) => {
-      const previousUrl = current?.[surfaceId]?.url;
-      if (previousUrl && wallCoverPreviewUrls.current.has(previousUrl)) {
-        URL.revokeObjectURL(previousUrl);
-        wallCoverPreviewUrls.current.delete(previousUrl);
-      }
-      const next = { ...(current || {}) };
-      delete next[surfaceId];
-      return next;
-    });
+    if (readOnly || !surfaceId || pendingWallCoverUploads.current.has(surfaceId)) return;
+    setWallCoverUploadState((current) => ({ ...current, [surfaceId]: {} }));
     setWallCovers((current) => {
       const nextCover = { ...(current?.[surfaceId] || {}) };
       delete nextCover.previewUrl;
@@ -2290,7 +2233,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }
 
     if (isAutomaticReserveItem(dragged)) {
-      updateItem(draggingId, { x: dragCoordinate(point.x) });
+      updateItem(draggingId, { x: point.x });
       return;
     }
 
@@ -2299,7 +2242,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       return;
     }
 
-    updateItem(draggingId, { x: dragCoordinate(point.x), z: dragCoordinate(point.z) });
+    updateItem(draggingId, floorDragPatch(point, dragged, width, depth, layout, genericCarpetFootprintEnabled));
   };
 
   const addItem = (entry, options = {}, quantity = 1) => {
@@ -2990,6 +2933,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             catalog={availableCatalog}
             saveState={saveState}
             confirmState={confirmState}
+            visualsUploading={Object.values(wallCoverUploadState).some((upload) => upload.uploading)}
             readOnly={readOnly}
             canConfirm={!sceneSaveError?.stale}
             isAdminViewer={effectiveAdminViewer}
@@ -3023,6 +2967,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             wallFabricColors={wallFabricPalette}
             wallCovers={wallCovers}
             wallCoverPreviews={wallCoverPreviews}
+            wallCoverUploadState={wallCoverUploadState}
             wallCoverSurfaces={wallCoverSurfaces}
             wallCoverIncludedMl={scenePricing.wallCoverIncludedMl || 0}
             wallFabricArea={Math.max(0, sceneWallFabricArea(width, depth, layout) - activeWallCoverFabricArea(wallCoverSurfaces, wallCovers))}
@@ -4904,6 +4849,7 @@ function OptionsStepPanel({
   wallFabricColors = [],
   wallCovers = {},
   wallCoverPreviews = {},
+  wallCoverUploadState = {},
   wallCoverSurfaces = [],
   wallCoverIncludedMl = 0,
   wallFabricArea = 0,
@@ -5056,6 +5002,7 @@ function OptionsStepPanel({
           surfaces={wallCoverSurfaces}
           covers={wallCovers}
           previews={wallCoverPreviews}
+          uploadState={wallCoverUploadState}
           includedMl={wallCoverIncludedMl}
           disabled={readOnly}
           onToggle={onWallCoverToggle}
@@ -7464,6 +7411,7 @@ function ValidationStepPanel({
   catalog = [],
   saveState,
   confirmState,
+  visualsUploading = false,
   readOnly,
   canConfirm = true,
   isAdminViewer,
@@ -7752,8 +7700,8 @@ function ValidationStepPanel({
       {confirmState.error && <div className="validation-message error">{tr(confirmState.error)}</div>}
 
       {confirmed && !confirmState.message && !confirmState.loading && <div className="validation-message success"><Check size={16} /> {tr(isAdminViewer ? t('validation_confirmed_admin_note') : t('validation_confirmed_client_note'))}</div>}
-      <button className="validation-confirm-button dark" type="button" disabled={confirmState.loading || readOnly || !canConfirm} onClick={onConfirm}>
-        {tr(confirmState.loading ? t('validation_confirm_loading') : hasSpecialRequest ? 'Envoyer ma demande →' : 'Envoyer ma configuration →')}
+      <button className="validation-confirm-button dark" type="button" disabled={confirmState.loading || visualsUploading || readOnly || !canConfirm} onClick={onConfirm}>
+        {tr(visualsUploading ? t('partition_uploading') : confirmState.loading ? t('validation_confirm_loading') : hasSpecialRequest ? 'Envoyer ma demande →' : 'Envoyer ma configuration →')}
       </button>
     </>
   );
@@ -8806,7 +8754,7 @@ function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', in
   );
 }
 
-function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includedMl = 0, unitPrice = wallCoverUnitPrice, disabled = false, onToggle, onPreview, onPreviewReset, onPending, onFramingChange }) {
+function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, uploadState = {}, includedMl = 0, unitPrice = wallCoverUnitPrice, disabled = false, onToggle, onPreview, onPreviewReset, onPending, onFramingChange }) {
   const tr = useUiText();
   const t = useT();
   const includedLabel = Number(includedMl || 0) > 0 ? `${formatNumber(includedMl)} ml inclus dans votre formule` : '';
@@ -8842,13 +8790,15 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
         const enabled = wallCoverEnabledForSurface(covers, surface);
         const preview = wallCoverPreviewForSurface(previews, surface);
         const pending = Boolean(covers?.[surface.id]?.visualPending || (surface.sourceWall && covers?.[surface.sourceWall]?.visualPending));
+        const upload = uploadState[surface.id] || {};
+        const busy = disabled || upload.uploading;
         return (
           <div key={surface.id} className={`wall-cover-row ${enabled ? 'active' : ''}`}>
             <div className="wall-cover-row-main">
               <button
                 type="button"
                 className={`wall-cover-toggle ${enabled ? 'active' : ''}`}
-                disabled={disabled}
+                disabled={busy}
                 aria-label={t(enabled ? 'wall_cover_toggle_remove' : 'wall_cover_toggle_add', { label: surface.label })}
                 onClick={() => onToggle?.(surface.id, !enabled, surface.sourceWall)}
               >
@@ -8857,18 +8807,19 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
               <em>{tr("Option")}</em>
               <div>
                 <strong>{tr(surface.label)}</strong>
-                <span>{tr(formatNumber(surface.visibleWidth || surface.width))} m × {tr(formatNumber(surface.height))} {tr("m · Image générique affichée sur la scène")}</span>
+                <span>{tr(formatNumber(surface.visibleWidth || surface.width))} m × {tr(formatNumber(surface.height))} m</span>
                 {preview?.name && <small>{tr(preview.name)}</small>}
               </div>
             </div>
             <div className="wall-cover-actions">
-              <label className={preview ? 'wall-cover-preview-button has-preview' : 'wall-cover-preview-button'} title={t(preview ? 'wall_cover_preview_replace' : 'wall_cover_preview_upload')}>
-                <Upload size={15} />
-                <span>{tr("Importer")}</span>
+              <label className={preview?.url ? 'wall-cover-preview-button has-preview' : 'wall-cover-preview-button'} title={t(preview?.url ? 'wall_cover_preview_replace' : 'wall_cover_preview_upload')}>
+                {preview?.url && <img src={preview.url} alt="" />}
+                <span>{upload.uploading ? t('partition_uploading') : tr("Importer")}</span>
                 <input
                   type="file"
-                  accept={visualUploadAccept}
-                  disabled={disabled}
+                  aria-label={tr(`Importer — ${surface.label}`)}
+                  accept={wallCoverUploadAccept}
+                  disabled={busy}
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     if (file) onPreview?.(surface.id, file);
@@ -8876,17 +8827,18 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, includ
                   }}
                 />
               </label>
-              {preview && (
-                <button type="button" className="wall-cover-remove-preview" disabled={disabled} onClick={() => onPreviewReset?.(surface.id)} title={t('wall_cover_remove_preview')}>
+              {preview?.url && (
+                <button type="button" className="wall-cover-remove-preview" disabled={busy} onClick={() => onPreviewReset?.(surface.id)} title={t('wall_cover_remove_preview')}>
                   <X size={14} />
                 </button>
               )}
             </div>
-            {preview?.url && <ImageFramingControls imageUrl={preview.url} value={preview} fit="cover" aspectRatio={surface.width / surface.height} disabled={disabled || preview.uploading} onChange={(framing) => onFramingChange?.(surface.id, framing)} />}
+            {upload.error && <p className="item-options-status error" role="alert">{tr(upload.error)}</p>}
+            {preview?.url && <ImageFramingControls imageUrl={preview.url} value={preview} fit="cover" aspectRatio={surface.width / surface.height} disabled={busy} onChange={(framing) => onFramingChange?.(surface.id, framing)} />}
             <label className="visual-pending-checkbox wall-cover-pending">
               <input
                 type="checkbox"
-                disabled={disabled}
+                disabled={busy}
                 checked={pending}
                 onChange={(event) => onPending?.(surface.id, event.target.checked)}
               />
@@ -11311,7 +11263,11 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
       updateItem(draggingId, wallDragPatch(point, dragged, previewItems, width, depth, layout));
       return;
     }
-    updateItem(draggingId, { x: dragCoordinate(point.x), z: dragCoordinate(point.z) });
+    if (isAutomaticReserveItem(dragged)) {
+      updateItem(draggingId, { x: point.x });
+      return;
+    }
+    updateItem(draggingId, floorDragPatch(point, dragged, width, depth, layout, !isSignaturePack));
   };
 
   const addItem = (entry) => {
@@ -12488,10 +12444,13 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
     });
     return map;
   }, [scenes]);
-  const clientRows = useMemo(() => clients.map((client) => ({ client, clientScenes: clientScenesWithFullData(client, sceneLookup) })), [clients, sceneLookup]);
+  const clientRows = useMemo(() => clients.map((client) => {
+    const clientScenes = clientScenesWithFullData(client, sceneLookup);
+    return { client, clientScenes, company: adminClientCompanyName(client, clientScenes) };
+  }), [clients, sceneLookup]);
   const searchedRows = clientRows.filter(({ client, clientScenes }) => adminClientMatchesFilters(client, clientScenes, filters, search));
   const tabCounts = Object.fromEntries(['all', 'draft', 'pending', 'signed'].map((tab) => [tab, searchedRows.filter(({ clientScenes }) => tab === 'all' || clientScenes.some((scene) => adminClientSceneState(scene).id === tab)).length]));
-  const visibleRows = searchedRows.filter(({ clientScenes }) => activeTab === 'all' || clientScenes.some((scene) => adminClientSceneState(scene).id === activeTab)).sort((a, b) => String(a.client.display_name || a.client.company_name || '').localeCompare(String(b.client.display_name || b.client.company_name || ''), 'fr', { sensitivity: 'base' }));
+  const visibleRows = searchedRows.filter(({ clientScenes }) => activeTab === 'all' || clientScenes.some((scene) => adminClientSceneState(scene).id === activeTab)).sort(compareAdminClientCompanies);
   const clientPageCount = Math.max(1, Math.ceil(visibleRows.length / clientPageSize));
   const safeClientPage = Math.min(clientPage, clientPageCount);
   const paginatedClients = visibleRows.slice((safeClientPage - 1) * clientPageSize, safeClientPage * clientPageSize);
@@ -12508,10 +12467,10 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
   }, [profileClient]);
 
   const exportCsv = () => {
-    const rows = [['Exposant', 'Email', 'Société', 'Salon', 'Pack', 'Statut', 'Hall', 'Emplacement', 'Scène']];
-    visibleRows.forEach(({ client, clientScenes }) => {
+    const rows = [['Société', 'Exposant', 'Email', 'Salon', 'Pack', 'Statut', 'Hall', 'Emplacement', 'Scène']];
+    visibleRows.forEach(({ client, clientScenes, company }) => {
       (clientScenes.length ? clientScenes : [{}]).forEach((scene) => rows.push([
-        client.display_name || client.company_name || '', client.email || '', adminClientCompanyName(client, clientScenes),
+        company, client.display_name || '', client.email || '',
         normalizeSalonTitle(scene.event_name || scene.salon) || '', scene.offer || '',
         scene.id ? adminClientSceneState(scene).label : '', scene.id ? sceneHallLabel(scene, scene.source_payload?.contactDetails || {}) : '', scene.id ? clientSceneEmplacement(scene) : '', scene.project_name || '',
       ]));
@@ -12559,17 +12518,16 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
       {deleteState.error && <div className="sync-result error" role="alert">{deleteState.error}</div>}
       {reopenState.error && <div className="sync-result error" role="alert">{reopenState.error}</div>}
       {reopenState.message && <p className="admin-exhibitors-feedback" role="status">{reopenState.message}</p>}
-      <p className="admin-exhibitors-count"><strong>{visibleRows.length} exposant{visibleRows.length > 1 ? 's' : ''}</strong> · triés par nom</p>
+      <p className="admin-exhibitors-count"><strong>{visibleRows.length} exposant{visibleRows.length > 1 ? 's' : ''}</strong> · triés par société</p>
       <div className="admin-exhibitors-table-scroll"><section className="admin-exhibitors-table" aria-label="Liste des exposants">
-        <div className="admin-exhibitors-head"><span>Exposant ↑</span><span>Société</span><span>Salon</span><span>Pack</span><span>Statut</span><span className="sr-only">Actions</span></div>
-        {paginatedClients.length ? paginatedClients.map(({ client, clientScenes }) => {
+        <div className="admin-exhibitors-head"><span>Société ↑</span><span>Exposant</span><span>Salon</span><span>Pack</span><span>Statut</span><span className="sr-only">Actions</span></div>
+        {paginatedClients.length ? paginatedClients.map(({ client, clientScenes, company }) => {
           const primary = clientScenes[0] || {};
           const name = client.display_name || client.company_name || 'Exposant sans nom';
-          const company = adminClientCompanyName(client, clientScenes);
           const status = clientScenes.length ? adminClientSceneState(primary) : { id: 'draft', label: 'Sans scène' };
           const initials = String(name).split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
           return <details className="admin-exhibitors-entry" key={client.id || client.client_key}>
-            <summary className="admin-exhibitors-row"><span className="admin-exhibitors-person"><i>{initials}</i><span><strong>{name}</strong><small>{client.email || 'E-mail non renseigné'}</small></span></span><span className="admin-exhibitors-company">{company || '—'}</span><span>{clientSalonSummary(client)}</span><span><em className="admin-exhibitors-pack">{primary.offer || '—'}</em></span><span><em className={`admin-exhibitors-badge ${status.id}`}>{status.label}</em>{clientScenes.length > 1 && <small className="admin-exhibitors-more">+{clientScenes.length - 1}</small>}</span><span className="admin-exhibitors-expand">Scènes {clientScenes.length} <ChevronDown size={14} /></span></summary>
+            <summary className="admin-exhibitors-row"><span className="admin-exhibitors-company"><strong>{company || '—'}</strong></span><span className="admin-exhibitors-person"><i>{initials}</i><span><strong>{name}</strong><small>{client.email || 'E-mail non renseigné'}</small></span></span><span>{clientSalonSummary(client)}</span><span><em className="admin-exhibitors-pack">{primary.offer || '—'}</em></span><span><em className={`admin-exhibitors-badge ${status.id}`}>{status.label}</em>{clientScenes.length > 1 && <small className="admin-exhibitors-more">+{clientScenes.length - 1}</small>}</span><span className="admin-exhibitors-expand">Scènes {clientScenes.length} <ChevronDown size={14} /></span></summary>
             <div className="admin-exhibitors-scenes"><div className="admin-exhibitors-scenes-head"><p>{clientScenes.length} scène{clientScenes.length > 1 ? 's' : ''} liée{clientScenes.length > 1 ? 's' : ''}</p><button type="button" onClick={() => setProfileClient(client)}>Ouvrir la fiche exposant</button></div>{clientScenes.length ? clientScenes.map((scene) => {
               const sceneStatus = adminClientSceneState(scene);
               return <div className="admin-exhibitors-scene" key={scene.id || scene.share_token || scene.monday_item_id}><span className="admin-exhibitors-scene-icon"><Box size={16} /></span><span className="admin-exhibitors-scene-title"><strong>{scene.project_name || scene.client_name || 'Scène'}</strong><small>{clientSceneMeta(scene)}</small><small className="admin-exhibitors-scene-location">{clientSceneLocationLabel(scene)}</small></span><em className={`admin-exhibitors-badge ${sceneStatus.id}`}>{sceneStatus.label}</em><div className="admin-exhibitors-scene-actions">{onReopenScene && canReopenSceneAsDraft(scene) && <button className="admin-exhibitors-reopen" type="button" disabled={Boolean(reopenState.sceneId) || Boolean(deleteState.loadingId)} onClick={() => runReopen(scene)}><Unlock size={14} />{reopenState.sceneId === scene.id ? 'Déverrouillage...' : 'Repasser en brouillon'}</button>}<a className="admin-outline-v2" href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a><button type="button" onClick={async () => downloadSceneTechnicalPlan(await loadSceneForAdminAction(scene), assets)}>Télécharger BAT</button><button type="button" onClick={async () => downloadScenePurchaseOrder(await loadSceneForAdminAction(scene), assets)}>Bon de commande</button><button className="admin-exhibitors-delete" type="button" aria-label={`Supprimer la scène ${scene.project_name || ''}`} disabled={deleteState.loadingId === `scene:${scene.id}`} onClick={() => runDelete(`scene:${scene.id}`, () => onDeleteScene?.(scene))}><Trash2 size={16} /></button></div></div>;
@@ -12655,6 +12613,14 @@ function clientSceneMeta(scene = {}) {
   const offer = scene.offer ? ` · ${scene.offer}` : '';
   const dimensions = sceneArea(scene) ? ` · ${sceneArea(scene)} m²` : '';
   return `${salon}${offer}${dimensions}`;
+}
+
+const adminCompanyCollator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
+
+function compareAdminClientCompanies(a, b) {
+  return Number(!a.company) - Number(!b.company)
+    || adminCompanyCollator.compare(a.company, b.company)
+    || adminCompanyCollator.compare(a.client.display_name || '', b.client.display_name || '');
 }
 
 function adminClientCompanyName(client = {}, scenes = []) {
@@ -15397,7 +15363,8 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const options = sceneLightingOptions(scene, { ...(scene.source_payload?.options || {}), ...(scene.options || {}) },
     scene.stand_presets?.base_config?.autoSpotsRule || scene.stand_presets?.base_config?.options?.autoSpotsRule);
   const manualItems = sceneAdminItems(scene, catalogEntries)
-    .map((item) => electricalWallClearance(item) ? constrainItem(item, width, depth, layout, options.carpetFootprintEnabled !== false) : item)
+    .map((item) => electricalWallClearance(item) || (!isWallItem(item) && isLockedPlacementRule(item.placementRule))
+      ? constrainItem(item, width, depth, layout, options.carpetFootprintEnabled !== false) : item)
     .filter((item) => !item.autoMeterCover
     && (!isSignatureScene(scene) || !isSignatureArchItem(item) || signatureArchFitsDepth(item, depth)));
   const automaticMeterCoverItems = makeAutomaticMeterCoverItems(packLabel, options.signatureMeterCoverType, catalogEntries, width, depth, layout, manualItems);
@@ -18067,12 +18034,11 @@ function itemToolbarMovementHardLocked(item = {}) {
 
 function automaticReserveBackWallCandidate(item = {}, patch = {}, width = 0, depth = 0, layout = 'back') {
   const base = constrainItem({ ...item, placementRule: placementRuleFromId('back-center'), lockedPlacement: true, rotation: 0 }, width, depth, layout);
-  const bounds = itemPlacementBounds(base);
-  const minX = -Number(width || 0) / 2 + wallThickness - Number(bounds.minX || 0);
-  const maxX = Number(width || 0) / 2 - wallThickness - Number(bounds.maxX || 0);
+  const region = itemAllowedRegion(standFloorBounds(width, depth, layout), itemPlacementBounds(base));
+  if (!region) return base;
   return {
     ...base,
-    x: Number(clamp(Number(patch.x ?? item.x ?? base.x ?? 0), minX, maxX).toFixed(2)),
+    x: snapStandEdge(clamp(Number(patch.x ?? item.x ?? base.x ?? 0), region.minX, region.maxX), region.minX, region.maxX, wallThickness + 0.005),
     z: Number(base.z || 0),
     rotation: 0,
     placementRule: placementRuleFromId('back-center'),
@@ -19318,6 +19284,29 @@ function clampToRegion(item, region) {
   };
 }
 
+function snapStandEdge(value, min, max, tolerance = 0.035) {
+  const fromMin = Math.abs(value - min);
+  const fromMax = Math.abs(value - max);
+  if (Math.min(fromMin, fromMax) > tolerance) return value;
+  return fromMin <= fromMax ? min : max;
+}
+
+function floorDragPatch(point, item, width, depth, layout, carpetFootprintEnabled) {
+  const position = { x: dragCoordinate(point.x), z: dragCoordinate(point.z) };
+  if (isCeilingMountedItem(item) || isCountertopAccessory(item)) return position;
+  const [stand] = placementRegions(width, depth, layout, itemPlacementBounds(item), false, electricalWallClearance(item));
+  if (!stand) return position;
+  // Don't pull an object back from the adjoining carpet footprint.
+  if (carpetFootprintEnabled && !pointInRegion(point, stand)) {
+    const [footprint] = placementRegions(width, depth, layout, itemPlacementBounds(item), true, electricalWallClearance(item)).slice(1);
+    if (footprint && pointInRegion(point, footprint)) return position;
+  }
+  return {
+    x: snapStandEdge(position.x, stand.minX, stand.maxX),
+    z: snapStandEdge(position.z, stand.minZ, stand.maxZ),
+  };
+}
+
 function pointInRegion(item, region) {
   return item.x >= region.minX && item.x <= region.maxX && item.z >= region.minZ && item.z <= region.maxZ;
 }
@@ -19663,7 +19652,7 @@ function applyPlacementRule(item, width, depth, layout) {
 
   const bounds = itemGroupBounds({ ...item, placementRule: null, lockedPlacement: false });
   const clearance = wallThickness;
-  const sideClearance = placementRuleSideClearance(item);
+  const sideClearance = placementRuleSideClearance(item, layout, rule.id.endsWith('right') ? 'right' : 'left');
   const backClearance = clearance + (isSmclPartitionHeadItem(item) ? partitionHeadBackInset : 0);
   const base = {
     ...item,
@@ -19675,8 +19664,8 @@ function applyPlacementRule(item, width, depth, layout) {
   if (rule.id === 'back-right' || rule.id === 'outer-right') {
     return {
       ...base,
-      x: Number((width / 2 - sideClearance - bounds.maxX).toFixed(2)),
-      z: Number((-depth / 2 + backClearance - bounds.minZ).toFixed(2)),
+      x: width / 2 - sideClearance - bounds.maxX,
+      z: -depth / 2 + backClearance - bounds.minZ,
     };
   }
 
@@ -19684,37 +19673,38 @@ function applyPlacementRule(item, width, depth, layout) {
     return {
       ...base,
       x: Number((-(bounds.minX + bounds.maxX) / 2).toFixed(2)),
-      z: Number((-depth / 2 + backClearance - bounds.minZ).toFixed(2)),
+      z: -depth / 2 + backClearance - bounds.minZ,
     };
   }
 
   if (rule.id === 'front-left') {
     return {
       ...base,
-      x: Number((-width / 2 + sideClearance - bounds.minX).toFixed(2)),
-      z: Number((depth / 2 - clearance - bounds.maxZ).toFixed(2)),
+      x: -width / 2 + sideClearance - bounds.minX,
+      z: depth / 2 - bounds.maxZ,
     };
   }
 
   if (rule.id === 'front-right') {
     return {
       ...base,
-      x: Number((width / 2 - sideClearance - bounds.maxX).toFixed(2)),
-      z: Number((depth / 2 - clearance - bounds.maxZ).toFixed(2)),
+      x: width / 2 - sideClearance - bounds.maxX,
+      z: depth / 2 - bounds.maxZ,
     };
   }
 
   return {
     ...base,
-    x: Number((-width / 2 + sideClearance - bounds.minX).toFixed(2)),
-    z: Number((-depth / 2 + backClearance - bounds.minZ).toFixed(2)),
+    x: -width / 2 + sideClearance - bounds.minX,
+    z: -depth / 2 + backClearance - bounds.minZ,
   };
 }
 
 
-function placementRuleSideClearance(item = {}) {
+function placementRuleSideClearance(item, layout, side) {
   if (isSmclPartitionHeadItem(item)) return 0;
-  return wallThickness + (isPartitionHeadItem(item) ? partitionHeadEdgeInset : 0);
+  if (isPartitionHeadItem(item)) return wallThickness + partitionHeadEdgeInset;
+  return layout === side || layout === 'u' ? wallThickness : 0;
 }
 
 function applyWallPlacementRule(item, width, depth, layout) {

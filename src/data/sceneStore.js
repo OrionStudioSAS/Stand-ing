@@ -810,14 +810,13 @@ export async function sendSceneCompletionEmail(scene, options = {}) {
 }
 
 export async function uploadSceneItemOptionImage(scene, item, file) {
-  if (!file) throw new Error('Fichier introuvable.');
-  if (!supabase) return fileToDataUrl(file);
+  const previewFile = await makeScenePreviewImage(file, { requirePreview: item?.type === 'wall-cover' });
+  if (!supabase) return fileToDataUrl(previewFile);
 
   const extension = file.name.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() || 'jpg';
   const safeSceneId = slugifyAsset(scene?.id || scene?.share_token || 'scene');
   const safeItemId = slugifyAsset(item?.id || item?.type || 'item');
   const safeName = slugifyAsset(file.name.replace(/\.[^.]+$/, ''));
-  const previewFile = await makeScenePreviewImage(file);
   const previewExtension = previewFile.name.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() || 'jpg';
   const storagePath = `scene-options/${safeSceneId}/${safeItemId}/${Date.now().toString(36)}-${safeName}-preview.${previewExtension}`;
   const bucket = supabase.storage.from('object-assets');
@@ -851,18 +850,22 @@ function fileToDataUrl(file) {
   });
 }
 
-export async function makeScenePreviewImage(file) {
+export async function makeScenePreviewImage(file, { requirePreview = false } = {}) {
+  if (!file?.size) throw new Error('Ce fichier est vide. Choisissez le fichier original.');
   if (isPdfFile(file)) {
     try {
       return await makePdfPreviewImage(file);
     } catch (error) {
-      console.warn('PDF preview rendering failed, using placeholder preview.', error);
-      return makeScenePlaceholderPreview(file);
+      throw new Error('Impossible de lire le PDF. Réexportez sa première page en PDF, JPG ou PNG.', { cause: error });
     }
   }
-  if (!isRasterImageFile(file)) return makeScenePlaceholderPreview(file);
+  if (!isRasterImageFile(file)) {
+    if (requirePreview) throw new Error('Pour prévisualiser la bâche, choisissez un fichier PDF, SVG, JPG ou PNG.');
+    return makeScenePlaceholderPreview(file);
+  }
+  let bitmap;
   try {
-    const bitmap = await imageBitmapFromFile(file);
+    bitmap = await imageBitmapFromFile(file);
     const maxEdge = 1200;
     const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
@@ -874,14 +877,14 @@ export async function makeScenePreviewImage(file) {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, height);
     ctx.drawImage(bitmap.image || bitmap, 0, 0, width, height);
-    bitmap.close?.();
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.68));
-    if (!blob) return makeScenePlaceholderPreview(file);
+    if (!blob?.size) throw new Error('Aperçu vide.');
     const baseName = file.name.replace(/\.[^.]+$/, '') || 'preview';
     return new File([blob], `${baseName}-preview.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
   } catch (error) {
-    console.warn('Preview compression failed, using lightweight placeholder preview.', error);
-    return makeScenePlaceholderPreview(file);
+    throw new Error('Impossible de lire cette image. Réexportez-la en JPG ou PNG, avec des dimensions réduites si elle est très grande.', { cause: error });
+  } finally {
+    bitmap?.close?.();
   }
 }
 
@@ -909,13 +912,13 @@ async function loadPdfRenderer() {
 async function makePdfPreviewImage(file) {
   const pdfjs = await loadPdfRenderer();
   const loadingTask = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
-  const pdfDocument = await loadingTask.promise;
   try {
+    const pdfDocument = await loadingTask.promise;
     const page = await pdfDocument.getPage(1);
     const originalViewport = page.getViewport({ scale: 1 });
     const maxEdge = 1400;
     const scale = Math.min(2, maxEdge / Math.max(originalViewport.width, originalViewport.height));
-    const viewport = page.getViewport({ scale: Math.max(0.5, scale) });
+    const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(viewport.width));
     canvas.height = Math.max(1, Math.round(viewport.height));
@@ -925,12 +928,11 @@ async function makePdfPreviewImage(file) {
     await page.render({ canvasContext: context, viewport, background: '#ffffff' }).promise;
     page.cleanup();
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
-    if (!blob) throw new Error('Aperçu PDF vide.');
+    if (!blob?.size) throw new Error('Aperçu PDF vide.');
     const baseName = file.name.replace(/\.[^.]+$/, '') || 'preview';
     return new File([blob], `${baseName}-preview.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
   } finally {
-    pdfDocument.cleanup();
-    await pdfDocument.destroy();
+    await loadingTask.destroy();
   }
 }
 
@@ -959,30 +961,29 @@ async function makeScenePlaceholderPreview(file) {
   ctx.fillStyle = '#204a85';
   ctx.font = '700 58px Arial, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(`${extension} transmis`, canvas.width / 2, canvas.height / 2 - 20);
+  ctx.fillText('Aperçu indisponible', canvas.width / 2, canvas.height / 2 - 20);
   ctx.font = '400 30px Arial, sans-serif';
-  ctx.fillText('Fichier HD enregistré pour production', canvas.width / 2, canvas.height / 2 + 38);
+  ctx.fillText(`Format ${extension}`, canvas.width / 2, canvas.height / 2 + 38);
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.72));
   const baseName = file?.name?.replace(/\.[^.]+$/, '') || 'preview';
   return new File([blob], `${baseName}-preview.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
 }
 
 async function imageBitmapFromFile(file) {
-  if (typeof createImageBitmap === 'function' && !isSvgFile(file)) return createImageBitmap(file);
-  const dataUrl = await fileToDataUrl(file);
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      resolve({
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-        image: img,
-        close() {},
-      });
-    };
-    img.onerror = () => reject(new Error('Lecture de l’image impossible.'));
-    img.src = dataUrl;
-  });
+  if (typeof createImageBitmap === 'function' && !isSvgFile(file)) {
+    try { return await createImageBitmap(file); } catch { /* Try the browser's image decoder. */ }
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    return await new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight, image });
+      image.onerror = () => reject(new Error('Lecture de l’image impossible.'));
+      image.src = url;
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 async function uploadSceneProductionFile(scene, item, file, preview = {}) {

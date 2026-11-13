@@ -16,7 +16,7 @@ const fixtures = [
   { ...base, id: 'sent', share_token: 'sent', project_name: 'Stand envoyé', status: 'bat_pending', client_status: 'bat_review' },
 ];
 const clients = [
-  { id: 'alice', display_name: 'Alice Dupont', email: 'alice@example.test', company_name: 'Alpha', scenes: fixtures.slice(0, 2) },
+  { id: 'alice', display_name: 'Alice Dupont', email: 'alice@example.test', company_name: 'Zénith', scenes: fixtures.slice(0, 2) },
   ...['beta', 'draft', 'sent'].map((id, index) => ({ id, display_name: ['Bruno Martin', 'Cécile Durand', 'Daniel Leroy'][index], company_name: id, scenes: fixtures.filter((scene) => scene.id === id) })),
 ];
 const fakeClient = `
@@ -25,8 +25,9 @@ window.fakeWrites=[];window.fakeRole='admin';
 export const supabase={from(table){if(table!=='scenes')throw Error('Unexpected write outside scenes: '+table);
  const filters={};let patch=null,columns='';const query={select(value){columns=value;return query},eq(key,value){filters[key]=value;return query},update(value){patch=value;return query},
  async single(){const row=window.fakeDb.find(scene=>scene.id===filters.id);if(!row)return{error:Error('Scène introuvable')};
-  if(columns.includes('->'))return{data:{client_status:row.client_status,exhibitor_view_only:row.source_payload.exhibitor_view_only,exhibitor_view_only_updated_at:row.source_payload.exhibitor_view_only_updated_at}};return{data:structuredClone(row)};},
+  if(columns.includes('->'))return{data:{status:row.status,client_status:row.client_status,exhibitor_view_only:row.source_payload.exhibitor_view_only,exhibitor_view_only_updated_at:row.source_payload.exhibitor_view_only_updated_at}};return{data:structuredClone(row)};},
  async maybeSingle(){await new Promise(resolve=>setTimeout(resolve,150));const row=window.fakeDb.find(scene=>scene.id===filters.id);
+  if(!patch)return query.single();
   if(window.fakeRole!=='admin')return{error:Error('Seul un administrateur peut modifier le verrouillage de la scène.')};
   if(window.reopenConflict){window.reopenConflict=false;row.updated_at='2026-10-19T08:01:00.000Z';row.source_payload.serverEdit=true;}
   if(row.updated_at!==filters.updated_at)return{data:null};
@@ -56,6 +57,8 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = []; page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__scene-reopen-test__`);
+  assert.deepEqual((await page.locator('.admin-exhibitors-head > span').allTextContents()).slice(0, 2), ['Société ↑', 'Exposant']);
+  assert.deepEqual(await page.locator('.admin-exhibitors-row > :first-child').allTextContents(), ['beta', 'draft', 'sent', 'Zénith']);
   const row = (title) => page.locator('.admin-exhibitors-scene').filter({ has: page.locator('.admin-exhibitors-scene-title strong', { hasText: title }) });
   const alpha = row('Stand Alpha');
   await page.locator('summary').filter({ hasText: 'Alice Dupont' }).click();

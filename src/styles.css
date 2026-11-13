@@ -11853,6 +11853,37 @@ img.asset-thumb {
   box-shadow: none;
 }
 
+.wall-cover-preview-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.wall-cover-preview-button > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #fff;
+}
+
+.wall-cover-preview-button > span {
+  position: relative;
+}
+
+.wall-cover-preview-button:focus-within {
+  outline: 2px solid #416bb0;
+  outline-offset: 2px;
+}
+
+.wall-cover-preview-button input {
+  position: absolute;
+  display: block;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
 .wall-cover-pending {
   justify-content: flex-start;
   min-height: 28px;

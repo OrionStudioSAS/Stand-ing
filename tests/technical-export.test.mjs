@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import { normalizeImageFraming } from '../src/imageFraming.js';
+import { technicalA3 } from '../src/technicalPrintLayout.js';
 import { Euler, Vector3 } from 'three';
 import { scenePackBenefits, sceneLightingOptions } from '../supabase/functions/_shared/packBenefits.js';
 import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor } from '../src/imageColorReplacement.js';
@@ -33,7 +34,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ electricalWallClearance, electricalClearanceRect, applyElectricalClearance, includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor });
+  const api = vm.createContext({ technicalA3, electricalWallClearance, electricalClearanceRect, applyElectricalClearance, includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }
@@ -521,12 +522,53 @@ test('wide spot pictograms anchor to every wall face instead of floating within 
   const image = { width: 100, height: 20 };
   for (const orientation of ['x', 'z']) for (const side of [-1, 1]) {
     const width = orientation === 'x' ? 80 : 24, height = orientation === 'x' ? 24 : 80;
-    api.drawAttachedSpotPicto(ctx, image, 10, 20, width, height, orientation === 'x' ? (side > 0 ? 0 : Math.PI) : (side > 0 ? -Math.PI/2 : Math.PI/2), orientation, side);
+    api.drawWallAttachedPicto(ctx, image, 10, 20, width, height, orientation === 'x' ? (side > 0 ? 0 : Math.PI) : (side > 0 ? -Math.PI/2 : Math.PI/2), orientation, side);
     const drawn = images.at(-1);
     const edge = orientation === 'x' ? drawn.y + (side < 0 ? drawn.height : 0) : drawn.x + (side < 0 ? drawn.width : 0);
     const expected = orientation === 'x' ? 20 + (side < 0 ? height : 0) : 10 + (side < 0 ? width : 0);
     assert.ok(Math.abs(edge - expected) < 1e-9);
   }
+});
+
+test('TV pictograms touch the selected wall, independently of electric overlays', () => {
+  const { api, ctx } = runtime();
+  const images = [];
+  api.drawRotatedContainedImage = (_ctx, _image, x, y, w, h) => images.push({ x, y, w, h });
+  const draw = (item, picto) => api.drawWallItemTop(ctx, item, 6, 4, 100, 8, (x) => x * 100, (z) => z * 100, '1', { width: .97, depth: .08 }, 'TV', picto);
+  const svg = { width: 262, height: 26 };
+  const electricity = { batElectricalPictos: [{ url: '/electric.svg', x: .5, y: -2, size: .2 }] };
+  for (const wall of ['back', 'left', 'right']) {
+    const tv = { type: 'asset-tv-43', label: 'TV 43"', wall, x: 1.25, modelUrl: '/tv.glb', isWallItem: true };
+    const frame = draw(tv, null);
+    assert.deepEqual(draw({ ...tv, dimensions: electricity }, svg), frame);
+    const image = images.at(-1);
+    assert.equal(frame.width, 97);
+    assert.equal(frame.height, 8);
+    const connector = electricalPictoPoint(frame, electricity.batElectricalPictos[0]);
+    if (wall === 'back') assert.equal(image.y, -192);
+    if (wall === 'left') assert.equal(image.x, -292);
+    if (wall === 'right') assert.equal(image.x + image.w, 292);
+    assert.equal(frame.angle, wall === 'back' ? Math.PI : wall === 'left' ? 3 * Math.PI / 2 : Math.PI / 2);
+    assert.ok(Math.hypot(connector.x - frame.x, connector.y - frame.y) > frame.height / 2);
+  }
+  for (const orientation of ['x', 'z']) for (const wallSide of [-1, 1]) {
+    draw({ type: 'screen', wall: 'object-wall:reserve', x: 0, wallSide, wallSurface: { orientation, normalAxis: 0, centerAxis: 0, length: 2 } }, svg);
+    const image = images.at(-1);
+    const [start, length] = orientation === 'x' ? [image.y, image.h] : [image.x, image.w];
+    assert.ok(Math.abs(start + (wallSide < 0 ? length : 0) - wallSide * 3) < 1e-9);
+  }
+});
+
+test('the plan omits furniture size callouts while retaining electrical and stand dimensions', () => {
+  const { api, ctx, text } = runtime();
+  api.drawPlan(ctx, 6, 4, 'back', [
+    { ...counter('counter'), x: 0, z: 0, modelSize: [1.35, 1, .65] },
+    { id: 'power', type: 'electric', x: 2, z: 1, dimensions: { category: 'Électricité' } },
+  ], []);
+  const labels = text.map(({ value }) => value);
+  assert.ok(labels.includes('6000') && labels.includes('4000'));
+  assert.ok(labels.includes('1000'));
+  assert.ok(!labels.includes('1350') && !labels.includes('650'));
 });
 
 test('reserve TV reinforcement stays on the selected lateral face and does not affect stand walls', () => {

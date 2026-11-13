@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
+import { PDFDocument, rgb } from 'pdf-lib';
 
 const appId = resolve('src/__refinements-app.jsx');
 const pageId = resolve('src/__refinements-page.jsx');
@@ -13,7 +14,7 @@ const arch = { id: 'arch', type: 'arche-signature', label: 'Arche Signature', di
 const scene = { id: 'refinements', offer: 'Signature', salon: 'SITL 2027 salon avec un nom tres long', project_name: 'Societe avec une raison sociale tres longue pour tester le header',
   dimensions: { width: 5, depth: 4 }, layout: 'back', items: [arch], client_status: 'draft', options: { ledRailsEnabled: false, wallCovers: { back: { enabled: true, previewUrl: art } } }, source_payload: {},
 };
-const exports = 'ConfiguratorApp, PosterOptionsPanel, PartitionHeadOptionsPanel, WoodReceptionDeskOptionsPanel, SignatureArchOptionCard, WallCoverOptionCard, sceneAllAdminItems, makeAutomaticReserveItems, makeAutomaticSpotItems, resolveSpotWallAttachments, objectWallSurfaces, spotPlacementTargetsForItem, pickLedRailOverride, reserveDoorColorForPack';
+const exports = 'ConfiguratorApp, PosterOptionsPanel, PartitionHeadOptionsPanel, WoodReceptionDeskOptionsPanel, SignatureArchOptionCard, WallCoverOptionCard, sceneAllAdminItems, makeAutomaticReserveItems, makeAutomaticSpotItems, resolveSpotWallAttachments, objectWallSurfaces, spotPlacementTargetsForItem, pickLedRailOverride, reserveDoorColorForPack, automaticReserveBackWallCandidate, floorDragPatch, constrainItem';
 const harness = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -48,8 +49,21 @@ function Test() {
 createRoot(document.getElementById('root')).render(<Test />);
 `;
 const store = `export * from '/src/data/sceneStore.js?refinements-original';
+import { makeScenePreviewImage } from '/src/data/sceneStore.js?refinements-original';
 export async function listObjectBank() { return []; }
 export async function saveScene(scene) { window.savedScene = JSON.parse(JSON.stringify(scene)); return scene; }
+export async function uploadSceneItemOptionImage(_scene, _target, file) {
+  const preview = await makeScenePreviewImage(file, { requirePreview: true }).catch((error) => {
+    window.previewError = error.cause?.message || error.message;
+    throw error;
+  });
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(preview);
+  });
+}
 `;
 const server = await createServer({ server: { host: '127.0.0.1', port: 0 }, logLevel: 'error', plugins: [{
   name: 'configurator-refinements-test',
@@ -75,7 +89,29 @@ try {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__refinements-test__`);
-  await page.waitForFunction(() => window.refinementPricing);
+  await page.waitForFunction(() => window.refinementPricing, undefined, { timeout: 15000 }).catch((error) => {
+    throw new Error(`${error.message}; browser: ${errors.join('; ')}`);
+  });
+  const positions = await page.evaluate(() => {
+    const { automaticReserveBackWallCandidate, floorDragPatch, constrainItem } = window.refinementApi;
+    const reserve = { type: 'reserve', label: 'Reserve 2 m2 centre arriere', autoReserve: true, modelSize: [2.12, 2.5, 1.06] };
+    const counter = { type: 'counter-fixture', label: 'Banque accueil', modelSize: [1.15, 1, .51], rotation: 0 };
+    return {
+      legacy: automaticReserveBackWallCandidate(reserve, { x: -1.88 }, 6, 4, 'back'),
+      leftWall: automaticReserveBackWallCandidate(reserve, { x: -3 }, 6, 4, 'left'),
+      front: constrainItem({ ...counter, placementRule: 'front-left' }, 6, 4, 'back', false),
+      dragged: floorDragPatch({ x: -2.40, z: 1.72 }, counter, 6, 4, 'back', false),
+      interior: floorDragPatch({ x: -.8, z: .25 }, counter, 6, 4, 'back', false),
+    };
+  });
+  assert.ok(Math.abs(positions.legacy.x - (-3 + 1.06)) < 1e-9);
+  assert.ok(Math.abs(positions.legacy.z - (-2 + .06 + .53)) < 1e-9);
+  assert.ok(Math.abs(positions.leftWall.x - (-3 + .06 + 1.06)) < 1e-9);
+  for (const position of [positions.front, positions.dragged]) {
+    assert.ok(Math.abs(position.x - (-3 + .575)) < 1e-9);
+    assert.ok(Math.abs(position.z - (2 - .255)) < 1e-9);
+  }
+  assert.deepEqual(positions.interior, { x: -.8, z: .25 });
   await page.getByRole('button', { name: /^Sol/ }).click();
   const thick = page.locator('.config-toggle-option').filter({ hasText: 'Moquette épaisse' });
   const appearance = () => thick.evaluate((button) => {
@@ -174,6 +210,36 @@ try {
   await page.getByRole('button', { name: /^Cloison/ }).click();
   await coverEditor.locator('summary').click();
   assert.equal(await coverEditor.locator('input[type=range]').inputValue(), '70', 'Banner framing survives reopening the scene');
+  const upload = page.locator('.wall-cover-row input[type=file]').first();
+  const thumbnail = page.locator('.wall-cover-preview-button img').first();
+  const oldPreview = await thumbnail.getAttribute('src');
+  for (const [name, mimeType, buffer, message] of [
+    ['empty.jpg', 'image/jpeg', Buffer.alloc(0), 'Ce fichier est vide'],
+    ['invalid.jpg', 'image/jpeg', Buffer.from('not an image'), 'Impossible de lire cette image'],
+    ['invalid.pdf', 'application/pdf', Buffer.from('not a PDF'), 'Impossible de lire le PDF'],
+  ]) {
+    await page.waitForFunction(() => !document.querySelector('.wall-cover-row input[type=file]').disabled);
+    await upload.setInputFiles({ name, mimeType, buffer });
+    await page.locator('.wall-cover-row [role=alert]').filter({ hasText: message }).waitFor({ timeout: 12000 }).catch(async (error) => {
+      throw new Error(`${error.message}; ${await page.locator('.wall-cover-row [role=alert]').allTextContents()}; ${await page.evaluate(() => window.previewError)}`);
+    });
+    assert.equal(await thumbnail.getAttribute('src'), oldPreview);
+  }
+  const pdf = await PDFDocument.create();
+  pdf.addPage([4000, 8000]).drawRectangle({ x: 0, y: 0, width: 4000, height: 8000, color: rgb(0, .6, .3) });
+  await page.waitForFunction(() => !document.querySelector('.wall-cover-row input[type=file]').disabled);
+  await upload.setInputFiles({ name: 'new-banner.pdf', mimeType: 'application/pdf', buffer: Buffer.from(await pdf.save()) });
+  await page.waitForFunction(() => window.savedScene?.options.wallCovers.back.previewName === 'new-banner.pdf', undefined, { timeout: 10000 }).catch(async (error) => {
+    const alert = await page.locator('.wall-cover-row [role=alert]').allTextContents();
+    throw new Error(`${error.message}; ${alert.join('; ')}; ${await page.evaluate(() => window.previewError)}`);
+  });
+  assert.match(await thumbnail.getAttribute('src'), /^data:image\/jpeg/);
+  assert.deepEqual(await thumbnail.evaluate((image) => [image.naturalWidth, image.naturalHeight]), [700, 1400]);
+  await page.waitForFunction(() => {
+    const canvas = window.testWallCoverTexture?.image;
+    const pixel = canvas?.getContext('2d')?.getImageData(10, 10, 1, 1).data;
+    return pixel?.[1] > 120 && pixel[0] < 10;
+  });
 
   await page.getByRole('button', { name: 'Composants test', exact: true }).click();
   for (const key of ['poster', 'head', 'counter', 'arch', 'cover']) {

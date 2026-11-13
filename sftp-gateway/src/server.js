@@ -117,6 +117,10 @@ app.post(
       const auth = await authenticateUploadRequest(req);
       const scene = await loadSceneForUpload(req.body, auth);
       assertCanUploadToScene(auth, scene);
+      if (!localFile.size) {
+        res.status(400).json({ ok: false, message: 'Ce fichier est vide. Choisissez le fichier original.' });
+        return;
+      }
 
       const surfaceKey = sanitizeKey(req.body.surfaceKey || req.body.itemId || req.body.itemType || 'visual');
       const version = await nextUploadVersion(scene.id, surfaceKey, auth);
@@ -305,7 +309,7 @@ async function registerSceneUploadedFile({ scene, auth, body, file, surfaceKey, 
       surface_label: body.surfaceLabel || body.itemLabel || body.itemType || null,
       original_filename: file.originalname,
       original_mime_type: body.originalMimeType || file.mimetype || null,
-      original_size: Number(body.originalSize || file.size || 0),
+      original_size: file.size,
       preview_url: body.previewUrl || null,
       preview_storage_path: body.previewStoragePath || null,
       sftp_remote_dir: remoteDir,

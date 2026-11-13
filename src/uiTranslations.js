@@ -1,5 +1,11 @@
 // Text added by the redesigned panels, separate from persisted catalogue/user data.
 export const englishUi = {
+  'Ce fichier est vide. Choisissez le fichier original.': 'This file is empty. Choose the original file.',
+  'Impossible de lire le PDF. Réexportez sa première page en PDF, JPG ou PNG.': 'Could not read this PDF. Export its first page again as a PDF, JPG or PNG.',
+  'Impossible de lire cette image. Réexportez-la en JPG ou PNG, avec des dimensions réduites si elle est très grande.': 'Could not read this image. Export it again as JPG or PNG, reducing its dimensions if it is very large.',
+  'Aperçu indisponible. Réessayez l’import.': 'Preview unavailable. Try uploading again.',
+  'Import du visuel impossible.': 'Could not upload the artwork.',
+  'Pour prévisualiser la bâche, choisissez un fichier PDF, SVG, JPG ou PNG.': 'To preview the banner, choose a PDF, SVG, JPG or PNG file.',
   'Inviter un collaborateur': 'Invite a collaborator',
   'Collaborateurs du stand': 'Stand collaborators',
   'Invitez jusqu’à deux personnes à modifier et à valider la configuration de ce stand.': 'Invite up to two people to edit and submit this stand configuration.',

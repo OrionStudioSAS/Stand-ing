@@ -525,7 +525,6 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
       frame = pictoImage
         ? drawRotatedPictoObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, pictoImage, label, groupStructuralAsset(item), hasElectric)
         : drawRotatedObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, color, label, hasElectric);
-      drawObjectDimensions(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, dims, item.rotation || 0);
     }
     ctx.restore();
     annotateElectricity(item, entry, frame, index);
@@ -1397,13 +1396,7 @@ function drawRotatedContainedImage(ctx, image, x, y, w, h, angleRadians) {
   ctx.restore();
 }
 
-function drawObjectDimensions(ctx, x, y, w, h, dims, rotation) {
-  if (Math.abs(rotation) > 1 || w < 34 || h < 26) return;
-  drawDimension(ctx, x - w / 2, y - h / 2 - 18, x + w / 2, y - h / 2 - 18, dimensionMm(dims.width), 'horizontal', technicalColors.red, 12);
-  drawDimension(ctx, x + w / 2 + 18, y - h / 2, x + w / 2 + 18, y + h / 2, dimensionMm(dims.depth), 'vertical', technicalColors.red, 12);
-}
-
-function drawAttachedSpotPicto(ctx, image, x, y, w, h, angle, orientation, side) {
+function drawWallAttachedPicto(ctx, image, x, y, w, h, angle, orientation, side) {
   const sideways = Math.abs(Math.sin(angle)) > .5;
   const imageW = image.naturalWidth || image.width || 1, imageH = image.naturalHeight || image.height || 1;
   const scale = Math.min(w / (sideways ? imageH : imageW), h / (sideways ? imageW : imageH));
@@ -1415,11 +1408,12 @@ function drawAttachedSpotPicto(ctx, image, x, y, w, h, angle, orientation, side)
 }
 
 function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, defaultLabel, pictoImage = null) {
+  const screen = isTechnicalScreenItem(item);
   const isCustomWallModel = Boolean(item.modelUrl) && !['screen', 'poster'].includes(item.type);
-  const itemWidth = (item.type === 'poster' ? Number(item.posterWidth || 1) : isCustomWallModel || isLedRailItem(item) ? dims.width : 0.95) * scale;
-  const itemDepth = (item.type === 'poster' ? 0.04 : isTechnicalScreenItem(item) ? 0.18 : isCustomWallModel || isLedRailItem(item) ? Math.max(0.04, dims.depth) : 0.08) * scale;
-  const wallLabelText = item.type === 'poster' ? `AFFICHE ${mm(item.posterWidth || 1)}` : isTechnicalScreenItem(item) ? tvTechnicalLabel(item) : (defaultLabel || 'OBJET MURAL');
-  ctx.fillStyle = item.type === 'poster' ? '#f7f1dc' : isTechnicalScreenItem(item) ? '#22364d' : (item.color || '#dfe8ec');
+  const itemWidth = (item.type === 'poster' ? Number(item.posterWidth || 1) : screen || isCustomWallModel || isLedRailItem(item) ? dims.width : 0.95) * scale;
+  const itemDepth = (item.type === 'poster' ? 0.04 : screen || isCustomWallModel || isLedRailItem(item) ? Math.max(0.04, dims.depth) : 0.08) * scale;
+  const wallLabelText = item.type === 'poster' ? `AFFICHE ${mm(item.posterWidth || 1)}` : screen ? tvTechnicalLabel(item) : (defaultLabel || 'OBJET MURAL');
+  ctx.fillStyle = item.type === 'poster' ? '#f7f1dc' : screen ? '#22364d' : (item.color || '#dfe8ec');
   ctx.strokeStyle = technicalColors.ink;
   ctx.lineWidth = 2;
 
@@ -1433,12 +1427,13 @@ function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY
     if (!pictoImage) ctx.fillRect(x, y, itemWidth, itemDepth);
     if (!pictoImage) ctx.strokeRect(x, y, itemWidth, itemDepth);
     if (pictoImage) {
-      if (isLedRailItem(item)) drawAttachedSpotPicto(ctx, pictoImage, x, y, itemWidth, itemDepth, 0, 'x', 1);
+      // The TV SVGs are drawn with the wall bracket at the bottom.
+      if (screen || isLedRailItem(item)) drawWallAttachedPicto(ctx, pictoImage, x, y, itemWidth, itemDepth, screen ? Math.PI : 0, 'x', 1);
       else drawContainedImage(ctx, pictoImage, x + 2, y + 2, itemWidth - 4, itemDepth - 4);
     }
     drawText(ctx, wallLabelText, x + itemWidth / 2, y + itemDepth + 58, 15, '#22364d', 'bold', 'center');
     drawBadge(ctx, x + itemWidth / 2, y + itemDepth + 22, label);
-    return { x: x + itemWidth / 2, y: y + itemDepth / 2, width: itemWidth, height: itemDepth, angle: 0 };
+    return { x: x + itemWidth / 2, y: y + itemDepth / 2, width: itemWidth, height: itemDepth, angle: screen ? Math.PI : 0 };
   }
 
   const gap = wallItemPlanGap(item);
@@ -1447,12 +1442,12 @@ function drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY
   if (!pictoImage) ctx.fillRect(x, y, itemDepth, itemWidth);
   if (!pictoImage) ctx.strokeRect(x, y, itemDepth, itemWidth);
   if (pictoImage) {
-    if (isLedRailItem(item)) drawAttachedSpotPicto(ctx, pictoImage, x, y, itemDepth, itemWidth, sideWallPictoAngle(item), 'z', item.wall === 'left' ? 1 : -1);
+    if (screen || isLedRailItem(item)) drawWallAttachedPicto(ctx, pictoImage, x, y, itemDepth, itemWidth, sideWallPictoAngle(item) + (screen ? Math.PI : 0), 'z', item.wall === 'left' ? 1 : -1);
     else drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4, sideWallPictoAngle(item));
   }
   drawSideTvLabel(ctx, wallLabelText, item.wall, x, y + itemWidth / 2, itemDepth);
   drawBadge(ctx, x + itemDepth + 22, y + itemWidth / 2, label);
-  return { x: x + itemDepth / 2, y: y + itemWidth / 2, width: itemWidth, height: itemDepth, angle: sideWallPictoAngle(item) };
+  return { x: x + itemDepth / 2, y: y + itemWidth / 2, width: itemWidth, height: itemDepth, angle: sideWallPictoAngle(item) + (screen ? Math.PI : 0) };
 }
 
 function drawObjectWallItemTop(ctx, item, scale, toX, toY, label, itemWidth, itemDepth, wallLabelText, pictoImage = null) {
@@ -1460,7 +1455,8 @@ function drawObjectWallItemTop(ctx, item, scale, toX, toY, label, itemWidth, ite
   if (!surface) return;
   const axis = clampValue(Number(item.x ?? surface.centerAxis ?? 0), Number(surface.centerAxis || 0) - Number(surface.length || 0) / 2, Number(surface.centerAxis || 0) + Number(surface.length || 0) / 2);
   const side = objectWallSideForTechnicalItem(item, surface);
-  const gap = isLedRailItem(item) ? wallThicknessMeters * scale / 2 : 4;
+  const screen = isTechnicalScreenItem(item);
+  const gap = screen || isLedRailItem(item) ? wallThicknessMeters * scale / 2 : 4;
 
   if (surface.orientation === 'x') {
     const x = toX(axis) - itemWidth / 2;
@@ -1469,12 +1465,12 @@ function drawObjectWallItemTop(ctx, item, scale, toX, toY, label, itemWidth, ite
     if (!pictoImage) ctx.fillRect(x, y, itemWidth, itemDepth);
     if (!pictoImage) ctx.strokeRect(x, y, itemWidth, itemDepth);
     if (pictoImage) {
-      if (isLedRailItem(item)) drawAttachedSpotPicto(ctx, pictoImage, x, y, itemWidth, itemDepth, side >= 0 ? 0 : Math.PI, 'x', side);
+      if (screen || isLedRailItem(item)) drawWallAttachedPicto(ctx, pictoImage, x, y, itemWidth, itemDepth, (side >= 0 ? 0 : Math.PI) + (screen ? Math.PI : 0), 'x', side);
       else drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemWidth - 4, itemDepth - 4, side >= 0 ? 0 : Math.PI);
     }
     drawText(ctx, wallLabelText, x + itemWidth / 2, side >= 0 ? y + itemDepth + 58 : y - 48, 15, '#22364d', 'bold', 'center');
     drawBadge(ctx, x + itemWidth / 2, side >= 0 ? y + itemDepth + 22 : y - 22, label);
-    return { x: x + itemWidth / 2, y: y + itemDepth / 2, width: itemWidth, height: itemDepth, angle: side >= 0 ? 0 : Math.PI };
+    return { x: x + itemWidth / 2, y: y + itemDepth / 2, width: itemWidth, height: itemDepth, angle: (side >= 0 ? 0 : Math.PI) + (screen ? Math.PI : 0) };
   }
 
   const wallX = toX(Number(surface.normalAxis || 0));
@@ -1484,12 +1480,12 @@ function drawObjectWallItemTop(ctx, item, scale, toX, toY, label, itemWidth, ite
   if (!pictoImage) ctx.strokeRect(x, y, itemDepth, itemWidth);
   const angle = isLedRailItem(item) ? (side >= 0 ? -Math.PI / 2 : Math.PI / 2) : (side >= 0 ? Math.PI / 2 : -Math.PI / 2);
   if (pictoImage) {
-    if (isLedRailItem(item)) drawAttachedSpotPicto(ctx, pictoImage, x, y, itemDepth, itemWidth, angle, 'z', side);
+    if (screen || isLedRailItem(item)) drawWallAttachedPicto(ctx, pictoImage, x, y, itemDepth, itemWidth, angle + (screen ? Math.PI : 0), 'z', side);
     else drawRotatedContainedImage(ctx, pictoImage, x + 2, y + 2, itemDepth - 4, itemWidth - 4, angle);
   }
   drawSideTvLabel(ctx, wallLabelText, side >= 0 ? 'left' : 'right', x, y + itemWidth / 2, itemDepth);
   drawBadge(ctx, x + itemDepth + 22, y + itemWidth / 2, label);
-  return { x: x + itemDepth / 2, y: y + itemWidth / 2, width: itemWidth, height: itemDepth, angle };
+  return { x: x + itemDepth / 2, y: y + itemWidth / 2, width: itemWidth, height: itemDepth, angle: angle + (screen ? Math.PI : 0) };
 }
 
 function drawSideTvLabel(ctx, label, wall, x, y, screenDepth) {
@@ -1506,7 +1502,7 @@ function sideWallPictoAngle(item = {}) {
 }
 
 function wallItemPlanGap(item = {}) {
-  return isLedRailItem(item) ? 0 : 4;
+  return isTechnicalScreenItem(item) || isLedRailItem(item) ? 0 : 4;
 }
 
 function isLedRailItem(item = {}) {
