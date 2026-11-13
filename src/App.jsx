@@ -17,7 +17,7 @@ import React, { Suspense, createContext, useCallback, useContext, useEffect, use
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Canvas, events as createSceneEvents, useFrame, useLoader, useThree } from '@react-three/fiber';
-import { ContactShadows, Html, OrbitControls, Text } from '@react-three/drei';
+import { Html, OrbitControls, Text } from '@react-three/drei';
 import { Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MOUSE, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
@@ -30,6 +30,7 @@ import { useSceneExhibitorReadOnly } from './useSceneExhibitorReadOnly.js';
 import { canReopenSceneAsDraft } from './sceneReopening.js';
 import AdminMondayView, { MondaySyncFeedback } from './AdminMondayView.jsx';
 import PresentationGround from './PresentationGround.jsx';
+import { StudioContactShadows, StudioLighting } from './StudioLighting.jsx';
 import { normalizePartitionHeadVisuals, partitionHeadUsesDifferentVisuals, patchPartitionHeadVisuals, withPartitionHeadVisualMode } from './partitionHeadVisuals.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
@@ -2827,8 +2828,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           }}
         >
           <color attach="background" args={['#050506']} />
-          <ambientLight intensity={1.42} />
-          <directionalLight position={[3, 7, 4]} intensity={0.72} castShadow shadow-mapSize={[2048, 2048]} />
+          <StudioLighting width={width} depth={depth} />
           <Suspense fallback={<Html center>{tr("Chargement")}</Html>}>
             <PresentationGround />
             {shouldRenderScene && (
@@ -2884,7 +2884,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 ) : null}
               />
             )}
-            <ContactShadows opacity={0.07} scale={12} blur={3.2} far={5} position={[0, -0.01, 0]} />
+            <StudioContactShadows width={width} depth={depth} />
           </Suspense>
           <OrbitControls
             ref={orbitControlsRef}
@@ -11370,8 +11370,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
           onPointerLeave={() => setDraggingId(null)}
         >
           <color attach="background" args={['#050506']} />
-          <ambientLight intensity={1.42} />
-          <directionalLight position={[3, 7, 4]} intensity={0.72} castShadow shadow-mapSize={[2048, 2048]} />
+          <StudioLighting width={width} depth={depth} />
           <Suspense fallback={<Html center>Chargement</Html>}>
             <PresentationGround />
             {presetAssetsReady && (
@@ -11407,7 +11406,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
               ) : null}
             />
             )}
-            <ContactShadows opacity={0.07} scale={12} blur={3.2} far={5} position={[0, -0.01, 0]} />
+            <StudioContactShadows width={width} depth={depth} />
           </Suspense>
           <OrbitControls
             ref={orbitControlsRef}
@@ -20829,7 +20828,7 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
         {slabSegments.map((segment) => (
           <mesh key={segment.id} receiveShadow position={[segment.centerX, -slabHeight / 2, segment.centerZ]}>
             <boxGeometry args={[segment.width, slabHeight, segment.depth]} />
-            <meshStandardMaterial color={carpetTexture ? '#ffffff' : carpetHex} map={carpetTexture || null} roughness={0.88} />
+            <meshStandardMaterial color={carpetTexture ? '#ffffff' : carpetHex} map={carpetTexture || null} roughness={0.88} allowOverride={false} />
           </mesh>
         ))}
         {technicalFloor && <TechnicalFloorAccessories width={width} depth={floorDepth} layout={layout} height={slabHeight} trimType={technicalFloorTrimType} rampX={technicalFloorRampX} onRampXChange={onTechnicalFloorRampX} onRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={[sceneOffset[0], sceneOffset[1], sceneOffset[2] - floorCenterZ]} />}
@@ -20838,7 +20837,7 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
         <>
           <mesh receiveShadow position={[footprint.centerX, 0.012, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
             <planeGeometry args={[footprint.width, footprint.depth]} />
-            <meshStandardMaterial color={footprintTexture ? '#ffffff' : footprintHex} map={footprintTexture || null} roughness={0.88} />
+            <meshStandardMaterial color={footprintTexture ? '#ffffff' : footprintHex} map={footprintTexture || null} roughness={0.88} allowOverride={false} />
           </mesh>
         </>
       )}
@@ -21060,10 +21059,11 @@ function colorTextureUrl(color) {
 }
 
 function useRepeatedTexture(url, width, depth, tileSize = 1) {
+  const anisotropy = useThree((state) => Math.min(8, state.gl.capabilities.getMaxAnisotropy()));
   const textureKey = `${url}|${width}|${depth}|${tileSize}`;
   const [textureState, setTextureState] = useState(() => {
     const cachedImage = url ? Cache.get(`image:${url}`) : null;
-    return { key: textureKey, texture: cachedImage ? createRepeatedTextureFromImage(cachedImage, width, depth, tileSize, url) : null };
+    return { key: textureKey, texture: cachedImage ? createRepeatedTextureFromImage(cachedImage, width, depth, tileSize, url, anisotropy) : null };
   });
 
   useEffect(() => {
@@ -21080,7 +21080,7 @@ function useRepeatedTexture(url, width, depth, tileSize = 1) {
 
     const applyImage = (image) => {
       if (disposed || !image) return;
-      const seamlessTexture = createRepeatedTextureFromImage(image, width, depth, tileSize, url);
+      const seamlessTexture = createRepeatedTextureFromImage(image, width, depth, tileSize, url, anisotropy);
       if (seamlessTexture) {
         currentTexture = seamlessTexture;
         setTextureState((previous) => {
@@ -21110,15 +21110,15 @@ function useRepeatedTexture(url, width, depth, tileSize = 1) {
       disposed = true;
       currentTexture?.dispose?.();
     };
-  }, [url, width, depth, tileSize, textureKey]);
+  }, [url, width, depth, tileSize, textureKey, anisotropy]);
 
   return textureState.key === textureKey ? textureState.texture : null;
 }
 
-function createRepeatedTextureFromImage(image, width, depth, tileSize = 1, url = '') {
+function createRepeatedTextureFromImage(image, width, depth, tileSize, url, anisotropy) {
   try {
     const seamlessTexture = createSeamlessRepeatedTexture(image);
-    configureRepeatedTexture(seamlessTexture, width, depth, tileSize);
+    configureRepeatedTexture(seamlessTexture, width, depth, tileSize, anisotropy);
     return seamlessTexture;
   } catch (error) {
     logTextureDiagnostic('Repeated texture ignored after decode issue', { url, error });
@@ -21126,13 +21126,14 @@ function createRepeatedTextureFromImage(image, width, depth, tileSize = 1, url =
   }
 }
 
-function configureRepeatedTexture(texture, width, depth, tileSize = 1) {
+function configureRepeatedTexture(texture, width, depth, tileSize, anisotropy) {
   texture.wrapS = RepeatWrapping;
   texture.wrapT = RepeatWrapping;
   texture.colorSpace = SRGBColorSpace;
   texture.minFilter = LinearMipmapLinearFilter;
   texture.magFilter = LinearFilter;
-  texture.repeat.set(Math.max(1, Number(width || 1) / tileSize), Math.max(1, Number(depth || 1) / tileSize));
+  texture.repeat.set(Math.max(1, Number(width || 1) / tileSize) * 1.8, Math.max(1, Number(depth || 1) / tileSize) * 1.8);
+  texture.anisotropy = anisotropy;
   texture.needsUpdate = true;
   return texture;
 }
@@ -21268,7 +21269,7 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
       }}
     >
       <planeGeometry args={size} />
-      <meshBasicMaterial transparent opacity={0} depthWrite={false} side={DoubleSide} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} side={DoubleSide} allowOverride={false} />
     </mesh>
   );
   const wallDragPlanes = () => {
@@ -21440,7 +21441,7 @@ function WallFabricSurface({ surface, color }) {
   const position = [surface.position[0], baseboardHeight + fabricHeight / 2, surface.position[2]];
   return (
     <group position={position} rotation={[0, surface.rotation, 0]}>
-      <mesh renderOrder={1} raycast={() => null}>
+      <mesh receiveShadow renderOrder={1} raycast={() => null}>
         <boxGeometry args={[surface.width, fabricHeight, 0.001]} />
         <meshStandardMaterial {...wallFabricMaterialProps(color, texture)} />
       </mesh>
@@ -21516,7 +21517,7 @@ function SignatureArchFootprint({ item, standDepth = 0 }) {
   return (
     <mesh receiveShadow raycast={() => null} position={[centerX, y, signatureArchFootprintLocalZ(item)]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
       <planeGeometry args={[width, depth]} />
-      <meshStandardMaterial color={texture ? '#ffffff' : color} map={texture || null} roughness={0.88} />
+      <meshStandardMaterial color={texture ? '#ffffff' : color} map={texture || null} roughness={0.88} allowOverride={false} />
     </mesh>
   );
 }
@@ -21702,7 +21703,7 @@ function ObjHitbox({ bounds = null, size = [0.7, 0.7, 0.7], centerY = null, minS
   return (
     <mesh position={[centerX, centerY ?? Math.max(y, minY) / 2, centerZ]}>
       <boxGeometry args={[Math.max(x, minX), Math.max(y, minY), Math.max(z, minZ)]} />
-      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} allowOverride={false} />
     </mesh>
   );
 }

@@ -52,7 +52,7 @@ export default function PresentationGround() {
   return (
     <mesh position={[0, -0.035, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
       <planeGeometry args={[40, 40]} />
-      <shaderMaterial vertexShader={vertexShader} fragmentShader={fragmentShader} transparent depthWrite={false} toneMapped={false} />
+      <shaderMaterial vertexShader={vertexShader} fragmentShader={fragmentShader} transparent depthWrite={false} toneMapped={false} allowOverride={false} />
     </mesh>
   );
 }

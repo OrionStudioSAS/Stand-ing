@@ -9,6 +9,7 @@ const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8
 const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
 const stylesSource = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 const groundSource = readFileSync(new URL('../src/PresentationGround.jsx', import.meta.url), 'utf8');
+const studioSource = readFileSync(new URL('../src/StudioLighting.jsx', import.meta.url), 'utf8');
 
 function loadFunction(source, api, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -23,12 +24,17 @@ test('PDF uploads render their first page as the scene preview', () => {
   assert.match(storeSource, /page\.render\(/);
 });
 
-test('the existing configurator lighting is preserved', () => {
-  assert.equal((appSource.match(/<ambientLight intensity=\{1\.42\} \/>/g) || []).length, 2);
-  assert.doesNotMatch(appSource, /ConfiguratorLighting|RoomEnvironment|environmentIntensity/);
+test('both stand viewports use studio lighting and retain the original resolution', () => {
+  assert.equal((appSource.match(/<StudioLighting width=\{width\} depth=\{depth\} \/>/g) || []).length, 2);
+  assert.equal((appSource.match(/<StudioContactShadows width=\{width\} depth=\{depth\} \/>/g) || []).length, 2);
+  assert.doesNotMatch(appSource, /renderPreview|studio-render-toggle/);
+  assert.equal((appSource.match(/dpr=\{\[1, 1\.5\]\}/g) || []).length, 2);
+  assert.match(studioSource, /<ambientLight intensity=\{1\.42\} \/>/);
+  assert.match(studioSource, /scene\.environment = previousEnvironment/);
+  assert.match(studioSource, /environment\.dispose\(\)/);
 });
 
-test('configurator scene uses a black backdrop and textured ground without changing its lighting', () => {
+test('studio lighting does not replace the black backdrop and textured ground', () => {
   const start = appSource.indexOf('className={sceneCanvasClassName}');
   const end = appSource.indexOf('</Canvas>', start);
   const canvas = appSource.slice(start, end);
@@ -37,8 +43,8 @@ test('configurator scene uses a black backdrop and textured ground without chang
   assert.match(canvas, /<color attach="background" args=\{\['#050506'\]\} \/>/);
   assert.match(canvas, /<PresentationGround \/>/);
   assert.match(stylesSource, /\.configurator-stage\s*\{[^}]*background: #050506/);
-  assert.match(groundSource, /function PresentationGround\(\)[\s\S]*<planeGeometry args=\{\[40, 40\]\}/);
-  assert.equal((appSource.match(/<PresentationGround \/>/g) || []).length, 2);
+  assert.match(groundSource, /function PresentationGround\([\s\S]*<planeGeometry args=\{\[40, 40\]\}/);
+  assert.equal((appSource.match(/<PresentationGround\b/g) || []).length, 2);
 });
 
 test('presentation ground uses continuous filtered grain and an analytic fade, not stretched pixels', () => {
