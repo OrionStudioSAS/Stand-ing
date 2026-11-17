@@ -18,7 +18,7 @@ import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Canvas, events as createSceneEvents, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, MOUSE, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
+import { Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, MOUSE, MeshBasicMaterial, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -21959,6 +21959,7 @@ function prepareLoadedModel(source, item = null, textureOptions = {}) {
       child.renderOrder = modelRenderOrderForItem(item);
       child.material = cloneMeshMaterial(child.material, item);
       child.material = applyItemOptionMaterials(child.material, item, textureOptions, child.name);
+      child.material = applyPoweredSurfaceMaterial(child.material, item);
       fitSignatureHeadStandardImage(child, item, textureOptions.mainImageTexture);
     }
   });
@@ -21967,6 +21968,33 @@ function prepareLoadedModel(source, item = null, textureOptions = {}) {
 
 function modelRenderOrderForItem(item = null) {
   return isWallItem(item) ? 6 : 0;
+}
+
+function applyPoweredSurfaceMaterial(material, item = {}) {
+  if (Array.isArray(material)) return material.map((entry) => applyPoweredSurfaceMaterial(entry, item));
+  if (!material) return material;
+  const name = normalizeMaterialName(material.name).replace(/\.\d+$/, '');
+  const text = normalizedItemText(item);
+  const arch = isSignatureArchItem(item);
+  const led = /^led_\d+k(?:[#_]\d+)?$/.test(name);
+  const lampLens = (isLedRailEntry(item) || isAutomaticSpotItem(item)) && led && !material.map;
+  const archLens = arch && /^(?:led_3200k|emessive_spot_encastr)/.test(name) && !material.map;
+  const tv = isTelevisionItem(item) || /\btv[ -]+\d{2}\b/.test(text);
+  const tvDisplay = tv && /^(?:_\d*|(?:tv[_ -])?(?:display|screen|ecran)|chrome_black)$/.test(name);
+  const digitalDisplay = /(?:borne[ -]tactile|(?:caisson|comptoir)[ -]numerique[ -]led|mur[ -]led[ -](?:horizontal|vertical)|totem[ -]lumineux)/.test(text) && led;
+  const archDisplay = arch && (isSignatureLedArch(item) ? name === 'led_5500k_15' : /^led_5500k(?:_11|#5)$/.test(name));
+  const headDisplay = isSignaturePartitionHeadItem(item) && isPartitionHeadMainImageMaterial(name, material, item);
+  const display = material.map && (tvDisplay || digitalDisplay || archDisplay || headDisplay);
+  if (!display && !lampLens && !archLens) return material;
+
+  // Screens and lenses emit light; studio shading still applies to their housings.
+  const powered = new MeshBasicMaterial();
+  Material.prototype.copy.call(powered, material);
+  powered.toneMapped = false;
+  powered.map = material.map || null;
+  powered.alphaMap = material.alphaMap || null;
+  powered.color.set(display ? '#ffffff' : archLens ? '#fff1d9' : '#fff9ef');
+  return powered;
 }
 
 function useExternalTexture(url, options = {}) {
@@ -23284,7 +23312,7 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
           </mesh>
           <mesh position={[0, 0, 0.035]}>
             <boxGeometry args={[0.82, 0.45, 0.015]} />
-            <meshStandardMaterial color="#67d7ff" emissive="#1c6887" emissiveIntensity={0.55} {...hoverMaterialProps(selected, hovered)} />
+            <meshBasicMaterial color="#67d7ff" toneMapped={false} {...hoverMaterialProps(selected, hovered)} />
           </mesh>
           {selected && <SelectionFrame bounds={{ width: 0.95, height: 0.58, depth: 0.08 }} centerY={0} />}
         </>

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
-import { DoubleSide, LinearFilter, LinearMipmapLinearFilter, MeshStandardMaterial, SRGBColorSpace, Texture } from 'three';
+import { DoubleSide, LinearFilter, LinearMipmapLinearFilter, Material, MeshBasicMaterial, MeshPhongMaterial, MeshStandardMaterial, SRGBColorSpace, Texture } from 'three';
 
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const storeSource = readFileSync(new URL('../src/data/sceneStore.js', import.meta.url), 'utf8');
@@ -152,6 +152,54 @@ test('Signature printed panels stay white without metallic gray, including uploa
   assert.equal(archWithImage.emissiveMap, uploaded);
   assert.equal(archWithImage.emissiveIntensity, 0.16);
   assert.equal(api.cloneAndNormalizeMaterial(whitePanel('LED_5500k#5'), { label: 'Other stand' }).metalness, 0.5);
+});
+
+test('catalogue screens and spot lenses stay lit independently of the studio without brightening the casing', () => {
+  const api = vm.createContext({ Material, MeshBasicMaterial, isSignatureLedArch, isSignaturePackLabel: (label) => label === 'Signature' });
+  for (const name of ['normalizeMaterialName', 'normalizedItemText', 'isTelevisionItem', 'isLedRailEntry', 'isLedRailModelEntry', 'isAutomaticSpotItem', 'isSignatureArchItem', 'isPartitionHeadItem', 'isSignaturePartitionHeadItem', 'applyPoweredSurfaceMaterial']) {
+    loadFunction(appSource, api, name);
+  }
+  api.isPartitionHeadMainImageMaterial = (name) => name === 'led_5500k#4';
+  const photo = new Texture();
+  const tvFinish = new MeshPhongMaterial({ name: '_', map: photo, color: '#333333', side: DoubleSide, depthWrite: false });
+  const casing = new MeshPhongMaterial({ name: 'Plastic_Metalic_Black', color: '#111111' });
+  const [screen, unchanged] = api.applyPoweredSurfaceMaterial([tvFinish, casing], { label: 'TV 32" - Sur Pied' });
+  assert.ok(screen.isMeshBasicMaterial);
+  assert.equal(screen.toneMapped, false);
+  assert.equal(screen.color.getHexString(), 'ffffff');
+  assert.equal(screen.map, photo);
+  assert.equal(screen.side, DoubleSide);
+  assert.equal(screen.depthWrite, false);
+  assert.equal(unchanged, casing);
+  assert.equal(tvFinish.toneMapped, true);
+  assert.equal(api.applyPoweredSurfaceMaterial(casing, { label: 'TV 32' }), casing);
+
+  for (const [label, name] of [
+    ['TV 55', '_2'], ['Borne Tactile 46', 'LED_5500k_6'], ['Comptoir Numérique LED', 'LED_5500k_2'],
+    ['Caisson Numérique LED', 'LED_5500k_4'], ['Mur LED Horizontal', 'LED_5500k_14'],
+    ['Mur LED Signature 2m + Spot 210', 'LED_5500k_15'], ['Arche Signature 2m + Spot 210', 'LED_5500k_11'],
+    ['Totem Lumineux Recto Verso', 'LED_5500k_1'], ['Tête de cloison Signature', 'LED_5500k#4'],
+  ]) {
+    const face = new MeshStandardMaterial({ name, map: photo });
+    assert.equal(api.applyPoweredSurfaceMaterial(face, { label }).map, photo, label);
+    assert.ok(api.applyPoweredSurfaceMaterial(face, { label }).isMeshBasicMaterial, label);
+  }
+  const printed = new MeshStandardMaterial({ name: 'LED_5500k_1', map: photo });
+  const disabledArchFace = new MeshStandardMaterial({ name: 'LED_5500k_11' });
+  const rearArchVisual = new MeshStandardMaterial({ name: '_28', map: photo });
+  assert.equal(api.applyPoweredSurfaceMaterial(printed, { label: 'Tête de cloison SIAE' }), printed);
+  assert.equal(api.applyPoweredSurfaceMaterial(disabledArchFace, { label: 'Mur LED Signature 2m + Spot 210' }), disabledArchFace);
+  assert.equal(api.applyPoweredSurfaceMaterial(rearArchVisual, { label: 'Arche Signature 2m + Spot 210' }), rearArchVisual);
+
+  const lens = new MeshPhongMaterial({ name: 'LED_5500k_1' });
+  for (const item of [{ label: 'Rail LED 2 Spots' }, { label: 'Rail LED 3 Spots' }, { label: 'Spot LED Blanc 30W', dimensions: { isLedSpotOption: true } }]) {
+    const lit = api.applyPoweredSurfaceMaterial(lens, item);
+    assert.ok(lit.isMeshBasicMaterial);
+    assert.equal(lit.color.getHexString(), 'fff9ef');
+  }
+  const bulb = api.applyPoweredSurfaceMaterial(new MeshStandardMaterial({ name: 'LED_3200k' }), { label: 'Arche Signature 2m + Suspension' });
+  assert.ok(bulb.isMeshBasicMaterial);
+  assert.equal(bulb.color.getHexString(), 'fff1d9');
 });
 
 test('header language flags use browser-safe SVG assets instead of platform emoji', () => {

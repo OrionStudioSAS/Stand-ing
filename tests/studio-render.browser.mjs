@@ -15,6 +15,23 @@ const packs = {
 };
 const item = (id, type, x, z, extra = {}) => ({ id, type, label: type, x, y: 0, z, rotation: 0, ...extra });
 const wall = '/models/Cloison%201x2.5m%20HT%20(1).obj';
+const studioDevices = [
+  item('studio-tv', 'asset-tv-32', -0.75, -1.8, { label: 'TV 32', wall: 'back', dimensions: { isTelevision: true }, y: 1.5, modelUrl: '/studio-test/tv.obj', materialUrl: '/studio-test/tv.mtl' }),
+  item('studio-rail', 'asset-rail-led-2-spots', 0.75, -1.8, { label: 'Rail LED 2 Spots', wall: 'back', dimensions: { isLedSpotOption: true }, y: 2.45, modelUrl: '/studio-test/rail.obj', materialUrl: '/studio-test/rail.mtl' }),
+];
+const studioDeviceFiles = {
+  'tv.obj': deviceFixtureObj('_', 'Plastic_Metalic_Black'),
+  'tv.mtl': 'newmtl _\nKd 1 1 1\nmap_Kd screen.jpg\nnewmtl Plastic_Metalic_Black\nKd 0.06 0.06 0.06\n',
+  'rail.obj': deviceFixtureObj('LED_5500k_1', 'Aluminum_Anodized_Clear'),
+  'rail.mtl': 'newmtl LED_5500k_1\nKd 1 0.95 0.88\nnewmtl Aluminum_Anodized_Clear\nKd 0.6 0.6 0.6\n',
+};
+
+function deviceFixtureObj(face, housing) {
+  return `o fixture\nv -0.4 -0.2 0.02\nv 0.4 -0.2 0.02\nv 0.4 0.2 0.02\nv -0.4 0.2 0.02\n` +
+    `v -0.44 -0.24 -0.02\nv 0.44 -0.24 -0.02\nv 0.44 0.24 -0.02\nv -0.44 0.24 -0.02\n` +
+    `vt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\nusemtl ${face}\nf 1/1 2/2 3/3 4/4\nusemtl ${housing}\nf 5/1 6/2 7/3 8/4\n`;
+}
+
 const fixture = {
   id: 'studio-preview-fixture', status: 'created', client_status: 'draft',
   salon: 'SITL', offer: 'Signature', project_name: 'Stand de comparaison',
@@ -24,6 +41,7 @@ const fixture = {
     wallCovers: { left: { enabled: true } },
   },
   items: [
+    ...studioDevices,
     item('table', 'table', -1.52, 0.51),
     item('chair-1', 'chair', -2.24, 0.71, { rotation: 80 }),
     item('chair-2', 'chair', -1.26, -0.2, { rotation: 170 }),
@@ -48,7 +66,16 @@ function StudioRenderProbe() {
       const { gl, scene } = state.get();
       const shadow = scene.children.find(object => object.isDirectionalLight)?.shadow;
       const textures = [];
+      const devices = {};
       scene.traverse(object => {
+        if (['studio-tv', 'studio-rail'].includes(object.userData?.itemId)) {
+          const finishes = devices[object.userData.itemId] = {};
+          object.traverse(mesh => {
+            for (const material of [].concat(mesh.material || [])) {
+              if (material.name) finishes[material.name] = { unlit: Boolean(material.isMeshBasicMaterial), toneMapped: material.toneMapped, map: Boolean(material.map?.image) };
+            }
+          });
+        }
         const texture = object.material?.map;
         if (texture?.isCanvasTexture && texture.wrapS === RepeatWrapping) {
           textures.push({ repeat: texture.repeat.toArray(), anisotropy: texture.anisotropy });
@@ -63,6 +90,7 @@ function StudioRenderProbe() {
         shadowWidth: shadow?.camera.right - shadow?.camera.left,
         shadowProjectionWidth: 2 / shadow?.camera.projectionMatrix.elements[0],
         textures,
+        devices,
       };
     };
     return () => delete window.studioRenderProbe;
@@ -114,6 +142,14 @@ try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1520, height: 960 }, deviceScaleFactor: 2 });
   const errors = [];
+  await page.route('**/studio-test/*', async (route) => {
+    const filename = new URL(route.request().url()).pathname.split('/').pop();
+    if (filename === 'screen.jpg') {
+      await route.fulfill({ path: resolve('public/textures/floor-laminate.jpg') });
+    } else {
+      await route.fulfill({ contentType: 'text/plain', body: studioDeviceFiles[filename] });
+    }
+  });
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error' && /THREE|WebGL|shader/i.test(message.text())) errors.push(message.text()); });
   await page.addInitScript(() => {
@@ -128,16 +164,25 @@ try {
   async function checkStudio(name, query, viewport, standWidth) {
     await page.setViewportSize(viewport);
     await page.goto(url + query);
-    await page.waitForFunction(() => {
+    const exhibitor = query.startsWith('?scene=');
+    await page.waitForFunction((exhibitor) => {
       const studio = window.studioRenderProbe?.();
-      return studio?.environment && studio.textures.length >= 2;
-    }, undefined, { timeout: 20000 }).catch(async (error) => {
+      return studio?.environment && studio.textures.length >= 2 && (!exhibitor || studio.devices['studio-tv']?._?.map && studio.devices['studio-rail']?.LED_5500k_1);
+    }, exhibitor, { timeout: 20000 }).catch(async (error) => {
       const probeState = await page.evaluate(() => window.studioRenderProbe?.());
       throw new Error(`${name}: ${error.message}\nProbe: ${JSON.stringify(probeState)}\nBrowser errors: ${errors.join('\n')}`);
     });
 
     const studio = await page.evaluate(() => window.studioRenderProbe());
     assert.equal(studio.intensity, 0.42, name);
+    if (exhibitor) {
+      const tv = studio.devices['studio-tv'];
+      assert.deepEqual(tv._, { unlit: true, toneMapped: false, map: true }, name);
+      assert.equal(tv.Plastic_Metalic_Black.unlit, false, name);
+      const rail = studio.devices['studio-rail'];
+      assert.deepEqual(rail.LED_5500k_1, { unlit: true, toneMapped: false, map: false }, name);
+      assert.equal(rail.Aluminum_Anodized_Clear.unlit, false, name);
+    }
     assert.equal(studio.dpr, 1.5, name);
     assert.deepEqual(studio.shadowMapSize, [2048, 2048], name);
     assert.ok(studio.shadowWidth >= standWidth, name);
@@ -155,7 +200,7 @@ try {
   await checkStudio('equipe-mobile', '?scene=equipe', { width: 390, height: 844 }, 6);
   await checkStudio('confort-pack-editor', '?testPackEditor', desktop, 14);
   assert.deepEqual(errors, []);
-  console.log('Studio render: all four packs, locked scene, mobile, and wide pack editor use HDR, fine textures and unchanged DPR without saving the scene');
+  console.log('Studio render: all four packs and mobile keep TV screens and spot lenses bright under the unchanged studio lighting; locked scenes are not saved');
 } finally {
   await browser?.close();
   await server.close();
