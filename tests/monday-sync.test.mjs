@@ -4,6 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { transformSync } from 'esbuild';
 import { normalizePackBenefits, packBenefitsForScene, isSignaturePackScene, sceneLightingOptions } from '../supabase/functions/_shared/packBenefits.js';
+import { defaultCeilingHeightM, parseHeightMeters } from '../supabase/functions/_shared/standHangingLimits.js';
 
 const edgeSource = readFileSync(new URL('../supabase/functions/monday-sync/index.ts', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '');
 const compiled = transformSync(edgeSource, { loader: 'ts', format: 'cjs' }).code;
@@ -30,7 +31,7 @@ function requestHandler(sourceError = null, sources = []) {
   const context = vm.createContext({
     Deno: { serve(value) { handler = value; }, env: { get: (key) => ({ SUPABASE_URL: 'https://test.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'test-service-key', MONDAY_API_TOKEN: 'test-monday-token' }[key]) } },
     createClient: () => database, Response, console: { error() {} },
-    normalizePackBenefits, packBenefitsForScene, isSignaturePackScene, sceneLightingOptions,
+    normalizePackBenefits, packBenefitsForScene, isSignaturePackScene, sceneLightingOptions, defaultCeilingHeightM, parseHeightMeters,
   });
   vm.runInContext(compiled, context);
   return { handler, database, history, context };
@@ -77,7 +78,7 @@ test('Monday authentication remains required and rejected requests retain CORS',
 });
 
 function runtime(fetch = () => { throw new Error('Unexpected network request'); }) {
-  const context = vm.createContext({ Deno: { serve() {} }, fetch, console, normalizePackBenefits, packBenefitsForScene, isSignaturePackScene, sceneLightingOptions });
+  const context = vm.createContext({ Deno: { serve() {} }, fetch, console, normalizePackBenefits, packBenefitsForScene, isSignaturePackScene, sceneLightingOptions, defaultCeilingHeightM, parseHeightMeters });
   vm.runInContext(compiled, context);
   return context;
 }
@@ -210,6 +211,53 @@ test('board preparation does not duplicate the required columns', async () => {
   });
   const result = await api.prepareMondayBoard('test-token', 'test-board');
   assert.equal(result.created.length, 0);
+});
+
+test('preparing the Signature test board adds the numeric ceiling column once', async () => {
+  let created = 0;
+  const api = runtime(async (_url, request) => {
+    const { query, variables } = JSON.parse(request.body);
+    assert.equal([variables.boardId].flat()[0], '18410370871');
+    if (query.includes('mutation')) {
+      created += 1;
+      assert.equal(variables.title, 'Hauteur plafond');
+      assert.equal(variables.type, 'numbers');
+      return { ok: true, json: async () => ({ data: { create_column: { title: variables.title } } }) };
+    }
+    const configured = [...columns, ...(created ? [{ id: 'height', title: 'HAUTEUR PLAFOND', type: 'numbers' }] : [])];
+    return { ok: true, json: async () => ({ data: { boards: [{ columns: configured }] } }) };
+  });
+  await api.prepareMondayBoard('test-token', '18410370871');
+  await api.prepareMondayBoard('test-token', '18410370871');
+  assert.equal(created, 1);
+});
+
+test('Monday reads ceiling, sling and aisle direction independently and freezes the height after start', () => {
+  const api = runtime();
+  const source = { board_id: '18410370871', offer: 'Signature' };
+  const item = (sling, side, ceiling = '4,80 m') => ({ column_values: [
+    { id: 'numbers', column: { title: 'Hauteur plafond' }, text: ceiling },
+    { id: 'color_mm91v4f9', text: sling }, { id: 'color_mm91rwqj', text: side },
+  ] });
+  const parse = (value, scene) => JSON.parse(JSON.stringify(api.mondayStandProductionPatch(value, source, scene)));
+  assert.deepEqual(parse(item('4,25 m', 'HAUT')), {
+    hanging_limits: { ceilingM: 4.8, slingM: 4.25, slingStatus: '4,25 m' }, plan_aisle_side: 'top',
+  });
+  for (const [status, side] of [['AUTRE', 'GAUCHE'], ['ATT', 'DROITE'], ['PAS BESOIN', 'BAS']]) {
+    assert.deepEqual(parse(item(status, side, '')).hanging_limits, { ceilingM: 5.25, slingM: null, slingStatus: status });
+  }
+  assert.equal(parse(item('5,25 m', 'ATT')).plan_aisle_side, null);
+  assert.equal(parse(item('5,25 m', 'BAS'), { status: 'created', client_status: 'not_started' }).hanging_limits.slingM, 5.25);
+  assert.deepEqual(parse({}, { status: 'created', client_status: 'not_started' }), {
+    hanging_limits: { ceilingM: 5.25, slingM: null, slingStatus: '' },
+  });
+  for (const existing of [
+    { status: 'created', client_status: 'draft' },
+    { status: 'created', client_status: 'not_started', source_payload: { exhibitor_view_only: true } },
+    { status: 'validated', client_status: 'bat_validated' },
+  ]) assert.deepEqual(parse(item('4,25 m', 'GAUCHE'), existing), { plan_aisle_side: 'left' });
+  const other = api.mondayStandProductionPatch({ column_values: [{ column: { title: 'HAUTEUR PLAFOND' }, text: '4,2' }] }, { board_id: 'siae' });
+  assert.equal(other.hanging_limits.ceilingM, 4.2);
 });
 
 test('existing scenes are read in unique batches of 200, not once per exhibitor', async () => {

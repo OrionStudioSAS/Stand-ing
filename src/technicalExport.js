@@ -41,7 +41,7 @@ const technicalTableY = 1040;
 const technicalRenderScale = 2.75;
 
 // Legacy raster preview only; downloads and email attachments use the A3 PDF.
-export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems: providedTechnicalItems = null, pictoImages = new Map() }) {
+export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems: providedTechnicalItems = null, pictoImages = new Map(), documentInfo = {} }) {
   const technicalItems = providedTechnicalItems || technicalItemsForPlan(items, width, depth, catalog);
   const floor = technicalFloorContext(providedTechnicalItems || items, catalog, depth);
   const drawableTechnicalItems = technicalItems.filter((item) => !item?.sourceOptions);
@@ -65,7 +65,7 @@ export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog
   ctx.fillRect(0, 0, sheet.width, sheet.height);
   drawFrame(ctx);
   drawSidebar(ctx, width, depth, fixedWallHeight, layout, drawableTechnicalItems, floor);
-  drawPlan(ctx, width, depth, layout, drawableTechnicalItems, catalog, pictoImages, visuals, constraints, false, {}, floor);
+  drawPlan(ctx, width, depth, layout, drawableTechnicalItems, catalog, pictoImages, visuals, constraints, false, {}, floor, documentInfo);
   drawItemTable(ctx, sections);
   drawVisualGallery(ctx, visuals, pictoImages, technicalTableY + tableHeight + 20);
   return canvas;
@@ -105,7 +105,7 @@ export async function createTechnicalPlanSvgPages({ width, depth, layout, items,
     ctx.strokeRect(technicalA3.margin, technicalA3.margin, technicalA3.width - 2 * technicalA3.margin, technicalA3.height - 2 * technicalA3.margin);
     if (page.kind === 'plan') {
       drawPrintSidebar(ctx, width, depth, layout, drawable, floor);
-      drawPlan(ctx, width, depth, layout, drawable, catalog, pictoImages, visuals, constraints, true, edits, floor);
+      drawPlan(ctx, width, depth, layout, drawable, catalog, pictoImages, visuals, constraints, true, edits, floor, documentInfo);
     } else drawPrintDetails(ctx, page, pictoImages);
     drawPrintPageHeader(ctx, documentInfo, page.kind === 'plan');
     drawText(ctx, `BAT - A3 paysage - Imprimer a 100 % / taille reelle`, technicalA3.margin + 16, technicalA3.height - 48, 15, '#555555');
@@ -444,7 +444,7 @@ function drawSidebar(ctx, width, depth, height, layout, items, floor = {}) {
   drawText(ctx, 'Generateur : StandING configurateur 3D', x + 12, footerY + 64, 15);
 }
 
-function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map(), visuals = [], constraints = [], print = false, edits = {}, floor = technicalFloorContext(items, catalog, depth)) {
+function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map(), visuals = [], constraints = [], print = false, edits = {}, floor = technicalFloorContext(items, catalog, depth), documentInfo = {}) {
   const bounds = { x: sheet.left + 58, y: 130, w: 1260, h: 760 };
   const scale = Math.min(bounds.w / (width + 1.1), bounds.h / (depth + 1.1));
   const planW = width * scale;
@@ -556,7 +556,25 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     ctx.fillRect(x - 19, y - 12, 38, 24);
     drawText(ctx, visual.reference, x, y + 5, 13, '#ffffff', 'bold', 'center');
   });
-  drawText(ctx, 'Allee', planX + planW / 2, planY + planH + (floor.signature && floor.footprints?.length ? .5 * scale : 0) + 62, 58, technicalColors.ink, 'normal', 'center');
+  drawPlanAisle(ctx, planX, planY, planW, planH, floor.signature && floor.footprints?.length ? .5 * scale : 0, documentInfo);
+}
+
+function drawPlanAisle(ctx, x, y, width, height, frontOverflow, { aisleSide, aisleNumber } = {}) {
+  const number = String(aisleNumber ?? '').trim().replace(/^all[ée]e(?:\s+|$)/i, '');
+  const label = number ? `Allée ${number}` : 'Allée';
+  if (aisleSide === 'left' || aisleSide === 'right') {
+    ctx.save();
+    ctx.translate(aisleSide === 'left' ? x - 26 : x + width + 33, y + height / 2);
+    ctx.rotate(aisleSide === 'left' ? -Math.PI / 2 : Math.PI / 2);
+    drawText(ctx, label, 0, 0, 22, technicalColors.ink, 'bold', 'center');
+    ctx.restore();
+  } else if (aisleSide === 'top') {
+    drawText(ctx, label, x + width / 2, y - 25, 22, technicalColors.ink, 'bold', 'center');
+  } else if (aisleSide === 'bottom') {
+    drawText(ctx, label, x + width / 2, y + height + frontOverflow + 62, 28, technicalColors.ink, 'bold', 'center');
+  } else {
+    drawText(ctx, 'Allée', x + width / 2, y + height + frontOverflow + 62, 58, technicalColors.ink, 'normal', 'center');
+  }
 }
 
 function isTechnicalArch(item = {}) {

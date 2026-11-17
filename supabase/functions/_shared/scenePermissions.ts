@@ -46,7 +46,7 @@ export async function canDeliverSceneSubmission(admin: any, user: any, scene: an
 export async function findSceneInvitation(admin: any, token: unknown) {
   if (typeof token !== "string" || !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(token)) return null;
   const { data } = await admin.from("scene_collaborators")
-    .select("id, email, user_id, accepted_at, expires_at, code_requested_at, scenes!inner(share_token)")
+    .select("id, email, user_id, accepted_at, expires_at, code_requested_at, scenes!inner(share_token, project_name, event_name, salon)")
     .eq("id", token).maybeSingle();
   if (!data || (!data.accepted_at && Date.parse(data.expires_at) <= Date.now())) return null;
   return data;

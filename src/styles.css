@@ -1449,7 +1449,6 @@ select {
   line-height: 1.25;
 }
 
-.scene-collaborators-trigger { display: inline-flex; align-items: center; gap: 8px; justify-self: start; }
 .scene-collaborators-modal .client-info-content p { color: #536178; line-height: 1.45; }
 .scene-collaborators-form, .scene-collaborators-list { display: grid; gap: 8px; margin: 0; padding: 0; }
 .scene-collaborators-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px; border: 1px solid #dce2ea; border-radius: 8px; }

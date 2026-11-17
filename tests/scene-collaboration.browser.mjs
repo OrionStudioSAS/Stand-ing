@@ -47,6 +47,16 @@ const server = await createServer({ server: { host: '127.0.0.1', port: 0 }, logL
         window.testUser = { id: 'guest', email: 'guest@example.test' };
         return { scene_token: scene.share_token };
       }
+      export async function openSceneInvitation(invite, hash) {
+        if (invite !== 'guest-link' || hash !== 'a'.repeat(56)) throw new Error('Ce lien a expiré ou a déjà été utilisé.');
+        window.testUser = { id: 'guest', email: 'guest@example.test' };
+        return { scene_token: scene.share_token };
+      }
+      export async function requestSceneInvitationLink(invite) {
+        if (invite !== 'guest-link') throw new Error('Unknown invite');
+        window.resentInvite = invite;
+        return { delivery: 'link' };
+      }
       export async function manageSceneCollaborators(id, action, details) {
         if (!['owner', 'admin'].includes(window.testUser?.id) || id !== scene.id) throw new Error('Access denied');
         if (action === 'list') return { members };
@@ -98,6 +108,11 @@ try {
   const inviteIcon = inviteButton(owner).locator('img.topbar-tool-icon');
   assert.equal(await inviteIcon.getAttribute('src'), '/icons/account-add.svg');
   await owner.waitForFunction(() => document.querySelector('img[src="/icons/account-add.svg"]')?.naturalWidth === 36);
+  await owner.locator('.user-pill').click();
+  const clientInfo = owner.locator('.client-info-modal-locked');
+  await clientInfo.waitFor();
+  assert.equal(await clientInfo.getByRole('button', { name: 'Inviter un collaborateur' }).count(), 0);
+  await clientInfo.locator('.modal-head-actions button').click();
   const validate = async (page) => {
     await page.locator('.stepper').getByRole('button', { name: /Validation/ }).click();
     const confirm = page.locator('.validation-confirm-button');
@@ -158,8 +173,10 @@ try {
     await page.getByRole('button', { name: 'Accéder à ma configuration' }).click();
     return page;
   };
-  const guest = await openGuest();
+  const guest = await open('?invite=guest-link&access=link#invitation_auth=' + 'a'.repeat(56), '');
   await guest.locator('.user-pill').click();
+  assert.equal(new URL(guest.url()).hash, '', 'The credential is removed from the address bar');
+  assert.equal(await guest.evaluate(() => window.requestedInvite), undefined, 'No code request for a personal link');
   assert.equal(await inviteButton(guest).count(), 0);
   assert.equal(await guest.getByRole('button', { name: 'Inviter un collaborateur' }).count(), 0);
   assert.equal(await guest.locator('.client-correction-button').isVisible(), true, 'Guest can report incorrect contact details');
@@ -180,8 +197,16 @@ try {
 
   const submitter = await openGuest();
   await validate(submitter);
+  await submitter.close();
+
+  const expired = await open('?invite=guest-link&access=link#invitation_auth=' + 'b'.repeat(56), '');
+  await expired.getByText('Ce lien a expiré ou a déjà été utilisé.').waitFor();
+  assert.equal(await expired.getByRole('textbox', { name: 'Code de connexion' }).count(), 0);
+  await expired.getByRole('button', { name: 'Renvoyer le lien' }).click();
+  await expired.getByText('Un nouveau lien vous a été envoyé par e-mail.').waitFor();
+  assert.equal(await expired.evaluate(() => window.resentInvite), 'guest-link');
   assert.deepEqual(errors, []);
-  console.log('Owner and admin manage invitations, including on a submitted scene; owner and guest become read-only after submission.');
+  console.log('One-click and legacy invitations, expired link resend, invitation management and submission locks OK.');
 } finally {
   await browser?.close();
   await server.close();

@@ -1,9 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizePackBenefits, packBenefitsForScene, isSignaturePackScene, sceneLightingOptions } from "../_shared/packBenefits.js";
+import { defaultCeilingHeightM, parseHeightMeters } from "../_shared/standHangingLimits.js";
 
 const mondayApiUrl = "https://api.monday.com/v2";
 const wallThickness = 0.06;
+const signatureTestBoardId = "18410370871";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -172,6 +174,7 @@ async function handleMondaySync(req: Request, execution: MondaySyncExecution) {
             aisle_number: mappedLocation.aisleNumber || existingScene.source_payload?.aisle_number || "",
             hall: mappedLocation.hall || existingScene.source_payload?.hall || "",
             sector: mappedLocation.sector || existingScene.source_payload?.sector || "",
+            ...mondayStandProductionPatch(item, resolvedSource, existingScene),
             constraint,
             constraints,
             ...(updatePackBenefits ? { packBenefits: currentPackBenefits, baseItems: currentBaseItems } : {}),
@@ -441,7 +444,7 @@ async function fetchExistingMondayScenes(database: any, items: any[]) {
   // Small batches avoid URL limits and replace a database round-trip per exhibitor.
   for (let offset = 0; offset < ids.length; offset += 200) {
     const { data, error } = await database.from("scenes")
-      .select("id, monday_item_id, share_token, source_payload, width_m, depth_m, client_email, client_name, project_name, event_name, salon, offer, client_status")
+      .select("id, monday_item_id, share_token, source_payload, width_m, depth_m, client_email, client_name, project_name, event_name, salon, offer, status, client_status")
       .in("monday_item_id", ids.slice(offset, offset + 200));
     if (error) throw error;
     for (const scene of data || []) scenes.set(String(scene.monday_item_id), scene);
@@ -815,6 +818,13 @@ async function prepareMondayBoard(token: string, boardId: string) {
     { title: "IMPLANTATION", type: "status", exists: findLayoutColumnId(board.columns), defaults: { labels: { "0": "ARRIERE", "1": "ARRIERE GAUCHE", "2": "ARRIERE DROITE", "3": "U" } } },
     { title: "LIEN CONFIGURATEUR", type: "link", exists: findLinkColumnId(board.columns), defaults: null },
   ];
+  if (boardId === signatureTestBoardId) {
+    needed.push({
+      title: "Hauteur plafond", type: "numbers",
+      exists: board.columns.find((column: any) => normalizeColumnLookup(column.title) === "hauteur_plafond")?.id,
+      defaults: null,
+    });
+  }
   for (const column of needed) {
     if (column.exists) continue;
     const response = await fetch(mondayApiUrl, {
@@ -946,6 +956,7 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
       aisle_number: aisleNumber,
       hall,
       sector,
+      ...mondayStandProductionPatch(item, source),
       constraint,
       constraints,
       poteau_1_text: mondayPoleRawText(item, source, 1),
@@ -954,6 +965,33 @@ function mapMondayItemToScene(item: any, source: any, clientId: string | undefin
   };
 }
 
+
+function mondayStandProductionPatch(item: any, source: any, existing?: any) {
+  const columns = item.column_values || [];
+  const mapping = source.mapping || {};
+  const findColumn = (id: string | undefined, fallbackId: string, title: string) =>
+    columns.find((column: any) => id && column.id === id)
+    || columns.find((column: any) => fallbackId && column.id === fallbackId)
+    || columns.find((column: any) => normalizeColumnLookup(column.title || column.column?.title) === title);
+  const testBoard = String(source.board_id) === signatureTestBoardId;
+  const ceiling = findColumn(mapping.ceiling_height_m, "", "hauteur_plafond");
+  const sling = findColumn(mapping.sling_height_m, testBoard ? "color_mm91v4f9" : "", "elingue");
+  const aisle = findColumn(mapping.plan_aisle_side, testBoard ? "color_mm91rwqj" : "", "allee_plan");
+  const sides: Record<string, string> = { haut: "top", bas: "bottom", gauche: "left", droite: "right" };
+  const patch: Record<string, unknown> = {};
+  if (aisle) patch.plan_aisle_side = sides[normalizeColumnLookup(aisle.text)] || null;
+  const notStarted = !existing || (existing.status === "created" && existing.client_status === "not_started"
+    && String(existing.source_payload?.exhibitor_view_only) !== "true");
+  if (notStarted) {
+    const previous = existing?.source_payload?.hanging_limits;
+    patch.hanging_limits = {
+      ceilingM: parseHeightMeters(ceiling ? ceiling.text : previous?.ceilingM) ?? defaultCeilingHeightM,
+      slingM: parseHeightMeters(sling ? sling.text : previous?.slingM),
+      slingStatus: clean(sling ? sling.text : previous?.slingStatus),
+    };
+  }
+  return patch;
+}
 
 function mondaySceneLocation(item: any, source: any) {
   const mapping = source.mapping ?? {};

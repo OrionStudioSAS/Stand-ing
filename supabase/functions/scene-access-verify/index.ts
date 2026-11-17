@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { findSceneInvitation, sceneEmail } from "../_shared/scenePermissions.ts";
+import { findSceneInvitation, sceneActor, sceneEmail } from "../_shared/scenePermissions.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,15 +15,27 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const { scene_token: sceneToken, invitation_token: invitationToken, code } = await req.json().catch(() => ({}));
+  const { scene_token: sceneToken, invitation_token: invitationToken, code, token_hash: tokenHash, use_session: useSession } = await req.json().catch(() => ({}));
+  const linkSignIn = tokenHash !== undefined;
+  const sessionSignIn = useSession === true && Boolean(invitationToken);
+  const validLink = Boolean(invitationToken) && typeof tokenHash === "string" && /^[a-z\d_-]{32,256}$/i.test(tokenHash);
+  const validCode = /^\d{6,10}$/.test(String(code || ""));
 
-  if (!(invitationToken || (sceneToken && typeof sceneToken === "string")) || !/^\d{6,10}$/.test(String(code || ""))) {
+  if (!(invitationToken || (sceneToken && typeof sceneToken === "string"))
+    || (!sessionSignIn && !(linkSignIn ? validLink : validCode))) {
     return json({ error: "Code ou lien de configuration invalide." }, 400);
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey);
   const invite = invitationToken ? await findSceneInvitation(admin, invitationToken) : null;
   if (invitationToken && !invite) return json({ error: "Cette invitation a expiré ou a été retirée." }, 404);
+  if (sessionSignIn) {
+    const user = await sceneActor(admin, req);
+    if (invite?.accepted_at && user?.id && user.id === invite.user_id && sceneEmail(user.email) === invite.email) {
+      return json({ scene_token: invite.scenes.share_token });
+    }
+    return json({ error: "Accès refusé." }, 401);
+  }
   let clientEmail = invite?.email;
   if (!invite) {
     const { data: scene } = await admin.from("scenes").select("client_email")
@@ -34,14 +46,12 @@ Deno.serve(async (req) => {
   if (!clientEmail) return json({ error: "Aucune adresse email valide n'est associée à cette scène." }, 400);
 
   const auth = createClient(supabaseUrl, anonKey);
-  const { data, error } = await auth.auth.verifyOtp({
-    email: clientEmail,
-    token: String(code),
-    type: "email",
-  });
+  const { data, error } = await auth.auth.verifyOtp(linkSignIn
+    ? { token_hash: tokenHash, type: "email" }
+    : { email: clientEmail, token: String(code), type: "email" });
 
   if (error || !data.session) {
-    return json({ error: "Code incorrect ou expiré." }, 401);
+    return json({ error: linkSignIn ? "Ce lien a expiré ou a déjà été utilisé." : "Code incorrect ou expiré." }, 401);
   }
 
   if (invite) {

@@ -8,7 +8,7 @@ const appId = resolve('src/App.jsx');
 const storeId = resolve('src/data/sceneStore.js');
 const clientId = resolve('src/data/supabaseClient.js');
 const packs = {
-  signature: { offer: 'Signature', salon: 'SITL', layout: 'left' },
+  signature: { offer: 'Signature', salon: 'SITL', layout: 'left', source_payload: { hanging_limits: { ceilingM: 5.25, slingM: 4.25 } } },
   confort: { offer: 'Confort', salon: 'SMCL 2026', layout: 'right' },
   prestige: { offer: 'Prestige', salon: 'SMCL 2026', layout: 'u', status: 'validated', client_status: 'bat_validated' },
   equipe: { offer: 'Équipé', salon: 'SIAE 2027', layout: 'back' },
@@ -42,6 +42,10 @@ const fixture = {
   },
   items: [
     ...studioDevices,
+    item('hanging-sign', 'asset-enseigne-haute-1000x1000x1000mm-ht', 0, 0, {
+      label: 'Enseigne haute 1m', modelUrl: '/models/Poidum%20Blanc%2050x50x50cm.obj',
+      dimensions: { ceilingMounted: true, ceilingBottomY: 4, size: [1, 5.8, 1] },
+    }),
     item('table', 'table', -1.52, 0.51),
     item('chair-1', 'chair', -2.24, 0.71, { rotation: 80 }),
     item('chair-2', 'chair', -1.26, -0.2, { rotation: 170 }),
@@ -67,7 +71,9 @@ function StudioRenderProbe() {
       const shadow = scene.children.find(object => object.isDirectionalLight)?.shadow;
       const textures = [];
       const devices = {};
+      let signY;
       scene.traverse(object => {
+        if (object.userData?.itemId === 'hanging-sign') signY = object.position.y;
         if (['studio-tv', 'studio-rail'].includes(object.userData?.itemId)) {
           const finishes = devices[object.userData.itemId] = {};
           object.traverse(mesh => {
@@ -91,6 +97,7 @@ function StudioRenderProbe() {
         shadowProjectionWidth: 2 / shadow?.camera.projectionMatrix.elements[0],
         textures,
         devices,
+        signY,
       };
     };
     return () => delete window.studioRenderProbe;
@@ -176,6 +183,7 @@ try {
     const studio = await page.evaluate(() => window.studioRenderProbe());
     assert.equal(studio.intensity, 0.42, name);
     if (exhibitor) {
+      assert.equal(studio.signY, name === 'signature' ? 3.25 : 4, name);
       const tv = studio.devices['studio-tv'];
       assert.deepEqual(tv._, { unlit: true, toneMapped: false, map: true }, name);
       assert.equal(tv.Plastic_Metalic_Black.unlit, false, name);

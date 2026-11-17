@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { findSceneInvitation } from "../_shared/scenePermissions.ts";
+import { sendSceneInvitationLink } from "../_shared/sceneInvitationEmail.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,7 +16,7 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const { scene_token: sceneToken, invitation_token: invitationToken } = await req.json().catch(() => ({}));
+  const { scene_token: sceneToken, invitation_token: invitationToken, delivery, language } = await req.json().catch(() => ({}));
   const admin = createClient(supabaseUrl, serviceRoleKey);
 
   if (invitationToken) {
@@ -26,8 +27,18 @@ Deno.serve(async (req) => {
     const { data: claimed, error } = await admin.from("scene_collaborators")
       .update({ code_requested_at: now.toISOString() }).eq("id", invite.id)
       .or(`code_requested_at.is.null,code_requested_at.lte.${cutoff}`).select("id").maybeSingle();
-    if (error) return json({ error: "Impossible d’envoyer le code de connexion." }, 500);
-    if (!claimed) return json({ error: "Un code vient déjà d’être envoyé. Réessayez dans une minute." }, 429);
+    if (error) return json({ error: delivery === "link" ? "Impossible d’envoyer le lien de connexion." : "Impossible d’envoyer le code de connexion." }, 500);
+    if (!claimed) return json({ error: delivery === "link" ? "Un lien vient déjà d’être envoyé. Réessayez dans une minute." : "Un code vient déjà d’être envoyé. Réessayez dans une minute." }, 429);
+
+    if (delivery === "link") {
+      try {
+        await sendSceneInvitationLink(admin, invite, invite.scenes, language);
+        return json({ masked_email: maskEmail(invite.email), delivery: "link" });
+      } catch (sendError) {
+        console.error("Invitation link delivery failed", sendError);
+        return json({ error: "Impossible d’envoyer le lien de connexion." }, 502);
+      }
+    }
 
     const auth = createClient(supabaseUrl, anonKey);
     // Do not pre-confirm invited addresses: only possession of the code grants membership.

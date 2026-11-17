@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -7,8 +7,9 @@ import ts from 'typescript';
 
 const read = (path) => readFileSync(new URL(`../supabase/functions/${path}`, import.meta.url), 'utf8');
 const permissions = read('_shared/scenePermissions.ts').replace(/^export /gm, '');
+const invitationEmail = read('_shared/sceneInvitationEmail.ts').replace(/^export /gm, '');
 const transpile = (name) => ts.transpileModule(
-  permissions + '\n' + read(`${name}/index.ts`).replace(/^import .*;\n/gm, ''),
+  permissions + '\n' + invitationEmail + '\n' + read(`${name}/index.ts`).replace(/^import .*;\n/gm, ''),
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } },
 ).outputText;
 
@@ -28,6 +29,7 @@ function fixture() {
   const mails = [];
   const codes = [];
   const authCreations = [];
+  const magicLinks = new Map();
   const admin = {
     auth: {
       async getUser(token) {
@@ -35,12 +37,24 @@ function fixture() {
           ? { id: token, email: token + '@example.test', email_confirmed_at: 'now' } : null;
         return { data: { user } };
       },
-      admin: { async createUser(payload) { authCreations.push(structuredClone(payload)); return { data: { user: guest } }; } },
+      admin: {
+        async createUser(payload) { authCreations.push(structuredClone(payload)); return { data: { user: guest } }; },
+        async generateLink({ type, email }) {
+          assert.equal(type, 'magiclink');
+          const token = randomBytes(28).toString('hex');
+          magicLinks.set(token, email);
+          return { data: { properties: { hashed_token: token } } };
+        },
+      },
       async signInWithOtp({ email }) { codes.push(email); return { error: null }; },
-      async verifyOtp({ email, token }) {
-        return email === guest.email && token === '123456'
-          ? { data: { session: { user: guest, access_token: 'guest-jwt', refresh_token: 'guest-refresh' } } }
-          : { error: new Error('Invalid code') };
+      async verifyOtp({ email, token, token_hash }) {
+        if (token_hash) {
+          email = magicLinks.get(token_hash);
+          magicLinks.delete(token_hash);
+        } else if (token !== '123456') email = null;
+        if (!email) return { error: new Error('Invalid credential') };
+        const user = email === guest.email ? guest : { id: 'other-invitee', email, email_confirmed_at: 'now' };
+        return { data: { session: { user, access_token: 'guest-jwt', refresh_token: 'guest-refresh' } } };
       },
     },
     from(table) {
@@ -59,7 +73,7 @@ function fixture() {
         const matching = rows.filter(row => filters.every(fn => fn(row)));
         if (remove) matching.forEach(row => rows.splice(rows.indexOf(row), 1));
         if (update) matching.forEach(row => Object.assign(row, update));
-        return { data: matching.map(row => ({ ...row, scenes: { share_token: scene.share_token } })), error: null };
+        return { data: matching.map(row => ({ ...row, scenes: { share_token: scene.share_token, project_name: scene.project_name } })), error: null };
       };
       return {
         select() { return this; }, limit() { return this; }, order() { return this; },
@@ -80,7 +94,7 @@ function fixture() {
   const handlers = Object.fromEntries(Object.entries(sources).map(([name, js]) => {
     let handler;
     vm.runInNewContext(js, {
-      Request, Response, AbortSignal, URL, console,
+      Request, Response, AbortSignal, URL, URLSearchParams, console,
       Deno: { env: { get: key => ({ RESEND_API_KEY: 'test', MONDAY_API_TOKEN: 'test', PUBLIC_APP_URL: 'https://standing.example.test/' })[key] }, serve(fn) { handler = fn; } },
       createClient: () => admin,
       fetch: async (_url, options) => { mails.push(JSON.parse(options.body)); return new Response('{}'); },
@@ -93,8 +107,12 @@ function fixture() {
   return { scene, invites, mails, codes, authCreations, request };
 }
 
-test('owner invites up to two addresses; OTP goes only to the invited email, and revocation invalidates the invite', async () => {
+const emailLink = (mail) => new URL(mail.text.match(/https:\/\/[^\s]+/)[0]);
+const tokenHash = (url) => new URLSearchParams(url.hash.slice(1)).get('invitation_auth');
+
+test('owner sends personal one-click links with a button and fallback; revocation still invalidates access', async () => {
   const h = fixture();
+  h.scene.project_name = 'Signature <Salon & stand>';
   const manage = (body, actor = 'owner') => h.request('scene-collaborators', { scene_id: 'scene', ...body }, actor);
   const invited = await manage({ action: 'invite', email: ' Guest@Example.Test ' });
   assert.equal(invited.status, 201);
@@ -102,23 +120,32 @@ test('owner invites up to two addresses; OTP goes only to the invited email, and
   assert.deepEqual(h.mails[0].to, ['guest@example.test']);
   assert.match(h.mails[0].text, new RegExp(`invite=${id}`));
   assert.doesNotMatch(h.mails[0].text, /owner-token/);
+  assert.doesNotMatch(h.mails[0].text, /vérifiez|code/i);
+  assert.match(h.mails[0].html, />Ouvrir la scène<\/a>/);
+  assert.match(h.mails[0].html, /Si le bouton ne fonctionne pas/);
+  assert.match(h.mails[0].html, /Signature &lt;Salon &amp; stand&gt;/);
+  const firstLink = emailLink(h.mails[0]);
+  assert.equal(firstLink.searchParams.get('access'), 'link');
+  assert.equal(firstLink.searchParams.has('invitation_auth'), false);
   assert.equal((await manage({ action: 'invite', email: 'guest@example.test' })).status, 409);
   assert.equal((await manage({ action: 'invite', email: 'second@example.test' })).status, 201);
   assert.equal((await manage({ action: 'invite', email: 'third@example.test' })).status, 409);
   assert.equal((await manage({ action: 'list' }, 'guest')).status, 403);
   assert.equal(h.invites[0].accepted_at, null);
 
-  assert.equal((await h.request('scene-access-request', { invitation_token: id, scene_token: 'owner-token' })).status, 200);
-  assert.deepEqual(h.codes, ['guest@example.test']);
-  assert.deepEqual(h.authCreations, [{ email: 'guest@example.test' }], 'No bypass of email confirmation');
-  assert.equal((await h.request('scene-access-request', { invitation_token: id })).status, 429);
-  assert.equal((await h.request('scene-access-verify', { invitation_token: id, code: '111111' })).status, 401);
+  assert.equal((await h.request('scene-access-verify', { invitation_token: id, use_session: true }, 'guest')).status, 401);
+  assert.equal((await h.request('scene-access-verify', { invitation_token: id, token_hash: tokenHash(emailLink(h.mails[1])) })).status, 403, 'A link for another email cannot accept this invite');
   assert.equal(h.invites[0].accepted_at, null);
-  const verified = await h.request('scene-access-verify', { invitation_token: id, code: '123456' });
+  const credentials = { invitation_token: id, token_hash: tokenHash(firstLink) };
+  const verified = await h.request('scene-access-verify', credentials);
   assert.equal(verified.status, 200);
   assert.equal((await verified.json()).scene_token, 'owner-token');
   assert.equal(h.invites[0].user_id, 'guest');
   assert.ok(h.invites[0].accepted_at);
+  assert.deepEqual(h.codes, [], 'No second email or code for a direct link');
+  assert.equal((await h.request('scene-access-verify', credentials)).status, 401, 'Magic link is single use');
+  const reused = await h.request('scene-access-verify', { invitation_token: id, use_session: true }, 'guest');
+  assert.deepEqual(await reused.json(), { scene_token: 'owner-token' });
 
   const sceneRequest = { sceneId: 'scene', shareToken: 'owner-token' };
   const delivery = (mode) => h.request('scene-completion-email', { ...sceneRequest, mode }, 'guest');
@@ -146,6 +173,24 @@ test('owner invites up to two addresses; OTP goes only to the invited email, and
   const pending = h.invites[0];
   pending.expires_at = '2000-01-01';
   assert.equal((await h.request('scene-access-verify', { invitation_token: pending.id, code: '123456' })).status, 404);
+});
+
+test('expired sign-in links can be resent to the same address, while old code-based invitations still work', async () => {
+  const h = fixture();
+  const response = await h.request('scene-collaborators', { action: 'invite', scene_id: 'scene', email: 'guest@example.test' }, 'owner');
+  const { member: { id } } = await response.json();
+  const sent = await h.request('scene-access-request', { invitation_token: id, delivery: 'link', language: 'en' });
+  assert.equal(sent.status, 200);
+  assert.equal((await sent.json()).delivery, 'link');
+  assert.deepEqual(h.mails[1].to, ['guest@example.test']);
+  assert.match(h.mails[1].html, />Open the stand<\/a>/);
+  assert.notEqual(tokenHash(emailLink(h.mails[1])), tokenHash(emailLink(h.mails[0])));
+  assert.equal((await h.request('scene-access-request', { invitation_token: id, delivery: 'link' })).status, 429);
+  h.invites[0].code_requested_at = null;
+  assert.equal((await h.request('scene-access-request', { invitation_token: id })).status, 200);
+  assert.deepEqual(h.codes, ['guest@example.test']);
+  assert.deepEqual(h.authCreations, [{ email: 'guest@example.test' }]);
+  assert.equal((await h.request('scene-access-verify', { invitation_token: id, code: '123456' })).status, 200);
 });
 
 test('an active admin can invite and revoke on a submitted scene without granting access management to guests', async () => {

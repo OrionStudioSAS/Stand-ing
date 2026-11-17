@@ -42,6 +42,23 @@ function runtime() {
 const imageUrl = 'https://storage.example/scene-options/counter-preview.jpg';
 const counter = (id, options = {}) => ({ id, type: 'counter', label: 'Comptoir accueil', x: 0, z: 0, dimensions: { width: 1, depth: 0.5 }, options: { binary3Enabled: true, binary3ImageUrl: imageUrl, ...options } });
 
+test('the BAT prints the aisle code on the requested edge without duplicating the label', () => {
+  for (const [side, expected] of [
+    ['top', [400, 175]], ['bottom', [400, 582]], ['left', [74, 350]], ['right', [733, 350]],
+  ]) {
+    const { api, ctx, text } = runtime();
+    let translated = [0, 0];
+    ctx.translate = (x, y) => { translated = [x, y]; };
+    api.drawPlanAisle(ctx, 100, 200, 600, 300, 20, { aisleSide: side, aisleNumber: 'ALLÉE 07B' });
+    assert.equal(text.length, 1);
+    assert.equal(text[0].value, 'Allée 07B');
+    assert.deepEqual([text[0].x + translated[0], text[0].y + translated[1]], expected);
+  }
+  const { api, ctx, text } = runtime();
+  api.drawPlanAisle(ctx, 100, 200, 600, 300, 20, { aisleSide: null, aisleNumber: '07B' });
+  assert.deepEqual(text, [{ value: 'Allée', x: 400, y: 582 }]);
+});
+
 test('Signature BAT footprint follows the arch color and stand depth instead of the generic square', () => {
   const { api, ctx, rectangles } = runtime();
   const arch = { id: 'arch', type: 'arche-signature', label: 'Arche Signature', x: -.7, z: -.8, modelSize: [1.1, 3, 2], options: { signatureArchColorHex: '#2255aa' } };

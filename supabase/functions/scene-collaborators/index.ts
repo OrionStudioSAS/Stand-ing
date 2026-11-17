@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canManageScene, sceneActor, sceneEmail } from "../_shared/scenePermissions.ts";
+import { sendSceneInvitationLink } from "../_shared/sceneInvitationEmail.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -48,8 +49,7 @@ Deno.serve(async (req) => {
   }
   if (email === sceneEmail(scene.client_email)) return json({ error: "Cette adresse est déjà le contact principal." }, 409);
 
-  const key = Deno.env.get("RESEND_API_KEY");
-  if (!key) return json({ error: "L’envoi des invitations n’est pas configuré." }, 503);
+  if (!Deno.env.get("RESEND_API_KEY")) return json({ error: "L’envoi des invitations n’est pas configuré." }, 503);
   const { data: members, error: readError } = await admin.from("scene_collaborators").select("slot,email").eq("scene_id", scene.id);
   if (readError) return json({ error: "Impossible de charger les invitations." }, 500);
   if (members.some((member) => member.email === email)) return json({ error: "Cette adresse est déjà invitée." }, 409);
@@ -62,26 +62,8 @@ Deno.serve(async (req) => {
   }
   if (!invitation) return json({ error: "Deux collaborateurs maximum par scène." }, 409);
 
-  const english = body.language === "en";
   try {
-    const url = new URL(Deno.env.get("PUBLIC_APP_URL") || "https://configurateur3d.stand-ing.com/");
-    url.searchParams.set("invite", invitation.id);
-    if (english) url.searchParams.set("lang", "en");
-    const stand = scene.project_name || scene.event_name || scene.salon || "Stand-ING";
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      signal: AbortSignal.timeout(15000),
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: Deno.env.get("RESEND_FROM_EMAIL") || "Stand-ING <no-reply@stand-ing.com>",
-        to: [email],
-        subject: english ? "Invitation to collaborate on a Stand-ING stand" : "Invitation à collaborer sur un stand Stand-ING",
-        text: english
-          ? `You have been invited to edit and submit the configuration for ${stand}. Open your personal link and verify your email within 7 days:\n\n${url}`
-          : `Vous êtes invité à modifier et à valider la configuration de ${stand}. Ouvrez votre lien personnel et vérifiez votre adresse e-mail dans les 7 jours :\n\n${url}`,
-      }),
-    });
-    if (!response.ok) throw new Error(`Email provider: ${response.status}`);
+    await sendSceneInvitationLink(admin, invitation, scene, body.language);
   } catch (error) {
     console.error("Scene invitation delivery failed", error);
     await admin.from("scene_collaborators").delete().eq("id", invitation.id).is("accepted_at", null);

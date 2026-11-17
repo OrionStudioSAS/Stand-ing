@@ -1692,10 +1692,18 @@ function sceneItemToPackTemplateItem(item = {}) {
 
 export async function requestSceneAccessCode(sceneToken, invitationToken) {
   if (!supabase) return { masked_email: 'mode local' };
+  return requestSceneAccess({ scene_token: sceneToken, invitation_token: invitationToken });
+}
 
-  const { data, error } = await supabase.functions.invoke('scene-access-request', {
-    body: { scene_token: sceneToken, invitation_token: invitationToken },
-  });
+export async function requestSceneInvitationLink(invitationToken, language) {
+  if (!supabase) throw new Error('Impossible d’envoyer le lien de connexion.');
+  const data = await requestSceneAccess({ invitation_token: invitationToken, delivery: 'link', language });
+  if (data?.delivery !== 'link') throw new Error('Impossible d’envoyer le lien de connexion.');
+  return data;
+}
+
+async function requestSceneAccess(body) {
+  const { data, error } = await supabase.functions.invoke('scene-access-request', { body });
 
   const functionError = await getFunctionError(error, data);
   if (functionError) throw functionError;
@@ -1704,10 +1712,31 @@ export async function requestSceneAccessCode(sceneToken, invitationToken) {
 
 export async function verifySceneAccessCode(sceneToken, code, invitationToken) {
   if (!supabase) return { local: true };
+  return establishSceneAccess({ scene_token: sceneToken, invitation_token: invitationToken, code });
+}
 
-  const { data, error } = await supabase.functions.invoke('scene-access-verify', {
-    body: { scene_token: sceneToken, invitation_token: invitationToken, code },
-  });
+export async function openSceneInvitation(invitationToken, tokenHash) {
+  if (!supabase) throw new Error('Accès refusé.');
+  let linkError;
+  if (tokenHash) {
+    try {
+      return await establishSceneAccess({ invitation_token: invitationToken, token_hash: tokenHash });
+    } catch (error) {
+      linkError = error;
+    }
+  }
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (sessionData?.session) {
+    const { data, error } = await supabase.functions.invoke('scene-access-verify', {
+      body: { invitation_token: invitationToken, use_session: true },
+    });
+    if (!error && data?.scene_token) return data;
+  }
+  throw linkError || new Error('Ce lien a expiré ou a déjà été utilisé.');
+}
+
+async function establishSceneAccess(body) {
+  const { data, error } = await supabase.functions.invoke('scene-access-verify', { body });
 
   const functionError = await getFunctionError(error, data);
   if (functionError) throw functionError;

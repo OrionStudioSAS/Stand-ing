@@ -31,6 +31,7 @@ import { canReopenSceneAsDraft } from './sceneReopening.js';
 import AdminMondayView, { MondaySyncFeedback } from './AdminMondayView.jsx';
 import PresentationGround from './PresentationGround.jsx';
 import { StudioContactShadows, StudioLighting } from './StudioLighting.jsx';
+import { clampHangingSignBottom, effectiveHangingLimit, hangingSignBodyHeight } from '../supabase/functions/_shared/standHangingLimits.js';
 import { normalizePartitionHeadVisuals, partitionHeadUsesDifferentVisuals, patchPartitionHeadVisuals, withPartitionHeadVisualMode } from './partitionHeadVisuals.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
@@ -90,7 +91,7 @@ import { t as tRaw, uiText } from './i18n.js';
 import { translateCatalogLabel } from './uiTranslations.js';
 import TechnicalPlanEditor from './TechnicalPlanEditor.jsx';
 import { loadTechnicalPlanEdits } from './data/technicalPlanStore.js';
-import { manageSceneCollaborators } from './data/sceneStore.js';
+import { manageSceneCollaborators, openSceneInvitation, requestSceneInvitationLink } from './data/sceneStore.js';
 import './signatureHeadInformation.css';
 import './styles.css';
 
@@ -603,8 +604,9 @@ function AppContent() {
   if (isAdmin) return <AdminGate />;
   if (!sceneToken && !invitationToken) return <HomeGate />;
   if (!scene && (sceneAccessRequired || (!sceneToken && invitationToken))) {
+    const AccessGate = invitationToken && params.get('access') === 'link' ? SceneInvitationLinkGate : SceneAccessGate;
     return (
-      <SceneAccessGate
+      <AccessGate
         sceneToken={sceneToken}
         invitationToken={invitationToken}
         language={params.get('lang') === 'en' ? 'en' : 'fr'}
@@ -812,6 +814,64 @@ function LoginHero() {
       </div>
       <div className="login-orb" aria-hidden="true" />
     </section>
+  );
+}
+
+function SceneInvitationLinkGate({ invitationToken, language, onVerified }) {
+  const tr = (text) => uiText(language, text);
+  const started = useRef(false);
+  const [opening, setOpening] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [sent, setSent] = useState(false);
+
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    const url = new URL(window.location.href);
+    const tokenHash = new URLSearchParams(url.hash.slice(1)).get('invitation_auth');
+    if (tokenHash) {
+      url.hash = '';
+      window.history.replaceState(window.history.state, '', url);
+    }
+    openSceneInvitation(invitationToken, tokenHash)
+      .then(onVerified)
+      .catch((err) => setError(err.message || 'Impossible d’ouvrir la scène.'))
+      .finally(() => setOpening(false));
+  }, [invitationToken, onVerified]);
+
+  const resend = async () => {
+    setSending(true);
+    setSent(false);
+    setError('');
+    try {
+      await requestSceneInvitationLink(invitationToken, language);
+      setSent(true);
+    } catch (err) {
+      setError(err.message || 'Impossible d’envoyer le lien de connexion.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <main className="admin-login-shell">
+      <LoginHero />
+      <section className="admin-login-area">
+        <div className="admin-login-card scene-access-card">
+          <div className="scene-access-icon"><KeyRound size={24} /></div>
+          <div className="login-form-heading">
+            <h1>{tr('Invitation à collaborer')}</h1>
+            {opening && <p role="status">{tr('Ouverture de la scène…')}</p>}
+          </div>
+          {error && <div className="admin-login-error" role="alert">{tr(error)}</div>}
+          {sent && <div className="scene-access-message" role="status">{tr('Un nouveau lien vous a été envoyé par e-mail.')}</div>}
+          {!opening && <button className="login-submit" type="button" disabled={sending} onClick={resend}>
+            {tr(sending ? 'Envoi en cours...' : 'Renvoyer le lien')}
+          </button>}
+        </div>
+      </section>
+    </main>
   );
 }
 
@@ -1235,6 +1295,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const headCountry = sceneHeadCountry(initialScene);
   const sceneVisualContext = useMemo(() => ({
     fontRevision,
+    hangingLimitM: initialScene.source_payload?.hanging_limits
+      ? effectiveHangingLimit(initialScene.source_payload.hanging_limits) : null,
     country: headCountry,
     language,
     company: partitionHeadCompany || sceneExhibitorCompanyName(initialScene, clientInfo, contactDetails),
@@ -2700,7 +2762,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             contactDetails={contactDetails}
             onClose={() => setHeaderPanel(null)}
             onReportCorrection={submitContactCorrection}
-            onOpenCollaborators={canManageCollaborators ? () => setHeaderPanel('collaborators') : undefined}
           />
         </div>
       )}
@@ -3402,7 +3463,7 @@ function SceneCollaboratorsModal({ sceneId, salonLabel, onClose }) {
   );
 }
 
-function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrection, onOpenCollaborators }) {
+function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrection }) {
   const tr = useUiText();
   const t = useT();
   const [correctionOpen, setCorrectionOpen] = useState(false);
@@ -3430,7 +3491,6 @@ function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrecti
     <section className="client-info-modal client-info-modal-locked">
       <ModalHead title={t('client_title')} salonLabel={salonLabel} onClose={onClose} />
       <div className="client-info-content">
-        {onOpenCollaborators && <button className="client-correction-button scene-collaborators-trigger" type="button" onClick={onOpenCollaborators}><Users size={16} /> {tr('Inviter un collaborateur')}</button>}
         {onReportCorrection && <button className="client-correction-button" type="button" onClick={() => setCorrectionOpen(true)}>{t('client_correction_cta')}</button>}
         <div className="form-grid two">
           <label>{t('client_firstname')}<input value={contactDetails.firstName || ''} {...lockedInputProps} /></label>
@@ -15582,6 +15642,8 @@ function sceneTechnicalDocumentInfo(scene = {}) {
     salon: scene.event_name || scene.salon?.name || (typeof scene.salon === 'string' ? scene.salon : ''),
     hall: sceneHallLabel(scene),
     stand: sceneStandNumber(scene),
+    aisleNumber: scene.source_payload?.aisle_number || sceneAisleNumber(scene, scene.source_payload?.contactDetails || {}),
+    aisleSide: scene.source_payload?.plan_aisle_side,
   };
 }
 
@@ -18125,6 +18187,14 @@ function floorItemBaseY(item = {}, entry = null) {
   if (!isCeilingMountedItem(item, entry)) return 0;
   const y = Number(item?.dimensions?.ceilingBottomY ?? entry?.dimensions?.ceilingBottomY ?? ceilingObjectBottomY);
   return Number.isFinite(y) ? Math.max(0, y) : ceilingObjectBottomY;
+}
+
+function sceneItemDisplayY(item, visualContext) {
+  const bottom = floorItemBaseY(item);
+  const limit = visualContext?.hangingLimitM;
+  if (!Number.isFinite(limit) || !isCeilingMountedItem(item) || !isHighSignageVisualItem(item)) return bottom;
+  const height = hangingSignBodyHeight(item, itemGroupBounds(item).height);
+  return height === null ? bottom : clampHangingSignBottom(bottom, height, limit);
 }
 
 function placementRuleLabel(id, withDescription = false) {
@@ -20673,7 +20743,7 @@ function StandScene({ width, depth, height, layout, items, catalog = [], selecte
       <WallCoverSurfaces width={width} depth={depth} layout={layout} items={items} covers={wallCovers} previews={wallCoverPreviews} />
       {wallItems.map(renderSceneItem)}
       {selectedToolbar && selectedItem && !draggingId && (
-        <SceneItemToolbarAnchor item={selectedItem} items={items} width={width} depth={depth}>
+        <SceneItemToolbarAnchor item={selectedItem} items={items} width={width} depth={depth} visualContext={visualContext}>
           {selectedToolbar}
         </SceneItemToolbarAnchor>
       )}
@@ -20738,8 +20808,8 @@ function applyDragPointerOffset(point = {}, offset = {}) {
   };
 }
 
-function SceneItemToolbarAnchor({ item, items = [], width = 0, depth = 0, children }) {
-  const position = sceneItemToolbarPosition(item, items, width, depth);
+function SceneItemToolbarAnchor({ item, items = [], width = 0, depth = 0, visualContext, children }) {
+  const position = sceneItemToolbarPosition(item, items, width, depth, visualContext);
   return (
     <Html
       position={position}
@@ -20761,7 +20831,7 @@ function SceneItemToolbarAnchor({ item, items = [], width = 0, depth = 0, childr
   );
 }
 
-function sceneItemToolbarPosition(item = {}, items = [], width = 0, depth = 0) {
+function sceneItemToolbarPosition(item = {}, items = [], width = 0, depth = 0, visualContext) {
   const bounds = itemGroupBounds(item);
   const toolbarGap = 0.18;
   if (isWallItem(item)) {
@@ -20773,7 +20843,7 @@ function sceneItemToolbarPosition(item = {}, items = [], width = 0, depth = 0) {
   }
   return [
     Number(item.x || 0) + Number(bounds.maxX || Number(bounds.width || 0.7) / 2) + toolbarGap,
-    floorItemBaseY(item) + Math.max(0.75, Number(bounds.height || 0.7) * 0.78),
+    sceneItemDisplayY(item, visualContext) + Math.max(0.75, Number(bounds.height || 0.7) * 0.78),
     Number(item.z || 0) + Number(bounds.centerZ || 0),
   ];
 }
@@ -21526,7 +21596,7 @@ function SceneItem({ item, items = [], selected, hovered, dragging, width, depth
     <group
       ref={rotationRef}
       userData={{ standSceneItem: true, itemId: item.id, ...(isSignatureArchItem(item) ? { archPickBounds: itemGroupBounds(item) } : {}) }}
-      position={[item.x, floorItemBaseY(item), item.z]}
+      position={[item.x, sceneItemDisplayY(item, visualContext), item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
       onPointerOver={onHover ? ((event) => { event.stopPropagation(); onHover(true); }) : undefined}
@@ -21551,7 +21621,7 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, standD
     <group
       ref={rotationRef}
       userData={{ standSceneItem: true, itemId: item.id, ...(isSignatureArchItem(item) ? { archPickBounds: groupBounds } : {}) }}
-      position={[item.x, floorItemBaseY(item), item.z]}
+      position={[item.x, sceneItemDisplayY(item, visualContext), item.z]}
       rotation={[0, rotationY, 0]}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}
       onPointerOver={onHover ? ((event) => { event.stopPropagation(); onHover(true); }) : undefined}

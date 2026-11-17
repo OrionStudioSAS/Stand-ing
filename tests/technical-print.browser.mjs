@@ -30,7 +30,7 @@ try {
     const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
     const catalog = [{ type: 'furniture', label: 'Mobilier', modelSize: [1, 1, 0.5], dimensions: { batPictoUrl: url, batPictoPath: 'furniture.svg', reference: 'AMCO-TEST' } }];
     const items = Array.from({ length: 3 }, (_, i) => ({ id: `item-${i}`, type: 'furniture', label: `Objet ${i + 1}`, x: i - 1, z: 0, modelSize: [1, 1, 0.5], dimensions: catalog[0].dimensions }));
-    const input = { width: 7, depth: 3.5, layout: 'u', items, catalog, documentInfo: { title: 'Société test', salon: 'SMCL 2026', hall: '3', stand: 'A-12' } };
+    const input = { width: 7, depth: 3.5, layout: 'u', items, catalog, documentInfo: { title: 'Société test', salon: 'SMCL 2026', hall: '3', stand: 'A-12', aisleNumber: 'A', aisleSide: 'right' } };
     window.batInput = input;
     const svgPages = await window.exporter.createTechnicalPlanSvgPages(input);
     const pdf = await window.exporter.createTechnicalPlanBlob(input);
@@ -42,6 +42,7 @@ try {
   });
   assert.equal(result.type, 'application/pdf');
   assert.equal(result.pages.length, 2);
+  assert.match(result.pages[0], /<text[^>]*transform="matrix\(0 1 -1 0 [^"]+\)"[^>]*>Allée A<\/text>/);
   assert.equal(result.pages[0].match(/<svg/g).length, 4, 'Each original SVG is embedded inline, not as a PNG');
   assert.doesNotMatch(result.pages[0], /<image/);
   assert.match(result.pages[0], /picto-1-paint/);
