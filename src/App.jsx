@@ -92,6 +92,13 @@ import { translateCatalogLabel } from './uiTranslations.js';
 import TechnicalPlanEditor from './TechnicalPlanEditor.jsx';
 import { loadTechnicalPlanEdits } from './data/technicalPlanStore.js';
 import { manageSceneCollaborators, openSceneInvitation, requestSceneInvitationLink } from './data/sceneStore.js';
+import { ReserveEditorModal, ReserveQuickView } from './ReserveConfigurator.jsx';
+import {
+  configureReserveChildren, formatReserveMetres, isReservePowerSource, normalizeDegrees,
+  refitReserveContents, reserveBuiltinChildren, reserveCatalogCategory, reserveDoorState, reserveEntryNeedsPower, reserveInterior,
+  reserveLocalToWorld, reservePlacementAllowed, reservePlacementFromEntry, findDoorHandleVariant, reserveDoorChild, doorHandleFromLabel,
+  mirrorReserveChildren, reserveOrientation,
+} from './reserveConfigurator.js';
 import './signatureHeadInformation.css';
 import './styles.css';
 
@@ -1183,7 +1190,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [reserveItemOverrides, setReserveItemOverrides] = useState(initialOptions.reserveItemOverrides || {});
   const [signatureMeterCoverType, setSignatureMeterCoverType] = useState(initialOptions.signatureMeterCoverType || '');
   const [reserveOptionType, setReserveOptionType] = useState(initialOptions.reserveOptionType || (initialOptions.reserveUpgradeEnabled ? '__legacy__' : ''));
+  // Every saved reserve choice is restored (corner, orientation, door, built-ins, custom request), not only the door finish.
   const [reserveOptions, setReserveOptions] = useState(() => ({
+    ...(initialOptions.reserveOptions && typeof initialOptions.reserveOptions === 'object' ? initialOptions.reserveOptions : {}),
     doorOpening: initialOptions.reserveOptions?.doorOpening || '',
     handleOrientation: initialOptions.reserveOptions?.handleOrientation || '',
   }));
@@ -1371,8 +1380,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       return electricalWallClearance(hydrated) ? constrainItem(hydrated, width, depth, layout, genericCarpetFootprintEnabled) : hydrated;
     }) : items,
   ), [items, availableCatalog, objectBankLoaded, width, depth, layout, genericCarpetFootprintEnabled]);
-  const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item) && !isAutomaticReserveItem(item) && !isAutomaticPartitionHeadItem(item) && !item.autoMeterCover), [hydratedItems]);
-  const automaticMeterCoverItems = useMemo(() => makeAutomaticMeterCoverItems(assetPackLabel, signatureMeterCoverType, availableCatalog, width, depth, layout, manualHydratedItems), [assetPackLabel, signatureMeterCoverType, availableCatalog, width, depth, layout, manualHydratedItems]);
+  const rawManualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item) && !isAutomaticReserveItem(item) && !isAutomaticPartitionHeadItem(item) && !item.autoMeterCover), [hydratedItems]);
+  const automaticMeterCoverItems = useMemo(() => makeAutomaticMeterCoverItems(assetPackLabel, signatureMeterCoverType, availableCatalog, width, depth, layout, rawManualHydratedItems), [assetPackLabel, signatureMeterCoverType, availableCatalog, width, depth, layout, rawManualHydratedItems]);
+  // Door variants are looked up in the whole active bank: a pack may not sell the doors its reserves are built with.
+  const reserveDoorCatalog = useMemo(() => objectBank
+    .filter((asset) => asset.is_active && !asset.dimensions?.isGroup && /\bporte\b/i.test(normalizedItemText(asset)) && !/document/i.test(normalizedItemText(asset)))
+    .map((asset) => assetToCatalogEntry(asset, objectBank))
+    .filter(Boolean), [objectBank]);
   const meterCoverConfiguratorEntry = useMemo(() => signatureMeterCoverConfiguratorEntry(availableCatalog), [availableCatalog]);
   const ledRailEntries = useMemo(() => hasAutomaticPackLighting(initialScene) ? ledRailCatalogEntries(availableCatalog) : [], [availableCatalog, initialScene]);
   const ledSpotCount = ledSpotCountForArea(area);
@@ -1389,10 +1403,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     [activePartitionHeadRuleConfig, partitionHeadChoice, isSignatureStand],
   );
   const automaticReserveItems = useMemo(
-    () => makeAutomaticReserveItems(activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, reserveOptions)
+    () => makeAutomaticReserveItems(activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, reserveOptions, [...availableCatalog, ...reserveDoorCatalog])
       .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, genericCarpetFootprintEnabled)),
-    [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, reserveOptions, reserveItemOverrides, genericCarpetFootprintEnabled],
+    [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, reserveOptions, reserveItemOverrides, genericCarpetFootprintEnabled, reserveDoorCatalog],
   );
+  const manualHydratedItems = useMemo(() => anchorReserveContentItems(rawManualHydratedItems, automaticReserveItems[0] || null), [rawManualHydratedItems, automaticReserveItems]);
   const automaticPartitionHeadItems = useMemo(
     () => makeAutomaticPartitionHeadItems(activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, assetPackLabel)
       .map((item) => applyPartitionHeadVisualOptions(item, partitionHeadVisuals)),
@@ -1578,6 +1593,327 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     expectedLedSpotCount: ledSpotCount,
   }), [area, availableCatalog, visibleSceneItems, assetPackLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, thickCarpetEnabled, thickFootprintArea, isSignatureStand, ledRailsEnabled, ledSpotCount]);
   const estimatedTotal = scenePricing.total;
+
+  // ---- Reserve configurator ------------------------------------------------
+  const [reserveEditor, setReserveEditor] = useState(null);
+  const [reserveNotice, setReserveNotice] = useState(null);
+  const [reserveRemoval, setReserveRemoval] = useState(null);
+  const reserveItem = automaticReserveItems[0] || null;
+  const reserveDoorEntries = useMemo(() => [...availableCatalog, ...reserveDoorCatalog], [availableCatalog, reserveDoorCatalog]);
+  const reserveCatalogCurated = useMemo(() => objectBank.some((asset) => asset?.is_active && isReserveCatalogFlagged(asset)), [objectBank]);
+  const reserveCatalog = useMemo(
+    () => buildReserveCatalog(placeableCatalog, assetPackLabel, width, depth, layout, reserveCatalogCurated),
+    [placeableCatalog, assetPackLabel, width, depth, layout, reserveCatalogCurated],
+  );
+  const reserveContentItems = useMemo(() => manualHydratedItems.filter(isReserveContentItem), [manualHydratedItems]);
+  const reserveContents = useMemo(() => reserveContentItems.map((item) => reserveContentFromItem(item, reserveCatalog)), [reserveContentItems, reserveCatalog]);
+  const buildReserveItem = useCallback((optionType, options) => (
+    makeAutomaticReserveItems(activeReserveRuleConfig, optionType, availableCatalog, width, depth, layout, assetPackLabel, options, reserveDoorEntries)
+      .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, genericCarpetFootprintEnabled))[0] || null
+  ), [activeReserveRuleConfig, availableCatalog, width, depth, layout, assetPackLabel, reserveDoorEntries, reserveItemOverrides, genericCarpetFootprintEnabled]);
+  const reserveRows = useMemo(() => {
+    if (!activeReserveRuleConfig) return [];
+    return reserveChoiceRows(activeReserveRuleConfig, availableCatalog, assetPackLabel).map((row) => {
+      const optionType = row.included ? '' : row.type;
+      const entry = findCatalogEntry(availableCatalog, row.type);
+      const interior = entry?.children?.length ? reserveInterior(entry.children) : null;
+      const tooWide = interior && (interior.width > width + 0.02 || interior.depth > depth + 0.02);
+      return {
+        key: row.key,
+        type: row.type,
+        optionType,
+        area: row.area,
+        areaLabel: row.areaLabel || reserveSizeName(row.area, entry?.label),
+        dims: reserveRowDimensions(entry) || row.description,
+        included: row.included && row.price === 0,
+        price: row.price,
+        available: !tooWide,
+        reason: tooWide ? `La réserve de ${formatReserveMetres(Math.max(interior.width, interior.depth))} m dépasserait la place disponible sur votre stand.` : '',
+      };
+    });
+  }, [activeReserveRuleConfig, availableCatalog, assetPackLabel, width, depth]);
+  const reserveRowPrice = useCallback((optionType) => {
+    if (optionType === '__none__') return 0;
+    const row = reserveRows.find((candidate) => candidate.optionType === optionType);
+    return row ? Number(row.price || 0) : 0;
+  }, [reserveRows]);
+  const reserveContentPricing = useCallback((contents = []) => {
+    const outside = manualHydratedItems.filter((item) => !isReserveContentItem(item));
+    const usedByType = new Map();
+    outside.forEach((item) => usedByType.set(item.type, (usedByType.get(item.type) || 0) + 1));
+    const lines = contents.map((content) => {
+      const includedBudget = Number(scenePricing.includedCounts?.get(content.type) || 0);
+      const used = usedByType.get(content.type) || 0;
+      usedByType.set(content.type, used + 1);
+      if (used < includedBudget) return { key: content.key, included: true, price: 0 };
+      const source = content.sourceId ? manualHydratedItems.find((item) => item.id === content.sourceId) : null;
+      const card = reserveCatalog.find((candidate) => candidate.key === content.catalogKey);
+      const entry = findCatalogEntry(availableCatalog, content.type);
+      const price = source ? cartItemBasePrice(source, entry, assetPackLabel, availableCatalog) : Number(card?.price ?? assetUnitPrice(entry, assetPackLabel) ?? 0);
+      return { key: content.key, included: price <= 0, price: Math.max(0, Number(price || 0)) };
+    });
+    return { lines, total: roundCurrency(lines.reduce((sum, line) => sum + line.price, 0)) };
+  }, [manualHydratedItems, scenePricing.includedCounts, reserveCatalog, availableCatalog, assetPackLabel]);
+  const reservePlacementsFor = useCallback((optionType) => {
+    const row = reserveRows.find((candidate) => candidate.optionType === optionType);
+    const entry = row ? findCatalogEntry(availableCatalog, row.type) : null;
+    return reservePlacementChoices(entry, availableCatalog, layout).map((choice) => ({
+      type: choice.entry.type,
+      placement: choice.placement,
+      label: choice.entry.label,
+      available: choice.allowed,
+      reason: choice.allowed ? '' : `Votre stand n’a pas de mur ${choice.placement === 'left' ? 'à gauche' : 'à droite'} pour fermer cette réserve.`,
+    }));
+  }, [reserveRows, availableCatalog, layout]);
+  const reserveDraftOptions = (draft = {}) => ({
+    ...reserveOptions,
+    placement: draft.placement || '',
+    orientation: draft.orientation || '',
+    door: draft.doorByType || {},
+    builtins: draft.builtinsByType || {},
+    doorOpening: draft.doorOpening || '',
+    handleOrientation: draft.handleOrientation || '',
+    layoutVersion: 1,
+  });
+  const buildReserveDraft = useCallback((draft = {}) => {
+    const options = {
+      ...reserveOptions,
+      placement: draft.placement || '',
+      orientation: draft.orientation || '',
+      door: draft.doorByType || {},
+      builtins: draft.builtinsByType || {},
+      doorOpening: draft.doorOpening || '',
+      handleOrientation: draft.handleOrientation || '',
+      layoutVersion: 1,
+    };
+    const item = buildReserveItem(draft.optionType ?? '', options);
+    if (!item) return null;
+    const geometryEntry = findCatalogEntry(availableCatalog, item.type);
+    const authoredChildren = geometryEntry?.children?.length ? makeItem(item.type, width, depth, layout, geometryEntry).children || [] : item.children || [];
+    const baseChildren = (item.options?.reserveOrientation
+      && reserveTurnedChildren(geometryEntry, authoredChildren, item.options.reserveOrientation, width, depth, layout, reserveDoorEntries)) || authoredChildren;
+    const authoredDoor = reserveDoorChild(baseChildren);
+    const handleChoices = authoredDoor
+      ? ['left', 'right'].filter((handle) => doorHandleFromLabel(authoredDoor) === handle || findDoorHandleVariant(authoredDoor, handle, reserveDoorEntries))
+      : [];
+    const orientation = reserveOrientationChoices(geometryEntry, authoredChildren, width, depth, layout);
+    return {
+      reserve: item,
+      baseChildren,
+      handleChoices,
+      placement: reservePlacementFromEntry(geometryEntry || item),
+      orientation: item.options?.reserveOrientation || orientation.native,
+      orientationChoices: orientation.choices,
+      orientationCorner: orientation.corner,
+    };
+  }, [reserveOptions, buildReserveItem, availableCatalog, width, depth, layout, reserveDoorEntries]);
+  const reserveInitialDraft = useMemo(() => ({
+    optionType: effectiveReserveOptionType === '__none__' ? '' : effectiveReserveOptionType,
+    placement: reserveOptions.placement || '',
+    orientation: reserveOptions.orientation || '',
+    doorByType: reserveOptions.door || {},
+    builtinsByType: reserveOptions.builtins || {},
+    doorOpening: reserveOptions.doorOpening || '',
+    handleOrientation: reserveOptions.handleOrientation || '',
+    contents: reserveContents,
+  }), [effectiveReserveOptionType, reserveOptions, reserveContents]);
+  const reserveStandOthers = useMemo(() => visibleSceneItems
+    .filter((item) => !isAutomaticReserveItem(item) && !isReserveContentItem(item) && !isWallItem(item) && !isCeilingMountedItem(item) && !isAutomaticLedRailItem(item) && !isAutomaticSpotItem(item))
+    .map((item) => ({ id: item.id, label: itemCartLabel(item), box: itemHardCollisionBox(item, 0) }))
+    .filter((item) => item.box), [visibleSceneItems]);
+  const reserveEditorModel = useMemo(() => (reserveEditor ? {
+    readOnly,
+    stand: { width, depth, layout },
+    others: reserveStandOthers,
+    rows: reserveRows,
+    catalog: reserveCatalog,
+    powerKey: reserveCatalog.find((card) => /alimentation/i.test(card.label))?.key || reserveCatalog.find((card) => card.isPower)?.key || '',
+    initialDraft: reserveInitialDraft,
+    build: buildReserveDraft,
+    placementsFor: reservePlacementsFor,
+    contentPricing: reserveContentPricing,
+    reservePrice: reserveRowPrice,
+    Preview3D: ReserveEditorPreview3D,
+  } : null), [reserveEditor, readOnly, width, depth, layout, reserveStandOthers, reserveRows, reserveCatalog, reserveInitialDraft, buildReserveDraft, reservePlacementsFor, reserveContentPricing, reserveRowPrice]);
+  const reservePreviewContext = useMemo(() => ({
+    stand: { width, depth, height, layout },
+    catalog: availableCatalog,
+    carpetColor: selectedCarpetColor,
+    carpetFootprintColor: selectedCarpetFootprintColor,
+    carpetFootprintEnabled: genericCarpetFootprintEnabled,
+    wallFabricColor: selectedWallFabricColor,
+    reserveWallFabricColor: selectedReserveWallFabricColor,
+    reserveDoorColorHex: reserveDoorColorForPack(assetPackLabel),
+    visualContext: sceneVisualContext,
+    makeContentItems: (contents = [], reserve = null) => anchorReserveContentItems(contents.map((content) => {
+      const source = content.sourceId ? rawManualHydratedItems.find((item) => item.id === content.sourceId) : null;
+      const card = reserveCatalog.find((candidate) => candidate.key === content.catalogKey);
+      const item = source
+        ? { ...source, options: { ...(source.options || {}), reserveContent: reserveContentPlacement(content) } }
+        : { ...hydrateSceneItemFromCatalog(makeReserveContentItem(content, card, availableCatalog, width, depth, layout), availableCatalog), isWallItem: false, wall: undefined, id: content.key };
+      return item;
+    }), reserve),
+  }), [width, depth, height, layout, availableCatalog, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, assetPackLabel, sceneVisualContext, rawManualHydratedItems, reserveCatalog]);
+
+  const openReserveEditor = (step = 'structure', selection = '') => {
+    if (!reserveItem) return;
+    setReserveNotice(null);
+    setReserveEditor({ step, selection, id: Date.now() });
+  };
+
+  // Moves the stored objects into a new reserve geometry; objects without room are removed (and can be restored).
+  const refitReserveItems = (currentItems, nextReserve) => {
+    const contentItems = currentItems.filter(isReserveContentItem);
+    if (!contentItems.length) return { items: currentItems, removed: [] };
+    const contents = contentItems.map((item) => reserveContentFromItem(item, reserveCatalog));
+    if (!nextReserve) return { items: currentItems.filter((item) => !isReserveContentItem(item)), removed: contents };
+    const interior = reserveInterior(nextReserve.children || []);
+    const door = reserveDoorState(nextReserve.children || [], { doorOpening: reserveOptions.doorOpening });
+    const { kept, removed } = refitReserveContents(contents, { interior, builtins: reserveBuiltinChildren(nextReserve.children || []), door });
+    const keptById = new Map(kept.map((content) => [content.sourceId, content]));
+    return {
+      removed,
+      items: currentItems.flatMap((item) => {
+        if (!isReserveContentItem(item)) return [item];
+        const content = keptById.get(item.id);
+        return content ? [{ ...item, options: { ...(item.options || {}), reserveContent: reserveContentPlacement(content) } }] : [];
+      }),
+    };
+  };
+
+  const chooseReserveRow = (row) => {
+    if (readOnly || !row) return;
+    const isSelected = row.optionType === effectiveReserveOptionType;
+    const nextType = isSelected && !activeReserveRuleConfig?.includedType ? '' : row.optionType;
+    if (nextType === effectiveReserveOptionType) return;
+    const nextReserve = nextType || activeReserveRuleConfig?.includedType ? buildReserveItem(nextType, reserveOptions) : null;
+    const previous = { optionType: reserveOptionType, items };
+    const { items: nextItems, removed } = refitReserveItems(items, nextReserve);
+    setReserveRemoval(null);
+    setReserveOptionType(nextType);
+    if (nextItems !== items) setItems(nextItems);
+    if (removed.length) {
+      setReserveNotice({
+        title: `${removed.length} objet${removed.length > 1 ? 's ne tiennent' : ' ne tient'} plus en ${row.areaLabel}`,
+        detail: `${removed.map((content) => content.label).join(', ')} ${removed.length > 1 ? 'ont été retirés' : 'a été retiré'}.`,
+        undo: previous,
+      });
+    } else {
+      setReserveNotice(null);
+    }
+  };
+
+  // Orientation offered for the current corner reserve (along the back wall or along its side wall).
+  const reserveOrientationInfo = useMemo(() => {
+    if (!reserveItem) return null;
+    const entry = findCatalogEntry(availableCatalog, reserveItem.type);
+    const authored = entry?.children?.length ? makeItem(entry.type, width, depth, layout, entry).children || [] : [];
+    const info = reserveOrientationChoices(entry, authored, width, depth, layout);
+    return { ...info, current: reserveItem.options?.reserveOrientation || info.native };
+  }, [reserveItem, availableCatalog, width, depth, layout]);
+
+  const chooseReserveOrientation = (orientation) => {
+    if (readOnly || !reserveItem || !reserveOrientationInfo || orientation === reserveOrientationInfo.current) return;
+    const nextOptions = { ...reserveOptions, orientation: orientation === reserveOrientationInfo.native ? '' : orientation, layoutVersion: 1 };
+    const nextReserve = buildReserveItem(effectiveReserveOptionType === '__none__' ? '' : effectiveReserveOptionType, nextOptions);
+    const previous = { optionType: reserveOptionType, items, options: reserveOptions };
+    const { items: nextItems, removed } = refitReserveItems(items, nextReserve);
+    setReserveOptions(nextOptions);
+    if (nextItems !== items) setItems(nextItems);
+    setReserveNotice(removed.length ? {
+      title: `${removed.length} objet${removed.length > 1 ? 's ne tiennent' : ' ne tient'} plus en position ${orientation === 'vertical' ? 'verticale' : 'horizontale'}`,
+      detail: `${removed.map((content) => content.label).join(', ')} ${removed.length > 1 ? 'ont été retirés' : 'a été retiré'}.`,
+      undo: previous,
+    } : null);
+  };
+
+  const undoReserveNotice = () => {
+    if (!reserveNotice?.undo || readOnly) return;
+    if (reserveNotice.undo.options) setReserveOptions(reserveNotice.undo.options);
+    setReserveOptionType(reserveNotice.undo.optionType);
+    setItems(reserveNotice.undo.items);
+    setReserveNotice(null);
+  };
+
+  const removeReserveWithContents = () => {
+    if (readOnly) return;
+    setReserveRemoval({ optionType: reserveOptionType, contents: items.filter(isReserveContentItem) });
+    setReserveNotice(null);
+    setItems((current) => current.filter((item) => !isReserveContentItem(item)));
+    removeReserve();
+  };
+
+  const undoReserveRemoval = () => {
+    if (!reserveRemoval || readOnly) return;
+    setReserveOptionType(reserveRemoval.optionType === '__none__' ? '' : reserveRemoval.optionType);
+    if (reserveRemoval.contents.length) setItems((current) => [...current, ...reserveRemoval.contents]);
+    setReserveRemoval(null);
+  };
+
+  const commitReserveDraft = (draft) => {
+    if (readOnly || !draft) return;
+    const nextOptions = reserveDraftOptions(draft);
+    const nextReserve = buildReserveItem(draft.optionType || '', nextOptions);
+    const keep = new Map(draft.contents.filter((content) => content.sourceId).map((content) => [content.sourceId, content]));
+    const added = draft.contents.filter((content) => !content.sourceId).map((content) => makeReserveContentItem(
+      content,
+      reserveCatalog.find((card) => card.key === content.catalogKey),
+      availableCatalog,
+      width,
+      depth,
+      layout,
+    ));
+    setReserveRemoval(null);
+    setReserveNotice(null);
+    setReserveOptionType(draft.optionType || '');
+    setReserveOptions(nextOptions);
+    setItems((current) => anchorReserveContentItems([
+      ...current.flatMap((item) => {
+        if (!isReserveContentItem(item)) return [item];
+        const content = keep.get(item.id);
+        return content ? [{ ...item, options: { ...(item.options || {}), reserveContent: reserveContentPlacement(content) } }] : [];
+      }),
+      ...added,
+    ], nextReserve));
+    if (added.length) setSelectedId(null);
+  };
+
+  const requestCustomReserve = async ({ width: customWidth, depth: customDepth, note = '' }) => {
+    if (readOnly) return;
+    const currentRow = reserveRows.find((row) => row.optionType === effectiveReserveOptionType);
+    const message = [
+      `Demande de réserve sur mesure : ${formatReserveMetres(customWidth)} m × ${formatReserveMetres(customDepth)} m.`,
+      currentRow ? `Réserve actuellement choisie : ${currentRow.areaLabel} (${currentRow.dims}).` : '',
+      note ? `Précisions : ${note}` : '',
+    ].filter(Boolean).join('\n');
+    await sendSceneQuestionEmail(currentScenePayload(saveState === 'configured' ? 'configured' : 'created', saveState === 'configured' ? 'configured' : 'draft'), {
+      subject: 'Réserve sur mesure',
+      message,
+      category: 'technical',
+      urgency: 'normal',
+      sceneUrl: sceneShareUrl(initialScene),
+    });
+    setReserveOptions((current) => ({ ...current, customRequest: { width: customWidth, depth: customDepth, note, requestedAt: new Date().toISOString() } }));
+  };
+
+  const reserveSummary = useMemo(() => {
+    if (!reserveItem) return {};
+    const interior = reserveInterior(reserveItem.children || []);
+    const door = reserveDoorState(reserveItem.children || [], { doorOpening: reserveOptions.doorOpening });
+    const placement = reservePlacementFromEntry(findCatalogEntry(availableCatalog, reserveItem.type) || reserveItem);
+    const placementLabel = { left: 'Coin arrière gauche', right: 'Coin arrière droit', center: 'Centre arrière' }[placement] || 'Contre le mur du fond';
+    const hasPower = reserveBuiltinChildren(reserveItem.children || []).some(isReservePowerSource) || reserveContents.some((content) => content.isPower);
+    return {
+      caption: interior ? `${formatReserveMetres(interior.width)} × ${formatReserveMetres(interior.depth)} m · ${({ left: 'arrière gauche', right: 'arrière droite', center: 'centre arrière' })[placement] || 'fond'}` : '',
+      placement: placementLabel,
+      door: door ? `${({ front: 'Façade', left: 'Côté gauche', right: 'Côté droit', back: 'Fond' })[door.side]} · ${door.opening === 'pull' ? 'extérieur' : 'intérieur'} · poignée ${door.handle === 'left' ? 'gauche' : 'droite'}` : 'Sans porte',
+      contentsPrice: reserveContentPricing(reserveContents).total,
+      warning: !hasPower && reserveContents.some((content) => content.needsPower) ? 'Prise requise' : '',
+      doorOptions: { doorOpening: reserveOptions.doorOpening },
+    };
+  }, [reserveItem, reserveOptions.doorOpening, availableCatalog, reserveContents, reserveContentPricing]);
+  const reserveQuickTotal = reserveRowPrice(effectiveReserveOptionType) + (reserveSummary.contentsPrice || 0);
+  const reserveQuickRow = reserveRows.find((row) => row.optionType === effectiveReserveOptionType) || null;
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
     const nextContactDetails = overrides.contactDetails || contactDetails;
@@ -2103,6 +2439,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const openSelectedItemConfigurator = () => {
     if (!selected || readOnly) return;
+    if (isReserveContentItem(selected) && reserveItem) {
+      const contentEntry = itemConfiguratorEntry(selected);
+      // Finishes (colours, variants) use the regular item window; placement lives in the reserve editor.
+      if (itemEditNeedsConfigurator(selected, contentEntry, assetPackLabel)) setItemConfigModal({ mode: 'edit', item: selected, entry: contentEntry });
+      else openReserveEditor('layout', selected.id);
+      return;
+    }
     if (openStepOptionForItem(selected)) return;
     const entry = itemConfiguratorEntry(selected);
     if (!itemEditNeedsConfigurator(selected, entry, assetPackLabel)) return;
@@ -2139,6 +2482,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       return;
     }
     if (item) {
+      if (item.options?.reserveContent) options = { ...(options || {}), reserveContent: item.options.reserveContent };
       if (entry?.type && entry.type !== item.type) {
         replaceItemWithEntry(item, entry, options);
       } else {
@@ -2321,12 +2665,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     let lastPlacedId = null;
     let placedCount = 0;
     const safeQuantity = Math.max(1, Number(quantity || 1));
+    // A copy made from the cart is a free stand object: it never inherits a reserve position.
+    const { reserveContent: _reservePlacement, ...placementOptions } = options || {};
     setItems((current) => {
       let next = current;
       for (let index = 0; index < safeQuantity; index += 1) {
         const item = {
           ...makeItem(entry.type, width, depth, layout, entry),
-          options: { ...(options || {}) },
+          options: { ...placementOptions },
         };
         const placed = placeItemInFreeSpot(item, [...next, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems], width, depth, layout, genericCarpetFootprintEnabled);
         if (!placed) break;
@@ -3095,6 +3441,40 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onTechnicalFloorType={(type) => !readOnly && handleTechnicalFloorType(type)}
             onTechnicalFloorTrimType={(type) => !readOnly && setTechnicalFloorTrimType(type)}
             onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
+            reservePanel={(
+              <ReserveQuickView
+                tr={tr}
+                formula={<FormulaIncludedBox includedRow={reserveRows.find((row) => row.included) || null} compact />}
+                rows={reserveRows}
+                selectedOptionType={effectiveReserveOptionType}
+                removed={effectiveReserveOptionType === '__none__'}
+                hasRule={Boolean(activeReserveRuleConfig?.includedType)}
+                disabled={readOnly}
+                summary={reserveSummary}
+                reserve={reserveItem}
+                contents={reserveContents}
+                totalPrice={reserveQuickTotal}
+                totalDetail={reserveItem ? `Réserve ${reserveQuickRow?.areaLabel || ''} · ${reserveContents.length} objet${reserveContents.length > 1 ? 's' : ''}` : 'Aucune réserve'}
+                notice={reserveNotice}
+                customRequest={reserveOptions.customRequest || null}
+                orientation={reserveOrientationInfo}
+                onSelectRow={chooseReserveRow}
+                onOrientation={chooseReserveOrientation}
+                onOpenEditor={(step) => openReserveEditor(step)}
+                onRemove={removeReserveWithContents}
+                onRestore={() => {
+                  if (readOnly) return;
+                  setReserveRemoval(null);
+                  setReserveOptionType(activeReserveRuleConfig?.includedType ? '' : (reserveRows[0]?.optionType || ''));
+                }}
+                onUndoRemove={reserveRemoval ? undoReserveRemoval : null}
+                onDismissNotice={() => setReserveNotice(null)}
+                onUndoNotice={reserveNotice?.undo ? undoReserveNotice : null}
+                onCustomRequest={requestCustomReserve}
+                onOpenShop={() => setActiveStep(3)}
+                onAskQuestion={() => setHeaderPanel('question')}
+              />
+            )}
             onReserveOption={(type) => { if (!readOnly) { if (type === '__none__') { removeReserve(); } else { setReserveOptionType(type); } } }}
             onReserveOptions={(patch) => !readOnly && setReserveOptions((current) => ({ ...current, ...patch }))}
             onPartitionHeadSide={(side, enabled) => !readOnly && !isSignatureStand && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
@@ -3150,6 +3530,21 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           onClose={() => closeTutorial(true)}
           onSkip={() => closeTutorial(true)}
         />
+      )}
+
+      {reserveEditor && reserveEditorModel && (
+        <ReservePreviewContext.Provider value={reservePreviewContext}>
+          <ReserveEditorModal
+            key={reserveEditor.id}
+            model={reserveEditorModel}
+            initialStep={reserveEditor.step}
+            initialSelection={reserveEditor.selection}
+            tr={tr}
+            onClose={() => setReserveEditor(null)}
+            onCommit={commitReserveDraft}
+            onCustomRequest={requestCustomReserve}
+          />
+        </ReservePreviewContext.Provider>
       )}
 
       {itemConfigModal && (() => {
@@ -4997,6 +5392,7 @@ function OptionsStepPanel({
   onPrestigeSignageFraming,
   onSelectPrestigeItem,
   isAdminViewer = false,
+  reservePanel = null,
 }) {
   const tr = useUiText();
   const t = useT();
@@ -5094,16 +5490,18 @@ function OptionsStepPanel({
         />
       </OptionAccordion>}
       <OptionAccordion {...accordionScrollProps('reserve')} title={t('option_reserve')} icon={<ConfiguratorOptionIcon src="/icons/reserve.svg" />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
-        <ReserveOptionCard
-          rule={reserveRule}
-          selectedOptionType={reserveOptionType}
-          options={reserveOptions}
-          catalog={catalog}
-          salonLabel={salonLabel}
-          disabled={readOnly}
-          onChange={onReserveOption}
-          onOptions={onReserveOptions}
-        />
+        {reservePanel || (
+          <ReserveOptionCard
+            rule={reserveRule}
+            selectedOptionType={reserveOptionType}
+            options={reserveOptions}
+            catalog={catalog}
+            salonLabel={salonLabel}
+            disabled={readOnly}
+            onChange={onReserveOption}
+            onOptions={onReserveOptions}
+          />
+        )}
       </OptionAccordion>
       <OptionAccordion {...accordionScrollProps('tete')} title={t('option_partition_head')} icon={<ConfiguratorOptionIcon src="/icons/tete_de_cloison.svg" />} open={openOptions.tete} onToggle={() => toggleOption('tete')}>
         <PartitionHeadOptionCard
@@ -5312,6 +5710,8 @@ function stableCartValue(value) {
 function cartGroupKey(item = {}) {
   const options = { ...(item.options || {}) };
   ['id', 'x', 'y', 'z', 'wall', 'rotation'].forEach((key) => delete options[key]);
+  // Objects stored in the reserve are grouped together, whatever their exact position.
+  if (options.reserveContent) options.reserveContent = true;
   return `${item.type || 'item'}:${stableCartValue(options)}`;
 }
 
@@ -6884,7 +7284,7 @@ function step2OptionKeyForItem(item = {}) {
   if (isSignatureArchItem(item)) return 'arche';
   if (isPrestigeArchControlItem(item, false)) return 'arche';
   if (isPrestigeHighSignControlItem(item, false)) return 'enseigne';
-  if (isReserveSceneItem(item) || isAutomaticReserveItem(item)) return 'reserve';
+  if (isReserveSceneItem(item) || isAutomaticReserveItem(item) || item?.options?.reserveContent) return 'reserve';
   if (isWoodReceptionDeskItem(item) && isIncludedSceneItem(item)) return 'comptoir';
   if (isLedRailEntry(item) || isAutomaticLedRailItem(item) || isAutomaticSpotItem(item)) return 'led';
   return '';
@@ -7416,6 +7816,8 @@ function itemOptionLines(item) {
     result.push(hasLogo ? 'Avec logo' : 'Sans logo');
     return uniqueTextValues(result);
   }
+  if (opts.reserveOrientation) result.push(`Orientation : ${opts.reserveOrientation === 'vertical' ? 'le long du mur latéral' : 'le long du fond'}`);
+  if (opts.reserveDoorSide) result.push(`Porte : ${({ front: 'façade', left: 'côté gauche', right: 'côté droit', back: 'fond' })[opts.reserveDoorSide] || opts.reserveDoorSide}`);
   if (opts.reserveDoorOpening) result.push(`Ouverture de porte : ${reserveDoorOpeningLabel(opts.reserveDoorOpening)}`);
   if (opts.reserveHandleOrientation) result.push(`Orientation de la poignée : ${reserveHandleOrientationLabel(opts.reserveHandleOrientation)}`);
   if (opts.variantLabel && !shouldHideVariantLabelInSummary(item, opts.variantLabel)) result.push(opts.variantLabel);
@@ -12881,6 +13283,7 @@ function AdminObjectsView({ assets, scenes, salons, search, onSearchChange, cate
               <div className="asset-tags">
                 {assetPacks(asset, scenes).slice(0, 2).map((pack) => <small key={pack}>{pack}</small>)}
                 {asset.dimensions?.adminOnly && <small className="admin-only">Admin</small>}
+                {asset.dimensions?.reserveCatalog && <small className="reserve-catalog" title="Disponible dans le configurateur de réserve">Réserve</small>}
                 {!asset.is_active && <small className="inactive">Inactif</small>}
               </div>
             </div>
@@ -13684,6 +14087,20 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           <span>
             <strong>Admin seulement</strong>
             <small>Si activé, seuls les admins peuvent poser cet objet dans une scène.</small>
+          </span>
+        </label>
+        )}
+
+        {!isColorGroup && !isGroupAsset && (
+        <label className="asset-toggle-row">
+          <input
+            type="checkbox"
+            checked={Boolean(draft.dimensions?.reserveCatalog)}
+            onChange={(event) => updateAssetBehavior({ reserveCatalog: event.target.checked || undefined })}
+          />
+          <span>
+            <strong>Disponible dans la réserve</strong>
+            <small>Si activé, l'objet apparaît dans le catalogue du configurateur de réserve pour être placé à l'intérieur (selon les packs cochés).</small>
           </span>
         </label>
         )}
@@ -15440,6 +15857,8 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const autoSpotsRule = options.autoSpotsRule || null;
   const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, packLabel, options.reserveOptions || {})
     .map((item) => applyReserveItemOverride(item, options.reserveItemOverrides || {}, width, depth, layout, options.carpetFootprintEnabled !== false));
+  const anchoredManualItems = manualItems.some((item) => item?.options?.reserveContent)
+    ? anchorReserveContentItems(manualItems, automaticReserveItems[0] || null) : manualItems;
   const ledItems = options.ledRailsEnabled === false
     ? []
     : hasAutoSpotsRule(autoSpotsRule)
@@ -15448,7 +15867,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
       : makeAutomaticLedRailItems(ledEntries, width, depth, layout, ledSpotCountForArea(area))
         .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout));
   return resolveTechnicalWallSurfaces(resolveSpotWallAttachments(applyElectricalClearance([
-    ...manualItems,
+    ...anchoredManualItems,
     ...automaticReserveItems,
     ...automaticMeterCoverItems,
     ...makeAutomaticPartitionHeadItems(partitionRule, partitionSides, catalogEntries, width, depth, layout, packLabel)
@@ -16982,7 +17401,340 @@ function makeAutomaticMeterCoverItems(packLabel, variantType, catalogEntries = [
   }], width, depth, layout);
 }
 
-function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = [], width, depth, layout, salonLabel, reserveOptions = {}) {
+function reserveCatalogArea(entry = {}) {
+  return reserveAreaFromText(`${entry?.label || ''} ${entry?.type || ''}`);
+}
+
+function isReservePlacementSibling(entry, candidate) {
+  if (!entry || !candidate || entry.type === candidate.type || candidate.is_active === false) return false;
+  if (!(candidate.isGroup || candidate.children?.length) || !isReserveCatalogEntry(candidate)) return false;
+  const area = reserveCatalogArea(entry);
+  return area > 0 && Math.abs(area - reserveCatalogArea(candidate)) < 0.01 && Boolean(reservePlacementFromEntry(candidate));
+}
+
+// Same-size reserve groups authored for another corner of the back wall.
+function reservePlacementChoices(entry, catalogEntries = [], layout = 'back') {
+  if (!entry) return [];
+  const ownPlacement = reservePlacementFromEntry(entry);
+  const choices = new Map();
+  if (ownPlacement) choices.set(ownPlacement, entry);
+  (catalogEntries || []).filter((candidate) => isReservePlacementSibling(entry, candidate)).forEach((candidate) => {
+    const placement = reservePlacementFromEntry(candidate);
+    if (!choices.has(placement)) choices.set(placement, candidate);
+  });
+  return ['left', 'center', 'right'].filter((placement) => choices.has(placement)).map((placement) => ({
+    placement,
+    entry: choices.get(placement),
+    allowed: placement === ownPlacement || reservePlacementAllowed(placement, layout),
+  }));
+}
+
+function reserveGeometryEntry(entry, placement = '', catalogEntries = [], layout = 'back') {
+  if (!entry || !placement || placement === reservePlacementFromEntry(entry)) return entry;
+  const choice = reservePlacementChoices(entry, catalogEntries, layout).find((candidate) => candidate.placement === placement);
+  return choice?.allowed ? choice.entry : entry;
+}
+
+// Corner reserves can run along the back wall (horizontal) or along their side wall (vertical).
+// Returns the orientations offered for an authored corner group, with the reason when one does not fit the stand.
+function reserveOrientationChoices(entry, children = [], width = 4, depth = 3, layout = 'back') {
+  const corner = entry ? reservePlacementFromEntry(entry) : '';
+  const native = reserveOrientation(children || []);
+  if ((corner !== 'left' && corner !== 'right') || (native !== 'horizontal' && native !== 'vertical')) return { corner, native, choices: [] };
+  const interior = reserveInterior(children || []);
+  const longSide = Math.max(interior?.width || 0, interior?.depth || 0);
+  const sideWall = reservePlacementAllowed(corner, layout);
+  const choices = ['horizontal', 'vertical'].map((orientation) => {
+    if (orientation === native) return { orientation, available: true, reason: '' };
+    if (orientation === 'vertical' && !sideWall) return { orientation, available: false, reason: `Votre stand n’a pas de mur ${corner === 'left' ? 'à gauche' : 'à droite'} pour y adosser la réserve.` };
+    const room = orientation === 'vertical' ? Number(depth || 0) : Number(width || 0);
+    if (longSide > room - 1) return { orientation, available: false, reason: `Le stand n’est pas assez ${orientation === 'vertical' ? 'profond' : 'large'} pour une réserve de ${formatReserveMetres(longSide)} m dans ce sens.` };
+    return { orientation, available: true, reason: '' };
+  });
+  return { corner, native, choices };
+}
+
+function reserveTurnedChildren(entry, children = [], orientation = '', width = 4, depth = 3, layout = 'back', doorCatalog = []) {
+  if (!orientation || !children?.length) return null;
+  const { corner, native, choices } = reserveOrientationChoices(entry, children, width, depth, layout);
+  if (orientation === native || !choices.find((choice) => choice.orientation === orientation)?.available) return null;
+  return mirrorReserveChildren(children, corner, doorCatalog);
+}
+
+function reserveChildConfig(reserveOptions = {}, groupType = '') {
+  return {
+    doorSlot: reserveOptions?.door?.[groupType]?.slot || '',
+    handleOrientation: reserveOptions?.handleOrientation || '',
+    builtins: reserveOptions?.builtins?.[groupType] || null,
+  };
+}
+
+function isReserveContentItem(item = {}) {
+  return Boolean(item?.options?.reserveContent);
+}
+
+function isReserveWallContentItem(item = {}) {
+  return item?.options?.reserveContent?.mount === 'wall';
+}
+
+function reserveWallContentBaseY(item = {}, entry = null) {
+  const y = Number(item?.dimensions?.wallY ?? entry?.dimensions?.wallY);
+  return Number.isFinite(y) && y >= 0 ? y : 0;
+}
+
+// Objects stored inside the reserve follow it: their local position is re-anchored on every render.
+function anchorReserveContentItems(items = [], reserveItem = null) {
+  if (!(items || []).some(isReserveContentItem)) return items;
+  const interior = reserveItem ? reserveInterior(reserveItem.children || []) : null;
+  return items.map((item) => {
+    if (!isReserveContentItem(item)) return item;
+    const placement = item.options.reserveContent;
+    const base = {
+      ...item,
+      isWallItem: false,
+      wall: undefined,
+      wallSide: undefined,
+      wallSurface: undefined,
+      placementRule: null,
+      lockedPlacement: false,
+      surfaceHostId: null,
+    };
+    if (!interior) return base;
+    const world = reserveLocalToWorld(reserveItem, {
+      x: interior.minX + Number(placement.u || 0),
+      z: interior.minZ + Number(placement.v || 0),
+    });
+    return {
+      ...base,
+      x: Math.round(world.x * 1000) / 1000,
+      z: Math.round(world.z * 1000) / 1000,
+      y: isReserveWallContentItem(item) ? reserveWallContentBaseY(item) : 0,
+      rotation: normalizeDegrees(Number(reserveItem.rotation || 0) + Number(placement.rotation || 0)),
+    };
+  });
+}
+
+const reserveCategoryOrder = ['storage', 'wall', 'appliance', 'electric'];
+const ReservePreviewContext = createContext(null);
+
+// Re-frames the camera when the preview switches between the thumbnail and the large view.
+function ReservePreviewCameraFrame({ position, target }) {
+  const camera = useThree((state) => state.camera);
+  const controls = useThree((state) => state.controls);
+  const key = `${position.join(',')}|${target.join(',')}`;
+  useEffect(() => {
+    camera.position.set(position[0], position[1], position[2]);
+    camera.lookAt(target[0], target[1], target[2]);
+    if (controls?.target) {
+      controls.target.set(target[0], target[1], target[2]);
+      controls.update?.();
+    }
+  }, [camera, controls, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
+// Live 3D view of the reserve being edited, rendered with the configurator's own scene components.
+function ReserveEditorPreview3D({ reserve, contents = [], selectedKey = '', full = false, onSelect }) {
+  const context = useContext(ReservePreviewContext);
+  const contentItems = useMemo(() => (context && reserve ? context.makeContentItems(contents, reserve) : []), [context, reserve, contents]);
+  const items = useMemo(() => (reserve ? [reserve, ...contentItems] : []), [reserve, contentItems]);
+  const frame = useMemo(() => {
+    const bounds = (reserve && itemHardCollisionBox(reserve, 0)) || { minX: -1, maxX: 1, minZ: -1, maxZ: 1 };
+    // StandScene offsets the stand by its camera pivot (viewAngle 0).
+    const center = [(bounds.minX + bounds.maxX) / 2, 0.95, (bounds.minZ + bounds.maxZ) / 2 + 0.25];
+    const span = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ, 1.2);
+    const distance = span * 1.1 + 2.6;
+    // The large view looks down steeply so contents stay visible above the 2.5 m partitions.
+    const position = full
+      ? [center[0] + distance * 0.2, distance * 1.45, center[2] + distance * 0.5]
+      : [center[0] + distance * 0.42, distance * 1.05, center[2] + distance * 0.82];
+    return { center: [center[0], 0.3, center[2]], position };
+  }, [reserve, full]);
+  if (!context || !reserve) return null;
+  const { stand } = context;
+  return (
+    <Canvas camera={{ position: frame.position, fov: 38 }} dpr={[1, 1.75]} gl={{ alpha: true }} flat shadows>
+      <StudioLighting width={stand.width} depth={stand.depth} />
+      <Suspense fallback={null}>
+        <StandScene
+          width={stand.width}
+          depth={stand.depth}
+          height={stand.height}
+          layout={stand.layout}
+          items={items}
+          catalog={context.catalog}
+          selectedId={selectedKey}
+          setSelectedId={(id) => onSelect?.(id && id !== reserve.id ? id : '')}
+          draggingId={null}
+          setDraggingId={() => {}}
+          onDragMove={() => {}}
+          viewAngle={0}
+          carpetColor={context.carpetColor}
+          carpetFootprintColor={context.carpetFootprintColor}
+          carpetFootprintEnabled={context.carpetFootprintEnabled}
+          wallFabricColor={context.wallFabricColor}
+          reserveWallFabricColor={context.reserveWallFabricColor}
+          reserveDoorColorHex={context.reserveDoorColorHex}
+          interactive={full}
+          hoverEnabled={full}
+          canEditLockedItems={false}
+          visualContext={context.visualContext}
+        />
+      </Suspense>
+      <ReservePreviewCameraFrame position={frame.position} target={frame.center} />
+      <OrbitControls
+        makeDefault
+        target={frame.center}
+        enablePan={full}
+        enableZoom={full}
+        enableRotate={full}
+        autoRotate={!full}
+        autoRotateSpeed={0.55}
+        enableDamping
+        minDistance={1.4}
+        maxDistance={14}
+        maxPolarAngle={Math.PI / 2.08}
+      />
+    </Canvas>
+  );
+}
+
+// Reserve furnishing is chosen among the shop's own objects: same assets, prices and pack rules.
+// Once at least one asset is ticked "Disponible dans la réserve" in the back-office, only ticked assets are offered;
+// before that, storage-friendly shop objects are picked automatically.
+function isReserveCatalogFlagged(entry = {}) {
+  return Boolean(entry?.dimensions?.reserveCatalog);
+}
+
+function buildReserveCatalog(entries = [], packLabel = '', width = 4, depth = 3, layout = 'back', curated = false) {
+  const memberTypes = variantGroupMemberTypes(entries);
+  const cards = [];
+  (entries || []).forEach((entry) => {
+    if (!entry || entry.isGroup || entry.children?.length || isAutomaticReserveItem(entry) || isCeilingMountedItem(entry)) return;
+    if (furniturePanelCategory(entry) === 'hidden') return;
+    if (isVariantGroupEntry(entry)) {
+      if (!variantGroupHasDisplayVariants(entry)) return;
+      itemConfigVariants(entry, packLabel).forEach((variant) => {
+        const asset = variant.entry;
+        if (!asset?.type || reserveCatalogNeedsArtwork(asset)) return;
+        const flagged = isReserveCatalogFlagged(entry) || isReserveCatalogFlagged(asset);
+        if (curated && !flagged) return;
+        const card = reserveCatalogCard(asset, { group: entry, variant, packLabel, width, depth, layout, flagged });
+        if (card) cards.push(card);
+      });
+      return;
+    }
+    if (memberTypes.has(entry.type)) return;
+    // Colour finishes keep their default and stay editable afterwards; artwork or paid extras need the shop configurator.
+    if (reserveCatalogNeedsArtwork(entry) || itemConfigExtraOptions(entry).length) return;
+    const flagged = isReserveCatalogFlagged(entry);
+    if (curated && !flagged) return;
+    const card = reserveCatalogCard(entry, { packLabel, width, depth, layout, flagged });
+    if (card) cards.push(card);
+  });
+  const unique = [...new Map(cards.map((card) => [card.key, card])).values()];
+  return unique.sort((a, b) => reserveCategoryOrder.indexOf(a.category) - reserveCategoryOrder.indexOf(b.category) || a.label.localeCompare(b.label, 'fr'));
+}
+
+function reserveCatalogNeedsArtwork(entry = {}) {
+  return normalizeTextureSlots(entry.dimensions?.textureSlots).some((slot) => slot.kind !== 'color');
+}
+
+function reserveCatalogCard(asset, { group = null, variant = null, packLabel = '', width = 4, depth = 3, layout = 'back', flagged = false } = {}) {
+  const groupLabel = String(group?.label || '').trim();
+  const mount = assetPlacementMode(asset) === 'wall' || (group && assetPlacementMode(group) === 'wall') ? 'wall' : 'floor';
+  // Ticked assets are always offered, filed under the closest catalogue filter.
+  const category = reserveCatalogCategory({ ...asset, groupLabel }) || (flagged ? (mount === 'wall' ? 'wall' : 'storage') : '');
+  if (!category) return null;
+  const probe = makeItem(asset.type, width, depth, layout, asset);
+  const bounds = itemGroupBounds(probe);
+  if (!bounds.width || !bounds.depth || bounds.width > 2.2 || bounds.depth > 1.2) return null;
+  const variantLabel = String(variant?.label || asset.label || '').trim();
+  const label = group ? `${groupLabel} · ${variantLabel}` : variantLabel;
+  const price = Number(variant?.price ?? assetUnitPrice(asset, packLabel) ?? 0) || 0;
+  return {
+    key: group ? `${group.type}:${asset.type}` : asset.type,
+    type: asset.type,
+    label,
+    groupLabel: '',
+    detail: group ? groupLabel : '',
+    size: [Number(bounds.width.toFixed(3)), Number(bounds.height.toFixed(3)), Number(bounds.depth.toFixed(3))],
+    mount,
+    category,
+    thumbnail: asset.thumbnailUrl || asset.thumbnail_url || variant?.imageUrl || group?.thumbnailUrl || '',
+    price: Math.max(0, price),
+    needsPower: reserveEntryNeedsPower({ ...asset, groupLabel }),
+    isPower: isReservePowerSource(asset),
+    options: group ? {
+      variantGroupType: group.type,
+      variantGroupLabel: groupLabel,
+      variantId: variant?.id || asset.type,
+      variantLabel,
+      variantAssetLabel: variantLabel,
+      variantReference: variant?.reference || '',
+      baseObjectReference: variant?.reference || '',
+      variantAssetType: asset.type,
+      variantImageUrl: variant?.imageUrl || '',
+    } : {},
+  };
+}
+
+function reserveContentFromItem(item = {}, catalogCards = []) {
+  const placement = item.options?.reserveContent || {};
+  const card = catalogCards.find((candidate) => candidate.key === placement.catalogKey && candidate.type === item.type)
+    || catalogCards.find((candidate) => candidate.type === item.type) || null;
+  const bounds = itemGroupBounds({ ...item, isWallItem: false, wall: undefined });
+  const groupLabel = item.options?.variantGroupLabel || '';
+  return {
+    key: item.id,
+    sourceId: item.id,
+    catalogKey: card?.key || placement.catalogKey || item.type,
+    type: item.type,
+    label: card?.label || (groupLabel ? `${groupLabel} · ${item.options?.variantLabel || item.label}` : item.label || item.type),
+    detail: card?.detail || groupLabel,
+    size: card?.size || [bounds.width, bounds.height, bounds.depth],
+    mount: placement.mount === 'wall' ? 'wall' : 'floor',
+    wall: placement.wall || '',
+    category: card?.category || reserveCatalogCategory({ ...item, groupLabel }) || 'storage',
+    thumbnail: card?.thumbnail || item.thumbnailUrl || item.options?.variantImageUrl || '',
+    needsPower: card ? card.needsPower : reserveEntryNeedsPower({ ...item, groupLabel }),
+    isPower: card ? card.isPower : isReservePowerSource(item),
+    rotation: Number(placement.rotation || 0),
+    u: Number(placement.u || 0),
+    v: Number(placement.v || 0),
+  };
+}
+
+function reserveContentPlacement(content = {}) {
+  return {
+    u: Math.round(Number(content.u || 0) * 1000) / 1000,
+    v: Math.round(Number(content.v || 0) * 1000) / 1000,
+    rotation: Number(content.rotation || 0),
+    mount: content.mount === 'wall' ? 'wall' : 'floor',
+    wall: content.mount === 'wall' ? content.wall || '' : '',
+    catalogKey: content.catalogKey || '',
+  };
+}
+
+function makeReserveContentItem(content = {}, card = null, catalogEntries = [], width = 4, depth = 3, layout = 'back') {
+  const entry = findCatalogEntry(catalogEntries, content.type) || card || { type: content.type, label: content.label };
+  const base = makeItem(content.type, width, depth, layout, entry);
+  return {
+    ...base,
+    label: entry.label || content.label,
+    isWallItem: false,
+    wall: undefined,
+    collisionEnabled: true,
+    options: { ...(card?.options || {}), reserveContent: reserveContentPlacement(content) },
+  };
+}
+
+function reserveRowDimensions(entry) {
+  const interior = entry?.children?.length ? reserveInterior(entry.children) : null;
+  return interior ? `${formatReserveMetres(interior.width)} × ${formatReserveMetres(interior.depth)} m` : '';
+}
+
+function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = [], width, depth, layout, salonLabel, reserveOptions = {}, doorCatalogEntries = null) {
   if (selectedOptionType === '__none__') return [];
   if (!rule?.includedType && !selectedOptionType) return [];
   const selectedOption = normalizeComplementaryOptions(rule?.options).find((option) => option.type === selectedOptionType) || null;
@@ -16992,11 +17744,32 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
 
   const billable = Boolean(selectedOption || rule.chargeIncluded || isSignaturePackLabel(salonLabel));
   const unitPrice = billable ? reserveOptionPrice(selectedOption || {}, entry, salonLabel) : 0;
-  const base = makeItem(type, width, depth, layout, entry);
+  // Reserves without any layout choice keep the exact authored group (no new code path is involved).
+  const layoutConfigured = Boolean(reserveOptions?.placement || reserveOptions?.door || reserveOptions?.builtins || reserveOptions?.orientation
+    || (reserveOptions?.handleOrientation && reserveOptions?.layoutVersion));
+  // The price follows the configured size; the geometry may come from the same size authored for another corner.
+  const geometryEntry = layoutConfigured ? reserveGeometryEntry(entry, reserveOptions?.placement, catalogEntries, layout) || entry : entry;
+  const relocated = geometryEntry !== entry;
+  const base = makeItem(geometryEntry.type, width, depth, layout, geometryEntry);
+  // Vertical/horizontal choice: the corner group is reflected across its corner diagonal (same stand walls, swapped sides).
+  const turnedChildren = reserveOptions?.orientation
+    ? reserveTurnedChildren(geometryEntry, base.children, reserveOptions.orientation, width, depth, layout, doorCatalogEntries || catalogEntries)
+    : null;
+  const geometryKey = turnedChildren ? `${geometryEntry.type}@${reserveOptions.orientation}` : geometryEntry.type;
+  const geometryChildren = turnedChildren || base.children;
+  const children = layoutConfigured && geometryChildren?.length
+    ? configureReserveChildren(geometryChildren, reserveChildConfig(reserveOptions, geometryKey), doorCatalogEntries || catalogEntries)
+    : geometryChildren;
+  const doorState = layoutConfigured && reserveOptions?.door?.[geometryKey]?.slot && children?.length
+    ? reserveDoorState(children, { doorOpening: reserveOptions?.doorOpening }) : null;
   const item = constrainItem({
     ...base,
+    children,
+    ...(turnedChildren && base.groupSize?.length >= 3 ? { groupSize: [base.groupSize[2], base.groupSize[1], base.groupSize[0]] } : {}),
     id: `auto-reserve-${rule.id}`,
-    label: selectedOption
+    label: relocated
+      ? (geometryEntry.label || entry.label || 'Réserve')
+      : selectedOption
       ? (selectedOption.label || entry.label || 'Réserve complémentaire')
       : (isSignaturePackLabel(salonLabel) ? entry.label || rule.includedLabel || 'Réserve' : rule.includedLabel || entry.label || 'Réserve incluse'),
     autoReserve: true,
@@ -17014,6 +17787,9 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
       reserveDoorColorHex: reserveDoorColorForPack(salonLabel),
       reserveDoorOpening: reserveOptions.doorOpening || '',
       reserveHandleOrientation: reserveOptions.handleOrientation || '',
+      ...(relocated ? { reservePlacementType: geometryEntry.type, reservePriceType: type } : {}),
+      ...(turnedChildren ? { reserveOrientation: reserveOptions.orientation, reserveGeometryKey: geometryKey } : {}),
+      ...(doorState ? { reserveDoorSide: doorState.side } : {}),
     },
   }, width, depth, layout);
 
@@ -18058,7 +18834,7 @@ function itemMovementLocked(item) {
 }
 
 function itemSystemTransformLocked(item = {}) {
-  return Boolean(isAutomaticReserveItem(item) || item?.autoMeterCover);
+  return Boolean(isAutomaticReserveItem(item) || item?.autoMeterCover || item?.options?.reserveContent);
 }
 
 function isTransformPatch(patch = {}) {
@@ -18178,6 +18954,7 @@ function isWallTopSnapItem(item = {}, entry = null) {
 }
 
 function floorItemBaseY(item = {}, entry = null) {
+  if (item?.options?.reserveContent?.mount === 'wall') return reserveWallContentBaseY(item, entry);
   if (item.autoCounterPower) return Number(item.y || 0);
   if (isCountertopAccessory(item) && item.surfaceHostId) return Number(item.y || 0);
   if (isWallTopSnapItem(item, entry)) {

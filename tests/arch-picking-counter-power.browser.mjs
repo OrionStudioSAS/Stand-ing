@@ -33,7 +33,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__arch-selection__`);
-  await page.waitForFunction(() => window.rawPicking?.().raw === 'arch');
+  await page.waitForFunction(() => window.sceneState && window.rawPicking?.().raw === 'arch');
   assert.deepEqual(await page.evaluate(() => window.rawPicking()), { raw: 'arch', filtered: 'chair' }, 'An actual model ceiling occludes the chair before filtering');
   const point = await page.evaluate(() => window.project());
   await page.mouse.click(point.x, point.y);
