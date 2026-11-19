@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeAdminRole, isSuperAdmin } from "../_shared/adminRoles.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,6 +37,17 @@ Deno.serve(async (req) => {
   const action = clean(body.action) || "list";
 
   try {
+    if (action === "scene-activity") {
+      if (!Array.isArray(body.sceneIds) || body.sceneIds.length > 200
+        || body.sceneIds.some((id: unknown) => typeof id !== "string" || !id.trim() || id.length > 150)) {
+        return json({ error: "Liste de scènes invalide." }, 400);
+      }
+      const { data, error } = await admin.rpc("latest_scene_configuration_activity", {
+        p_scene_ids: [...new Set(body.sceneIds)],
+      });
+      if (error) throw error;
+      return json({ activities: data || [] });
+    }
     if (action === "audit") {
       const offset = Number(body.offset ?? 0);
       if (!Number.isInteger(offset) || offset < 0 || offset > 100000) return json({ error: "Offset invalide." }, 400);
@@ -55,8 +67,8 @@ Deno.serve(async (req) => {
       return json({ events: (data || []).slice(0, 100), hasMore: (data || []).length > 100 });
     }
 
-    const canManage = isManagingAdmin(adminUser.role_label);
-    if (["create", "update", "delete"].includes(action) && !canManage) return json({ error: "Accès réservé aux admins." }, 403);
+    const canManage = isSuperAdmin(adminUser.role_label);
+    if (["create", "update", "delete"].includes(action) && !canManage) return json({ error: "La gestion des comptes et des mots de passe est réservée aux super admins." }, 403);
     const password = typeof body.password === "string" ? body.password : "";
     const invalidPasswordType = body.password != null && typeof body.password !== "string";
     const invalidPasswordLength = (action === "create" || password !== "") && (password.length < 8 || password.length > 128);
@@ -111,8 +123,8 @@ Deno.serve(async (req) => {
       const { data: target, error: targetError } = await admin.from("admin_users").select("user_id, full_name, email, role_label, is_active, profile_metadata").eq("user_id", userId).maybeSingle();
       if (targetError) throw targetError;
       if (!target) return json({ error: "Compte admin introuvable." }, 404);
-      if (userId === currentUserId && (!isActive || !isManagingAdmin(role))) return json({ error: "Impossible de retirer tes propres droits admin." }, 400);
-      if (isManagingAdmin(target.role_label) && (!isActive || !isManagingAdmin(role)) && !(await hasAnotherAdmin(admin, userId))) return json({ error: "Conserve au moins un admin actif." }, 400);
+      if (userId === currentUserId && (!isActive || !isSuperAdmin(role))) return json({ error: "Impossible de retirer tes propres droits super admin." }, 400);
+      if (isSuperAdmin(target.role_label) && (!isActive || !isSuperAdmin(role)) && !(await hasAnotherSuperAdmin(admin, userId))) return json({ error: "Conserve au moins un super admin actif." }, 400);
       if (password) {
         const { error: passwordError } = await admin.auth.admin.updateUserById(userId, { password });
         if (passwordError) return json({ error: passwordError.message }, 400);
@@ -131,7 +143,7 @@ Deno.serve(async (req) => {
       const { data: target, error: targetError } = await admin.from("admin_users").select("full_name, email, role_label").eq("user_id", userId).maybeSingle();
       if (targetError) throw targetError;
       if (!target) return json({ error: "Compte admin introuvable." }, 404);
-      if (target && isManagingAdmin(target.role_label) && !(await hasAnotherAdmin(admin, userId))) return json({ error: "Conserve au moins un admin actif." }, 400);
+      if (target && isSuperAdmin(target.role_label) && !(await hasAnotherSuperAdmin(admin, userId))) return json({ error: "Conserve au moins un super admin actif." }, 400);
       const { error } = await admin.auth.admin.deleteUser(userId);
       if (error) return json({ error: error.message }, 500);
       const auditWarning = await writeAudit(admin, currentUserId, adminUser, "Utilisateur supprimé", target.full_name || target.email || userId, userId);
@@ -216,27 +228,21 @@ async function listUsers(admin: any, currentUserId: string, canManage: boolean) 
   return rows.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 }
 
-function isManagingAdmin(role: unknown) {
-  return ["admin", "super admin", "super administrateur"].includes(clean(role).toLowerCase());
-}
-
 function allowedRole(role: unknown) {
-  if (isManagingAdmin(role)) return "Admin";
-  const value = clean(role).toLowerCase();
-  if (value === "prestataire") return "Prestataire";
-  return value === "dessinateur" ? "Dessinateur" : "";
+  return normalizeAdminRole(role);
 }
 
-async function hasAnotherAdmin(admin: any, excludedUserId: string) {
+async function hasAnotherSuperAdmin(admin: any, excludedUserId: string) {
   const { data, error } = await admin.from("admin_users").select("user_id, role_label").eq("is_active", true).neq("user_id", excludedUserId);
   if (error) throw error;
-  return (data || []).some((row: any) => isManagingAdmin(row.role_label));
+  return (data || []).some((row: any) => isSuperAdmin(row.role_label));
 }
 
 async function writeAudit(admin: any, actorId: string, actor: any, action: string, detail: string, targetId: string) {
   const { error } = await admin.from("admin_audit_events").insert({
     actor_user_id: actorId, actor_name: actor.full_name || actor.email || "Admin",
-    action, detail, target_id: targetId,
+    actor_email: actor.email || null, actor_kind: "admin",
+    action, detail, target_id: targetId, target_type: "admin_user",
   });
   if (error) {
     console.error("Admin audit write failed", error.message);

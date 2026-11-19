@@ -1,3 +1,4 @@
+import { normalizeAdminRole, isSuperAdmin } from '../supabase/functions/_shared/adminRoles.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -11,13 +12,17 @@ const input = { email: 'staff@example.com', fullName: 'Staff Test', role: 'Admin
 
 function runtime(options = {}) {
   let handler;
-  const actor = { user_id: 'actor', role_label: options.role || 'Admin', is_active: options.active !== false, full_name: 'Admin Test' };
+  const actor = { user_id: 'actor', role_label: options.role || 'Super admin', is_active: options.active !== false, full_name: 'Admin Test' };
   const profiles = new Map([['actor', actor], ...(options.profiles || []).map(profile => [profile.user_id, profile])]);
   const accounts = new Map([['actor', { id: 'actor', email: 'admin@example.com', password: 'existing-password' }], ...(options.accounts || []).map(account => [account.id, account])]);
-  const calls = { create: [], password: [], delete: [], profiles: [], audit: [], logs: [] };
+  const calls = { create: [], password: [], delete: [], profiles: [], audit: [], logs: [], rpc: [] };
   const database = {
+    rpc: async (name, args) => {
+      calls.rpc.push({ name, args });
+      return options.activityError ? { error: { message: 'Activity unavailable' } } : { data: options.activities || [] };
+    },
     auth: {
-      getUser: async () => ({ data: { user: options.unauthenticated ? null : { id: 'actor', user_metadata: { role: 'Admin' } } }, error: null }),
+      getUser: async () => ({ data: { user: options.unauthenticated ? null : { id: 'actor', user_metadata: { role: 'Super admin' } } }, error: null }),
       admin: {
         listUsers: async () => ({ data: { users: [...accounts.values()] }, error: null }),
         createUser: async attributes => {
@@ -70,7 +75,7 @@ function runtime(options = {}) {
   };
   const context = vm.createContext({
     Deno: { serve: callback => { handler = callback; }, env: { get: key => ({ SUPABASE_URL: 'https://test.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'server-only' }[key]) } },
-    createClient: () => database, Response,
+    createClient: () => database, Response, normalizeAdminRole, isSuperAdmin,
     console: { error: (...args) => calls.logs.push(args) },
   });
   vm.runInContext(compiled, context);
@@ -103,7 +108,7 @@ test('admin creation defines a confirmed Auth password without invitations or cr
 test('password editing uses Auth only; a blank or missing password preserves the existing credential', async () => {
   for (const password of [undefined, '', secret]) {
     const api = runtime();
-    const result = await api.request({ ...input, action: 'update', userId: 'actor', password });
+    const result = await api.request({ ...input, role: 'Super admin', action: 'update', userId: 'actor', password });
     assert.equal(result.status, 200);
     assert.equal(api.accounts.get('actor').password, password || 'existing-password');
     assert.equal(api.calls.password.length, password ? 1 : 0);
@@ -126,7 +131,7 @@ test('server rejects missing, short, oversized and non-string passwords before c
 });
 
 test('only an authenticated active managing admin can create users or set passwords, regardless of submitted roles', async () => {
-  for (const options of [{ role: 'Dessinateur' }, { role: 'Prestataire' }, { active: false }, { unauthenticated: true }]) {
+  for (const options of [{ role: 'Admin' }, { role: 'admin' }, { role: 'Dessinateur' }, { role: 'Prestataire' }, { active: false }, { unauthenticated: true }]) {
     for (const action of ['create', 'update']) {
       const api = runtime(options);
       const result = await api.request({ ...input, action, userId: 'actor', password: secret, role: 'Admin' });
@@ -137,21 +142,24 @@ test('only an authenticated active managing admin can create users or set passwo
   assert.equal((await runtime().request({ ...input, action: 'create', password: secret }, false)).status, 401);
 });
 
-test('existing Admin and legacy Super admin labels retain the same rights and normalize to Admin', async () => {
-  for (const role of ['Admin', 'admin', 'Super admin', 'Super administrateur']) {
+test('super admin labels stay distinct from Admin, and self-demotion is denied before changing passwords', async () => {
+  for (const role of ['Super admin', 'Super administrateur']) {
     const api = runtime({ role });
     const result = await api.request({ ...input, role, action: 'update', userId: 'actor', password: secret });
     assert.equal(result.status, 200);
-    assert.equal(api.profiles.get('actor').role_label, 'Admin');
-    const listed = await api.request({ action: 'list' });
-    assert.equal(listed.body.users[0].role, 'Admin');
+    assert.equal(api.profiles.get('actor').role_label, 'Super admin');
+    assert.equal((await api.request({ action: 'list' })).body.users[0].role, 'Super admin');
   }
-  for (const patch of [{ role: 'Dessinateur' }, { isActive: false }]) {
+  for (const patch of [{ role: 'Admin' }, { role: 'Dessinateur' }, { role: 'Super admin', isActive: false }]) {
     const api = runtime();
     const result = await api.request({ ...input, ...patch, action: 'update', userId: 'actor', password: secret });
-    assert.equal(result.status, 400, 'Self-demotion cannot be combined with a password change');
+    assert.equal(result.status, 400);
     assert.equal(api.calls.password.length, 0);
   }
+  const api = runtime({ role: 'Admin' });
+  const user = (await api.request({ action: 'list' })).body.users[0];
+  assert.equal(user.role, 'Admin');
+  assert.equal(user.can_manage, false);
 });
 
 test('creating an existing admin is a conflict and never resets that account password', async () => {
@@ -185,7 +193,7 @@ test('failed profile creation cleans up a new Auth account but never changes an 
 
 test('Auth password rejection leaves existing profiles unchanged and rolls back any new staff access', async () => {
   const edit = runtime({ authError: true });
-  assert.equal((await edit.request({ ...input, action: 'update', userId: 'actor', password: secret })).status, 400);
+  assert.equal((await edit.request({ ...input, role: 'Super admin', action: 'update', userId: 'actor', password: secret })).status, 400);
   assert.equal(edit.calls.profiles.length, 0);
   assert.equal(edit.accounts.get('actor').password, 'existing-password');
   const create = runtime({ authError: true, accounts: [{ id: 'exhibitor', email: input.email, password: 'old-password' }] });
@@ -196,7 +204,7 @@ test('Auth password rejection leaves existing profiles unchanged and rolls back 
 
 test('a profile save failure after changing a password clearly reports the partial result without exposing credentials', async () => {
   const api = runtime({ profileError: true });
-  const result = await api.request({ ...input, action: 'update', userId: 'actor', password: secret });
+  const result = await api.request({ ...input, role: 'Super admin', action: 'update', userId: 'actor', password: secret });
   assert.equal(result.status, 500);
   assert.match(result.body.error, /mot de passe a été modifié/);
   assert.ok(!JSON.stringify(result.body).includes(secret));
@@ -218,4 +226,58 @@ test('the frontend transport only forwards a nonempty password to the authentica
   await api.saveAdminUser({ ...input, userId: 'actor', password: '' });
   assert.equal(calls[1].body.action, 'update');
   assert.equal('password' in calls[1].body, false);
+});
+
+test('scene activity summaries are admin-only, bounded, and keyed by unique scene IDs', async () => {
+  const activity = { scene_id: 'scene-new', action: 'Objet déplacé', actor_name: 'Exposant', created_at: '2026-11-19T09:45:00Z' };
+  const api = runtime({ activities: [activity] });
+  const result = await api.request({ action: 'scene-activity', sceneIds: ['scene-old', 'scene-new', 'scene-new'] });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.activities, [activity]);
+  assert.equal(api.calls.rpc[0].name, 'latest_scene_configuration_activity');
+  assert.deepEqual([...api.calls.rpc[0].args.p_scene_ids], ['scene-old', 'scene-new']);
+  for (const sceneIds of [undefined, 'scene-new', [1], [''], Array(201).fill('scene-new')]) {
+    assert.equal((await api.request({ action: 'scene-activity', sceneIds })).status, 400);
+  }
+  assert.equal(api.calls.rpc.length, 1);
+  assert.equal((await runtime({ active: false }).request({ action: 'scene-activity', sceneIds: ['scene-new'] })).status, 403);
+  assert.equal((await runtime({ unauthenticated: true }).request({ action: 'scene-activity', sceneIds: ['scene-new'] })).status, 401);
+  assert.equal((await runtime({ activityError: true }).request({ action: 'scene-activity', sceneIds: ['scene-new'] })).status, 500);
+});
+
+test('only a super admin can edit other Admin accounts, their role, access or password', async () => {
+  const target = { user_id: 'target', full_name: 'Other Admin', email: 'target@example.com', role_label: 'Admin', is_active: true };
+  for (const action of ['create', 'update', 'delete']) {
+    for (const role of ['Admin', 'Super admin', 'Prestataire']) {
+      const blocked = runtime({ role: 'Admin', profiles: [target] });
+      const result = await blocked.request({ ...input, action, userId: 'target', role, password: secret });
+      assert.equal(result.status, 403);
+      assert.equal(blocked.calls.password.length + blocked.calls.create.length + blocked.calls.profiles.length + blocked.calls.delete.length, 0);
+    }
+  }
+  for (const role of ['Admin', 'Super admin', 'Prestataire', 'Dessinateur']) {
+    const allowed = runtime({ profiles: [target] });
+    const result = await allowed.request({ ...input, action: 'update', userId: 'target', role, password: secret });
+    assert.equal(result.status, 200);
+    assert.equal(allowed.profiles.get('target').role_label, role);
+    assert.equal(allowed.accounts.get('target').password, secret);
+    const users = (await allowed.request({ action: 'list' })).body.users;
+    assert.equal(users.find(user => user.auth_user_id === 'actor').role, 'Super admin');
+  }
+  const blocked = runtime({ role: 'Admin', profiles: [target] });
+  assert.equal((await blocked.request({ ...input, action: 'update', userId: 'actor', role: 'Super admin', password: secret })).status, 403,
+    'An Admin cannot promote themselves, even when auth user_metadata claims Super admin');
+  assert.equal(normalizeAdminRole('super administrateur'), 'Super admin');
+  assert.equal(normalizeAdminRole('Admin'), 'Admin');
+  assert.equal(isSuperAdmin('Admin'), false);
+  assert.equal(isSuperAdmin('Super admin'), true);
+});
+
+test('a super admin cannot delete themselves or remove their own administrative access', async () => {
+  const api = runtime();
+  assert.equal((await api.request({ action: 'delete', userId: 'actor' })).status, 400);
+  for (const patch of [{ role: 'Admin' }, { role: 'Super admin', isActive: false }]) {
+    assert.equal((await api.request({ ...input, ...patch, action: 'update', userId: 'actor', password: secret })).status, 400);
+  }
+  assert.equal(api.calls.password.length + api.calls.delete.length + api.calls.profiles.length, 0);
 });

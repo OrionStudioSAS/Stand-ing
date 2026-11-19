@@ -55,7 +55,7 @@ function collisionContext() {
     'wallItemAxisBounds', 'wallItemMetrics', 'wallItemCollisionBox',
     'wallCoverPartitionHeadBlocker', 'wallMountedBlocker',
     'wallItemAxisRange', 'smclPartitionHeadWallAxis', 'applyWallPlacementRule',
-    'partitionHeadModelBounds', 'partitionHeadPhysicalBox', 'collidesWithPartitionHeads',
+    'partitionHeadModelBounds', 'partitionHeadPhysicalBox', 'technicalPartitionHeadPose', 'collidesWithPartitionHeads',
     'collidesWithScene', 'signatureArchWallX', 'signatureArchBackWallZ',
     'placeSignatureArchAgainstBackWall', 'isTransformPatch',
     'sideWallLength', 'sideWallStartZ', 'sideWallEndZ', 'sideWallCenterZ', 'wallAxisLimits',
@@ -88,6 +88,23 @@ test('SMCL retains its 60 cm placement footprint but protects the complete head'
   assert.equal(context.collidesWithScene(reserve, [head], reserve.id, 4, 4), true);
   assert.equal(context.collidesWithScene({ ...reserve, x: 0.2 }, [head], reserve.id, 4, 4), false);
   assert.equal(context.collidesWithScene({ ...reserve, x: 0.25 }, [head], reserve.id, 4, 4), false, 'No arbitrary extra clearance');
+});
+
+test('the visible left SMCL head reaches the edge and the BAT uses its actual wall rotation', () => {
+  const context = collisionContext();
+  const left = { ...head, label: 'Tête de cloison SMCL gauche', placementRule: { id: 'outer-left', locked: true }, dimensions: { size: [1.25, 3, .11], smclHeadSide: 'left' } };
+  const back = context.applyWallPlacementRule(left, 6.13, 3.19, 'back');
+  const side = context.applyWallPlacementRule(left, 6.13, 3.19, 'left');
+  assert.equal(back.wall, 'back');
+  assert.ok(Math.abs(back.x - .625 + 6.13 / 2) < 1e-9);
+  assert.equal(side.wall, 'left');
+  assert.ok(Math.abs(side.x + .625 - context.sideWallEndZ(3.19)) < 1e-9);
+  const backPose = context.technicalPartitionHeadPose(back, [], 6.13, 3.19);
+  const sidePose = context.technicalPartitionHeadPose(side, [], 6.13, 3.19);
+  assert.equal(backPose.rotation, 0);
+  assert.equal(sidePose.rotation, 90);
+  assert.equal(sidePose.width, 1.25);
+  assert.equal(sidePose.z, side.x);
 });
 
 test('SIAE supports span 60 cm from the inner edge and retain model depth and height', () => {

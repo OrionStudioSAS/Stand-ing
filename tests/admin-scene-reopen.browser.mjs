@@ -48,6 +48,7 @@ const server = await createServer({ logLevel: 'error', server: { host: '127.0.0.
     if (id === `${root}src/__reopen-app.jsx`) return source.replace("createRoot(document.getElementById('root')).render(<App />);", 'export {AdminClientsView};');
     if (id === `${root}src/__reopen-page.jsx`) return harness;
     if (id === `${root}src/data/supabaseClient.js`) return fakeClient;
+    if (id === `${root}src/data/technicalPlanStore.js`) return 'export async function loadTechnicalPlanEdits(){return {edits:{items:{},extras:[],annotations:[]},revision:0}};export async function saveTechnicalPlanEdits(id,edits){return {edits,revision:1}};';
   },
   configureServer(vite) { vite.middlewares.use('/__scene-reopen-test__', (_req, res) => { res.setHeader('Content-Type', 'text/html'); res.end('<div id="root"></div><script type="module" src="/src/__reopen-page.jsx"></script>'); }); },
 }] });
@@ -62,6 +63,15 @@ try {
   const row = (title) => page.locator('.admin-exhibitors-scene').filter({ has: page.locator('.admin-exhibitors-scene-title strong', { hasText: title }) });
   const alpha = row('Stand Alpha');
   await page.locator('summary').filter({ hasText: 'Alice Dupont' }).click();
+  await page.getByRole('button', { name: 'Ouvrir la fiche exposant' }).click();
+  const profile = page.getByRole('dialog', { name: 'Alice Dupont' });
+  await profile.locator('.admin-exhibitors-profile-scene').filter({ hasText: 'Stand Alpha' }).getByRole('button', { name: 'Modifier le BAT' }).click();
+  const batEditor = page.getByRole('dialog', { name: 'Éditeur du BAT' });
+  await batEditor.locator('.bat-editor-paper > svg').waitFor({ state: 'attached' });
+  assert.equal(await batEditor.getByRole('heading', { name: 'Stand Alpha' }).count(), 1);
+  await batEditor.getByRole('button', { name: "Fermer l'éditeur BAT" }).click();
+  await profile.getByRole('button', { name: 'Fermer la fiche' }).click();
+  assert.ok(await alpha.getByRole('button', { name: 'Télécharger BAT' }).isVisible());
   assert.equal(await page.getByRole('button', { name: 'Repasser en brouillon', exact: true, includeHidden: true }).count(), 2);
   for (const name of ['Stand signé', 'Stand brouillon', 'Stand envoyé']) assert.equal(await row(name).locator('.admin-exhibitors-reopen').count(), 0);
   assert.equal(await page.getByTestId('client-lock').innerText(), 'Lecture seule');

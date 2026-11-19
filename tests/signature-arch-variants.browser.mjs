@@ -55,11 +55,53 @@ try{
   await server.listen();browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error(e.message)});
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__arch-test__`);
   await page.waitForFunction(()=>window.archPricing,null,{timeout:60000});
+  const ground = page.getByRole('button', { name: /^Sol/ });
+  const footprintPalette = page.locator('.signature-floor-footprint');
+  if (!await footprintPalette.isVisible()) await ground.click();
+  await footprintPalette.getByRole('button', { name: /Gris.*1893/i }).click();
+  await page.waitForFunction(() => window.savedScene?.items.some(item => item.options?.signatureArchColorId === '1893'));
+  assert.equal(await page.evaluate(() => window.archPricing.lines.filter(line => line.type === 'signature-footprint-color').length), 1);
+  assert.equal(await page.evaluate(() => window.archPricing.lines.find(line => line.type === 'signature-footprint-color').total), 285);
+  const floorColors = await footprintPalette.locator('.surface-color-swatches button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label')));
+  const carpetPalette = page.getByRole('region', { name: 'MOQUETTE', exact: true });
+  const appearance = (palette) => palette.evaluate(node => {
+    const title = getComputedStyle(node.querySelector('.ground-section-heading > span'));
+    const swatch = getComputedStyle(node.querySelector('.surface-color-swatches button'));
+    return { font: title.font, color: title.color, width: swatch.width, height: swatch.height, gap: getComputedStyle(node).gap };
+  });
+  assert.deepEqual(await appearance(footprintPalette.locator('.surface-color-option-card')), await appearance(carpetPalette),
+    'Moquette and Empreinte use identical heading typography, spacing and swatch size');
+  assert.ok(await footprintPalette.locator('.ground-section-icon').isVisible());
+  assert.ok(await footprintPalette.locator('.surface-color-swatches button').first().evaluate(node => getComputedStyle(node).backgroundImage !== 'none'),
+    'The footprint uses textured swatches like the main carpet');
+  await page.getByRole('button',{name:/^Arche/}).click();
+  const archPalette = page.locator('.signature-arch-card .signature-arch-palette');
+  assert.deepEqual(await archPalette.locator('.signature-arch-swatches button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label'))), floorColors,
+    'Sol and Arche use exactly the same included and optional colours');
+  assert.equal(await archPalette.getByRole('button', { name: /Gris.*1893/i }).getAttribute('aria-pressed'), 'true');
+  await archPalette.getByRole('button', { name: /Rouge.*1964/i }).click();
+  await page.waitForFunction(() => window.savedScene?.items.some(item => item.options?.signatureArchColorId === '1964'));
+  await ground.click();
+  assert.equal(await footprintPalette.getByRole('button', { name: /Rouge.*1964/i }).getAttribute('aria-pressed'), 'true',
+    'A colour selected under Arche is immediately reflected under Sol');
+  assert.equal(await page.evaluate(() => window.archPricing.lines.some(line => line.type === 'signature-footprint-color')), false);
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await footprintPalette.getByRole('button', { name: /Rouge.*1964/i }).isVisible());
+  assert.ok(await footprintPalette.evaluate(node => node.scrollWidth <= node.clientWidth));
+  await footprintPalette.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: '/tmp/standing-signature-floor-footprint.png' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole('button',{name:/^Arche/}).click();
   const sizeGroup=page.getByRole('group',{name:'Taille',exact:true}), lightingGroup=page.getByRole('group',{name:'Éclairage du plafond',exact:true});
   assert.equal(await sizeGroup.getByRole('button').count(),2);
   assert.equal(await sizeGroup.getByRole('button',{name:/^1 m/}).count(),0);
   await page.waitForFunction(()=>window.archItems.some(i=>i.type==='asset-arche-signature-2m-spot-210-mvhslqjn'));
+  const cart = page.getByRole('button', { name: 'Ouvrir le panier' });
+  const popover = page.locator('.topbar-cart-popover');
+  await cart.click();
+  assert.equal(await page.locator('.cart-item-card').filter({ hasText: 'Arche' }).count(), 0);
+  assert.equal(await popover.getByText(/^Solde disponible :/).count(), 1);
+  await page.getByRole('button', { name: 'Fermer le panier' }).click();
   for(const index of [2,3,5,4]){
     const size=variants[index][3],lighting=index%2?'Suspension':'Spot';
     await sizeGroup.getByRole('button',{name:new RegExp(`^${size} m`)}).click();
@@ -74,6 +116,11 @@ try{
   }
   const ledSwitch=page.getByRole('switch',{name:'Mur LED',exact:true});
   await ledSwitch.click();
+  await cart.click();
+  assert.equal(await popover.getByText(/^Supplément à payer :/).count(), 1);
+  assert.equal(await popover.getByText(/^Solde disponible :/).count(), 0);
+  assert.equal(await page.locator('.cart-item-card').count(), 1);
+  await page.getByRole('button', { name: 'Fermer le panier' }).click();
   assert.equal(await page.getByText('Visuel lumineux façade', {exact:true}).count(),0);
   for(const index of [8,9,7,6]){
     const size=variants[index][3],lighting=index%2?'Suspension':'Spot';

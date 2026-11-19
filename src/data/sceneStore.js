@@ -694,6 +694,21 @@ export async function listAdminUsers() {
   return data?.users || [];
 }
 
+export async function listSceneLatestActivities(sceneIds = []) {
+  if (!supabase || !sceneIds.length) return [];
+  const ids = [...new Set(sceneIds.filter(Boolean))];
+  const activities = [];
+  for (let offset = 0; offset < ids.length; offset += 200) {
+    const { data, error } = await supabase.functions.invoke('admin-users', {
+      body: { action: 'scene-activity', sceneIds: ids.slice(offset, offset + 200) },
+    });
+    const functionError = await getFunctionError(error, data);
+    if (functionError) throw functionError;
+    activities.push(...(data?.activities || []));
+  }
+  return activities;
+}
+
 export async function listAdminAuditEvents(offset = 0, filters = {}) {
   if (!supabase) return { events: [], hasMore: false };
   const { data, error } = await supabase.functions.invoke('admin-users', {

@@ -15,7 +15,7 @@ const api = vm.createContext({
   adminDashboardIsComplete: (scene) => ['configured', 'bat_review', 'bat_validated'].includes(scene.client_status),
 });
 
-for (const name of ['adminClientSceneState', 'adminClientMatchesFilters', 'adminClientCompanyName', 'clientSceneEmplacement', 'clientSceneLocationLabel']) {
+for (const name of ['adminClientSceneState', 'adminClientMatchesFilters', 'adminClientCompanyName', 'clientSceneEmplacement', 'clientSceneLocationLabel', 'clientHallSummary']) {
   const start = source.indexOf(`function ${name}(`);
   assert.ok(start >= 0, `${name} exists`);
   vm.runInContext(source.slice(start, source.indexOf('\n}\n', start) + 2), api);
@@ -65,4 +65,13 @@ test('directory keeps scene actions, CSV export, Monday sync and responsive tabl
   assert.match(source, /setClientPageSize\(Number\(event\.target\.value\)\)/);
   assert.match(css, /\.admin-exhibitors-table-scroll/);
   assert.match(css, /@media \(max-width: 760px\)[^\n]*\.admin-exhibitors-toolbar/);
+});
+
+test('Hall column is between Salon and Pack and summarizes distinct halls across linked scenes', () => {
+  assert.match(source, /<span>Salon<\/span><span>Hall<\/span><span>Pack<\/span>/);
+  assert.equal(api.clientHallSummary([
+    { source_payload: { hall: '10' } }, { source_payload: { hall: '2' } },
+    { source_payload: { hall: '2' } }, { source_payload: {} },
+  ]), '2, 10');
+  assert.equal(api.clientHallSummary([]), '—');
 });

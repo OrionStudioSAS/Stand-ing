@@ -5,8 +5,9 @@ import AssetBatElectricalPictoEditor from './AssetBatElectricalPictoEditor.jsx';
 import { batElectricalPictosMetadata, normalizeBatElectricalPictos } from './batElectricalPicto.js';
 import AssetGroupPlacementEditor from './AssetGroupPlacementEditor.jsx';
 import { nextGroupRowPosition } from './groupPlacement.js';
-import { includedCounterPowerItems } from './includedCounterPower.js';
+import { counterPowerCatalogEntry, includedCounterPowerItems } from './includedCounterPower.js';
 import { signageExtraOptions, normalizedExtraChoices } from './signageExtras.js';
+import { normalizeAdminRole, isSuperAdmin } from '../supabase/functions/_shared/adminRoles.js';
 import { electricalWallClearance, electricalClearanceRect, applyElectricalClearance } from './electricalClearance.js';
 import { prioritizeUnderArchIntersections } from './scenePicking.js';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
@@ -30,7 +31,9 @@ import { useSceneExhibitorReadOnly } from './useSceneExhibitorReadOnly.js';
 import { canReopenSceneAsDraft } from './sceneReopening.js';
 import AdminMondayView, { MondaySyncFeedback } from './AdminMondayView.jsx';
 import PresentationGround from './PresentationGround.jsx';
+import AdminSceneHistoryButton, { useSceneLatestActivities } from './AdminSceneHistory.jsx';
 import { StudioContactShadows, StudioLighting } from './StudioLighting.jsx';
+import SceneAssembly, { SceneFirstFrame, SceneOpeningOrbit, useSceneDepartures } from './SceneAssembly.jsx';
 import { clampHangingSignBottom, effectiveHangingLimit, hangingSignBodyHeight } from '../supabase/functions/_shared/standHangingLimits.js';
 import { normalizePartitionHeadVisuals, partitionHeadUsesDifferentVisuals, patchPartitionHeadVisuals, withPartitionHeadVisualMode } from './partitionHeadVisuals.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
@@ -46,6 +49,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Download,
   Eye,
   FileImage,
   FileCheck2,
@@ -1368,7 +1372,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const hydratedItems = useMemo(() => resolveSurfaceAttachments(
     objectBankLoaded ? items.map((item) => {
       const hydrated = hydrateSceneItemFromCatalog(item, availableCatalog);
-      return electricalWallClearance(hydrated) ? constrainItem(hydrated, width, depth, layout, genericCarpetFootprintEnabled) : hydrated;
+      return electricalWallClearance(hydrated) || (isSmclPartitionHeadItem(hydrated) && isLockedPlacementRule(hydrated.placementRule))
+        ? constrainItem(hydrated, width, depth, layout, genericCarpetFootprintEnabled) : hydrated;
     }) : items,
   ), [items, availableCatalog, objectBankLoaded, width, depth, layout, genericCarpetFootprintEnabled]);
   const manualHydratedItems = useMemo(() => hydratedItems.filter((item) => !isAutomaticLedRailItem(item) && !isAutomaticReserveItem(item) && !isAutomaticPartitionHeadItem(item) && !item.autoMeterCover), [hydratedItems]);
@@ -1495,7 +1500,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     });
   }, [isSignatureStand, depth, signatureArchBackZ, objectBankLoaded, selectedCarpetFootprintColor?.id, selectedCarpetFootprintColor?.hex, selectedCarpetFootprintColor?.image]);
 
-  const cartItems = useMemo(() => visibleSceneItems.filter(shopCartItemVisible), [visibleSceneItems]);
   const showCartBar = false;
   const sceneTextureLoad = useSceneTexturePreload(visibleSceneItems, [
     selectedCarpetColor.image,
@@ -1512,7 +1516,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   );
   const sceneCanvasClassName = [
     (draggingId || technicalFloorRampDragging) ? 'dragging-canvas' : '',
-    !sceneHasRendered && !sceneAssetsReady ? 'scene-canvas-loading' : '',
+    !sceneHasRendered ? 'scene-canvas-loading' : '',
   ].filter(Boolean).join(' ');
   const selected = visibleSceneItems.find((item) => item.id === selectedId);
   const selectedMovementHardLocked = selected ? itemToolbarMovementHardLocked(selected) : false;
@@ -1521,10 +1525,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     setSceneHasRendered(false);
     tutorialAutoOpened.current = false;
   }, [initialScene?.id]);
-
-  useEffect(() => {
-    if (sceneAssetsReady) setSceneHasRendered(true);
-  }, [sceneAssetsReady]);
 
   useEffect(() => {
     if (tutorialAutoOpened.current || effectiveAdminViewer || readOnly || !sceneHasRendered || activeStep <= 1) return;
@@ -1578,6 +1578,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     expectedLedSpotCount: ledSpotCount,
   }), [area, availableCatalog, visibleSceneItems, assetPackLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, thickCarpetEnabled, thickFootprintArea, isSignatureStand, ledRailsEnabled, ledSpotCount]);
   const estimatedTotal = scenePricing.total;
+  const cartItems = useMemo(() => visibleSceneItems.filter((item) => shopCartItemVisible(item) && (!isSignatureStand
+    || cartItemPrice(item, findCatalogEntry(availableCatalog, item.type) || item, assetPackLabel, scenePricing, visibleSceneItems, availableCatalog) > 0)),
+  [visibleSceneItems, isSignatureStand, assetPackLabel, scenePricing, availableCatalog]);
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
     const nextContactDetails = overrides.contactDetails || contactDetails;
@@ -2707,17 +2710,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         <button className={`user-pill ${headerPanel === 'client' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('client')} aria-label={tRaw(language, 'aria_client')}>
           <img className="topbar-tool-icon" src="/icons/account.svg" alt="" aria-hidden="true" />
         </button>
-        {canManageCollaborators && (
-          <button className={`round-tool ${headerPanel === 'collaborators' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('collaborators')} aria-label={tr('Inviter un collaborateur')} title={tr('Inviter un collaborateur')} aria-haspopup="dialog" aria-expanded={headerPanel === 'collaborators'}>
-            <img className="topbar-tool-icon" src="/icons/account-add.svg" alt="" aria-hidden="true" />
-          </button>
-        )}
         <button className={`round-tool ${headerPanel === 'question' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('question')} aria-label={tRaw(language, 'aria_questions')}>
           <img className="topbar-tool-icon" src="/icons/qr.svg" alt="" aria-hidden="true" />
         </button>
         {!readOnly && (
           <button className={`round-tool tutorial-trigger ${tutorialOpen ? 'active' : ''}`} type="button" onClick={openTutorial} aria-label={tr("Relancer le tutoriel")}>
-            <img className="topbar-tool-icon" src="/icons/tuto.svg" alt="" aria-hidden="true" />
+            <img className="topbar-tool-icon" src="/icons/info.svg" alt="" aria-hidden="true" />
           </button>
         )}
         {activeStep > 1 && (
@@ -2762,13 +2760,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             contactDetails={contactDetails}
             onClose={() => setHeaderPanel(null)}
             onReportCorrection={submitContactCorrection}
+            sceneId={initialScene.id}
+            canManageCollaborators={canManageCollaborators}
           />
-        </div>
-      )}
-
-      {headerPanel === 'collaborators' && canManageCollaborators && (
-        <div className="header-modal-layer" onMouseDown={(event) => event.target === event.currentTarget && setHeaderPanel(null)}>
-          <SceneCollaboratorsModal sceneId={initialScene.id} salonLabel={salonLabel} onClose={() => setHeaderPanel(null)} />
         </div>
       )}
 
@@ -2818,6 +2812,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           events={standSceneEvents}
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
           dpr={[1, 1.5]}
+          frameloop={sceneHasRendered ? 'always' : 'demand'}
           className={sceneCanvasClassName}
           gl={{ alpha: true }}
           flat
@@ -2841,6 +2836,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 depth={depth}
                 height={height}
                 layout={layout}
+                animationReady={sceneHasRendered}
                 items={visibleSceneItems}
                 catalog={availableCatalog}
                 selectedId={selectedId}
@@ -2888,7 +2884,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 ) : null}
               />
             )}
-            <StudioContactShadows width={width} depth={depth} />
+            {shouldRenderScene && <StudioContactShadows width={width} depth={depth} />}
+            {sceneAssetsReady && !sceneHasRendered && <SceneFirstFrame onReady={setSceneHasRendered} />}
+            <SceneOpeningOrbit controlsRef={orbitControlsRef} ready={sceneHasRendered} />
           </Suspense>
           <OrbitControls
             ref={orbitControlsRef}
@@ -2909,7 +2907,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           />
         </Canvas>
 
-        {!sceneHasRendered && !sceneAssetsReady && <SceneTextureLoaderOverlay loaded={sceneLoadProgress.loaded} total={sceneLoadProgress.total} />}
+        {!sceneHasRendered && <SceneTextureLoaderOverlay loaded={sceneLoadProgress.loaded} total={sceneLoadProgress.total} />}
 
         {activeStep > 1 && !headerPanel && (
           <CameraModeToolbar mode={cameraControlMode} onChange={setCameraControlMode} />
@@ -3400,7 +3398,7 @@ function ModalHead({ icon, title, salonLabel, onClose }) {
   );
 }
 
-function SceneCollaboratorsModal({ sceneId, salonLabel, onClose }) {
+function SceneCollaboratorsSection({ sceneId }) {
   const tr = useUiText();
   const language = useContext(LanguageContext);
   const [members, setMembers] = useState(null);
@@ -3441,9 +3439,9 @@ function SceneCollaboratorsModal({ sceneId, salonLabel, onClose }) {
   };
 
   return (
-    <section className="client-info-modal scene-collaborators-modal" role="dialog" aria-modal="true" aria-label={tr('Collaborateurs du stand')}>
-      <ModalHead icon={<Users size={19} />} title={tr('Collaborateurs du stand')} salonLabel={salonLabel} onClose={onClose} />
-      <div className="client-info-content" aria-busy={busy || (!members && !error)}>
+    <section className="scene-collaborators-section" aria-label={tr('Ajouter des collaborateurs')}>
+      <h3><Users size={17} />{tr('Ajouter des collaborateurs')}</h3>
+      <div className="scene-collaborators-content" aria-busy={busy || (!members && !error)}>
         <p>{tr('Invitez jusqu’à deux personnes à modifier et à valider la configuration de ce stand.')}</p>
         {!members && !error && <div role="status">{tr('Chargement')}</div>}
         {members?.length > 0 && <ul className="scene-collaborators-list">
@@ -3463,7 +3461,7 @@ function SceneCollaboratorsModal({ sceneId, salonLabel, onClose }) {
   );
 }
 
-function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrection }) {
+function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrection, sceneId, canManageCollaborators = false }) {
   const tr = useUiText();
   const t = useT();
   const [correctionOpen, setCorrectionOpen] = useState(false);
@@ -3520,6 +3518,7 @@ function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrecti
           <label>{t('client_hall')}<input value={contactDetails.hall || ''} {...lockedInputProps} /></label>
           <label>{t('client_placement_field')}<input value={contactDetails.emplacement || ''} {...lockedInputProps} /></label>
         </div>
+        {canManageCollaborators && sceneId && <SceneCollaboratorsSection sceneId={sceneId} />}
       </div>
       {correctionOpen && (
         <div className="client-correction-layer" onMouseDown={(event) => event.target === event.currentTarget && setCorrectionOpen(false)}>
@@ -3573,6 +3572,9 @@ function QuestionModal({ salonLabel, form, state = {}, onFormChange, onClose, on
       <ModalHead icon={<HelpCircle size={19} />} title={t('question_title')} salonLabel={salonLabel} onClose={onClose} />
       <div className="question-content">
         <p>{t('question_intro')}</p>
+        <p className="question-help-contact">{tr("Vous avez besoin d’aide ? N’hésitez pas à nous contacter au")}{' '}
+          <a href="tel:+33134646413">01 34 64 64 13</a>.
+        </p>
 
         <QuestionFaq />
 
@@ -4152,6 +4154,27 @@ function PrestigeArchOptionCard({ enabled = false, tvEnabled = true, disabled = 
   );
 }
 
+function SignatureArchColorCard({ title = 'Couleur', colors = [], selectedColor = null, disabled = false, onSelect }) {
+  const tr = useUiText();
+  const { selected, includedColors, optionalColors } = surfaceColorOptionGroups(colors, selectedColor || {}, '', 1);
+  const colorLabel = (color) => `${color.name || ''}${color.code ? ` (${color.code})` : ''}`;
+  return (
+      <section aria-label={tr(title)} className="signature-arch-palette surface-color-option-card">
+        <div className="signature-arch-palette-heading"><strong>{tr(title)}</strong><span>{tr(colorLabel(selected))}</span></div>
+        <p>{tr("S’applique à l’arche et à son empreinte moquette.")}</p>
+        {[[includedColors, true], [optionalColors, false]].map(([choices, included]) => choices.length > 0 && (
+          <div key={String(included)} className="signature-arch-palette-group">
+            <div><small>{tr(choices.length)} {tr("couleurs")} {tr(included ? 'incluses' : 'en option')}</small><span className={included ? 'arch-badge included' : 'arch-badge'}>{tr(included ? 'Inclus' : '+ 285 €')}</span></div>
+            <div className="signature-arch-swatches" role="group" aria-label={tr(`EMPREINTE MOQUETTE : couleurs ${included ? 'incluses' : 'en option'}`)}>
+              {choices.map((color) => <button key={color.id} type="button" title={tr(colorLabel(color))} aria-label={tr(colorLabel(color))} aria-pressed={normalizeColorId(selected.id) === normalizeColorId(color.id)}
+                className={normalizeColorId(selected.id) === normalizeColorId(color.id) ? 'active' : ''} style={{ backgroundColor: colorHex(color) }} disabled={disabled} onClick={() => onSelect?.(color.id)} />)}
+            </div>
+          </div>
+        ))}
+      </section>
+  );
+}
+
 function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items = [], entries = [], colors = [], selectedColor = null, uploadState = {}, disabled = false, onVariantChange, onColorChange, onImage, onResetImage, onFramingChange, onVisualPending, onApply, onAlternative }) {
   const tr = useUiText();
   const selectedItem = items[0] || null;
@@ -4160,10 +4183,9 @@ function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items =
   const selectedVariant = signatureArchVariant(selectedEntry);
   const ledWall = isSignatureLedArch(selectedEntry);
   const ledEntry = signatureArchChoice(entries, selectedVariant.size, selectedVariant.lighting, !ledWall);
-  const { selected, includedColors, optionalColors } = surfaceColorOptionGroups(colors, selectedColor || {}, '', 1);
+  const { selected } = surfaceColorOptionGroups(colors, selectedColor || {}, '', 1);
   const supplement = selectedVariant.supplement + (ledWall ? 2570 : 0) + (selected.id && !selected.included ? 285 : 0);
   const busy = disabled || Boolean(uploadState?.uploading);
-  const colorLabel = (color) => `${color.name || ''}${color.code ? ` (${color.code})` : ''}`;
 
   if (Number(standDepth) < signatureArchMinimumDepth(2)) return (
     <div className="signature-arch-unavailable">
@@ -4235,19 +4257,8 @@ function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items =
         </div>
       </section>
 
-      <section className="signature-arch-palette surface-color-option-card">
-        <div className="signature-arch-palette-heading"><strong>{tr("Couleur")}</strong><span>{tr(colorLabel(selected))}</span></div>
-        <p>{tr("S’applique à l’arche et à son empreinte moquette.")}</p>
-        {[[includedColors, true], [optionalColors, false]].map(([choices, included]) => choices.length > 0 && (
-          <div key={String(included)} className="signature-arch-palette-group">
-            <div><small>{tr(choices.length)} {tr("couleurs")} {tr(included ? 'incluses' : 'en option')}</small><span className={included ? 'arch-badge included' : 'arch-badge'}>{tr(included ? 'Inclus' : '+ 285 €')}</span></div>
-            <div className="signature-arch-swatches" role="group" aria-label={tr(`EMPREINTE MOQUETTE : couleurs ${included ? 'incluses' : 'en option'}`)}>
-              {choices.map((color) => <button key={color.id} type="button" title={tr(colorLabel(color))} aria-label={tr(colorLabel(color))} aria-pressed={normalizeColorId(selected.id) === normalizeColorId(color.id)}
-                className={normalizeColorId(selected.id) === normalizeColorId(color.id) ? 'active' : ''} style={{ backgroundColor: colorHex(color) }} disabled={busy || !selectedItem} onClick={() => onColorChange?.(color.id)} />)}
-            </div>
-          </div>
-        ))}
-      </section>
+      <SignatureArchColorCard colors={colors} selectedColor={selectedColor}
+        disabled={busy || !selectedItem} onSelect={onColorChange} />
 
       {signatureArchVisualSlots.filter((slot) => !ledWall || slot.id !== 'signature-arch-led-5').map((slot) => {
         const value = selectedItem?.options?.textureSlotValues?.[slot.id] || {};
@@ -4433,6 +4444,7 @@ function CounterOptionCard({ items = [], colors = [], colorCatalog = [], catalog
 
   return (
     <div className="counter-option-panel">
+      {isIncludedSceneItem(selectedItem) && <CounterPowerControl item={selectedItem} />}
       {items.length > 1 && (
         <div className="counter-selector">
           <span>{t('counter_selector_label')}</span>
@@ -4546,6 +4558,36 @@ function CounterOptionCard({ items = [], colors = [], colorCatalog = [], catalog
 
 
 
+
+function CounterPowerControl({ item, catalog = [], salonLabel = '', disabled = false, onChange }) {
+  const tr = useUiText();
+  const tooltipId = useId();
+  if (isIncludedSceneItem(item)) return (
+    <div className="counter-power-included">
+      <span>{tr("Multiprise incluse dans votre comptoir")}</span>
+      <span className="counter-power-tooltip">
+        <button type="button" aria-describedby={tooltipId} aria-label={tr("Information sur la multiprise incluse")}><HelpCircle size={16} /></button>
+        <span id={tooltipId} role="tooltip">{tr("Une multiprise est incluse dans votre comptoir.")}</span>
+      </span>
+    </div>
+  );
+  const entry = counterPowerCatalogEntry(catalog);
+  const price = entry ? assetUnitPrice(entry, salonLabel) : 0;
+  return (
+    <section className="counter-logo-card counter-logo-card-v2 counter-power-card">
+      <header>
+        <strong>{tr("Multiprise dans le comptoir")}</strong>
+        <label className="counter-logo-switch" aria-label={tr("Ajouter une multiprise dans le comptoir")}>
+          <input type="checkbox" checked={Boolean(item?.options?.counterPowerEnabled)} disabled={disabled || !entry}
+            onChange={(event) => onChange?.(event.target.checked)} />
+          <span aria-hidden="true" />
+        </label>
+      </header>
+      {entry ? <em className={price > 0 ? 'billable' : 'included'}>{tr(price > 0 ? `+ ${price.toLocaleString('fr-FR')} €` : 'Inclus')}</em>
+        : <small>{tr("Multiprise indisponible pour ce pack.")}</small>}
+    </section>
+  );
+}
 
 function includedColorisLabel(count = 0) {
   const safeCount = Math.max(1, Number(count || 0));
@@ -5009,7 +5051,7 @@ function OptionsStepPanel({
   return (
     <>
       <PanelHead title={t('panel_options_title')} step={activeStep} />
-      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle={tr(isSignatureStand ? 'Moquette' : 'Moquette · Empreinte')} icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle={tr('Moquette · Empreinte')} icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
           uniformLayout={uniformColorSections}
           showThickOption={isSignatureStand}
@@ -5027,6 +5069,15 @@ function OptionsStepPanel({
           onOptionToggle={onCarpetConfigOption}
           onThickChange={onCarpetThick}
         />
+        {isSignatureStand && (
+          <div className="signature-floor-footprint">
+            <SurfaceColorOptionCard title={tr("EMPREINTE MOQUETTE")} iconSrc="/icons/empreinte_moquette_icon.svg"
+              colors={signatureArchColors} selectedColor={signatureArchColor} area={1}
+              description="S’applique à l’arche et à son empreinte moquette."
+              disabled={readOnly || !signatureArchItems.length}
+              onSelect={onSignatureArchColor} />
+          </div>
+        )}
         {!isSignatureStand && (
           <FootprintColorOptionCard
             enabled={carpetFootprintEnabled}
@@ -5341,10 +5392,11 @@ function PackAllowanceProgress({ pricing }) {
   if (pricing?.packBenefits?.mode !== 'allowance') return null;
   const amount = Number(pricing.allowanceAmount || 0);
   const used = Math.min(amount, Number(pricing.allowanceApplied || 0));
+  const balance = Number(pricing.allowanceRemaining || 0) - Number(pricing.accessoriesSupplement ?? pricing.total ?? 0);
   return <section className="pack-allowance-progress" aria-label={tr("Utilisation du forfait accessoires")}>
     <div><strong>{tr("Forfait accessoires")}</strong><b>{tr(validationMoney(amount))} {tr("€ HT")}</b></div>
     <progress max={Math.max(1, amount)} value={used} aria-label={tr("Montant du forfait utilisé")} />
-    <div><span>{tr(validationMoney(used))} {tr("€ utilisés")}</span><span>{tr(validationMoney(pricing.allowanceRemaining || 0))} {tr("€ disponibles")}</span></div>
+    <div><span>{tr(validationMoney(used, true))} {tr("€ utilisés")}</span><span>{balance === 0 ? tr("Forfait entièrement utilisé") : <>{tr(balance > 0 ? "Solde disponible" : "Supplément à payer")} : {tr(validationMoney(Math.abs(balance), true))} {tr("€ HT")}</>}</span></div>
   </section>;
 }
 
@@ -5355,8 +5407,6 @@ function PackAllowanceSummary({ pricing }) {
     <PackAllowanceProgress pricing={pricing} />
     <div><span>{tr("Total avant forfait")}</span><b>{tr(validationMoney(pricing.grossTotal || 0, true))} {tr("€ HT")}</b></div>
     <div><span>{tr("Forfait offert :")} {tr(validationMoney(pricing.allowanceAmount || 0))} {tr("€ HT")}</span><b>− {tr(validationMoney(pricing.allowanceApplied || 0, true))} €</b></div>
-    <div><span>{tr("Solde disponible")}</span><b>{tr(validationMoney(pricing.allowanceRemaining || 0, true))} {tr("€ HT")}</b></div>
-    <div><span>{tr("Supplément à payer")}</span><b>{tr(validationMoney(pricing.total || 0, true))} {tr("€ HT")}</b></div>
     <small>{tr("Objets, options et assurance mobilier compris dans le forfait. Solde non remboursable.")}</small>
   </section>;
 }
@@ -5740,7 +5790,9 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const counterLogoSupplement = counterLogoUnitPrice > 0 && counterLogoOptionActive(visualItem)
     ? counterLogoUnitPrice
     : 0;
-  const perItemTotal = basePrice + nonGlobalExtras + colorOptionExtras + counterLogoSupplement;
+  const counterPowerSupplement = canConfigureCounterVisual && !isIncludedSceneItem(visualItem)
+    && visualItem.options?.counterPowerEnabled ? assetUnitPrice(counterPowerCatalogEntry(catalog), salonLabel) : 0;
+  const perItemTotal = basePrice + nonGlobalExtras + colorOptionExtras + counterLogoSupplement + counterPowerSupplement;
   const total = (perItemTotal * (mode === 'add' ? quantity : 1)) + globalExtras;
   const hasVisualOptions = Boolean(item || mode === 'add') && (
     (item && isPartitionHeadItem(item))
@@ -5955,6 +6007,10 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
           />
         )}
 
+        {hasVisualOptions && canConfigureCounterVisual && (
+          <CounterPowerControl item={visualItem} catalog={catalog} salonLabel={salonLabel}
+            onChange={(checked) => updateDraftVisualOptions({ counterPowerEnabled: checked })} />
+        )}
         {hasVisualOptions && canConfigureCounterVisual && (
           <WoodReceptionDeskOptionsPanel
             item={visualItem}
@@ -7148,7 +7204,15 @@ function roundLinearMeters(value = 0) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
-function isFurnitureInsuranceEligible(entry = {}, item = {}) {
+function isFurnitureInsuranceEligible(entry = {}, item = {}, allFurniture = false) {
+  if (allFurniture) {
+    const assetName = normalizeTextValue(`${entry?.type || ''} ${entry?.label || ''} ${item?.type || ''} ${item?.label || ''}`).replace(/[-_]+/g, ' ');
+    // Some structural assets are sold under Mobilier in the catalogue.
+    if (item?.autoReserve || item?.autoPartitionHead || item?.autoMeterCover
+      || /\b(?:arche|reserve\s+\d|tete de cloison|plancher technique|cache compteur)\b/.test(assetName)) return false;
+    const category = configuredMarketCategory(entry || {}) || configuredMarketCategory(item || {});
+    if (category) return category === 'furniture';
+  }
   const text = normalizeTextValue([
     entry?.type,
     entry?.label,
@@ -7162,6 +7226,7 @@ function isFurnitureInsuranceEligible(entry = {}, item = {}) {
     item?.options?.variantAssetLabel,
   ].filter(Boolean).join(' '));
   if (!text) return false;
+  if (allFurniture && /\b(?:mobilier|chaise|chair|table|tabouret|stool|fauteuil|canape|banquette|mange[-_ ]?debout|etagere|armoire|meuble|banc|pouf)s?\b/.test(text)) return true;
   if (text.includes('podium')) return true;
   if (text.includes('bar')) return true;
   if (text.includes('comptoir') || (text.includes('banque') && text.includes('accueil'))) return true;
@@ -7171,7 +7236,7 @@ function isFurnitureInsuranceEligible(entry = {}, item = {}) {
 function furnitureInsuranceLine(amount = 0) {
   const safeAmount = Math.max(0, Number(amount || 0));
   if (safeAmount <= 0) return null;
-  const row = furnitureInsuranceRows.find((entry) => safeAmount >= entry.min && safeAmount <= entry.max) || furnitureInsuranceRows[furnitureInsuranceRows.length - 1];
+  const row = furnitureInsuranceRows.find((entry) => safeAmount <= entry.max) || furnitureInsuranceRows[furnitureInsuranceRows.length - 1];
   const rangeLabel = row.max === Infinity
     ? '+ 7001 €'
     : `${row.min.toLocaleString('fr-FR')} → ${row.max.toLocaleString('fr-FR')} €`;
@@ -7487,7 +7552,7 @@ function ValidationStepPanel({
   const t = useT();
   const safeItems = (items || []).filter(Boolean);
   const lines = pricing?.lines || [];
-  const visibleSupplementLines = lines.filter((line) => !line.mandatory && !String(line.type || '').startsWith('technical-floor-'));
+  const visibleSupplementLines = lines.filter((line) => !line.mandatory && !String(line.type || '').startsWith('technical-floor-') && (!isSignatureStand || Number(line.total) > 0));
   const includedCounts = pricing?.includedCounts || new Map();
   const confirmed = saveState === 'configured';
   const specialRequestText = String(specialRequest || '');
@@ -8493,7 +8558,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
 
   return (
     <div className={`partition-head-panel partition-head-panel-v2${isSignatureStand ? ' signature-head-options' : ''}`}>
-      {!isSignatureStand && normalizePackLabel(salonLabel) !== 'equipe' && !normalizeTextValue(salonLabel).includes('siae') && <div className="partition-head-activity-info">
+      {!isSignatureStand && ['confort', 'prestige'].includes(normalizePackLabel(salonLabel)) && <div className="partition-head-activity-info">
         <b>i</b>
         <span>{tr("Le fond de couleur correspond à votre secteur d'activité et ne peut être modifié.")}</span>
       </div>}
@@ -8686,7 +8751,7 @@ function surfaceColorOptionGroups(colors = [], selectedColor = {}, defaultColorI
   };
 }
 
-function SurfaceColorOptionCard({ title, iconSrc, colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect }) {
+function SurfaceColorOptionCard({ title, iconSrc, description = '', colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect }) {
   const tr = useUiText();
   const { selected, includedColors, optionalColors, optionTotal, fromPrice } = surfaceColorOptionGroups(colors, selectedColor, defaultColorId, area);
   const selectedId = normalizeColorId(selected.id);
@@ -8710,8 +8775,9 @@ function SurfaceColorOptionCard({ title, iconSrc, colors, selectedColor, default
   );
 
   return (
-    <section className="surface-color-option-card">
+    <section className="surface-color-option-card" aria-label={tr(title)}>
       <GroundOptionHeading title={tr(title)} value={colorLabel(selected)} iconSrc={iconSrc} />
+      {description && <p className="surface-color-description">{tr(description)}</p>}
       {!!includedColors.length && (
         <div className="surface-color-group">
           <small>{tr(`${includedColors.length} couleur${includedColors.length > 1 ? 's incluses' : ' incluse'}`)}</small>
@@ -9658,7 +9724,6 @@ function AdminDashboard({ user, adminProfile }) {
               search={adminSearch}
               selectedSalonName={openSalonName}
               onSelectedSalonName={setOpenSalonName}
-              onDownloadDebit={(salon) => downloadSalonDebit(salon, assets)}
               onCreateSalon={createAdminSalon}
               onDeleteSalon={deleteAdminSalon}
               onOpenSalon={(salon) => { setOpenSalonName(salon.name); setAdminSearch(''); }}
@@ -9725,7 +9790,7 @@ function AdminDashboard({ user, adminProfile }) {
               }}
             />
           )}
-          {tab === 'users' && <AdminUsersView users={adminUsers} usersError={adminUsersError} auditEvents={adminAudit} auditError={adminAuditError} auditHasMore={adminAuditHasMore} auditLoading={adminAuditLoading} auditFilters={adminAuditFilters} onAuditFiltersChange={setAdminAuditFilters} onLoadMoreAudit={loadMoreAdminAudit} search={adminSearch} canManage={['admin', 'super admin', 'super administrateur'].includes(normalizeTextValue(adminProfile?.role_label))} currentUserId={user?.id} onSaveUser={saveAdminUserProfile} onDeleteUser={deleteAdminUser} />}
+          {tab === 'users' && <AdminUsersView users={adminUsers} usersError={adminUsersError} auditEvents={adminAudit} auditError={adminAuditError} auditHasMore={adminAuditHasMore} auditLoading={adminAuditLoading} auditFilters={adminAuditFilters} onAuditFiltersChange={setAdminAuditFilters} onLoadMoreAudit={loadMoreAdminAudit} search={adminSearch} canManage={isSuperAdmin(adminProfile?.role_label)} currentUserId={user?.id} onSaveUser={saveAdminUserProfile} onDeleteUser={deleteAdminUser} />}
         </div>
       </section>
     </main>
@@ -10007,7 +10072,7 @@ function AdminSalonRow({ title, detail, status, muted }) {
   );
 }
 
-function AdminSalonsView({ salons, assets = [], search = '', selectedSalonName = '', onSelectedSalonName, onCreateSalon, onDeleteSalon, onOpenSalon, onOpenPacks, onActivatePack, onOpenAssets, onOpenMonday, onDownloadDebit }) {
+function AdminSalonsView({ salons, assets = [], search = '', selectedSalonName = '', onSelectedSalonName, onCreateSalon, onDeleteSalon, onOpenSalon, onOpenPacks, onActivatePack, onOpenAssets, onOpenMonday }) {
   const [statusFilter, setStatusFilter] = useState('');
   const [view, setView] = useState('salons');
   const [detailTab, setDetailTab] = useState('overview');
@@ -10017,8 +10082,6 @@ function AdminSalonsView({ salons, assets = [], search = '', selectedSalonName =
   const [draft, setDraft] = useState(() => ({ name: '', year: new Date().getFullYear(), location: '', status: 'draft' }));
   const [creatorState, setCreatorState] = useState({ loading: false, message: '', error: '' });
   const [deletingSalonId, setDeletingSalonId] = useState('');
-  const [downloadingSalonId, setDownloadingSalonId] = useState('');
-  const [debitError, setDebitError] = useState('');
   const selectedSalon = salons.find((salon) => salon.name === selectedSalonName);
   const normalizedSearch = normalizeTextValue(search);
   const filteredSalons = salons.filter((salon) => {
@@ -10063,20 +10126,11 @@ function AdminSalonsView({ salons, assets = [], search = '', selectedSalonName =
       setDeletingSalonId('');
     }
   };
-  const downloadDebit = async (salon) => {
-    setDownloadingSalonId(salon.id);
-    setDebitError('');
-    try { await onDownloadDebit?.(salon); }
-    catch (error) { setDebitError(error.message || 'Impossible de générer le débit du salon.'); }
-    finally { setDownloadingSalonId(''); }
-  };
-
   if (selectedSalon) return <AdminSalonDetail
     salon={selectedSalon} assets={assets} search={search} detailTab={detailTab} onDetailTab={setDetailTab}
     standFilter={standFilter} onStandFilter={setStandFilter} standSearch={standSearch} onStandSearch={setStandSearch}
     onOpenPacks={onOpenPacks} onActivatePack={onActivatePack} onOpenAssets={onOpenAssets} onOpenMonday={onOpenMonday}
-    onDownloadDebit={() => downloadDebit(selectedSalon)} downloadingDebit={downloadingSalonId === selectedSalon.id}
-    onDelete={() => removeSalon(selectedSalon)} deleting={deletingSalonId === selectedSalon.id} error={debitError}
+    onDelete={() => removeSalon(selectedSalon)} deleting={deletingSalonId === selectedSalon.id} error={creatorState.error}
   />;
 
   return <section className="admin-salons-v2">
@@ -10168,7 +10222,7 @@ function AdminPackV2Card({ group, onOpenSalon, onOpenPacks }) {
   </article>;
 }
 
-function AdminSalonDetail({ salon, assets, search, detailTab, onDetailTab, standFilter, onStandFilter, standSearch, onStandSearch, onOpenPacks, onActivatePack, onOpenAssets, onOpenMonday, onDownloadDebit, downloadingDebit, onDelete, deleting, error }) {
+function AdminSalonDetail({ salon, assets, search, detailTab, onDetailTab, standFilter, onStandFilter, standSearch, onStandSearch, onOpenPacks, onActivatePack, onOpenAssets, onOpenMonday, onDelete, deleting, error }) {
   const packs = adminSalonStandPacks(salon);
   const scenes = salon.scenes || [];
   const complete = adminSalonCompletedScenes(salon);
@@ -10187,20 +10241,96 @@ function AdminSalonDetail({ salon, assets, search, detailTab, onDetailTab, stand
     <div className="admin-salon-detail-banner"><span className="admin-salon-v2-calendar"><CalendarDays size={19} /></span><div className="admin-salon-detail-title"><h2>{salon.name} <span className={`salon-status-pill ${salonStatusKind(salon)}`}>{salon.status === 'active' ? 'Ouvert aux configs' : salonStatusLabel(salon.status)}</span></h2><p>{adminSalonMeta(salon)}{detailTab !== 'overview' && packs.length ? ` · Packs ${packs.map((pack) => pack.name).join(' et ')}` : ''}</p></div>{detailTab === 'overview' && <div className="admin-salon-detail-progress">{packs.map((pack, index) => { const progress = adminSalonPackProgress(pack); return <div key={pack.key}><span>{pack.name}</span><strong>{progress.percent} % · {progress.complete}/{progress.total}</strong><span className="admin-salon-v2-track"><span className={index % 2 ? 'warm' : ''} style={{ width: `${progress.percent}%` }} /></span></div>; })}</div>}</div>
     <nav className="admin-salon-detail-tabs" aria-label="Sections du salon">
       {[
-        ['overview', "Vue d’ensemble"], ['bat', 'Bon à tirer'], ['assets', 'Catalogue'], ['packs', 'Packs'], ['monday', 'Synchro Monday'],
+        ['overview', "Vue d’ensemble"], ['bat', 'Bon à tirer'], ['debit', 'Débit'], ['assets', 'Catalogue'], ['packs', 'Packs'], ['monday', 'Synchro Monday'],
       ].map(([id, label]) => <button type="button" key={id} aria-current={detailTab === id ? 'page' : undefined} onClick={() => onDetailTab(id)}>{label}</button>)}
     </nav>
     {detailTab === 'overview' && <>
+      {salonPackCards(salon).some((entry) => !entry.active) && <div className="admin-salon-detail-section-heading">
+        <div><h3>Packs du salon</h3><p>Active les packs dont tu as besoin pour ce salon.</p></div>
+        <button className="admin-outline-v2" type="button" onClick={() => onDetailTab('packs')}><Plus size={15} /> Activer un pack</button>
+      </div>}
       <div className="admin-salon-detail-summary"><div className="admin-salon-detail-stats"><AdminSalonStat label="Exposants inscrits" value={salonExhibitorCount(salon)} /><AdminSalonStat label="Configs terminées" value={complete.length} total={scenes.length} /><AdminSalonStat label="BAT validés" value={batValidated} total={complete.length} /><AdminSalonStat label="Total estimé HT" value={`${amount.toLocaleString('fr-FR')} €`} /></div>
       <div className="admin-salon-detail-bat-card"><h3>BAT par pack</h3>{packs.map((pack, index) => { const validated = pack.scenes.filter((scene) => scene.client_status === 'bat_validated' || scene.status === 'validated').length; const submitted = adminSalonCompletedScenes({ scenes: pack.scenes }).length; return <div key={pack.key}><div className="admin-salon-v2-progress"><div><span>{pack.name}</span><strong>{validated} / {submitted} validés</strong></div><span className="admin-salon-v2-track"><span className={index % 2 ? 'warm' : ''} style={{ width: `${submitted ? Math.round(validated / submitted * 100) : 0}%` }} /></span></div><small>{submitted} soumis · {validated} validés · {pendingBatForScenes(pack.scenes)} en attente</small></div>; })}</div></div>
       <AdminSalonExhibitorTable salon={salon} scenes={filteredScenes} allScenes={scenes} packs={packs} filter={standFilter} onFilter={onStandFilter} search={standSearch} onSearch={onStandSearch} />
     </>}
     {detailTab === 'bat' && <AdminSalonBatTab salon={salon} search={search} />}
+    {detailTab === 'debit' && <AdminSalonDebitTab key={salon.id || salon.name} salon={salon} assets={assets} search={search} />}
     {detailTab === 'assets' && <AdminSalonCatalogTab salon={salon} assets={assets} search={search} onOpenAsset={onOpenAssets} />}
     {detailTab === 'packs' && <AdminSalonPacksTab salon={salon} onOpenPacks={onOpenPacks} onActivatePack={onActivatePack} />}
     {detailTab === 'monday' && <div className="admin-salon-detail-list"><div className="admin-salon-detail-section-heading"><div><h3>Synchronisation Monday</h3><p>Sources reliées à {salon.name} : {(salon.monday_sources || []).length}</p></div><button className="admin-outline-v2" type="button" onClick={onOpenMonday}>Ouvrir Monday.com</button></div>{(salon.monday_sources || []).map((source) => <div key={source.id || source.board_id}><RotateCcw size={15} /><strong>{source.name || source.board_name || source.board_id || 'Source Monday'}</strong></div>)}{!(salon.monday_sources || []).length && <p>Aucune source Monday reliée.</p>}</div>}
-    <div className="admin-salon-detail-admin-actions"><button type="button" className="admin-outline-v2" disabled={downloadingDebit} onClick={onDownloadDebit}>{downloadingDebit ? 'Préparation...' : 'Télécharger le débit'}</button><button type="button" className="admin-danger-v2" disabled={deleting} onClick={onDelete}>{deleting ? 'Suppression...' : 'Supprimer le salon'}</button></div>
+    <div className="admin-salon-detail-admin-actions"><button type="button" className="admin-danger-v2" disabled={deleting} onClick={onDelete}>{deleting ? 'Suppression...' : 'Supprimer le salon'}</button></div>
     {error && <div className="preset-library-feedback error" role="alert">{error}</div>}
+  </section>;
+}
+
+function AdminSalonDebitTab({ salon, assets, search = '' }) {
+  const [scenes, setScenes] = useState(null);
+  const [loadError, setLoadError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    listScenesForSalonDebit().then((rows) => {
+      if (active) setScenes(rows);
+    }).catch(() => {
+      if (active) setLoadError(true);
+    });
+    return () => { active = false; };
+  }, [attempt]);
+
+  const report = useMemo(() => scenes && salonDebitReport(salon, scenes, assets), [salon, scenes, assets]);
+  const query = normalizeTextValue(search);
+  const visibleDetails = report?.details.filter((line) => !query || normalizeTextValue([
+    line.label, line.category, line.reference, line.finish, ...line.sources, ...line.checks,
+  ].join(' ')).includes(query)) || [];
+  const count = (quantity) => quantity.toLocaleString('fr-FR');
+
+  return <section className="admin-salon-debit" aria-labelledby="salon-debit-heading">
+    <div className="admin-salon-detail-section-heading">
+      <div><h3 id="salon-debit-heading">Débit du salon</h3><p>Quantités par hall, tous packs confondus. Les brouillons ne sont pas comptés.</p></div>
+      <button className="admin-primary-v2" type="button" disabled={!report} onClick={() => downloadSalonDebit(salon, report)}>
+        <Download size={15} aria-hidden="true" /> Télécharger le débit
+      </button>
+    </div>
+    {loadError ? <div className="admin-debit-state" role="alert"><span>Impossible de charger le débit du salon.</span><button className="admin-outline-v2" type="button" onClick={() => { setLoadError(false); setAttempt((value) => value + 1); }}>Réessayer</button></div>
+      : !report ? <div className="admin-debit-state" role="status">Chargement du débit…</div>
+      : <>
+        <dl className="admin-debit-summary">
+          <div><dt>Scènes prises en compte</dt><dd>{count(report.sceneCount)}</dd></div>
+          <div><dt>Pièces au total</dt><dd>{count(report.totalPieces)}</dd></div>
+          <div><dt>Ajustements à vérifier</dt><dd>{count(report.totalAdjustments)}</dd></div>
+        </dl>
+        {!report.details.length ? <div className="admin-debit-state">{report.sceneCount ? 'Aucune pièce à comptabiliser.' : 'Aucune scène configurée pour ce salon.'}</div> : <>
+          {query && <p className="admin-debit-search-note" role="status">{visibleDetails.length} sur {report.details.length} lignes. Le total et le CSV couvrent tout le salon.</p>}
+          <div className="admin-debit-table-wrap" role="region" aria-label="Quantités par hall" tabIndex={0}>
+            <table className="admin-debit-table" aria-label="Débit par hall">
+              <thead><tr>
+                <th scope="col">Produit</th>
+                <th scope="col">Catégorie</th>
+                {report.halls.map((hall) => <th scope="col" key={hall.key}>{hall.label}</th>)}
+                <th scope="col" className="admin-debit-total">Total global</th>
+              </tr></thead>
+              <tbody>
+                {visibleDetails.map((line) => <tr key={line.key}>
+                  <th scope="row">
+                    <strong>{line.label}</strong>
+                    {[line.reference, line.finish].filter(Boolean).length > 0 && <small>{[line.reference, line.finish].filter(Boolean).join(' · ')}</small>}
+                    {line.checks.size > 0 && <details className="admin-debit-checks"><summary>Contrôle atelier</summary><ul>{[...line.checks].sort().map((check) => <li key={check}>{check}</li>)}</ul></details>}
+                  </th>
+                  <td>{line.category}</td>
+                  {report.halls.map((hall) => <td key={hall.key}>{count(line.halls.get(hall.key) || 0)}</td>)}
+                  <td className="admin-debit-total">{count(line.total)}</td>
+                </tr>)}
+                {!visibleDetails.length && <tr><td colSpan={report.halls.length + 3}>Aucun produit ne correspond à la recherche.</td></tr>}
+              </tbody>
+              <tfoot><tr><th scope="row" colSpan={2}>Total pièces</th>
+                {report.halls.map((hall) => <td key={hall.key}>{count(hall.total)}</td>)}
+                <td className="admin-debit-total">{count(report.totalPieces)}</td>
+              </tr></tfoot>
+            </table>
+          </div>
+        </>}
+      </>}
   </section>;
 }
 
@@ -10267,7 +10397,6 @@ function adminSalonPackModules(entry) {
 }
 
 function AdminSalonPacksTab({ salon, onOpenPacks, onActivatePack }) {
-  const [showChoices, setShowChoices] = useState(false);
   const [busyPack, setBusyPack] = useState('');
   const [error, setError] = useState('');
   const entries = salonPackCards(salon);
@@ -10278,7 +10407,6 @@ function AdminSalonPacksTab({ salon, onOpenPacks, onActivatePack }) {
     setError('');
     try {
       await onActivatePack?.(salon, entry.packName);
-      setShowChoices(false);
     } catch (activationError) {
       setError(activationError.message || "Impossible d'activer ce pack.");
     } finally {
@@ -10286,10 +10414,14 @@ function AdminSalonPacksTab({ salon, onOpenPacks, onActivatePack }) {
     }
   };
   return <div className="admin-salon-packs-tab">
+    {available.length > 0 && <div className="admin-salon-detail-section-heading admin-salon-pack-activation">
+      <div><h3>Activer un pack</h3><p>Le pack sera ajouté à {salon.name}.</p></div>
+      <div className="admin-salon-pack-choices">{available.map((entry) => <button className="admin-outline-v2" type="button" key={entry.packName} disabled={Boolean(busyPack)} onClick={() => activate(entry)}>{busyPack === entry.packName ? 'Activation...' : `Activer ${entry.packName}`}</button>)}</div>
+    </div>}
     <h3>Packs activés sur {salon.name}</h3>
     <div className="admin-salon-packs-grid">
       {active.map((entry) => <article key={entry.packName} className="admin-salon-pack-tile"><header><h4>{entry.packName}</h4><span>Activé</span></header><div className="admin-salon-pack-tile-stats"><div><strong>{entry.presets?.length || 0}</strong><small>Implantations</small></div><div><strong>{adminSalonPackModules(entry)}</strong><small>Modules inclus</small></div></div><p>Board Monday · {entry.source?.board_id || entry.offer?.monday_source?.board_id || 'Non configuré'}</p><button className="admin-outline-v2" type="button" onClick={() => onOpenPacks?.(salon)}>Gérer dans Packs</button></article>)}
-      <div className="admin-salon-pack-activate"><button type="button" onClick={() => available.length ? setShowChoices((current) => !current) : onOpenPacks?.(salon)}><Plus size={17} /><strong>{available.length ? 'Activer un autre pack' : 'Créer ou gérer les packs'}</strong><span>{available.length ? available.map((entry) => entry.packName).join(' ou ') : 'Depuis la gestion des packs'}</span></button>{showChoices && available.length > 0 && <div className="admin-salon-pack-choices">{available.map((entry) => <button type="button" key={entry.packName} disabled={Boolean(busyPack)} onClick={() => activate(entry)}>{busyPack === entry.packName ? 'Activation...' : `Activer ${entry.packName}`}</button>)}</div>}</div>
+      {!available.length && <div className="admin-salon-pack-activate"><button type="button" onClick={() => onOpenPacks?.(salon)}><Plus size={17} /><strong>Créer ou gérer les packs</strong><span>Depuis la gestion des packs</span></button></div>}
     </div>
     {error && <div className="preset-library-feedback error" role="alert">{error}</div>}
   </div>;
@@ -10453,29 +10585,31 @@ function salonDebitLeafItems(items = [], catalogEntries = [], assets = []) {
   return leaves;
 }
 
-function salonDebitAisle(scene = {}) {
-  return String(sceneAisleNumber(scene, scene.source_payload?.contactDetails || {}) || '')
-    .trim().replace(/^all[ée]e\s*/i, '').trim().replace(/\s+/g, ' ').toLocaleUpperCase('fr-FR');
+function salonDebitHall(scene = {}) {
+  const label = String(scene.source_payload?.hall ?? '').trim() || sceneHallLabel(scene, scene.source_payload?.contactDetails || {});
+  const hall = String(label || '').trim().replace(/^(?:hall|pavillon)(?:\s*[-:]\s*|\s+|(?=\d)|$)/i, '')
+    .trim().replace(/\s+/g, ' ');
+  if (['a definir', 'non renseigne', '-', '—', 'n/a'].includes(normalizeTextValue(hall))) return '';
+  return hall.toLocaleUpperCase('fr-FR');
 }
 
-function salonDebitCsv(salon = {}, scenes = [], assets = []) {
-  const selectedScenes = salonDebitScenes(salon, scenes);
-  const aisleNames = [...new Set(selectedScenes.map(salonDebitAisle))]
+function salonDebitReport(salon = {}, scenes = [], assets = []) {
+  const selectedScenes = salonDebitScenes(salon, scenes).map((scene) => ({ scene, hall: salonDebitHall(scene) }));
+  const hallNames = [...new Set(selectedScenes.map(({ hall }) => hall))]
     .sort((a, b) => !a ? 1 : !b ? -1 : a.localeCompare(b, 'fr', { numeric: true }));
   const lines = new Map();
-  const add = (detail, aisle, quantity = 1) => {
+  const add = (detail, hall, quantity = 1) => {
     const key = [detail.type, detail.reference, detail.finish, detail.unit].join('|');
-    if (!lines.has(key)) lines.set(key, { ...detail, total: 0, aisles: new Map(), sources: new Set(), checks: new Set() });
+    if (!lines.has(key)) lines.set(key, { ...detail, key, total: 0, halls: new Map(), sources: new Set(), checks: new Set() });
     const line = lines.get(key);
     line.total += quantity;
-    line.aisles.set(aisle, (line.aisles.get(aisle) || 0) + quantity);
+    line.halls.set(hall, (line.halls.get(hall) || 0) + quantity);
     if (detail.source) line.sources.add(detail.source);
     if (detail.check) line.checks.add(detail.check);
   };
 
-  selectedScenes.forEach((scene) => {
+  selectedScenes.forEach(({ scene, hall }) => {
     const pack = sceneOfferLabel(scene) || 'Sans pack';
-    const aisle = salonDebitAisle(scene);
     const catalogEntries = sceneAdminCatalog(assets, scene);
     const options = scene.options || scene.source_payload?.options || {};
     const prestigeState = {
@@ -10492,7 +10626,7 @@ function salonDebitCsv(salon = {}, scenes = [], assets = []) {
       && !isHiddenPrestigeBaseItem(item, prestigeState)
     ));
 
-    salonDebitLeafItems(visibleItems, catalogEntries, assets).forEach(({ item, entry, group }) => {
+    salonDebitLeafItems([...visibleItems, ...includedCounterPowerItems(visibleItems, catalogEntries)], catalogEntries, assets).forEach(({ item, entry, group }) => {
       const asset = assets.find((candidate) => candidate.type === item.type) || entry;
       const label = entry.label || item.label || item.type;
       const normalized = normalizeTextValue(`${item.type} ${label}`);
@@ -10512,7 +10646,7 @@ function salonDebitCsv(salon = {}, scenes = [], assets = []) {
         unit: 'pièce',
         source: group || 'Objet de scène',
         cloison,
-      }, aisle, Math.max(1, Number(item.quantity) || 1));
+      }, hall, Math.max(1, Number(item.quantity) || 1));
     });
 
     const width = Number(scene.dimensions?.width || scene.width_m || 0);
@@ -10522,7 +10656,8 @@ function salonDebitCsv(salon = {}, scenes = [], assets = []) {
       if (panel.lengthMm <= 0) return;
       const nonStandard = ![250, 500, 750, 1000].includes(panel.lengthMm);
       const wallLabel = { back: 'fond', left: 'gauche', right: 'droite' }[panel.wall] || panel.wall;
-      const stand = [aisle, sceneStandNumber(scene, scene.source_payload?.contactDetails || {})].filter(Boolean).join(' ');
+      const contact = scene.source_payload?.contactDetails || {};
+      const stand = [sceneAisleNumber(scene, contact), sceneStandNumber(scene, contact)].map((value) => String(value || '').trim()).filter(Boolean).join(' ');
       add({
         type: `stand-wall-${panel.reinforced ? 'reinforced' : 'standard'}-${panel.lengthMm}`,
         category: nonStandard ? 'Ajustements à vérifier' : 'Cloisons',
@@ -10534,26 +10669,35 @@ function salonDebitCsv(salon = {}, scenes = [], assets = []) {
         cloison: true,
         nonStandard,
         check: nonStandard ? `${scene.project_name || scene.client_name || scene.id || 'Stand'}${stand ? ` (stand ${stand})` : ''} : mur ${wallLabel} de ${Math.round((panel.wall === 'back' ? width : depth) * 1000)} mm, ajustement de ${panel.lengthMm} mm à vérifier` : '',
-      }, aisle);
+      }, hall);
     });
   });
 
   const details = [...lines.values()].sort((a, b) => a.category.localeCompare(b.category, 'fr') || a.label.localeCompare(b.label, 'fr') || a.reference.localeCompare(b.reference, 'fr'));
+  const halls = hallNames.map((key) => ({
+    key, label: key ? `Hall ${key}` : 'Hall non renseigné',
+    total: details.reduce((sum, line) => sum + (line.halls.get(key) || 0), 0),
+  }));
   const totalCloisons = details.filter((line) => line.cloison).reduce((total, line) => total + line.total, 0);
   const totalAdjustments = details.filter((line) => line.nonStandard).reduce((total, line) => total + line.total, 0);
+  const totalPieces = details.reduce((total, line) => total + line.total, 0);
+  return { halls, details, totalCloisons, totalAdjustments, totalPieces, sceneCount: selectedScenes.length };
+}
+
+function salonDebitCsv(salon, { halls, details, totalCloisons, totalAdjustments, totalPieces, sceneCount }) {
   const rows = [
     ['Salon', salon.name || 'Salon'],
     ['Périmètre', 'Scènes configurées par les exposants uniquement (brouillons exclus)'],
-    ['Répartition', 'Par allée, tous packs confondus'],
-    ['Nombre de scènes', selectedScenes.length],
+    ['Répartition', 'Par hall, tous packs confondus'],
+    ['Nombre de scènes', sceneCount],
     ['Total cloisons (stand et groupes)', totalCloisons],
     ['Dont ajustements hors standard à vérifier', totalAdjustments],
     ...(totalAdjustments ? [['Attention', 'Les ajustements sont des reliquats de découpe théoriques à valider en atelier, pas des formats catalogue. Largeurs standard : 250 / 500 / 750 / 1000 mm.']] : []),
     ['Date export', new Date().toLocaleDateString('fr-FR')],
     [],
-    ['Catégorie', 'Référence', 'Produit', 'Finition', 'Unité', 'Provenance', 'Contrôle atelier', ...aisleNames.map((aisle) => aisle ? `Allée ${aisle}` : 'Allée non renseignée'), 'Total global'],
-    ...details.map((line) => [line.category, line.reference, line.label, line.finish, line.unit, [...line.sources].sort().join(' / '), [...line.checks].sort().join(' / '), ...aisleNames.map((aisle) => line.aisles.get(aisle) || 0), line.total]),
-    ['TOTAL PIÈCES', '', '', '', 'pièce', '', '', ...aisleNames.map((aisle) => details.reduce((total, line) => total + (line.aisles.get(aisle) || 0), 0)), details.reduce((total, line) => total + line.total, 0)],
+    ['Catégorie', 'Référence', 'Produit', 'Finition', 'Unité', 'Provenance', 'Contrôle atelier', ...halls.map((hall) => hall.label), 'Total global'],
+    ...details.map((line) => [line.category, line.reference, line.label, line.finish, line.unit, [...line.sources].sort().join(' / '), [...line.checks].sort().join(' / '), ...halls.map((hall) => line.halls.get(hall.key) || 0), line.total]),
+    ['TOTAL PIÈCES', '', '', '', 'pièce', '', '', ...halls.map((hall) => hall.total), totalPieces],
   ];
   const escape = (value) => {
     const raw = String(value ?? '');
@@ -10563,9 +10707,8 @@ function salonDebitCsv(salon = {}, scenes = [], assets = []) {
   return `\uFEFF${rows.map((row) => row.map(escape).join(';')).join('\r\n')}`;
 }
 
-async function downloadSalonDebit(salon, assets = []) {
-  const scenes = await listScenesForSalonDebit();
-  const csv = salonDebitCsv(salon, scenes, assets);
+function downloadSalonDebit(salon, report) {
+  const csv = salonDebitCsv(salon, report);
   downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `debit-${slugForType(salon.name || salon.id || 'salon')}.csv`);
 }
 
@@ -11240,6 +11383,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
   const [rotationPanelOpen, setRotationPanelOpen] = useState(false);
   const [editorTab, setEditorTab] = useState('base');
   const [viewMode, setViewMode] = useState('3d');
+  const [presetHasRendered, setPresetHasRendered] = useState(false);
   const [objectSearch, setObjectSearch] = useState('');
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [objectFeedback, setObjectFeedback] = useState('');
@@ -11288,6 +11432,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
   ]);
   const presetSuspendLoad = useSceneSuspendPreload(previewItems);
   const presetAssetsReady = presetTextureLoad.ready && presetSuspendLoad.ready;
+  const shouldRenderPreset = presetAssetsReady || presetHasRendered;
   const presetLoadProgress = combineLoadStates(presetTextureLoad, presetSuspendLoad);
   const selected = previewItems.find((item) => item.id === selectedId);
   const selectedIsAutomatic = selected && (isAutomaticLedRailItem(selected) || isAutomaticReserveItem(selected) || isAutomaticPartitionHeadItem(selected) || selected.autoMeterCover);
@@ -11379,7 +11524,8 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
           events={standSceneEvents}
           camera={{ position: [4.5, 4.2, 5.7], fov: 48 }}
           dpr={[1, 1.5]}
-          className={!presetAssetsReady ? 'scene-canvas-loading' : ''}
+          frameloop={presetHasRendered ? 'always' : 'demand'}
+          className={!presetHasRendered ? 'scene-canvas-loading' : ''}
           flat
           shadows
           onPointerUp={() => setDraggingId(null)}
@@ -11389,12 +11535,13 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
           <StudioLighting width={width} depth={depth} />
           <Suspense fallback={<Html center>Chargement</Html>}>
             <PresentationGround />
-            {presetAssetsReady && (
+            {shouldRenderPreset && (
             <StandScene
               width={width}
               depth={depth}
               height={height}
               layout={layout}
+              animationReady={presetHasRendered}
               items={previewItems}
               catalog={availableCatalog}
               selectedId={selectedId}
@@ -11422,7 +11569,9 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
               ) : null}
             />
             )}
-            <StudioContactShadows width={width} depth={depth} />
+            {shouldRenderPreset && <StudioContactShadows width={width} depth={depth} />}
+            {presetAssetsReady && !presetHasRendered && <SceneFirstFrame onReady={setPresetHasRendered} />}
+            <SceneOpeningOrbit controlsRef={orbitControlsRef} ready={presetHasRendered} />
           </Suspense>
           <OrbitControls
             ref={orbitControlsRef}
@@ -11446,7 +11595,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
         </div>
         {viewMode === 'plan' && <PresetPlanView width={width} depth={depth} layout={layout} items={previewItems} editableIds={previewItems.filter((item) => !isAutomaticPartitionHeadItem(item)).map((item) => item.id)} selectedId={selectedId} onSelect={setSelectedId} carpetColor={selectedCarpetColor} footprintColor={selectedCarpetFootprintColor} footprintEnabled={!isSignaturePack} onMove={updateItem} />}
 
-        {!presetAssetsReady && <SceneTextureLoaderOverlay loaded={presetLoadProgress.loaded} total={presetLoadProgress.total} />}
+        {!presetHasRendered && <SceneTextureLoaderOverlay loaded={presetLoadProgress.loaded} total={presetLoadProgress.total} />}
 
         {viewMode === '3d' && <CameraModeToolbar mode={cameraControlMode} onChange={setCameraControlMode} />}
         {viewMode === '3d' && <button type="button" className="preset-recenter" onClick={() => {
@@ -12179,6 +12328,7 @@ function presetMetaLabel(preset, presets = []) {
 
 function AdminUsersView({ users: rawUsers = [], usersError = '', auditEvents = [], auditError = '', auditHasMore = false, auditLoading = false, auditFilters = {}, onAuditFiltersChange, onLoadMoreAudit, search = '', canManage = false, currentUserId, onSaveUser, onDeleteUser }) {
   const users = useMemo(() => rawUsers.map((userRow) => ({ ...userRow, role: adminEditableRole(userRow.role) || userRow.role || 'Exposant' })), [rawUsers]);
+  const canManageUsers = canManage && isSuperAdmin(users.find((row) => row.auth_user_id === currentUserId)?.role);
   const [activeTab, setActiveTab] = useState('users');
   const [roleFilter, setRoleFilter] = useState('');
   const [kindFilter, setKindFilter] = useState('all');
@@ -12216,6 +12366,7 @@ function AdminUsersView({ users: rawUsers = [], usersError = '', auditEvents = [
   };
 
   const openEditor = (userRow) => {
+    if (!canManageUsers) return;
     setError('');
     setEditor(userRow ? {
       userId: userRow.auth_user_id,
@@ -12231,6 +12382,7 @@ function AdminUsersView({ users: rawUsers = [], usersError = '', auditEvents = [
   };
 
   const save = async (draft) => {
+    if (!canManageUsers) return;
     if ((!draft.userId || draft.password) && (!draft.password || draft.password.length < 8 || draft.password.length > 128)) {
       setError('Le mot de passe doit contenir entre 8 et 128 caractères.');
       return;
@@ -12265,7 +12417,7 @@ function AdminUsersView({ users: rawUsers = [], usersError = '', auditEvents = [
   });
 
   const remove = async () => {
-    if (!editor?.original) return;
+    if (!canManageUsers || !editor?.original) return;
     setSaving(true);
     setError('');
     try {
@@ -12285,6 +12437,7 @@ function AdminUsersView({ users: rawUsers = [], usersError = '', auditEvents = [
     </div>
     {message && <div className="sync-result success" role="status">{message}</div>}
     {error && !editor && <div className="sync-result error" role="alert">{error}</div>}
+    {!canManageUsers && <p className="admin-users-v2-permissions">La gestion des comptes, des rôles et des mots de passe est réservée aux super admins.</p>}
     {usersError && <div className="sync-result error" role="alert">Utilisateurs : {usersError}</div>}
     {auditError && <div className="sync-result error" role="alert">Journal d’audit : {auditError}</div>}
     {activeTab === 'users' ? <>
@@ -12297,7 +12450,7 @@ function AdminUsersView({ users: rawUsers = [], usersError = '', auditEvents = [
           ].map(([kind, label]) => <button key={kind} type="button" aria-pressed={kindFilter === kind} onClick={() => setKindFilter(kind)}>{label}</button>)}
           <label><span className="sr-only">Filtrer par rôle</span><select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}><option value="">Tous les rôles</option>{[...new Set(users.map((row) => row.role).filter(Boolean))].sort().map((role) => <option key={role} value={role}>{role}</option>)}</select></label>
         </div>
-        <button className="admin-primary-v2" type="button" disabled={!canManage} title={!canManage ? 'Réservé aux admins' : undefined} onClick={() => openEditor(null)}>Ajouter un utilisateur</button>
+        <button className="admin-primary-v2" type="button" disabled={!canManageUsers} title={!canManageUsers ? 'Réservé aux super admins' : undefined} onClick={() => openEditor(null)}>Ajouter un utilisateur</button>
       </div>
       <div className="admin-users-v2-table-scroll"><div className="admin-users-v2-table">
         <div className="admin-users-v2-head"><span>Utilisateur</span><span>E-mail</span><span>Rôle</span><span>Salons</span><span>Dernière connexion</span><span>Accès</span><span className="sr-only">Actions</span></div>
@@ -12305,16 +12458,16 @@ function AdminUsersView({ users: rawUsers = [], usersError = '', auditEvents = [
           const name = userRow.display_name || userRow.email || 'Utilisateur';
           const initials = String(name).split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
           const isStaff = userRow.kind === 'admin';
-          const canChangeAccess = isStaff && canManage && userRow.auth_user_id !== currentUserId && !saving;
+          const canChangeAccess = isStaff && canManageUsers && userRow.auth_user_id !== currentUserId && !saving;
           const salonsLabel = isStaff ? 'Tous' : (userRow.salons || []).join(', ') || '—';
           return <div className="admin-users-v2-row" key={userRow.id}>
             <span className="admin-users-v2-person"><i>{initials}</i><span><strong>{name}</strong><small>{isStaff ? adminUserOrganization(userRow) : `${userRow.scenes_count || 0} scène${userRow.scenes_count > 1 ? 's' : ''}`}</small></span></span>
             <span className="admin-users-v2-email" title={userRow.email || ''}>{userRow.email || '—'}</span>
-            <span><em className={`admin-users-v2-role ${adminEditableRole(userRow.role) === 'Admin' ? 'super' : ''}`}>{userRow.role || 'Exposant'}</em></span>
+            <span><em className={`admin-users-v2-role ${isSuperAdmin(userRow.role) ? 'super' : ''}`}>{userRow.role || 'Exposant'}</em></span>
             <span title={salonsLabel}>{salonsLabel}</span>
             <span className="admin-users-v2-date">{userRow.auth_user_id ? adminUserDateTime(userRow.last_sign_in_at) : '—'}</span>
             <span>{isStaff ? <button className="admin-users-v2-switch" type="button" role="switch" aria-checked={userRow.is_active !== false} aria-label={`Accès de ${name}`} disabled={!canChangeAccess} onClick={() => toggleAccess(userRow)}><span /></button> : <em className="admin-users-v2-access">{userRow.auth_user_id ? 'Compte créé' : 'Sans compte'}</em>}</span>
-            <span className="admin-users-v2-actions">{isStaff ? <><button className="admin-outline-v2" type="button" disabled={!canManage} onClick={() => openEditor(userRow)}>Modifier</button><button type="button" onClick={() => showHistory({ actorId: userRow.auth_user_id })}>Historique</button></> : <button className="admin-outline-v2" type="button" onClick={() => setSelectedExhibitor(userRow)}>Voir scènes</button>}</span>
+            <span className="admin-users-v2-actions">{isStaff ? <><button className="admin-outline-v2" type="button" disabled={!canManageUsers} onClick={() => openEditor(userRow)}>Modifier</button><button type="button" onClick={() => showHistory({ actorId: userRow.auth_user_id })}>Historique</button></> : <button className="admin-outline-v2" type="button" onClick={() => setSelectedExhibitor(userRow)}>Voir scènes</button>}</span>
           </div>;
         }) : <div className="admin-empty-row">Aucun utilisateur pour ce filtre.</div>}
       </div></div>
@@ -12344,7 +12497,7 @@ function AdminUsersView({ users: rawUsers = [], usersError = '', auditEvents = [
             <label>Nom complet<input required autoFocus autoComplete="name" value={editor.fullName} onChange={(event) => setEditor((current) => ({ ...current, fullName: event.target.value }))} /></label>
             <label>E-mail<input type="email" autoComplete="off" required disabled={Boolean(editor.userId)} value={editor.email} onChange={(event) => setEditor((current) => ({ ...current, email: event.target.value }))} /></label>
             <label>Organisation<input value={editor.organization} onChange={(event) => setEditor((current) => ({ ...current, organization: event.target.value }))} /></label>
-            <label>Rôle<select required value={editor.role} onChange={(event) => setEditor((current) => ({ ...current, role: event.target.value }))}><option value="" disabled>Choisir un rôle</option><option value="Admin">Admin</option><option value="Prestataire">Prestataire</option><option value="Dessinateur">Dessinateur</option></select></label>
+            <label>Rôle<select required disabled={saving || editor.userId === currentUserId} value={editor.role} onChange={(event) => setEditor((current) => ({ ...current, role: event.target.value }))}><option value="" disabled>Choisir un rôle</option><option value="Super admin">Super admin</option><option value="Admin">Admin</option><option value="Prestataire">Prestataire</option><option value="Dessinateur">Dessinateur</option></select></label>
             <label>{editor.userId ? 'Nouveau mot de passe' : 'Mot de passe'}<input type="password" autoComplete="new-password" required={!editor.userId} minLength={8} maxLength={128} aria-describedby="admin-user-password-help" disabled={saving} value={editor.password} onChange={(event) => setEditor((current) => ({ ...current, password: event.target.value }))} /></label>
             <p id="admin-user-password-help">{editor.userId ? 'Laissez vide pour conserver le mot de passe actuel. Sinon, 8 caractères minimum.' : '8 caractères minimum. Transmettez ce mot de passe à l’utilisateur de manière sécurisée.'}</p>
             <label>Confirmer le mot de passe<input type="password" autoComplete="new-password" required={!editor.userId || Boolean(editor.password)} minLength={8} maxLength={128} disabled={saving} value={editor.passwordConfirmation} onChange={(event) => setEditor((current) => ({ ...current, passwordConfirmation: event.target.value }))} /></label>
@@ -12386,10 +12539,7 @@ function AdminAuditTable({ events = [], users = [], onSceneFilter }) {
 }
 
 function adminEditableRole(role = '') {
-  if (['admin', 'super admin', 'super administrateur'].includes(normalizeTextValue(role))) return 'Admin';
-  if (normalizeTextValue(role) === 'prestataire') return 'Prestataire';
-  if (normalizeTextValue(role) === 'dessinateur') return 'Dessinateur';
-  return '';
+  return normalizeAdminRole(role);
 }
 
 function adminUserOrganization(userRow = {}) {
@@ -12492,6 +12642,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
   const [clientPageSize, setClientPageSize] = useState(12);
   const [activeTab, setActiveTab] = useState('all');
   const [profileClient, setProfileClient] = useState(null);
+  const { editor, editorError, loadingId: loadingBatId, openEditor, closeEditor } = useAdminBatEditor(assets);
 
   useEffect(() => {
     setClientPage(1);
@@ -12514,17 +12665,21 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
   const clientPageCount = Math.max(1, Math.ceil(visibleRows.length / clientPageSize));
   const safeClientPage = Math.min(clientPage, clientPageCount);
   const paginatedClients = visibleRows.slice((safeClientPage - 1) * clientPageSize, safeClientPage * clientPageSize);
+  const pageScenes = paginatedClients.flatMap((row) => row.clientScenes);
+  const sceneActivity = useSceneLatestActivities(pageScenes.map((scene) => scene.id).filter(Boolean),
+    pageScenes.map((scene) => scene.updated_at || '').join('|'));
+
 
   useEffect(() => {
     setClientPage((page) => Math.min(page, clientPageCount));
   }, [clientPageCount]);
 
   useEffect(() => {
-    if (!profileClient) return undefined;
+    if (!profileClient || editor) return undefined;
     const closeOnEscape = (event) => { if (event.key === 'Escape') setProfileClient(null); };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [profileClient]);
+  }, [profileClient, editor]);
 
   const exportCsv = () => {
     const rows = [['Société', 'Exposant', 'Email', 'Salon', 'Pack', 'Statut', 'Hall', 'Emplacement', 'Scène']];
@@ -12577,26 +12732,36 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
       <MondaySyncFeedback syncState={syncState} />
       {deleteState.error && <div className="sync-result error" role="alert">{deleteState.error}</div>}
       {reopenState.error && <div className="sync-result error" role="alert">{reopenState.error}</div>}
+      {!profileClient && editorError && <div className="sync-result error" role="alert">{editorError}</div>}
       {reopenState.message && <p className="admin-exhibitors-feedback" role="status">{reopenState.message}</p>}
       <p className="admin-exhibitors-count"><strong>{visibleRows.length} exposant{visibleRows.length > 1 ? 's' : ''}</strong> · triés par société</p>
       <div className="admin-exhibitors-table-scroll"><section className="admin-exhibitors-table" aria-label="Liste des exposants">
-        <div className="admin-exhibitors-head"><span>Société ↑</span><span>Exposant</span><span>Salon</span><span>Pack</span><span>Statut</span><span className="sr-only">Actions</span></div>
-        {paginatedClients.length ? paginatedClients.map(({ client, clientScenes, company }) => {
+        <div className="admin-exhibitors-head"><span>Société ↑</span><span>Exposant</span><span>Salon</span><span>Hall</span><span>Pack</span><span>Statut</span><span>Dernière activité</span><span className="sr-only">Actions</span></div>
+        {paginatedClients.length ? paginatedClients.map(({ client, clientScenes: linkedScenes, company }) => {
+          const clientScenes = [...linkedScenes].sort((a, b) =>
+            (Date.parse(sceneActivity.activities.get(b.id)?.created_at) || 0) - (Date.parse(sceneActivity.activities.get(a.id)?.created_at) || 0));
+          const latestActivity = sceneActivity.activities.get(clientScenes[0]?.id);
           const primary = clientScenes[0] || {};
           const name = client.display_name || client.company_name || 'Exposant sans nom';
           const status = clientScenes.length ? adminClientSceneState(primary) : { id: 'draft', label: 'Sans scène' };
           const initials = String(name).split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
           return <details className="admin-exhibitors-entry" key={client.id || client.client_key}>
-            <summary className="admin-exhibitors-row"><span className="admin-exhibitors-company"><strong>{company || '—'}</strong></span><span className="admin-exhibitors-person"><i>{initials}</i><span><strong>{name}</strong><small>{client.email || 'E-mail non renseigné'}</small></span></span><span>{clientSalonSummary(client)}</span><span><em className="admin-exhibitors-pack">{primary.offer || '—'}</em></span><span><em className={`admin-exhibitors-badge ${status.id}`}>{status.label}</em>{clientScenes.length > 1 && <small className="admin-exhibitors-more">+{clientScenes.length - 1}</small>}</span><span className="admin-exhibitors-expand">Scènes {clientScenes.length} <ChevronDown size={14} /></span></summary>
+            <summary className="admin-exhibitors-row"><span className="admin-exhibitors-company"><strong>{company || '—'}</strong></span><span className="admin-exhibitors-person"><i>{initials}</i><span><strong>{name}</strong><small>{client.email || 'E-mail non renseigné'}</small></span></span><span>{clientSalonSummary(client)}</span><span className="admin-exhibitors-hall" title={clientHallSummary(clientScenes)}>{clientHallSummary(clientScenes)}</span><span><em className="admin-exhibitors-pack">{primary.offer || '—'}</em></span><span><em className={`admin-exhibitors-badge ${status.id}`}>{status.label}</em>{clientScenes.length > 1 && <small className="admin-exhibitors-more">+{clientScenes.length - 1}</small>}</span><span className="admin-exhibitors-activity" title={latestActivity ? `${latestActivity.actor_name} · ${latestActivity.action}` : sceneActivity.error}><strong>{latestActivity ? adminUserDateTime(latestActivity.created_at) : sceneActivity.loading ? 'Chargement…' : sceneActivity.error ? 'Activité indisponible' : 'Non enregistrée'}</strong>{latestActivity && <small>{latestActivity.actor_name}</small>}</span><span className="admin-exhibitors-expand">Scènes {clientScenes.length} <ChevronDown size={14} /></span></summary>
             <div className="admin-exhibitors-scenes"><div className="admin-exhibitors-scenes-head"><p>{clientScenes.length} scène{clientScenes.length > 1 ? 's' : ''} liée{clientScenes.length > 1 ? 's' : ''}</p><button type="button" onClick={() => setProfileClient(client)}>Ouvrir la fiche exposant</button></div>{clientScenes.length ? clientScenes.map((scene) => {
               const sceneStatus = adminClientSceneState(scene);
-              return <div className="admin-exhibitors-scene" key={scene.id || scene.share_token || scene.monday_item_id}><span className="admin-exhibitors-scene-icon"><Box size={16} /></span><span className="admin-exhibitors-scene-title"><strong>{scene.project_name || scene.client_name || 'Scène'}</strong><small>{clientSceneMeta(scene)}</small><small className="admin-exhibitors-scene-location">{clientSceneLocationLabel(scene)}</small></span><em className={`admin-exhibitors-badge ${sceneStatus.id}`}>{sceneStatus.label}</em><div className="admin-exhibitors-scene-actions">{onReopenScene && canReopenSceneAsDraft(scene) && <button className="admin-exhibitors-reopen" type="button" disabled={Boolean(reopenState.sceneId) || Boolean(deleteState.loadingId)} onClick={() => runReopen(scene)}><Unlock size={14} />{reopenState.sceneId === scene.id ? 'Déverrouillage...' : 'Repasser en brouillon'}</button>}<a className="admin-outline-v2" href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a><button type="button" onClick={async () => downloadSceneTechnicalPlan(await loadSceneForAdminAction(scene), assets)}>Télécharger BAT</button><button type="button" onClick={async () => downloadScenePurchaseOrder(await loadSceneForAdminAction(scene), assets)}>Bon de commande</button><button className="admin-exhibitors-delete" type="button" aria-label={`Supprimer la scène ${scene.project_name || ''}`} disabled={deleteState.loadingId === `scene:${scene.id}`} onClick={() => runDelete(`scene:${scene.id}`, () => onDeleteScene?.(scene))}><Trash2 size={16} /></button></div></div>;
+              return <div className="admin-exhibitors-scene" data-scene-id={scene.id} key={scene.id || scene.share_token || scene.monday_item_id}><span className="admin-exhibitors-scene-icon"><Box size={16} /></span><span className="admin-exhibitors-scene-title"><strong>{scene.project_name || scene.client_name || 'Scène'}</strong><small>{clientSceneMeta(scene)}</small><small className="admin-exhibitors-scene-location">{clientSceneLocationLabel(scene)}</small><small>{sceneActivity.activities.has(scene.id) ? `Modifiée le ${adminUserDateTime(sceneActivity.activities.get(scene.id).created_at)} · ${sceneActivity.activities.get(scene.id).actor_name}` : sceneActivity.loading ? 'Chargement de l’activité…' : sceneActivity.error ? 'Activité indisponible' : 'Aucune activité enregistrée'} · ID {String(scene.id || '').slice(-8)}</small></span><em className={`admin-exhibitors-badge ${sceneStatus.id}`}>{sceneStatus.label}</em><div className="admin-exhibitors-scene-actions"><AdminSceneHistoryButton scene={scene} renderEvents={(events) => <AdminAuditTable events={events} />} />{onReopenScene && canReopenSceneAsDraft(scene) && <button className="admin-exhibitors-reopen" type="button" disabled={Boolean(reopenState.sceneId) || Boolean(deleteState.loadingId)} onClick={() => runReopen(scene)}><Unlock size={14} />{reopenState.sceneId === scene.id ? 'Déverrouillage...' : 'Repasser en brouillon'}</button>}<a className="admin-outline-v2" href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a><button type="button" onClick={async () => downloadSceneTechnicalPlan(await loadSceneForAdminAction(scene), assets)}>Télécharger BAT</button><button type="button" disabled={Boolean(loadingBatId)} onClick={() => openEditor(scene)}>{loadingBatId === scene.id ? 'Chargement…' : 'Modifier le BAT'}</button><button type="button" onClick={async () => downloadScenePurchaseOrder(await loadSceneForAdminAction(scene), assets)}>Bon de commande</button><button className="admin-exhibitors-delete" type="button" aria-label={`Supprimer la scène ${scene.project_name || ''}`} disabled={deleteState.loadingId === `scene:${scene.id}`} onClick={() => runDelete(`scene:${scene.id}`, () => onDeleteScene?.(scene))}><Trash2 size={16} /></button></div></div>;
             }) : <div className="admin-empty-row">Aucune scène associée.</div>}</div>
           </details>;
         }) : <div className="admin-empty-row">Aucun exposant trouvé avec les filtres actuels.</div>}
       </section></div>
       <nav className="admin-exhibitors-pagination" aria-label="Pagination exposants"><span>{visibleRows.length ? `${(safeClientPage - 1) * clientPageSize + 1}–${Math.min(safeClientPage * clientPageSize, visibleRows.length)}` : '0'} sur {visibleRows.length} exposants</span><label><span className="sr-only">Exposants par page</span><select value={clientPageSize} onChange={(event) => setClientPageSize(Number(event.target.value))}><option value={12}>12 par page</option><option value={24}>24 par page</option><option value={48}>48 par page</option></select></label><div><button type="button" aria-label="Page précédente" disabled={safeClientPage === 1} onClick={() => setClientPage((page) => page - 1)}>‹</button>{Array.from({ length: Math.min(5, clientPageCount) }, (_, index) => Math.max(1, Math.min(safeClientPage - 2, clientPageCount - 4)) + index).map((page) => <button type="button" key={page} aria-label={`Page ${page}`} aria-current={safeClientPage === page ? 'page' : undefined} onClick={() => setClientPage(page)}>{page}</button>)}{clientPageCount > 5 && <span>… {clientPageCount}</span>}<button type="button" aria-label="Page suivante" disabled={safeClientPage === clientPageCount} onClick={() => setClientPage((page) => page + 1)}>›</button></div></nav>
-      {profileClient && createPortal(<div className="admin-exhibitors-profile-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setProfileClient(null); }}><section className="admin-exhibitors-profile" role="dialog" aria-modal="true" aria-labelledby="admin-exhibitor-profile-title"><header><div><h2 id="admin-exhibitor-profile-title">{profileClient.display_name || profileClient.company_name || 'Exposant'}</h2><p>Fiche exposant</p></div><button type="button" aria-label="Fermer la fiche" autoFocus onClick={() => setProfileClient(null)}><X size={18} /></button></header><dl><div><dt>Société</dt><dd>{adminClientCompanyName(profileClient, clientScenesWithFullData(profileClient, sceneLookup)) || '—'}</dd></div><div><dt>E-mail</dt><dd>{profileClient.email ? <a href={`mailto:${profileClient.email}`}>{profileClient.email}</a> : '—'}</dd></div><div><dt>Téléphone</dt><dd>{profileClient.phone || '—'}</dd></div><div><dt>Salon</dt><dd>{clientSalonSummary(profileClient)}</dd></div><div><dt>Pack</dt><dd>{clientPackSummary(profileClient)}</dd></div></dl><h3>Scènes liées</h3>{clientScenesWithFullData(profileClient, sceneLookup).map((scene) => <a className="admin-exhibitors-profile-scene" key={scene.id || scene.share_token} href={sceneShareUrl(scene)} target="_blank" rel="noreferrer"><span>{scene.project_name || scene.client_name || 'Scène'}<small>{clientSceneLocationLabel(scene)}</small></span><ArrowRight size={15} /></a>)}</section></div>, document.body)}
+      {profileClient && !editor && createPortal(<div className="admin-exhibitors-profile-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setProfileClient(null); }}><section className="admin-exhibitors-profile" role="dialog" aria-modal="true" aria-labelledby="admin-exhibitor-profile-title"><header><div><h2 id="admin-exhibitor-profile-title">{profileClient.display_name || profileClient.company_name || 'Exposant'}</h2><p>Fiche exposant</p></div><button type="button" aria-label="Fermer la fiche" autoFocus onClick={() => setProfileClient(null)}><X size={18} /></button></header><dl><div><dt>Société</dt><dd>{adminClientCompanyName(profileClient, clientScenesWithFullData(profileClient, sceneLookup)) || '—'}</dd></div><div><dt>E-mail</dt><dd>{profileClient.email ? <a href={`mailto:${profileClient.email}`}>{profileClient.email}</a> : '—'}</dd></div><div><dt>Téléphone</dt><dd>{profileClient.phone || '—'}</dd></div><div><dt>Salon</dt><dd>{clientSalonSummary(profileClient)}</dd></div><div><dt>Pack</dt><dd>{clientPackSummary(profileClient)}</dd></div></dl><h3>Scènes liées</h3>
+      {editorError && <p className="sync-result error" role="alert">{editorError}</p>}
+      {clientScenesWithFullData(profileClient, sceneLookup).map((scene) => <div className="admin-exhibitors-profile-scene" key={scene.id || scene.share_token}>
+        <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer"><span>{scene.project_name || scene.client_name || 'Scène'}<small>{clientSceneLocationLabel(scene)}</small></span><ArrowRight size={15} /></a>
+        <button className="admin-outline-v2" type="button" disabled={Boolean(loadingBatId)} onClick={() => openEditor(scene)}>{loadingBatId === scene.id ? 'Chargement…' : 'Modifier le BAT'}</button>
+      </div>)}</section></div>, document.body)}
+      {editor && <TechnicalPlanEditor {...editor} onClose={closeEditor} />}
     </section>
   );
 }
@@ -12644,6 +12809,13 @@ function clientPrimaryScene(client) {
   return scenes
     .slice()
     .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))[0];
+}
+
+function clientHallSummary(scenes = []) {
+  const halls = [...new Set(scenes.map((scene) => sceneHallLabel(scene, scene.source_payload?.contactDetails || {}))
+    .map((hall) => String(hall || '').trim())
+    .filter((hall) => hall && !['a definir', 'non renseigne', '-', '—'].includes(normalizeTextValue(hall))))];
+  return halls.sort((a, b) => a.localeCompare(b, 'fr', { numeric: true })).join(', ') || '—';
 }
 
 function clientSalonSummary(client) {
@@ -15076,11 +15248,30 @@ function GroupEditorModel({ item }) {
   return <><Model3D item={item} selected={false} hovered={false} dragging={false} /><ObjectBaseboards item={item} /></>;
 }
 
-function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
-  const [page, setPage] = useState(1);
+function useAdminBatEditor(assets) {
   const [editor, setEditor] = useState(null);
   const [editorError, setEditorError] = useState('');
   const [loadingId, setLoadingId] = useState('');
+  const openEditor = async (scene) => {
+    setLoadingId(scene.id); setEditorError('');
+    try {
+      const full = await loadSceneForAdminAction(scene);
+      if (!full?.id || !Array.isArray(full.items)) throw new Error('Impossible de charger la scène pour modifier le BAT.');
+      await prepareTechnicalExportFonts(full);
+      const catalog = sceneAdminCatalog(assets, full);
+      setEditor({ sceneId: full.id, options: {
+        width: Number(full.dimensions?.width || full.width_m || 4), depth: Number(full.dimensions?.depth || full.depth_m || 3),
+        layout: full.layout || 'back', items: withTechnicalOptionsMarker(sceneAllAdminItems(full, catalog), full, catalog),
+        catalog, documentInfo: sceneTechnicalDocumentInfo(full),
+      } });
+    } catch (error) { setEditorError(error.message || 'Impossible d’ouvrir le BAT.'); } finally { setLoadingId(''); }
+  };
+  return { editor, editorError, loadingId, openEditor, closeEditor: () => setEditor(null) };
+}
+
+function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
+  const [page, setPage] = useState(1);
+  const { editor, editorError, loadingId, openEditor, closeEditor } = useAdminBatEditor(assets);
   const [downloadState, setDownloadState] = useState({ sceneId: '', error: '' });
   const downloadBat = async scene => {
     setDownloadState({ sceneId: scene.id, error: '' });
@@ -15090,19 +15281,6 @@ function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
     } catch (error) {
       setDownloadState({ sceneId: '', error: isDeploymentAssetError(error) ? deploymentAssetErrorMessage : error.message || 'Le téléchargement du BAT a échoué. Réessayez.' });
     }
-  };
-  const openEditor = async (scene) => {
-    setLoadingId(scene.id); setEditorError('');
-    try {
-      const full = await loadSceneForAdminAction(scene);
-      await prepareTechnicalExportFonts(full);
-      const catalog = sceneAdminCatalog(assets, full);
-      setEditor({ sceneId: full.id, options: {
-        width: Number(full.dimensions?.width || full.width_m || 4), depth: Number(full.dimensions?.depth || full.depth_m || 3),
-        layout: full.layout || 'back', items: withTechnicalOptionsMarker(sceneAllAdminItems(full, catalog), full, catalog),
-        catalog, documentInfo: sceneTechnicalDocumentInfo(full),
-      } });
-    } catch (error) { setEditorError(error.message); } finally { setLoadingId(''); }
   };
   const pageCount = Math.max(1, Math.ceil(scenes.length / 18));
   const currentPage = Math.min(page, pageCount);
@@ -15138,7 +15316,7 @@ function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
         );
       }) : <div className="admin-empty-row">Aucune scène à afficher.</div>}
       {pageCount > 1 && <nav className="admin-pagination" aria-label="Pagination des BAT"><span>Page {currentPage}/{pageCount}</span><div><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Précédent</button><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</button></div></nav>}
-      {editor && <TechnicalPlanEditor {...editor} onClose={() => setEditor(null)} />}
+      {editor && <TechnicalPlanEditor {...editor} onClose={closeEditor} />}
     </section>
   );
 }
@@ -15423,7 +15601,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const options = sceneLightingOptions(scene, { ...(scene.source_payload?.options || {}), ...(scene.options || {}) },
     scene.stand_presets?.base_config?.autoSpotsRule || scene.stand_presets?.base_config?.options?.autoSpotsRule);
   const manualItems = sceneAdminItems(scene, catalogEntries)
-    .map((item) => electricalWallClearance(item) || (!isWallItem(item) && isLockedPlacementRule(item.placementRule))
+    .map((item) => electricalWallClearance(item) || (isLockedPlacementRule(item.placementRule) && (!isWallItem(item) || isSmclPartitionHeadItem(item)))
       ? constrainItem(item, width, depth, layout, options.carpetFootprintEnabled !== false) : item)
     .filter((item) => !item.autoMeterCover
     && (!isSignatureScene(scene) || !isSignatureArchItem(item) || signatureArchFitsDepth(item, depth)));
@@ -15663,7 +15841,7 @@ function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = [])
       return { id: surface.id, label: surface.label, position: surface.position, width: surface.width, height: surface.height, previewUrl: preview?.url || '', previewName: preview?.name || '', visualPending: Boolean(cover.visualPending) };
     });
   return [
-    ...items,
+    ...items.map((item) => isPartitionHeadItem(item) ? { ...item, technicalHeadPlan: technicalPartitionHeadPose(item, items, width, depth) } : item),
     {
       id: '__technical-options__',
       type: '__technical-options__',
@@ -15692,6 +15870,15 @@ function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = [])
       collisionEnabled: false,
     },
   ];
+}
+
+function technicalPartitionHeadPose(item, items, width, depth) {
+  const mounted = isWallItem(item);
+  const bounds = partitionHeadModelBounds(item);
+  const [x, , z] = mounted ? screenWorldPosition(item, width, depth, items) : [Number(item.x || 0), 0, Number(item.z || 0)];
+  const rotation = mounted ? wallMountedItemRotation(item, objectWallTransform(item, items)) * 180 / Math.PI : Number(item.rotation || 0);
+  const center = rotatePoint((bounds.minX + bounds.maxX) / 2, (bounds.minZ + bounds.maxZ) / 2, -rotation);
+  return { x: x + center.x, z: z + center.z, rotation, width: bounds.maxX - bounds.minX, depth: bounds.maxZ - bounds.minZ };
 }
 
 async function prepareTechnicalExportFonts(scene = {}) {
@@ -17182,6 +17369,7 @@ function partitionHeadSummary(rule, sides = {}) {
 
 function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelections = [], technicalFloor = null, wallCovers = {}, wallCoverSurfaces = [], ledRailsEnabled = true, expectedLedSpotCount = 0 }) {
   const safeItems = (items || []).filter(Boolean);
+  const insureAllFurniture = isSignatureScene(scene);
   const basePrice = 0;
   const baseItems = sceneBaseItems(scene);
   const baseItemsConfigured = sceneHasBaseItems(scene);
@@ -17234,7 +17422,9 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     const unitPrice = billableCount ? roundCurrency(lineTotal / billableCount) : assetUnitPrice(entry, salonLabel);
     billableCounts.set(type, billableCount);
     itemsTotal += lineTotal;
-    if (billableItems.some((item) => isFurnitureInsuranceEligible(entry, item))) furnitureInsuranceBase += lineTotal;
+    if (insureAllFurniture) {
+      furnitureInsuranceBase += itemPrices.reduce((sum, price, index) => sum + (isFurnitureInsuranceEligible(entry, billableItems[index], true) ? price : 0), 0);
+    } else if (billableItems.some((item) => isFurnitureInsuranceEligible(entry, item))) furnitureInsuranceBase += lineTotal;
     lines.push({
       type,
       label: pricingLineLabelForItems(billableItems, entry, type),
@@ -17251,13 +17441,13 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     const sizeLine = counterVariantUpgradeOptionLine(item, entry, salonLabel, index);
     if (sizeLine) {
       itemsTotal += sizeLine.total;
-      if (isFurnitureInsuranceEligible(entry, item)) furnitureInsuranceBase += sizeLine.total;
+      if (isFurnitureInsuranceEligible(entry, item, insureAllFurniture)) furnitureInsuranceBase += sizeLine.total;
       lines.push(sizeLine);
     }
     const colorLine = counterColorOptionLine(item, entry, salonLabel, index);
     if (colorLine) {
       itemsTotal += colorLine.total;
-      if (isFurnitureInsuranceEligible(entry, item)) furnitureInsuranceBase += colorLine.total;
+      if (isFurnitureInsuranceEligible(entry, item, insureAllFurniture)) furnitureInsuranceBase += colorLine.total;
       lines.push(colorLine);
     }
     const logoLine = counterLogoOptionLine(item, entry, salonLabel, index);
@@ -17265,6 +17455,13 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       itemsTotal += logoLine.total;
       lines.push(logoLine);
     }
+  });
+
+  includedCounterPowerItems(safeItems, catalog).filter((power) => !power.included).forEach((power) => {
+    const price = assetUnitPrice(power, salonLabel);
+    itemsTotal += price;
+    lines.push({ type: power.id, label: power.label, quantity: 1, unitPrice: price, total: price,
+      reference: assetReference(power, salonLabel), optionForItemId: power.surfaceHostId });
   });
 
   if (isSignatureScene(scene) && safeItems.some((item) => item.autoPartitionHead && (() => {
@@ -17368,6 +17565,7 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     itemsTotal += line.total;
     lines.push(line);
   });
+  furnitureInsuranceBase = roundCurrency(furnitureInsuranceBase);
   const insuranceLine = furnitureInsuranceLine(furnitureInsuranceBase);
   if (insuranceLine) {
     itemsTotal += insuranceLine.total;
@@ -17590,23 +17788,19 @@ function mergeBaseUsageRows(configuredRows = [], automaticRows = []) {
 function useSceneTexturePreload(items = [], extraUrls = []) {
   const urls = collectSceneTextureUrls(items, extraUrls);
   const key = urls.join('|');
-  const [state, setState] = useState(() => ({ ready: urls.length === 0, loaded: 0, total: urls.length }));
+  const [state, setState] = useState(null);
 
   useEffect(() => {
-    if (!urls.length) {
-      setState({ ready: true, loaded: 0, total: 0 });
-      return undefined;
-    }
+    if (!urls.length) return undefined;
 
     let cancelled = false;
     let loaded = 0;
-    setState({ ready: false, loaded: 0, total: urls.length });
 
     Promise.all(urls.map((url) => preloadImage(url).then(() => {
       loaded += 1;
-      if (!cancelled) setState({ ready: false, loaded, total: urls.length });
+      if (!cancelled) setState({ key, ready: false, loaded, total: urls.length });
     }))).then(() => {
-      if (!cancelled) setState({ ready: true, loaded: urls.length, total: urls.length });
+      if (!cancelled) setState({ key, ready: true, loaded: urls.length, total: urls.length });
     });
 
     return () => {
@@ -17614,7 +17808,7 @@ function useSceneTexturePreload(items = [], extraUrls = []) {
     };
   }, [key]);
 
-  return state;
+  return state?.key === key ? state : { ready: !key, loaded: 0, total: urls.length };
 }
 
 function useSceneModelFilePreload(items = []) {
@@ -17660,17 +17854,13 @@ function useSceneSuspendPreload(items = []) {
   }, [items]);
 
   const key = modelItems.map((i) => `${i.modelUrl}|${modelMaterialUrl(i) || ''}`).join(',');
-  const [state, setState] = useState(() => ({ ready: modelItems.length === 0, loaded: 0, total: modelItems.length }));
+  const [state, setState] = useState(null);
 
   useEffect(() => {
-    if (!modelItems.length) {
-      setState({ ready: true, loaded: 0, total: 0 });
-      return undefined;
-    }
+    if (!modelItems.length) return undefined;
 
     let cancelled = false;
     let loaded = 0;
-    setState({ ready: false, loaded: 0, total: modelItems.length });
 
     const preloadItem = async (item) => {
       const isGlb = item.modelUrl?.toLowerCase().split('?')[0].endsWith('.glb');
@@ -17699,17 +17889,17 @@ function useSceneSuspendPreload(items = []) {
         // don't block preload on individual item failures
       }
       loaded += 1;
-      if (!cancelled) setState({ ready: false, loaded, total: modelItems.length });
+      if (!cancelled) setState({ key, ready: false, loaded, total: modelItems.length });
     };
 
     Promise.all(modelItems.map(preloadItem)).then(() => {
-      if (!cancelled) setState({ ready: true, loaded: modelItems.length, total: modelItems.length });
+      if (!cancelled) setState({ key, ready: true, loaded: modelItems.length, total: modelItems.length });
     });
 
     return () => { cancelled = true; };
   }, [key]);
 
-  return state;
+  return state?.key === key ? state : { ready: !key, loaded: 0, total: modelItems.length };
 }
 
 function combineLoadStates(...states) {
@@ -19799,7 +19989,13 @@ function applyWallPlacementRule(item, width, depth, layout) {
     'outer-right': wall === 'right' ? range.max : range.max,
   };
   const rawAxis = axisByRule[rule.id] ?? range.min;
-  const axis = smclPartitionHeadWallAxis(item, wall, rawAxis, range);
+  const flushLeft = (rule.id === 'front-left' || rule.id === 'outer-left' || rule.id === 'back-left')
+    && isSmclPartitionHeadItem(item)
+    && (item.dimensions?.smclHeadSide || item.options?.partitionHeadSide || smclPartitionHeadSide(item)) === 'left';
+  const axis = flushLeft
+    // The solid support is 60 cm; the visible left wing extends beyond it.
+    ? (wall === 'left' ? sideWallEndZ(depth) : -width / 2) + (wall === 'left' ? 1 : -1) * partitionHeadModelBounds(item).minX
+    : smclPartitionHeadWallAxis(item, wall, rawAxis, range);
 
   return {
     ...item,
@@ -20650,8 +20846,13 @@ function reserveWallBlocker(item, wall, width, depth, margin = 0.03, renderedBou
   };
 }
 
-function StandScene({ width, depth, height, layout, items, catalog = [], selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, reserveDoorColorHex = '', wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
+function canAnimateSceneDeparture(item) {
+  return shopCartItemVisible(item) && !item.autoMeterCover;
+}
+
+function StandScene({ width, depth, height, layout, animationReady = true, items, catalog = [], selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, reserveDoorColorHex = '', wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
   const [hoveredId, setHoveredId] = useState(null);
+  const { departures, finishDeparture } = useSceneDepartures(items, canAnimateSceneDeparture);
   const dragPointerOffset = useRef({ x: 0, z: 0 });
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedId) || null, [items, selectedId]);
@@ -20684,64 +20885,76 @@ function StandScene({ width, depth, height, layout, items, catalog = [], selecte
   const counterPowerItems = includedCounterPowerItems(items, catalog);
   const floorItems = [...items, ...counterPowerItems].filter((item) => !isWallItem(item));
   const wallItems = items.filter((item) => isWallItem(item));
+  const initialIds = useRef(new Map([...floorItems, ...wallItems].map((item, index) => [item.id, index])));
   const renderSceneItem = (item) => (
     <Suspense key={item.id} fallback={null}>
-      <SceneItem
-        item={isReserveSceneItem(item) && reserveDoorColorHex ? { ...item, options: { ...item.options, reserveDoorColorHex, reserveFrameColorHex: reserveDoorColorHex } } : item}
-        items={items}
-        width={width}
-        depth={depth}
-        selected={item.id === selectedId}
-        hovered={item.id === hoveredId}
-        dragging={item.id === draggingId}
-        onSelect={() => interactive && setSelectedId(item.autoCounterPower ? item.surfaceHostId : item.id)}
-        onHover={hoverEnabled ? ((hovered) => setItemHover(item.id, hovered)) : null}
-        onDragStart={(event) => {
-          event.stopPropagation();
-          if (!interactive) return;
-          setSelectedId(item.autoCounterPower ? item.surfaceHostId : item.id);
-          if (item.autoCounterPower) return;
-          if (!canDragSceneItem(item, canEditLockedItems)) return;
-          dragPointerOffset.current = sceneItemDragPointerOffset(
-            item,
-            { x: event.point.x - cameraPivot[0], z: event.point.z - cameraPivot[2] },
-            items,
-            width,
-            depth,
-          );
-          event.target.setPointerCapture(event.pointerId);
-          setDraggingId(item.id);
-        }}
-        onDragEnd={(event) => {
-          event.stopPropagation();
-          if (draggingId === item.id && event.target.hasPointerCapture?.(event.pointerId)) {
-            event.target.releasePointerCapture(event.pointerId);
-          }
-          if (draggingId === item.id) {
-            dragPointerOffset.current = { x: 0, z: 0 };
-            setDraggingId(null);
-          }
-        }}
-        onDragMove={dragFromPointer}
-        visualContext={visualContext}
-      />
+      <SceneAssembly ready={animationReady} delay={initialIds.current.has(item.id) ? 195 + Math.min(initialIds.current.get(item.id) * 32, 370) : 0} immediate={item.id === draggingId}>
+        <SceneItem
+          item={isReserveSceneItem(item) && reserveDoorColorHex ? { ...item, options: { ...item.options, reserveDoorColorHex, reserveFrameColorHex: reserveDoorColorHex } } : item}
+          items={items}
+          width={width}
+          depth={depth}
+          selected={item.id === selectedId}
+          hovered={item.id === hoveredId}
+          dragging={item.id === draggingId}
+          onSelect={() => interactive && setSelectedId(item.autoCounterPower ? item.surfaceHostId : item.id)}
+          onHover={hoverEnabled ? ((hovered) => setItemHover(item.id, hovered)) : null}
+          onDragStart={(event) => {
+            event.stopPropagation();
+            if (!interactive) return;
+            setSelectedId(item.autoCounterPower ? item.surfaceHostId : item.id);
+            if (item.autoCounterPower) return;
+            if (!canDragSceneItem(item, canEditLockedItems)) return;
+            dragPointerOffset.current = sceneItemDragPointerOffset(
+              item,
+              { x: event.point.x - cameraPivot[0], z: event.point.z - cameraPivot[2] },
+              items,
+              width,
+              depth,
+            );
+            event.target.setPointerCapture(event.pointerId);
+            setDraggingId(item.id);
+          }}
+          onDragEnd={(event) => {
+            event.stopPropagation();
+            if (draggingId === item.id && event.target.hasPointerCapture?.(event.pointerId)) {
+              event.target.releasePointerCapture(event.pointerId);
+            }
+            if (draggingId === item.id) {
+              dragPointerOffset.current = { x: 0, z: 0 };
+              setDraggingId(null);
+            }
+          }}
+          onDragMove={dragFromPointer}
+          visualContext={visualContext}
+        />
+      </SceneAssembly>
     </Suspense>
   );
 
   return (
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
       {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragPointer={dragFromPointer} onDragMove={(point) => onDragMove(applyDragPointerOffset(point, dragPointerOffset.current))} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
-      <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRampX={technicalFloorRampX} onTechnicalFloorRampX={onTechnicalFloorRampX} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
-      <Walls width={width} depth={depth} height={height} layout={layout} items={items} wallFabricColor={wallFabricColor} reserveWallFabricColor={reserveWallFabricColor} wallCovers={wallCovers} onDeselect={clearSceneSelection} />
-      <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">
-        {width}m x {depth}m
-      </Text>
+      <SceneAssembly phase="floor" ready={animationReady}>
+        <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRampX={technicalFloorRampX} onTechnicalFloorRampX={onTechnicalFloorRampX} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
+        <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">{width}m x {depth}m</Text>
+      </SceneAssembly>
+      <SceneAssembly phase="walls" delay={110} ready={animationReady}>
+        <Walls width={width} depth={depth} height={height} layout={layout} items={items} wallFabricColor={wallFabricColor} reserveWallFabricColor={reserveWallFabricColor} wallCovers={wallCovers} onDeselect={clearSceneSelection} />
+        <WallCoverSurfaces width={width} depth={depth} layout={layout} items={items} covers={wallCovers} previews={wallCoverPreviews} />
+      </SceneAssembly>
       {(Array.isArray(sceneConstraints) && sceneConstraints.length ? sceneConstraints : sceneConstraint ? [sceneConstraint] : []).map((constraint, index) => (
         <SceneConstraintColumn key={constraint.id || `${constraint.x}-${constraint.z}-${index}`} constraint={constraint} />
       ))}
       {floorItems.map(renderSceneItem)}
-      <WallCoverSurfaces width={width} depth={depth} layout={layout} items={items} covers={wallCovers} previews={wallCoverPreviews} />
       {wallItems.map(renderSceneItem)}
+      {departures.map((item) => (
+        <SceneAssembly key={`departing-${item.id}`} phase="departure" onComplete={() => finishDeparture(item.id)}>
+          <Suspense fallback={null}>
+            <SceneItem item={item} items={items} width={width} depth={depth} visualContext={visualContext} />
+          </Suspense>
+        </SceneAssembly>
+      ))}
       {selectedToolbar && selectedItem && !draggingId && (
         <SceneItemToolbarAnchor item={selectedItem} items={items} width={width} depth={depth} visualContext={visualContext}>
           {selectedToolbar}
@@ -21175,9 +21388,15 @@ function useRepeatedTexture(url, width, depth, tileSize = 1) {
   return textureState.key === textureKey ? textureState.texture : null;
 }
 
+const repeatedTextureSources = new WeakMap();
+
 function createRepeatedTextureFromImage(image, width, depth, tileSize, url, anisotropy) {
   try {
-    const seamlessTexture = createSeamlessRepeatedTexture(image);
+    const source = repeatedTextureSources.get(image);
+    const seamlessTexture = source ? new CanvasTexture(source.data) : createSeamlessRepeatedTexture(image);
+    // Keep independent repeat transforms while sharing the seamless pixel data on the GPU.
+    if (source) seamlessTexture.source = source;
+    else repeatedTextureSources.set(image, seamlessTexture.source);
     configureRepeatedTexture(seamlessTexture, width, depth, tileSize, anisotropy);
     return seamlessTexture;
   } catch (error) {
@@ -21194,7 +21413,6 @@ function configureRepeatedTexture(texture, width, depth, tileSize, anisotropy) {
   texture.magFilter = LinearFilter;
   texture.repeat.set(Math.max(1, Number(width || 1) / tileSize) * 1.8, Math.max(1, Number(depth || 1) / tileSize) * 1.8);
   texture.anisotropy = anisotropy;
-  texture.needsUpdate = true;
   return texture;
 }
 
@@ -21583,7 +21801,12 @@ function SignatureArchFootprint({ item, standDepth = 0 }) {
 }
 
 function standSceneEvents(state) {
-  return { ...createSceneEvents(state), filter: prioritizeUnderArchIntersections };
+  return { ...createSceneEvents(state), filter: (hits) => prioritizeUnderArchIntersections(hits.filter((hit) => {
+    for (let object = hit.object; object; object = object.parent) {
+      if (object.userData?.assemblyPhase === 'departure') return false;
+    }
+    return true;
+  })) };
 }
 
 function SceneItem({ item, items = [], selected, hovered, dragging, width, depth, onSelect, onHover, onDragStart, onDragEnd, onDragMove, visualContext }) {
@@ -21598,7 +21821,7 @@ function SceneItem({ item, items = [], selected, hovered, dragging, width, depth
       userData={{ standSceneItem: true, itemId: item.id, ...(isSignatureArchItem(item) ? { archPickBounds: itemGroupBounds(item) } : {}) }}
       position={[item.x, sceneItemDisplayY(item, visualContext), item.z]}
       rotation={[0, rotationY, 0]}
-      onClick={(event) => { event.stopPropagation(); onSelect(); }}
+      onClick={onSelect ? ((event) => { event.stopPropagation(); onSelect(); }) : undefined}
       onPointerOver={onHover ? ((event) => { event.stopPropagation(); onHover(true); }) : undefined}
       onPointerOut={onHover ? ((event) => { event.stopPropagation(); onHover(false); }) : undefined}
       onPointerDown={onDragStart}
@@ -21623,7 +21846,7 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, standD
       userData={{ standSceneItem: true, itemId: item.id, ...(isSignatureArchItem(item) ? { archPickBounds: groupBounds } : {}) }}
       position={[item.x, sceneItemDisplayY(item, visualContext), item.z]}
       rotation={[0, rotationY, 0]}
-      onClick={(event) => { event.stopPropagation(); onSelect(); }}
+      onClick={onSelect ? ((event) => { event.stopPropagation(); onSelect(); }) : undefined}
       onPointerOver={onHover ? ((event) => { event.stopPropagation(); onHover(true); }) : undefined}
       onPointerOut={onHover ? ((event) => { event.stopPropagation(); onHover(false); }) : undefined}
       onPointerDown={onDragStart}
@@ -23350,7 +23573,7 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
       position={offset}
       rotation={[0, rotation, 0]}
       userData={{ standSceneItem: true, itemId: item.id }}
-      onClick={(event) => { event.stopPropagation(); onSelect(); }}
+      onClick={onSelect ? ((event) => { event.stopPropagation(); onSelect(); }) : undefined}
       onPointerOver={onHover ? ((event) => { event.stopPropagation(); onHover(true); }) : undefined}
       onPointerOut={onHover ? ((event) => { event.stopPropagation(); onHover(false); }) : undefined}
       onPointerDown={onDragStart}

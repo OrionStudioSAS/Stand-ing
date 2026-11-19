@@ -20,9 +20,9 @@ export function signatureArchSizeSupplementLines(items = []) {
     if (!arch || item?.dimensions?.isColorGroup) return [];
     const variant = signatureArchVariant(item);
     const lines = [];
-    if (isSignatureLedArch(item)) lines.push({ type: `signature-arch-led-wall-${item.id || index}`, label: `Mur LED Signature ${variant.size} m`, quantity: 1, unitPrice: 2570, total: 2570, reference: '' });
+    if (isSignatureLedArch(item)) lines.push({ type: `signature-arch-led-wall-${item.id || index}`, label: `Mur LED Signature ${variant.size} m`, quantity: 1, unitPrice: 2570, total: 2570, reference: '', optionForItemId: item.id });
     if (!variant.supplement) return lines;
-    return [...lines, { type: `signature-arch-size-${item.id || index}`, label: `Arche Signature ${variant.size} m — ${variant.lighting === 'suspension' ? 'Suspension' : 'Spot'}`, quantity: 1, unitPrice: variant.supplement, total: variant.supplement, reference: '' }];
+    return [...lines, { type: `signature-arch-size-${item.id || index}`, label: `Arche Signature ${variant.size} m — ${variant.lighting === 'suspension' ? 'Suspension' : 'Spot'}`, quantity: 1, unitPrice: variant.supplement, total: variant.supplement, reference: '', optionForItemId: item.id }];
   });
 }
 

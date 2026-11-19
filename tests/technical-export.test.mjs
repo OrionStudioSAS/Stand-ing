@@ -3,6 +3,7 @@ import { isSignatureLedArch } from '../src/signatureArchVariants.js';
 import { groupStructuralAsset } from '../src/groupPlacement.js';
 import { normalizeBatElectricalPicto, normalizeBatElectricalPictos, electricalPictoPoint } from '../src/batElectricalPicto.js';
 import { includedCounterPowerItems } from '../src/includedCounterPower.js';
+import { technicalRiggingCoordinates, technicalSignRiggingPoints } from '../src/technicalRigging.js';
 import { sceneHeadCountry } from '../src/equippedHeadInformation.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -34,13 +35,26 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ technicalA3, electricalWallClearance, electricalClearanceRect, applyElectricalClearance, includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor });
+  const api = vm.createContext({ technicalA3, electricalWallClearance, electricalClearanceRect, applyElectricalClearance, includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor, technicalRiggingCoordinates, technicalSignRiggingPoints });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }
 
 const imageUrl = 'https://storage.example/scene-options/counter-preview.jpg';
 const counter = (id, options = {}) => ({ id, type: 'counter', label: 'Comptoir accueil', x: 0, z: 0, dimensions: { width: 1, depth: 0.5 }, options: { binary3Enabled: true, binary3ImageUrl: imageUrl, ...options } });
+
+test('the BAT receives included and selected countertop power strips without duplicates', () => {
+  const { api } = runtime();
+  const catalog = [{ type: 'triplette', label: 'Triplette', modelSize: [.23, .05, .13], dimensions: { category: 'Électricité' } }];
+  const base = { ...counter('included'), included: true };
+  const optional = counter('optional', { counterPowerEnabled: true });
+  const items = [base, optional, counter('without-strip')];
+  const plan = api.technicalItemsForPlan(items, 6, 3, catalog);
+  assert.equal(plan.filter(item => item.autoCounterPower).length, 2);
+  assert.ok(plan.some(item => item.id === 'counter-power-optional' && item.surfaceHostId === 'optional'));
+  assert.equal(api.technicalItemsForPlan([...items, ...includedCounterPowerItems(items, catalog)], 6, 3, catalog)
+    .filter(item => item.autoCounterPower).length, 2);
+});
 
 test('the BAT prints the aisle code on the requested edge without duplicating the label', () => {
   for (const [side, expected] of [
@@ -109,6 +123,50 @@ test('BAT furniture and SVG pictos turn in the same direction as the 3D scene', 
       assert.ok(Math.abs(Math.sin(angles[0]) - expected.z) < 1e-10);
     }
   }
+});
+
+test('the BAT compensates native reception-desk orientation without losing scene rotation', () => {
+  const { api, ctx } = runtime();
+  const variants = [
+    'asset-banque-accueil-bois-1m-signa-mr48wzmt',
+    'asset-banque-accueil-bois-1-5m-signa-mr48wom9',
+    'asset-banque-accueil-bois-2m-signa-mr48x5w9',
+    'asset-banque-accueil-blanc-0-5m-signa-mvghqhov',
+  ];
+  const entries = [...variants, 'asset-comptoir-standard'].map((type) => ({ type, label: 'Comptoir accueil', dimensions: { batPictoUrl: '/counter.svg' } }));
+  const group = { type: 'group-reception', dimensions: { isVariantGroup: true, variantAssets: entries } };
+  const catalog = [...entries, group];
+  const drawn = [];
+  const image = { width: 200, height: 100 };
+  api.drawRotatedPictoObject = (_ctx, x, y, _w, _h, rotation) => drawn.push({ x, y, rotation });
+  for (const rotation of [0, 90, 180, 270]) {
+    const items = [
+      ...entries.map((entry, index) => ({ ...entry, id: `counter-${index}`, x: 0, z: .5, rotation })),
+      { id: 'variant', type: group.type, x: 0, z: .5, rotation, options: { variantAssetType: variants[1] } },
+    ];
+    drawn.length = 0;
+    api.drawPlan(ctx, 6, 4, 'back', items, catalog, new Map([['/counter.svg', image]]));
+    assert.deepEqual(drawn.map((entry) => entry.rotation), [rotation + 180, rotation + 180, rotation + 180, rotation + 180, rotation, rotation + 180]);
+    assert.ok(drawn.every((entry) => entry.x === drawn[0].x && entry.y === drawn[0].y));
+  }
+});
+
+test('the BAT labels the measured 4, 2 or 1 rigging points and dimensions them from usable walls', () => {
+  const { api, ctx, text } = runtime();
+  const sign = { id: 'sign', type: 'asset-enseigne-haute-aluminium-2000x2000x1000mm-ht-mrbwze9h', label: 'Enseigne haute 2 m', x: .5, z: .25, rotation: 90, dimensions: { ceilingMounted: true }, modelSize: [2, 5.8, 2] };
+  const points = technicalSignRiggingPoints(sign);
+  assert.deepEqual(points.map(({ x, z }) => [Math.round(x * 1000), Math.round(z * 1000)]), [[-490, 1240], [-490, -740], [1490, -740], [1490, 1240]]);
+  assert.equal(technicalSignRiggingPoints({ ...sign, type: 'asset-enseigne-haute-hexagonale-smcl-1500x1300mm-ht-mqqg851n' }).length, 2);
+  assert.equal(technicalSignRiggingPoints({ ...sign, type: 'asset-enseigne-haute-aluminium-2000x2000x1000mm-ht-kit-mrbx0zab' }).length, 1);
+  assert.equal(technicalSignRiggingPoints({ ...sign, options: { prestigeHidden: true } }).length, 0);
+  assert.equal(api.technicalRiggingSection([sign], [], 6, 4, 'u', { items: { sign: { hidden: true } } }), null);
+  const section = api.technicalRiggingSection([sign], [], 6, 4, 'u');
+  assert.match(section.rows[0].lines[0], /X : 2450 mm depuis le mur gauche · Y : 3180 mm depuis le mur du fond/);
+  const rightOnly = technicalRiggingCoordinates(points[0], 6, 4, 'right', .06);
+  assert.equal(rightOnly.xReference, 'mur droit');
+  assert.equal(technicalRiggingCoordinates(points[0], 6, 4, 'back', .06).xReference, 'bord gauche');
+  api.drawPlan(ctx, 6, 4, 'u', [sign], []);
+  assert.deepEqual(text.map(({ value }) => value).filter((value) => /^E1\.\d$/.test(value)), ['E1.1', 'E1.2', 'E1.3', 'E1.4']);
 });
 
 test('BAT SVG pictograms keep their transparent background and the PNG is A3-ready', () => {
@@ -550,7 +608,12 @@ test('wide spot pictograms anchor to every wall face instead of floating within 
 test('TV pictograms touch the selected wall, independently of electric overlays', () => {
   const { api, ctx } = runtime();
   const images = [];
-  api.drawRotatedContainedImage = (_ctx, _image, x, y, w, h) => images.push({ x, y, w, h });
+  api.drawRotatedContainedImage = (_ctx, _image, x, y, w, h, angle) => images.push({ x, y, w, h, angle });
+  const faces = (image, normal) => {
+    // The wide screen is along the bottom of the SVG, away from the bracket.
+    const front = [-Math.sin(image.angle), Math.cos(image.angle)];
+    assert.ok(front[0] * normal[0] + front[1] * normal[1] > .999);
+  };
   const draw = (item, picto) => api.drawWallItemTop(ctx, item, 6, 4, 100, 8, (x) => x * 100, (z) => z * 100, '1', { width: .97, depth: .08 }, 'TV', picto);
   const svg = { width: 262, height: 26 };
   const electricity = { batElectricalPictos: [{ url: '/electric.svg', x: .5, y: -2, size: .2 }] };
@@ -565,7 +628,8 @@ test('TV pictograms touch the selected wall, independently of electric overlays'
     if (wall === 'back') assert.equal(image.y, -192);
     if (wall === 'left') assert.equal(image.x, -292);
     if (wall === 'right') assert.equal(image.x + image.w, 292);
-    assert.equal(frame.angle, wall === 'back' ? Math.PI : wall === 'left' ? 3 * Math.PI / 2 : Math.PI / 2);
+    assert.equal(frame.angle, image.angle);
+    faces(image, wall === 'back' ? [0, 1] : wall === 'left' ? [1, 0] : [-1, 0]);
     assert.ok(Math.hypot(connector.x - frame.x, connector.y - frame.y) > frame.height / 2);
   }
   for (const orientation of ['x', 'z']) for (const wallSide of [-1, 1]) {
@@ -573,6 +637,7 @@ test('TV pictograms touch the selected wall, independently of electric overlays'
     const image = images.at(-1);
     const [start, length] = orientation === 'x' ? [image.y, image.h] : [image.x, image.w];
     assert.ok(Math.abs(start + (wallSide < 0 ? length : 0) - wallSide * 3) < 1e-9);
+    faces(image, orientation === 'x' ? [0, wallSide] : [wallSide, 0]);
   }
 });
 
@@ -620,6 +685,7 @@ test('the BAT uses the moved reserve and refreshes the TV surface from its curre
   Object.assign(api, {
     sceneAdminItems: (scene) => scene.items,
     sceneOfferLabel: (scene) => scene.offer || '',
+    isLockedPlacementRule: () => false,
     isSignatureScene: () => false, reserveRuleBands: [], signatureReserveRuleBands: [],
     sceneReserveRules: () => [], activeReserveRule: () => ({}),
     reserveRuleWithPackChoices: (rule) => rule,

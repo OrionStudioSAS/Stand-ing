@@ -15,10 +15,14 @@ function loadFunction(name, context) {
   vm.runInContext(appSource.slice(start, appSource.indexOf('\n}\n', start) + 2), context);
 }
 
-test('Signature scenes expose their dedicated arch controls and hide the generic footprint control', () => {
+test('Signature Sol uses the carpet design with the arch palette and shared colour handler', () => {
   assert.match(appSource, /function isSignatureScene\(/);
   assert.match(appSource, /function SignatureArchOptionCard\(/);
-  assert.match(appSource, /isSignatureStand \? 'Moquette' : 'Moquette · Empreinte'/);
+  assert.match(appSource, /subtitle=\{tr\('Moquette · Empreinte'\)\}/);
+  assert.match(appSource, /<SurfaceColorOptionCard title=\{tr\("EMPREINTE MOQUETTE"\)\} iconSrc="\/icons\/empreinte_moquette_icon.svg"/);
+  assert.match(appSource, /colors=\{signatureArchColors\} selectedColor=\{signatureArchColor\} area=\{1\}/);
+  assert.match(appSource, /disabled=\{readOnly \|\| !signatureArchItems.length\}\s+onSelect=\{onSignatureArchColor\}/);
+  assert.match(appSource, /<SignatureArchColorCard colors=\{colors\} selectedColor=\{selectedColor\}/);
   assert.match(appSource, /!isSignatureStand && \(\s*<FootprintColorOptionCard/);
   assert.match(appSource, /className="signature-arch-title">\{tr\("Arche"\)\}/);
   assert.match(appSource, /Espace insuffisant.*Taille · Éclairage · Couleur · Options/);

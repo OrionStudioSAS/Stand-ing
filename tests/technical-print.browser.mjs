@@ -30,20 +30,36 @@ try {
     const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
     const catalog = [{ type: 'furniture', label: 'Mobilier', modelSize: [1, 1, 0.5], dimensions: { batPictoUrl: url, batPictoPath: 'furniture.svg', reference: 'AMCO-TEST' } }];
     const items = Array.from({ length: 3 }, (_, i) => ({ id: `item-${i}`, type: 'furniture', label: `Objet ${i + 1}`, x: i - 1, z: 0, modelSize: [1, 1, 0.5], dimensions: catalog[0].dimensions }));
+    const devicePicto = (width, depth) => ({ batPictoUrl: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${depth}"><rect width="${width}" height="${depth}" fill="#aaa"/><rect y="${depth * .8}" width="${width}" height="${depth * .2}" fill="#222"/></svg>`)}` });
+    items.push(
+      { id: 'reception', type: 'asset-banque-accueil-bois-1m-signa-mr48wzmt', label: 'Comptoir accueil', x: 2.5, z: .5, rotation: 180, modelSize: [1, 1, .5], dimensions: devicePicto(100, 50) },
+      { id: 'tv', type: 'screen', label: 'TV 43', x: .5, wall: 'back', modelSize: [1, .6, .1], dimensions: devicePicto(100, 10) },
+      { id: 'rigging', type: 'asset-enseigne-haute-aluminium-2000x2000x1000mm-ht-mrbwze9h', label: 'Enseigne haute 2 m', x: 1.5, z: -.4, rotation: 90, dimensions: { ceilingMounted: true }, modelSize: [2, 5.8, 2] },
+      { id: 'head', type: 'head-smcl', label: 'Tête de cloison gauche', isWallItem: true, wall: 'left', technicalHeadPlan: { x: -3.4, z: 1.2, rotation: 90, width: 1.25, depth: .11 } },
+    );
     const input = { width: 7, depth: 3.5, layout: 'u', items, catalog, documentInfo: { title: 'Société test', salon: 'SMCL 2026', hall: '3', stand: 'A-12', aisleNumber: 'A', aisleSide: 'right' } };
     window.batInput = input;
     const svgPages = await window.exporter.createTechnicalPlanSvgPages(input);
+    const orientations = Object.fromEntries(['reception', 'tv'].map((id) => {
+      const group = svgPages[0].querySelector(`[data-bat-id="${id}"] g[transform]`);
+      const matrix = group.transform.baseVal.consolidate().matrix;
+      return [id, [matrix.a, matrix.b, matrix.c, matrix.d]];
+    }));
     const pdf = await window.exporter.createTechnicalPlanBlob(input);
     const longItems = Array.from({ length: 65 }, (_, i) => ({ ...items[i % 3], id: `long-${i}`, label: `Mobilier ${i + 1}`, options: { variantBatDescription: `DESCRIPTION-COMPLETE-${i + 1}\n${'X'.repeat(400)}\nInstruction 1\nInstruction 2\nInstruction 3\nInstruction finale ${i + 1}` } }));
     const longPages = await window.exporter.createTechnicalPlanSvgPages({ ...input, items: longItems });
     const unsafe = new XMLSerializer().serializeToString(window.svgTools.sanitizeTechnicalSvg('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(1)</script><image href="https://invalid.example/image"/><path style="fill:url(https://invalid.example/a)" d="M0 0L10 10"/></svg>'));
     const encode = (blob) => new Promise((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsDataURL(blob); });
-    return { pdf: await encode(pdf), type: pdf.type, pages: svgPages.map((svg) => new XMLSerializer().serializeToString(svg)), longPages: longPages.map((svg) => svg.textContent), unsafe };
+    return { pdf: await encode(pdf), type: pdf.type, pages: svgPages.map((svg) => new XMLSerializer().serializeToString(svg)), longPages: longPages.map((svg) => svg.textContent), orientations, unsafe };
   });
   assert.equal(result.type, 'application/pdf');
   assert.equal(result.pages.length, 2);
   assert.match(result.pages[0], /<text[^>]*transform="matrix\(0 1 -1 0 [^"]+\)"[^>]*>Allée A<\/text>/);
-  assert.equal(result.pages[0].match(/<svg/g).length, 4, 'Each original SVG is embedded inline, not as a PNG');
+  assert.equal(result.pages[0].match(/<svg/g).length, 6, 'Each original SVG is embedded inline, not as a PNG');
+  assert.deepEqual(result.orientations, { reception: [1, 0, 0, 1], tv: [1, 0, 0, 1] });
+  for (let index = 1; index <= 4; index++) assert.match(result.pages[0], new RegExp(`E6\\.${index}</text>`));
+  assert.match(result.pages[0], /data-bat-id="head"[^>]*><rect[^>]*transform="matrix\(0 -1 1 0 /, 'The SMCL head fallback uses its scene yaw');
+  assert.match(result.pages.slice(1).join(''), /X : \d+ mm depuis le mur droit · Y : \d+ mm depuis le mur du fond/);
   assert.doesNotMatch(result.pages[0], /<image/);
   assert.match(result.pages[0], /picto-1-paint/);
   assert.match(result.pages[0], /#picto-1 \.edge/);

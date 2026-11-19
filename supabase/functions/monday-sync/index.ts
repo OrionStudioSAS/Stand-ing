@@ -185,7 +185,10 @@ async function handleMondaySync(req: Request, execution: MondaySyncExecution) {
         if (!clean(existingScene.client_email) && mappedClientEmail) scenePatch.client_email = mappedClientEmail;
         if (!clean(existingScene.client_name) && mappedClientName) scenePatch.client_name = mappedClientName;
         const hasScenePatch = Object.entries(scenePatch.source_payload as Record<string, unknown>)
-          .some(([key, value]) => !sameMondayData(existingScene.source_payload?.[key], value))
+          .some(([key, value]) => key === "hanging_limits"
+            ? Object.entries(value as Record<string, unknown>)
+              .some(([field, height]) => !sameMondayData(existingScene.source_payload?.hanging_limits?.[field], height))
+            : !sameMondayData(existingScene.source_payload?.[key], value))
           || Object.keys(scenePatch).some((key) => key !== "source_payload");
         if (hasScenePatch) {
           const { data: updated, error: updateConstraintError } = await supabase.rpc("patch_scene_from_monday", {
@@ -982,12 +985,16 @@ function mondayStandProductionPatch(item: any, source: any, existing?: any) {
   if (aisle) patch.plan_aisle_side = sides[normalizeColumnLookup(aisle.text)] || null;
   const notStarted = !existing || (existing.status === "created" && existing.client_status === "not_started"
     && String(existing.source_payload?.exhibitor_view_only) !== "true");
-  if (notStarted) {
-    const previous = existing?.source_payload?.hanging_limits;
+  const initialize = notStarted && !existing?.source_payload?.hanging_limits;
+  if (initialize || ceiling || sling) {
+    // Only patch columns present on this board; the database merges missing
+    // height fields against the current row, not the earlier batched read.
     patch.hanging_limits = {
-      ceilingM: parseHeightMeters(ceiling ? ceiling.text : previous?.ceilingM) ?? defaultCeilingHeightM,
-      slingM: parseHeightMeters(sling ? sling.text : previous?.slingM),
-      slingStatus: clean(sling ? sling.text : previous?.slingStatus),
+      ...(initialize || ceiling ? { ceilingM: parseHeightMeters(ceiling?.text) ?? defaultCeilingHeightM } : {}),
+      ...(initialize || sling ? {
+        slingM: parseHeightMeters(sling?.text),
+        slingStatus: clean(sling?.text),
+      } : {}),
     };
   }
   return patch;

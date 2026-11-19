@@ -104,15 +104,24 @@ try {
   };
 
   const owner = await open('?scene=owner-link', 'owner');
-  const inviteButton = (page) => page.locator('.configurator-topbar').getByRole('button', { name: 'Inviter un collaborateur' });
-  const inviteIcon = inviteButton(owner).locator('img.topbar-tool-icon');
-  assert.equal(await inviteIcon.getAttribute('src'), '/icons/account-add.svg');
-  await owner.waitForFunction(() => document.querySelector('img[src="/icons/account-add.svg"]')?.naturalWidth === 36);
+  const infoButton = (page) => page.locator('.configurator-topbar .user-pill');
+  assert.equal(await owner.locator('.configurator-topbar img[src="/icons/account-add.svg"]').count(), 0);
+  const tutorial = owner.getByRole('button', { name: 'Relancer le tutoriel' });
+  assert.equal(await tutorial.locator('img').getAttribute('src'), '/icons/info.svg');
+  await tutorial.click();
+  await owner.getByRole('dialog', { name: 'Tutoriel configurateur' }).waitFor();
+  await owner.getByRole('button', { name: 'Fermer le tutoriel' }).click();
   await owner.locator('.user-pill').click();
   const clientInfo = owner.locator('.client-info-modal-locked');
   await clientInfo.waitFor();
   assert.equal(await clientInfo.getByRole('button', { name: 'Inviter un collaborateur' }).count(), 0);
   await clientInfo.locator('.modal-head-actions button').click();
+  await owner.getByRole('button', { name: 'Questions et remarques', exact: true }).click();
+  const phone = owner.locator('.question-help-contact a');
+  assert.equal(await phone.getAttribute('href'), 'tel:+33134646413');
+  assert.equal(await phone.innerText(), '01 34 64 64 13');
+  await owner.getByRole('button', { name: 'Questions et remarques', exact: true }).click();
+
   const validate = async (page) => {
     await page.locator('.stepper').getByRole('button', { name: /Validation/ }).click();
     const confirm = page.locator('.validation-confirm-button');
@@ -124,9 +133,9 @@ try {
     assert.equal(await confirm.isDisabled(), true, 'Exhibitor cannot submit a second time');
     await page.locator('.configurator-shell.readonly-mode').waitFor();
   };
-  await inviteButton(owner).click();
-  const dialog = owner.getByRole('dialog', { name: 'Collaborateurs du stand' });
-  assert.equal(await inviteButton(owner).getAttribute('aria-expanded'), 'true');
+  await infoButton(owner).click();
+  const dialog = owner.getByRole('region', { name: 'Ajouter des collaborateurs' });
+  assert.ok(await owner.locator('.client-info-modal-locked').isVisible());
   for (const email of ['guest@example.test', 'second@example.test']) {
     await dialog.getByRole('textbox', { name: 'Adresse e-mail du collaborateur' }).fill(email);
     await dialog.getByRole('button', { name: 'Envoyer l’invitation' }).click();
@@ -137,22 +146,25 @@ try {
   await dialog.getByRole('button', { name: 'Retirer l’accès : second@example.test' }).click();
   await dialog.getByText('Accès retiré.', { exact: true }).waitFor();
   assert.equal(await dialog.getByRole('textbox').count(), 1);
-  await inviteButton(owner).click();
+  await infoButton(owner).click();
   await dialog.waitFor({ state: 'hidden' });
   await owner.setViewportSize({ width: 320, height: 740 });
   const headerBounds = await owner.locator('.configurator-topbar-actions').boundingBox();
   assert.ok(headerBounds.x >= 0 && headerBounds.x + headerBounds.width <= 320, 'Header actions fit on mobile');
-  await inviteButton(owner).click();
+  await infoButton(owner).click();
   await dialog.waitFor();
-  await inviteButton(owner).click();
+  await infoButton(owner).click();
   await owner.setViewportSize({ width: 1280, height: 900 });
   await validate(owner);
-  assert.equal(await inviteButton(owner).isVisible(), true, 'Owner can still manage access after submission');
+  await infoButton(owner).click();
+  await owner.getByRole('region', { name: 'Ajouter des collaborateurs' }).waitFor();
+  assert.equal(await owner.getByRole('button', { name: 'Envoyer l’invitation' }).count(), 1, 'Owner can still manage access after submission');
+  await infoButton(owner).click();
   await owner.close();
 
   const admin = await open('?scene=owner-link&submitted=1', 'admin');
-  await inviteButton(admin).click();
-  const adminDialog = admin.getByRole('dialog', { name: 'Collaborateurs du stand' });
+  await infoButton(admin).click();
+  const adminDialog = admin.getByRole('region', { name: 'Ajouter des collaborateurs' });
   await adminDialog.getByRole('textbox', { name: 'Adresse e-mail du collaborateur' }).fill('new@example.test');
   await adminDialog.getByRole('button', { name: 'Envoyer l’invitation' }).click();
   await adminDialog.getByText('new@example.test', { exact: true }).waitFor();
@@ -162,7 +174,8 @@ try {
 
   const designer = await open('?scene=owner-link', 'designer');
   await designer.locator('.user-pill').waitFor();
-  assert.equal(await inviteButton(designer).count(), 0, 'Designer in read-only mode cannot manage invitations');
+  await infoButton(designer).click();
+  assert.equal(await designer.getByRole('region', { name: 'Ajouter des collaborateurs' }).count(), 0, 'Designer in read-only mode cannot manage invitations');
   await designer.close();
 
   const openGuest = async () => {
@@ -177,7 +190,7 @@ try {
   await guest.locator('.user-pill').click();
   assert.equal(new URL(guest.url()).hash, '', 'The credential is removed from the address bar');
   assert.equal(await guest.evaluate(() => window.requestedInvite), undefined, 'No code request for a personal link');
-  assert.equal(await inviteButton(guest).count(), 0);
+  assert.equal(await guest.getByRole('region', { name: 'Ajouter des collaborateurs' }).count(), 0);
   assert.equal(await guest.getByRole('button', { name: 'Inviter un collaborateur' }).count(), 0);
   assert.equal(await guest.locator('.client-correction-button').isVisible(), true, 'Guest can report incorrect contact details');
   await guest.locator('.client-info-modal .modal-head-actions button').click();

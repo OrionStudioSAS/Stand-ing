@@ -232,7 +232,7 @@ test('preparing the Signature test board adds the numeric ceiling column once', 
   assert.equal(created, 1);
 });
 
-test('Monday reads ceiling, sling and aisle direction independently and freezes the height after start', () => {
+test('Monday updates ceiling, sling and aisle direction on existing drafts and validated scenes', () => {
   const api = runtime();
   const source = { board_id: '18410370871', offer: 'Signature' };
   const item = (sling, side, ceiling = '4,80 m') => ({ column_values: [
@@ -255,9 +255,50 @@ test('Monday reads ceiling, sling and aisle direction independently and freezes 
     { status: 'created', client_status: 'draft' },
     { status: 'created', client_status: 'not_started', source_payload: { exhibitor_view_only: true } },
     { status: 'validated', client_status: 'bat_validated' },
-  ]) assert.deepEqual(parse(item('4,25 m', 'GAUCHE'), existing), { plan_aisle_side: 'left' });
+    { status: 'configured', client_status: 'configured', source_payload: { options: { carpet: 'blue' } } },
+  ]) assert.deepEqual(parse(item('4,25 m', 'GAUCHE'), existing), {
+    plan_aisle_side: 'left',
+    hanging_limits: { ceilingM: 4.8, slingM: 4.25, slingStatus: '4,25 m' },
+  });
   const other = api.mondayStandProductionPatch({ column_values: [{ column: { title: 'HAUTEUR PLAFOND' }, text: '4,2' }] }, { board_id: 'siae' });
   assert.equal(other.hanging_limits.ceilingM, 4.2);
+});
+
+test('partial Monday height patches distinguish absent columns from explicit resets', () => {
+  const api = runtime();
+  const source = { board_id: 'other-board', offer: 'Prestige', mapping: {
+    ceiling_height_m: 'ceiling', sling_height_m: 'sling', plan_aisle_side: 'aisle',
+  } };
+  const previous = { ceilingM: 4.8, slingM: 4.25, slingStatus: '4,25 m' };
+  for (const client_status of ['not_started', 'draft', 'configured', 'bat_validated']) {
+    const existing = { status: 'created', client_status, source_payload: { hanging_limits: previous } };
+    const parse = (column_values) => JSON.parse(JSON.stringify(api.mondayStandProductionPatch({ column_values }, source, existing)));
+    assert.deepEqual(parse([]), {});
+    assert.deepEqual(parse([{ id: 'aisle', text: 'BAS' }]), { plan_aisle_side: 'bottom' });
+    assert.deepEqual(parse([{ id: 'ceiling', text: '4,20 m' }]), { hanging_limits: { ceilingM: 4.2 } });
+    assert.deepEqual(parse([{ id: 'ceiling', text: '' }]), { hanging_limits: { ceilingM: 5.25 } });
+    assert.deepEqual(parse([{ id: 'sling', text: '5,25 m' }]), { hanging_limits: { slingM: 5.25, slingStatus: '5,25 m' } });
+    for (const text of ['', 'ATT', 'AUTRE', 'PAS BESOIN']) {
+      assert.deepEqual(parse([{ id: 'sling', text }]), { hanging_limits: { slingM: null, slingStatus: text } });
+    }
+    assert.deepEqual(existing.source_payload.hanging_limits, previous);
+  }
+  assert.deepEqual(JSON.parse(JSON.stringify(api.mondayStandProductionPatch({}, source, {
+    status: 'created', client_status: 'draft', source_payload: {},
+  }))), {}, 'Do not invent height limits for legacy drafts on boards without these columns');
+});
+
+test('existing production columns are read by title outside the Signature pilot', () => {
+  const api = runtime();
+  for (const offer of ['Signature', 'Prestige', 'Confort', 'Équipé']) {
+    const patch = api.mondayStandProductionPatch({ column_values: [
+      { id: 'new-sling-id', column: { title: 'ELINGUE' }, text: '4,25 m' },
+      { id: 'new-aisle-id', column: { title: 'ALLEE PLAN' }, text: 'DROITE' },
+    ] }, { board_id: 'other-board', offer }, { status: 'validated', client_status: 'bat_validated' });
+    assert.deepEqual(JSON.parse(JSON.stringify(patch)), {
+      plan_aisle_side: 'right', hanging_limits: { slingM: 4.25, slingStatus: '4,25 m' },
+    });
+  }
 });
 
 test('existing scenes are read in unique batches of 200, not once per exhibitor', async () => {
@@ -351,4 +392,68 @@ test('full sync skips unchanged scene writes and caches shared board reads while
   assert.equal(writes[0].args.p_source_patch.stand_number, 'NEW');
   assert.equal(writes[0].args.p_source_patch.options, undefined);
   assert.deepEqual([...history.at(-1).source_ids], ['s1', 's2']);
+});
+
+test('full sync updates production settings after creation once, without rebuilding scene objects', async () => {
+  const source = { id: 'production', board_id: '18410370871', offer: 'Prestige', mapping: {} };
+  const { handler, database, context } = requestHandler(null, [source]);
+  const productionColumns = [
+    { id: 'color_mm91v4f9', title: 'ELINGUE', text: '4,25 m' },
+    { id: 'color_mm91rwqj', title: 'ALLEE PLAN', text: 'DROITE' },
+  ];
+  const scenes = ['draft', 'configured', 'bat_validated'].map((client_status, index) => ({
+    id: String(index), monday_item_id: String(index), offer: 'Prestige',
+    status: client_status === 'draft' ? 'created' : 'validated', client_status,
+    client_name: 'Current contact', client_email: 'current@example.com',
+    source_payload: {
+      stand_number: '', aisle_number: '', hall: '', sector: '',
+      constraint: null, constraints: [], poteau_1_text: '', poteau_2_text: '',
+      packBenefits: { mode: 'included-items' }, baseItems: [],
+      hanging_limits: { ceilingM: 4.8, slingM: 5.25, slingStatus: '5,25 m' },
+      plan_aisle_side: 'top', options: { savedImage: 'saved.jpg' },
+      exhibitor_view_only: true,
+    },
+  }));
+  context.fetchMondayBoardColumnsSafe = async () => ({ columns: productionColumns });
+  context.fetchMondayItems = async () => scenes.map((scene) => ({
+    id: scene.monday_item_id, name: 'Company', column_values: productionColumns,
+  }));
+  context.ensureSourceContext = async () => ({ offerId: 'offer' });
+  context.fetchOfferPackConfiguration = async () => ({ packBenefits: { mode: 'included-items' }, baseItems: [] });
+  context.packBenefitsForScene = () => ({ mode: 'included-items' });
+  const from = database.from.bind(database);
+  database.from = (table) => table === 'scenes'
+    ? { select() { return this; }, in: async () => ({ data: scenes }) }
+    : from(table);
+  const writes = [];
+  database.rpc = async (name, args) => {
+    if (name === 'patch_scene_from_monday') {
+      writes.push(args);
+      const scene = scenes.find((value) => value.id === args.p_scene_id);
+      scene.source_payload = {
+        ...scene.source_payload, ...args.p_source_patch,
+        hanging_limits: { ...scene.source_payload.hanging_limits, ...args.p_source_patch.hanging_limits },
+      };
+    } else assert.equal(name, 'stamp_scene_monday_sync');
+    return { data: true };
+  };
+  const sync = () => handler(new Request('https://test/functions/v1/monday-sync', {
+    method: 'POST', headers: { Authorization: 'Bearer token' }, body: '{}',
+  }));
+  assert.equal((await sync()).status, 200);
+  assert.equal(writes.length, 3);
+  for (const scene of scenes) {
+    assert.deepEqual(JSON.parse(JSON.stringify(scene.source_payload.hanging_limits)), {
+      ceilingM: 4.8, slingM: 4.25, slingStatus: '4,25 m',
+    });
+    assert.equal(scene.source_payload.plan_aisle_side, 'right');
+    assert.equal(scene.source_payload.options.savedImage, 'saved.jpg');
+    assert.equal(scene.source_payload.exhibitor_view_only, true);
+  }
+  for (const write of writes) {
+    assert.equal(write.p_source_patch.options, undefined);
+    assert.equal(write.p_source_patch.hanging_limits.ceilingM, undefined);
+  }
+  assert.equal((await sync()).status, 200);
+  assert.equal(writes.length, 3, 'A partial height patch must not trigger another write when unchanged');
 });

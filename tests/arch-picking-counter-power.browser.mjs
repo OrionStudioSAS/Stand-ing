@@ -16,7 +16,7 @@ const power={type:'triplette',label:'Triplette',modelUrl:'/power.glb',modelSize:
 window.project=()=>{const p=new Vector3(0,.6,0).project(window.sceneState.camera);const r=window.sceneState.gl.domElement.getBoundingClientRect();return{x:r.x+(p.x+1)*r.width/2,y:r.y+(1-p.y)*r.height/2}};
 window.rawPicking=()=>{const state=window.sceneState,p=new Vector3(0,.6,0).project(state.camera);state.raycaster.setFromCamera(new Vector2(p.x,p.y),state.camera);const hits=state.raycaster.intersectObjects(state.scene.children,true);const id=h=>{for(let n=h?.object;n;n=n.parent)if(n.userData.standSceneItem)return n.userData.itemId;return null};return{raw:id(hits[0]),filtered:id(prioritizeUnderArchIntersections(hits)[0])}};
 window.powerPosition=()=>{let found;window.sceneState.scene.traverse(n=>{if(n.userData.itemId==='included-counter-power-base')found=n});return found?{x:found.position.x,y:found.position.y,z:found.position.z,loaded:found.children.some(c=>c.type==='Group')}:null};
-function Test(){const[mode,setMode]=useState('arch'),[selected,setSelected]=useState(''),[moved,setMoved]=useState(false);const base={id:'base',type:'counter',label:'Comptoir accueil',included:true,modelSize:[1.15,1.01,.5],x:moved?1:-1.5,z:0,rotation:moved?90:0};const shop={...base,id:'shop',included:false,x:1.5,rotation:0};return <><button onClick={()=>setMode('power')}>Tester les multiprises</button><button onClick={()=>setMoved(true)}>Déplacer le comptoir</button><output>{selected}</output><div style={{width:900,height:700}}><Canvas key={mode} events={standSceneEvents} camera={{position:[0,7,3],fov:40}} onCreated={state=>{window.sceneState=state;state.camera.lookAt(0,.6,0);state.camera.updateMatrixWorld(true)}}><ambientLight intensity={1.5}/><Suspense fallback={null}>{mode==='arch'?<>{[arch,chair].map(item=><SceneItem key={item.id} item={item} items={[arch,chair]} width={6} depth={4} selected={false} onSelect={()=>setSelected(item.id)} onDragStart={()=>{}} onDragEnd={()=>{}} onDragMove={()=>{}}/>)}</>:<StandScene width={6} depth={4} height={2.5} viewAngle={0} layout="back" items={[base,shop]} catalog={[power]} interactive={false} carpetColor={{hex:'#ddd'}} wallFabricColor={{hex:'#fff'}} setSelectedId={()=>{}}/>}</Suspense></Canvas></div></>};createRoot(document.getElementById('root')).render(<Test/>);`;
+function Test(){const[mode,setMode]=useState('arch'),[selected,setSelected]=useState(''),[moved,setMoved]=useState(false),[shopPower,setShopPower]=useState(false);const base={id:'base',type:'counter',label:'Comptoir accueil',included:true,modelSize:[1.15,1.01,.5],x:moved?1:-1.5,z:0,rotation:moved?90:0};const shop={...base,id:'shop',included:false,x:1.5,rotation:0,options:{counterPowerEnabled:shopPower}};return <><button onClick={()=>setMode('power')}>Tester les multiprises</button><button onClick={()=>setMoved(true)}>Déplacer le comptoir</button><button onClick={()=>setShopPower(value=>!value)}>Multiprise optionnelle</button><output>{selected}</output><div style={{width:900,height:700}}><Canvas key={mode} events={standSceneEvents} camera={{position:[0,7,3],fov:40}} onCreated={state=>{window.sceneState=state;state.camera.lookAt(0,.6,0);state.camera.updateMatrixWorld(true)}}><ambientLight intensity={1.5}/><Suspense fallback={null}>{mode==='arch'?<>{[arch,chair].map(item=><SceneItem key={item.id} item={item} items={[arch,chair]} width={6} depth={4} selected={false} onSelect={()=>setSelected(item.id)} onDragStart={()=>{}} onDragEnd={()=>{}} onDragMove={()=>{}}/>)}</>:<StandScene width={6} depth={4} height={2.5} viewAngle={0} layout="back" items={[base,shop]} catalog={[power]} interactive={false} carpetColor={{hex:'#ddd'}} wallFabricColor={{hex:'#fff'}} setSelectedId={()=>{}}/>}</Suspense></Canvas></div></>};createRoot(document.getElementById('root')).render(<Test/>);`;
 const server = await createServer({ logLevel: 'error', server: { host: '127.0.0.1', port: 0 }, plugins: [{
   name: 'arch-selection-regression',
   resolveId(id) { if (id === '/src/__arch-selection-app.jsx') return appId; if (id === '/src/__arch-selection-test.jsx') return harnessId; },
@@ -33,7 +33,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__arch-selection__`);
-  await page.waitForFunction(() => window.rawPicking?.().raw === 'arch');
+  await page.waitForFunction(() => window.sceneState && window.rawPicking?.().raw === 'arch');
   assert.deepEqual(await page.evaluate(() => window.rawPicking()), { raw: 'arch', filtered: 'chair' }, 'An actual model ceiling occludes the chair before filtering');
   const point = await page.evaluate(() => window.project());
   await page.mouse.click(point.x, point.y);
@@ -47,6 +47,18 @@ try {
   await page.getByRole('button', { name: 'Déplacer le comptoir' }).click();
   await page.waitForFunction(() => Math.abs(window.powerPosition().x - .85) < .001);
   assert.ok(Math.abs((await page.evaluate(() => window.powerPosition())).z) < .001);
+  await page.getByRole('button', { name: 'Multiprise optionnelle', exact: true }).click();
+  await page.waitForFunction(() => {
+    let found;
+    window.sceneState.scene.traverse(n=>{if(n.userData.itemId==='counter-power-shop')found=n});
+    return found?.children.some(c=>c.type==='Group') && Math.abs(found.position.y-1.012)<.001;
+  });
+  await page.getByRole('button', { name: 'Multiprise optionnelle', exact: true }).click();
+  await page.waitForFunction(() => {
+    let found=false;
+    window.sceneState.scene.traverse(n=>{if(n.userData.itemId==='counter-power-shop')found=true});
+    return !found;
+  });
   assert.deepEqual(errors, []);
   console.log('3D: real arch GLB roof click-through to contained furniture; base-only real power-strip model at countertop height following translation/rotation OK');
 } finally { await browser?.close(); await server.close(); }

@@ -1,3 +1,4 @@
+import { includedCounterPowerItems } from '../src/includedCounterPower.js';
 import { wallCoverPackTariff, wallCoverQuote } from '../src/wallCoverPricing.js';
 import { signatureArchSizeSupplementLines } from '../src/signatureArchVariants.js';
 import { signatureFootprintSupplementLine } from '../src/signatureFootprint.js';
@@ -12,7 +13,7 @@ const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const money = (value) => Math.round(Number(value) * 100) / 100;
 
 function pricingApi() {
-  const api = vm.createContext({ wallCoverPackTariff, wallCoverQuote, signatureArchSizeSupplementLines, signatureFootprintSupplementLine,
+  const api = vm.createContext({ includedCounterPowerItems, wallCoverPackTariff, wallCoverQuote, signatureArchSizeSupplementLines, signatureFootprintSupplementLine,
     scenePackBenefits, packAllowanceBreakdown, packAllowanceLineType, withPackAllowance,
     manualOrderRowsToPricingLines, replaceManualOrderPricingLines, roundCurrency: money,
     isSignatureScene: (scene) => scene.offer === 'Signature',
@@ -22,6 +23,7 @@ function pricingApi() {
     cartItemBasePrice: (_item, entry) => entry.price, textureSlotColorSupplement: () => 0,
     pricingLineLabelForItems: (_items, entry) => entry.label, itemOptionLines: () => [],
     uniqueTextValues: (values) => [...new Set(values)], itemReferenceWithOptions: () => '', assetReference: () => '',
+    assetUnitPrice: (entry) => Number(entry?.price || 0),
     counterVariantUpgradeOptionLine: () => null, counterColorOptionLine: () => null, counterLogoOptionLine: () => null,
     globalSharedOptionLines: () => [], wallCoverIncludedLinearMeters: () => 0,
     sceneAdminCatalog: (assets) => assets, sceneAllAdminItems: (scene) => scene.items,
@@ -30,7 +32,7 @@ function pricingApi() {
   });
   const start = source.indexOf('const furnitureInsuranceRows =');
   vm.runInContext(source.slice(start, source.indexOf('\n];', start) + 3), api);
-  for (const name of ['normalizeTextValue', 'isFurnitureInsuranceEligible', 'furnitureInsuranceLine', 'countSceneItems',
+  for (const name of ['normalizeTextValue', 'configuredMarketCategory', 'isFurnitureInsuranceEligible', 'furnitureInsuranceLine', 'countSceneItems',
     'manualPurchaseOrderLines', 'calculateScenePricing', 'scenePurchaseOrder', 'normalizePurchaseOrderLines']) {
     const offset = source.indexOf(`function ${name}(`);
     assert.ok(offset >= 0, name);
@@ -54,6 +56,23 @@ test('Signature top logos cost 97 EUR once for both heads, including different a
     assert.equal(api.calculateScenePricing({ catalog, items, scene }).lines.some((line) => line.type === 'signature-head-top-logo'), false);
   }
   assert.equal(api.calculateScenePricing({ catalog, items: [head('left', { imageUrl: '/a.png' })], scene: { ...scene, offer: 'Équipé' } }).lines.some((line) => line.type === 'signature-head-top-logo'), false);
+});
+
+test('Signature insures the reception desk, high table and every stool, but not multimedia', () => {
+  const api = pricingApi();
+  const catalog = [
+    { type: 'counter', label: 'Comptoir accueil', price: 473 },
+    { type: 'stool', label: 'Tabouret haut', price: 77.25, dimensions: { category: 'Mobilier' } },
+    { type: 'bistro', label: 'Mange-debout', price: 104 },
+    { type: 'tv', label: 'TV sur pied', price: 700, dimensions: { category: 'Multimédia' } },
+    { type: 'reserve-3m', label: 'Réserve 3 m²', price: 650, dimensions: { category: 'Mobilier' } },
+  ];
+  const scene = { offer: 'Signature', dimensions: { width: 5, depth: 4 } };
+  const items = [{ type: 'counter' }, { type: 'stool' }, { type: 'stool' }, { type: 'bistro' }, { type: 'tv' }, { type: 'reserve-3m' }];
+  const pricing = api.calculateScenePricing({ catalog, scene, items });
+  assert.equal(pricing.furnitureInsuranceBase, 731.5);
+  assert.equal(pricing.insuranceLine.total, 84.74);
+  assert.equal(api.furnitureInsuranceLine(500.25).total, 84.74);
 });
 
 test('Signature covers furniture insurance before charging only the combined excess', () => {
@@ -124,4 +143,19 @@ test('editing admin manual lines includes existing insurance in saved allowance 
   assert.equal(removed.allowanceApplied, 784.74);
   assert.equal(removed.allowanceRemaining, 15.26);
   assert.equal(removed.lines.filter((line) => line.type === 'mandatory-furniture-insurance').length, 1);
+});
+
+test('optional countertop power uses the catalog price once and disappears when deselected', () => {
+  const api = pricingApi();
+  const catalog = [{ type: 'desk', label: 'Comptoir accueil', price: 473 }, { type: 'triplette', label: 'Triplette', price: 57 }];
+  const desk = { id: 'desk-1', type: 'desk', label: 'Comptoir accueil', options: { counterPowerEnabled: true } };
+  const price = (item) => api.calculateScenePricing({ catalog, items: [item], scene: { offer: 'Confort' }, salonLabel: 'Confort' });
+  const selected = price(desk);
+  const line = selected.lines.find((line) => line.type === 'counter-power-desk-1');
+  assert.equal(line.total, 57);
+  assert.equal(line.optionForItemId, desk.id);
+  const unselected = price({ ...desk, options: { counterPowerEnabled: false } });
+  assert.equal(Math.round((selected.itemsTotal - unselected.itemsTotal) * 100) / 100, 57);
+  assert.equal(unselected.lines.some((line) => line.type === 'counter-power-desk-1'), false);
+  assert.equal(price({ ...desk, included: true }).lines.some((line) => line.type.startsWith('counter-power-')), false);
 });

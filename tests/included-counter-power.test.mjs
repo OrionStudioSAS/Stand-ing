@@ -45,3 +45,18 @@ test('electrical anchors can sit outside a TV without changing its center or dim
   assert.equal(normalizeBatElectricalPicto({ batElectricalPictoSize: .6 }).size, .2, 'Old object-relative sliders do not inflate the new symbol');
   assert.equal(normalizeBatElectricalPicto({ batElectricalPictoSizeMeters: .3 }).size, .3);
 });
+
+test('an optional counter receives a billable strip only when its own toggle is enabled', () => {
+  const counter = { ...base, id: 'optional', included: false, priceMode: 'billable' };
+  assert.equal(includedCounterPowerItems([counter], catalog).length, 0);
+  const [strip] = includedCounterPowerItems([{ ...counter, options: { counterPowerEnabled: true } }], catalog);
+  assert.equal(strip.id, 'counter-power-optional');
+  assert.equal(strip.included, false);
+  assert.equal(strip.priceMode, 'billable');
+  assert.equal(strip.options.unitPrice, undefined, 'Use the catalogue tariff, not the included strip price');
+  assert.equal(strip.surfaceHostId, counter.id);
+  assert.equal(strip.y, 1.002);
+  assert.equal(includedCounterPowerItems([{ ...counter, options: { counterPowerEnabled: false } }], catalog).length, 0);
+  assert.equal(includedCounterPowerItems([{ ...base, options: { counterPowerEnabled: false } }], catalog).length, 1,
+    'Included counters always keep their free strip');
+});

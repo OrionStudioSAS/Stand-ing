@@ -119,7 +119,7 @@ test('The same Signature head asset is assigned to opposite stand edges', () => 
 });
 
 test('Signature heads attach to side-wall fronts or back-wall ends, never rear corners', () => {
-  const context = vm.createContext({ signatureFootprintPalette, isPartitionHeadItem: () => true,
+  const context = vm.createContext({ signatureFootprintPalette, isPartitionHeadItem: () => true, isSmclPartitionHeadItem: () => false,
     availableWalls: (layout) => layout === 'u'
       ? [{ id: 'back' }, { id: 'left' }, { id: 'right' }]
       : [{ id: 'back' }, ...(layout === 'back' ? [] : [{ id: layout }])],

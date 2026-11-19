@@ -8,8 +8,8 @@ const appId = resolve('src/__admin-credentials-app.jsx');
 const pageId = resolve('src/__admin-credentials-page.jsx');
 const source = await readFile('src/App.jsx', 'utf8');
 const initialUsers = [
-  { id: 'self', auth_user_id: 'self', display_name: 'Admin actuel', email: 'admin@example.com', role: 'Admin', kind: 'admin', is_active: true },
-  { id: 'staff', auth_user_id: 'staff', display_name: 'Compte historique', email: 'staff@example.com', role: 'Super admin', kind: 'admin', is_active: true },
+  { id: 'self', auth_user_id: 'self', display_name: 'Admin actuel', email: 'admin@example.com', role: 'Super admin', kind: 'admin', is_active: true },
+  { id: 'staff', auth_user_id: 'staff', display_name: 'Compte historique', email: 'staff@example.com', role: 'Admin', kind: 'admin', is_active: true },
   { id: 'designer', auth_user_id: 'designer', display_name: 'Dessinateur test', email: 'designer@example.com', role: 'Dessinateur', kind: 'admin', is_active: true },
 ];
 const harness = `
@@ -20,7 +20,7 @@ window.adminSaves = [];
 function Test() {
   const [users, setUsers] = useState(${JSON.stringify(initialUsers)});
   const [canManage, setCanManage] = useState(true);
-  return <main style={{ padding:20 }}><button onClick={() => setCanManage(false)}>Droits dessinateur test</button><AdminUsersView
+  return <main style={{ padding:20 }}><button onClick={() => setUsers(current => current.map(user => user.auth_user_id === 'self' ? {...user,role:'Admin'} : user))}>Droits admin test</button><button onClick={() => setCanManage(false)}>Droits dessinateur test</button><AdminUsersView
     users={users} currentUserId="self" canManage={canManage} onAuditFiltersChange={() => {}}
     onSaveUser={async input => {
       window.adminSaves.push(input);
@@ -64,8 +64,8 @@ try {
   assert.equal(await password.getAttribute('type'), 'password');
   assert.equal(await password.getAttribute('autocomplete'), 'new-password');
   assert.equal(await password.getAttribute('minlength'), '8');
-  assert.deepEqual(await dialog.getByRole('combobox').locator('option:not([disabled])').allTextContents(), ['Admin', 'Prestataire', 'Dessinateur']);
-  assert.equal(await page.getByText('Super admin', { exact: true }).count(), 0);
+  assert.deepEqual(await dialog.getByRole('combobox').locator('option:not([disabled])').allTextContents(), ['Super admin', 'Admin', 'Prestataire', 'Dessinateur']);
+  assert.equal(await dialog.getByRole('option', { name: 'Super admin', exact: true }).count(), 1);
   await dialog.getByLabel('Nom complet').fill('Nouvel admin');
   await dialog.getByLabel('E-mail', { exact: true }).fill('new@example.com');
   await dialog.getByRole('combobox').selectOption('Admin');
@@ -111,6 +111,10 @@ try {
   await dialog.getByRole('button', { name: 'Créer l’utilisateur' }).scrollIntoViewIfNeeded();
   assert.ok(await dialog.getByRole('button', { name: 'Créer l’utilisateur' }).isVisible());
   await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Droits admin test' }).click();
+  assert.equal(await page.getByRole('button', { name: 'Ajouter un utilisateur', exact: true }).isDisabled(), true);
+  assert.equal(await staffRow.getByRole('button', { name: 'Modifier', exact: true }).isDisabled(), true);
+  assert.equal(await staffRow.getByRole('switch').isDisabled(), true);
   await page.getByRole('button', { name: 'Droits dessinateur test' }).click();
   assert.equal(await page.getByRole('button', { name: 'Ajouter un utilisateur', exact: true }).isDisabled(), true);
   assert.deepEqual(errors, []);
