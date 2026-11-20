@@ -194,7 +194,6 @@ const counterLogoPrices = [
   { minWidth: 0, price: 186 },
 ];
 const reserveWallCoverEdgeInset = 0.02;
-const partitionHeadWallAxisInset = 0;
 const collisionPlacementStep = 0.25;
 const ledSpotAreaMeters = 3;
 const ledRailDefaultCenterY = fixedWallHeight - 0.11;
@@ -19587,7 +19586,7 @@ function closestPlacementInRegions(item, regions) {
 function wallItemAxisRange(item, wall, width, depth) {
   const limits = wallAxisLimits(wall, width, depth);
   const bounds = wallItemAxisBounds(item, wall);
-  const sideMargin = isPartitionHeadItem(item) && !isSignaturePartitionHeadItem(item) && wall !== 'back' ? partitionHeadEdgeInset : 0;
+  const sideMargin = isPartitionHeadItem(item) && !isSignaturePartitionHeadItem(item) && !isSmclPartitionHeadItem(item) && wall !== 'back' ? partitionHeadEdgeInset : 0;
   return {
     min: limits.min - bounds.min + sideMargin,
     max: limits.max - bounds.max - sideMargin,
@@ -19989,13 +19988,7 @@ function applyWallPlacementRule(item, width, depth, layout) {
     'outer-right': wall === 'right' ? range.max : range.max,
   };
   const rawAxis = axisByRule[rule.id] ?? range.min;
-  const flushLeft = (rule.id === 'front-left' || rule.id === 'outer-left' || rule.id === 'back-left')
-    && isSmclPartitionHeadItem(item)
-    && (item.dimensions?.smclHeadSide || item.options?.partitionHeadSide || smclPartitionHeadSide(item)) === 'left';
-  const axis = flushLeft
-    // The solid support is 60 cm; the visible left wing extends beyond it.
-    ? (wall === 'left' ? sideWallEndZ(depth) : -width / 2) + (wall === 'left' ? 1 : -1) * partitionHeadModelBounds(item).minX
-    : smclPartitionHeadWallAxis(item, wall, rawAxis, range);
+  const axis = smclPartitionHeadWallAxis(item, wall, rawAxis);
 
   return {
     ...item,
@@ -20010,19 +20003,10 @@ function applyWallPlacementRule(item, width, depth, layout) {
   };
 }
 
-function smclPartitionHeadWallAxis(item, wall, rawAxis, range) {
-  // Fixed Signature heads must meet the wall end, not the accessory snap grid.
-  if (isSignaturePartitionHeadItem(item)) return rawAxis;
-  if (!isSmclPartitionHeadItem(item)) return isPartitionHeadItem(item) && wall === 'back' ? rawAxis : snapWallAxis(rawAxis, item);
-  const axis = Number(rawAxis || 0);
-  const middle = (Number(range.min || 0) + Number(range.max || 0)) / 2;
-  if (wall === 'back') {
-    const side = item?.dimensions?.smclHeadSide || item?.options?.partitionHeadSide || smclPartitionHeadSide(item);
-    const direction = side === 'right' ? -1 : 1;
-    return clamp(Number((axis + direction * partitionHeadWallAxisInset).toFixed(2)), range.min, range.max);
-  }
-  const direction = axis >= middle ? -1 : 1;
-  return clamp(Number((axis + direction * partitionHeadWallAxisInset).toFixed(2)), range.min, range.max);
+function smclPartitionHeadWallAxis(item, wall, rawAxis) {
+  // Fixed heads anchor their solid support, not the upper overhang or accessory snap grid.
+  if (isSignaturePartitionHeadItem(item) || isSmclPartitionHeadItem(item)) return rawAxis;
+  return isPartitionHeadItem(item) && wall === 'back' ? rawAxis : snapWallAxis(rawAxis, item);
 }
 
 function constrainItem(item, width, depth, layout, carpetFootprintEnabled = true) {
@@ -20676,7 +20660,8 @@ function wallMountedNormalOffset(item, objectSurface = false) {
   if (isPartitionHeadItem(item)) {
     const bounds = itemGroupBounds(item);
     if (isSignaturePartitionHeadItem(item)) return wallFaceOffset - Number(bounds.minX || 0);
-    return wallFaceOffset + partitionHeadWallGap - Number(bounds.minZ || 0);
+    const gap = isSmclPartitionHeadItem(item) ? 0 : partitionHeadWallGap;
+    return wallFaceOffset + gap - Number(bounds.minZ || 0);
   }
   const depth = Number(itemGroupSize(item)?.depth || item?.wallDepth || itemDefaultSize(item)?.[2] || 0.08);
   return wallFaceOffset + Math.max(0.02, depth / 2);

@@ -24,7 +24,7 @@ function collisionContext() {
     wallCoverSurfaceOffset: 0.008,
     minWallCoverDisplayWidth: 0.7,
     partitionHeadWallGap: 0.02,
-    partitionHeadEdgeInset: 0.02, partitionHeadWallAxisInset: 0,
+    partitionHeadEdgeInset: 0.02,
     normalizePlacementRule: (rule) => rule,
     snapWallAxis: (value) => Math.round(value / .1) * .1,
     signatureArchPlacementStep: 0.25,
@@ -90,21 +90,65 @@ test('SMCL retains its 60 cm placement footprint but protects the complete head'
   assert.equal(context.collidesWithScene({ ...reserve, x: 0.25 }, [head], reserve.id, 4, 4), false, 'No arbitrary extra clearance');
 });
 
-test('the visible left SMCL head reaches the edge and the BAT uses its actual wall rotation', () => {
+test('Confort/Prestige fixed heads anchor the solid support to the scene edge, not the upper wing', () => {
+  const context = collisionContext();
+  // Live catalog bounds: the lower 60 cm support is off-centre in the 1.25 m GLB.
+  for (const pack of ['Confort', 'Prestige']) {
+    for (const [side, label, minX, maxX] of [
+      ['left', 'gauche', -0.33793, 0.26207],
+      ['right', 'droite', -0.262075, 0.337925],
+    ]) {
+      for (const [width, depth] of [[6, 3], [6.13, 3.19]]) {
+        for (const layout of ['back', 'left', 'right', 'u']) {
+          for (const rule of [`outer-${side}`, `front-${side}`, `back-${side}`]) {
+            const original = {
+              ...head, type: `asset-tete-de-cloison-smcl-${label}`, label: `Tête de cloison ${label}`,
+              x: 0, z: 0, placementRule: { id: rule, locked: true },
+              options: { lowerVisualUrl: 'existing-client-artwork.png' },
+              dimensions: { size: [1.25, 3, .11], packs: [pack], smclHeadSide: side,
+                placementBounds: { minX, maxX, minZ: -.055, maxZ: -.014, height: 2.4, source: 'legacy-smcl-head' } },
+            };
+            const placed = context.applyWallPlacementRule(original, width, depth, layout);
+            const bounds = context.wallItemAxisBounds(placed, placed.wall);
+            const limits = context.wallAxisLimits(placed.wall, width, depth);
+            const atMin = placed.wall === 'back' && side === 'left';
+            const edge = placed.x + bounds[atMin ? 'min' : 'max'];
+            assert.ok(Math.abs(edge - limits[atMin ? 'min' : 'max']) < .0001, `${pack}/${side}/${layout}/${rule}: support meets edge`);
+            assert.equal(placed.wall, !rule.startsWith('back-') && (layout === side || layout === 'u') ? side : 'back');
+            assert.equal(placed.options, original.options, 'Existing artwork is preserved');
+            assert.equal(placed.dimensions, original.dimensions, 'Visible model dimensions remain unchanged');
+            assert.equal(original.x, 0, 'Placement does not mutate the saved item');
+            assert.deepEqual(context.applyWallPlacementRule(placed, width, depth, layout), placed, 'Reopening a scene keeps the corrected placement');
+            const pose = context.technicalPartitionHeadPose(placed, [], width, depth);
+            assert.equal(pose.rotation, placed.wall === 'left' ? 90 : placed.wall === 'right' ? -90 : 0);
+            assert.equal(pose.width, 1.25, 'BAT and collisions still use the full upper wing');
+            assert.equal(placed.wall === 'back' ? pose.x : pose.z, placed.x, 'BAT follows the same wall anchor');
+            const supportBounds = context.itemGroupBounds(placed);
+            const position = context.screenWorldPosition(placed, width, depth, []);
+            const transform = new Matrix4().makeRotationY(context.wallMountedItemRotation(placed));
+            transform.setPosition(...position);
+            const support = new Box3(
+              new Vector3(supportBounds.minX, 0, supportBounds.minZ),
+              new Vector3(supportBounds.maxX, supportBounds.height, supportBounds.maxZ),
+            ).applyMatrix4(transform);
+            const gap = placed.wall === 'back' ? support.min.z - (-depth / 2 + .06)
+              : placed.wall === 'left' ? support.min.x - (-width / 2 + .06)
+                : (width / 2 - .06) - support.max.x;
+            assert.ok(Math.abs(gap) < 1e-9, `${pack}/${side}/${layout}/${rule}: support touches the wall`);
+          }
+        }
+      }
+    }
+  }
+});
+
+test('SMCL heads without legacy bounds also reach the edge using their fallback solid support', () => {
   const context = collisionContext();
   const left = { ...head, label: 'Tête de cloison SMCL gauche', placementRule: { id: 'outer-left', locked: true }, dimensions: { size: [1.25, 3, .11], smclHeadSide: 'left' } };
   const back = context.applyWallPlacementRule(left, 6.13, 3.19, 'back');
   const side = context.applyWallPlacementRule(left, 6.13, 3.19, 'left');
-  assert.equal(back.wall, 'back');
-  assert.ok(Math.abs(back.x - .625 + 6.13 / 2) < 1e-9);
-  assert.equal(side.wall, 'left');
-  assert.ok(Math.abs(side.x + .625 - context.sideWallEndZ(3.19)) < 1e-9);
-  const backPose = context.technicalPartitionHeadPose(back, [], 6.13, 3.19);
-  const sidePose = context.technicalPartitionHeadPose(side, [], 6.13, 3.19);
-  assert.equal(backPose.rotation, 0);
-  assert.equal(sidePose.rotation, 90);
-  assert.equal(sidePose.width, 1.25);
-  assert.equal(sidePose.z, side.x);
+  assert.ok(Math.abs(back.x - .3 + 6.13 / 2) < 1e-9);
+  assert.ok(Math.abs(side.x + .3 - context.sideWallEndZ(3.19)) < 1e-9);
 });
 
 test('SIAE supports span 60 cm from the inner edge and retain model depth and height', () => {
