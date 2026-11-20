@@ -96,11 +96,12 @@ try{
   assert.equal(await sizeGroup.getByRole('button').count(),2);
   assert.equal(await sizeGroup.getByRole('button',{name:/^1 m/}).count(),0);
   await page.waitForFunction(()=>window.archItems.some(i=>i.type==='asset-arche-signature-2m-spot-210-mvhslqjn'));
-  const cart = page.getByRole('button', { name: 'Ouvrir le panier' });
-  const popover = page.locator('.topbar-cart-popover');
+  const cart = page.getByRole('button', { name: /^Voir le panier/ });
+  const popover = page.locator('.stn-drawer');
   await cart.click();
-  assert.equal(await page.locator('.cart-item-card').filter({ hasText: 'Arche' }).count(), 0);
-  assert.equal(await popover.getByText(/^Solde disponible :/).count(), 1);
+  await popover.waitFor();
+  assert.equal(await page.locator('.stn-drawer .line').filter({ hasText: 'Arche' }).count(), 0);
+  assert.equal(await popover.getByText(/^Il vous reste /).count(), 1);
   await page.getByRole('button', { name: 'Fermer le panier' }).click();
   for(const index of [2,3,5,4]){
     const size=variants[index][3],lighting=index%2?'Suspension':'Spot';
@@ -117,9 +118,10 @@ try{
   const ledSwitch=page.getByRole('switch',{name:'Mur LED',exact:true});
   await ledSwitch.click();
   await cart.click();
-  assert.equal(await popover.getByText(/^Supplément à payer :/).count(), 1);
-  assert.equal(await popover.getByText(/^Solde disponible :/).count(), 0);
-  assert.equal(await page.locator('.cart-item-card').count(), 1);
+  await popover.waitFor();
+  assert.equal(await popover.getByText(/^Entièrement utilisé\./).count(), 1);
+  assert.equal(await popover.getByText(/^Il vous reste /).count(), 0);
+  assert.equal(await page.locator('.stn-drawer .line').count(), 1);
   await page.getByRole('button', { name: 'Fermer le panier' }).click();
   assert.equal(await page.getByText('Visuel lumineux façade', {exact:true}).count(),0);
   for(const index of [8,9,7,6]){
