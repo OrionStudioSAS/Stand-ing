@@ -6381,11 +6381,6 @@ img.asset-thumb {
   background: #ffe8c7;
 }
 
-.asset-tags small.reserve-catalog {
-  color: #14532d;
-  background: #dcf5e4;
-}
-
 .asset-drawer-layer {
   position: fixed;
   inset: 0;
