@@ -177,6 +177,49 @@ export const englishUi = {
   'Image personnalisable': 'Custom artwork', 'Images personnalisable': 'Custom artwork', 'Inclinaison': 'Tilt',
   'Option rangement': 'Storage option', 'Option vérification et intégration des fichiers vidéo': 'Video file checking and integration',
   'Taille:': 'Size:',
+  // Reserve configurator (pop-up editor and options panel).
+  'Configurateur de réserve': 'Storage room configurator', 'Plan de la réserve': 'Storage room plan', 'Ouvrir le plan de la réserve': 'Open the storage room plan',
+  'Ouvrir l’éditeur de réserve': 'Open the storage room editor', 'Voir l’éditeur de réserve': 'View the storage room editor', 'Valider la réserve': 'Confirm storage room',
+  'Structure': 'Structure', 'Emplacement': 'Location', 'Façade': 'Front', 'Côté droit': 'Right side', 'Côté gauche': 'Left side', 'Fond': 'Back',
+  'Tout': 'All', 'Électroménager': 'Appliances', 'Mural': 'Wall-mounted', 'mural': 'wall-mounted', 'Électricité': 'Electricity', 'Rangement': 'Storage',
+  'Chevauche un autre objet': 'Overlaps another item', 'Bloque l’ouverture de la porte': 'Blocks the door opening', 'Dépasse de la réserve': 'Sticks out of the storage room',
+  'ALLÉE': 'AISLE', 'Zone à laisser libre': 'Keep this area clear', 'Place disponible · relâchez ici': 'Space available · drop here', 'Place indisponible': 'No space here',
+  'place indisponible': 'no space here', 'Vers l’allée': 'Towards the aisle', 'Prise requise': 'Power socket required', 'Cloison du stand': 'Stand wall',
+  'Mur de la réserve': 'Storage room wall', 'Objet': 'Item', 'Placer la porte ici': 'Place the door here',
+  'Votre formule n’en inclut pas pour cette surface et ne permet pas d’en ajouter en option.': 'Your package does not include one for this area and it cannot be added as an option.',
+  'Vous pouvez la remettre à tout moment.': 'You can add it back at any time.', 'Vous pourrez la remettre à tout moment.': 'You will be able to add it back at any time.',
+  'Indisponible': 'Unavailable', 'espace insuffisant': 'not enough space', 'Demande envoyée': 'Request sent', 'Sur mesure': 'Custom size', 'Modifier ma demande': 'Edit my request',
+  'Autre dimension ?': 'Another size?', 'Une autre dimension ?': 'Another size?', 'Sur mesure, sur devis': 'Custom size, on quotation', 'Annuler le changement': 'Undo the change',
+  'ouvrir l’éditeur': 'open the editor', 'pour réorganiser.': 'to rearrange it.', 'Un besoin particulier ?': 'A specific need?', 'Posez une question à notre équipe': 'Ask our team a question',
+  'Envoi impossible pour le moment.': 'Could not send right now.', 'Devis sous 48 h': 'Quotation within 48 h', 'Largeur': 'Width', 'Profondeur': 'Depth',
+  'Précisions (facultatif)': 'Details (optional)', 'Envoi…': 'Sending…', 'Demander un devis': 'Request a quotation', 'Élément inclus retiré': 'Included item removed',
+  'Un objet mural suit l’orientation de son mur': 'A wall-mounted item follows the direction of its wall', 'Lecture seule': 'Read only', 'Aide': 'Help',
+  'Comment ça marche ?': 'How does it work?', 'Annuler (⌘Z)': 'Undo (⌘Z)', 'Rétablir': 'Redo', 'Rétablir (⇧⌘Z)': 'Redo (⇧⌘Z)', 'Dézoomer': 'Zoom out',
+  'Réinitialiser le zoom': 'Reset zoom', 'Zoomer': 'Zoom in', 'Cotes': 'Dimensions', 'Grille': 'Grid', 'Grille magnétique': 'Snap to grid', 'Plan 2D': '2D plan',
+  'Aperçu 3D': '3D preview', 'Agrandir': 'Enlarge', 'Pivoter (R)': 'Rotate (R)', 'Pivoter': 'Rotate', 'Dupliquer': 'Duplicate', 'Supprimer (Suppr)': 'Delete (Del)',
+  'Glisser': 'Drag', 'déplacer': 'move', 'pivoter': 'rotate', 'supprimer': 'delete', 'annuler': 'undo', 'ajuster': 'adjust', 'pour tourner': 'to orbit', 'Molette': 'Scroll',
+  'pour zoomer': 'to zoom', 'cliquez un objet pour le sélectionner': 'click an item to select it', 'Relâchez': 'Release', 'pour déposer': 'to drop', 'Échap': 'Esc',
+  'pour annuler': 'to cancel', 'Survolez une option pour la prévisualiser sur le plan': 'Hover over an option to preview it on the plan', 'Suppr': 'Del', 'Suivant': 'Next',
+  'Quitter sans enregistrer ?': 'Leave without saving?', 'Continuer l’édition': 'Keep editing', 'Quitter': 'Leave', 'Perpendiculaire au fond': 'Perpendicular to the back wall',
+  'Contre le mur du fond et le mur latéral': 'Against the back and side walls', 'Contre le mur du fond': 'Against the back wall', 'Centrée': 'Centred',
+  'Position sur le mur': 'Position on the wall', 'Position de la porte': 'Door position', 'Ouverture': 'Opening', 'Vers l’extérieur': 'Outwards', 'Vers l’intérieur': 'Inwards',
+  'extérieur': 'outwards', 'intérieur': 'inwards', 'poignée gauche': 'left handle', 'poignée droite': 'right handle', 'Sans porte': 'No door',
+  'Catalogue': 'Catalogue', 'Dans la réserve': 'In the storage room', 'Rechercher un objet…': 'Search for an item…',
+  'Glissez un objet sur le plan, ou cliquez sur + pour le placer automatiquement à un endroit libre.': 'Drag an item onto the plan, or click + to place it automatically in a free spot.',
+  'Plus de place': 'No room left', 'Plus de place libre : déplacez ou retirez un objet, ou faites ouvrir la porte vers l’extérieur.': 'No free space left: move or remove an item, or make the door open outwards.',
+  'Aucun objet ne correspond à votre recherche.': 'No item matches your search.', 'Ajoutez-la maintenant pour éviter un oubli.': 'Add it now so it is not forgotten.',
+  'Localiser': 'Locate', 'Remettre': 'Restore', 'Retirer': 'Remove', 'Ajoutez des étagères, un réfrigérateur ou une poubelle depuis le catalogue.': 'Add shelves, a fridge or a bin from the catalogue.',
+  'Voir le catalogue': 'View the catalogue', 'Position X': 'X position', 'Position Y': 'Y position', 'Rotation': 'Rotation', 'Fourni avec la réserve': 'Supplied with the storage room',
+  'Retiré de la réserve': 'Removed from the storage room', 'Total réserve HT': 'Storage room total excl. VAT', 'Ajouter': 'Add', 'Réorganiser la réserve': 'Rearrange the storage room',
+  'Choisissez une taille de réserve pour voir son plan.': 'Choose a storage room size to see its plan.',
+  'Largeur · coin arrière gauche': 'Width · rear left corner', 'Largeur · coin arrière droit': 'Width · rear right corner', 'Longueur · centre arrière': 'Length · rear centre',
+  'Orientation': 'Orientation', 'Le long du fond': 'Along the back wall', 'Le long du mur gauche': 'Along the left wall', 'Le long du mur droit': 'Along the right wall',
+  'le long du fond': 'along the back wall', 'le long du mur gauche': 'along the left wall', 'le long du mur droit': 'along the right wall', 'le long du mur latéral': 'along the side wall',
+  'Dans la profondeur du stand': 'Across the stand depth', 'Dans la largeur du stand': 'Across the stand width', 'Voir en 3D': 'View in 3D', 'Personnaliser': 'Customise',
+  'Personnaliser la réserve': 'Customise the storage room', 'Voir la réserve': 'View the storage room', 'Valider': 'Confirm',
+  'Suivant : la porte': 'Next: the door', 'Suivant : l’aménagement': 'Next: the layout', 'Coin arrière gauche': 'Rear left corner', 'Coin arrière droit': 'Rear right corner',
+  'Centre arrière': 'Rear centre', 'position verticale': 'vertical position', 'position horizontale': 'horizontal position',
+  'arrière gauche': 'rear left', 'arrière droite': 'rear right', 'centre arrière': 'rear centre', 'fond': 'back', 'façade': 'front', 'côté gauche': 'left side', 'côté droit': 'right side',
 };
 
 const key = text => String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[’‘]/g,"'").replace(/\s+/g,' ').trim().toLowerCase();
@@ -234,6 +277,28 @@ export function translateGeneratedUi(text, translate) {
   let match;
   if (text.includes('\n')) return text.split('\n').map(translate).join('\n');
   if ((match=text.match(/^-\s+(.*)$/))) return `- ${translate(match[1])}`;
+  // Reserve configurator messages built at runtime.
+  if ((match=text.match(/^(\d+) objets? ne tien(?:t|nent) plus(?: en (.+?))?(?: : (.*))?$/))) return `${match[1]} item${match[1]==='1'?'':'s'} no longer fit${match[1]==='1'?'s':''}${match[2]?` in ${translate(match[2])}`:''}${match[3]?`: ${translate(match[3])}`:''}`;
+  if ((match=text.match(/^(.*) (ont été retirés|a été retiré)\.$/))) return `${translate(match[1])} ${match[2].startsWith('ont')?'were':'was'} removed.`;
+  if ((match=text.match(/^le (\d{2}\/\d{2}) · réponse sous 48 h$/))) return `on ${match[1]} · reply within 48 h`;
+  if ((match=text.match(/^à (\d+) cm du coin gauche$/))) return `${match[1]} cm from the left corner`;
+  if ((match=text.match(/^(.*) (bloquent|bloque) l[’'](ouverture)$/))) return `${translate(match[1])} block${match[2]==='bloque'?'s':''} the door`;
+  if ((match=text.match(/^« (.*) » bloque l[’']ouverture de la porte : déplacez-le ou retirez-le$/))) return `“${translate(match[1])}” blocks the door: move or remove it`;
+  if ((match=text.match(/^(.*) a besoin d[’']une prise$/))) return `${translate(match[1])} needs a power socket`;
+  if ((match=text.match(/^surface libre (\d+) %$/))) return `${match[1]}% free space`;
+  if ((match=text.match(/^(\d+) objets?$/))) return `${match[1]} item${match[1]==='1'?'':'s'}`;
+  if ((match=text.match(/^Plus de place pour « (.*) » dans cette réserve$/))) return `No room left for “${translate(match[1])}” in this storage room`;
+  if ((match=text.match(/^Plus de place pour dupliquer « (.*) »$/))) return `No room left to duplicate “${translate(match[1])}”`;
+  if ((match=text.match(/^(.*) ajouté à la réserve$/))) return `${translate(match[1])} added to the storage room`;
+  if ((match=text.match(/^(Rotation impossible|Position impossible|Déplacement annulé|Impossible ici) : (.*)$/))) return `${({'Rotation impossible':'Cannot rotate','Position impossible':'Cannot place it there','Déplacement annulé':'Move cancelled','Impossible ici':'Not possible here'})[match[1]]}: ${String(translate(match[2])).replace(/^./,(c)=>c.toLowerCase())}`;
+  if ((match=text.match(/^« (.*) » (.*)$/))) return `“${translate(match[1])}” ${String(translate(match[2])).replace(/^./,(c)=>c.toLowerCase())}`;
+  if ((match=text.match(/^(.*) retiré$/))) return `${translate(match[1])} removed`;
+  if ((match=text.match(/^Porte : (.*)$/))) return `Door: ${translate(match[1])}`;
+  if ((match=text.match(/^Orientation : (.*)$/))) return `Orientation: ${translate(match[1])}`;
+  if ((match=text.match(/^(.*) sélectionnée?$/))) return `${translate(match[1])} selected`;
+  if ((match=text.match(/^Aperçu · (.*)$/))) return `Preview · ${translate(match[1])}`;
+  if ((match=text.match(/^Votre stand n[’']a pas de mur (à gauche|à droite) pour y adosser la réserve\.$/))) return `Your stand has no ${match[1] === 'à gauche' ? 'left' : 'right'} wall to place the storage room against.`;
+  if ((match=text.match(/^Le stand n[’']est pas assez (profond|large) pour une réserve de ([\d,.]+) m dans ce sens\.$/))) return `The stand is not ${match[1] === 'profond' ? 'deep' : 'wide'} enough for a ${match[2].replace(',', '.')} m storage room this way round.`;
   if ((match=text.match(/^(.*)\s*\/\s*(\d+) têtes?$/))) return `${translate(match[1].trim())} / ${match[2]} heads`;
   if ((match=text.match(/^(?:Dimensions\s*:\s*)?((?:L[.:]|Ø\.)\s*.*)$/))) return `${text.startsWith('Dimensions')?'Dimensions: ':''}${match[1].replace(/\bL[.:]/g,'W.').replace(/\bl[.:]/g,'D.').replace(/\bP[.:]/g,'D.').replace('hauteur au choix','height of your choice').replace(/(\d),(\d)/g,'$1.$2')}`;
   if ((match=text.match(/^(?:Hauteur totale|Résolution vidéo|Résolution)\s*:\s*(.*)$/))) return `${text.startsWith('Hauteur')?'Total height':text.startsWith('Résolution vidéo')?'Video resolution':'Resolution'}: ${match[1]}`;
