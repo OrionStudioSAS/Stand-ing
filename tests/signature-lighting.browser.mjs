@@ -106,12 +106,12 @@ try {
   assert.deepEqual(restored.baseItems, [], 'Do not bring back the old included furniture');
   await page.getByRole('button', { name: /^Spots LED/ }).click();
   await page.screenshot({ path: '/tmp/standing-signature-lighting.png' });
-  await page.locator('.led-option-card button').click();
+  await page.locator('.led-rail-remove-all').click();
   await page.waitForFunction(() => window.renderedLighting?.length === 0 && window.savedLightingScene?.options.ledRailsEnabled === false);
   await page.getByRole('button', { name: 'Recharger test', exact: true }).click();
   await page.waitForFunction(() => window.lightingState?.items.filter(item => item.autoLedRail).length === 0);
   await page.getByRole('button', { name: /^Spots LED/ }).click();
-  await page.locator('.led-option-card button').click();
+  await page.locator('.led-rail-restore').click();
   await page.waitForFunction(() => window.renderedLighting?.length === 2 && window.savedLightingScene?.options.ledRailsEnabled === true);
   await page.getByRole('button', { name: 'Ancienne scène directe' }).click();
   await page.waitForFunction(() => window.renderedLighting?.length === 2 && window.renderedLighting.every(item => item.model));
