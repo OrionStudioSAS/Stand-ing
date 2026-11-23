@@ -158,13 +158,15 @@ try {
     await page.setViewportSize({ width, height: 1000 });
     const bounds = await page.evaluate(() => {
       const rect = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
-      return { info: rect('.config-breadcrumb'), steps: rect('.stepper'), tools: rect('.language-pill'), header: rect('.configurator-topbar'), cart: rect('.topbar-cart') };
+      return { info: rect('.stn-nav .project'), steps: rect('.stepper'), tools: rect('.language-pill'), header: rect('.stn-nav'), cart: rect('.topbar-cart'), scroll: document.documentElement.scrollWidth };
     });
+    assert.ok(bounds.cart.right <= width && bounds.scroll <= width, `Header fits at ${width}px`);
+    // The steps and the project name leave the bar under 900 px (mobile), as in the navbar mock-up.
+    if (width <= 900) { assert.equal(await page.locator('.stepper').isVisible(), false, `Steps are hidden at ${width}px`); continue; }
     const separated = (a, b) => a.right <= b.left + 1 || b.right <= a.left + 1 || a.bottom <= b.top + 1 || b.bottom <= a.top + 1;
     assert.ok(separated(bounds.info, bounds.steps), `Information does not overlap steps at ${width}px`);
     assert.ok(separated(bounds.steps, bounds.tools), `Steps do not overlap tools at ${width}px`);
     assert.ok(Math.abs((bounds.steps.left + bounds.steps.right) / 2 - width / 2) <= 1, `Steps are centered at ${width}px`);
-    assert.ok(bounds.cart.right <= width, `Header fits at ${width}px`);
   }
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.locator('.stepper').isVisible(), false);

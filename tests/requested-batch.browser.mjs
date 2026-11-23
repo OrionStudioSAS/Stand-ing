@@ -57,10 +57,10 @@ try {
   const cents = await page.evaluate(() => window.api.calculateScenePricing({ catalog: [{type:'test-centimes',label:'Objet',price:85.5}], items: [{id:'test-centimes',type:'test-centimes',options:{unitPrice:85.5}}], salonLabel:'Confort', scene:{offer:'Confort'} }).lines.find(line=>line.type==='test-centimes'));
   assert.equal(cents.unitPrice,85.5, 'Unit prices retain centimes too');
   await page.getByRole('button', { name: 'Test cart', exact: true }).click();
-  await page.getByRole('button', { name: 'Ouvrir le panier', exact: true }).click();
-  const included = page.locator('.cart-item-card').filter({ hasText: 'Chaise incluse' });
-  assert.equal(await included.locator('.cart-item-copy > b').innerText(), 'Inclus');
-  assert.match(await page.locator('.cart-item-card').filter({ hasText: 'Table supplémentaire' }).innerText(), /85,5 € HT/);
+  await page.getByRole('button', { name: /^Voir le panier/ }).click();
+  const included = page.locator('.stn-drawer .line').filter({ hasText: 'Chaise incluse' });
+  assert.equal(await included.locator('.l-price').innerText(), 'Inclus');
+  assert.match(await page.locator('.stn-drawer .line').filter({ hasText: 'Table supplémentaire' }).innerText(), /85,50 €/);
   await page.getByRole('button', { name: 'Test asset', exact: true }).click();
   const editor = page.getByRole('region', { name: 'Pictos électriques BAT', exact: true });
   await editor.getByLabel('Importer le picto électrique', { exact: true }).setInputFiles({ name: 'electric.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(electric) });
