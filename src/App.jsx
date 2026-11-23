@@ -19,10 +19,11 @@ import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Canvas, events as createSceneEvents, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, MOUSE, MeshBasicMaterial, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
+import { Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, ExtrudeGeometry, Float32BufferAttribute, FrontSide, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, MOUSE, MeshBasicMaterial, MeshStandardMaterial, Plane, RepeatWrapping, Shape, SRGBColorSpace, TOUCH, Vector2, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { defaultImageFraming, framedImageRect, normalizeImageFraming } from './imageFraming.js';
 import { packEditorChanges, packEditorImpact } from './packEditor.js';
 import { closestSpotWallTarget, spotTargetPatch, spotWallTargetFromRay, spotWallTargets } from './spotPlacement.js';
@@ -56,6 +57,7 @@ import {
   Globe2,
   GripVertical,
   HelpCircle,
+  Info,
   KeyRound,
   Layers,
   LayoutDashboard,
@@ -64,6 +66,7 @@ import {
   Mail,
   MessageSquare,
   Minus,
+  Move,
   Move3D,
   Orbit,
   Paperclip,
@@ -226,6 +229,20 @@ const technicalTrimOptions = [
   { id: 'straight', label: 'Cornière droite' },
   { id: 'sloped', label: 'Cornière inclinée' },
 ];
+// 3D assets of the object bank (OBJ, millimetres, low edge on z = 0, rising towards -z).
+const technicalFloorAssetBaseUrl = `${String(import.meta.env.VITE_SUPABASE_URL || 'https://eljedngumyxwlvbckkkx.supabase.co').replace(/\/$/, '')}/storage/v1/object/public/object-assets`;
+const technicalFloorAssets = {
+  ramp4: `${technicalFloorAssetBaseUrl}/asset-rampe-pmr-215x1000mm-mr0m8jik/rampe-pmr-215x1000mm.obj`,
+  ramp12: `${technicalFloorAssetBaseUrl}/asset-rampe-pmr-1000x1000mm-mr0m8pos/rampe-pmr-1000x1000mm.obj`,
+  // Trims are served as GLB (converted from the object-bank OBJ: metres, outward winding,
+  // embedded brushed aluminium). The SketchUp OBJ had inverted faces that flickered on the carpet.
+  trimStraight: '/models/technical-floor/corniere-droite-40x40-1ml.glb',
+  trimSloped: '/models/technical-floor/corniere-inclinee-1ml.glb',
+};
+const technicalSlopedTrimDepth = 0.12;
+const technicalSlopedTrimOverhang = 0.1;
+const technicalRampGap = 0.1;
+const technicalRampCornerMargin = 0.05;
 const blankTextureDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 const textureRetryAttempts = 6;
 const textureRetryBaseDelay = 320;
@@ -1176,11 +1193,15 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [carpetThick, setCarpetThick] = useState(Boolean(initialOptions.carpetThick));
   const [footprintThick, setFootprintThick] = useState(Boolean(initialOptions.footprintThick));
   const thickCarpetEnabled = carpetThick || footprintThick;
-  const [carpetFootprintEnabled, setCarpetFootprintEnabled] = useState(initialOptions.carpetFootprintEnabled !== false);
+  const [carpetFootprintEnabled, setCarpetFootprintEnabled] = useState(() => (
+    initialOptions.technicalFloorType && typeof initialOptions.technicalFloorFootprintEnabled === 'boolean'
+      ? initialOptions.technicalFloorFootprintEnabled
+      : initialOptions.carpetFootprintEnabled !== false
+  ));
   const [selectedWallFabricId, setSelectedWallFabricId] = useState(initialOptions.wallFabricColorId || initialOptions.defaultColorOptions?.wallFabricColorId || '');
   const [technicalFloorType, setTechnicalFloorType] = useState(initialOptions.technicalFloorType || '');
   const [technicalFloorTrimType, setTechnicalFloorTrimType] = useState(initialOptions.technicalFloorTrimType || 'straight');
-  const [technicalFloorRampX, setTechnicalFloorRampX] = useState(Number(initialOptions.technicalFloorRampX || 0));
+  const [technicalFloorRampsState, setTechnicalFloorRamps] = useState(() => legacyTechnicalFloorRamps(initialOptions));
   const [ledRailsEnabled, setLedRailsEnabled] = useState(initialOptions.ledRailsEnabled !== false);
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
   const [reserveItemOverrides, setReserveItemOverrides] = useState(initialOptions.reserveItemOverrides || {});
@@ -1289,6 +1310,25 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const selectedTechnicalFloor = technicalFloorOptions.find((option) => option.id === technicalFloorType) || null;
   const effectiveCarpetFootprintEnabled = carpetFootprintEnabled && !selectedTechnicalFloor;
   const genericCarpetFootprintEnabled = effectiveCarpetFootprintEnabled && !isSignatureStand;
+  const effectiveTechnicalFloorTrimType = technicalFloorTrimAllowed(selectedTechnicalFloor, technicalFloorTrimType);
+  const technicalFloorRamps = useMemo(() => normalizeTechnicalFloorRamps(technicalFloorRampsState, {
+    width, depth, layout, floor: selectedTechnicalFloor, trimType: effectiveTechnicalFloorTrimType,
+  }), [technicalFloorRampsState, width, depth, layout, selectedTechnicalFloor, effectiveTechnicalFloorTrimType]);
+  const technicalFloorRampX = technicalFloorRamps.find((ramp) => ramp.edge === 'front')?.offset || 0;
+  const updateTechnicalFloorRamp = useCallback((rampId, patch) => {
+    setTechnicalFloorRamps((current) => {
+      const base = normalizeTechnicalFloorRamps(current, { width, depth, layout, floor: selectedTechnicalFloor, trimType: effectiveTechnicalFloorTrimType });
+      return base.map((ramp) => (ramp.id === rampId ? { ...ramp, ...patch } : ramp));
+    });
+  }, [width, depth, layout, selectedTechnicalFloor, effectiveTechnicalFloorTrimType]);
+  const addTechnicalFloorRamp = () => {
+    const next = nextTechnicalFloorRamp(technicalFloorRamps, { width, depth, layout, floor: selectedTechnicalFloor });
+    if (next) setTechnicalFloorRamps([...technicalFloorRamps, next]);
+  };
+  const removeTechnicalFloorRamp = (rampId) => {
+    if (technicalFloorRamps.length <= 1) return;
+    setTechnicalFloorRamps(technicalFloorRamps.filter((ramp) => ramp.id !== rampId));
+  };
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
   const effectiveAdminViewer = Boolean(isAdminViewer && !adminExhibitorPreview);
@@ -1334,11 +1374,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   useEffect(() => {
     setItems((current) => current.map((item) => constrainItem(item, width, depth, layout, genericCarpetFootprintEnabled)));
   }, [width, depth, layout, genericCarpetFootprintEnabled]);
-
-  useEffect(() => {
-    if (!selectedTechnicalFloor) return;
-    setTechnicalFloorRampX((current) => clamp(Number(current || 0), -width / 2, width / 2));
-  }, [selectedTechnicalFloor, width]);
 
   useEffect(() => {
     if (readOnly) {
@@ -1620,9 +1655,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       technicalFloorHeight: selectedTechnicalFloor?.height || 0,
       technicalFloorPrice: selectedTechnicalFloor?.price || 0,
       technicalFloorReference: selectedTechnicalFloor?.reference || '',
-      technicalFloorTrimType,
-      technicalFloorRampEnabled: Boolean(selectedTechnicalFloor),
+      technicalFloorTrimType: effectiveTechnicalFloorTrimType,
+      technicalFloorRampEnabled: technicalFloorRamps.length > 0,
       technicalFloorRampX,
+      technicalFloorRamps,
+      technicalFloorFootprintEnabled: selectedTechnicalFloor ? carpetFootprintEnabled : undefined,
       language,
       ledRailsEnabled,
       ledRailMode: 'auto',
@@ -1721,7 +1758,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly, objectBankLoaded, sceneSaveError?.stale, confirmState.loading]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, effectiveTechnicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, technicalFloorRamps, carpetFootprintEnabled, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly, objectBankLoaded, sceneSaveError?.stale, confirmState.loading]);
 
   useEffect(() => {
     listObjectBank()
@@ -1848,12 +1885,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     return true;
   };
 
+  // The footprint is hidden while a technical floor is selected (effectiveCarpetFootprintEnabled)
+  // and comes back untouched when the exhibitor returns to "Aucun plancher".
   const handleTechnicalFloorType = (type) => {
     setTechnicalFloorType(type);
-    if (type) {
-      setCarpetFootprintEnabled(false);
-      setTechnicalFloorRampX((current) => clamp(Number(current || 0), -width / 2, width / 2));
-    }
   };
 
   const showPlacementMessage = (message) => {
@@ -2828,7 +2863,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           <color attach="background" args={['#050506']} />
           <StudioLighting width={width} depth={depth} />
           <Suspense fallback={<Html center>{tr("Chargement")}</Html>}>
-            <PresentationGround />
+            <PresentationGround lowered={selectedTechnicalFloor?.height || 0} />
             {shouldRenderScene && (
               <StandScene
                 width={width}
@@ -2856,9 +2891,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 wallCovers={wallCovers}
                 wallCoverPreviews={wallCoverPreviews}
                 technicalFloor={selectedTechnicalFloor}
-                technicalFloorTrimType={technicalFloorTrimType}
-                technicalFloorRampX={technicalFloorRampX}
-                onTechnicalFloorRampX={setTechnicalFloorRampX}
+                technicalFloorTrimType={effectiveTechnicalFloorTrimType}
+                technicalFloorRamps={technicalFloorRamps}
+                onTechnicalFloorRampChange={readOnly ? undefined : updateTechnicalFloorRamp}
                 onTechnicalFloorRampDragChange={setTechnicalFloorRampDragging}
                 visualContext={sceneVisualContext}
                 sceneConstraints={sceneConstraints}
@@ -2973,7 +3008,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             carpetFootprintEnabled={genericCarpetFootprintEnabled}
             wallFabricColor={selectedWallFabricColor}
             technicalFloor={selectedTechnicalFloor}
-            technicalFloorTrimType={technicalFloorTrimType}
+            technicalFloorTrimType={effectiveTechnicalFloorTrimType}
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={actualLedSpotCount}
             autoSpotsRule={autoSpotsBaseRule}
@@ -3031,7 +3066,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             wallFabricArea={Math.max(0, sceneWallFabricArea(width, depth, layout) - activeWallCoverFabricArea(wallCoverSurfaces, wallCovers))}
             defaultColorOptions={effectiveDefaultColorOptions}
             technicalFloorType={technicalFloorType}
-            technicalFloorTrimType={technicalFloorTrimType}
+            technicalFloorTrimType={effectiveTechnicalFloorTrimType}
+            technicalFloorRamps={technicalFloorRamps}
+            technicalFloorFootprintEnabled={carpetFootprintEnabled && !isSignatureStand}
+            standWidth={width}
+            onAddTechnicalFloorRamp={() => !readOnly && addTechnicalFloorRamp()}
+            onRemoveTechnicalFloorRamp={(rampId) => !readOnly && removeTechnicalFloorRamp(rampId)}
             ledRailsEnabled={ledRailsEnabled}
             ledSpotCount={ledSpotCount}
             autoSpotsRule={autoSpotsBaseRule}
@@ -4957,6 +4997,11 @@ function OptionsStepPanel({
   defaultColorOptions = {},
   technicalFloorType,
   technicalFloorTrimType,
+  technicalFloorRamps = [],
+  technicalFloorFootprintEnabled = false,
+  standWidth = 0,
+  onAddTechnicalFloorRamp,
+  onRemoveTechnicalFloorRamp,
   ledRailsEnabled,
   ledSpotCount,
   reserveRule,
@@ -5122,19 +5167,27 @@ function OptionsStepPanel({
           onFramingChange={onWallCoverFraming}
         />
       </OptionAccordion>
-      {isAdminViewer && (
-      <OptionAccordion {...accordionScrollProps('plancher')} title={t('option_floor')} icon={<Ruler size={16} />} open={openOptions.plancher} onToggle={() => toggleOption('plancher')}>
+      <OptionAccordion {...accordionScrollProps('plancher')} className="floor-qv-accordion" title={t('option_floor')}
+        subtitle={technicalFloorSubtitle(technicalFloorType, area, t)}
+        icon={<Layers size={22} strokeWidth={1.7} />} open={openOptions.plancher} onToggle={() => toggleOption('plancher')}>
         <TechnicalFloorOptionCard
           floorType={technicalFloorType}
           trimType={technicalFloorTrimType}
           area={area}
           layout={layout}
+          standWidth={standWidth}
+          standDepth={standDepth}
+          carpetColor={selectedCarpetColor}
+          footprintColor={selectedCarpetFootprintColor}
+          footprintEnabled={technicalFloorFootprintEnabled}
+          ramps={technicalFloorRamps}
           disabled={readOnly}
           onFloorType={onTechnicalFloorType}
           onTrimType={onTechnicalFloorTrimType}
+          onAddRamp={onAddTechnicalFloorRamp}
+          onRemoveRamp={onRemoveTechnicalFloorRamp}
         />
       </OptionAccordion>
-      )}
       {(hasIncludedObjects || isSignatureStand) && <OptionAccordion {...accordionScrollProps('led')} title={t('option_led')} icon={<ConfiguratorOptionIcon src="/icons/spots.svg" />} open={openOptions.led} onToggle={() => toggleOption('led')}>
         <LedRailOptionCard
           enabled={ledRailsEnabled}
@@ -8280,60 +8333,315 @@ function LedRailOptionCard({ enabled, spotCount, disabled = false, onEnabledChan
   );
 }
 
-function TechnicalFloorOptionCard({ floorType, trimType, area, layout, disabled = false, onFloorType, onTrimType }) {
-  const tr = useUiText();
+function technicalFloorSubtitle(floorType = '', area = 0, t = (key) => key) {
+  const floor = technicalFloorOptions.find((option) => option.id === floorType);
+  const surface = formatNumber(area);
+  return floor ? t('floor_subtitle_raised', { height: formatNumber(floor.height * 100), area: surface }) : t('floor_subtitle_none', { area: surface });
+}
+
+function technicalFloorColorCaption(color) {
+  if (!color || typeof color === 'string') return '';
+  return String(color.name || '').toLocaleLowerCase('fr-FR');
+}
+
+function technicalFloorColorCode(color) {
+  if (!color || typeof color === 'string') return '';
+  return String(color.code || color.id || '');
+}
+
+function shadeHex(hex = '#bebebe', factor = 1) {
+  const raw = String(hex || '').replace('#', '');
+  const value = raw.length === 3 ? raw.split('').map((char) => char + char).join('') : raw.padEnd(6, '0').slice(0, 6);
+  const channels = [0, 2, 4].map((index) => parseInt(value.slice(index, index + 2), 16) || 0);
+  const next = channels.map((channel) => (factor >= 1
+    ? Math.round(channel + (255 - channel) * (factor - 1))
+    : Math.round(channel * factor)));
+  return `#${next.map((channel) => clamp(channel, 0, 255).toString(16).padStart(2, '0')).join('')}`;
+}
+
+// Isometric section of the actual stand: dimensions, open sides, carpet/footprint colours and ramps.
+function technicalFloorPreviewModel({ width = 5, depth = 5, layout = 'u', floorHeight = 0, trimType = 'straight', carpetHex = '#bebebe', footprintHex = '#f2a24e', footprintEnabled = false, ramps = [], viewWidth = 324, viewHeight = 176, padding = [26, 22, 34, 22] }) {
+  const w = Math.max(1, Number(width) || 5);
+  const d = Math.max(1, Number.isFinite(Number(depth)) ? Number(depth) : 5);
+  const size = Math.max(w, d);
+  const edges = openTechnicalFloorEdges(layout);
+  const walls = availableWalls(layout).map((wall) => wall.id);
+  const raised = floorHeight > 0;
+  const sloped = raised && trimType === 'sloped';
+  const slabHeight = raised ? size * (floorHeight > 0.05 ? 0.1 : 0.045) : size * 0.012;
+  const trimHeight = raised ? (floorHeight > 0.05 ? slabHeight * 0.36 : slabHeight) : 0;
+  const bandWidth = size * 0.028;
+  const wallHeight = size * 0.09;
+  const ex = [0.866, 0.5];
+  const eb = [0.866, -0.5];
+  const raw = (x, y, z) => [x * ex[0] + (-z) * eb[0], x * ex[1] + (-z) * eb[1] - y];
+  const shapes = [];
+  const add = (points, fill, stroke = shadeHex(fill, 0.72), strokeWidth = 0.5) => shapes.push({ points, fill, stroke, strokeWidth });
+  const quad = (a, b, c, e) => [raw(...a), raw(...b), raw(...c), raw(...e)];
+  const top = slabHeight;
+  const x0 = -w / 2;
+  const x1 = w / 2;
+  const z0 = -d / 2;
+  const z1 = d / 2;
+  const wallFill = '#e3e8ef';
+
+  if (walls.includes('back')) add(quad([x0, top, z0], [x1, top, z0], [x1, top + wallHeight, z0], [x0, top + wallHeight, z0]), wallFill, '#b8c2cf');
+  if (walls.includes('left')) add(quad([x0, top, z0], [x0, top, z1], [x0, top + wallHeight, z1], [x0, top + wallHeight, z0]), shadeHex(wallFill, 1.04), '#b8c2cf');
+
+  const sideFace = (edge, yFrom, yTo, fill) => {
+    if (edge === 'front') add(quad([x0, yFrom, z1], [x1, yFrom, z1], [x1, yTo, z1], [x0, yTo, z1]), fill);
+    else add(quad([x1, yFrom, z1], [x1, yFrom, z0], [x1, yTo, z0], [x1, yTo, z1]), shadeHex(fill, 0.9));
+  };
+  const carpetSide = shadeHex(carpetHex, 0.86);
+  ['front', 'right'].forEach((edge) => {
+    const open = edges.includes(edge);
+    if (!raised) { sideFace(edge, 0, top, carpetSide); return; }
+    if (!open) { sideFace(edge, 0, top, '#d9c7a4'); return; }
+    if (sloped) {
+      if (edge === 'front') add(quad([x0, 0, z1 + bandWidth * 2.4], [x1 + (edges.includes('right') ? bandWidth * 2.4 : 0), 0, z1 + bandWidth * 2.4], [x1, top, z1], [x0, top, z1]), '#cfd5de', '#8d96a5');
+      else add(quad([x1 + bandWidth * 2.4, 0, z1 + bandWidth * 2.4], [x1 + bandWidth * 2.4, 0, z0], [x1, top, z0], [x1, top, z1]), '#b9c1cc', '#8d96a5');
+      return;
+    }
+    if (top - trimHeight > 0.0001) sideFace(edge, 0, top - trimHeight, edge === 'front' ? '#f6f7f9' : '#eceff3');
+    sideFace(edge, top - trimHeight, top, edge === 'front' ? '#cfd5de' : '#c4ccd7');
+  });
+
+  add(quad([x0, top, z0], [x1, top, z0], [x1, top, z1], [x0, top, z1]), carpetHex, shadeHex(carpetHex, 0.7));
+
+  if (raised && !sloped) {
+    if (edges.includes('front')) add(quad([x0, top, z1 - bandWidth], [x1, top, z1 - bandWidth], [x1, top, z1], [x0, top, z1]), '#eef1f5', '#8d96a5');
+    if (edges.includes('right')) add(quad([x1 - bandWidth, top, z0], [x1, top, z0], [x1, top, z1], [x1 - bandWidth, top, z1]), '#eef1f5', '#8d96a5');
+    if (edges.includes('left')) add(quad([x0, top, z0], [x0 + bandWidth, top, z0], [x0 + bandWidth, top, z1], [x0, top, z1]), '#eef1f5', '#8d96a5');
+  }
+
+  const rampSize = raised ? technicalRampDimensions(floorHeight) : null;
+  (raised && !sloped ? ramps : []).forEach((ramp) => {
+    const offset = Number(ramp.offset || 0);
+    const half = rampSize.width / 2;
+    const rampFill = shadeHex(carpetHex, 0.94);
+    const rampStroke = '#8d96a5';
+    if (ramp.edge === 'front') add(quad([offset - half, top, z1 - rampSize.depth], [offset + half, top, z1 - rampSize.depth], [offset + half, 0, z1], [offset - half, 0, z1]), rampFill, rampStroke);
+    if (ramp.edge === 'right') add(quad([x1 - rampSize.depth, top, offset - half], [x1 - rampSize.depth, top, offset + half], [x1, 0, offset + half], [x1, 0, offset - half]), shadeHex(rampFill, 0.92), rampStroke);
+    if (ramp.edge === 'left') add(quad([x0 + rampSize.depth, top, offset - half], [x0 + rampSize.depth, top, offset + half], [x0, 0, offset + half], [x0, 0, offset - half]), rampFill, rampStroke);
+  });
+
+  let footprintCenter = null;
+  if (!raised && footprintEnabled) {
+    const rect = carpetFootprintBounds(w, d, layout);
+    const y = top + 0.001;
+    add(quad([rect.minX, y, rect.minZ], [rect.maxX, y, rect.minZ], [rect.maxX, y, rect.maxZ], [rect.minX, y, rect.maxZ]), footprintHex, shadeHex(footprintHex, 0.68));
+    footprintCenter = raw((rect.minX + rect.maxX) / 2, y, (rect.minZ + rect.maxZ) / 2);
+  }
+
+  if (walls.includes('right')) add(quad([x1, top, z1], [x1, top, z0], [x1, top + wallHeight, z0], [x1, top + wallHeight, z1]), shadeHex(wallFill, 0.95), '#b8c2cf');
+
+  const anchors = {
+    carpet: raw(x0 + w * 0.32, top, z0 + d * 0.3),
+    footprint: footprintCenter,
+    trim: edges.includes('right') ? raw(x1, top, z0 + d * 0.35) : raw(x0 + w * 0.8, top, z1),
+    plinth: raw(x0 + w * 0.28, top * 0.4, z1),
+    heightTop: raw(x1, top, z1),
+    heightBottom: raw(x1, 0, z1),
+  };
+
+  const allPoints = shapes.flatMap((shape) => shape.points);
+  const minX = Math.min(...allPoints.map((point) => point[0]));
+  const maxX = Math.max(...allPoints.map((point) => point[0]));
+  const minY = Math.min(...allPoints.map((point) => point[1]));
+  const maxY = Math.max(...allPoints.map((point) => point[1]));
+  const [padTop, padRight, padBottom, padLeft] = padding;
+  const scale = Math.min((viewWidth - padLeft - padRight) / Math.max(0.001, maxX - minX), (viewHeight - padTop - padBottom) / Math.max(0.001, maxY - minY));
+  const offsetX = padLeft + (viewWidth - padLeft - padRight - (maxX - minX) * scale) / 2 - minX * scale;
+  const offsetY = padTop + (viewHeight - padTop - padBottom - (maxY - minY) * scale) / 2 - minY * scale;
+  const fit = (point) => (point ? [Math.round((point[0] * scale + offsetX) * 10) / 10, Math.round((point[1] * scale + offsetY) * 10) / 10] : null);
+  return {
+    shapes: shapes.map((shape) => ({ ...shape, points: shape.points.map(fit) })),
+    anchors: Object.fromEntries(Object.entries(anchors).map(([key, point]) => [key, fit(point)])),
+  };
+}
+
+function TechnicalFloorIsoSvg({ model, width, height, className = '' }) {
+  return (
+    <svg className={className} viewBox={`0 0 ${width} ${height}`} width="100%" aria-hidden="true">
+      {model.shapes.map((shape, index) => (
+        <polygon key={index} points={shape.points.map((point) => point.join(',')).join(' ')} fill={shape.fill} stroke={shape.stroke} strokeWidth={shape.strokeWidth} strokeOpacity="0.6" strokeLinejoin="round" />
+      ))}
+    </svg>
+  );
+}
+
+function TechnicalFloorHero({ floor, trimType, previewProps, carpetColor, footprintColor, footprintEnabled }) {
   const t = useT();
-  const selectedFloor = technicalFloorOptions.find((option) => option.id === floorType) || null;
-  const openEdges = openTechnicalFloorEdges(layout);
-  const estimated = selectedFloor ? Math.round(Number(area || 0) * selectedFloor.price) : 0;
+  const viewWidth = 324;
+  const viewHeight = 176;
+  const model = technicalFloorPreviewModel({ ...previewProps, floorHeight: floor?.height || 0, trimType, viewWidth, viewHeight, padding: [22, 30, 36, 30] });
+  const heightCm = floor ? formatNumber(floor.height * 100) : '';
+  const sloped = floor && trimType === 'sloped';
+  const callouts = [];
+  const pushCallout = (id, anchor, dx, dy, strong, text) => {
+    if (!anchor) return;
+    // Keep the whole label inside the preview (rough 10.5px text metrics).
+    const labelWidth = `${strong} ${text || ''}`.trim().length * 5.5 + 16;
+    const align = dx < 0 ? 'left' : 'right';
+    const x = align === 'left' ? clamp(anchor[0] + dx, labelWidth + 6, viewWidth - 6) : clamp(anchor[0] + dx, 6, viewWidth - labelWidth - 6);
+    const y = clamp(anchor[1] + dy, 12, viewHeight - 34);
+    callouts.push({ id, anchor, x, y, align, strong, text });
+  };
+  const carpetCaption = technicalFloorColorCaption(carpetColor);
+  if (!floor) {
+    pushCallout('carpet', model.anchors.carpet, -8, -26, t('floor_preview_carpet'), t('floor_preview_carpet_ground'));
+    if (footprintEnabled) pushCallout('footprint', model.anchors.footprint, 12, 22, t('floor_preview_footprint'), `${technicalFloorColorCaption(footprintColor)} ${technicalFloorColorCode(footprintColor)}`.trim());
+  } else {
+    pushCallout('carpet', model.anchors.carpet, -10, -26, t('floor_preview_carpet'), carpetCaption);
+    pushCallout('trim', model.anchors.trim, 14, -24, t(sloped ? 'floor_preview_trim_sloped' : 'floor_preview_trim'), sloped ? '' : '4 × 4 cm');
+    if (floor.height > 0.05) pushCallout('plinth', model.anchors.plinth, -12, 26, t('floor_preview_plinth'), t('floor_preview_plinth_white'));
+  }
+  const top = model.anchors.heightTop;
+  const bottom = model.anchors.heightBottom;
+  const dimX = top ? top[0] + 12 : 0;
 
   return (
-    <div className="technical-floor-card">
-      <div className="technical-floor-info">
-        <span><b>!</b> {t('floor_warning')}</span>
+    <div className="floor-qv-hero">
+      <TechnicalFloorIsoSvg model={model} width={viewWidth} height={viewHeight} />
+      <svg className="floor-qv-hero-overlay" viewBox={`0 0 ${viewWidth} ${viewHeight}`} width="100%" aria-hidden="true">
+        {callouts.map((callout) => (
+          <g key={callout.id}>
+            <polyline points={`${callout.anchor.join(',')} ${callout.x},${callout.y}`} fill="none" stroke="#5b6170" strokeWidth="0.9" />
+            <circle cx={callout.anchor[0]} cy={callout.anchor[1]} r="2.6" fill="#fff" stroke="#3b64a8" strokeWidth="1.4" />
+          </g>
+        ))}
+        {floor && top && bottom && (
+          <g stroke="#3b64a8" strokeWidth="1.2">
+            <line x1={dimX} y1={bottom[1]} x2={dimX} y2={top[1]} />
+            <line x1={dimX - 4} y1={bottom[1]} x2={dimX + 4} y2={bottom[1]} />
+            <line x1={dimX - 4} y1={top[1]} x2={dimX + 4} y2={top[1]} />
+          </g>
+        )}
+      </svg>
+      {callouts.map((callout) => (
+        <span key={callout.id} className={`floor-qv-callout ${callout.align}`} style={{ left: `${(callout.x / viewWidth) * 100}%`, top: `${(callout.y / viewHeight) * 100}%` }}>
+          <b>{callout.strong}</b>{callout.text ? ` ${callout.text}` : ''}
+        </span>
+      ))}
+      {floor && top && bottom && (
+        <span className="floor-qv-dimension" style={{ left: `${((dimX + 7) / viewWidth) * 100}%`, top: `${(((top[1] + bottom[1]) / 2) / viewHeight) * 100}%` }}>{heightCm} cm</span>
+      )}
+      <span className="floor-qv-hero-tag"><Layers size={13} strokeWidth={1.6} />{floor ? t('floor_preview_section', { height: heightCm }) : t('floor_preview_none')}</span>
+    </div>
+  );
+}
+
+function TechnicalFloorThumb({ floorHeight, previewProps, footprintEnabled }) {
+  const model = technicalFloorPreviewModel({ ...previewProps, floorHeight, trimType: 'straight', ramps: [], footprintEnabled: !floorHeight && footprintEnabled, viewWidth: 60, viewHeight: 42, padding: [3, 3, 3, 3] });
+  return <span className="floor-qv-thumb"><TechnicalFloorIsoSvg model={model} width={60} height={42} /></span>;
+}
+
+function TechnicalFloorOptionCard({ floorType, trimType, area, layout, standWidth = 0, standDepth = 0, carpetColor = null, footprintColor = null, footprintEnabled = false, ramps = [], disabled = false, onFloorType, onTrimType, onAddRamp, onRemoveRamp }) {
+  const t = useT();
+  const selectedFloor = technicalFloorOptions.find((option) => option.id === floorType) || null;
+  const effectiveTrim = technicalFloorTrimAllowed(selectedFloor, trimType);
+  const carpetHex = colorHex(carpetColor, '#bebebe');
+  const footprintHex = colorHex(footprintColor, '#f2a24e');
+  const previewProps = { width: standWidth, depth: standDepth, layout, carpetHex, footprintHex, footprintEnabled, ramps };
+  const surface = formatNumber(area);
+  const estimate = (option) => Math.round(Number(area || 0) * option.price).toLocaleString('fr-FR');
+  const footprintCaption = `${technicalFloorColorCaption(footprintColor)}${technicalFloorColorCode(footprintColor) ? ` (${technicalFloorColorCode(footprintColor)})` : ''}`;
+  const canAddRamp = Boolean(selectedFloor && nextTechnicalFloorRamp(ramps, { width: standWidth, depth: standDepth, layout, floor: selectedFloor }));
+  const rampSize = selectedFloor ? technicalRampDimensions(selectedFloor.height) : null;
+
+  return (
+    <div className="floor-qv">
+      <TechnicalFloorHero floor={selectedFloor} trimType={effectiveTrim} previewProps={previewProps} carpetColor={carpetColor} footprintColor={footprintColor} footprintEnabled={footprintEnabled} />
+
+      <div className="floor-qv-section">
+        <div className="floor-qv-section-head">
+          <strong>{t('floor_height_title')}</strong>
+          <span>{selectedFloor ? `${formatNumber(selectedFloor.height * 100)} cm` : t('floor_height_none')}</span>
+        </div>
+        <div className="floor-qv-list" role="radiogroup" aria-label={t('floor_height_title')}>
+          <button type="button" role="radio" aria-checked={!floorType} className={`floor-qv-option ${!floorType ? 'active' : ''}`} disabled={disabled} onClick={() => onFloorType('')}>
+            <TechnicalFloorThumb floorHeight={0} previewProps={previewProps} footprintEnabled={footprintEnabled} />
+            <span className="floor-qv-option-copy">
+              <strong>{t('floor_none')}</strong>
+              <small>{footprintEnabled ? t('floor_none_detail_footprint') : t('floor_none_detail')}</small>
+            </span>
+            <span className="floor-qv-option-price"><em className="floor-qv-included">{t('floor_included')}</em></span>
+          </button>
+          {technicalFloorOptions.map((option) => {
+            const active = floorType === option.id;
+            return (
+              <button key={option.id} type="button" role="radio" aria-checked={active} className={`floor-qv-option ${active ? 'active' : ''}`} disabled={disabled} onClick={() => onFloorType(option.id)}>
+                <TechnicalFloorThumb floorHeight={option.height} previewProps={previewProps} footprintEnabled={false} />
+                <span className="floor-qv-option-copy">
+                  <span className="floor-qv-option-title">
+                    <strong>{formatNumber(option.height * 100)} cm</strong>
+                    {footprintEnabled && <em className="floor-qv-removes"><Info size={11} strokeWidth={2} />{t('floor_removes_footprint')}</em>}
+                  </span>
+                  <small>{t(option.height > 0.05 ? 'floor_detail_12' : 'floor_detail_4')}</small>
+                </span>
+                <span className="floor-qv-option-price">
+                  <strong>{option.price} € <small>{t('floor_price_unit')}</small></strong>
+                  <small>≈ {estimate(option)} € HT</small>
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <strong className="technical-floor-title">{t('floor_choose_height')}</strong>
-      <div className="technical-floor-choices">
-        <button type="button" className={!floorType ? 'active' : ''} disabled={disabled} onClick={() => onFloorType('')}>
-          <span className="reserve-choice-radio" aria-hidden="true">{!floorType ? <span /> : null}</span>
-          <span><strong>{t('floor_none')}</strong><small>{t('floor_none_detail')}</small></span>
-          <em>{t('floor_included')}</em>
-        </button>
-        {technicalFloorOptions.map((option) => {
-          const active = floorType === option.id;
-          return (
-            <button key={option.id} type="button" className={active ? 'active' : ''} disabled={disabled} onClick={() => onFloorType(option.id)}>
-              <span className="reserve-choice-radio" aria-hidden="true">{active ? <span /> : null}</span>
-              <span><strong>{tr(option.label.replace('Plancher technique ', ''))}</strong><small>{tr(option.detail)}</small></span>
-              <em>{tr(option.price)} {tr("€ HT/m²")}</em>
-            </button>
-          );
-        })}
-      </div>
-
-      {selectedFloor && (
-        <>
-          <div className="technical-floor-detail">
-            <strong>{tr(selectedFloor.reference)}</strong>
-            <span>{tr(formatNumber(area))} m² × {tr(selectedFloor.price)} {tr("€ HT/m² =")} {tr(estimated.toLocaleString('fr-FR'))} {tr("€ HT")}</span>
-            <small>{t('floor_open_edges')} {tr(openEdges.map(technicalFloorEdgeLabel).join(', '))}</small>
-          </div>
-          <div className="technical-floor-actions">
-            <span>{t('floor_trim_type')}</span>
+      {selectedFloor && selectedFloor.height <= 0.05 && (
+        <div className="floor-qv-section">
+          <div className="floor-qv-section-head"><strong>{t('floor_trim_type')}</strong></div>
+          <div className="floor-qv-segmented">
             {technicalTrimOptions.map((option) => (
-              <button key={option.id} type="button" className={trimType === option.id ? 'active' : ''} disabled={disabled} onClick={() => onTrimType(option.id)}>
-                {tr(option.label)}
+              <button key={option.id} type="button" className={effectiveTrim === option.id ? 'active' : ''} aria-pressed={effectiveTrim === option.id} disabled={disabled} onClick={() => onTrimType(option.id)}>
+                <strong>{t(option.id === 'sloped' ? 'floor_trim_sloped' : 'floor_trim_straight')}</strong>
+                <small>{t(option.id === 'sloped' ? 'floor_trim_sloped_detail' : 'floor_trim_straight_detail')}</small>
               </button>
             ))}
           </div>
-          <div className="technical-floor-ramp-required">
-            <span>
-              <strong>{t('floor_ramp_title')}</strong>
-              <small>{tr(selectedFloor.rampLabel)} · {t('floor_ramp_detail')}</small>
-            </span>
+        </div>
+      )}
+
+      {selectedFloor && effectiveTrim !== 'sloped' && (
+        <div className="floor-qv-section">
+          <div className="floor-qv-section-head">
+            <strong>{t('floor_ramps_title')}</strong>
+            <span>{ramps.length}</span>
           </div>
-        </>
+          <div className="floor-qv-ramps">
+            {ramps.map((ramp, index) => (
+              <div key={ramp.id} className="floor-qv-ramp">
+                <span className="floor-qv-ramp-index">{index + 1}</span>
+                <span className="floor-qv-ramp-copy">
+                  <strong>{t('floor_ramp_label', { height: formatNumber(selectedFloor.height * 100) })}</strong>
+                  <small>{t('floor_ramp_side', { side: t(`floor_edge_${ramp.edge}`) })} · {formatNumber(rampSize.width * 100)} × {formatNumber(rampSize.depth * 100)} cm</small>
+                </span>
+                {ramps.length > 1 && (
+                  <button type="button" className="floor-qv-ramp-remove" disabled={disabled} onClick={() => onRemoveRamp?.(ramp.id)} aria-label={t('floor_ramp_remove')} title={t('floor_ramp_remove')}><X size={14} /></button>
+                )}
+              </div>
+            ))}
+            <button type="button" className="floor-qv-ramp-add" disabled={disabled || !canAddRamp} onClick={() => onAddRamp?.()}><Plus size={14} />{t('floor_ramp_add')}</button>
+          </div>
+          <p className="floor-qv-hint"><Move size={13} />{t('floor_ramp_hint')}</p>
+        </div>
+      )}
+
+      {selectedFloor ? (
+        <div className="floor-qv-know">
+          <strong>{t('floor_know_title')}</strong>
+          {footprintEnabled && (
+            <div className="floor-qv-know-row warn"><Info size={15} /><span><b>{t('floor_know_footprint', { color: footprintCaption })}</b> {t('floor_know_footprint_auto')}</span></div>
+          )}
+          <div className="floor-qv-know-row step">
+            <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" d="M1.875 11.25L5.625 11.25L5.625 8.125L9.375 8.125L9.375 5L13.125 5" /></svg>
+            <span>{t('floor_know_step_before')} <b>{formatNumber(selectedFloor.height * 100)} cm</b> {effectiveTrim === 'sloped' ? t('floor_know_step_sloped') : t('floor_know_step_after')}</span>
+          </div>
+          <div className="floor-qv-know-row ok"><Check size={15} /><span>{t('floor_know_price')} <b>{surface} m² × {selectedFloor.price} € HT</b>.</span></div>
+        </div>
+      ) : (
+        <p className="floor-qv-note"><Info size={14} /><span>{footprintEnabled ? `${t('floor_warning')} ` : ''}{t('floor_note_price', { area: surface })}</span></p>
       )}
     </div>
   );
@@ -16258,6 +16566,107 @@ function openTechnicalFloorEdges(layout = 'u') {
   return edges;
 }
 
+function technicalFloorTrimAllowed(floor, trimType = 'straight') {
+  // The sloped aluminium trim is 41 mm high: it only fits the 4 cm floor.
+  return trimType === 'sloped' && Number(floor?.height || 0) <= 0.05 ? 'sloped' : 'straight';
+}
+
+function technicalRampDimensions(floorHeight) {
+  const height = Math.max(0.04, Number(floorHeight || 0.04));
+  return height <= 0.05 ? { width: 1, depth: 0.215, height } : { width: 1, depth: 1, height };
+}
+
+// Slab footprint in floor-local coordinates (group centred on the floor, front edge at +z).
+function technicalFloorSlabBounds(width, floorDepth, layout, trimType = 'straight') {
+  const edges = openTechnicalFloorEdges(layout);
+  const inset = trimType === 'sloped' ? technicalSlopedTrimOverhang : 0;
+  return {
+    minX: -width / 2 + (edges.includes('left') ? inset : 0),
+    maxX: width / 2 - (edges.includes('right') ? inset : 0),
+    minZ: -floorDepth / 2,
+    maxZ: floorDepth / 2 - (edges.includes('front') ? inset : 0),
+    edges,
+  };
+}
+
+function technicalRampOffsetRange(edge, bounds, ramp) {
+  const half = ramp.width / 2;
+  if (edge === 'front') return { min: bounds.minX + half + technicalRampCornerMargin, max: bounds.maxX - half - technicalRampCornerMargin };
+  // Side ramps stop before the front corner so they never cross a front ramp notch.
+  return { min: bounds.minZ + half + technicalRampCornerMargin, max: bounds.maxZ - ramp.depth - half - technicalRampCornerMargin };
+}
+
+function technicalRampEdges(bounds, ramp) {
+  return bounds.edges.filter((edge) => {
+    const range = technicalRampOffsetRange(edge, bounds, ramp);
+    return range.max >= range.min && (edge === 'front' || bounds.maxX - bounds.minX > ramp.depth * 2);
+  });
+}
+
+function technicalRampRect(ramp, bounds, size) {
+  const offset = Number(ramp.offset || 0);
+  if (ramp.edge === 'left') return { minX: bounds.minX, maxX: bounds.minX + size.depth, minZ: offset - size.width / 2, maxZ: offset + size.width / 2 };
+  if (ramp.edge === 'right') return { minX: bounds.maxX - size.depth, maxX: bounds.maxX, minZ: offset - size.width / 2, maxZ: offset + size.width / 2 };
+  return { minX: offset - size.width / 2, maxX: offset + size.width / 2, minZ: bounds.maxZ - size.depth, maxZ: bounds.maxZ };
+}
+
+function legacyTechnicalFloorRamps(options = {}) {
+  if (Array.isArray(options.technicalFloorRamps)) return options.technicalFloorRamps;
+  return [{ id: 'ramp-1', edge: 'front', offset: Number(options.technicalFloorRampX || 0) }];
+}
+
+// Keeps every ramp on an open edge (never against a wall), inside its edge and without overlap.
+function normalizeTechnicalFloorRamps(ramps = [], { width, depth, layout, floor, trimType = 'straight' } = {}) {
+  if (!floor || technicalFloorTrimAllowed(floor, trimType) === 'sloped') return [];
+  const size = technicalRampDimensions(floor.height);
+  const bounds = technicalFloorSlabBounds(width, sceneFloorDepth(layout, depth), layout, 'straight');
+  const edges = technicalRampEdges(bounds, size);
+  if (!edges.length) return [];
+  const byEdge = new Map(edges.map((edge) => [edge, []]));
+  (Array.isArray(ramps) ? ramps : []).forEach((ramp, index) => {
+    const edge = edges.includes(ramp?.edge) ? ramp.edge : edges[0];
+    const range = technicalRampOffsetRange(edge, bounds, size);
+    byEdge.get(edge).push({ id: String(ramp?.id || `ramp-${index + 1}`), edge, offset: clamp(Number(ramp?.offset || 0), range.min, range.max) });
+  });
+  const result = [];
+  byEdge.forEach((list, edge) => {
+    const range = technicalRampOffsetRange(edge, bounds, size);
+    const step = size.width + technicalRampGap;
+    list.sort((a, b) => a.offset - b.offset);
+    for (let index = 1; index < list.length; index += 1) list[index].offset = Math.max(list[index].offset, list[index - 1].offset + step);
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      const limit = index === list.length - 1 ? range.max : list[index + 1].offset - step;
+      list[index].offset = Math.min(list[index].offset, limit);
+    }
+    list.filter((ramp) => ramp.offset >= range.min - 0.001).forEach((ramp) => result.push({ ...ramp, offset: Math.round(ramp.offset * 1000) / 1000 }));
+  });
+  if (!result.length) {
+    const range = technicalRampOffsetRange(edges[0], bounds, size);
+    result.push({ id: 'ramp-1', edge: edges[0], offset: clamp(0, range.min, range.max) });
+  }
+  return result;
+}
+
+// Finds a free spot for an extra ramp, front edge first.
+function nextTechnicalFloorRamp(ramps = [], context = {}) {
+  const { width, depth, layout, floor } = context;
+  if (!floor) return null;
+  const size = technicalRampDimensions(floor.height);
+  const bounds = technicalFloorSlabBounds(width, sceneFloorDepth(layout, depth), layout, 'straight');
+  const step = size.width + technicalRampGap;
+  for (const edge of technicalRampEdges(bounds, size)) {
+    const range = technicalRampOffsetRange(edge, bounds, size);
+    const taken = ramps.filter((ramp) => ramp.edge === edge).map((ramp) => ramp.offset);
+    const candidates = [];
+    for (let offset = range.min; offset <= range.max + 0.0001; offset += 0.05) candidates.push(offset);
+    const center = (range.min + range.max) / 2;
+    candidates.sort((a, b) => Math.abs(a - center) - Math.abs(b - center));
+    const free = candidates.find((offset) => taken.every((other) => Math.abs(other - offset) >= step - 0.0001));
+    if (free !== undefined) return { id: `ramp-${Date.now().toString(36)}`, edge, offset: Math.round(free * 1000) / 1000 };
+  }
+  return null;
+}
+
 function technicalFloorEdgeLabel(edge = '') {
   if (edge === 'front') return 'devant';
   if (edge === 'left') return 'gauche';
@@ -20835,7 +21244,7 @@ function canAnimateSceneDeparture(item) {
   return shopCartItemVisible(item) && !item.autoMeterCover;
 }
 
-function StandScene({ width, depth, height, layout, animationReady = true, items, catalog = [], selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, reserveDoorColorHex = '', wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
+function StandScene({ width, depth, height, layout, animationReady = true, items, catalog = [], selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, reserveDoorColorHex = '', wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRamps = [], onTechnicalFloorRampChange, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const { departures, finishDeparture } = useSceneDepartures(items, canAnimateSceneDeparture);
   const dragPointerOffset = useRef({ x: 0, z: 0 });
@@ -20921,7 +21330,7 @@ function StandScene({ width, depth, height, layout, animationReady = true, items
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
       {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragPointer={dragFromPointer} onDragMove={(point) => onDragMove(applyDragPointerOffset(point, dragPointerOffset.current))} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
       <SceneAssembly phase="floor" ready={animationReady}>
-        <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRampX={technicalFloorRampX} onTechnicalFloorRampX={onTechnicalFloorRampX} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
+        <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRamps={technicalFloorRamps} onTechnicalFloorRampChange={onTechnicalFloorRampChange} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
         <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">{width}m x {depth}m</Text>
       </SceneAssembly>
       <SceneAssembly phase="walls" delay={110} ready={animationReady}>
@@ -21063,7 +21472,7 @@ function SceneConstraintColumn({ constraint }) {
   );
 }
 
-function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRampX = 0, onTechnicalFloorRampX, onTechnicalFloorRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
+function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRamps = [], onTechnicalFloorRampChange, onTechnicalFloorRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
   const floorDepth = sceneFloorDepth(layout, depth);
   const floorCenterZ = sceneFloorCenterZ(layout);
@@ -21071,239 +21480,343 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
   const footprintTexture = useRepeatedTexture(colorTextureUrl(carpetFootprintColor || carpetColor), footprint.width, footprint.depth);
   const carpetHex = colorHex(carpetColor, '#bebebe');
   const footprintHex = colorHex(carpetFootprintColor || carpetColor, carpetHex);
-  const slabHeight = technicalFloor?.height || floorThickness;
-  const rampDimensions = technicalFloor ? technicalRampDimensions(width, slabHeight) : null;
-  const rampLimit = rampDimensions ? Math.max(0, width / 2 - rampDimensions.width / 2) : 0;
-  const resolvedRampX = rampDimensions ? clamp(Number(technicalFloorRampX || 0), -rampLimit, rampLimit) : 0;
-  const openEdges = technicalFloor ? openTechnicalFloorEdges(layout) : [];
-  const slabSegments = technicalFloor && rampDimensions
-    ? technicalFloorSlabSegments(width, floorDepth, rampDimensions, resolvedRampX, openEdges, technicalFloorTrimType === 'sloped' ? slabHeight : 0.04)
-    : [{ id: 'full', width, depth: floorDepth, centerX: 0, centerZ: 0 }];
 
   return (
     <group>
       <group position={[0, 0, floorCenterZ]}>
-        {slabSegments.map((segment) => (
-          <mesh key={segment.id} receiveShadow position={[segment.centerX, -slabHeight / 2, segment.centerZ]}>
-            <boxGeometry args={[segment.width, slabHeight, segment.depth]} />
+        {technicalFloor ? (
+          <TechnicalFloorSlab
+            width={width}
+            depth={floorDepth}
+            layout={layout}
+            floor={technicalFloor}
+            trimType={technicalFloorTrimAllowed(technicalFloor, technicalFloorTrimType)}
+            ramps={technicalFloorRamps}
+            carpetColor={carpetColor}
+            onRampChange={onTechnicalFloorRampChange}
+            onRampDragChange={onTechnicalFloorRampDragChange}
+            interactive={interactive}
+            sceneOffset={[sceneOffset[0], sceneOffset[1], sceneOffset[2] - floorCenterZ]}
+          />
+        ) : (
+          <mesh receiveShadow position={[0, -floorThickness / 2, 0]}>
+            <boxGeometry args={[width, floorThickness, floorDepth]} />
             <meshStandardMaterial color={carpetTexture ? '#ffffff' : carpetHex} map={carpetTexture || null} roughness={0.88} allowOverride={false} />
           </mesh>
-        ))}
-        {technicalFloor && <TechnicalFloorAccessories width={width} depth={floorDepth} layout={layout} height={slabHeight} trimType={technicalFloorTrimType} rampX={technicalFloorRampX} onRampXChange={onTechnicalFloorRampX} onRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={[sceneOffset[0], sceneOffset[1], sceneOffset[2] - floorCenterZ]} />}
+        )}
       </group>
       {carpetFootprintEnabled && (
-        <>
-          <mesh receiveShadow position={[footprint.centerX, 0.012, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
-            <planeGeometry args={[footprint.width, footprint.depth]} />
-            <meshStandardMaterial color={footprintTexture ? '#ffffff' : footprintHex} map={footprintTexture || null} roughness={0.88} allowOverride={false} />
-          </mesh>
-        </>
+        <mesh receiveShadow position={[footprint.centerX, 0.012, footprint.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[footprint.width, footprint.depth]} />
+          <meshStandardMaterial color={footprintTexture ? '#ffffff' : footprintHex} map={footprintTexture || null} roughness={0.88} allowOverride={false} />
+        </mesh>
       )}
     </group>
   );
 }
 
-function technicalRampDimensions(width, floorHeight) {
-  const height = Math.max(0.04, Number(floorHeight || 0.04));
-  return {
-    depth: height <= 0.05 ? 0.7 : 1.25,
-    width: Math.min(1.4, Math.max(0.9, Number(width || 0) * 0.25)),
-  };
+// Outline of the raised slab (shape space: x = world x, y = world z), with one notch per ramp.
+function technicalFloorSlabOutline(bounds, ramps = [], size = null) {
+  const { minX, maxX, minZ, maxZ } = bounds;
+  const rampDepth = Number(size?.depth || 0);
+  const half = Number(size?.width || 0) / 2;
+  const onEdge = (edge) => ramps.filter((ramp) => ramp.edge === edge);
+  const points = [[minX, minZ], [maxX, minZ]];
+  onEdge('right').sort((a, b) => a.offset - b.offset).forEach((ramp) => {
+    points.push([maxX, ramp.offset - half], [maxX - rampDepth, ramp.offset - half], [maxX - rampDepth, ramp.offset + half], [maxX, ramp.offset + half]);
+  });
+  points.push([maxX, maxZ]);
+  onEdge('front').sort((a, b) => b.offset - a.offset).forEach((ramp) => {
+    points.push([ramp.offset + half, maxZ], [ramp.offset + half, maxZ - rampDepth], [ramp.offset - half, maxZ - rampDepth], [ramp.offset - half, maxZ]);
+  });
+  points.push([minX, maxZ]);
+  onEdge('left').sort((a, b) => b.offset - a.offset).forEach((ramp) => {
+    points.push([minX, ramp.offset + half], [minX + rampDepth, ramp.offset + half], [minX + rampDepth, ramp.offset - half], [minX, ramp.offset - half]);
+  });
+  return points;
 }
 
-function technicalFloorSlabSegments(width, depth, rampDimensions, rampX = 0, edges = [], edgeInset = 0.04) {
-  const rampWidth = Number(rampDimensions?.width || 0);
-  const rampDepth = Number(rampDimensions?.depth || 0);
-  const inset = Math.max(0, Number(edgeInset || 0));
-  const minX = -width / 2 + (edges.includes('left') ? inset : 0);
-  const maxX = width / 2 - (edges.includes('right') ? inset : 0);
-  const minZ = -depth / 2;
-  const maxZ = depth / 2 - (edges.includes('front') ? inset : 0);
-  const safeWidth = Math.max(0.01, maxX - minX);
-  const safeDepth = Math.max(0.01, maxZ - minZ);
-  if (!rampWidth || !rampDepth) {
-    return [{ id: 'inset-full', width: safeWidth, depth: safeDepth, centerX: (minX + maxX) / 2, centerZ: (minZ + maxZ) / 2 }];
-  }
-
-  const rampMinX = Math.max(minX, rampX - rampWidth / 2);
-  const rampMaxX = Math.min(maxX, rampX + rampWidth / 2);
-  const rampBackZ = Math.max(minZ, depth / 2 - rampDepth);
-  const segments = [];
-  const addSegment = (id, left, right, back, front) => {
-    const segmentWidth = right - left;
-    const segmentDepth = front - back;
-    if (segmentWidth <= 0.01 || segmentDepth <= 0.01) return;
-    segments.push({
-      id,
-      width: segmentWidth,
-      depth: segmentDepth,
-      centerX: (left + right) / 2,
-      centerZ: (back + front) / 2,
+// Straight runs of trim along the open edges, interrupted by the ramp notches whose sides get their own trim.
+function technicalFloorTrimRuns(bounds, ramps = [], size = null) {
+  const runs = [];
+  const half = Number(size?.width || 0) / 2;
+  const rampDepth = Number(size?.depth || 0);
+  bounds.edges.forEach((edge) => {
+    const along = edge === 'front' ? [bounds.minX, bounds.maxX] : [bounds.minZ, bounds.maxZ];
+    const gaps = ramps.filter((ramp) => ramp.edge === edge).map((ramp) => [ramp.offset - half, ramp.offset + half]).sort((a, b) => a[0] - b[0]);
+    let cursor = along[0];
+    gaps.forEach(([gapStart, gapEnd]) => {
+      if (gapStart - cursor > 0.01) runs.push({ edge, start: cursor, end: gapStart });
+      cursor = Math.max(cursor, gapEnd);
     });
-  };
-
-  addSegment('left', minX, rampMinX, minZ, maxZ);
-  addSegment('right', rampMaxX, maxX, minZ, maxZ);
-  addSegment('back', rampMinX, rampMaxX, minZ, Math.min(maxZ, rampBackZ));
-  return segments.length ? segments : [{ id: 'inset-full', width: safeWidth, depth: safeDepth, centerX: (minX + maxX) / 2, centerZ: (minZ + maxZ) / 2 }];
+    if (along[1] - cursor > 0.01) runs.push({ edge, start: cursor, end: along[1] });
+  });
+  // Notch sides: trims facing into the ramp opening, from the edge to the ramp head.
+  ramps.forEach((ramp) => {
+    const a = ramp.offset - half;
+    const b = ramp.offset + half;
+    if (ramp.edge === 'front') {
+      runs.push({ edge: 'notch', origin: [a, bounds.maxZ], direction: [0, -1], outward: [1, 0], length: rampDepth });
+      runs.push({ edge: 'notch', origin: [b, bounds.maxZ - rampDepth], direction: [0, 1], outward: [-1, 0], length: rampDepth });
+    } else if (ramp.edge === 'left') {
+      runs.push({ edge: 'notch', origin: [bounds.minX, a], direction: [1, 0], outward: [0, 1], length: rampDepth });
+      runs.push({ edge: 'notch', origin: [bounds.minX + rampDepth, b], direction: [-1, 0], outward: [0, -1], length: rampDepth });
+    } else {
+      runs.push({ edge: 'notch', origin: [bounds.maxX - rampDepth, a], direction: [1, 0], outward: [0, 1], length: rampDepth });
+      runs.push({ edge: 'notch', origin: [bounds.maxX, b], direction: [-1, 0], outward: [0, -1], length: rampDepth });
+    }
+  });
+  return runs;
 }
 
-function TechnicalFloorAccessories({ width, depth, layout, height, trimType, rampX = 0, onRampXChange, onRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
-  const [draggingRamp, setDraggingRamp] = useState(false);
-  const edges = openTechnicalFloorEdges(layout);
-  const trimHeight = Math.max(0.04, Number(height || 0.04));
+// Placement (origin + yaw) of an OBJ piece whose length runs on local +x and whose inside is local -z.
+function technicalEdgePlacement(edge, bounds, along) {
+  if (edge === 'left') return { position: [bounds.minX, along], rotationY: -Math.PI / 2 };
+  if (edge === 'right') return { position: [bounds.maxX, along], rotationY: Math.PI / 2 };
+  return { position: [along, bounds.maxZ], rotationY: 0 };
+}
+
+const _technicalFloorGeometryCache = new Map();
+
+function loadTechnicalFloorGeometry(url) {
+  if (_technicalFloorGeometryCache.has(url)) return _technicalFloorGeometryCache.get(url);
+  const entry = { geometry: null, material: null, error: null };
+  if (url.toLowerCase().split('?')[0].endsWith('.glb')) {
+    entry.promise = new GLTFLoader().loadAsync(url).then((gltf) => {
+      let source = null;
+      gltf.scene.updateMatrixWorld(true);
+      gltf.scene.traverse((child) => { if (!source && child.isMesh && child.geometry) source = child; });
+      if (!source) throw new Error(`GLB sans maillage : ${url}`);
+      const geometry = source.geometry.clone();
+      geometry.applyMatrix4(source.matrixWorld); // already in metres
+      geometry.computeBoundingBox();
+      const material = (Array.isArray(source.material) ? source.material[0] : source.material).clone();
+      // Single-sided, pulled slightly towards the camera so it never fights with the carpet or slab edge.
+      material.side = FrontSide;
+      material.polygonOffset = true;
+      material.polygonOffsetFactor = -1;
+      material.polygonOffsetUnits = -1;
+      entry.geometry = geometry;
+      entry.material = material;
+    }).catch((error) => {
+      entry.error = error;
+      logTextureDiagnostic('Technical floor asset unavailable', { url, error });
+    });
+    _technicalFloorGeometryCache.set(url, entry);
+    return entry;
+  }
+  entry.promise = new OBJLoader().loadAsync(url).then((group) => {
+    const geometries = [];
+    group.updateMatrixWorld(true);
+    group.traverse((child) => {
+      if (!child.isMesh || !child.geometry) return;
+      const geometry = child.geometry.clone();
+      geometry.applyMatrix4(child.matrixWorld);
+      if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+      geometries.push(geometry);
+    });
+    const merged = geometries.length > 1 ? (mergeGeometries(geometries.map((geometry) => (geometry.index ? geometry.toNonIndexed() : geometry)), false) || geometries[0]) : geometries[0];
+    if (!merged) throw new Error(`OBJ sans maillage : ${url}`);
+    merged.scale(0.001, 0.001, 0.001); // SketchUp export in millimetres
+    merged.computeBoundingBox();
+    entry.geometry = merged;
+  }).catch((error) => {
+    entry.error = error;
+    logTextureDiagnostic('Technical floor asset unavailable', { url, error });
+  });
+  _technicalFloorGeometryCache.set(url, entry);
+  return entry;
+}
+
+// Always reads the cache entry of the *current* url: when the url changes (e.g. straight -> sloped trim)
+// the previous asset is never returned with the next one's missing material.
+function useTechnicalFloorAsset(url) {
+  const entry = loadTechnicalFloorGeometry(url);
+  const [, setLoadedUrl] = useState(entry.geometry ? url : '');
+  useEffect(() => {
+    let active = true;
+    const current = loadTechnicalFloorGeometry(url);
+    if (!current.geometry) current.promise.then(() => { if (active) setLoadedUrl(url); });
+    return () => { active = false; };
+  }, [url]);
+  return entry;
+}
+
+function useTechnicalFloorGeometry(url) {
+  return useTechnicalFloorAsset(url).geometry;
+}
+
+// Ramp OBJ with world-scale UVs on its walking surface so the carpet matches the slab.
+function useTechnicalRampGeometry(url) {
+  const source = useTechnicalFloorGeometry(url);
+  return useMemo(() => {
+    if (!source) return null;
+    const geometry = source.clone();
+    const position = geometry.getAttribute('position');
+    const uv = new Float32Array(position.count * 2);
+    for (let index = 0; index < position.count; index += 1) {
+      uv[index * 2] = position.getX(index);
+      uv[index * 2 + 1] = -position.getZ(index);
+    }
+    geometry.setAttribute('uv', new Float32BufferAttribute(uv, 2));
+    return geometry;
+  }, [source]);
+}
+
+function TechnicalFloorSlab({ width, depth, layout, floor, trimType, ramps = [], carpetColor, onRampChange, onRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
+  const height = Math.max(0.04, Number(floor?.height || 0.04));
   const sloped = trimType === 'sloped';
-  const trimDepth = sloped ? trimHeight : 0.04;
-  const { depth: rampDepth, width: rampWidth } = technicalRampDimensions(width, trimHeight);
-  const rampLimit = Math.max(0, width / 2 - rampWidth / 2);
-  const resolvedRampX = clamp(Number(rampX || 0), -rampLimit, rampLimit);
-  const moveRamp = (event) => {
-    if (!interactive || !draggingRamp || !onRampXChange) return;
-    event.stopPropagation();
-    const floorPoint = new Vector3();
-    event.ray.intersectPlane(floorPlane, floorPoint);
-    onRampXChange(clamp(floorPoint.x - sceneOffset[0], -rampLimit, rampLimit));
-  };
+  const bounds = useMemo(() => technicalFloorSlabBounds(width, depth, layout, trimType), [width, depth, layout, trimType]);
+  const activeRamps = sloped ? [] : ramps;
+  const rampSize = technicalRampDimensions(height);
+  // One carpet repeat per metre: the slab and ramps use world-unit UVs.
+  const carpetTexture = useRepeatedTexture(colorTextureUrl(carpetColor), 1, 1);
+  const carpetHex = colorHex(carpetColor, '#bebebe');
+  const rampKey = activeRamps.map((ramp) => `${ramp.edge}:${ramp.offset}`).join('|');
+  const slabGeometry = useMemo(() => {
+    const outline = technicalFloorSlabOutline(bounds, activeRamps, rampSize);
+    const shape = new Shape(outline.map(([x, z]) => new Vector2(x, z)));
+    const geometry = new ExtrudeGeometry(shape, { depth: height, bevelEnabled: false });
+    // Shape y is world z; extrusion runs downward from the carpet level.
+    geometry.rotateX(Math.PI / 2);
+    return geometry;
+  }, [bounds, rampKey, height, rampSize.depth, rampSize.width]);
+  useEffect(() => () => slabGeometry.dispose(), [slabGeometry]);
+  const carpetMaterialProps = { color: carpetTexture ? '#ffffff' : carpetHex, map: carpetTexture || null, roughness: 0.88 };
 
   return (
     <group>
-      {edges.includes('front') && <TechnicalTrim edge="front" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} gapCenter={resolvedRampX} gapWidth={sloped ? 0 : rampWidth + 0.08} hasLeftEdge={edges.includes('left')} hasRightEdge={edges.includes('right')} />}
-      {edges.includes('left') && <TechnicalTrim edge="left" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} hasFrontEdge={edges.includes('front')} />}
-      {edges.includes('right') && <TechnicalTrim edge="right" width={width} depth={depth} height={trimHeight} thickness={trimDepth} sloped={sloped} hasFrontEdge={edges.includes('front')} />}
-      {!sloped && <mesh
-          castShadow
-          receiveShadow
-          position={[resolvedRampX, -trimHeight, depth / 2 - rampDepth / 2]}
-          onPointerDown={(event) => {
-            if (!interactive || !onRampXChange) return;
-            event.stopPropagation();
-            event.target.setPointerCapture?.(event.pointerId);
-            setDraggingRamp(true);
-            onRampDragChange?.(true);
-          }}
-          onPointerMove={moveRamp}
-          onPointerUp={(event) => {
-            event.stopPropagation();
-            event.target.releasePointerCapture?.(event.pointerId);
-            setDraggingRamp(false);
-            onRampDragChange?.(false);
-          }}
-          onPointerCancel={() => {
-            setDraggingRamp(false);
-            onRampDragChange?.(false);
-          }}
-        >
-          <RampGeometry width={rampWidth} depth={rampDepth} height={trimHeight} includeBackFace={false} />
-          <meshStandardMaterial color={draggingRamp ? '#b9c5d4' : '#d9dde2'} roughness={0.55} metalness={0.05} />
-        </mesh>}
+      <mesh geometry={slabGeometry} receiveShadow castShadow>
+        <meshStandardMaterial attach="material-0" {...carpetMaterialProps} allowOverride={false} />
+        {/* Outer faces: white skirting (plinthes blanches) below the aluminium trim. */}
+        <meshStandardMaterial attach="material-1" color="#f4f5f7" roughness={0.62} allowOverride={false} />
+      </mesh>
+      <TechnicalFloorTrims bounds={bounds} ramps={activeRamps} rampSize={rampSize} height={height} sloped={sloped} />
+      {activeRamps.map((ramp) => (
+        <TechnicalFloorRamp
+          key={ramp.id}
+          ramp={ramp}
+          ramps={activeRamps}
+          bounds={bounds}
+          size={rampSize}
+          carpetMaterialProps={carpetMaterialProps}
+          onRampChange={onRampChange}
+          onRampDragChange={onRampDragChange}
+          interactive={interactive}
+          sceneOffset={sceneOffset}
+        />
+      ))}
     </group>
   );
 }
 
-function RampGeometry({ width, depth, height, yOffset = 0.006, includeBackFace = true, includeBottomFace = true }) {
-  const geometry = useMemo(() => {
-    const w = Math.max(0.2, Number(width || 1));
-    const d = Math.max(0.2, Number(depth || 0.8));
-    const h = Math.max(0.02, Number(height || 0.04));
-    const x0 = -w / 2;
-    const x1 = w / 2;
-    const zFront = d / 2;
-    const zBack = -d / 2;
-    const yLow = Number(yOffset || 0);
-    const yHigh = h + Number(yOffset || 0);
-    const positions = [
-      // Sloped walking surface: low at the entrance, high inside the stand.
-      x0, yLow, zFront, x1, yLow, zFront, x1, yHigh, zBack,
-      x0, yLow, zFront, x1, yHigh, zBack, x0, yHigh, zBack,
-      // Left side.
-      x0, yLow, zFront, x0, yHigh, zBack, x0, yLow, zBack,
-      // Right side.
-      x1, yLow, zFront, x1, yLow, zBack, x1, yHigh, zBack,
-    ];
-    if (includeBackFace) {
-      positions.push(
-        x0, yLow, zBack, x1, yLow, zBack, x1, yHigh, zBack,
-        x0, yLow, zBack, x1, yHigh, zBack, x0, yHigh, zBack,
-      );
+function TechnicalFloorTrims({ bounds, ramps, rampSize, height, sloped }) {
+  const trimUrl = sloped ? technicalFloorAssets.trimSloped : technicalFloorAssets.trimStraight;
+  const { geometry, material } = useTechnicalFloorAsset(trimUrl);
+  const runs = useMemo(() => technicalFloorTrimRuns(bounds, ramps, rampSize), [bounds, ramps, rampSize]);
+  if (!geometry || !material) return null;
+  const pieceLength = Math.max(0.001, geometry.boundingBox.max.x - geometry.boundingBox.min.x);
+  const pieceHeight = Math.max(0.001, geometry.boundingBox.max.y - geometry.boundingBox.min.y);
+  // Top of the trim sits flush with the carpet (+1-2 mm); the 12 cm floor shows the white skirting underneath.
+  const baseY = sloped ? -height : -pieceHeight + 0.002;
+  const pieces = [];
+  runs.forEach((run, runIndex) => {
+    const total = run.edge === 'notch' ? run.length : run.end - run.start;
+    const count = Math.max(1, Math.ceil(total / pieceLength - 0.001));
+    for (let index = 0; index < count; index += 1) {
+      const start = index * pieceLength;
+      const length = Math.min(pieceLength, total - start);
+      if (length <= 0.005) continue;
+      let position;
+      let rotationY;
+      if (run.edge === 'notch') {
+        position = [run.origin[0] + run.direction[0] * start, run.origin[1] + run.direction[1] * start];
+        // Local +x follows the run, local -z points away from the opening (into the slab).
+        rotationY = Math.atan2(-run.direction[1], run.direction[0]);
+      } else {
+        // On the right edge the piece's local +x runs towards the back, so start from the front end.
+        const along = run.edge === 'right' ? run.end - start : run.start + start;
+        ({ position, rotationY } = technicalEdgePlacement(run.edge, bounds, along));
+        if (sloped) {
+          const outward = run.edge === 'front' ? [0, 1] : run.edge === 'left' ? [-1, 0] : [1, 0];
+          position = [position[0] + outward[0] * technicalSlopedTrimOverhang, position[1] + outward[1] * technicalSlopedTrimOverhang];
+        }
+      }
+      pieces.push({ key: `${runIndex}-${index}`, position, rotationY, length });
     }
-    if (includeBottomFace) {
-      positions.push(
-        x0, yLow, zFront, x0, yLow, zBack, x1, yLow, zBack,
-        x0, yLow, zFront, x1, yLow, zBack, x1, yLow, zFront,
-      );
-    }
-    const rampGeometry = new BufferGeometry();
-    rampGeometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
-    rampGeometry.computeVertexNormals();
-    return rampGeometry;
-  }, [width, depth, height, yOffset, includeBackFace, includeBottomFace]);
+  });
 
-  return <primitive object={geometry} attach="geometry" />;
+  return (
+    <group>
+      {pieces.map((piece) => (
+        <mesh key={piece.key} geometry={geometry} material={material} castShadow receiveShadow position={[piece.position[0], baseY, piece.position[1]]} rotation={[0, piece.rotationY, 0]} scale={[piece.length / pieceLength, sloped ? height / pieceHeight : 1, 1]} />
+      ))}
+    </group>
+  );
 }
 
-function TechnicalTrim({ edge, width, depth, height, thickness, sloped, gapCenter = 0, gapWidth = 0, hasFrontEdge = false, hasLeftEdge = false, hasRightEdge = false }) {
-  const isFront = edge === 'front';
-  const length = isFront ? width : depth;
-  const materialColor = sloped ? '#c7ccd2' : '#eef1f4';
+function TechnicalFloorRamp({ ramp, ramps, bounds, size, carpetMaterialProps, onRampChange, onRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
+  const geometry = useTechnicalRampGeometry(size.depth < 0.5 ? technicalFloorAssets.ramp4 : technicalFloorAssets.ramp12);
+  const [dragging, setDragging] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const editable = interactive && Boolean(onRampChange);
+  if (!geometry) return null;
+  const sourceWidth = Math.max(0.001, geometry.boundingBox.max.x - geometry.boundingBox.min.x);
+  const sourceDepth = Math.max(0.001, geometry.boundingBox.max.z - geometry.boundingBox.min.z);
+  const sourceHeight = Math.max(0.001, geometry.boundingBox.max.y - geometry.boundingBox.min.y);
+  // Origin of the OBJ is the low outer corner: shift it so the ramp is centred on its offset.
+  const placement = technicalEdgePlacement(ramp.edge, bounds, ramp.edge === 'right' ? ramp.offset + size.width / 2 : ramp.offset - size.width / 2);
+  const releaseDrag = (event) => {
+    event?.stopPropagation?.();
+    event?.target?.releasePointerCapture?.(event.pointerId);
+    setDragging(false);
+    onRampDragChange?.(false);
+  };
+  const moveRamp = (event) => {
+    if (!editable || !dragging) return;
+    event.stopPropagation();
+    const point = new Vector3();
+    if (!event.ray.intersectPlane(floorPlane, point)) return;
+    const x = point.x - sceneOffset[0];
+    const z = point.z - sceneOffset[2];
+    // Snap to the closest open side (walls are never candidates).
+    const candidates = technicalRampEdges(bounds, size).map((edge) => {
+      const distance = edge === 'front' ? Math.abs(bounds.maxZ - z) : edge === 'left' ? Math.abs(x - bounds.minX) : Math.abs(bounds.maxX - x);
+      return { edge, distance };
+    }).sort((a, b) => a.distance - b.distance);
+    const edge = candidates[0]?.edge;
+    if (!edge) return;
+    const range = technicalRampOffsetRange(edge, bounds, size);
+    const offset = clamp(edge === 'front' ? x : z, range.min, range.max);
+    const blocked = ramps.some((other) => other.id !== ramp.id && other.edge === edge && Math.abs(other.offset - offset) < size.width + technicalRampGap);
+    if (blocked) return;
+    onRampChange(ramp.id, { edge, offset: Math.round(offset * 1000) / 1000 });
+  };
 
-  if (sloped) {
-    const slopeDepth = Math.max(0.02, Number(thickness || height || 0.04));
-    const cornerInsetLeft = isFront && hasLeftEdge ? slopeDepth : 0;
-    const cornerInsetRight = isFront && hasRightEdge ? slopeDepth : 0;
-    const frontInset = !isFront && hasFrontEdge ? slopeDepth : 0;
-    const effectiveLength = Math.max(0.02, length - cornerInsetLeft - cornerInsetRight - frontInset);
-    const position = isFront
-      ? [(cornerInsetLeft - cornerInsetRight) / 2, -height, depth / 2 - slopeDepth / 2]
-      : [
-        edge === 'left' ? -width / 2 + slopeDepth / 2 : width / 2 - slopeDepth / 2,
-        -height,
-        -frontInset / 2,
-      ];
-    const rotation = isFront ? [0, 0, 0] : [0, edge === 'left' ? -Math.PI / 2 : Math.PI / 2, 0];
-    return (
-      <mesh castShadow receiveShadow position={position} rotation={rotation}>
-        <RampGeometry width={effectiveLength} depth={slopeDepth} height={height} yOffset={0.001} includeBackFace={false} includeBottomFace={false} />
-        <meshStandardMaterial color={materialColor} roughness={0.52} metalness={0.04} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
-      </mesh>
-    );
-  }
-
-  if (isFront && gapWidth > 0) {
-    const gapMin = clamp(Number(gapCenter || 0) - gapWidth / 2, -width / 2, width / 2);
-    const gapMax = clamp(Number(gapCenter || 0) + gapWidth / 2, -width / 2, width / 2);
-    const segments = [
-      { id: 'left', min: -width / 2, max: gapMin },
-      { id: 'right', min: gapMax, max: width / 2 },
-    ].filter((segment) => segment.max - segment.min > 0.02);
-
-    return (
-      <group>
-        {segments.map((segment) => {
-          const segmentLength = segment.max - segment.min;
-          return (
-            <mesh
-              key={segment.id}
-              castShadow
-              receiveShadow
-              position={[(segment.min + segment.max) / 2, -height / 2, depth / 2 - thickness / 2]}
-            >
-              <boxGeometry args={[segmentLength, height, thickness]} />
-              <meshStandardMaterial color={materialColor} roughness={0.48} metalness={0.08} />
-            </mesh>
-          );
-        })}
-      </group>
-    );
-  }
-
-  const position = edge === 'front'
-    ? [0, -height / 2, depth / 2 - thickness / 2]
-    : [edge === 'left' ? -width / 2 + thickness / 2 : width / 2 - thickness / 2, -height / 2, 0];
-  const size = isFront ? [length, height, thickness] : [thickness, height, length];
   return (
-    <mesh castShadow receiveShadow position={position}>
-      <boxGeometry args={size} />
-      <meshStandardMaterial color={materialColor} roughness={0.48} metalness={0.08} />
+    <mesh
+      name={`technical-floor-ramp-${ramp.id}`}
+      geometry={geometry}
+      castShadow
+      receiveShadow
+      position={[placement.position[0], -size.height, placement.position[1]]}
+      rotation={[0, placement.rotationY, 0]}
+      scale={[size.width / sourceWidth, size.height / sourceHeight, size.depth / sourceDepth]}
+      onPointerOver={(event) => { if (!editable) return; event.stopPropagation(); setHovered(true); document.body.style.cursor = 'grab'; }}
+      onPointerOut={() => { setHovered(false); if (!dragging) document.body.style.cursor = ''; }}
+      onPointerDown={(event) => {
+        if (!editable) return;
+        event.stopPropagation();
+        event.target.setPointerCapture?.(event.pointerId);
+        setDragging(true);
+        document.body.style.cursor = 'grabbing';
+        onRampDragChange?.(true);
+      }}
+      onPointerMove={moveRamp}
+      onPointerUp={(event) => { releaseDrag(event); document.body.style.cursor = hovered ? 'grab' : ''; }}
+      onPointerCancel={() => releaseDrag(null)}
+    >
+      <meshStandardMaterial {...carpetMaterialProps} color={dragging || hovered ? '#dbe6f7' : carpetMaterialProps.color} emissive={dragging ? '#1f4378' : '#000000'} emissiveIntensity={dragging ? 0.12 : 0} side={DoubleSide} allowOverride={false} />
     </mesh>
   );
 }

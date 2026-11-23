@@ -48,9 +48,11 @@ const fragmentShader = `
   }
 `;
 
-export default function PresentationGround() {
+// `lowered` drops the hall floor under a raised technical floor so the slab and its ramps sit on it.
+export default function PresentationGround({ lowered = 0 }) {
+  const drop = Math.max(0, Number(lowered) || 0);
   return (
-    <mesh position={[0, -0.035, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
+    <mesh position={[0, drop > 0 ? -drop - 0.003 : -0.035, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
       <planeGeometry args={[40, 40]} />
       <shaderMaterial vertexShader={vertexShader} fragmentShader={fragmentShader} transparent depthWrite={false} toneMapped={false} allowOverride={false} />
     </mesh>

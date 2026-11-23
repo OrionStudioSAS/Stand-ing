@@ -41,7 +41,7 @@ test('studio lighting does not replace the black backdrop and textured ground', 
   assert.ok(start >= 0 && end > start);
   assert.match(canvas, /gl=\{\{ alpha: true \}\}/);
   assert.match(canvas, /<color attach="background" args=\{\['#050506'\]\} \/>/);
-  assert.match(canvas, /<PresentationGround \/>/);
+  assert.match(canvas, /<PresentationGround(?: lowered=\{[^}]+\})? \/>/);
   assert.match(stylesSource, /\.configurator-stage\s*\{[^}]*background: #050506/);
   assert.match(groundSource, /function PresentationGround\([\s\S]*<planeGeometry args=\{\[40, 40\]\}/);
   assert.equal((appSource.match(/<PresentationGround\b/g) || []).length, 2);
