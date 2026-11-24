@@ -52,3 +52,28 @@ test('plastic and painted finishes are not reclassified and tinted as bare alumi
     assert.equal(api.isAluminiumMaterial({ name }), true, name);
   }
 });
+
+test('electrical white overrides also upgrade legacy grey Phong finishes to studio PBR', () => {
+  const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const api = vm.createContext({ studioWhiteFinishMaterial });
+  for (const name of ['materialWithColor', 'brightenElectricalMaterial']) {
+    const start = source.indexOf(`function ${name}(`);
+    vm.runInContext(source.slice(start, source.indexOf('\n}\n', start) + 2), api);
+  }
+  for (const original of [
+    new MeshPhongMaterial({ name: 'Metal_Painted_Red_5cm', color: '#d8d8d8' }),
+    new MeshPhongMaterial({ name: 'Alu_tridi', color: '#808080', map: new Texture() }),
+    new MeshStandardMaterial({ name: 'Socket', color: '#ffffff', metalness: .5 }),
+  ]) {
+    const color = original.color.getHexString(), map = original.map;
+    const result = api.brightenElectricalMaterial(original);
+    assert.ok(result.isMeshStandardMaterial);
+    assert.equal(result.color.getHexString(), 'ffffff');
+    assert.equal(result.metalness, 0);
+    assert.equal(result.emissive.getHexString(), 'ffffff');
+    assert.equal(result.emissiveIntensity, .22);
+    assert.equal(result.map, null);
+    assert.equal(original.color.getHexString(), color, 'Shared source colors remain unchanged');
+    assert.equal(original.map, map, 'Shared source textures remain unchanged');
+  }
+});

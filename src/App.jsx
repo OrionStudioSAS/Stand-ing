@@ -22197,10 +22197,13 @@ function ObjModel({ item, selected, hovered, dragging }) {
   const model = useMemo(() => {
     if (!obj) return null;
     const clone = obj.clone(true);
+    const electricalWhite = isElectricalWhiteItem(item);
     const material = new MeshStandardMaterial({
       color: activeColor(selected, dragging, defaultModelColor(item)),
       roughness: defaultModelRoughness(item),
       metalness: defaultModelMetalness(item),
+      emissive: electricalWhite ? '#ffffff' : '#000000',
+      emissiveIntensity: electricalWhite ? 0.22 : 0,
       side: DoubleSide,
       ...hoverMaterialProps(selected, hovered),
     });
@@ -22518,7 +22521,7 @@ function isElectricalWhiteItem(item = {}) {
 }
 
 function brightenElectricalMaterial(material) {
-  const cloned = materialWithColor(material, '#ffffff');
+  const cloned = studioWhiteFinishMaterial(materialWithColor(material, '#ffffff'), { label: 'White electrical finish' });
   if ('roughness' in cloned) cloned.roughness = 0.22;
   if ('metalness' in cloned) cloned.metalness = 0;
   if (cloned.emissive?.set) cloned.emissive.set('#ffffff');
@@ -23207,7 +23210,7 @@ function defaultModelColor(item) {
 
 function defaultModelMetalness(item) {
   const text = normalizeTextValue(`${item?.type || ''} ${item?.label || ''}`);
-  if (text.includes('alimentation') || text.includes('multiprise') || text.includes('triplette')) return 0.01;
+  if (text.includes('alimentation') || text.includes('multiprise') || text.includes('triplette')) return 0;
   return /porte[-_ ]?doc/i.test(item?.type || item?.label || '') ? 0.35 : 0.03;
 }
 

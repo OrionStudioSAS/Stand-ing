@@ -17,6 +17,14 @@ const fixtures = [
   materialUrl: file.endsWith('.obj') ? storage + type + '/' + file.replace('.obj', '.mtl') : null,
   x: (index - 2) * 1.5, z: 0, rotation: 0, dimensions: { size }, options: {},
 }));
+for (const [index, withMaterials] of [true, false].entries()) {
+  const root = storage + 'asset-triplette-mqsb0l9j/';
+  fixtures.push({
+    id: withMaterials ? 'triplette' : 'triplette-no-mtl', label: 'Triplette', type: 'asset-triplette-mqsb0l9j',
+    modelUrl: root + 'triplette.obj', materialUrl: withMaterials ? root + 'triplette.mtl' : null,
+    x: -.55 + index * 1.1, z: 1.3, rotation: 0, dimensions: { size: [.23, .05, .13] }, options: {},
+  });
+}
 const output = process.env.WHITE_FINISH_SCREENSHOTS || resolve(tmpdir(), 'standing-white-finish');
 await mkdir(output, { recursive: true });
 const appId = resolve('src/__white-finish-app.jsx');
@@ -26,7 +34,7 @@ const harness = `
 import React, { Suspense, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas, useThree } from '@react-three/fiber';
-import { Vector3 } from 'three';
+import { Raycaster, Vector3 } from 'three';
 import { SceneItem } from '/src/__white-finish-app.jsx';
 import { StudioLighting } from '/src/StudioLighting.jsx';
 const fixtures = ${JSON.stringify(fixtures)};
@@ -40,7 +48,8 @@ function Probe() {
         const result = materials[group.userData.itemId] = {};
         group.traverse((mesh) => {
           for (const material of [].concat(mesh.material || [])) {
-            if (material.name) result[material.name] = { color: material.color?.getHexString(), type: material.type, metalness: material.metalness, roughness: material.roughness, emissive: material.emissive?.getHexString(), emissiveIntensity: material.emissiveIntensity, map: !!material.map?.image };
+            if (material.opacity === 0) continue;
+            result[material.name || '__default__'] = { color: material.color?.getHexString(), type: material.type, metalness: material.metalness, roughness: material.roughness, emissive: material.emissive?.getHexString(), emissiveIntensity: material.emissiveIntensity, map: !!material.map?.image };
           }
         });
       });
@@ -52,6 +61,20 @@ function Probe() {
         return [...pixel];
       };
       const pixels = { podiumFront: sample([-3, .5, .251]), podiumSide: sample([-2.749, .5, 0]), podiumTop: sample([-3, 1.001, 0]), blackFront: sample([-1.5, .5, .251]), icareTop: sample([0, 1.101, 0]), telepheTop: sample([1.5, 1.101, 0]), counterSide: sample([3.251, .5, 0]) };
+      for (const item of fixtures.filter((item) => item.id.startsWith('triplette'))) {
+        const meshes = [];
+        scene.traverse((group) => {
+          if (group.userData?.itemId !== item.id) return;
+          group.traverse((node) => { if (node.isMesh && [].concat(node.material || []).some((material) => material.opacity !== 0)) meshes.push(node); });
+        });
+        const samples = [];
+        for (const x of [-.08, -.04, 0, .04, .08]) for (const z of [-.04, 0, .04]) {
+          const ray = new Raycaster(new Vector3(item.x + x, 1, item.z + z), new Vector3(0, -1, 0));
+          const hit = ray.intersectObjects(meshes, false)[0];
+          if (hit) samples.push(sample(hit.point.toArray()));
+        }
+        if (samples.length) pixels[item.id] = samples.sort((a, b) => b[0] - a[0])[0];
+      }
       context.finish();
       return { environment: !!scene.environment, materials, pixels,
         glError: context.getError(), drawCalls: gl.info.render.calls,
@@ -91,10 +114,10 @@ try {
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__white-finish-test__`);
-  await page.waitForFunction(() => {
+  await page.waitForFunction((count) => {
     const result = window.whiteFinishProbe?.();
-    return result?.environment && Object.values(result.materials).filter((materials) => Object.keys(materials).length > 0).length === 5;
-  }, null, { timeout: 60000 });
+    return result?.environment && Object.values(result.materials).filter((materials) => Object.keys(materials).length > 0).length === count;
+  }, fixtures.length, { timeout: 60000 });
   await page.waitForTimeout(800);
   const result = await page.evaluate(() => window.whiteFinishProbe());
   await writeFile(resolve(output, 'probe.json'), JSON.stringify(result, null, 2));
@@ -118,5 +141,13 @@ try {
     assert.ok(result.pixels.blackFront[0] < 100, 'Black podium is not whitened');
     assert.ok(result.pixels.icareTop[0] > 230 && result.pixels.telepheTop[0] > 230, 'Already-correct white GLB tabletops stay white');
     assert.ok(result.pixels.podiumTop[0] - result.pixels.podiumSide[0] > 5, 'White surfaces retain directional shading');
+    for (const id of ['triplette', 'triplette-no-mtl']) {
+      for (const material of Object.values(result.materials[id])) {
+        assert.equal(material.type, 'MeshStandardMaterial', id + ': electrical finish receives studio fill light');
+        assert.equal(material.color, 'ffffff');
+        assert.equal(material.metalness, 0);
+      }
+      assert.ok(result.pixels[id]?.[0] > 225, id + ': actual socket body stays bright white');
+    }
   }
 } finally { await browser?.close(); await server.close(); }
