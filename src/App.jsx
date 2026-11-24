@@ -18,7 +18,7 @@ import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Canvas, events as createSceneEvents, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, MOUSE, MeshBasicMaterial, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
+import { Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Float32BufferAttribute, Group, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, MOUSE, MeshBasicMaterial, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -96,7 +96,7 @@ import { ReserveEditorModal, ReserveQuickView } from './ReserveConfigurator.jsx'
 import {
   configureReserveChildren, formatReserveMetres, isReservePowerSource, normalizeDegrees,
   refitReserveContents, reserveBuiltinChildren, reserveCatalogCategory, reserveDoorState, reserveEntryNeedsPower, reserveInterior,
-  reserveLocalToWorld, reservePlacementAllowed, reservePlacementFromEntry, findDoorHandleVariant, reserveDoorChild, doorHandleFromLabel,
+  reserveLocalToWorld, reservePlacementAllowed, reservePlacementFromEntry, reserveDoorChild, applyReserveDoorChoice, reserveDoorFit, isReserveDoorChild,
   mirrorReserveChildren, reserveOrientation, clampFloorContent, contentCenter, snapWallContent,
 } from './reserveConfigurator.js';
 import './signatureHeadInformation.css';
@@ -1696,9 +1696,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     const baseChildren = (item.options?.reserveOrientation
       && reserveTurnedChildren(geometryEntry, authoredChildren, item.options.reserveOrientation, width, depth, layout, reserveDoorEntries)) || authoredChildren;
     const authoredDoor = reserveDoorChild(baseChildren);
-    const handleChoices = authoredDoor
-      ? ['left', 'right'].filter((handle) => doorHandleFromLabel(authoredDoor) === handle || findDoorHandleVariant(authoredDoor, handle, reserveDoorEntries))
-      : [];
+    // Both handles are always possible: the door of the right hand is used, or the 3D view mirrors the model.
+    const handleChoices = authoredDoor ? ['left', 'right'] : [];
     const orientation = reserveOrientationChoices(geometryEntry, authoredChildren, width, depth, layout);
     return {
       reserve: item,
@@ -1737,6 +1736,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     contentPricing: reserveContentPricing,
     reservePrice: reserveRowPrice,
     Preview3D: ReserveEditorPreview3D,
+    // Items supplied with the reserve (patère, triplette…) are bank assets: show their shop thumbnail.
+    thumbnailFor: (child) => child?.thumbnailUrl || child?.thumbnail_url
+      || findCatalogEntry(availableCatalog, child?.type)?.thumbnailUrl
+      || reserveCatalog.find((card) => card.type === child?.type)?.thumbnail
+      // Built-ins may be admin-only or outside the exhibitor's pack: fall back to the raw bank.
+      || objectBank.find((asset) => asset.type === child?.type)?.thumbnail_url || '',
     // Same product window as the shop (variants, colours, options, quantity); "Ajouter" fills the reserve.
     configure: (productKey, onDone) => {
       const entry = findCatalogEntry(availableCatalog, productKey);
@@ -1750,7 +1755,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         },
       });
     },
-  } : null), [reserveEditor, readOnly, width, depth, layout, reserveStandOthers, reserveRows, reserveCatalog, reserveInitialDraft, buildReserveDraft, reservePlacementsFor, reserveContentPricing, reserveRowPrice]);
+  } : null), [reserveEditor, readOnly, width, depth, layout, reserveStandOthers, reserveRows, reserveCatalog, availableCatalog, objectBank, reserveInitialDraft, buildReserveDraft, reservePlacementsFor, reserveContentPricing, reserveRowPrice]);
   const reservePreviewContext = useMemo(() => ({
     stand: { width, depth, height, layout },
     catalog: availableCatalog,
@@ -1784,7 +1789,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     const contents = contentItems.map((item) => reserveContentFromItem(item, reserveCatalog));
     if (!nextReserve) return { items: currentItems.filter((item) => !isReserveContentItem(item)), removed: contents };
     const interior = reserveInterior(nextReserve.children || []);
-    const door = reserveDoorState(nextReserve.children || [], { doorOpening: reserveOptions.doorOpening });
+    const door = reserveDoorState(nextReserve.children || [], { doorOpening: reserveOptions.doorOpening, handleOrientation: reserveOptions.handleOrientation });
     const { kept, removed } = refitReserveContents(contents, { interior, builtins: reserveBuiltinChildren(nextReserve.children || []), door });
     const keptById = new Map(kept.map((content) => [content.sourceId, content]));
     return {
@@ -1915,7 +1920,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const reserveSummary = useMemo(() => {
     if (!reserveItem) return {};
     const interior = reserveInterior(reserveItem.children || []);
-    const door = reserveDoorState(reserveItem.children || [], { doorOpening: reserveOptions.doorOpening });
+    const door = reserveDoorState(reserveItem.children || [], { doorOpening: reserveOptions.doorOpening, handleOrientation: reserveOptions.handleOrientation });
     const placement = reservePlacementFromEntry(findCatalogEntry(availableCatalog, reserveItem.type) || reserveItem);
     const placementLabel = { left: 'Coin arrière gauche', right: 'Coin arrière droit', center: 'Centre arrière' }[placement] || 'Contre le mur du fond';
     const hasPower = reserveBuiltinChildren(reserveItem.children || []).some(isReservePowerSource) || reserveContents.some((content) => content.isPower);
@@ -1925,9 +1930,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       door: door ? `${({ front: 'Façade', left: 'Côté gauche', right: 'Côté droit', back: 'Fond' })[door.side]} · ${door.opening === 'pull' ? 'extérieur' : 'intérieur'} · poignée ${door.handle === 'left' ? 'gauche' : 'droite'}` : 'Sans porte',
       contentsPrice: reserveContentPricing(reserveContents).total,
       warning: !hasPower && reserveContents.some((content) => content.needsPower) ? 'Prise requise' : '',
-      doorOptions: { doorOpening: reserveOptions.doorOpening },
+      doorOptions: { doorOpening: reserveOptions.doorOpening, handleOrientation: reserveOptions.handleOrientation },
     };
-  }, [reserveItem, reserveOptions.doorOpening, availableCatalog, reserveContents, reserveContentPricing]);
+  }, [reserveItem, reserveOptions.doorOpening, reserveOptions.handleOrientation, availableCatalog, reserveContents, reserveContentPricing]);
   const reserveQuickTotal = reserveRowPrice(effectiveReserveOptionType) + (reserveSummary.contentsPrice || 0);
   const reserveQuickRow = reserveRows.find((row) => row.optionType === effectiveReserveOptionType) || null;
 
@@ -17488,6 +17493,7 @@ function reserveChildConfig(reserveOptions = {}, groupType = '') {
   return {
     doorSlot: reserveOptions?.door?.[groupType]?.slot || '',
     handleOrientation: reserveOptions?.handleOrientation || '',
+    doorOpening: reserveOptions?.doorOpening || '',
     builtins: reserveOptions?.builtins?.[groupType] || null,
   };
 }
@@ -17516,7 +17522,7 @@ function fitReserveContentPlacements(items = [], reserveItem = null, interior = 
   const context = {
     interior,
     builtins: reserveBuiltinChildren(children),
-    door: reserveDoorState(children, { doorOpening: reserveItem.options?.reserveDoorOpening }),
+    door: reserveDoorState(children, { doorOpening: reserveItem.options?.reserveDoorOpening, handleOrientation: reserveItem.options?.reserveHandleOrientation }),
   };
   const { kept, removed } = refitReserveContents(contents, context);
   kept.forEach((content) => placements.set(content.key, reserveContentPlacement(content)));
@@ -17816,11 +17822,14 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
     : null;
   const geometryKey = turnedChildren ? `${geometryEntry.type}@${reserveOptions.orientation}` : geometryEntry.type;
   const geometryChildren = turnedChildren || base.children;
+  // The door model always follows the chosen opening and handle (an authored group keeps its walls, slot and builtins).
   const children = layoutConfigured && geometryChildren?.length
     ? configureReserveChildren(geometryChildren, reserveChildConfig(reserveOptions, geometryKey), doorCatalogEntries || catalogEntries)
+    : geometryChildren?.length
+    ? applyReserveDoorChoice(geometryChildren, { doorOpening: reserveOptions?.doorOpening, handleOrientation: reserveOptions?.handleOrientation }, doorCatalogEntries || catalogEntries)
     : geometryChildren;
   const doorState = layoutConfigured && reserveOptions?.door?.[geometryKey]?.slot && children?.length
-    ? reserveDoorState(children, { doorOpening: reserveOptions?.doorOpening }) : null;
+    ? reserveDoorState(children, { doorOpening: reserveOptions?.doorOpening, handleOrientation: reserveOptions?.handleOrientation }) : null;
   const item = constrainItem({
     ...base,
     children,
@@ -22481,12 +22490,25 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, standD
 
 function reserveChildWithFinish(child, parent) {
   const color = parent.options?.reserveDoorColorHex;
-  if (!color) return child;
+  const doorFit = reserveDoorFitForChild(child, parent);
+  if (!color && !doorFit) return child;
   const text = normalizedItemText(child).replace(/[_-]+/g, ' ');
   const hasFrame = /cloison|reserve|\bporte\b(?!\s*(?:document|revue))/.test(text);
-  return { ...child, options: { ...child.options, reserveDoorColorHex: color,
-    ...(hasFrame ? { reserveFrameColorHex: parent.options?.reserveFrameColorHex || color } : {}),
+  return { ...child, options: { ...child.options,
+    ...(color ? { reserveDoorColorHex: color } : {}),
+    ...(color && hasFrame ? { reserveFrameColorHex: parent.options?.reserveFrameColorHex || color } : {}),
+    ...(doorFit ? { reserveDoorFit: doorFit } : {}),
   } };
+}
+
+// The reserve door is shown as chosen (opening, handle) and set in the partition line.
+function reserveDoorFitForChild(child, parent) {
+  if (!isReserveSceneItem(parent) || !isReserveDoorChild(child)) return null;
+  const fit = reserveDoorFit(parent.children || [], {
+    doorOpening: parent.options?.reserveDoorOpening,
+    handleOrientation: parent.options?.reserveHandleOrientation,
+  });
+  return fit?.childId === child.id ? fit : null;
 }
 
 function groupChildRenderY(child = {}) {
@@ -24108,11 +24130,58 @@ function centerModel(model, item = null) {
     }
   }
 
+  const doorModel = item?.options?.reserveDoorFit ? fitReserveDoorModel(model, item.options.reserveDoorFit) : null;
+  if (doorModel) return doorModel;
+
   const scaledBox = new Box3().setFromObject(model);
   const center = scaledBox.getCenter(new Vector3());
   const anchorY = isCenterAnchoredWallModel(item) ? -center.y : -scaledBox.min.y;
   model.position.set(-center.x, anchorY, -center.z);
   return model;
+}
+
+// Reserve doors: a 1 m partition module with a leaf left ajar and a handle. Centring the whole model would
+// let the ajar leaf push the module off the partition line, so the module itself is anchored on the wall axis,
+// then the model is turned (or, without a model of the right hand, mirrored) so the leaf opens to the chosen
+// side and the handle is on the chosen side, whatever way the file was authored.
+function reserveDoorModelParts(model) {
+  model.updateMatrixWorld(true);
+  const total = new Box3().setFromObject(model);
+  const size = total.getSize(new Vector3());
+  if (!(size.y > 0) || !(size.x > 0)) return null;
+  const parts = { panel: new Box3(), leaf: new Box3(), handle: new Box3() };
+  model.traverse((child) => {
+    if (!child.isMesh) return;
+    const box = new Box3().setFromObject(child);
+    if (box.isEmpty()) return;
+    const height = box.max.y - box.min.y;
+    const width = box.max.x - box.min.x;
+    const middle = (box.min.y + box.max.y) / 2 - total.min.y;
+    if (height > 0.95 * size.y && width > 0.9 * size.x) parts.panel.union(box);
+    else if (height > 0.6 * size.y && height < 0.95 * size.y && width > 0.5 * size.x && width < 0.95 * size.x) parts.leaf.union(box);
+    else if (height < 0.1 * size.y && width < 0.3 * size.x && middle > 0.3 * size.y && middle < 0.5 * size.y) parts.handle.union(box);
+  });
+  if (parts.panel.isEmpty()) return null;
+  const panel = parts.panel.getCenter(new Vector3());
+  const handleSign = parts.handle.isEmpty() ? 0 : Math.sign(parts.handle.getCenter(new Vector3()).x - panel.x);
+  const swingSign = parts.leaf.isEmpty() ? 0
+    : (parts.leaf.max.z - parts.panel.max.z) >= (parts.panel.min.z - parts.leaf.min.z) ? 1 : -1;
+  return { floorY: total.min.y, panel, handleSign, swingSign };
+}
+
+function fitReserveDoorModel(model, fit) {
+  const parts = reserveDoorModelParts(model);
+  if (!parts) return null;
+  model.position.set(-parts.panel.x, -parts.floorY, -parts.panel.z);
+  const pivot = new Group();
+  pivot.add(model);
+  // (-1, 1, -1) is a half turn; a single negative axis is a mirror image (the other hand of door).
+  const scaleX = parts.handleSign && fit.handleSign ? parts.handleSign * fit.handleSign : 1;
+  const scaleZ = parts.swingSign && fit.swingSign ? parts.swingSign * fit.swingSign : 1;
+  pivot.scale.set(scaleX, 1, scaleZ);
+  pivot.position.set(0, 0, Number(fit.wallZ) || 0);
+  pivot.userData.reserveDoorFit = { ...fit, turned: scaleX < 0 && scaleZ < 0, mirrored: scaleX * scaleZ < 0 };
+  return pivot;
 }
 
 function Chair({ selected, hovered, dragging }) {

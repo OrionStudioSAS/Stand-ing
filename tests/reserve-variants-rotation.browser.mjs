@@ -10,14 +10,17 @@ const source = await readFile(`${root}src/App.jsx`, 'utf8');
 const packs = ['Signature'];
 const wall = { type: 'wall-fixture', label: 'Cloison 1x2.5m', is_active: true, model_url: '/__wall.obj', dimensions: { size: [1, 2.5, 0.06], packs: [] } };
 const door = { type: 'door-trad-gauche-poignee-gauche', label: 'Porte Trad Gauche 1000x2500mm Ht + Poignée Gauche', is_active: true, model_url: '/__door.obj', dimensions: { size: [1, 2.5, 0.25], packs: [] } };
+// Supplied with the reserve, admin-only and outside the stand's pack: its shop thumbnail must still show.
+const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const bloc = { type: 'bloc-fixture', label: 'Bloc test', is_active: true, model_url: '/__box.obj', thumbnail_url: pixel, dimensions: { size: [0.3, 1.8, 0.3], packs: ['Autre'], adminOnly: true, category: 'Mobilier' } };
 const child = (id, asset, x, z, rotation) => ({ id, type: asset.type, label: asset.label, modelUrl: asset.model_url, modelSize: asset.dimensions.size, dimensions: asset.dimensions, x, z, rotation });
 // Same layout as the catalogue "Réserve 2m² arrière gauche"; the 1 m² keeps one partition and the door.
-const reserve2 = { type: 'reserve-2m2-fixture', label: 'Réserve 2m² arrière gauche', is_active: true, dimensions: { isGroup: true, isReserve: true, children: [child('wall1', wall, 0, 0, 0), child('wall2', wall, -1, 0, 0), child('door', door, 0.56, -0.528, -90)], groupSize: [2, 2.5, 1], packs, placementRule: { id: 'back-left', locked: true } } };
+const reserve2 = { type: 'reserve-2m2-fixture', label: 'Réserve 2m² arrière gauche', is_active: true, dimensions: { isGroup: true, isReserve: true, children: [child('wall1', wall, 0, 0, 0), child('wall2', wall, -1, 0, 0), child('door', door, 0.56, -0.528, -90), child('bloc', bloc, -0.8, 0.3, 0)], groupSize: [2, 2.5, 1], packs, placementRule: { id: 'back-left', locked: true } } };
 const reserve1 = { type: 'reserve-1m2-fixture', label: 'Réserve 1m2 arrière gauche', is_active: true, dimensions: { isGroup: true, isReserve: true, children: [child('wall1', wall, -0.5, 0.03, 180), child('door', door, 0.06, -0.5, -90)], groupSize: [1, 2.5, 1], packs, placementRule: { id: 'back-left', locked: true } } };
 const fridgeA = { type: 'fridge-a-fixture', label: 'Frigo A', is_active: true, model_url: '/__box.obj', dimensions: { size: [0.5, 0.85, 0.55], packs, category: 'Mobilier', price: 80 } };
 const fridgeB = { type: 'fridge-b-fixture', label: 'Frigo B', is_active: true, model_url: '/__box.obj', dimensions: { size: [0.6, 1.4, 0.6], packs, category: 'Mobilier', price: 120 } };
 const fridges = { type: 'fridge-group-fixture', label: 'Frigo test', is_active: true, dimensions: { isVariantGroup: true, packs, category: 'Mobilier', variantAssetTypes: [fridgeA.type, fridgeB.type], configOptions: [] } };
-const assets = [wall, door, reserve2, reserve1, fridgeA, fridgeB, fridges];
+const assets = [wall, door, reserve2, reserve1, fridgeA, fridgeB, fridges, bloc];
 const rules = (includedType) => ({ 'signature-2m2': { includedType, includedLabel: 'Réserve', options: [] }, large: { includedType, includedLabel: 'Réserve', options: [] } });
 const scene = { id: 'reserve-variants', client_name: 'Test réserve', offer: 'Signature', event_name: 'Test', dimensions: { width: 5, depth: 5 }, layout: 'u', items: [], options: {}, source_payload: { reserveRules: rules(reserve2.type) } };
 const objBox = (width, height, depth) => {
@@ -76,6 +79,9 @@ try {
   await editor.getByText('Frigo test · Frigo B ajouté à la réserve').waitFor();
   await editor.getByRole('button', { name: /Dans la réserve/ }).click();
   await editor.locator('.rsv-content-list').getByText('Frigo test · Frigo B').waitFor();
+  const blocThumb = await editor.locator('.rsv-content-list li.builtin').filter({ hasText: 'Bloc test' }).locator('.rsv-content-thumb img').getAttribute('src');
+  assert.equal(blocThumb, pixel, 'Items supplied with the reserve show their catalogue visual');
+  await editor.locator('.rsv-content-list').getByText('Frigo test · Frigo B').click();
 
   // Free rotation from the selected object card.
   const angle = editor.getByRole('textbox', { name: 'Angle en degrés' });

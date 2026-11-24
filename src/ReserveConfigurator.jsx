@@ -8,7 +8,7 @@ import {
   RESERVE_DOOR_LEAF, RESERVE_GRID, boundsOverlap, boundsPolygon, childFootprint, clampFloorContent, contentCenter, contentFootprint, contentPolygon,
   footprintPolygon, polygonsOverlap,
   doorDistanceFromLeft, findFreeReserveSpot, footprintBounds, formatReserveCm, formatReserveMetres, isReservePowerSource,
-  isWallBuiltin, refitReserveContents, reserveBuiltinChildren, reserveChildSize, reserveContentIssues, reserveDoorSlots,
+  isWallBuiltin, builtinWallContent, refitReserveContents, reserveBuiltinChildren, reserveChildSize, reserveContentIssues, reserveDoorSlots,
   reserveDoorState, reserveFreeSurfaceRatio, reserveInterior, reserveSegments, snapToGrid, snapWallContent,
 } from './reserveConfigurator.js';
 import './reserveConfigurator.css';
@@ -60,7 +60,7 @@ export function reserveStructure(reserveItem, options = {}) {
   return {
     children,
     interior,
-    door: reserveDoorState(children, { doorOpening: options.doorOpening }),
+    door: reserveDoorState(children, { doorOpening: options.doorOpening, handleOrientation: options.handleOrientation }),
     slots: reserveDoorSlots(children),
     segments: reserveSegments(children),
     builtins: reserveBuiltinChildren(children),
@@ -1160,11 +1160,11 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
   const dragCatalogKey = useRef('');
   const toastTimer = useRef(0);
 
-  const built = useMemo(() => model.build(draft), [model, draft.optionType, draft.placement, draft.orientation, draft.doorByType, draft.handleOrientation, draft.builtinsByType]); // eslint-disable-line react-hooks/exhaustive-deps
+  const built = useMemo(() => model.build(draft), [model, draft.optionType, draft.placement, draft.orientation, draft.doorByType, draft.handleOrientation, draft.doorOpening, draft.builtinsByType]); // eslint-disable-line react-hooks/exhaustive-deps
   const reserve = built?.reserve || null;
   // Door and built-in choices are kept per geometry (each size, corner and orientation has its own layout).
   const groupType = reserve?.options?.reserveGeometryKey || reserve?.type || '';
-  const structure = useMemo(() => (reserve ? reserveStructure(reserve, { doorOpening: draft.doorOpening }) : null), [reserve, draft.doorOpening]);
+  const structure = useMemo(() => (reserve ? reserveStructure(reserve, { doorOpening: draft.doorOpening, handleOrientation: draft.handleOrientation }) : null), [reserve, draft.doorOpening, draft.handleOrientation]);
   const interior = structure?.interior || null;
   const hasPower = useMemo(() => (structure?.builtins || []).some(isReservePowerSource) || draft.contents.some((content) => content.isPower), [structure, draft.contents]);
   const context = useMemo(() => ({ interior, contents: draft.contents, builtins: structure?.builtins || [], door: structure?.door || null }), [interior, draft.contents, structure]);
@@ -1228,11 +1228,20 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
     commit((current) => {
       const nextDraft = { ...current, ...patch };
       const nextBuilt = model.build(nextDraft);
-      const nextStructure = nextBuilt?.reserve ? reserveStructure(nextBuilt.reserve, { doorOpening: nextDraft.doorOpening }) : null;
+      const nextStructure = nextBuilt?.reserve ? reserveStructure(nextBuilt.reserve, { doorOpening: nextDraft.doorOpening, handleOrientation: nextDraft.handleOrientation }) : null;
       if (!nextStructure?.interior) return nextDraft;
       const { kept, removed } = refitReserveContents(current.contents, { interior: nextStructure.interior, builtins: nextStructure.builtins, door: nextStructure.door });
+      // Hooks and other wall builtins hang on a partition: the door taking it moves them to a free wall.
+      const before = model.build(current)?.reserve?.children || [];
+      const rehung = nextStructure.builtins.filter((child) => {
+        const previous = before.find((candidate) => candidate.id === child.id);
+        return child.wallMoved && previous && Math.hypot(Number(previous.x) - Number(child.x), Number(previous.z) - Number(child.z)) > 0.01;
+      });
       if (removed.length) {
         window.setTimeout(() => showToast(`${plural(removed.length, 'objet ne tient', 'objets ne tiennent')} plus : ${removed.map((item) => item.label).join(', ')}`, 'warning', { label: 'Annuler', run: undo }), 0);
+      } else if (rehung.length) {
+        const names = rehung.map((child) => String(child.label || '').trim()).join(', ');
+        window.setTimeout(() => showToast(`Porte posée sur ce mur : ${names} ${rehung.length > 1 ? 'passent' : 'passe'} sur une autre cloison`, 'info', { label: 'Annuler', run: undo }), 0);
       } else if (label) {
         window.setTimeout(() => showToast(label, 'success'), 0);
       }
@@ -1354,6 +1363,12 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
 
   // Validity of an included piece (shelves unit…) at a given position and angle.
   const builtinIssue = useCallback((child, center, rotation) => {
+    // Hooks, power strips…: same rules as wall-mounted contents (on a wall, never on the door, not on each other).
+    if (isWallBuiltin(child)) {
+      const others = (structure?.builtins || []).filter((other) => other.id !== child.id);
+      const issues = reserveContentIssues(builtinWallContent(child, interior, center, rotation), { interior, door: structure?.door, builtins: others, contents: draft.contents });
+      return issues[0] || '';
+    }
     const box = footprintBounds(reserveChildSize(child), center.x, center.z, rotation);
     const outline = footprintPolygon(reserveChildSize(child), center.x, center.z, rotation);
     const inside = box.minX >= interior.minX - 0.005 && box.maxX <= interior.maxX + 0.005 && box.minZ >= interior.minZ - 0.005 && box.maxZ <= interior.maxZ + 0.005;
@@ -1452,6 +1467,14 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
       if (drag.kind === 'builtin') {
         const child = (structure?.builtins || []).find((candidate) => `builtin:${candidate.id}` === drag.key);
         if (!child) return;
+        if (isWallBuiltin(child)) {
+          // Stays fixed on the closest wall, facing the room.
+          const hung = snapWallContent(builtinWallContent(child, interior, center), center, interior);
+          const position = contentCenter(hung, interior);
+          const blocked = builtinIssue(child, position, hung.rotation);
+          setDrag((current) => current && ({ ...current, position, rotation: hung.rotation, valid: !blocked, reason: blocked, moved: true }));
+          return;
+        }
         const blocked = builtinIssue(child, center, Number(child.rotation || 0));
         setDrag((current) => current && ({ ...current, position: center, valid: !blocked, reason: blocked, moved: true }));
         return;
@@ -1473,7 +1496,7 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
         updateBuiltin(current.key.slice('builtin:'.length), {
           x: Math.round(current.position.x * 1000) / 1000,
           z: Math.round(current.position.z * 1000) / 1000,
-          ...(current.mode === 'rotate' ? { rotation: current.rotation } : {}),
+          ...(current.rotation !== undefined ? { rotation: current.rotation } : {}),
         });
       } else if (current.candidate) {
         updateContent(current.key, () => current.candidate);
@@ -1835,6 +1858,7 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
                   contents={draft.contents}
                   builtins={structure?.builtins || []}
                   removedBuiltins={removedBuiltins}
+                  builtinThumbnail={(child) => model.thumbnailFor?.(child) || ''}
                   pricing={pricing}
                   issuesByKey={issuesByKey}
                   selectedKey={selectedKey}
@@ -2118,11 +2142,30 @@ function DoorStep({ tr, readOnly, doorState, slotsBySide, sideSlots, slotIndex, 
 }
 
 function LayoutStep({
-  tr, readOnly, tab, setTab, categories, category, setCategory, search, setSearch, entries, fitsByKey, contents, builtins, removedBuiltins,
+  tr, readOnly, tab, setTab, categories, category, setCategory, search, setSearch, entries, fitsByKey, contents, builtins, removedBuiltins, builtinThumbnail = () => '',
   pricing, issuesByKey, selectedKey, selectedContent, selectedBuiltin, interior, freeRatio, hasPower, missingPower, powerEntry,
   onSelect, onAdd, onDragStart, onDragEnd, onRemove, onDuplicate, onRotate, onRestoreBuiltin, onPosition, onRotation,
 }) {
   const totalCount = contents.length;
+  const builtinThumb = (child) => ({ thumbnail: builtinThumbnail(child), mount: isWallBuiltin(child) ? 'wall' : 'floor' });
+  // Category row: fade only the side(s) where more chips are hidden.
+  const chipsRef = useRef(null);
+  const [chipsOverflow, setChipsOverflow] = useState('');
+  const measureChips = useCallback(() => {
+    const row = chipsRef.current;
+    if (!row) return;
+    const before = row.scrollLeft > 2;
+    const after = row.scrollLeft + row.clientWidth < row.scrollWidth - 2;
+    setChipsOverflow(`${before ? ' more-start' : ''}${after ? ' more-end' : ''}`);
+  }, []);
+  useEffect(() => {
+    const row = chipsRef.current;
+    if (!row) return undefined;
+    measureChips();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measureChips) : null;
+    observer?.observe(row);
+    return () => observer?.disconnect();
+  }, [measureChips, tab, categories.length]);
   const priceFor = (key) => pricing.lines.find((line) => line.key === key) || { price: 0, included: true };
   return (
     <div className="rsv-step-body">
@@ -2134,9 +2177,20 @@ function LayoutStep({
 
       {tab === 'catalog' ? (
         <>
-          <label className="rsv-search"><Search size={14} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tr('Rechercher un objet…')} /></label>
-          <div className="rsv-chips">
-            {categories.map((id) => <button key={id} type="button" className={category === id ? 'active' : ''} onClick={() => setCategory(id)}>{tr(CATEGORY_LABELS[id])}</button>)}
+          <label className="rsv-search"><Search size={14} /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tr('Rechercher un objet…')} aria-label={tr('Rechercher un objet…')} /></label>
+          <div ref={chipsRef} className={`rsv-chips scroll${chipsOverflow}`} role="toolbar" aria-label={tr('Catégories')} onScroll={measureChips}>
+            {categories.map((id) => (
+              <button
+                key={id}
+                type="button"
+                className={category === id ? 'active' : ''}
+                aria-pressed={category === id}
+                // Bring a half-hidden chip fully into the scrolling row once it is picked.
+                onClick={(event) => { setCategory(id); event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' }); }}
+              >
+                {tr(CATEGORY_LABELS[id])}
+              </button>
+            ))}
           </div>
           <p className="rsv-info-box"><Info size={14} /> {tr('Glissez un objet sur le plan, ou cliquez sur + pour le placer automatiquement à un endroit libre.')}</p>
           <div className="rsv-catalog-grid">
@@ -2188,7 +2242,7 @@ function LayoutStep({
           {selectedBuiltin && (
             <div className="rsv-selected-card builtin">
               <header>
-                <div className="rsv-selected-thumb"><Package size={22} /></div>
+                <div className="rsv-selected-thumb"><ContentThumb content={builtinThumb(selectedBuiltin)} /></div>
                 <div><strong>{tr(selectedBuiltin.label)}</strong><small>{tr('Fourni avec la réserve')}</small></div>
                 <span className="rsv-pill green">{tr('Inclus')}</span>
               </header>
@@ -2242,7 +2296,7 @@ function LayoutStep({
             {builtins.map((child) => (
               <li key={child.id} className={`builtin${selectedKey === `builtin:${child.id}` ? ' active' : ''}`}>
                 <button type="button" className="rsv-content-main" onClick={() => onSelect(`builtin:${child.id}`)}>
-                  <span className="rsv-content-thumb"><Package size={16} /></span>
+                  <span className="rsv-content-thumb"><ContentThumb content={builtinThumb(child)} /></span>
                   <span className="rsv-content-copy"><strong>{tr(child.label)}</strong><small>{tr('Fourni avec la réserve')}</small></span>
                   <span className="rsv-content-price included">{tr('Inclus')}</span>
                 </button>
@@ -2252,7 +2306,7 @@ function LayoutStep({
             {removedBuiltins.map((child) => (
               <li key={`removed-${child.id}`} className="removed">
                 <span className="rsv-content-main static">
-                  <span className="rsv-content-thumb"><Package size={16} /></span>
+                  <span className="rsv-content-thumb"><ContentThumb content={builtinThumb(child)} /></span>
                   <span className="rsv-content-copy"><strong>{tr(child.label)}</strong><small>{tr('Retiré de la réserve')}</small></span>
                 </span>
                 {!readOnly && <button type="button" className="rsv-link" onClick={() => onRestoreBuiltin(child.id)}>{tr('Remettre')}</button>}

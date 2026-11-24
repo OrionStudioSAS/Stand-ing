@@ -56,6 +56,10 @@ try {
     const interior = geometry.reserveInterior(reserve.children);
     return { orientation: reserve.options.reserveOrientation || '', width: interior.width, depth: interior.depth, sides: interior.sides,
       door: geometry.reserveDoorChild(reserve.children).type, doorSide: geometry.reserveDoorState(reserve.children, {}).side,
+      ...(() => {
+        const door = geometry.reserveDoorState(reserve.children, { doorOpening: reserve.options.reserveDoorOpening, handleOrientation: reserve.options.reserveHandleOrientation });
+        return { handle: door.handle, opening: door.opening, hand: geometry.doorFamilyFromLabel(door.slot.child), expectedHand: geometry.doorFamilyForChoice(door.handle, door.opening) };
+      })(),
       minX: reserve.x + interior.minX, minZ: reserve.z + interior.minZ };
   });
   const near = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 0.02, `${message}: ${actual} ≠ ${expected}`);
@@ -65,16 +69,21 @@ try {
   await page.waitForFunction(() => window.orientationItems?.some((item) => item.autoReserve));
   let state = await reserveState();
   assert.equal(state.orientation, '');
-  near(state.width, 2, 'Authored reserve runs along the back wall'); near(state.depth, 1, 'Authored depth');
+  // Inside measure: up to the inner face of the door panel (it fills the opening 9 cm inside its stored line).
+  near(state.width, 1.94, 'Authored reserve runs along the back wall'); near(state.depth, 1, 'Authored depth');
+  assert.equal(state.handle, 'left', 'Authored handle');
+  assert.equal(state.hand, state.expectedHand, 'The door model is the hand for the opening and handle shown');
   await page.getByRole('button', { name: /^Réserve/ }).first().click();
   const vertical = page.getByRole('radio', { name: 'Le long du mur gauche' });
   await vertical.click();
   await page.waitForFunction(() => window.orientationItems.find((item) => item.autoReserve)?.options?.reserveOrientation === 'vertical');
   state = await reserveState();
-  near(state.width, 1, 'Vertical width'); near(state.depth, 2, 'Vertical depth along the left wall');
+  near(state.width, 1, 'Vertical width'); near(state.depth, 1.94, 'Vertical depth along the left wall');
   assert.equal(state.sides.left, false, 'The left stand wall still closes the reserve');
   assert.equal(state.sides.back, false, 'The back stand wall still closes the reserve');
-  assert.equal(state.door, doorMirror.type, 'The door is replaced by its mirrored model');
+  assert.equal(state.handle, 'right', 'Seen in the mirror, the handle changes side');
+  assert.equal(state.hand, state.expectedHand, 'The door model is still the hand for the opening and handle shown');
+  assert.ok([doorLeft.type, doorMirror.type].includes(state.door), 'A catalogue door model is used');
   assert.equal(state.doorSide, 'front');
   assert.ok(state.minX < -2.4, `The reserve stays against the left wall (${state.minX})`);
   assert.ok(state.minZ < -2.4, `The reserve stays against the back wall (${state.minZ})`);
@@ -88,7 +97,7 @@ try {
   await page.waitForFunction(() => window.orientationItems?.some((item) => item.autoReserve));
   state = await reserveState();
   assert.equal(state.orientation, 'vertical', 'The orientation is kept after reloading the scene');
-  near(state.depth, 2, 'Still vertical after reload');
+  near(state.depth, 1.94, 'Still vertical after reload');
 
   await page.goto(`${base}?layout=back`);
   await page.waitForFunction(() => window.orientationItems?.some((item) => item.autoReserve));

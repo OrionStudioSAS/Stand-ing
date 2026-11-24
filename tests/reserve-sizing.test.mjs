@@ -1,4 +1,5 @@
 import { electricalWallClearance, electricalClearanceRect, applyElectricalClearance } from '../src/electricalClearance.js';
+import { applyReserveDoorChoice } from '../src/reserveConfigurator.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -13,7 +14,7 @@ const groups = [1, 2, 3, 4].map((area) => ({ type: `group-reserve-${area}m2`, la
 const rule = { id: 'medium', includedType: groups[1].type, includedLabel: groups[1].label,
   options: [{ type: groups[0].type, label: groups[0].label, price: 0 }, { type: groups[2].type, label: groups[2].label, price: 222 }] };
 function runtime() {
-  const api = vm.createContext({ electricalWallClearance, electricalClearanceRect, applyElectricalClearance,
+  const api = vm.createContext({ electricalWallClearance, electricalClearanceRect, applyElectricalClearance, applyReserveDoorChoice,
     normalizePackLabel: label=>String(label).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(),
     isSignaturePackLabel: (label) => label === 'Signature', reserveDoorColorForPack: () => '',
     assetUnitPrice: () => 0, findCatalogEntry: (entries, type) => entries.find((entry) => entry.type === type),

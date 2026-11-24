@@ -60,7 +60,7 @@ try {
   assert.equal(right.visibleWidth,1.44,'3m minus 50cm head minus 1.06m reserve');
   assert.equal(back.visibleWidth,4.44,'The existing back wall calculation must stay unchanged');
   assert.ok(Math.abs(right.width-1.44)<1e-9,'Real 3D banner width matches the stated measurement');
-  assert.ok(Math.abs(back.width-4.438895)<1e-9,'Preserve the actual fixed door-frame geometry behind the 4.44m display');
+  assert.ok(Math.abs(back.width-4.44)<1e-9,'The banner stops on the door panel where the 3D shows it: the real width is the 4.44m displayed');
   assert.ok(Math.abs(right.position[2]-right.width/2-result.reserve.maxZ)<1e-9,'Banner meets the real reserve partition');
   const head=result.heads.find(item=>item.wall==='right');
   assert.ok(Math.abs(right.position[2]+right.width/2-(head.x+head.bounds.min))<1e-9,'Banner meets the head with no artificial centimetre gap');

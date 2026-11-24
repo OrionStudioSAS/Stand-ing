@@ -958,6 +958,27 @@ kbd {
 }
 .rsv-chips button:hover:not(:disabled) { border-color: #a9bbd9; transform: translateY(-1px); }
 .rsv-chips button.active { background: var(--rsv-blue); border-color: var(--rsv-blue); color: #fff; }
+/* Catalogue filters: one row that scrolls sideways, fading out on the side(s) where more chips are hidden. */
+.rsv-chips.scroll {
+  --rsv-fade-start: 0px;
+  --rsv-fade-end: 0px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 28px;
+  margin-inline: -2px;
+  padding: 2px 2px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: #cdd5e2 transparent;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--rsv-fade-start), #000 calc(100% - var(--rsv-fade-end)), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 var(--rsv-fade-start), #000 calc(100% - var(--rsv-fade-end)), transparent);
+}
+.rsv-chips.scroll.more-start { --rsv-fade-start: 28px; }
+.rsv-chips.scroll.more-end { --rsv-fade-end: 28px; }
+.rsv-chips.scroll button { flex: 0 0 auto; white-space: nowrap; scroll-snap-align: start; }
+.rsv-chips.scroll::-webkit-scrollbar { height: 4px; }
+.rsv-chips.scroll::-webkit-scrollbar-thumb { background: #cdd5e2; border-radius: 999px; }
 
 .rsv-choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .rsv-choice-card { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; padding: 12px; }
@@ -1045,7 +1066,26 @@ kbd {
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .rsv-search:focus-within { border-color: var(--rsv-blue); box-shadow: 0 0 0 3px rgba(65, 107, 176, 0.14); }
-.rsv-search input { flex: 1; border: 0; outline: 0; background: transparent; color: var(--rsv-ink); font-size: 13.5px; }
+/* type="search" keeps the project-wide text-input frame (styles.css) off this field: the label is the only frame. */
+.rsv-search input[type="search"] {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--rsv-ink);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.rsv-search input[type="search"]::placeholder { color: var(--rsv-muted); font-weight: 500; }
+.rsv-search input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 
 .rsv-info-box {
   display: flex;

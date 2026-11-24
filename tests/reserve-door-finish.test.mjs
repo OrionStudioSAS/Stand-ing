@@ -4,11 +4,12 @@ import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { MeshPhongMaterial, MeshStandardMaterial, Texture } from 'three';
 import { wallFabricColors } from '../src/config/colorOptions.js';
+import { isReserveDoorChild, reserveDoorFit } from '../src/reserveConfigurator.js';
 
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 function runtime() {
-  const api = vm.createContext({ wallFabricColors, MeshStandardMaterial });
-  for (const name of ['normalizeTextValue', 'normalizePackLabel', 'isSignaturePackLabel', 'signatureReserveWallFabricColor', 'reserveDoorColorForPack', 'reserveChildWithFinish', 'normalizedItemText', 'normalizeMaterialName', 'isReserveDoorPaintMaterial', 'isReserveFramePaintMaterial', 'colorHex', 'wallFabricMaterialProps', 'reserveDoorFabricColor', 'reserveDoorFabricMaterial']) {
+  const api = vm.createContext({ wallFabricColors, MeshStandardMaterial, isReserveDoorChild, reserveDoorFit });
+  for (const name of ['normalizeTextValue', 'normalizePackLabel', 'isSignaturePackLabel', 'signatureReserveWallFabricColor', 'reserveDoorColorForPack', 'reserveChildWithFinish', 'reserveDoorFitForChild', 'isReserveSceneItem', 'isAutomaticReserveItem', 'normalizedItemText', 'normalizeMaterialName', 'isReserveDoorPaintMaterial', 'isReserveFramePaintMaterial', 'colorHex', 'wallFabricMaterialProps', 'reserveDoorFabricColor', 'reserveDoorFabricMaterial']) {
     const start = app.indexOf(`function ${name}(`);
     assert.ok(start >= 0, name);
     vm.runInContext(app.slice(start, app.indexOf('\n}\n', start) + 2), api);
@@ -89,4 +90,18 @@ test('door fabric uses the reserve wall texture and PBR light response, not smoo
     assert.equal(fallback.emissive.getHexString(), '787878');
     assert.equal(fallback.emissiveIntensity, 0.16);
   }
+});
+
+test('the door of a reserve carries how the 3D view must show it, other doors do not', () => {
+  const api = runtime();
+  const wall = { label: 'Cloison Trad 1000x2500mm Ht', modelSize: [1, 2.5, 0.06] };
+  const door = { id: 'door', type: 'porte-gauche', label: 'Porte Trad Gauche 1000x2500mm Ht', x: 0.56, z: -0.528, rotation: -90, modelSize: [1, 2.5, 0.25], options: {} };
+  const children = [{ ...wall, id: 'w1', x: 0, z: 0, rotation: 0 }, { ...wall, id: 'w2', x: -1, z: 0, rotation: 0 }, door];
+  const parent = { autoReserve: true, children, options: { reserveDoorOpening: 'pull', reserveHandleOrientation: 'right' } };
+  const fit = api.reserveChildWithFinish(door, parent).options.reserveDoorFit;
+  assert.equal(fit.opening, 'pull');
+  assert.equal(fit.handle, 'right');
+  assert.equal(fit.outward, -1, 'Turned to -90° on the right side, the model faces the inside');
+  assert.equal(api.reserveChildWithFinish(children[0], parent).options?.reserveDoorFit, undefined, 'Partitions are left as they are');
+  assert.equal(api.reserveChildWithFinish(door, { children, options: {} }), door, 'A door outside a reserve is left as it is');
 });

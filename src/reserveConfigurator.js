@@ -3,8 +3,13 @@
 // x to the right, z towards the aisle, rotations follow three.js (degrees around Y).
 
 export const RESERVE_WALL = 0.06;
-export const RESERVE_DOOR_OFFSET = 0.03;
+// Catalogue reserves store a door module 9 cm outside the centre of its partition panel: set there, the panel
+// fills the opening between the perpendicular partitions, its outer face flush with their ends (measured on
+// every catalogue reserve). The 3D view anchors the door model on that panel (see reserveDoorFit).
+export const RESERVE_DOOR_OFFSET = 0.09;
 export const RESERVE_DOOR_LEAF = 0.8;
+// Depth of the band in front of the door opening where no wall-mounted object (hook, shelf…) can be fixed.
+const RESERVE_DOOR_WALL_DEPTH = 0.05;
 export const RESERVE_GRID = 0.05;
 const EPSILON = 1e-6;
 
@@ -123,8 +128,9 @@ export function reserveSegments(children = []) {
   });
 }
 
-function lineInset(segments = []) {
-  return segments.some((segment) => segment.kind === 'door') ? RESERVE_DOOR_OFFSET + RESERVE_WALL / 2 : RESERVE_WALL / 2;
+// Inner face of a partition or door module, measured from its own line (a door panel sits RESERVE_DOOR_OFFSET inside it).
+function segmentInset(segment) {
+  return segment.kind === 'door' ? RESERVE_DOOR_OFFSET + RESERVE_WALL / 2 : RESERVE_WALL / 2;
 }
 
 // Interior rectangle: reserve walls give an inset, sides without a reserve wall are stand walls.
@@ -151,11 +157,14 @@ export function reserveInterior(children = []) {
   const right = on('z', outer.maxX);
   const back = on('x', outer.minZ);
   const front = on('x', outer.maxZ);
+  // Each side stops at the innermost face of its modules (a filler module may sit inside the outer bounds).
+  const lowSide = (list, fallback) => (list.length ? Math.max(...list.map((segment) => segment.line + segmentInset(segment))) : fallback);
+  const highSide = (list, fallback) => (list.length ? Math.min(...list.map((segment) => segment.line - segmentInset(segment))) : fallback);
   return withSize({
-    minX: outer.minX + (left.length ? lineInset(left) : 0),
-    maxX: outer.maxX - (right.length ? lineInset(right) : 0),
-    minZ: outer.minZ + (back.length ? lineInset(back) : 0),
-    maxZ: outer.maxZ - (front.length ? lineInset(front) : 0),
+    minX: lowSide(left, outer.minX),
+    maxX: highSide(right, outer.maxX),
+    minZ: lowSide(back, outer.minZ),
+    maxZ: highSide(front, outer.maxZ),
     outer,
     sides: { left: left.length > 0, right: right.length > 0, back: back.length > 0, front: front.length > 0 },
   });
@@ -242,7 +251,7 @@ function slotNormalComponent(slot) {
   return slot.orientation === 'z' ? slot.normal.x : slot.normal.z;
 }
 
-// Wall axis of a slot: door modules are authored 3 cm outside the partition axis.
+// Wall axis of a slot: door modules are authored RESERVE_DOOR_OFFSET outside the partition axis.
 function slotAxis(slot) {
   return slot.kind === 'door' ? slot.line - slotNormalComponent(slot) * RESERVE_DOOR_OFFSET : slot.line;
 }
@@ -289,6 +298,59 @@ export function findDoorHandleVariant(door = {}, handle = 'right', catalogEntrie
     && Math.abs(reserveChildSize(entry)[0] - width) < 0.05
     && /poignee/.test(childText(entry))
   )) || null;
+}
+
+// Door models come in two hands, named after the side of the handle seen from the side the leaf opens
+// towards: "Porte droite" (handle right when it opens outwards, left when it opens inwards) and
+// "Porte gauche" (the opposite). Their "poignée …" suffix only tells how the file was authored and is
+// not reliable, so the 3D view orients the leaf from the model geometry (see reserveDoorFit).
+export function doorFamilyForChoice(handle = 'right', opening = 'push') {
+  return (handle === 'right') === (opening === 'pull') ? 'right' : 'left';
+}
+
+// Handle side of a door as authored (all catalogue doors open outwards): its family.
+export function doorDefaultHandle(child = {}) {
+  if (child.doorHandle === 'left' || child.doorHandle === 'right') return child.doorHandle;
+  return doorFamilyFromLabel(child) || doorHandleFromLabel(child);
+}
+
+// Catalogue door of the hand needed for the chosen handle and opening, same range and width.
+export function findDoorChoiceVariant(door = {}, { handle = 'right', opening = 'push' } = {}, catalogEntries = []) {
+  if (!door) return null;
+  const family = doorFamilyForChoice(handle, opening);
+  const current = doorFamilyFromLabel(door);
+  if (!current || current === family) return null;
+  const width = reserveChildSize(door)[0];
+  const isTrad = isTradDoor(door);
+  const series = /\bht\b/.test(childText(door));
+  const candidates = (catalogEntries || []).filter((entry) => (
+    entry && !entry.isGroup && isReserveDoorChild(entry)
+    && doorFamilyFromLabel(entry) === family
+    && isTradDoor(entry) === isTrad
+    && Math.abs(reserveChildSize(entry)[0] - width) < 0.05
+  ));
+  return candidates.find((entry) => /\bht\b/.test(childText(entry)) === series) || candidates[0] || null;
+}
+
+// What the 3D view needs to show the door as chosen, in the door model's own frame:
+// - outward: +1 when the model's local +z points to the aisle side of the door wall, -1 otherwise;
+// - handle / swing: wanted sign of the handle along local x and of the ajar leaf along local z;
+// - wallZ: local z of the partition axis (door modules are stored RESERVE_DOOR_OFFSET outside it).
+export function reserveDoorFit(children = [], options = {}) {
+  const state = reserveDoorState(children, options);
+  if (!state) return null;
+  const rotation = radians(state.slot.child.rotation);
+  const localZ = { x: Math.sin(rotation), z: Math.cos(rotation) };
+  const outward = localZ.x * state.slot.normal.x + localZ.z * state.slot.normal.z >= 0 ? 1 : -1;
+  return {
+    childId: state.slot.child.id,
+    handle: state.handle,
+    opening: state.opening,
+    outward,
+    handleSign: (state.handle === 'right' ? 1 : -1) * outward,
+    swingSign: (state.opening === 'pull' ? 1 : -1) * outward,
+    wallZ: round(-RESERVE_DOOR_OFFSET * outward),
+  };
 }
 
 // Model of the same door seen in a mirror: hinge and handle both change side.
@@ -350,7 +412,7 @@ export function reserveDoorState(children = [], options = {}) {
   if (!slot) return null;
   const handle = options.handleOrientation === 'left' || options.handleOrientation === 'right'
     ? options.handleOrientation
-    : doorHandleFromLabel(slot.child);
+    : doorDefaultHandle(slot.child);
   const opening = options.doorOpening === 'pull' ? 'pull' : 'push';
   const inward = { x: -slot.normal.x, z: -slot.normal.z };
   // Viewer outside looks inwards: their right-hand direction in the plan.
@@ -363,6 +425,10 @@ export function reserveDoorState(children = [], options = {}) {
   const open = { x: hinge.x + swing.x * RESERVE_DOOR_LEAF, z: hinge.z + swing.z * RESERVE_DOOR_LEAF };
   const xs = [hinge.x, latch.x, open.x];
   const zs = [hinge.z, latch.z, open.z];
+  // Opening in the door wall, from the inner face of the panel a few cm into the room: nothing can be fixed there.
+  const face = RESERVE_WALL / 2;
+  const opening0 = { x: hinge.x + inward.x * face, z: hinge.z + inward.z * face };
+  const opening1 = { x: latch.x + inward.x * (face + RESERVE_DOOR_WALL_DEPTH), z: latch.z + inward.z * (face + RESERVE_DOOR_WALL_DEPTH) };
   return {
     slot,
     side: slot.side,
@@ -375,6 +441,10 @@ export function reserveDoorState(children = [], options = {}) {
     inward,
     right,
     zone: { minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) },
+    wallZone: {
+      minX: Math.min(opening0.x, opening1.x), maxX: Math.max(opening0.x, opening1.x),
+      minZ: Math.min(opening0.z, opening1.z), maxZ: Math.max(opening0.z, opening1.z),
+    },
     zoneInside: opening === 'push',
   };
 }
@@ -409,22 +479,106 @@ export function applyReserveBuiltins(children = [], overrides = {}) {
 export function configureReserveChildren(children = [], config = {}, catalogEntries = []) {
   let next = children || [];
   if (config.doorSlot) next = moveReserveDoor(next, config.doorSlot);
-  if (config.handleOrientation) {
-    const door = reserveDoorChild(next);
-    const variant = door ? findDoorHandleVariant(door, config.handleOrientation, catalogEntries) : null;
-    if (door && variant) {
-      next = next.map((child) => (child.id === door.id ? {
-        ...child,
-        type: variant.type,
-        label: variant.label,
-        modelUrl: variant.modelUrl || child.modelUrl,
-        modelSize: variant.modelSize || child.modelSize,
-        materialUrl: variant.materialUrl ?? child.materialUrl,
-        dimensions: { ...(child.dimensions || {}), ...(variant.dimensions || {}) },
-      } : child));
+  next = applyReserveDoorChoice(next, { handleOrientation: config.handleOrientation, doorOpening: config.doorOpening }, catalogEntries);
+  next = applyReserveBuiltins(next, config.builtins);
+  return relocateBlockedWallBuiltins(next, { handleOrientation: config.handleOrientation, doorOpening: config.doorOpening });
+}
+
+// Swaps the door model for the catalogue door of the right hand (see doorFamilyForChoice). Position and
+// rotation are kept: the 3D view turns the leaf itself. Without a matching model the door is left as is
+// and the 3D view mirrors it.
+export function applyReserveDoorChoice(children = [], options = {}, catalogEntries = []) {
+  const state = reserveDoorState(children, options);
+  if (!state) return children;
+  const door = state.slot.child;
+  const variant = findDoorChoiceVariant(door, { handle: state.handle, opening: state.opening }, catalogEntries);
+  const fit = reserveDoorFit(children, options);
+  return children.map((child) => {
+    if (child.id !== door.id) return child;
+    // A door's name reads as its hand, not as the handle shown: keep the side actually chosen.
+    const chosen = !variant ? child : {
+      ...child,
+      type: variant.type,
+      label: variant.label,
+      modelUrl: variant.modelUrl || child.modelUrl,
+      modelSize: variant.modelSize || child.modelSize,
+      materialUrl: variant.materialUrl ?? child.materialUrl,
+      dimensions: { ...(child.dimensions || {}), ...(variant.dimensions || {}) },
+    };
+    const frame = doorPanelFrame(chosen, fit);
+    if (!variant && child.doorHandle === state.handle && !frame) return child;
+    return { ...chosen, doorHandle: state.handle, ...(frame ? { dimensions: { ...(chosen.dimensions || {}), wallCoverFrameBounds: frame } } : {}) };
+  });
+}
+
+// The 6 cm partition panel of a door, in the door's own frame, where the 3D view shows it (see reserveDoorFit).
+// Stored frames were measured on each model as authored, so they no longer match once the model is turned.
+function doorPanelFrame(door = {}, fit = null) {
+  const dimensions = door.dimensions || {};
+  if (!fit || !(dimensions.depthLocked6cm || dimensions.wallCoverFrameBounds)) return null;
+  const halfLength = reserveChildSize(door)[0] / 2;
+  const frame = { minX: -halfLength, maxX: halfLength, minZ: fit.wallZ - RESERVE_WALL / 2, maxZ: fit.wallZ + RESERVE_WALL / 2 };
+  const current = dimensions.wallCoverFrameBounds;
+  const same = current && ['minX', 'maxX', 'minZ', 'maxZ'].every((key) => Math.abs(Number(current[key]) - frame[key]) < 0.0005);
+  return same ? null : Object.fromEntries(Object.entries(frame).map(([key, value]) => [key, Math.round(value * 1e6) / 1e6]));
+}
+
+// A wall-mounted builtin (hook, power strip…) seen as a reserve content, to reuse the wall placement rules.
+export function builtinWallContent(child = {}, interior, center = null, rotation = null) {
+  const point = center || { x: Number(child.x || 0), z: Number(child.z || 0) };
+  return {
+    ...contentFromCenter({ key: `builtin:${child.id}`, mount: 'wall', size: reserveChildSize(child) }, point, interior),
+    rotation: rotation ?? Number(child.rotation || 0),
+  };
+}
+
+const WALL_SIDES = ['back', 'left', 'right', 'front'];
+
+// Closest free place on a wall for a wall-mounted object: along its own wall first, then on the other
+// reserve partitions, then on the stand walls.
+export function findWallSpotNear(content, context = {}) {
+  const { interior } = context;
+  if (!interior) return null;
+  const centre = contentCenter(content, interior);
+  const own = snapWallContent(content, centre, interior).wall;
+  const sides = [own, ...WALL_SIDES.filter((side) => side !== own).sort((a, b) => Number(Boolean(interior.sides?.[b])) - Number(Boolean(interior.sides?.[a])))];
+  for (const side of sides) {
+    const horizontal = side === 'back' || side === 'front';
+    const start = horizontal ? interior.minX : interior.minZ;
+    const end = horizontal ? interior.maxX : interior.maxZ;
+    const from = horizontal ? centre.x : centre.z;
+    const positions = [];
+    for (let along = start; along <= end + EPSILON; along += RESERVE_GRID / 2) positions.push(along);
+    positions.sort((a, b) => Math.abs(a - from) - Math.abs(b - from));
+    for (const along of positions) {
+      const point = horizontal
+        ? { x: along, z: side === 'back' ? interior.minZ : interior.maxZ }
+        : { x: side === 'left' ? interior.minX : interior.maxX, z: along };
+      const placed = snapWallContent({ ...content, wall: side }, point, interior);
+      if (placed.wall === side && !reserveContentIssues(placed, context).length) return placed;
     }
   }
-  return applyReserveBuiltins(next, config.builtins);
+  return null;
+}
+
+// Wall-mounted builtins are fixed on a partition: when the door takes the partition they hang on, they move to
+// the closest free place on a wall (see findWallSpotNear). Others stay exactly where they are.
+export function relocateBlockedWallBuiltins(children = [], options = {}) {
+  const interior = reserveInterior(children);
+  const door = reserveDoorState(children, options);
+  if (!interior || !door) return children;
+  let current = children;
+  reserveBuiltinChildren(children).filter(isWallBuiltin).forEach((child) => {
+    const others = reserveBuiltinChildren(current).filter((other) => other.id !== child.id);
+    const context = { interior, door, builtins: others, contents: [] };
+    const content = builtinWallContent(child, interior);
+    if (!reserveContentIssues(content, context).includes('door')) return;
+    const spot = findWallSpotNear(content, context);
+    if (!spot) return;
+    const centre = contentCenter(spot, interior);
+    current = current.map((item) => (item.id === child.id ? { ...item, x: round(centre.x), z: round(centre.z), rotation: spot.rotation, wallMoved: true } : item));
+  });
+  return current;
 }
 
 export function reserveBuiltinChildren(children = []) {
@@ -506,8 +660,11 @@ export function reserveContentIssues(content, { interior, contents = [], builtin
   const outline = contentPolygon(content, interior);
   const issues = [];
   if (!boundsInside(box, interior)) issues.push('outside');
-  if (door?.zoneInside && boundsOverlap(box, door.zone) && polygonsOverlap(outline, boundsPolygon(door.zone))) issues.push('door');
   const mount = content.mount === 'wall' ? 'wall' : 'floor';
+  const inSwing = door?.zoneInside && boundsOverlap(box, door.zone) && polygonsOverlap(outline, boundsPolygon(door.zone));
+  // A wall-mounted object is fixed on a partition: never on the door, whichever way it opens.
+  const onDoor = mount === 'wall' && door?.wallZone && boundsOverlap(box, door.wallZone);
+  if (inSwing || onDoor) issues.push('door');
   const blocking = [
     ...contents.filter((other) => other.key !== content.key).map((other) => ({ mount: other.mount === 'wall' ? 'wall' : 'floor', box: contentFootprint(other, interior), outline: contentPolygon(other, interior) })),
     ...builtins.map((child) => ({ mount: isWallBuiltin(child) ? 'wall' : 'floor', box: childFootprint(child), outline: childPolygon(child) })),
