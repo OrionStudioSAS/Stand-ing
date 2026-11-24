@@ -202,10 +202,23 @@ export const translations = {
     counter_finish_title: 'Couleur',
 
     // FurnitureStepPanel
-    furniture_subtitle: 'Cliquez un accessoire pour le configurer',
-    furniture_search: 'Rechercher un accessoire...',
+    furniture_subtitle: 'Mobilier, multimédia, électricité : complétez votre stand en quelques clics.',
+    furniture_search: 'Rechercher : écran, prise, comptoir…',
     furniture_aria_filter: 'Filtrer les accessoires',
-    furniture_empty: 'Aucun accessoire dans cette catégorie.',
+    furniture_empty: 'Aucun accessoire ne correspond.',
+    shop_empty_hint: 'Essayez un autre mot que « {query} » ou parcourez toutes les catégories.',
+    shop_reset_filters: 'Voir tous les accessoires',
+    shop_clear_search: 'Effacer la recherche',
+    shop_results_one: '1 résultat',
+    shop_results_many: '{count} résultats',
+    shop_add: 'Ajouter',
+    shop_configure: 'Configurer',
+    shop_add_one: 'Ajouter un {label}',
+    shop_remove_one: 'Retirer un {label}',
+    shop_included: 'Inclus ×{count}',
+    shop_included_short: 'Inclus',
+    shop_announce_added: '{label} ajouté au stand ({count})',
+    shop_announce_removed: '{label} retiré du stand ({count})',
 
     // MarketplaceCard
     market_from_price: 'À partir de {price} €',
@@ -383,7 +396,7 @@ export const translations = {
     reserve_desc_large: '2m × 2m',
 
     // Furniture categories
-    cat_all: 'TOUS',
+    cat_all: 'Tout',
     cat_furniture: 'Mobilier',
     cat_multimedia: 'Multimédia',
     cat_electricity: 'Électricité',
@@ -592,10 +605,23 @@ export const translations = {
     counter_finish_title: 'Finish',
 
     // FurnitureStepPanel
-    furniture_subtitle: 'Click an accessory to configure it',
-    furniture_search: 'Search an accessory...',
+    furniture_subtitle: 'Furniture, AV, power: complete your stand in a few clicks.',
+    furniture_search: 'Search: screen, socket, counter…',
     furniture_aria_filter: 'Filter accessories',
-    furniture_empty: 'No accessory in this category.',
+    furniture_empty: 'No accessory matches.',
+    shop_empty_hint: 'Try another word than “{query}” or browse all categories.',
+    shop_reset_filters: 'Show all accessories',
+    shop_clear_search: 'Clear search',
+    shop_results_one: '1 result',
+    shop_results_many: '{count} results',
+    shop_add: 'Add',
+    shop_configure: 'Configure',
+    shop_add_one: 'Add one {label}',
+    shop_remove_one: 'Remove one {label}',
+    shop_included: 'Included ×{count}',
+    shop_included_short: 'Included',
+    shop_announce_added: '{label} added to your stand ({count})',
+    shop_announce_removed: '{label} removed from your stand ({count})',
 
     // MarketplaceCard
     market_from_price: 'From {price} €',
@@ -773,7 +799,7 @@ export const translations = {
     reserve_desc_large: '2m × 2m · luggage + team bags',
 
     // Furniture categories
-    cat_all: 'ALL',
+    cat_all: 'All',
     cat_furniture: 'Furniture',
     cat_multimedia: 'Multimedia',
     cat_electricity: 'Electricity',
