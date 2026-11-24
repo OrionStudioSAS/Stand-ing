@@ -1,4 +1,5 @@
 import { isSignatureLedArch } from '../src/signatureArchVariants.js';
+import { studioWhiteFinishMaterial } from '../src/importedWhiteFinish.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -100,7 +101,7 @@ test('carpet selector exposes the configured free and paid colors', () => {
 });
 
 test('imported non-metal furniture finishes keep their colors without a false metallic cast', () => {
-  const api = vm.createContext({ isSignatureLedArch, DoubleSide, isSignaturePrintedSurface: () => false });
+  const api = vm.createContext({ isSignatureLedArch, DoubleSide, studioWhiteFinishMaterial, isSignaturePrintedSurface: () => false });
   for (const name of ['normalizeMaterialName', 'normalizedItemText', 'normalizeMaterialTexture', 'isChromeMaterial', 'isAluminiumMaterial', 'isImportedNonmetalFinish', 'isBrightFridgeFinish', 'cloneAndNormalizeMaterial', 'cloneMeshMaterial']) {
     loadFunction(appSource, api, name);
   }
@@ -129,7 +130,7 @@ test('imported non-metal furniture finishes keep their colors without a false me
 });
 
 test('Signature printed panels stay white without metallic gray, including uploaded image margins', () => {
-  const api = vm.createContext({ isSignatureLedArch, DoubleSide, LinearFilter, LinearMipmapLinearFilter, SRGBColorSpace });
+  const api = vm.createContext({ isSignatureLedArch, DoubleSide, studioWhiteFinishMaterial, LinearFilter, LinearMipmapLinearFilter, SRGBColorSpace });
   api.isSignaturePackLabel = (label) => label === 'Signature';
   for (const name of [
     'normalizeMaterialName', 'normalizedItemText', 'normalizeMaterialTexture',

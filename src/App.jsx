@@ -33,6 +33,7 @@ import AdminMondayView, { MondaySyncFeedback } from './AdminMondayView.jsx';
 import PresentationGround from './PresentationGround.jsx';
 import AdminSceneHistoryButton, { useSceneLatestActivities } from './AdminSceneHistory.jsx';
 import { StudioContactShadows, StudioLighting } from './StudioLighting.jsx';
+import { studioWhiteFinishMaterial } from './importedWhiteFinish.js';
 import SceneAssembly, { SceneFirstFrame, SceneOpeningOrbit, useSceneDepartures } from './SceneAssembly.jsx';
 import { clampHangingSignBottom, effectiveHangingLimit, hangingSignBodyHeight } from '../supabase/functions/_shared/standHangingLimits.js';
 import { normalizePartitionHeadVisuals, partitionHeadUsesDifferentVisuals, patchPartitionHeadVisuals, withPartitionHeadVisualMode } from './partitionHeadVisuals.js';
@@ -23107,7 +23108,7 @@ function cloneAndNormalizeMaterial(material, item = {}) {
   }
 
   cloned.needsUpdate = true;
-  return cloned;
+  return !chrome && !aluminium ? studioWhiteFinishMaterial(cloned, item) : cloned;
 }
 
 function normalizeMaterialTexture(texture) {
@@ -23120,7 +23121,9 @@ function normalizeMaterialTexture(texture) {
 }
 
 function isAluminiumMaterial(material = {}) {
-  return /alu|minium|metal|brushed/i.test(material.name || '');
+  const name = material.name || '';
+  if (/plastic|plastique|fabric|textile|tissu|laminate|wood|bois|paint|peint|coated|laqu[eé]|white|blanc|black|noir/i.test(name)) return false;
+  return /alu|minium|metal|brushed/i.test(name);
 }
 
 function isSignaturePrintedSurface(material = {}, item = {}) {
