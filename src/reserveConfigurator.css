@@ -1077,6 +1077,13 @@ kbd {
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s var(--rsv-ease);
 }
 .rsv-catalog-card:hover { border-color: #b3c3de; box-shadow: 0 10px 22px rgba(31, 67, 120, 0.12); transform: translateY(-3px); }
+/* The product area opens the shop product window (variants, colours, quantity). */
+.rsv-catalog-open { display: grid; gap: 4px; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
+.rsv-catalog-open:disabled { cursor: not-allowed; }
+.rsv-catalog-open strong { overflow: hidden; color: var(--rsv-ink); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+.rsv-catalog-open small { color: var(--rsv-muted); font-size: 11.5px; }
+/* Shop product window shown above the reserve editor. */
+.rsv-config-layer .item-config-overlay { z-index: 1300; }
 .rsv-catalog-card:active { cursor: grabbing; transform: scale(0.98); }
 .rsv-catalog-card.no-room { opacity: 0.55; border-style: dashed; cursor: not-allowed; }
 .rsv-catalog-card.no-room:hover { transform: none; box-shadow: none; }
@@ -1150,6 +1157,31 @@ kbd {
 .rsv-selected-fields input:focus { outline: 2px solid rgba(65, 107, 176, 0.25); border-color: var(--rsv-blue); }
 .rsv-selected-fields label em { position: absolute; right: 10px; bottom: 10px; font-style: normal; color: var(--rsv-muted); }
 .rsv-rotation-field .rsv-segmented { width: 100%; }
+.rsv-rotation-field.full { grid-column: 1 / -1; }
+.rsv-rotation-field small { color: var(--rsv-muted); font-weight: 600; }
+.rsv-rotation-control { display: flex; align-items: center; gap: 12px; }
+.rsv-dial { flex: none; width: 64px; height: 64px; cursor: grab; touch-action: none; outline: none; border-radius: 50%; }
+.rsv-dial:active { cursor: grabbing; }
+.rsv-dial:focus-visible { box-shadow: 0 0 0 3px rgba(65, 107, 176, 0.3); }
+.rsv-dial.disabled { cursor: not-allowed; opacity: 0.5; }
+.rsv-dial-face { fill: #f6f8fb; stroke: var(--rsv-line); stroke-width: 1.2; }
+.rsv-dial line { stroke: #c3ccd8; stroke-width: 1; stroke-linecap: round; }
+.rsv-dial line.major { stroke: #8f9bb0; stroke-width: 1.6; }
+.rsv-dial .rsv-dial-needle { stroke: var(--rsv-blue-strong); stroke-width: 2.4; transition: x2 0.15s, y2 0.15s; }
+.rsv-dial-knob { fill: var(--rsv-blue); stroke: #fff; stroke-width: 1.6; transition: cx 0.15s, cy 0.15s; }
+.rsv-dial-hub { fill: var(--rsv-blue-strong); }
+.rsv-rotation-inputs { display: grid; flex: 1; gap: 6px; min-width: 0; }
+.rsv-angle-input { position: relative; display: block; }
+.rsv-angle-input em { position: absolute; top: 50%; right: 10px; color: var(--rsv-muted); font-style: normal; font-weight: 700; transform: translateY(-50%); }
+.rsv-rotation-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.rsv-rotation-steps button { display: inline-flex; align-items: center; justify-content: center; gap: 3px; height: 28px; border: 1px solid var(--rsv-line); border-radius: 8px; background: #fff; color: var(--rsv-ink); font-size: 11.5px; font-weight: 700; transition: background 0.15s, border-color 0.15s; }
+.rsv-rotation-steps button:hover:not(:disabled) { border-color: #a9bbd9; background: var(--rsv-tint); }
+.rsv-rotation-steps button:disabled { opacity: 0.45; cursor: not-allowed; }
+.rsv-selected-actions.single { grid-template-columns: 1fr; }
+.rsv-rotate-handle { cursor: grab; }
+.rsv-rotate-handle line { stroke: var(--rsv-blue, #416bb0); stroke-width: 0.012; stroke-dasharray: 0.02 0.015; }
+.rsv-rotate-handle circle { fill: #fff; stroke: var(--rsv-blue, #416bb0); stroke-width: 0.014; transition: fill 0.15s; }
+.rsv-rotate-handle:hover circle { fill: var(--rsv-blue, #416bb0); }
 .rsv-rotation-field .rsv-segmented button { flex: 1; }
 .rsv-selected-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .rsv-selected-actions button { border-radius: 10px; }

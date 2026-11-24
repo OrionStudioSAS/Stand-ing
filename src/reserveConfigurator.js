@@ -63,6 +63,33 @@ export function footprintBounds(size = [0.5, 0.5, 0.5], x = 0, z = 0, rotation =
   };
 }
 
+// Real outline of a (possibly rotated) rectangle: its four corners, in order.
+export function footprintPolygon(size = [0.5, 0.5, 0.5], x = 0, z = 0, rotation = 0) {
+  const [width, , depth] = size;
+  return [[-width / 2, -depth / 2], [width / 2, -depth / 2], [width / 2, depth / 2], [-width / 2, depth / 2]]
+    .map(([px, pz]) => rotateReservePoint(px, pz, rotation))
+    .map((point) => ({ x: x + point.x, z: z + point.z }));
+}
+
+export function boundsPolygon(bounds) {
+  return [{ x: bounds.minX, z: bounds.minZ }, { x: bounds.maxX, z: bounds.minZ }, { x: bounds.maxX, z: bounds.maxZ }, { x: bounds.minX, z: bounds.maxZ }];
+}
+
+// Separating axis test between two convex outlines; touching edges (within the tolerance) do not count.
+export function polygonsOverlap(a = [], b = [], tolerance = 0.005) {
+  const axes = [a, b].flatMap((polygon) => polygon.map((point, index) => {
+    const next = polygon[(index + 1) % polygon.length];
+    const length = Math.hypot(next.x - point.x, next.z - point.z) || 1;
+    return { x: -(next.z - point.z) / length, z: (next.x - point.x) / length };
+  }));
+  return axes.every((axis) => {
+    const project = (polygon) => polygon.map((point) => point.x * axis.x + point.z * axis.z);
+    const pa = project(a);
+    const pb = project(b);
+    return Math.min(...pa) < Math.max(...pb) - tolerance && Math.min(...pb) < Math.max(...pa) - tolerance;
+  });
+}
+
 export function childFootprint(child = {}) {
   return footprintBounds(reserveChildSize(child), Number(child.x || 0), Number(child.z || 0), Number(child.rotation || 0));
 }
@@ -413,6 +440,15 @@ export function contentFootprint(content = {}, interior) {
   return footprintBounds(content.size || [0.5, 0.5, 0.5], center.x, center.z, content.rotation || 0);
 }
 
+export function contentPolygon(content = {}, interior) {
+  const center = contentCenter(content, interior);
+  return footprintPolygon(content.size || [0.5, 0.5, 0.5], center.x, center.z, content.rotation || 0);
+}
+
+export function childPolygon(child = {}) {
+  return footprintPolygon(reserveChildSize(child), Number(child.x || 0), Number(child.z || 0), Number(child.rotation || 0));
+}
+
 export function contentCenter(content = {}, interior) {
   return { x: Number(interior?.minX || 0) + Number(content.u || 0), z: Number(interior?.minZ || 0) + Number(content.v || 0) };
 }
@@ -465,20 +501,18 @@ export function snapToGrid(value, step = RESERVE_GRID) {
 // Returns the reasons why a content cannot stay at its position.
 export function reserveContentIssues(content, { interior, contents = [], builtins = [], door = null } = {}) {
   if (!content || !interior) return ['outside'];
+  // The bounding box decides "inside" exactly (the interior is a rectangle); collisions use the real rotated outlines.
   const box = contentFootprint(content, interior);
+  const outline = contentPolygon(content, interior);
   const issues = [];
   if (!boundsInside(box, interior)) issues.push('outside');
-  if (door?.zoneInside && boundsOverlap(box, door.zone)) issues.push('door');
+  if (door?.zoneInside && boundsOverlap(box, door.zone) && polygonsOverlap(outline, boundsPolygon(door.zone))) issues.push('door');
   const mount = content.mount === 'wall' ? 'wall' : 'floor';
   const blocking = [
-    ...contents.filter((other) => other.key !== content.key).map((other) => ({ mount: other.mount === 'wall' ? 'wall' : 'floor', box: contentFootprint(other, interior), wall: other.wall })),
-    ...builtins.map((child) => ({ mount: isWallBuiltin(child) ? 'wall' : 'floor', box: childFootprint(child), wall: '' })),
+    ...contents.filter((other) => other.key !== content.key).map((other) => ({ mount: other.mount === 'wall' ? 'wall' : 'floor', box: contentFootprint(other, interior), outline: contentPolygon(other, interior) })),
+    ...builtins.map((child) => ({ mount: isWallBuiltin(child) ? 'wall' : 'floor', box: childFootprint(child), outline: childPolygon(child) })),
   ];
-  const overlaps = blocking.some((other) => {
-    if (mount === 'wall' && other.mount === 'wall') return boundsOverlap(box, other.box);
-    if (mount === 'floor' && other.mount === 'floor') return boundsOverlap(box, other.box);
-    return false;
-  });
+  const overlaps = blocking.some((other) => other.mount === mount && boundsOverlap(box, other.box) && polygonsOverlap(outline, other.outline));
   if (overlaps) issues.push('overlap');
   return issues;
 }

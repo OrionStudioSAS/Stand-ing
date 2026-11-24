@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   clampFloorContent, configureReserveChildren, contentFootprint, findDoorHandleVariant, findFreeReserveSpot, isReservePowerSource,
-  findMirroredDoorVariant, mirrorReserveChildren, normalizeDegrees, reserveOrientation,
+  findMirroredDoorVariant, mirrorReserveChildren, normalizeDegrees, reserveOrientation, footprintPolygon, polygonsOverlap,
   moveReserveDoor, refitReserveContents, reserveBuiltinChildren, reserveCatalogCategory, reserveContentIssues, reserveDoorChild,
   reserveDoorSlots, reserveDoorState, reserveEntryNeedsPower, reserveInterior, reserveLocalToWorld, reservePlacementAllowed,
   reservePlacementFromEntry, reserveWorldToLocal, snapWallContent,
@@ -175,4 +175,26 @@ test('door variants are matched on their visible range, not on the asset type', 
   assert.equal(findDoorHandleVariant(door, 'right', doorCatalog).type, 'door-gauche-droite');
   assert.equal(findMirroredDoorVariant(door, doorCatalog).type, 'door-droite-droite');
   assert.equal(findMirroredDoorVariant(door, []), null);
+});
+
+test('collisions use the real outline of rotated objects', () => {
+  // Two 1 m × 10 cm boards turned at 45°, side by side: their bounding boxes overlap, their outlines do not.
+  const a = footprintPolygon([1, 0.8, 0.1], 0, 0, 45);
+  const b = footprintPolygon([1, 0.8, 0.1], 0.3, 0.3, 45);
+  assert.equal(polygonsOverlap(a, b), false);
+  assert.equal(polygonsOverlap(a, footprintPolygon([1, 0.8, 0.1], 0, 0, -45)), true, 'Crossing boards do overlap');
+  assert.equal(polygonsOverlap(footprintPolygon([0.5, 1, 0.5], 0, 0, 0), footprintPolygon([0.5, 1, 0.5], 0.5, 0, 0)), false, 'Touching edges are allowed');
+});
+
+test('an object can be turned to any angle inside the reserve', () => {
+  const interior = reserveInterior(twoSquareMetres);
+  const context = { interior, builtins: reserveBuiltinChildren(twoSquareMetres), door: reserveDoorState(twoSquareMetres, { doorOpening: 'pull' }), contents: [] };
+  const cabinet = { key: 'cabinet', mount: 'floor', size: [0.6, 0.85, 0.4], rotation: 30 };
+  const placed = findFreeReserveSpot(cabinet, context);
+  assert.ok(placed, 'A cabinet turned by 30° finds a place');
+  assert.equal(placed.rotation, 30, 'The requested angle is kept');
+  assert.deepEqual(reserveContentIssues(placed, context), []);
+  const neighbour = findFreeReserveSpot({ key: 'bin', mount: 'floor', size: [0.3, 0.6, 0.3], rotation: 0 }, { ...context, contents: [placed] });
+  assert.ok(neighbour);
+  assert.deepEqual(reserveContentIssues(neighbour, { ...context, contents: [placed] }), []);
 });

@@ -97,7 +97,7 @@ import {
   configureReserveChildren, formatReserveMetres, isReservePowerSource, normalizeDegrees,
   refitReserveContents, reserveBuiltinChildren, reserveCatalogCategory, reserveDoorState, reserveEntryNeedsPower, reserveInterior,
   reserveLocalToWorld, reservePlacementAllowed, reservePlacementFromEntry, findDoorHandleVariant, reserveDoorChild, doorHandleFromLabel,
-  mirrorReserveChildren, reserveOrientation,
+  mirrorReserveChildren, reserveOrientation, clampFloorContent, contentCenter, snapWallContent,
 } from './reserveConfigurator.js';
 import './signatureHeadInformation.css';
 import './styles.css';
@@ -1407,7 +1407,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, genericCarpetFootprintEnabled)),
     [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, reserveOptions, reserveItemOverrides, genericCarpetFootprintEnabled, reserveDoorCatalog],
   );
-  const manualHydratedItems = useMemo(() => anchorReserveContentItems(rawManualHydratedItems, automaticReserveItems[0] || null), [rawManualHydratedItems, automaticReserveItems]);
+  const manualHydratedItems = useMemo(() => anchorReserveContentItems(rawManualHydratedItems, automaticReserveItems[0] || null, { fit: true }), [rawManualHydratedItems, automaticReserveItems]);
   const automaticPartitionHeadItems = useMemo(
     () => makeAutomaticPartitionHeadItems(activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, assetPackLabel)
       .map((item) => applyPartitionHeadVisualOptions(item, partitionHeadVisuals)),
@@ -1649,7 +1649,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       const source = content.sourceId ? manualHydratedItems.find((item) => item.id === content.sourceId) : null;
       const card = reserveCatalog.find((candidate) => candidate.key === content.catalogKey);
       const entry = findCatalogEntry(availableCatalog, content.type);
-      const price = source ? cartItemBasePrice(source, entry, assetPackLabel, availableCatalog) : Number(card?.price ?? assetUnitPrice(entry, assetPackLabel) ?? 0);
+      const configuredPrice = Number(content.options?.unitPrice);
+      const price = source ? cartItemBasePrice(source, entry, assetPackLabel, availableCatalog)
+        : Number.isFinite(configuredPrice) && content.options?.unitPrice !== undefined ? configuredPrice
+          : Number(card?.price ?? assetUnitPrice(entry, assetPackLabel) ?? 0);
       return { key: content.key, included: price <= 0, price: Math.max(0, Number(price || 0)) };
     });
     return { lines, total: roundCurrency(lines.reduce((sum, line) => sum + line.price, 0)) };
@@ -1734,6 +1737,19 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     contentPricing: reserveContentPricing,
     reservePrice: reserveRowPrice,
     Preview3D: ReserveEditorPreview3D,
+    // Same product window as the shop (variants, colours, options, quantity); "Ajouter" fills the reserve.
+    configure: (productKey, onDone) => {
+      const entry = findCatalogEntry(availableCatalog, productKey);
+      if (!entry) return;
+      setItemConfigModal({
+        mode: 'add',
+        entry,
+        reserveTarget: ({ entry: chosen, options = {}, quantity = 1 }) => {
+          const groupType = options.variantGroupType;
+          onDone?.({ cardKey: groupType ? `${groupType}:${chosen?.type}` : chosen?.type, options, quantity });
+        },
+      });
+    },
   } : null), [reserveEditor, readOnly, width, depth, layout, reserveStandOthers, reserveRows, reserveCatalog, reserveInitialDraft, buildReserveDraft, reservePlacementsFor, reserveContentPricing, reserveRowPrice]);
   const reservePreviewContext = useMemo(() => ({
     stand: { width, depth, height, layout },
@@ -2476,6 +2492,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   const confirmItemConfigurator = ({ entry, item, options, quantity = 1 }) => {
     if (readOnly) return;
+    if (itemConfigModal?.reserveTarget) {
+      itemConfigModal.reserveTarget({ entry, options, quantity });
+      setItemConfigModal(null);
+      return;
+    }
     if (item?.autoMeterCover) {
       if (signatureMeterCoverEntries(availableCatalog).some((variant) => variant.type === entry?.type)) setSignatureMeterCoverType(entry.type);
       setItemConfigModal(null);
@@ -3552,6 +3573,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           ? visibleSceneItems.find((item) => item.id === itemConfigModal.item.id) || itemConfigModal.item
           : undefined;
         return (
+          <div className={itemConfigModal.reserveTarget ? 'rsv-config-layer' : undefined} style={{ display: 'contents' }}>
           <ItemConfiguratorModal
             mode={itemConfigModal.mode}
             scene={initialScene}
@@ -3572,6 +3594,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onDeleteItem={removeSceneItemById}
             canDeleteItem={(sceneItem) => canDeleteSceneItem(sceneItem, effectiveAdminViewer)}
           />
+          </div>
         );
       })()}
 
@@ -15858,7 +15881,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, packLabel, options.reserveOptions || {})
     .map((item) => applyReserveItemOverride(item, options.reserveItemOverrides || {}, width, depth, layout, options.carpetFootprintEnabled !== false));
   const anchoredManualItems = manualItems.some((item) => item?.options?.reserveContent)
-    ? anchorReserveContentItems(manualItems, automaticReserveItems[0] || null) : manualItems;
+    ? anchorReserveContentItems(manualItems, automaticReserveItems[0] || null, { fit: true }) : manualItems;
   const ledItems = options.ledRailsEnabled === false
     ? []
     : hasAutoSpotsRule(autoSpotsRule)
@@ -17483,12 +17506,35 @@ function reserveWallContentBaseY(item = {}, entry = null) {
 }
 
 // Objects stored inside the reserve follow it: their local position is re-anchored on every render.
-function anchorReserveContentItems(items = [], reserveItem = null) {
+// When the reserve changed without the exhibitor (pack rule edited in the admin…), stored objects are
+// moved to a free spot of the new reserve; one that has no room left is kept inside the reserve anyway.
+function fitReserveContentPlacements(items = [], reserveItem = null, interior = null) {
+  const placements = new Map();
+  if (!reserveItem || !interior) return placements;
+  const children = reserveItem.children || [];
+  const contents = items.filter(isReserveContentItem).map((item) => reserveContentFromItem(item, []));
+  const context = {
+    interior,
+    builtins: reserveBuiltinChildren(children),
+    door: reserveDoorState(children, { doorOpening: reserveItem.options?.reserveDoorOpening }),
+  };
+  const { kept, removed } = refitReserveContents(contents, context);
+  kept.forEach((content) => placements.set(content.key, reserveContentPlacement(content)));
+  removed.forEach((content) => {
+    const center = contentCenter(content, interior);
+    const inside = content.mount === 'wall' ? snapWallContent(content, center, interior) : clampFloorContent(content, center, interior);
+    placements.set(content.key, reserveContentPlacement(inside));
+  });
+  return placements;
+}
+
+function anchorReserveContentItems(items = [], reserveItem = null, { fit = false } = {}) {
   if (!(items || []).some(isReserveContentItem)) return items;
   const interior = reserveItem ? reserveInterior(reserveItem.children || []) : null;
+  const fitted = fit ? fitReserveContentPlacements(items, reserveItem, interior) : null;
   return items.map((item) => {
     if (!isReserveContentItem(item)) return item;
-    const placement = item.options.reserveContent;
+    const placement = fitted?.get(item.id) || item.options.reserveContent;
     const base = {
       ...item,
       isWallItem: false,
@@ -17506,6 +17552,7 @@ function anchorReserveContentItems(items = [], reserveItem = null) {
     });
     return {
       ...base,
+      ...(placement !== item.options.reserveContent ? { options: { ...item.options, reserveContent: placement } } : {}),
       x: Math.round(world.x * 1000) / 1000,
       z: Math.round(world.z * 1000) / 1000,
       y: isReserveWallContentItem(item) ? reserveWallContentBaseY(item) : 0,
@@ -17633,6 +17680,14 @@ function buildReserveCatalog(entries = [], packLabel = '', width = 4, depth = 3,
     if (card) cards.push(card);
   });
   const unique = [...new Map(cards.map((card) => [card.key, card])).values()];
+  // Shop behaviour: one product card, variants chosen in the product window when there is something to choose.
+  const variantCounts = unique.reduce((counts, card) => counts.set(card.productKey, (counts.get(card.productKey) || 0) + 1), new Map());
+  const productEntries = new Map((entries || []).map((entry) => [entry?.type, entry]));
+  unique.forEach((card) => {
+    const product = productEntries.get(card.productKey);
+    card.variantCount = variantCounts.get(card.productKey) || 1;
+    card.configurable = card.variantCount > 1 || Boolean(product && entryNeedsConfigurator(product));
+  });
   return unique.sort((a, b) => reserveCategoryOrder.indexOf(a.category) - reserveCategoryOrder.indexOf(b.category) || a.label.localeCompare(b.label, 'fr'));
 }
 
@@ -17654,6 +17709,10 @@ function reserveCatalogCard(asset, { group = null, variant = null, packLabel = '
   const price = Number(variant?.price ?? assetUnitPrice(asset, packLabel) ?? 0) || 0;
   return {
     key: group ? `${group.type}:${asset.type}` : asset.type,
+    productKey: group ? group.type : asset.type,
+    productLabel: group ? groupLabel : variantLabel,
+    productThumbnail: group?.thumbnailUrl || group?.thumbnail_url || asset.thumbnailUrl || asset.thumbnail_url || variant?.imageUrl || '',
+    variantLabel: group ? variantLabel : '',
     type: asset.type,
     label,
     groupLabel: '',
@@ -17725,7 +17784,7 @@ function makeReserveContentItem(content = {}, card = null, catalogEntries = [], 
     isWallItem: false,
     wall: undefined,
     collisionEnabled: true,
-    options: { ...(card?.options || {}), reserveContent: reserveContentPlacement(content) },
+    options: { ...(card?.options || {}), ...(content.options || {}), reserveContent: reserveContentPlacement(content) },
   };
 }
 

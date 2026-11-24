@@ -5,7 +5,8 @@ import {
   Layers, Package, Plus, Redo2, RotateCw, Ruler, Search, Send, Trash2, Undo2, X, Zap,
 } from 'lucide-react';
 import {
-  RESERVE_DOOR_LEAF, RESERVE_GRID, boundsOverlap, childFootprint, clampFloorContent, contentCenter, contentFootprint,
+  RESERVE_DOOR_LEAF, RESERVE_GRID, boundsOverlap, boundsPolygon, childFootprint, clampFloorContent, contentCenter, contentFootprint, contentPolygon,
+  footprintPolygon, polygonsOverlap,
   doorDistanceFromLeft, findFreeReserveSpot, footprintBounds, formatReserveCm, formatReserveMetres, isReservePowerSource,
   isWallBuiltin, refitReserveContents, reserveBuiltinChildren, reserveChildSize, reserveContentIssues, reserveDoorSlots,
   reserveDoorState, reserveFreeSurfaceRatio, reserveInterior, reserveSegments, snapToGrid, snapWallContent,
@@ -326,6 +327,7 @@ export function ReservePlan({
   svgRef,
   safeAreas = null,
   onItemPointerDown,
+  onRotatePointerDown,
   onBackgroundPointerDown,
   onSlotSelect,
   onDoorPointerDown,
@@ -525,6 +527,7 @@ export function ReservePlan({
               showPower={item.needsPower && !hasPower}
               interactive={interactive && step === 'layout'}
               onPointerDown={onItemPointerDown}
+              onRotatePointerDown={onRotatePointerDown}
               filterId={`rsv-shadow-${uid}`}
               tr={tr}
             />
@@ -659,7 +662,7 @@ function ChipIcon({ icon, x, size }) {
   return null;
 }
 
-function PlanItem({ item, fontSize, compact, selected, dragging, invalidReason, muted, hideLabel = false, showPower, interactive, onPointerDown, filterId, tr }) {
+function PlanItem({ item, fontSize, compact, selected, dragging, invalidReason, muted, hideLabel = false, showPower, interactive, onPointerDown, onRotatePointerDown, filterId, tr }) {
   const palette = contentPalette[item.category] || contentPalette.storage;
   const [w, , d] = item.size || [0.5, 0.5, 0.5];
   const visualW = Math.max(0.04, w);
@@ -689,6 +692,13 @@ function PlanItem({ item, fontSize, compact, selected, dragging, invalidReason, 
         />
         {item.mount === 'wall' && <line x1={-visualW / 2} y1={-visualD / 2} x2={visualW / 2} y2={-visualD / 2} className="rsv-item-wallside" />}
         {item.kind !== 'builtin' && item.mount !== 'wall' && <line x1={-visualW / 2 + 0.03} y1={visualD / 2 - 0.03} x2={visualW / 2 - 0.03} y2={visualD / 2 - 0.03} className="rsv-item-front" />}
+        {/* Free rotation: drag the round handle around the object (15° steps, Shift for any angle). */}
+        {selected && !compact && interactive && item.mount !== 'wall' && onRotatePointerDown && (
+          <g className="rsv-rotate-handle" onPointerDown={(event) => { event.stopPropagation(); onRotatePointerDown(event, item); }}>
+            <line x1={0} y1={-visualD / 2} x2={0} y2={-visualD / 2 - Math.max(0.16, fontSize * 1.4)} />
+            <circle cx={0} cy={-visualD / 2 - Math.max(0.16, fontSize * 1.4)} r={Math.max(0.045, fontSize * 0.5)} />
+          </g>
+        )}
       </g>
       {selected && !compact && (
         <g className="rsv-item-handles">
@@ -1158,6 +1168,32 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
   const interior = structure?.interior || null;
   const hasPower = useMemo(() => (structure?.builtins || []).some(isReservePowerSource) || draft.contents.some((content) => content.isPower), [structure, draft.contents]);
   const context = useMemo(() => ({ interior, contents: draft.contents, builtins: structure?.builtins || [], door: structure?.door || null }), [interior, draft.contents, structure]);
+  // Products: one card per shop product (variants are chosen in the shop product window).
+  const products = useMemo(() => {
+    const byKey = new Map();
+    model.catalog.forEach((entry) => {
+      const key = entry.productKey || entry.key;
+      const product = byKey.get(key) || {
+        key, label: entry.productLabel || entry.label, thumbnail: entry.productThumbnail || entry.thumbnail, category: entry.category,
+        configurable: Boolean(entry.configurable), variants: [],
+      };
+      product.variants.push(entry);
+      product.configurable = product.configurable || Boolean(entry.configurable);
+      byKey.set(key, product);
+    });
+    return [...byKey.values()].map((product) => {
+      const prices = product.variants.map((entry) => Number(entry.price || 0));
+      return {
+        ...product,
+        mount: product.variants.every((entry) => entry.mount === 'wall') ? 'wall' : 'floor',
+        minPrice: Math.min(...prices),
+        samePrice: prices.every((price) => price === prices[0]),
+        size: product.variants[0].size,
+        needsPower: product.variants.some((entry) => entry.needsPower),
+        isPower: product.variants.some((entry) => entry.isPower),
+      };
+    });
+  }, [model.catalog]);
   const issuesByKey = useMemo(() => Object.fromEntries(draft.contents.map((content) => [content.key, reserveContentIssues(content, context)])), [draft.contents, context]);
   const pricing = useMemo(() => model.contentPricing(draft.contents), [model, draft.contents]);
   const reservePrice = model.reservePrice(draft.optionType);
@@ -1218,8 +1254,37 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
     });
   }, [commit, groupType, readOnly]);
 
-  const addCatalogEntry = useCallback((entry, center = null) => {
+  const addCatalogEntry = useCallback((entry, center = null, options = null, quantity = 1) => {
     if (readOnly || !interior) return null;
+    const count = Math.max(1, Math.min(20, Number(quantity || 1)));
+    if (count > 1 || options) {
+      // Several copies or a configured variant: placed one after the other in a single history step.
+      const placedList = [];
+      let contents = draft.contents;
+      for (let index = 0; index < count; index += 1) {
+        const base = {
+          key: newContentKey(), sourceId: '', catalogKey: entry.key, type: entry.type, label: entry.label, detail: entry.detail,
+          size: entry.size, mount: entry.mount, category: entry.category, thumbnail: entry.thumbnail, needsPower: entry.needsPower,
+          isPower: entry.isPower, rotation: 0, u: 0, v: 0, ...(options ? { options } : {}),
+        };
+        const localContext = { ...context, contents };
+        let placed = null;
+        if (center && index === 0) {
+          const candidate = base.mount === 'wall' ? snapWallContent(base, center, interior) : clampFloorContent(base, center, interior);
+          if (!reserveContentIssues(candidate, localContext).length) placed = candidate;
+        }
+        if (!placed) placed = findFreeReserveSpot(base, localContext);
+        if (!placed) break;
+        placedList.push(placed);
+        contents = [...contents, placed];
+      }
+      if (!placedList.length) { showToast(`Plus de place pour « ${entry.label} » dans cette réserve`, 'warning'); return null; }
+      commit((current) => ({ ...current, contents: [...current.contents, ...placedList] }));
+      setSelectedKey(placedList[placedList.length - 1].key);
+      if (placedList.length < count) showToast(`${placedList.length} sur ${count} ajoutés : plus de place pour les autres`, 'warning');
+      else showToast(count > 1 ? `${count} × ${entry.label} ajoutés à la réserve` : `${entry.label} ajouté à la réserve`, 'success');
+      return placedList[placedList.length - 1];
+    }
     const base = {
       key: newContentKey(),
       sourceId: '',
@@ -1251,7 +1316,18 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
     setSelectedKey(placed.key);
     showToast(`${entry.label} ajouté à la réserve`, 'success');
     return placed;
-  }, [commit, context, interior, readOnly, showToast]);
+  }, [commit, context, draft.contents, interior, readOnly, showToast]);
+
+  // Products: one card per shop product; its variants are chosen in the shop product window.
+  const openProduct = useCallback((product, center = null) => {
+    if (readOnly || !product) return;
+    if (!product.configurable || !model.configure) { addCatalogEntry(product.variants[0], center); return; }
+    model.configure(product.key, ({ cardKey, options, quantity }) => {
+      const card = model.catalog.find((entry) => entry.key === cardKey);
+      if (!card) { showToast('Cette variante ne peut pas être placée dans la réserve', 'warning'); return; }
+      addCatalogEntry(card, center, options, quantity);
+    });
+  }, [addCatalogEntry, model, readOnly, showToast]);
 
   const removeContent = useCallback((key) => {
     if (readOnly) return;
@@ -1276,11 +1352,23 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
     setSelectedKey(placed.key);
   }, [commit, context, draft.contents, model.catalog, showToast]);
 
-  const rotateSelected = useCallback(() => {
+  // Validity of an included piece (shelves unit…) at a given position and angle.
+  const builtinIssue = useCallback((child, center, rotation) => {
+    const box = footprintBounds(reserveChildSize(child), center.x, center.z, rotation);
+    const outline = footprintPolygon(reserveChildSize(child), center.x, center.z, rotation);
+    const inside = box.minX >= interior.minX - 0.005 && box.maxX <= interior.maxX + 0.005 && box.minZ >= interior.minZ - 0.005 && box.maxZ <= interior.maxZ + 0.005;
+    if (!inside) return 'outside';
+    if (structure?.door?.zoneInside && polygonsOverlap(outline, boundsPolygon(structure.door.zone))) return 'door';
+    if (!isWallBuiltin(child) && draft.contents.some((content) => content.mount !== 'wall' && polygonsOverlap(outline, contentPolygon(content, interior)))) return 'overlap';
+    return '';
+  }, [draft.contents, interior, structure]);
+
+  const rotateSelected = useCallback((delta = 15, absolute = null) => {
     if (readOnly) return;
+    const turn = (current) => ((Math.round(absolute ?? (Number(current || 0) + delta)) % 360) + 360) % 360;
     if (selectedContent) {
       if (selectedContent.mount === 'wall') { showToast('Un objet mural suit l’orientation de son mur', 'info'); return; }
-      const rotated = clampFloorContent({ ...selectedContent, rotation: (Number(selectedContent.rotation || 0) + 90) % 360 }, contentCenter(selectedContent, interior), interior);
+      const rotated = clampFloorContent({ ...selectedContent, rotation: turn(selectedContent.rotation) }, contentCenter(selectedContent, interior), interior);
       const issues = reserveContentIssues(rotated, context);
       if (issues.length) {
         const relocated = findFreeReserveSpot(rotated, context);
@@ -1290,9 +1378,12 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
       }
       updateContent(selectedContent.key, () => rotated);
     } else if (selectedBuiltin && !isWallBuiltin(selectedBuiltin)) {
-      updateBuiltin(selectedBuiltin.id, { rotation: (Number(selectedBuiltin.rotation || 0) + 90) % 360 });
+      const rotation = turn(selectedBuiltin.rotation);
+      const blocked = builtinIssue(selectedBuiltin, { x: Number(selectedBuiltin.x || 0), z: Number(selectedBuiltin.z || 0) }, rotation);
+      if (blocked) { showToast(`Rotation impossible : ${ISSUE_LABELS[blocked].toLowerCase()}`, 'warning'); return; }
+      updateBuiltin(selectedBuiltin.id, { rotation });
     }
-  }, [context, interior, readOnly, selectedBuiltin, selectedContent, showToast, updateBuiltin, updateContent]);
+  }, [builtinIssue, context, interior, readOnly, selectedBuiltin, selectedContent, showToast, updateBuiltin, updateContent]);
 
   // Pointer helpers.
   const toLocal = useCallback((clientX, clientY) => {
@@ -1322,6 +1413,13 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
     setDrag({ key: item.key, kind: item.kind, offset: { x: item.x - local.x, z: item.z - local.z }, origin: { x: item.x, z: item.z }, position: null, valid: true, reason: '', pointerId: event.pointerId, moved: false });
   }, [readOnly, step, toLocal]);
 
+  const onRotatePointerDown = useCallback((event, item) => {
+    if (readOnly || step !== 'layout') return;
+    setSelectedKey(item.key);
+    event.currentTarget.ownerSVGElement?.setPointerCapture?.(event.pointerId);
+    setDrag({ key: item.key, kind: item.kind, mode: 'rotate', center: { x: item.x, z: item.z }, rotation: Number(item.rotation || 0), position: null, valid: true, reason: '', pointerId: event.pointerId, moved: false });
+  }, [readOnly, step]);
+
   const dragRef = useRef(null);
   useEffect(() => { dragRef.current = drag; }, [drag]);
   const dragging = Boolean(drag);
@@ -1332,14 +1430,29 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
       if (!drag) return;
       const local = toLocal(event.clientX, event.clientY);
       if (!local) return;
+      if (drag.mode === 'rotate') {
+        // Angle of the pointer around the object centre: the handle points to the object's back (-z local).
+        const raw = (Math.atan2(-(local.x - drag.center.x), -(local.z - drag.center.z)) * 180) / Math.PI;
+        const angle = ((Math.round(raw / (event.shiftKey ? 1 : 15)) * (event.shiftKey ? 1 : 15)) % 360 + 360) % 360;
+        if (drag.kind === 'builtin') {
+          const child = (structure?.builtins || []).find((candidate) => `builtin:${candidate.id}` === drag.key);
+          if (!child) return;
+          const blocked = builtinIssue(child, drag.center, angle);
+          setDrag((current) => current && ({ ...current, position: drag.center, rotation: angle, valid: !blocked, reason: blocked, moved: true }));
+          return;
+        }
+        const content = draft.contents.find((item) => item.key === drag.key);
+        if (!content) return;
+        const candidate = clampFloorContent({ ...content, rotation: angle }, drag.center, interior);
+        const issues = reserveContentIssues(candidate, context);
+        setDrag((current) => current && ({ ...current, candidate, rotation: angle, position: contentCenter(candidate, interior), valid: !issues.length, reason: issues[0] || '', moved: true }));
+        return;
+      }
       const center = { x: snap(local.x + drag.offset.x), z: snap(local.z + drag.offset.z) };
       if (drag.kind === 'builtin') {
         const child = (structure?.builtins || []).find((candidate) => `builtin:${candidate.id}` === drag.key);
         if (!child) return;
-        const box = footprintBounds(reserveChildSize(child), center.x, center.z, child.rotation || 0);
-        const others = draft.contents.filter((content) => content.mount !== 'wall').map((content) => contentFootprint(content, interior));
-        const inside = box.minX >= interior.minX - 0.005 && box.maxX <= interior.maxX + 0.005 && box.minZ >= interior.minZ - 0.005 && box.maxZ <= interior.maxZ + 0.005;
-        const blocked = !inside ? 'outside' : structure.door?.zoneInside && boundsOverlap(box, structure.door.zone) ? 'door' : !isWallBuiltin(child) && others.some((other) => boundsOverlap(box, other)) ? 'overlap' : '';
+        const blocked = builtinIssue(child, center, Number(child.rotation || 0));
         setDrag((current) => current && ({ ...current, position: center, valid: !blocked, reason: blocked, moved: true }));
         return;
       }
@@ -1355,9 +1468,13 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
       setDrag(null);
       if (!current?.moved || !current.position) return;
       if (!current.valid) {
-        showToast(`Déplacement annulé : ${ISSUE_LABELS[current.reason]?.toLowerCase() || 'place indisponible'}`, 'warning');
+        showToast(`${current.mode === 'rotate' ? 'Rotation impossible' : 'Déplacement annulé'} : ${ISSUE_LABELS[current.reason]?.toLowerCase() || 'place indisponible'}`, 'warning');
       } else if (current.kind === 'builtin') {
-        updateBuiltin(current.key.slice('builtin:'.length), { x: Math.round(current.position.x * 1000) / 1000, z: Math.round(current.position.z * 1000) / 1000 });
+        updateBuiltin(current.key.slice('builtin:'.length), {
+          x: Math.round(current.position.x * 1000) / 1000,
+          z: Math.round(current.position.z * 1000) / 1000,
+          ...(current.mode === 'rotate' ? { rotation: current.rotation } : {}),
+        });
       } else if (current.candidate) {
         updateContent(current.key, () => current.candidate);
       }
@@ -1373,7 +1490,7 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
       window.removeEventListener('pointercancel', up);
       window.removeEventListener('keydown', cancel);
     };
-  }, [dragging, context, draft.contents, interior, showToast, snap, structure, toLocal, updateBuiltin, updateContent]);
+  }, [dragging, builtinIssue, context, draft.contents, interior, showToast, snap, structure, toLocal, updateBuiltin, updateContent]);
 
   // Contents rendered on the plan, with the live drag position.
   const planContents = useMemo(() => {
@@ -1382,14 +1499,15 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
   }, [draft.contents, drag]);
   const planStructure = useMemo(() => {
     if (!structure || !drag?.position || drag.kind !== 'builtin') return structure;
-    return { ...structure, builtins: structure.builtins.map((child) => (`builtin:${child.id}` === drag.key ? { ...child, x: drag.position.x, z: drag.position.z } : child)) };
+    return { ...structure, builtins: structure.builtins.map((child) => (`builtin:${child.id}` === drag.key ? { ...child, x: drag.position.x, z: drag.position.z, rotation: drag.rotation ?? child.rotation } : child)) };
   }, [structure, drag]);
 
   // Catalogue drag & drop (HTML5).
-  const catalogEntryByKey = useMemo(() => new Map(model.catalog.map((entry) => [entry.key, entry])), [model.catalog]);
+  const catalogEntryByKey = useMemo(() => new Map(products.map((product) => [product.key, product])), [products]);
   const onPlanDragOver = (event) => {
     const key = dragCatalogKey.current;
-    const entry = catalogEntryByKey.get(key);
+    const product = catalogEntryByKey.get(key);
+    const entry = product?.variants[0];
     if (!entry || readOnly || step !== 'layout' || !interior) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
@@ -1403,14 +1521,15 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
   };
   const onPlanDrop = (event) => {
     const key = dragCatalogKey.current || event.dataTransfer.getData('text/plain');
-    const entry = catalogEntryByKey.get(key);
+    const product = catalogEntryByKey.get(key);
+    const entry = product?.variants[0];
     event.preventDefault();
     const current = ghost;
     setGhost(null);
     dragCatalogKey.current = '';
     if (!entry || !current) return;
     if (!current.valid) { showToast(`Impossible ici : ${ISSUE_LABELS[current.reason]?.toLowerCase() || 'place indisponible'}`, 'warning'); return; }
-    addCatalogEntry(entry, current.center);
+    openProduct(product, current.center);
   };
 
   // Keyboard shortcuts.
@@ -1418,6 +1537,7 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
     const onKey = (event) => {
       const tag = event.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (document.querySelector('.rsv-config-layer')) return;
       const mod = event.metaKey || event.ctrlKey;
       if (mod && event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo(); return; }
       if (mod && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); return; }
@@ -1427,7 +1547,7 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
         return;
       }
       if (readOnly || step !== 'layout' || !selectedKey) return;
-      if (event.key === 'r' || event.key === 'R') { event.preventDefault(); rotateSelected(); }
+      if (event.key === 'r' || event.key === 'R') { event.preventDefault(); rotateSelected(event.shiftKey ? -15 : 15); }
       if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); removeContent(selectedKey); }
       if (event.key.startsWith('Arrow') && selectedContent) {
         event.preventDefault();
@@ -1519,14 +1639,15 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
 
   const catalogEntries = useMemo(() => {
     const text = search.trim().toLowerCase();
-    return model.catalog.filter((entry) => (category === 'all' || entry.category === category)
-      && (!text || `${entry.label} ${entry.detail || ''} ${entry.groupLabel || ''}`.toLowerCase().includes(text)));
-  }, [model.catalog, category, search]);
+    return products.filter((product) => (category === 'all' || product.variants.some((entry) => entry.category === category))
+      && (!text || [product.label, ...product.variants.map((entry) => `${entry.label} ${entry.detail || ''}`)].join(' ').toLowerCase().includes(text)));
+  }, [products, category, search]);
   const categories = useMemo(() => ['all', ...['storage', 'appliance', 'wall', 'electric'].filter((id) => model.catalog.some((entry) => entry.category === id))], [model.catalog]);
   const fitsByKey = useMemo(() => {
     if (!interior) return {};
-    return Object.fromEntries(model.catalog.map((entry) => [entry.key, Boolean(findFreeReserveSpot({ key: '__probe__', size: entry.size, mount: entry.mount, rotation: 0, u: 0, v: 0 }, context))]));
-  }, [model.catalog, context, interior]);
+    const fits = (entry) => Boolean(findFreeReserveSpot({ key: '__probe__', size: entry.size, mount: entry.mount, rotation: 0, u: 0, v: 0 }, context));
+    return Object.fromEntries(products.map((product) => [product.key, product.variants.some(fits)]));
+  }, [products, context, interior]);
 
   const subtitle = step === 'structure'
     ? `${currentRow?.areaLabel || ''} · ${formatReserveMetres(interior?.width || 0)} × ${formatReserveMetres(interior?.depth || 0)} m · ${PLACEMENT_LABELS[built?.placement] || ''}${built?.orientationChoices?.length ? ` · ${orientationLabel(built.orientation, built.orientationCorner)}` : ''}`.toLowerCase().replace(/^./, (c) => c.toUpperCase())
@@ -1537,7 +1658,8 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
   const stepDone = (id) => visited.has(id) && id !== step && STEPS.findIndex((item) => item.id === id) < STEPS.findIndex((item) => item.id === step);
   const Preview3D = model.Preview3D;
   const missingPowerContents = draft.contents.filter((content) => content.needsPower);
-  const powerEntry = model.catalog.find((entry) => entry.key === model.powerKey) || null;
+  const powerCard = model.catalog.find((entry) => entry.key === model.powerKey) || null;
+  const powerEntry = powerCard ? products.find((product) => product.variants.some((entry) => entry.key === powerCard.key)) || null : null;
 
   const modal = (
     <div className={`rsv-overlay${closing ? ' closing' : ''}`} onPointerDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}>
@@ -1607,6 +1729,7 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
                 hasPower={hasPower}
                 interactive={!readOnly}
                 onItemPointerDown={onItemPointerDown}
+                onRotatePointerDown={onRotatePointerDown}
                 onBackgroundPointerDown={(event) => { if (!event.target.closest?.('.rsv-item, .rsv-slot, .rsv-door')) setSelectedKey(''); }}
                 onSlotSelect={(slotId) => moveDoorToSlot(slotId)}
                 onDragOver={onPlanDragOver}
@@ -1617,7 +1740,7 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
 
             {toolbarPosition && (selectedContent || selectedBuiltin) && !readOnly && (
               <div className="rsv-float-toolbar" style={{ left: toolbarPosition.left, top: toolbarPosition.top }}>
-                <button type="button" onClick={rotateSelected} title={tr('Pivoter (R)')} aria-label={tr('Pivoter')} disabled={(selectedContent?.mount || (selectedBuiltin && isWallBuiltin(selectedBuiltin) ? 'wall' : 'floor')) === 'wall'}><RotateCw size={14} /></button>
+                <button type="button" onClick={() => rotateSelected(15)} title={tr('Pivoter de 15° (R)')} aria-label={tr('Pivoter')} disabled={(selectedContent?.mount || (selectedBuiltin && isWallBuiltin(selectedBuiltin) ? 'wall' : 'floor')) === 'wall'}><RotateCw size={14} /></button>
                 {selectedContent && <button type="button" onClick={() => duplicateContent(selectedContent.key)} title={tr('Dupliquer')} aria-label={tr('Dupliquer')}><Copy size={14} /></button>}
                 <button type="button" className="danger" onClick={() => removeContent(selectedKey)} title={tr('Supprimer (Suppr)')} aria-label={tr('Supprimer')}><Trash2 size={14} /></button>
                 <span>{contentSizeLabel(selectedContent?.size || reserveChildSize(selectedBuiltin))}</span>
@@ -1723,7 +1846,7 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
                   missingPower={missingPowerContents}
                   powerEntry={powerEntry}
                   onSelect={setSelectedKey}
-                  onAdd={(entry) => addCatalogEntry(entry)}
+                  onAdd={(product) => openProduct(product)}
                   onDragStart={(entry) => { dragCatalogKey.current = entry.key; }}
                   onDragEnd={() => { dragCatalogKey.current = ''; setGhost(null); }}
                   onRemove={removeContent}
@@ -2030,12 +2153,15 @@ function LayoutStep({
                   onDragEnd={onDragEnd}
                 >
                   {entry.mount === 'wall' && <span className="rsv-catalog-tag">{tr('Mural')}</span>}
-                  <div className="rsv-catalog-thumb"><ContentThumb content={entry} /></div>
-                  <strong title={entry.groupLabel ? `${entry.groupLabel} · ${entry.label}` : entry.label}>{tr(entry.label)}</strong>
-                  <small>{entry.groupLabel ? `${tr(entry.groupLabel)} · ` : ''}{contentSizeLabel(entry.size)}</small>
+                  <button type="button" className="rsv-catalog-open" disabled={readOnly || !fits} onClick={() => onAdd(entry)} aria-label={`${tr(entry.configurable ? 'Choisir' : 'Ajouter')} ${entry.label}`}>
+                    <div className="rsv-catalog-thumb"><ContentThumb content={entry} /></div>
+                    <strong title={entry.label}>{tr(entry.label)}</strong>
+                    <small>{entry.variants.length > 1 ? tr(`${entry.variants.length} variantes disponibles`) : contentSizeLabel(entry.size)}</small>
+                  </button>
                   <footer>
-                    <span className={entry.price > 0 ? 'price' : 'price included'}>{tr(fits ? reservePriceTag(entry.price) : 'Plus de place')}</span>
-                    <button type="button" disabled={readOnly || !fits} onClick={() => onAdd(entry)} aria-label={`${tr('Ajouter')} ${entry.label}`}><Plus size={15} /></button>
+                    <span className={entry.minPrice > 0 ? 'price' : 'price included'}>{tr(!fits ? 'Plus de place' : entry.minPrice > 0 && !entry.samePrice ? `À partir de ${formatReservePrice(entry.minPrice)}` : reservePriceTag(entry.minPrice))}</span>
+                    {/* Same action as the card itself: a visual cue only, so each card has one accessible control. */}
+                    <button type="button" disabled={readOnly || !fits} onClick={() => onAdd(entry)} aria-hidden="true" tabIndex={-1}><Plus size={15} /></button>
                   </footer>
                 </article>
               );
@@ -2067,10 +2193,17 @@ function LayoutStep({
                 <span className="rsv-pill green">{tr('Inclus')}</span>
               </header>
               {!readOnly && (
-                <div className="rsv-selected-actions">
-                  <button type="button" className="rsv-secondary-button" onClick={onRotate} disabled={isWallBuiltin(selectedBuiltin)}><RotateCw size={14} /> {tr('Pivoter')}</button>
-                  <button type="button" className="rsv-danger-outline" onClick={() => onRemove(`builtin:${selectedBuiltin.id}`)}><Trash2 size={14} /> {tr('Retirer')}</button>
-                </div>
+                <>
+                  {!isWallBuiltin(selectedBuiltin) && (
+                    <div className="rsv-rotation-field full">
+                      <span>{tr('Orientation')}</span>
+                      <RotationControl tr={tr} value={selectedBuiltin.rotation} onChange={(value) => onRotate(0, value)} />
+                    </div>
+                  )}
+                  <div className="rsv-selected-actions single">
+                    <button type="button" className="rsv-danger-outline" onClick={() => onRemove(`builtin:${selectedBuiltin.id}`)}><Trash2 size={14} /> {tr('Retirer')}</button>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -2082,7 +2215,7 @@ function LayoutStep({
                 <strong>{tr(`${missingPower[0].label} a besoin d’une prise`)}</strong>
                 <span>{tr('Ajoutez-la maintenant pour éviter un oubli.')}</span>
               </div>
-              {powerEntry && <button type="button" disabled={readOnly} onClick={() => onAdd(powerEntry)}>{tr(reservePriceTag(powerEntry.price))}</button>}
+              {powerEntry && <button type="button" disabled={readOnly} onClick={() => onAdd(powerEntry)}>{tr(powerEntry.configurable ? 'Choisir' : reservePriceTag(powerEntry.minPrice))}</button>}
             </div>
           )}
 
@@ -2140,6 +2273,82 @@ function LayoutStep({
   );
 }
 
+// Free rotation: drag the dial (15° steps, Shift for any angle), type an angle, or nudge it.
+function RotationControl({ tr, value = 0, disabled = false, onChange }) {
+  const angle = ((Math.round(Number(value || 0)) % 360) + 360) % 360;
+  const [text, setText] = useState(String(angle));
+  const dialRef = useRef(null);
+  useEffect(() => { setText(String(angle)); }, [angle]);
+  const commitText = () => {
+    const next = Number(String(text).replace(',', '.').replace('°', ''));
+    if (Number.isFinite(next)) onChange?.(((Math.round(next) % 360) + 360) % 360);
+    else setText(String(angle));
+  };
+  const fromPointer = (event) => {
+    const box = dialRef.current?.getBoundingClientRect();
+    if (!box) return null;
+    const raw = (Math.atan2(-(event.clientX - (box.left + box.width / 2)), -(event.clientY - (box.top + box.height / 2))) * 180) / Math.PI;
+    const step = event.shiftKey ? 1 : 15;
+    return ((Math.round(raw / step) * step) % 360 + 360) % 360;
+  };
+  const onPointerDown = (event) => {
+    if (disabled) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const next = fromPointer(event);
+    if (next !== null && next !== angle) onChange?.(next);
+  };
+  const onPointerMove = (event) => {
+    if (disabled || !event.currentTarget.hasPointerCapture?.(event.pointerId)) return;
+    const next = fromPointer(event);
+    if (next !== null && next !== angle) onChange?.(next);
+  };
+  const radians = (angle * Math.PI) / 180;
+  return (
+    <div className="rsv-rotation-control">
+      <svg
+        ref={dialRef}
+        className={`rsv-dial${disabled ? ' disabled' : ''}`}
+        viewBox="-30 -30 60 60"
+        role="slider"
+        aria-label={tr('Orientation de l’objet')}
+        aria-valuemin={0}
+        aria-valuemax={359}
+        aria-valuenow={angle}
+        tabIndex={disabled ? -1 : 0}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onKeyDown={(event) => {
+          if (disabled) return;
+          if (event.key === 'ArrowRight' || event.key === 'ArrowUp') { event.preventDefault(); onChange?.((angle + (event.shiftKey ? 1 : 15)) % 360); }
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') { event.preventDefault(); onChange?.((angle + 360 - (event.shiftKey ? 1 : 15)) % 360); }
+        }}
+      >
+        <circle r="26" className="rsv-dial-face" />
+        {Array.from({ length: 24 }, (_, index) => {
+          const tick = (index * 15 * Math.PI) / 180;
+          const long = index % 6 === 0;
+          return <line key={index} x1={-Math.sin(tick) * (long ? 19 : 22)} y1={-Math.cos(tick) * (long ? 19 : 22)} x2={-Math.sin(tick) * 25} y2={-Math.cos(tick) * 25} className={long ? 'major' : ''} />;
+        })}
+        <line x1="0" y1="0" x2={-Math.sin(radians) * 17} y2={-Math.cos(radians) * 17} className="rsv-dial-needle" />
+        <circle cx={-Math.sin(radians) * 17} cy={-Math.cos(radians) * 17} r="4.2" className="rsv-dial-knob" />
+        <circle r="2.4" className="rsv-dial-hub" />
+      </svg>
+      <div className="rsv-rotation-inputs">
+        <label className="rsv-angle-input">
+          <input value={text} disabled={disabled} inputMode="numeric" aria-label={tr('Angle en degrés')} onChange={(event) => setText(event.target.value)} onBlur={commitText} onKeyDown={(event) => { if (event.key === 'Enter') commitText(); }} />
+          <em>°</em>
+        </label>
+        <div className="rsv-rotation-steps">
+          <button type="button" disabled={disabled} onClick={() => onChange?.((angle + 345) % 360)} aria-label={tr('Tourner de 15° vers la gauche')}>−15°</button>
+          <button type="button" disabled={disabled} onClick={() => onChange?.((angle + 15) % 360)} aria-label={tr('Tourner de 15° vers la droite')}>+15°</button>
+          <button type="button" disabled={disabled} onClick={() => onChange?.((angle + 90) % 360)} aria-label={tr('Tourner d’un quart de tour')}><RotateCw size={12} /> 90°</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SelectedContentCard({ tr, readOnly, content, interior, price, issues, onRemove, onDuplicate, onPosition, onRotation }) {
   const box = interior ? contentFootprint(content, interior) : null;
   const x = box ? Math.round((box.minX - interior.minX) * 100) : 0;
@@ -2163,13 +2372,9 @@ function SelectedContentCard({ tr, readOnly, content, interior, price, issues, o
       <div className="rsv-selected-fields">
         <label><span>{tr('Position X')}</span><input value={fields.x} disabled={readOnly} onChange={(event) => setFields((current) => ({ ...current, x: event.target.value }))} onBlur={() => commitField('x')} onKeyDown={(event) => { if (event.key === 'Enter') commitField('x'); }} inputMode="numeric" /><em>cm</em></label>
         <label><span>{tr('Position Y')}</span><input value={fields.z} disabled={readOnly} onChange={(event) => setFields((current) => ({ ...current, z: event.target.value }))} onBlur={() => commitField('z')} onKeyDown={(event) => { if (event.key === 'Enter') commitField('z'); }} inputMode="numeric" /><em>cm</em></label>
-        <div className="rsv-rotation-field">
-          <span>{tr('Rotation')}</span>
-          <div className="rsv-segmented small">
-            {(content.mount === 'wall' ? [rotation] : [0, 90]).map((value) => (
-              <button key={value} type="button" disabled={readOnly || content.mount === 'wall'} className={(content.mount === 'wall' || rotation % 180 === value % 180) ? 'active' : ''} onClick={() => onRotation(value)}>{value}°</button>
-            ))}
-          </div>
+        <div className="rsv-rotation-field full">
+          <span>{tr('Orientation')}{content.mount === 'wall' && <small> · {tr('suit le mur')}</small>}</span>
+          <RotationControl tr={tr} value={rotation} disabled={readOnly || content.mount === 'wall'} onChange={(value) => onRotation(value)} />
         </div>
       </div>
       {!readOnly && (

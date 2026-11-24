@@ -210,6 +210,10 @@ export const englishUi = {
   'Personnaliser la réserve': 'Customise the storage room', 'Voir la réserve': 'View the storage room', 'Valider': 'Confirm',
   'Suivant : la porte': 'Next: the door', 'Suivant : l’aménagement': 'Next: the layout', 'Coin arrière gauche': 'Rear left corner', 'Coin arrière droit': 'Rear right corner',
   'Centre arrière': 'Rear centre', 'position verticale': 'vertical position', 'position horizontale': 'horizontal position',
+  'Choisir': 'Choose', 'Cette variante ne peut pas être placée dans la réserve': 'This variant cannot be placed in the storage room',
+  'Orientation de l’objet': 'Object orientation', 'Angle en degrés': 'Angle in degrees', 'Tourner de 15° vers la gauche': 'Turn 15° to the left',
+  'Tourner de 15° vers la droite': 'Turn 15° to the right', 'Tourner d’un quart de tour': 'Turn a quarter turn', 'suit le mur': 'follows the wall',
+  'Pivoter de 15° (R)': 'Rotate 15° (R)',
   'arrière gauche': 'rear left', 'arrière droite': 'rear right', 'centre arrière': 'rear centre', 'fond': 'back', 'façade': 'front', 'côté gauche': 'left side', 'côté droit': 'right side',
 };
 
@@ -286,6 +290,10 @@ export function translateGeneratedUi(text, translate) {
   if ((match=text.match(/^(.*) retiré$/))) return `${translate(match[1])} removed`;
   if ((match=text.match(/^Porte : (.*)$/))) return `Door: ${translate(match[1])}`;
   if ((match=text.match(/^Orientation : (.*)$/))) return `Orientation: ${translate(match[1])}`;
+  if ((match=text.match(/^(\d+) variantes disponibles$/))) return `${match[1]} variants available`;
+  if ((match=text.match(/^À partir de (.+)$/))) return `From ${match[1]}`;
+  if ((match=text.match(/^(\d+) sur (\d+) ajoutés : plus de place pour les autres$/))) return `${match[1]} of ${match[2]} added: no room left for the others`;
+  if ((match=text.match(/^(\d+) × (.+) ajoutés à la réserve$/))) return `${match[1]} × ${translate(match[2])} added to the storage room`;
   if ((match=text.match(/^(.*) sélectionnée?$/))) return `${translate(match[1])} selected`;
   if ((match=text.match(/^Aperçu · (.*)$/))) return `Preview · ${translate(match[1])}`;
   if ((match=text.match(/^Votre stand n[’']a pas de mur (à gauche|à droite) pour y adosser la réserve\.$/))) return `Your stand has no ${match[1] === 'à gauche' ? 'left' : 'right'} wall to place the storage room against.`;

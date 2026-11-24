@@ -21,6 +21,8 @@ pnpm-debug.log*
 .DS_Store
 .vscode/
 .idea/
+# Local Claude Code tool settings (preview servers…)
+.claude/launch.json
 
 # Local render/debug captures
 tmp-*
