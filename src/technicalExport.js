@@ -1597,7 +1597,10 @@ function drawCeilingObject(ctx, x, y, w, h, rotation, image, color, label, outsi
 function drawTechnicalHead(ctx, pose, toX, toY, scale, pictoImage, label) {
   const { width, depth, rotation } = pose;
   const x = toX(pose.x), y = toY(pose.z), w = width * scale, h = depth * scale;
-  if (pictoImage) return drawRotatedPictoObject(ctx, x, y, w, h, rotation, pictoImage, label, true, true);
+  if (pictoImage) {
+    const picto = pose.pictoFrame || pose;
+    return drawRotatedPictoObject(ctx, x, y, picto.width * scale, picto.depth * scale, picto.rotation, pictoImage, label, true, true);
+  }
   const angle = technicalPlanRotation(rotation);
   ctx.save();
   ctx.translate(x, y);

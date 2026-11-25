@@ -55,7 +55,7 @@ function collisionContext() {
     'wallItemAxisBounds', 'wallItemMetrics', 'wallItemCollisionBox',
     'wallCoverPartitionHeadBlocker', 'wallMountedBlocker',
     'wallItemAxisRange', 'smclPartitionHeadWallAxis', 'applyWallPlacementRule',
-    'partitionHeadModelBounds', 'partitionHeadPhysicalBox', 'technicalPartitionHeadPose', 'collidesWithPartitionHeads',
+    'partitionHeadModelBounds', 'partitionHeadPhysicalBox', 'partitionHeadBatPictoFrame', 'technicalPartitionHeadPose', 'collidesWithPartitionHeads',
     'collidesWithScene', 'signatureArchWallX', 'signatureArchBackWallZ',
     'placeSignatureArchAgainstBackWall', 'isTransformPatch',
     'sideWallLength', 'sideWallStartZ', 'sideWallEndZ', 'sideWallCenterZ', 'wallAxisLimits',

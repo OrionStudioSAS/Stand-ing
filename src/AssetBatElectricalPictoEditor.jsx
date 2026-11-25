@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { batElectricalPictosMetadata, normalizeBatElectricalPictos } from './batElectricalPicto.js';
 
-export default function AssetBatElectricalPictoEditor({ primaryUrl = '', metadata = {}, modelSize = [1, 1, .5], disabled = false, onUpload, onChange, onRemove }) {
+export default function AssetBatElectricalPictoEditor({ primaryUrl = '', metadata = {}, modelSize = [1, 1, .5], headFrame = null, disabled = false, onUpload, onChange, onRemove }) {
   const icons = normalizeBatElectricalPictos(metadata);
   const [selection, setSelection] = useState(0);
   const selected = Math.min(selection, Math.max(0, icons.length - 1));
@@ -9,9 +9,9 @@ export default function AssetBatElectricalPictoEditor({ primaryUrl = '', metadat
   const preview = useRef(null);
   const [iconRatios, setIconRatios] = useState({});
   const grabOffset = useRef({ x: 0, y: 0 });
-  const width = Math.max(.05, Number(modelSize[0]) || 1);
-  const depth = Math.max(.05, Number(modelSize[2]) || .5);
-  const scale = Math.min(100, 220 / width, 130 / depth);
+  const width = Math.max(.05, Number(headFrame?.width ?? modelSize[0]) || 1);
+  const depth = Math.max(.05, Number(headFrame?.depth ?? modelSize[2]) || .5);
+  const scale = Math.min(headFrame ? 300 : 100, 220 / width, 130 / depth);
   const change = (index, patch) => onChange?.(batElectricalPictosMetadata(icons.map((entry, i) => i === index ? { ...entry, ...patch } : entry)));
   const position = (index, x, y) => change(index, { x, y });
   const move = (event, index) => {
@@ -44,7 +44,7 @@ export default function AssetBatElectricalPictoEditor({ primaryUrl = '', metadat
     </>}
     {icons.length > 0 && primaryUrl && <>
       <div className="bat-electrical-workspace"><div ref={preview} className="bat-electrical-preview" style={{ width: `${width * scale}px`, height: `${depth * scale}px` }}>
-        <img src={primaryUrl} alt="Picto principal de l'objet" />
+        <img src={primaryUrl} alt="Picto principal de l'objet" style={headFrame ? { objectFit: 'fill' } : undefined} />
         {icons.map((entry, index) => <button type="button" key={index} disabled={disabled} aria-label={`Déplacer le picto électrique${icons.length > 1 ? ` ${index + 1}` : ''}`} aria-pressed={selected === index}
           style={{ left: `${entry.x * 100}%`, top: `${entry.y * 100}%`, width: `${entry.size * scale}px`, height: `${entry.size * scale / (iconRatios[entry.url] || 1)}px` }}
           onClick={() => setSelection(index)}

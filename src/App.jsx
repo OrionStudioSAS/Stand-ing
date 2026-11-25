@@ -13794,7 +13794,8 @@ function AssetDrawer({ asset, assets, scenes, salons: adminSalons = [], onClose,
           />
         </label>
         <BatPictoPreview imageUrl={draft.dimensions?.batPictoUrl} label={draft.label || draft.type} onRemove={removeBatPicto} removeDisabled={batPictoUploading} />
-        <AssetBatElectricalPictoEditor primaryUrl={draft.dimensions?.batPictoUrl} metadata={draft.dimensions} modelSize={assetModelSize(draft)} disabled={batPictoUploading}
+        <AssetBatElectricalPictoEditor primaryUrl={draft.dimensions?.batPictoUrl} metadata={draft.dimensions} modelSize={assetModelSize(draft)}
+          headFrame={isPartitionHeadItem(draft) ? partitionHeadBatPictoFrame(draft) : null} disabled={batPictoUploading}
           onUpload={changeElectricalPicto} onRemove={(index) => changeElectricalPicto(null, index)}
           onChange={(patch) => setDraft((current) => ({ ...current, dimensions: { ...current.dimensions, ...patch } }))} />
         <BatPictoColorSettings
@@ -15873,13 +15874,23 @@ function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = [])
   ];
 }
 
+function partitionHeadBatPictoFrame(item, bounds = partitionHeadModelBounds(item), rotation = 0) {
+  const width = bounds.maxX - bounds.minX;
+  const depth = bounds.maxZ - bounds.minZ;
+  // The Signature drawing runs along model Z, with the yellow face on local +X.
+  return isSignaturePartitionHeadItem(item)
+    ? { width: depth, depth: width, rotation: rotation - 90 }
+    : { width, depth, rotation };
+}
+
 function technicalPartitionHeadPose(item, items, width, depth) {
   const mounted = isWallItem(item);
   const bounds = partitionHeadModelBounds(item);
   const [x, , z] = mounted ? screenWorldPosition(item, width, depth, items) : [Number(item.x || 0), 0, Number(item.z || 0)];
   const rotation = mounted ? wallMountedItemRotation(item, objectWallTransform(item, items)) * 180 / Math.PI : Number(item.rotation || 0);
   const center = rotatePoint((bounds.minX + bounds.maxX) / 2, (bounds.minZ + bounds.maxZ) / 2, -rotation);
-  return { x: x + center.x, z: z + center.z, rotation, width: bounds.maxX - bounds.minX, depth: bounds.maxZ - bounds.minZ };
+  return { x: x + center.x, z: z + center.z, rotation, width: bounds.maxX - bounds.minX, depth: bounds.maxZ - bounds.minZ,
+    pictoFrame: partitionHeadBatPictoFrame(item, bounds, rotation) };
 }
 
 async function prepareTechnicalExportFonts(scene = {}) {
