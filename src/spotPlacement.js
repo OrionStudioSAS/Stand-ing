@@ -11,8 +11,22 @@ function subtractInterval(intervals, blocker) {
   });
 }
 
+function sameBounds(a, b) {
+  return ['minX', 'maxX', 'minZ', 'maxZ'].every((key) => Math.abs(Number(a?.[key]) - Number(b?.[key])) < 0.002);
+}
+
 // Work with the complete rail footprint, even when its normal collisions are disabled.
-export function spotWallTargets({ walls, objectSurfaces, reserves, bounds, halfWidth, halfDepth, nativeOffset, objectOffset }) {
+// Obstacles (arch, partition heads, reserve doors, other rails) as rail-axis ranges:
+// - { orientation, normalMin, normalMax, min, max }: blocks every surface of that orientation
+//   whose rail band crosses [normalMin, normalMax];
+// - { wall, wallSide, min, max }: blocks one wall face (native wall or object surface side).
+function obstacleBlocksSurface(obstacle, surface, normal, halfDepth) {
+  if (obstacle.wall) return obstacle.wall === surface.wall && (obstacle.wallSide ?? null) === (surface.wallSide ?? null);
+  if (obstacle.orientation !== surface.orientation) return false;
+  return normal + halfDepth > obstacle.normalMin + epsilon && normal - halfDepth < obstacle.normalMax - epsilon;
+}
+
+export function spotWallTargets({ walls, objectSurfaces, reserves, obstacles = [], bounds, halfWidth, halfDepth, nativeOffset, objectOffset }) {
   const surfaces = [
     ...walls,
     ...objectSurfaces.flatMap((surface) => {
@@ -40,7 +54,10 @@ export function spotWallTargets({ walls, objectSurfaces, reserves, bounds, halfW
     const max = Math.min(surface.max, alongX ? bounds.maxX : bounds.maxZ) - halfWidth;
     if (max < min - epsilon) return [];
     let intervals = [{ min, max: Math.max(min, max) }];
+    const ownBounds = surface.wallSurface?.protectedBounds;
     for (const reserve of reserves) {
+      // A rail on a reserve face hangs above that reserve's door leaf: only other reserves block it.
+      if (ownBounds && sameBounds(reserve, ownBounds)) continue;
       const near = alongX ? reserve.minZ : reserve.minX;
       const far = alongX ? reserve.maxZ : reserve.maxX;
       if (normal + halfDepth <= near + epsilon || normal - halfDepth >= far - epsilon) continue;
@@ -48,6 +65,10 @@ export function spotWallTargets({ walls, objectSurfaces, reserves, bounds, halfW
         min: (alongX ? reserve.minX : reserve.minZ) - halfWidth - 0.02,
         max: (alongX ? reserve.maxX : reserve.maxZ) + halfWidth + 0.02,
       });
+    }
+    for (const obstacle of obstacles) {
+      if (!obstacleBlocksSurface(obstacle, surface, normal, halfDepth)) continue;
+      intervals = subtractInterval(intervals, { min: obstacle.min - halfWidth - 0.02, max: obstacle.max + halfWidth + 0.02 });
     }
     return intervals.length ? [{ ...surface, normalAxis: normal, intervals }] : [];
   });
