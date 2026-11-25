@@ -502,7 +502,8 @@ export function ReservePlan({
               <circle cx={door.hinge.x} cy={door.hinge.z} r={0.028} className="rsv-door-hinge" />
               <circle cx={door.open.x} cy={door.open.z} r={0.024} className="rsv-door-handle" />
               {step === 'door' && !compact && (
-                <g transform={`translate(${door.center.x + door.slot.normal.x * 0.32} ${door.center.z + door.slot.normal.z * 0.32})`}>
+                // Past the reserve's own dimension lines (drawn on its right and back sides) so the two labels never overlap.
+                <g transform={`translate(${door.center.x + door.slot.normal.x * doorChipOffset(door)} ${door.center.z + door.slot.normal.z * doorChipOffset(door)})`}>
                   <PlanChip label={`${tr('Porte')} ${Math.round(RESERVE_DOOR_LEAF * 100)} cm`} fontSize={fontSize * 0.86} tone="blue" />
                 </g>
               )}
@@ -720,6 +721,11 @@ function PlanItem({ item, fontSize, compact, selected, dragging, invalidReason, 
       )}
     </g>
   );
+}
+
+function doorChipOffset(door) {
+  const { normal } = door.slot;
+  return normal.x > 0.5 || normal.z < -0.5 ? 0.62 : 0.32;
 }
 
 function DimensionLine({ from, to, label, fontSize, vertical = false }) {
@@ -980,7 +986,8 @@ export function ReserveQuickView({
         <SummaryRow
           icon={<ContentsGlyph empty={!contents.length} />}
           label={tr('Aménagement')}
-          value={tr(contents.length ? plural(contents.length, 'objet') : 'Aucun objet · réserve vide')}
+          value={tr(contents.length ? plural(contents.length, 'objet')
+            : structure?.builtins?.length ? `${plural(structure.builtins.length, 'équipement')} inclus · aucun ajout` : 'Aucun objet · réserve vide')}
           badge={summary.warning ? <span className="rsv-pill amber"><Zap size={10} /> {tr(summary.warning)}</span>
             : contents.length ? <span className={`rsv-pill ${summary.contentsPrice > 0 ? 'blue' : 'green'}`}>{tr(reservePriceTag(summary.contentsPrice))}</span> : null}
           tone={summary.warning ? 'warning' : ''}
@@ -1651,11 +1658,25 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
   const doorSlotIndex = doorSideSlots.findIndex((slot) => slot.kind === 'door');
   // The stored slot is the authored partition that swaps places with the authored door.
   // Clicking the partition currently standing in the authored door position restores the original layout.
+  const doorSlotPatch = (slotId) => {
+    const currentSlot = draft.doorByType?.[groupType]?.slot || '';
+    return { doorByType: { ...(draft.doorByType || {}), [groupType]: { slot: slotId === currentSlot ? '' : slotId } } };
+  };
   const moveDoorToSlot = (slotId, label = 'Porte déplacée') => {
     if (!slotId || readOnly || !groupType) return;
-    const currentSlot = draft.doorByType?.[groupType]?.slot || '';
-    const nextSlot = slotId === currentSlot ? '' : slotId;
-    applyStructure({ doorByType: { ...(draft.doorByType || {}), [groupType]: { slot: nextSlot } } }, label);
+    applyStructure(doorSlotPatch(slotId), label);
+  };
+  // Whether the leaf would swing into a floor built-in or an added object with the door on this slot.
+  const doorSlotBlocked = (slotId) => {
+    const next = model.build({ ...draft, ...doorSlotPatch(slotId) });
+    if (!next?.reserve) return true;
+    const nextStructure = reserveStructure(next.reserve, { doorOpening: draft.doorOpening, handleOrientation: draft.handleOrientation });
+    const door = nextStructure?.door;
+    if (!door?.zoneInside) return false;
+    const builtins = nextStructure.builtins || [];
+    if (builtins.some((child) => !isWallBuiltin(child) && boundsOverlap(childFootprint(child), door.zone))) return true;
+    const nextContext = { interior: nextStructure.interior, contents: draft.contents, builtins, door };
+    return draft.contents.some((content) => reserveContentIssues(content, nextContext).includes('door'));
   };
   const doorDistance = structure ? doorDistanceFromLeft(structure.children, { doorOpening: draft.doorOpening }) : 0;
   const handleChoices = built?.handleChoices || ['left', 'right'];
@@ -1833,7 +1854,9 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
                   blockers={doorBlockers}
                   onArrange={(key) => { goStep('layout'); setLayoutTab('inside'); if (key) setSelectedKey(key); }}
                   onSide={(side) => {
-                    const target = (doorSlotsBySide[side] || []).find((slot) => slot.kind !== 'door');
+                    // On a new wall the door takes the first position where it opens freely.
+                    const candidates = (doorSlotsBySide[side] || []).filter((slot) => slot.kind !== 'door');
+                    const target = candidates.find((slot) => !doorSlotBlocked(slot.id)) || candidates[0];
                     if (target) moveDoorToSlot(target.id, `Porte déplacée en ${(SIDE_LABELS[side] || '').toLowerCase()}`);
                   }}
                   onSlotIndex={(index) => { const slot = doorSideSlots[index]; if (slot && slot.kind !== 'door') moveDoorToSlot(slot.id); }}

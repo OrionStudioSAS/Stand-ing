@@ -294,6 +294,8 @@ export function translateGeneratedUi(text, translate) {
   if ((match=text.match(/^À partir de (.+)$/))) return `From ${match[1]}`;
   if ((match=text.match(/^(\d+) sur (\d+) ajoutés : plus de place pour les autres$/))) return `${match[1]} of ${match[2]} added: no room left for the others`;
   if ((match=text.match(/^(\d+) × (.+) ajoutés à la réserve$/))) return `${match[1]} × ${translate(match[2])} added to the storage room`;
+  if ((match=text.match(/^(\d+) équipements? inclus · aucun ajout$/))) return `${match[1]} included fitting${match[1]==='1'?'':'s'} · nothing added`;
+  if (text === 'Aucun objet · réserve vide') return 'No items · empty storage room';
   if ((match=text.match(/^Porte posée sur ce mur : (.+) (passe|passent) sur une autre cloison$/))) return `Door set on this wall: ${match[1].split(', ').map(translate).join(', ')} ${match[2] === 'passent' ? 'move' : 'moves'} to another partition`;
   if ((match=text.match(/^(.*) sélectionnée?$/))) return `${translate(match[1])} selected`;
   if ((match=text.match(/^Aperçu · (.*)$/))) return `Preview · ${translate(match[1])}`;

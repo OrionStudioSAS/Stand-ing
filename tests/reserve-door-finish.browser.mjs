@@ -165,7 +165,7 @@ try {
     assert.equal(materials.length, 28);
     const panels = materials.filter((material) => material.name === 'MeshFabric_B01_18cm_1');
     assert.equal(panels.length, 4);
-    assert.ok(panels.every((material) => material.hex === (enabled ? '787878' : 'ffffff') && !material.textured), 'Reserve partition bodies still use anthracite only on Signature and Equipe');
+    assert.ok(panels.every((material) => material.hex === 'ffffff' && material.textured === enabled), 'Reserve partition bodies wear the door module fabric (anthracite weave) only on Signature and Equipe');
     const trims = materials.filter((material) => ['Menuiserie', 'Plastic_Simple_Shiny_Black_2'].includes(material.name));
     assert.equal(trims.length, 8);
     assert.ok(trims.every((material) => material.hex === 'ffffff' && !material.textured), 'Door surrounds and skirting stay white even when the reserve has an anthracite frame override');

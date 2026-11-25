@@ -18,7 +18,7 @@ import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Canvas, events as createSceneEvents, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Float32BufferAttribute, Group, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, MOUSE, MeshBasicMaterial, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
+import { Box3, BoxGeometry, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Float32BufferAttribute, Group, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, Matrix4, Mesh, MOUSE, MeshBasicMaterial, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -22859,7 +22859,7 @@ function ObjModel({ item, selected, hovered, dragging }) {
         return materialWithTexture(source, mainImageTexture, { luminous: isSignaturePartitionHeadItem(item) });
       }
       if (item.options?.reserveDoorColorHex && isReserveDoorPaintMaterial(source?.name)) return reserveDoorFabricMaterial(source, item, reserveDoorTexture);
-      if (item.options?.reserveFrameColorHex && isReserveFramePaintMaterial(source?.name)) return reserveFramePaintMaterial(source, item);
+      if (item.options?.reserveFrameColorHex && isReserveFramePaintMaterial(source?.name)) return reserveFramePaintMaterial(source, item, reserveDoorTexture);
       return material;
     };
     clone.traverse((child) => {
@@ -23067,7 +23067,7 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   const materialName = normalizeMaterialName(material.name);
   const doorColor = item?.options?.reserveDoorColorHex;
   if (doorColor && isReserveDoorPaintMaterial(materialName)) return reserveDoorFabricMaterial(material, item, textureOptions.reserveDoorTexture);
-  if (item.options?.reserveFrameColorHex && isReserveFramePaintMaterial(materialName)) return reserveFramePaintMaterial(material, item);
+  if (item.options?.reserveFrameColorHex && isReserveFramePaintMaterial(materialName)) return reserveFramePaintMaterial(material, item, textureOptions.reserveDoorTexture);
   if (isSignatureArchItem(item) && isSignatureArchColorMaterial(materialName, material)) {
     return signatureArchPaintMaterial(material, item?.options?.signatureArchColorHex || '#bebebe');
   }
@@ -23116,9 +23116,11 @@ function isReserveFramePaintMaterial(materialName = '') {
   return /^meshfabric_b01_18cm_?1(?:\.\d+)?$/.test(normalizeMaterialName(materialName));
 }
 
-function reserveFramePaintMaterial(material, item) {
-  return new MeshStandardMaterial({ name: material.name, side: material.side,
-    ...wallFabricMaterialProps({ hex: item.options.reserveFrameColorHex }) });
+function reserveFramePaintMaterial(material, item, texture = null) {
+  // Same woven fabric as the door module beside it when both share the colour; a plain tint otherwise.
+  const sameFabric = texture && item.options.reserveFrameColorHex === item.options.reserveDoorColorHex;
+  return new MeshStandardMaterial({ name: material.name, side: material.side, userData: { reserveFabric: true },
+    ...wallFabricMaterialProps({ hex: item.options.reserveFrameColorHex }, sameFabric ? texture : null) });
 }
 
 function reserveDoorFabricColor(item = {}) {
@@ -23138,7 +23140,7 @@ function useReserveDoorFabricTexture(item, flipY = true) {
 
 function reserveDoorFabricMaterial(material, item, texture = null) {
   // Use the same fabric shader as the reserve walls, including its texture and light response.
-  return new MeshStandardMaterial({ name: material.name, side: material.side,
+  return new MeshStandardMaterial({ name: material.name, side: material.side, userData: { reserveFabric: true },
     ...wallFabricMaterialProps(reserveDoorFabricColor(item), texture) });
 }
 
@@ -24131,13 +24133,64 @@ function centerModel(model, item = null) {
   }
 
   const doorModel = item?.options?.reserveDoorFit ? fitReserveDoorModel(model, item.options.reserveDoorFit) : null;
-  if (doorModel) return doorModel;
+  if (doorModel) return projectReserveFabricUVs(doorModel);
 
   const scaledBox = new Box3().setFromObject(model);
   const center = scaledBox.getCenter(new Vector3());
   const anchorY = isCenterAnchoredWallModel(item) ? -center.y : -scaledBox.min.y;
   model.position.set(-center.x, anchorY, -center.z);
-  return model;
+  return projectReserveFabricUVs(model);
+}
+
+// Reserve fabric (partition bodies and the door module): the files' own UV layouts differ (the door one draws the
+// weave as horizontal bands), so the fabric is laid flat on each face in metres, one tile per metre, like the
+// fabric of the reserve walls. Projected geometries are cached per source geometry and placement.
+const reserveFabricGeometryCache = new WeakMap();
+const reserveFabricProjectedGeometries = new WeakSet();
+
+function projectReserveFabricUVs(root) {
+  root.updateMatrixWorld(true);
+  const toRoot = new Matrix4().copy(root.parent?.matrixWorld || new Matrix4()).invert();
+  root.traverse((mesh) => {
+    if (!mesh.isMesh || !mesh.geometry?.attributes?.position) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const map = materials.find((material) => material?.userData?.reserveFabric && material.map)?.map;
+    if (!map) return;
+    const matrix = new Matrix4().multiplyMatrices(toRoot, mesh.matrixWorld);
+    const key = `${matrix.elements.map((value) => value.toFixed(5)).join(',')}|${map.repeat.x}|${map.repeat.y}`;
+    const source = mesh.geometry;
+    if (reserveFabricProjectedGeometries.has(source)) return;
+    let cached = reserveFabricGeometryCache.get(source);
+    if (!cached) reserveFabricGeometryCache.set(source, cached = new Map());
+    if (!cached.has(key)) {
+      const projected = reserveFabricProjectedGeometry(source, matrix, map.repeat);
+      reserveFabricProjectedGeometries.add(projected);
+      cached.set(key, projected);
+    }
+    mesh.geometry = cached.get(key);
+  });
+  return root;
+}
+
+function reserveFabricProjectedGeometry(source, matrix, repeat) {
+  const geometry = source.clone();
+  if (!geometry.attributes.normal) geometry.computeVertexNormals();
+  const position = geometry.attributes.position;
+  const normal = geometry.attributes.normal;
+  const normalMatrix = new Matrix4().copy(matrix).invert().transpose();
+  const uv = new Float32Array(position.count * 2);
+  const point = new Vector3();
+  const direction = new Vector3();
+  for (let index = 0; index < position.count; index += 1) {
+    point.fromBufferAttribute(position, index).applyMatrix4(matrix);
+    direction.fromBufferAttribute(normal, index).transformDirection(normalMatrix);
+    const [ax, ay, az] = [Math.abs(direction.x), Math.abs(direction.y), Math.abs(direction.z)];
+    const [u, v] = az >= ax && az >= ay ? [point.x, point.y] : ax >= ay ? [point.z, point.y] : [point.x, point.z];
+    uv[index * 2] = u / (repeat.x || 1);
+    uv[index * 2 + 1] = v / (repeat.y || 1);
+  }
+  geometry.setAttribute('uv', new Float32BufferAttribute(uv, 2));
+  return geometry;
 }
 
 // Reserve doors: a 1 m partition module with a leaf left ajar and a handle. Centring the whole model would
@@ -24149,11 +24202,13 @@ function reserveDoorModelParts(model) {
   const total = new Box3().setFromObject(model);
   const size = total.getSize(new Vector3());
   if (!(size.y > 0) || !(size.x > 0)) return null;
-  const parts = { panel: new Box3(), leaf: new Box3(), handle: new Box3() };
+  const parts = { panel: new Box3(), leaf: new Box3(), handle: new Box3(), frame: new Box3() };
   model.traverse((child) => {
     if (!child.isMesh) return;
     const box = new Box3().setFromObject(child);
     if (box.isEmpty()) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    if (materials.some((material) => /menuiserie/i.test(material?.name || ''))) parts.frame.union(box);
     const height = box.max.y - box.min.y;
     const width = box.max.x - box.min.x;
     const middle = (box.min.y + box.max.y) / 2 - total.min.y;
@@ -24166,7 +24221,7 @@ function reserveDoorModelParts(model) {
   const handleSign = parts.handle.isEmpty() ? 0 : Math.sign(parts.handle.getCenter(new Vector3()).x - panel.x);
   const swingSign = parts.leaf.isEmpty() ? 0
     : (parts.leaf.max.z - parts.panel.max.z) >= (parts.panel.min.z - parts.leaf.min.z) ? 1 : -1;
-  return { floorY: total.min.y, panel, handleSign, swingSign };
+  return { floorY: total.min.y, panel, panelBox: parts.panel, frameBox: parts.frame, handleSign, swingSign };
 }
 
 function fitReserveDoorModel(model, fit) {
@@ -24181,7 +24236,35 @@ function fitReserveDoorModel(model, fit) {
   pivot.scale.set(scaleX, 1, scaleZ);
   pivot.position.set(0, 0, Number(fit.wallZ) || 0);
   pivot.userData.reserveDoorFit = { ...fit, turned: scaleX < 0 && scaleZ < 0, mirrored: scaleX * scaleZ < 0 };
+  addReserveDoorBaseboards(pivot, parts);
   return pivot;
+}
+
+// The partitions' skirting carries on along the fixed parts of the door module, on both faces, up to the door frame.
+let reserveDoorBaseboardMaterial = null;
+const reserveDoorBaseboardGeometries = new Map();
+
+function addReserveDoorBaseboards(pivot, parts) {
+  if (parts.frameBox.isEmpty()) return;
+  const offset = new Vector3(-parts.panel.x, -parts.floorY, -parts.panel.z);
+  const panel = parts.panelBox.clone().translate(offset);
+  const frame = parts.frameBox.clone().translate(offset);
+  reserveDoorBaseboardMaterial ||= new MeshStandardMaterial({ color: '#fff9ee', roughness: 0.48 });
+  const y = baseboardHeight / 2 + 0.002;
+  [[panel.min.x, frame.min.x], [frame.max.x, panel.max.x]].forEach(([from, to]) => {
+    const length = to - from;
+    if (!(length > 0.005)) return;
+    [panel.max.z + baseboardThickness / 2, panel.min.z - baseboardThickness / 2].forEach((z) => {
+      const key = length.toFixed(4);
+      if (!reserveDoorBaseboardGeometries.has(key)) reserveDoorBaseboardGeometries.set(key, new BoxGeometry(length, baseboardHeight, baseboardThickness));
+      const baseboard = new Mesh(reserveDoorBaseboardGeometries.get(key), reserveDoorBaseboardMaterial);
+      baseboard.position.set((from + to) / 2, y, z);
+      baseboard.castShadow = true;
+      baseboard.receiveShadow = true;
+      baseboard.userData.reserveDoorBaseboard = true;
+      pivot.add(baseboard);
+    });
+  });
 }
 
 function Chair({ selected, hovered, dragging }) {
