@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
@@ -26,27 +26,27 @@ try {
   await page.waitForFunction(() => window.floorApi);
   const result = await page.evaluate(async () => {
     const api = window.floorApi;
-    const width = 6, depth = 4, color = '#2874ad';
+    const width = 6, depth = 4, color = '#2874ad', footprintTint = '#d8e6f0', carpetTint = '#fae6e6';
     const arch = { id:'arch', type:'arche-signature', label:'Arche Signature 2m', modelSize:[1.2,3.5,2], x:-1.2,z:-.7,rotation:0,options:{signatureArchColorHex:color,signatureArchColorName:'Bleu'} };
-    const scene = { offer:'Signature',dimensions:{width,depth},layout:'back',options:{carpetFootprintEnabled:false} };
+    const scene = { offer:'Signature',dimensions:{width,depth},layout:'back',options:{carpetFootprintEnabled:false,carpetColorHex:'#d00000',carpetColorName:'Rouge'} };
     const input = items => ({width,depth,layout:'back',items:api.withTechnicalOptionsMarker(items,scene,[]),catalog:[]});
     const squareCount = svg => [...svg.querySelectorAll('rect[fill="#eee5d6"]')].filter(rect => +rect.getAttribute('width')>30 && +rect.getAttribute('height')>30).length;
-    const footprint = svg => [...svg.querySelectorAll('rect[fill="'+color+'"]')].find(rect => !rect.closest('[data-bat-id]') && +rect.getAttribute('height')>30);
+    const footprint = svg => [...svg.querySelectorAll('rect[fill="'+footprintTint+'"]')].find(rect => !rect.closest('[data-bat-id]') && +rect.getAttribute('height')>30);
     const inspect = (svg, expected) => {
       document.body.replaceChildren(svg);
-      const rect = footprint(svg), floor = svg.querySelector('rect[fill="#f4efe5"]');
+      const rect = footprint(svg), floor = svg.querySelector('rect[fill="'+carpetTint+'"]');
       if (!rect) throw new Error('Missing arch carpet footprint');
       const scale = +floor.getAttribute('width') / width;
       const center = new DOMPoint().matrixTransform(rect.getCTM());
       return {squareCount:squareCount(svg),width:+rect.getAttribute('width')/scale,depth:+rect.getAttribute('height')/scale,
         x:(center.x-Number(floor.getAttribute('x')))/scale-width/2,z:(center.y-Number(floor.getAttribute('y')))/scale-depth/2,
-        expected,legend:svg.textContent.includes('Empreinte sous arche'),color:rect.getAttribute('fill')};
+        expected,legend:svg.textContent.includes('Empreinte moquette') && Boolean(svg.querySelector('rect[fill="'+color+'"][width="28"]')),color:rect.getAttribute('fill')};
     };
     const marked = input([arch]);
     const pages = await api.createTechnicalPlanSvgPages(marked);
     const standard = inspect(pages[0], marked.items.at(-1).sourceFloor.footprints[0]);
     const preview = api.renderTechnicalPlanCanvas(marked);
-    const floorRect = pages[0].querySelector('rect[fill="#f4efe5"]');
+    const floorRect = pages[0].querySelector('rect[fill="'+carpetTint+'"]');
     const scale = +floorRect.getAttribute('width') / width;
     const pixel = preview.getContext('2d').getImageData(
       Math.round((+floorRect.getAttribute('x')+(arch.x+width/2)*scale)*2.75),
@@ -63,17 +63,22 @@ try {
     const absent = (await api.createTechnicalPlanSvgPages(input([])))[0];
     const otherPacks = [];
     for (const offer of ['Confort','Prestige','Équipé']) {
-      const items = api.withTechnicalOptionsMarker([],{...scene,offer,options:{carpetFootprintEnabled:true}},[]);
-      otherPacks.push(squareCount((await api.createTechnicalPlanSvgPages({width,depth,layout:'back',items,catalog:[]}))[0]));
+      const items = api.withTechnicalOptionsMarker([],{...scene,offer,options:{...scene.options,carpetFootprintEnabled:true,carpetFootprintColorHex:'#0044ad'}},[]);
+      const svg = await api.createTechnicalPlanSvg({width,depth,layout:'back',items,catalog:[]});
+      otherPacks.push({
+        tile: [...svg.querySelectorAll('rect[fill="#d1ddf0"]')].some(rect => +rect.getAttribute('width') > 30 && rect.getAttribute('width') === rect.getAttribute('height')),
+        floor: Boolean(svg.querySelector('rect[fill="#fae6e6"]')),
+        swatches: ['#d00000', '#0044ad'].every(hex => svg.querySelector('rect[fill="'+hex+'"][width="28"]')),
+      });
     }
     document.body.replaceChildren(pages[0]);
     const pdf = await api.createTechnicalPlanBlob(marked);
-    return {standard,variants,previewPixel:Array.from(pixel),absent:squareCount(absent),otherPacks,pdf:Array.from(new Uint8Array(await pdf.arrayBuffer()))};
+    return {standard,variants,previewPixel:Array.from(pixel),absent:squareCount(absent) + Number(Boolean(footprint(absent))),otherPacks,pdf:Array.from(new Uint8Array(await pdf.arrayBuffer()))};
   });
   for (const entry of [result.standard, ...result.variants]) {
     assert.equal(entry.squareCount, 0);
     for (const key of ['width','depth','x','z']) assert.ok(Math.abs(entry[key]-entry.expected[key])<.0001, `${key}: ${JSON.stringify(entry)}`);
-    assert.equal(entry.color, '#2874ad');
+    assert.equal(entry.color, '#d8e6f0');
     assert.equal(entry.legend, true);
     if (entry.threeDimensions) {
       assert.ok(Math.abs(entry.width-entry.threeDimensions.width)<.0001);
@@ -81,11 +86,12 @@ try {
     }
   }
   assert.equal(result.standard.depth, 4.5);
-  assert.deepEqual(result.previewPixel, [40,116,173,255], 'The legacy PNG preview also uses the arch footprint color and 50 cm overhang');
+  assert.deepEqual(result.previewPixel, [216,230,240,255], 'The legacy PNG preview also uses the arch footprint tint and 50 cm overhang');
   assert.equal(result.absent, 0, 'Signature without an arch has no square footprint');
-  assert.deepEqual(result.otherPacks, [1,1,1]);
+  assert.deepEqual(result.otherPacks, Array.from({length:3}, () => ({tile:true,floor:true,swatches:true})));
   const pdf = await PDFDocument.load(Uint8Array.from(result.pdf));
   assert.ok(Math.abs(pdf.getPage(0).getWidth()/pdf.getPage(0).getHeight()-420/297)<.001);
+  await writeFile('/tmp/standing-signature-bat-footprint.pdf', Uint8Array.from(result.pdf));
   await page.screenshot({path:'/tmp/standing-signature-bat-footprint.png'});
   assert.deepEqual(errors, []);
   console.log('Signature BAT footprint: real 3D bounds/color/position, grouped and rotated arches, 50 cm overhang, no-arch state, unchanged other packs, PNG and vector A3 PDF OK.');

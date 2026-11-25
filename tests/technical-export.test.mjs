@@ -89,7 +89,7 @@ test('Signature BAT footprint follows the arch color and stand depth instead of 
   ctx.translate = (...point) => transforms.push(point);
   api.drawCarpetFootprint(ctx, 100, 200, 600, 400, 'back', 100, floor);
   assert.equal(rectangles.length, 1);
-  assert.equal(rectangles[0].color, '#2255aa');
+  assert.equal(rectangles[0].color, '#d7e0f0', 'The arch footprint remains blue but prints as a light tint');
   assert.ok(Math.abs(rectangles[0].width - 110) < 1e-9);
   assert.equal(rectangles[0].height, 450);
   assert.deepEqual(transforms[0], [330, 425]);
@@ -106,7 +106,19 @@ test('Signature without an arch and disabled generic footprints never draw the s
   assert.equal(rectangles[0].width, 100);
   assert.equal(rectangles[0].height, 100);
   const sourceFloor = { signature: true, footprints: [{ width: 1.4, depth: 4.5, x: .3, z: .25, rotation: 0, color: '#445566' }] };
-  assert.equal(api.technicalFloorContext([{ sourceOptions: { carpetFootprintEnabled: false }, sourceFloor }], [], 4), sourceFloor, 'Exact 3D group bounds take priority over flattened BAT children');
+  assert.equal(api.technicalFloorContext([{ sourceOptions: { carpetFootprintEnabled: false }, sourceFloor }], [], 4).footprints, sourceFloor.footprints, 'Exact 3D group bounds take priority over flattened BAT children');
+});
+
+test('BAT paints a subtle tint for saved carpet and footprint colors', () => {
+  const { api, ctx, rectangles } = runtime();
+  const marker = {
+    sourceOptions: { carpetColorHex: '#d00000', defaultColorOptions: { carpetColorHex: '#000', carpetFootprintColorHex: '#0044ad' } },
+    sourceFloor: { signature: false, footprintEnabled: true },
+  };
+  const input = { width: 6, depth: 4, layout: 'back', items: [marker], catalog: [] };
+  api.renderTechnicalPlanCanvas(input);
+  assert.ok(rectangles.some(rect => rect.color === '#fae6e6'), 'Selected red on the floor takes precedence over the pack default');
+  assert.ok(rectangles.some(rect => rect.color === '#d1ddf0'), 'The footprint has a separate color and tint');
 });
 
 test('BAT furniture and SVG pictos turn in the same direction as the 3D scene', () => {

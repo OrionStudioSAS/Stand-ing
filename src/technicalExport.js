@@ -448,8 +448,8 @@ function drawPrintProductionFooter(ctx, banner, sections, items, floor, imageMap
   const options = items.find((item) => item?.sourceOptions)?.sourceOptions || {};
   const footprint = floor.footprints?.[0];
   const colors = [
-    ['Empreinte moquette', footprint?.color || options.carpetFootprintColorHex, footprint?.colorName || [options.carpetFootprintColorName, options.carpetFootprintColorCode].filter(Boolean).join(' '), floor.signature ? !footprint : floor.footprintEnabled === false],
-    ['Moquette', options.carpetColorHex, [options.carpetColorName, options.carpetColorCode].filter(Boolean).join(' ')],
+    ['Empreinte moquette', footprint?.color || floor.footprintColor, footprint?.colorName || [options.carpetFootprintColorName, options.carpetFootprintColorCode].filter(Boolean).join(' '), floor.signature ? !footprint : floor.footprintEnabled === false],
+    ['Moquette', floor.carpetColor, [options.carpetColorName, options.carpetColorCode].filter(Boolean).join(' ')],
     ['Coton cloison', options.wallFabricColorHex, [options.wallFabricColorName, options.wallFabricColorCode].filter(Boolean).join(' ')],
   ];
   colors.forEach(([label, color, name, absent], index) => {
@@ -569,7 +569,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
   const toX = (x) => planX + (x + width / 2) * scale;
   const toY = (z) => planY + (z + depth / 2) * scale;
 
-  ctx.fillStyle = technicalColors.floor;
+  ctx.fillStyle = technicalCarpetTint(floor.carpetColor, .10, technicalColors.floor);
   ctx.fillRect(planX, planY, planW, planH);
   drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale, floor);
   drawGrid(ctx, planX, planY, planW, planH, width, depth, scale);
@@ -803,7 +803,13 @@ function drawTechnicalConstraints(ctx, constraints = [], scale, toX, toY) {
 function technicalFloorContext(items = [], catalog = [], standDepth = 0) {
   items = (items || []).filter(Boolean);
   const marker = items.find((item) => item?.sourceOptions);
-  if (marker?.sourceFloor) return marker.sourceFloor;
+  const options = marker?.sourceOptions || {};
+  const defaults = options.defaultColorOptions || {};
+  const colors = {
+    carpetColor: normalizeHexColor(options.carpetColorHex) || normalizeHexColor(defaults.carpetColorHex),
+    footprintColor: normalizeHexColor(options.carpetFootprintColorHex) || normalizeHexColor(defaults.carpetFootprintColorHex),
+  };
+  if (marker?.sourceFloor) return { ...marker.sourceFloor, ...colors };
   const arches = items.filter((item) => {
     const entry = catalog.find((candidate) => candidate.type === item?.type);
     const text = normalizeTechnicalText(`${item?.type || ''} ${item?.label || ''} ${entry?.label || ''}`);
@@ -811,6 +817,7 @@ function technicalFloorContext(items = [], catalog = [], standDepth = 0) {
       || (isTechnicalArch(item) && (text.includes('signature') || text.includes('totem') && text.includes('plafond')));
   });
   return {
+    ...colors,
     signature: arches.length > 0,
     footprintEnabled: marker?.sourceOptions?.carpetFootprintEnabled !== false,
     footprints: arches.map((item) => {
@@ -824,6 +831,15 @@ function technicalFloorContext(items = [], catalog = [], standDepth = 0) {
   };
 }
 
+function technicalCarpetTint(color, opacity, fallback) {
+  const hex = normalizeHexColor(color);
+  if (!hex) return fallback;
+  // Blend against paper white so the footprint keeps the same tint over and outside the stand.
+  return '#' + hex.slice(1).match(/../g).map((value) => (
+    Math.round(255 * (1 - opacity) + parseInt(value, 16) * opacity).toString(16).padStart(2, '0')
+  )).join('');
+}
+
 function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale, floor = {}) {
   if (floor.signature) {
     (floor.footprints || []).forEach((footprint) => {
@@ -831,7 +847,7 @@ function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale, flo
       ctx.save();
       ctx.translate(planX + planW / 2 + footprint.x * scale, planY + planH / 2 + footprint.z * scale);
       ctx.rotate(-Number(footprint.rotation || 0) * Math.PI / 180);
-      ctx.fillStyle = footprint.color || '#bebebe';
+      ctx.fillStyle = technicalCarpetTint(footprint.color || '#bebebe', .18, technicalColors.footprint);
       ctx.strokeStyle = '#777777'; ctx.lineWidth = 1.5; ctx.setLineDash([10, 6]);
       ctx.fillRect(-w / 2, -h / 2, w, h);
       ctx.strokeRect(-w / 2, -h / 2, w, h);
@@ -855,7 +871,7 @@ function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale, flo
   }
 
   ctx.save();
-  ctx.fillStyle = technicalColors.footprint;
+  ctx.fillStyle = technicalCarpetTint(floor.footprintColor, .18, technicalColors.footprint);
   ctx.strokeStyle = '#b8aa91';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([10, 6]);
