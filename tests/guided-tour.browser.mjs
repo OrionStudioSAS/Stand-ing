@@ -80,7 +80,7 @@ try {
   assert.equal(await activeStep(), 'Configuration', 'Closing the tour restores the starting step');
   assert.equal(await page.evaluate(() => localStorage.getItem('standing-config-tutorial:guided-tour')), 'done');
 
-  await page.locator('[data-tour="nav-questions"]').click();
+  await page.locator('[data-tour="nav-profile"]').click();
   await page.getByRole('button', { name: 'Relancer le tutoriel' }).click();
   await tour.waitFor();
   const resume = page.getByRole('button', { name: /Reprendre à l’étape/ });

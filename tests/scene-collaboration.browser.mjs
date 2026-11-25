@@ -106,8 +106,8 @@ try {
   const owner = await open('?scene=owner-link', 'owner');
   const infoButton = (page) => page.locator('.stn-nav .user-pill');
   assert.equal(await owner.locator('.stn-nav img[src="/icons/account-add.svg"]').count(), 0);
-  // The walkthrough is relaunched from the "Questions et remarques" panel of the top bar.
-  await owner.getByRole('button', { name: 'Questions et remarques', exact: true }).click();
+  // The walkthrough is relaunched from the profile menu of the top bar.
+  await owner.locator('.user-pill').click();
   await owner.getByRole('button', { name: 'Relancer le tutoriel' }).click();
   await owner.getByRole('dialog', { name: 'Tutoriel configurateur' }).waitFor();
   await owner.getByRole('button', { name: 'Fermer le tutoriel' }).click();

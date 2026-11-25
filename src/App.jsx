@@ -2728,8 +2728,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onOpenChange={(open) => setHeaderPanel(open ? 'cart' : null)}
             onSelectItem={setSelectedId}
             onOpenItem={openCartItemConfigurator}
-            onIncrementItem={duplicateCartItem}
-            onDecrementItem={removeSceneItemById}
             onDeleteItems={removeSceneItemsById}
             canRemoveItem={(item) => canDeleteSceneItem(item, effectiveAdminViewer)}
             onValidate={() => setActiveStep(4)}
@@ -3257,9 +3255,9 @@ function buildConfiguratorTour({ language = 'fr', firstName = '', standLabel = '
         { target: '.stn-nav .project', label: L('Votre stand', 'Your stand'), text: L('Nom, salon, formule et surface.', 'Name, show, package and floor area.') },
         { target: '.stn-nav .stepper', label: L('Les 4 étapes', 'The 4 steps'), text: L('Accueil, Configuration, Boutique, Validation.', 'Home, Configuration, Shop, Review.') },
         { target: '[data-tour="nav-help"]', label: L('Aide par téléphone', 'Phone support'), text: L('Un conseiller du lundi au vendredi, de 9 h à 18 h.', 'An advisor Monday to Friday, 9 am to 6 pm.') },
-        { target: '[data-tour="nav-questions"]', label: L('Questions et remarques', 'Questions and comments'), text: L('Questions fréquentes, message à l’équipe et cette visite.', 'FAQ, message to the team and this tour.') },
+        { target: '[data-tour="nav-questions"]', label: L('Questions et remarques', 'Questions and comments'), text: L('Questions fréquentes et message à l’équipe.', 'FAQ and message to the team.') },
         { target: '[data-tour="nav-language"]', label: L('Langue', 'Language'), text: L('Interface en français ou en anglais.', 'Interface in French or English.') },
-        { target: '[data-tour="nav-profile"]', label: L('Mon profil', 'My profile'), text: L('Vos coordonnées et vos collaborateurs.', 'Your details and your collaborators.') },
+        { target: '[data-tour="nav-profile"]', label: L('Mon profil', 'My profile'), text: L('Vos coordonnées, vos collaborateurs et cette visite.', 'Your details, your collaborators and this tour.') },
         ...(hasCart ? [{ target: '[data-tour="nav-cart"]', label: L('Panier', 'Cart'), text: L('Le total HT de vos options, en temps réel.', 'The total of your options excl. VAT, live.') }] : []),
       ],
     },
@@ -3491,8 +3489,7 @@ function buildConfiguratorTour({ language = 'fr', firstName = '', standLabel = '
       title: L('Une question ? Écrivez-nous', 'A question? Write to us'),
       body: L('Consultez les questions fréquentes ou envoyez un message : il part avec la référence de votre stand.', 'Browse the frequently asked questions or send a message: it goes out with your stand’s reference.'),
       annotations: [
-        { target: '.stn-nav .panel.fb .self .item', label: L('Revoir la visite guidée', 'Replay the guided tour'), text: L('Relancez cette visite à tout moment.', 'Start this tour again at any time.') },
-        { target: '.stn-nav .panel.fb .cats', label: L('Questions fréquentes', 'Frequently asked questions'), text: L('Les réponses aux questions les plus courantes.', 'Answers to the most common questions.') },
+        { target: '.stn-nav .panel.fb .faq-acc', label: L('Questions fréquentes', 'Frequently asked questions'), text: L('Les réponses aux questions les plus courantes.', 'Answers to the most common questions.') },
         { target: '.stn-nav .panel.fb .write', label: L('Écrire à l’équipe', 'Write to the team'), text: L('Réponse par e-mail sous 24 h ouvrées.', 'Reply by email within 24 business hours.') },
       ],
     },
@@ -3510,7 +3507,7 @@ function buildConfiguratorTour({ language = 'fr', firstName = '', standLabel = '
         L('Ajouter du mobilier depuis la boutique', 'Add furniture from the shop'),
         L('Vérifier puis envoyer la configuration', 'Check, then send the configuration'),
       ],
-      note: L('Pour revoir la visite : icône « Questions et remarques » › Revoir la visite guidée.', 'To replay the tour: “Questions and comments” icon › Replay the guided tour.'),
+      note: L('Pour revoir la visite : icône « Mon profil » › Revoir la visite guidée.', 'To replay the tour: “My profile” icon › Replay the guided tour.'),
       cta: L('Commencer ma configuration', 'Start my configuration'),
     },
   ];
@@ -3772,13 +3769,19 @@ function ConfiguratorNavbar({
   const last = String(contactDetails.lastName || '').trim();
   const shortName = [first, last ? `${last[0].toUpperCase()}.` : ''].filter(Boolean).join(' ');
   const initials = navbarInitials(contactDetails);
+  const tourReplay = !readOnly && (
+    <button type="button" className="item tour-replay" onClick={onOpenTutorial} aria-pressed={tutorialOpen} aria-label={tr('Relancer le tutoriel')}>
+      <NavIcon name="play" />
+      <span><b>{tr('Revoir la visite guidée')}</b><span>{tr('2 minutes pour prendre l’outil en main')}</span></span>
+    </button>
+  );
   const helpTip = tr(supportOpen ? 'Aide par téléphone · conseiller disponible' : 'Aide par téléphone');
 
   return (
     <header className="stn-nav" ref={navRef}>
       {/* Gauche : marque + projet */}
       <div className="left">
-        <a className="logo-wrap" href="/"><img className="logo" src="/images/logo-standing.svg" alt={tr('Stand-ING')} /></a>
+        <a className="logo-wrap" href="/"><img className="logo" src="/images/logo-standing-nav.png" alt={tr('Stand-ING')} /></a>
         <span className="sep" aria-hidden="true" />
         <div className="project">
           <span className="project-name">{project.name}</span>
@@ -3842,9 +3845,6 @@ function ConfiguratorNavbar({
           </button>
           {panel === 'question' && (
             <NavbarQuestionPanel
-              readOnly={readOnly}
-              tutorialOpen={tutorialOpen}
-              onOpenTutorial={onOpenTutorial}
               form={questionForm}
               onFormChange={onQuestionChange}
               state={questionState}
@@ -3884,10 +3884,9 @@ function ConfiguratorNavbar({
                 <span className="avatar lg">{initials || <NavIcon name="user" size={20} stroke={2.2} />}</span>
                 <span><b>{shortName || contactDetails.company || tr('Mon profil')}</b>{shortName && contactDetails.company && <span>{contactDetails.company}</span>}</span>
               </div>
-              {(contactDetails.email || contactDetails.phone) && (
+              {contactDetails.phone && (
                 <dl className="contact">
-                  {contactDetails.email && <div><dt><NavIcon name="mail" size={16} />{tr('E-mail')}</dt><dd>{contactDetails.email}</dd></div>}
-                  {contactDetails.phone && <div><dt><NavIcon name="phone" size={16} />{tr('Téléphone')}</dt><dd>{contactDetails.phone}</dd></div>}
+                  <div><dt><NavIcon name="phone" size={16} />{tr('Téléphone')}</dt><dd>{contactDetails.phone}</dd></div>
                 </dl>
               )}
               <hr />
@@ -3896,9 +3895,9 @@ function ConfiguratorNavbar({
                   <NavIcon name="user" />
                   <span><b>{tr('Mes informations')}</b><span>{tr('Modifier coordonnées, société, facturation')}</span></span>
                 </button>
-                {canManageCollaborators && sceneId && (
-                  <NavbarTeam sceneId={sceneId} contactDetails={contactDetails} shortName={shortName} initials={initials} viewerIsOwner={viewerIsOwner} onToast={showToast} />
-                )}
+                {canManageCollaborators && sceneId ? (
+                  <NavbarTeam sceneId={sceneId} contactDetails={contactDetails} shortName={shortName} initials={initials} viewerIsOwner={viewerIsOwner} onToast={showToast}>{tourReplay}</NavbarTeam>
+                ) : tourReplay}
               </div>
             </div>
           )}
@@ -3912,7 +3911,7 @@ function ConfiguratorNavbar({
 }
 
 // "Ajouter un collaborateur sur le stand" + "Sur ce stand", backed by the existing scene-collaborators service (2 guests max).
-function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '', viewerIsOwner = false, onToast }) {
+function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '', viewerIsOwner = false, onToast, children = null }) {
   const tr = useUiText();
   const language = useContext(LanguageContext);
   const [members, setMembers] = useState(null);
@@ -3986,6 +3985,7 @@ function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '
       )}
       {full && <p className="invite-note">{tr('Deux collaborateurs maximum par scène.')}</p>}
       {error && <p className="invite-note form-error" role="alert">{tr(error)}</p>}
+      {children}
       <hr />
       <div className="team-title">{tr('Sur ce stand')}</div>
       <div className="team">
@@ -4013,34 +4013,19 @@ function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '
 // FAQ entries: the configurator's four validated questions, each with the matching mock-up category icon.
 const NAVBAR_FAQ_ICONS = ['structure', 'image', 'receipt', 'truck'];
 
-function NavbarQuestionPanel({ readOnly, tutorialOpen, onOpenTutorial, form, onFormChange, state = {}, onSubmit, onReset }) {
+function NavbarQuestionPanel({ form, onFormChange, state = {}, onSubmit, onReset }) {
   const tr = useUiText();
   const t = useT();
-  const [view, setView] = useState('form');
-  const [query, setQuery] = useState('');
-  const [focusIndex, setFocusIndex] = useState(null);
+  const [openIndex, setOpenIndex] = useState(null);
   const subjectRef = useRef(null);
-  const messageRef = useRef(null);
-  const faqSearchRef = useRef(null);
   const faq = [1, 2, 3, 4].map((index) => ({ q: tr(t(`faq_q${index}`)), a: tr(t(`faq_a${index}`)) }));
-  const normalize = (value) => String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  const term = normalize(query.trim());
-  const visible = faq.map((entry, index) => ({ ...entry, index }))
-    .filter((entry) => (term ? normalize(`${entry.q} ${entry.a}`).includes(term) : focusIndex === null || entry.index === focusIndex));
   const sent = Boolean(state.message) && !state.loading && !state.error;
   const canSend = String(form.subject || '').trim().length >= 3 && String(form.message || '').trim().length >= 3;
 
-  const openFaq = (text, index = null) => {
-    setQuery(text);
-    setFocusIndex(text ? null : index);
-    setView('faq');
-    if (text) window.setTimeout(() => { const input = faqSearchRef.current; input?.focus(); input?.setSelectionRange(text.length, text.length); }, 0);
-  };
   const writeAgain = () => {
     onReset?.();
     onFormChange('subject', '');
     onFormChange('message', '');
-    setView('form');
     window.setTimeout(() => subjectRef.current?.focus(), 0);
   };
 
@@ -4057,70 +4042,26 @@ function NavbarQuestionPanel({ readOnly, tutorialOpen, onOpenTutorial, form, onF
     );
   }
 
-  if (view === 'faq') {
-    return (
-      <div className="panel w380 fb" role="dialog" aria-label={tr('Question ou remarque')}>
-        <div className="faq">
-          <div className="faq-head">
-            <button type="button" className="back" aria-label={tr('Retour')} onClick={() => { setView('form'); setQuery(''); setFocusIndex(null); }}><NavIcon name="back" size={18} stroke={2.4} /></button>
-            <h3>{tr('Questions fréquentes')}</h3>
-          </div>
-          <div className="faq-search">
-            <NavIcon name="search" size={17} stroke={2.2} />
-            <input ref={faqSearchRef} type="search" value={query} onChange={(event) => { setQuery(event.target.value); setFocusIndex(null); }} placeholder={tr('Rechercher : visuel, livraison, devis…')} aria-label={tr('Rechercher dans les questions fréquentes')} />
-          </div>
-          {visible.length > 0 && (
-            <div className="faq-list">
-              {visible.map((entry) => (
-                <details key={entry.index} className="qa" open={(term && visible.length === 1) || focusIndex === entry.index}>
-                  <summary><span>{entry.q}</span><NavIcon name="chevron" size={16} stroke={2.4} /></summary>
-                  <p>{entry.a}</p>
-                </details>
-              ))}
-            </div>
-          )}
-          {!visible.length && (
-            <div className="faq-empty">
-              <b>{tr(`Aucune réponse pour « ${query.trim()} »`)}</b>
-              <p>{tr('Posez-nous la question, on vous répond sous 24 h ouvrées.')}</p>
-              <button type="button" className="primary" onClick={() => { onFormChange('subject', query.trim().slice(0, 90)); setView('form'); window.setTimeout(() => messageRef.current?.focus(), 0); }}>{tr('Poser ma question')}</button>
-            </div>
-          )}
-          <div className="faq-foot">
-            <span>{tr('Toujours bloqué ?')}</span>
-            <button type="button" className="ghost" onClick={() => { setView('form'); window.setTimeout(() => subjectRef.current?.focus(), 0); }}>{tr('Écrivez-nous')}</button>
-            <a className="ghost" href={STANDING_SUPPORT_PHONE.href}>{STANDING_SUPPORT_PHONE.label}</a>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="panel w380 fb" role="dialog" aria-label={tr('Question ou remarque')}>
       <form onSubmit={onSubmit}>
         <div className="p-head"><h3>{tr('Une question, une remarque ?')}</h3></div>
-        {!readOnly && (
-          <div className="self">
-            <button type="button" className="item" onClick={onOpenTutorial} aria-pressed={tutorialOpen} aria-label={tr('Relancer le tutoriel')}>
-              <NavIcon name="play" />
-              <span><b>{tr('Revoir la visite guidée')}</b><span>{tr('2 minutes pour prendre l’outil en main')}</span></span>
-            </button>
-          </div>
-        )}
         <div className="faq-home">
           <p className="write-title">{tr('Questions fréquentes')}</p>
-          <div className="faq-search">
-            <NavIcon name="search" size={17} stroke={2.2} />
-            <input type="search" value="" onChange={(event) => openFaq(event.target.value)} placeholder={tr('Rechercher une réponse')} aria-label={tr('Rechercher dans les questions fréquentes')} />
-          </div>
-          <div className="cats">
-            {faq.map((entry, index) => (
-              <button key={index} type="button" className="cat" onClick={() => openFaq('', index)}>
-                <NavIcon name={NAVBAR_FAQ_ICONS[index]} size={22} />
-                <span><b>{entry.q}</b><span>{tr('Voir la réponse')}</span></span>
-              </button>
-            ))}
+          <div className="faq-acc">
+            {faq.map((entry, index) => {
+              const open = openIndex === index;
+              return (
+                <div key={index} className={`qa${open ? ' open' : ''}`}>
+                  <button type="button" className="qa-q" aria-expanded={open} aria-controls={`stn-faq-${index}`} onClick={() => setOpenIndex(open ? null : index)}>
+                    <NavIcon name={NAVBAR_FAQ_ICONS[index]} size={20} />
+                    <span>{entry.q}</span>
+                    <NavIcon name="chevron" size={16} stroke={2.4} className="qa-chev" />
+                  </button>
+                  {open && <p id={`stn-faq-${index}`}>{entry.a}</p>}
+                </div>
+              );
+            })}
           </div>
         </div>
         <div className="p-body write">
@@ -4132,7 +4073,7 @@ function NavbarQuestionPanel({ readOnly, tutorialOpen, onOpenTutorial, form, onF
           </div>
           <div className="field">
             <label className="lbl" htmlFor="stn-message">{tr('Votre message')}</label>
-            <textarea id="stn-message" ref={messageRef} maxLength={500} value={form.message} onChange={(event) => onFormChange('message', event.target.value)} placeholder={tr('Décrivez votre besoin en quelques lignes')} />
+            <textarea id="stn-message" maxLength={500} value={form.message} onChange={(event) => onFormChange('message', event.target.value)} placeholder={tr('Décrivez votre besoin en quelques lignes')} />
           </div>
           {state.error && <p className="form-error" role="alert">{tr(state.error)}</p>}
           <button className="primary" type="submit" disabled={state.loading || !canSend}>{tr(state.loading ? 'Envoi…' : 'Envoyer')}</button>
@@ -5924,7 +5865,7 @@ function PackAllowanceSummary({ pricing }) {
 
 // Header cart, as in the navbar mock-up: total HT next to the icon, details in a side drawer.
 // Works controlled (open / onOpenChange from the navbar) or on its own.
-function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, total, pricing, salonLabel, readOnly, standLabel = '', area = 0, offerLabel = '', nextStep = 4, open, onOpenChange, onSelectItem, onOpenItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onValidate, onContinue }) {
+function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, total, pricing, salonLabel, readOnly, standLabel = '', area = 0, offerLabel = '', nextStep = 4, open, onOpenChange, onSelectItem, onOpenItem, onDeleteItems, canRemoveItem, onValidate, onContinue }) {
   const tr = useUiText();
   const itemRefs = useRef(new Map());
   const closeRef = useRef(null);
@@ -6041,7 +5982,6 @@ function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, tota
                   {section.lines.map(({ group, item, entry, lineTotal }) => {
                     const quantity = group.items.length;
                     const removableItems = group.items.filter((groupItem) => canRemoveItem?.(groupItem) ?? true);
-                    const decrementItem = [...removableItems].pop();
                     const optionLines = itemOptionLines(item).filter((line) => line !== item.options?.variantLabel);
                     const label = tr(itemCartLabel(item));
                     return (
@@ -6055,11 +5995,6 @@ function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, tota
                           <p className="l-name">{label}</p>
                           {optionLines.length > 0 && <p className="l-detail">{optionLines.map((line) => tr(line)).join(' · ')}</p>}
                           <div className="l-tools">
-                            <div className="qty">
-                              <button type="button" disabled={readOnly || !decrementItem || quantity <= 1} onClick={() => decrementItem && onDecrementItem?.(decrementItem.id)} aria-label={tr('Retirer un')}>−</button>
-                              <output>{quantity}</output>
-                              <button type="button" disabled={readOnly || item.autoMeterCover} onClick={() => onIncrementItem?.(item)} aria-label={tr('Ajouter un')}>+</button>
-                            </div>
                             <button type="button" className="l-link" onClick={() => openCartItem(item)}>{tr('Modifier')}</button>
                             <button type="button" className="l-link rm" disabled={readOnly || !removableItems.length} onClick={() => { onDeleteItems?.(removableItems.map((groupItem) => groupItem.id)); showToast(tr(`${itemCartLabel(item)} retiré du panier`)); }}>{tr('Retirer')}</button>
                           </div>
