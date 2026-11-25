@@ -11,6 +11,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { normalizeImageFraming } from '../src/imageFraming.js';
 import { technicalA3 } from '../src/technicalPrintLayout.js';
+import { layoutTechnicalVisuals, technicalFrontPage } from '../src/technicalVisualLayout.js';
 import { Euler, Vector3 } from 'three';
 import { scenePackBenefits, sceneLightingOptions } from '../supabase/functions/_shared/packBenefits.js';
 import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor } from '../src/imageColorReplacement.js';
@@ -35,7 +36,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ technicalA3, electricalWallClearance, electricalClearanceRect, applyElectricalClearance, includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor, technicalRiggingCoordinates, technicalSignRiggingPoints });
+  const api = vm.createContext({ technicalA3, technicalFrontPage, layoutTechnicalVisuals, electricalWallClearance, electricalClearanceRect, applyElectricalClearance, includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor, technicalRiggingCoordinates, technicalSignRiggingPoints });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }
@@ -71,6 +72,9 @@ test('the BAT prints the aisle code on the requested edge without duplicating th
   const { api, ctx, text } = runtime();
   api.drawPlanAisle(ctx, 100, 200, 600, 300, 20, { aisleSide: null, aisleNumber: '07B' });
   assert.deepEqual(text, [{ value: 'Allée', x: 400, y: 582 }]);
+  text.length = 0;
+  api.drawPlanAisle(ctx, 100, 200, 600, 300, 20, { aisleSide: 'bottom', aisleNumber: 'P' }, technicalFrontPage.gallery.y - 24);
+  assert.deepEqual(text, [{ value: 'Allée P', x: 400, y: 816 }], 'The print aisle label clears object badges and stays above artwork previews');
 });
 
 test('Signature BAT footprint follows the arch color and stand depth instead of the generic square', () => {

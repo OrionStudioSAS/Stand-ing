@@ -17,13 +17,14 @@ insert into public.scenes (id, share_token, salon, offer, client_email, client_s
   ('collab-other-scene', 'collab-other-token', 'Test', 'Signature', 'collab-owner@example.test', 'draft', '{}');
 insert into public.scene_collaborators (scene_id, slot, email, user_id, accepted_at) values
   ('collab-test-scene', 1, 'collab-guest@example.test', 'b0000000-0000-0000-0000-000000000002', now()),
-  ('collab-test-scene', 2, 'collab-pending@example.test', null, null);
+  ('collab-test-scene', 2, 'collab-pending@example.test', null, null),
+  ('collab-test-scene', 3, 'collab-third@example.test', null, null);
 
 do $$ begin
   begin
     insert into public.scene_collaborators (scene_id, slot, email)
-      values ('collab-test-scene', 3, 'collab-third@example.test');
-    raise exception 'A third slot was accepted';
+      values ('collab-test-scene', 4, 'collab-fourth@example.test');
+    raise exception 'A fourth slot was accepted';
   exception when check_violation then null;
   end;
   begin

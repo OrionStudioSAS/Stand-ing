@@ -2954,12 +2954,6 @@ select {
   font: inherit;
 }
 
-.option-accordion > button .option-accordion-subtitle {
-  color: #e1e9f8;
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 14px;
-}
 .configurator-option-icon {
   width: 25px;
   height: 25px;
@@ -3084,10 +3078,40 @@ select {
 
 .ground-section-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.ground-info-button {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #2f61ad;
+  cursor: pointer;
+}
+
+.ground-info-button:hover,
+.ground-info-button[aria-expanded="true"] {
+  background: #eaf2ff;
+}
+
+.ground-info-text {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f5f7fb;
+  color: #405269;
+  font-size: .78rem;
 }
 
 .ground-section-heading > span {
@@ -13232,6 +13256,55 @@ img.asset-thumb {
   font-weight: 950;
 }
 
+.validation-allowance-recap {
+  display: grid;
+  margin: 0;
+  padding: 4px 14px;
+  border: 1px solid #dce3ed;
+  border-radius: 10px;
+  background: #fff;
+  color: #243248;
+  font-size: .82rem;
+}
+
+.validation-allowance-recap > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 0;
+}
+
+.validation-allowance-recap dt {
+  font-weight: 600;
+}
+
+.validation-allowance-recap small {
+  display: block;
+  margin-top: 3px;
+  color: #56667b;
+  font-size: .72rem;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.validation-allowance-recap dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.validation-allowance-recap .validation-allowance-total {
+  border-top: 1px solid #dce3ed;
+  color: #193b6a;
+  font-size: .95rem;
+}
+
+.validation-allowance-total dd {
+  font-size: 1.15rem;
+}
+
 .validation-modern-insurance-card {
   display: flex;
   align-items: center;
@@ -15476,8 +15549,6 @@ img.asset-thumb {
 .signature-arch-design .signature-arch-choice-group button.unavailable { opacity: 1; border: 1px dotted #bfc8d8; color: #a3adbf; background: #f6f7f9; box-shadow: none; cursor: not-allowed; }
 .signature-arch-design .signature-arch-choice-group button.unavailable > strong { text-decoration: line-through; }
 .signature-arch-design .arch-badge.unavailable { gap: 4px; color: #6c7280; background: #ebedf1; }
-.signature-arch-title { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 7px; }
-.signature-arch-accordion.option-accordion > button .option-accordion-label .signature-arch-title > small { display: inline-flex; border-radius: 20px; padding: 2px 7px; color: #24569f; background: #fff; font-size: 9px; font-weight: 650; line-height: 11px; }
 .signature-arch-unavailable { display: grid; gap: 16px; padding: 16px 18px 18px; color: #414550; background: #fff; }
 .signature-arch-space-notice { display: grid; grid-template-columns: 28px minmax(0,1fr); align-items: start; gap: 10px; border: 1px solid #e9ecf2; border-radius: 9px; padding: 11px; background: #f6f7f9; }
 .signature-arch-space-notice > span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: #9299a8; background: #fff; box-shadow: 0 1px 2px #19243a10; }

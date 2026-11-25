@@ -57,6 +57,7 @@ import {
   Globe2,
   GripVertical,
   HelpCircle,
+  Info,
   KeyRound,
   Layers,
   LayoutDashboard,
@@ -3442,7 +3443,7 @@ function SceneCollaboratorsSection({ sceneId }) {
     <section className="scene-collaborators-section" aria-label={tr('Ajouter des collaborateurs')}>
       <h3><Users size={17} />{tr('Ajouter des collaborateurs')}</h3>
       <div className="scene-collaborators-content" aria-busy={busy || (!members && !error)}>
-        <p>{tr('Invitez jusqu’à deux personnes à modifier et à valider la configuration de ce stand.')}</p>
+        <p>{tr('Invitez jusqu’à trois personnes à modifier et à valider la configuration de ce stand.')}</p>
         {!members && !error && <div role="status">{tr('Chargement')}</div>}
         {members?.length > 0 && <ul className="scene-collaborators-list">
           {members.map((member) => <li key={member.id}>
@@ -3450,10 +3451,10 @@ function SceneCollaboratorsSection({ sceneId }) {
             <button type="button" disabled={busy} onClick={() => changeMembership('remove', member)} aria-label={`${tr('Retirer l’accès')} : ${member.email}`}><Trash2 size={15} /> {tr('Retirer')}</button>
           </li>)}
         </ul>}
-        {members && (members.length < 2 ? <form className="scene-collaborators-form" onSubmit={(event) => { event.preventDefault(); changeMembership('invite'); }}>
+        {members && (members.length < 3 ? <form className="scene-collaborators-form" onSubmit={(event) => { event.preventDefault(); changeMembership('invite'); }}>
           <label className="form-row">{tr('Adresse e-mail du collaborateur')}<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required maxLength={254} disabled={busy} /></label>
           <button className="client-correction-button" type="submit" disabled={busy || !email.trim()}>{tr('Envoyer l’invitation')}</button>
-        </form> : <p>{tr('Deux collaborateurs maximum par scène.')}</p>)}
+        </form> : <p>{tr('Trois collaborateurs maximum par scène.')}</p>)}
         {message && <div className="validation-message success" role="status">{tr(message)}</div>}
         {error && <div className="validation-message error" role="alert">{tr(error)}</div>}
       </div>
@@ -5051,7 +5052,7 @@ function OptionsStepPanel({
   return (
     <>
       <PanelHead title={t('panel_options_title')} step={activeStep} />
-      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} subtitle={tr('Moquette · Empreinte')} icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
+      <OptionAccordion {...accordionScrollProps('moquette')} title={t('option_ground')} icon={<ConfiguratorOptionIcon src="/icons/sol.svg" />} open={openOptions.moquette} onToggle={() => toggleOption('moquette')}>
         <CarpetColorOptionCard
           uniformLayout={uniformColorSections}
           showThickOption={isSignatureStand}
@@ -5095,7 +5096,7 @@ function OptionsStepPanel({
           />
         )}
       </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} subtitle={tr("Coton gratté · Bâche imprimée")} icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
+      <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
         <ColorOptionCard
           uniformLayout={uniformColorSections}
           title={tr("COTON GRATTÉ")}
@@ -5176,9 +5177,7 @@ function OptionsStepPanel({
         />
       </OptionAccordion>
       {isSignatureStand && (
-        <OptionAccordion {...accordionScrollProps('arche')} className="signature-arch-accordion"
-          title={<span className="signature-arch-title">{tr("Arche")}{Number(standDepth) < signatureArchMinimumDepth(2) && <small>{tr("Non disponible")}</small>}</span>}
-          subtitle={tr(Number(standDepth) < signatureArchMinimumDepth(2) ? `Espace insuffisant · ${formatNumber(area)} m²` : 'Taille · Éclairage · Couleur · Options')}
+        <OptionAccordion {...accordionScrollProps('arche')} className="signature-arch-accordion" title={tr("Arche")}
           icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
           <SignatureArchOptionCard
             standDepth={standDepth}
@@ -5201,7 +5200,7 @@ function OptionsStepPanel({
         </OptionAccordion>
       )}
       {isPrestigeStand && (
-        <OptionAccordion {...accordionScrollProps('arche')} title={tr("Arche")} subtitle={tr("TV · Présence")} icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
+        <OptionAccordion {...accordionScrollProps('arche')} title={tr("Arche")} icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
           <PrestigeArchOptionCard
             enabled={prestigeArchEnabled && prestigeArchItems.length > 0}
             tvEnabled={prestigeArchTvEnabled}
@@ -5213,7 +5212,7 @@ function OptionsStepPanel({
         </OptionAccordion>
       )}
       {isPrestigeStand && (
-        <OptionAccordion {...accordionScrollProps('enseigne')} title={tr("Enseigne haute")} subtitle={tr("Visuel")} icon={<ConfiguratorOptionIcon src="/icons/enseigne_haute.svg" />} open={openOptions.enseigne} onToggle={() => toggleOption('enseigne')}>
+        <OptionAccordion {...accordionScrollProps('enseigne')} title={tr("Enseigne haute")} icon={<ConfiguratorOptionIcon src="/icons/enseigne_haute.svg" />} open={openOptions.enseigne} onToggle={() => toggleOption('enseigne')}>
           <PrestigeSignageOptionCard
             items={prestigeSignageItems}
             enabled={prestigeSignageEnabled && prestigeSignageItems.length > 0}
@@ -5229,7 +5228,7 @@ function OptionsStepPanel({
           />
         </OptionAccordion>
       )}
-      {!isSignatureStand && <OptionAccordion {...accordionScrollProps('comptoir')} title={t('option_counter')} subtitle={tr("Taille · Couleur · Logo")} icon={<ConfiguratorOptionIcon src="/icons/comptoir_accueil.svg" />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
+      {!isSignatureStand && <OptionAccordion {...accordionScrollProps('comptoir')} title={t('option_counter')} icon={<ConfiguratorOptionIcon src="/icons/comptoir_accueil.svg" />} open={openOptions.comptoir} onToggle={() => toggleOption('comptoir')}>
         <CounterOptionCard
           items={counterItems}
           colors={counterColors}
@@ -5409,6 +5408,22 @@ function PackAllowanceSummary({ pricing }) {
     <div><span>{tr("Forfait offert :")} {tr(validationMoney(pricing.allowanceAmount || 0))} {tr("€ HT")}</span><b>− {tr(validationMoney(pricing.allowanceApplied || 0, true))} €</b></div>
     <small>{tr("Objets, options et assurance mobilier compris dans le forfait. Solde non remboursable.")}</small>
   </section>;
+}
+
+function ValidationAllowanceRecap({ pricing }) {
+  const tr = useUiText();
+  const insurance = Number(pricing.insuranceLine?.total || 0);
+  const insuranceBase = pricing.insuranceLine?.insuranceBase ?? pricing.furnitureInsuranceBase ?? 0;
+  const subtotal = roundCurrency(Number(pricing.grossTotal || 0) - insurance);
+  const allowance = Number(pricing.allowanceApplied || 0);
+  const money = (amount) => `${validationMoney(amount, true)} ${tr("€ HT")}`;
+
+  return <dl className="validation-allowance-recap" aria-label={tr("Récapitulatif des montants")}>
+    <div><dt>{tr("Total hors assurance")}</dt><dd>{money(subtotal)}</dd></div>
+    <div><dt>{tr("Assurance mobilier")}{insurance > 0 && <small>{tr("Calculée sur")} {validationMoney(insuranceBase, true)} {tr("€ HT de mobilier")}</small>}</dt><dd>{money(insurance)}</dd></div>
+    <div><dt>{tr("Forfait mobilier")}</dt><dd>{allowance > 0 && '− '}{money(allowance)}</dd></div>
+    <div className="validation-allowance-total"><dt>{tr("Montant total")}</dt><dd>{money(pricing.total || 0)}</dd></div>
+  </dl>;
 }
 
 function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, total, pricing, salonLabel, readOnly, onSelectItem, onOpenItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onValidate }) {
@@ -7779,22 +7794,19 @@ function ValidationStepPanel({
     <>
       <PanelHead title={tr("Validation")} step={4} />
 
-      <section className="validation-modern-total-card">
-        <span>{tr("Total options et mobilier")}</span>
-        <strong>{tr(validationMoney(pricing?.total || 0, true))} {tr("€ HT")}</strong>
-      </section>
-
-      <PackAllowanceSummary pricing={pricing} />
-
-      {insuranceLine && (
-        <section className="validation-modern-insurance-card">
+      {pricing?.packBenefits?.mode === 'allowance' ? <ValidationAllowanceRecap pricing={pricing} /> : <>
+        <section className="validation-modern-total-card">
+          <span>{tr("Total options et mobilier")}</span>
+          <strong>{tr(validationMoney(pricing?.total || 0, true))} {tr("€ HT")}</strong>
+        </section>
+        {insuranceLine && <section className="validation-modern-insurance-card">
           <div>
             <strong><HelpCircle size={14} /> {tr("Assurance mobilier obligatoire")}</strong>
-            <span>{tr(pricing?.packBenefits?.mode === 'allowance' ? 'Prise en compte dans le forfait accessoires. ' : '')}{tr("Calculée sur")} {tr(validationMoney(insuranceLine.insuranceBase || pricing?.furnitureInsuranceBase || 0))} {tr("€ HT de mobilier")}</span>
+            <span>{tr("Calculée sur")} {tr(validationMoney(insuranceLine.insuranceBase || pricing?.furnitureInsuranceBase || 0))} {tr("€ HT de mobilier")}</span>
           </div>
-          <b>{tr(pricing?.packBenefits?.mode === 'allowance' ? '' : '+ ')}{tr(validationMoney(insuranceLine.total || 0, true))} €</b>
-        </section>
-      )}
+          <b>+ {tr(validationMoney(insuranceLine.total || 0, true))} €</b>
+        </section>}
+      </>}
 
       {pendingVisuals.length > 0 && (
         <section className="validation-modern-alert-card">
@@ -8231,7 +8243,7 @@ function ConfiguratorOptionIcon({ src }) {
   return <img className="configurator-option-icon" src={src} alt="" aria-hidden="true" loading="eager" />;
 }
 
-function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, title, subtitle = '', icon, open, onToggle, children, className = '' }) {
+function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, title, icon, open, onToggle, children, className = '' }) {
   const tr = useUiText();
   const accordionRef = useRef(null);
 
@@ -8251,7 +8263,6 @@ function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, 
           <span className="option-accordion-icon" aria-hidden="true">{tr(icon)}</span>
           <span className="option-accordion-copy">
             <strong className="option-accordion-title">{tr(title)}</strong>
-            {subtitle && <small className="option-accordion-subtitle">{tr(subtitle)}</small>}
           </span>
         </span>
         <span className="option-accordion-toggle" aria-hidden="true"><ChevronDown size={16} /></span>
@@ -8751,7 +8762,7 @@ function surfaceColorOptionGroups(colors = [], selectedColor = {}, defaultColorI
   };
 }
 
-function SurfaceColorOptionCard({ title, iconSrc, description = '', colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect }) {
+function SurfaceColorOptionCard({ title, iconSrc, info = '', description = '', colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect }) {
   const tr = useUiText();
   const { selected, includedColors, optionalColors, optionTotal, fromPrice } = surfaceColorOptionGroups(colors, selectedColor, defaultColorId, area);
   const selectedId = normalizeColorId(selected.id);
@@ -8776,7 +8787,7 @@ function SurfaceColorOptionCard({ title, iconSrc, description = '', colors, sele
 
   return (
     <section className="surface-color-option-card" aria-label={tr(title)}>
-      <GroundOptionHeading title={tr(title)} value={colorLabel(selected)} iconSrc={iconSrc} />
+      <GroundOptionHeading title={tr(title)} value={colorLabel(selected)} iconSrc={iconSrc} info={info} />
       {description && <p className="surface-color-description">{tr(description)}</p>}
       {!!includedColors.length && (
         <div className="surface-color-group">
@@ -8980,12 +8991,13 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, upload
 function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect, uniformLayout = false, showThickOption = true, thick = false, footprintArea = 0, onThickChange }) {
   const tr = useUiText();
   const t = useT();
+  const carpetInfo = "La moquette est recyclée.";
   const thickOption = <div className="carpet-thick-option"><ToggleOption active={thick} disabled={disabled} label={t('carpet_thick_label')}
     detail={tr("S’applique à la moquette et à l’empreinte moquette.")}
     price={thickCarpetPriceFromCarpetTab(area, footprintArea, t)} onChange={onThickChange} /></div>;
   // Other packs already show this shared option below the footprint palette.
   if (uniformLayout) {
-    return <><SurfaceColorOptionCard title={tr("MOQUETTE")} iconSrc="/icons/moquette_icon.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />{tr(showThickOption && thickOption)}</>;
+    return <><SurfaceColorOptionCard title={tr("MOQUETTE")} iconSrc="/icons/moquette_icon.svg" info={carpetInfo} colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />{tr(showThickOption && thickOption)}</>;
   }
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
@@ -9000,7 +9012,7 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
   return (
     <div className="carpet-choice-card ground-choice-card ground-carpet-card">
       <section className="carpet-choice-section ground-section">
-        <GroundOptionHeading title={tr("MOQUETTE")} iconSrc="/icons/moquette_icon.svg" />
+        <GroundOptionHeading title={tr("MOQUETTE")} iconSrc="/icons/moquette_icon.svg" info={carpetInfo} />
         <div className="ground-main-choice">
           <button
             type="button"
@@ -9052,15 +9064,19 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
   );
 }
 
-function GroundOptionHeading({ title, value = '', iconSrc = '' }) {
+function GroundOptionHeading({ title, value = '', iconSrc = '', info = '' }) {
   const tr = useUiText();
+  const infoId = useId();
+  const [showInfo, setShowInfo] = useState(false);
   return (
     <div className="ground-section-heading">
       <span>
         {iconSrc && <img className="ground-section-icon" src={iconSrc} alt="" aria-hidden="true" />}
         {tr(title)}
+        {info && <button className="ground-info-button" type="button" aria-label={tr("Informations sur la moquette")} aria-expanded={showInfo} aria-controls={infoId} onClick={() => setShowInfo((current) => !current)}><Info size={15} /></button>}
       </span>
       {value && <strong>{tr(value)}</strong>}
+      {info && <p id={infoId} className="ground-info-text" hidden={!showInfo}>{tr(info)}</p>}
     </div>
   );
 }
@@ -15817,6 +15833,7 @@ async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = [], includ
 function sceneTechnicalDocumentInfo(scene = {}) {
   return {
     title: scene.project_name || scene.client_name || 'Plan technique',
+    pack: typeof scene.offer === 'string' ? scene.offer : scene.offer?.name || '',
     salon: scene.event_name || scene.salon?.name || (typeof scene.salon === 'string' ? scene.salon : ''),
     hall: sceneHallLabel(scene),
     stand: sceneStandNumber(scene),
@@ -20840,6 +20857,7 @@ function StandScene({ width, depth, height, layout, animationReady = true, items
   const [hoveredId, setHoveredId] = useState(null);
   const { departures, finishDeparture } = useSceneDepartures(items, canAnimateSceneDeparture);
   const dragPointerOffset = useRef({ x: 0, z: 0 });
+  const dragGrabHeight = useRef(0);
   const draggingItem = useMemo(() => items.find((item) => item.id === draggingId) || null, [items, draggingId]);
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedId) || null, [items, selectedId]);
   const cameraPivot = useMemo(() => {
@@ -20851,7 +20869,7 @@ function StandScene({ width, depth, height, layout, animationReady = true, items
     if (!interactive || !draggingId) return;
     const projectedPoint = draggingItem && isWallItem(draggingItem)
       ? wallDragPointFromRay(event.ray, draggingItem, items, width, depth, cameraPivot, layout)
-      : floorDragPointFromRay(event.ray, cameraPivot);
+      : floorDragPointFromRay(event.ray, cameraPivot, dragGrabHeight.current);
     if (!projectedPoint) return;
     event.stopPropagation();
     onDragMove(applyDragPointerOffset(projectedPoint, dragPointerOffset.current));
@@ -20891,6 +20909,8 @@ function StandScene({ width, depth, height, layout, animationReady = true, items
             setSelectedId(item.autoCounterPower ? item.surfaceHostId : item.id);
             if (item.autoCounterPower) return;
             if (!canDragSceneItem(item, canEditLockedItems)) return;
+            // Project drag rays at the grab height so perspective does not shift the object.
+            dragGrabHeight.current = event.point.y;
             dragPointerOffset.current = sceneItemDragPointerOffset(
               item,
               { x: event.point.x - cameraPivot[0], z: event.point.z - cameraPivot[2] },
@@ -20950,9 +20970,10 @@ function StandScene({ width, depth, height, layout, animationReady = true, items
   );
 }
 
-function floorDragPointFromRay(ray, cameraPivot = [0, 0, 0]) {
+function floorDragPointFromRay(ray, cameraPivot = [0, 0, 0], grabHeight = 0) {
   const point = new Vector3();
-  if (!ray?.intersectPlane?.(floorPlane, point)) return null;
+  const plane = grabHeight ? new Plane(floorPlane.normal, -grabHeight) : floorPlane;
+  if (!ray?.intersectPlane?.(plane, point)) return null;
   return { x: point.x - Number(cameraPivot[0] || 0), z: point.z - Number(cameraPivot[2] || 0) };
 }
 
@@ -21501,7 +21522,7 @@ function DragSurface({ width, depth, layout, carpetFootprintEnabled = true, scen
   const floorDepth = sceneFloorDepth(layout, depth);
   const floorCenterZ = sceneFloorCenterZ(layout);
   const emitDragPoint = (event) => {
-    if (isSpotWallItem(draggingItem)) {
+    if (draggingItem && (!isWallItem(draggingItem) || isSpotWallItem(draggingItem))) {
       onDragPointer?.(event);
       return;
     }

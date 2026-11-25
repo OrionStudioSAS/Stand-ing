@@ -18,14 +18,13 @@ function loadFunction(name, context) {
 test('Signature Sol uses the carpet design with the arch palette and shared colour handler', () => {
   assert.match(appSource, /function isSignatureScene\(/);
   assert.match(appSource, /function SignatureArchOptionCard\(/);
-  assert.match(appSource, /subtitle=\{tr\('Moquette · Empreinte'\)\}/);
+  assert.match(appSource, /accordionScrollProps\('moquette'\)\} title=\{t\('option_ground'\)\} icon=/);
   assert.match(appSource, /<SurfaceColorOptionCard title=\{tr\("EMPREINTE MOQUETTE"\)\} iconSrc="\/icons\/empreinte_moquette_icon.svg"/);
   assert.match(appSource, /colors=\{signatureArchColors\} selectedColor=\{signatureArchColor\} area=\{1\}/);
   assert.match(appSource, /disabled=\{readOnly \|\| !signatureArchItems.length\}\s+onSelect=\{onSignatureArchColor\}/);
   assert.match(appSource, /<SignatureArchColorCard colors=\{colors\} selectedColor=\{selectedColor\}/);
   assert.match(appSource, /!isSignatureStand && \(\s*<FootprintColorOptionCard/);
-  assert.match(appSource, /className="signature-arch-title">\{tr\("Arche"\)\}/);
-  assert.match(appSource, /Espace insuffisant.*Taille · Éclairage · Couleur · Options/);
+  assert.match(appSource, /className="signature-arch-accordion" title=\{tr\("Arche"\)\}/);
   assert.match(stylesSource, /\.signature-arch-variants/);
 });
 

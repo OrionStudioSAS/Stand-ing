@@ -129,7 +129,10 @@ test('owner sends personal one-click links with a button and fallback; revocatio
   assert.equal(firstLink.searchParams.has('invitation_auth'), false);
   assert.equal((await manage({ action: 'invite', email: 'guest@example.test' })).status, 409);
   assert.equal((await manage({ action: 'invite', email: 'second@example.test' })).status, 201);
-  assert.equal((await manage({ action: 'invite', email: 'third@example.test' })).status, 409);
+  assert.equal((await manage({ action: 'invite', email: 'third@example.test' })).status, 201);
+  assert.deepEqual(h.invites.map(({ slot }) => slot), [1, 2, 3]);
+  assert.equal((await manage({ action: 'invite', email: 'fourth@example.test' })).status, 409);
+  assert.equal(h.mails.length, 3);
   assert.equal((await manage({ action: 'list' }, 'guest')).status, 403);
   assert.equal(h.invites[0].accepted_at, null);
 
@@ -159,7 +162,7 @@ test('owner sends personal one-click links with a button and fallback; revocatio
   h.scene.source_payload.configuration_submitted_by = 'guest';
   assert.equal((await h.request('scene-config-sync', sceneRequest, 'guest')).status, 200);
   assert.equal((await delivery()).status, 200);
-  assert.deepEqual(h.mails[2].to, ['owner@example.test'], 'Confirmation still goes to the main contact');
+  assert.deepEqual(h.mails[3].to, ['owner@example.test'], 'Confirmation still goes to the main contact');
   for (const actor of ['owner', 'guest']) {
     assert.equal((await h.request('scene-contact-sync', sceneRequest, actor)).status, 403, 'Neither exhibitor can sync changes after submission');
   }

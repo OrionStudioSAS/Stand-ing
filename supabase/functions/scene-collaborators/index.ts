@@ -54,13 +54,13 @@ Deno.serve(async (req) => {
   if (readError) return json({ error: "Impossible de charger les invitations." }, 500);
   if (members.some((member) => member.email === email)) return json({ error: "Cette adresse est déjà invitée." }, 409);
   let invitation = null;
-  for (const slot of [1, 2]) {
+  for (const slot of [1, 2, 3]) {
     if (members.some((member) => member.slot === slot)) continue;
     const { data, error } = await admin.from("scene_collaborators").insert({ scene_id: scene.id, email, slot }).select(columns).single();
     if (data) { invitation = data; break; }
     if (error?.code !== "23505") return json({ error: "Impossible de créer l’invitation." }, 500);
   }
-  if (!invitation) return json({ error: "Deux collaborateurs maximum par scène." }, 409);
+  if (!invitation) return json({ error: "Trois collaborateurs maximum par scène." }, 409);
 
   try {
     await sendSceneInvitationLink(admin, invitation, scene, body.language);

@@ -124,6 +124,11 @@ try {
 
   const validate = async (page) => {
     await page.locator('.stepper').getByRole('button', { name: /Validation/ }).click();
+    const recap = page.locator('.validation-allowance-recap');
+    assert.deepEqual((await recap.locator('dt').allTextContents()).map(text => text.trim()), [
+      'Total hors assurance', 'Assurance mobilier', 'Forfait mobilier', 'Montant total',
+    ]);
+    assert.equal(await page.locator('.pack-allowance-progress, .validation-modern-insurance-card').count(), 0);
     const confirm = page.locator('.validation-confirm-button');
     assert.equal(await confirm.isEnabled(), true);
     await confirm.click();
@@ -136,12 +141,12 @@ try {
   await infoButton(owner).click();
   const dialog = owner.getByRole('region', { name: 'Ajouter des collaborateurs' });
   assert.ok(await owner.locator('.client-info-modal-locked').isVisible());
-  for (const email of ['guest@example.test', 'second@example.test']) {
+  for (const email of ['guest@example.test', 'second@example.test', 'third@example.test']) {
     await dialog.getByRole('textbox', { name: 'Adresse e-mail du collaborateur' }).fill(email);
     await dialog.getByRole('button', { name: 'Envoyer l’invitation' }).click();
     await dialog.getByText(email, { exact: true }).waitFor();
   }
-  await dialog.getByText('Deux collaborateurs maximum par scène.').waitFor();
+  await dialog.getByText('Trois collaborateurs maximum par scène.').waitFor();
   assert.equal(await dialog.getByRole('textbox').count(), 0);
   await dialog.getByRole('button', { name: 'Retirer l’accès : second@example.test' }).click();
   await dialog.getByText('Accès retiré.', { exact: true }).waitFor();
