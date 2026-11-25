@@ -18442,6 +18442,10 @@ function sceneFloorCenterZ(layout) {
   return layoutHasSideWalls(layout) ? wallThickness / 2 : 0;
 }
 
+function sceneFloorFrontZ(layout, depth) {
+  return sceneFloorCenterZ(layout) + sceneFloorDepth(layout, depth) / 2;
+}
+
 function sideWallStartZ(depth) {
   return -Number(depth || 0) / 2 + wallThickness;
 }
@@ -19518,7 +19522,8 @@ function rectSize(rect) {
 }
 
 function placementRegions(width, depth, layout, itemBounds, carpetFootprintEnabled = true, clearance = 0) {
-  const bounds = standFloorBounds(width, depth, layout);
+  // The rendered floor reaches the end of the side walls, past the nominal depth.
+  const bounds = { ...standFloorBounds(width, depth, layout), maxZ: sceneFloorFrontZ(layout, depth) };
   const regions = [bounds];
   if (carpetFootprintEnabled) regions.push(carpetFootprintBounds(width, depth, layout));
   return regions
@@ -19958,7 +19963,7 @@ function applyPlacementRule(item, width, depth, layout) {
     return {
       ...base,
       x: -width / 2 + sideClearance - bounds.minX,
-      z: depth / 2 - bounds.maxZ,
+      z: sceneFloorFrontZ(layout, depth) - bounds.maxZ,
     };
   }
 
@@ -19966,7 +19971,7 @@ function applyPlacementRule(item, width, depth, layout) {
     return {
       ...base,
       x: width / 2 - sideClearance - bounds.maxX,
-      z: depth / 2 - bounds.maxZ,
+      z: sceneFloorFrontZ(layout, depth) - bounds.maxZ,
     };
   }
 
