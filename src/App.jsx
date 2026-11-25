@@ -240,6 +240,7 @@ const technicalFloorAssets = {
   trimSloped: '/models/technical-floor/corniere-inclinee-1ml.glb',
 };
 const technicalSlopedTrimDepth = 0.12;
+const technicalStraightTrimFlange = 0.042; // top flange of the 40 × 40 angle, lying on the slab edge
 const technicalSlopedTrimOverhang = 0.1;
 const technicalRampGap = 0.1;
 const technicalRampCornerMargin = 0.05;
@@ -1311,24 +1312,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const effectiveCarpetFootprintEnabled = carpetFootprintEnabled && !selectedTechnicalFloor;
   const genericCarpetFootprintEnabled = effectiveCarpetFootprintEnabled && !isSignatureStand;
   const effectiveTechnicalFloorTrimType = technicalFloorTrimAllowed(selectedTechnicalFloor, technicalFloorTrimType);
-  const technicalFloorRamps = useMemo(() => normalizeTechnicalFloorRamps(technicalFloorRampsState, {
-    width, depth, layout, floor: selectedTechnicalFloor, trimType: effectiveTechnicalFloorTrimType,
-  }), [technicalFloorRampsState, width, depth, layout, selectedTechnicalFloor, effectiveTechnicalFloorTrimType]);
-  const technicalFloorRampX = technicalFloorRamps.find((ramp) => ramp.edge === 'front')?.offset || 0;
-  const updateTechnicalFloorRamp = useCallback((rampId, patch) => {
-    setTechnicalFloorRamps((current) => {
-      const base = normalizeTechnicalFloorRamps(current, { width, depth, layout, floor: selectedTechnicalFloor, trimType: effectiveTechnicalFloorTrimType });
-      return base.map((ramp) => (ramp.id === rampId ? { ...ramp, ...patch } : ramp));
-    });
-  }, [width, depth, layout, selectedTechnicalFloor, effectiveTechnicalFloorTrimType]);
-  const addTechnicalFloorRamp = () => {
-    const next = nextTechnicalFloorRamp(technicalFloorRamps, { width, depth, layout, floor: selectedTechnicalFloor });
-    if (next) setTechnicalFloorRamps([...technicalFloorRamps, next]);
-  };
-  const removeTechnicalFloorRamp = (rampId) => {
-    if (technicalFloorRamps.length <= 1) return;
-    setTechnicalFloorRamps(technicalFloorRamps.filter((ramp) => ramp.id !== rampId));
-  };
   const faceLabel = layout === 'u' ? '3 faces ouvertes' : layout === 'back' ? '1 face ouverte' : '2 faces ouvertes';
   const selectedLanguage = languages.find((entry) => entry.id === language) || languages[0];
   const effectiveAdminViewer = Boolean(isAdminViewer && !adminExhibitorPreview);
@@ -1347,7 +1330,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     aisleNumber: sceneAisleNumber(initialScene, contactDetails),
     hall: sceneHallLabel(initialScene, contactDetails),
     sector: sceneSectorLabel(initialScene),
-  }), [fontRevision, headCountry, language, partitionHeadCompany, initialScene, clientInfo, contactDetails, standLabel]);
+    technicalFloorActive: Boolean(selectedTechnicalFloor),
+  }), [fontRevision, headCountry, language, partitionHeadCompany, initialScene, clientInfo, contactDetails, standLabel, selectedTechnicalFloor]);
   const sceneConstraints = useMemo(() => sceneConstraintsFromPayload(initialScene.source_payload, width, depth), [initialScene.source_payload, width, depth]);
   const sceneConstraint = sceneConstraints[0] || null;
 
@@ -1471,6 +1455,30 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)
     && (!isSignatureStand || !isSignatureArchItem(item) || signatureArchFitsDepth(item, depth))), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand, isSignatureStand, depth]);
   const signatureArchItems = useMemo(() => visibleSceneItems.filter(isSignatureArchItem), [visibleSceneItems]);
+  // Only Signature stands keep a footprint on the technical floor (the arch one), contained in the stand.
+  const technicalFloorFootprints = useMemo(() => (isSignatureStand ? technicalFloorFootprintRects(signatureArchItems, {
+    width, depth, layout, floor: selectedTechnicalFloor, trimType: effectiveTechnicalFloorTrimType,
+  }) : []), [isSignatureStand, signatureArchItems, width, depth, layout, selectedTechnicalFloor, effectiveTechnicalFloorTrimType]);
+  const technicalFloorObstacles = useMemo(() => (selectedTechnicalFloor ? technicalFloorObstacleRects({ width, depth, layout, items: visibleSceneItems }) : []), [selectedTechnicalFloor, width, depth, layout, visibleSceneItems]);
+  const technicalFloorContext = useMemo(() => ({
+    width, depth, layout, floor: selectedTechnicalFloor, trimType: effectiveTechnicalFloorTrimType, footprints: technicalFloorFootprints, obstacles: technicalFloorObstacles,
+  }), [width, depth, layout, selectedTechnicalFloor, effectiveTechnicalFloorTrimType, technicalFloorFootprints, technicalFloorObstacles]);
+  const technicalFloorRamps = useMemo(() => normalizeTechnicalFloorRamps(technicalFloorRampsState, technicalFloorContext), [technicalFloorRampsState, technicalFloorContext]);
+  const technicalFloorRampX = technicalFloorRamps.find((ramp) => ramp.edge === 'front')?.offset || 0;
+  const updateTechnicalFloorRamp = useCallback((rampId, patch) => {
+    setTechnicalFloorRamps((current) => {
+      const base = normalizeTechnicalFloorRamps(current, technicalFloorContext);
+      return base.map((ramp) => (ramp.id === rampId ? { ...ramp, ...patch } : ramp));
+    });
+  }, [technicalFloorContext]);
+  const addTechnicalFloorRamp = () => {
+    const next = nextTechnicalFloorRamp(technicalFloorRamps, technicalFloorContext);
+    if (next) setTechnicalFloorRamps([...technicalFloorRamps, next]);
+  };
+  const removeTechnicalFloorRamp = (rampId) => {
+    if (technicalFloorRamps.length <= 1) return;
+    setTechnicalFloorRamps(technicalFloorRamps.filter((ramp) => ramp.id !== rampId));
+  };
   // Keep the saved arch available for a safe downgrade and preserve its uploaded artwork.
   const signatureArchItem = sceneItems.find(isSignatureArchItem) || null;
   const signatureArchBackZ = signatureArchItem ? signatureArchBackWallZ(signatureArchItem, depth) : null;
@@ -1581,7 +1589,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   }, [objectBank, availableCatalog]);
 
   const thickFootprintArea = isSignatureStand
-    ? signatureArchItems.reduce((total, item) => total + signatureArchFootprintDimensions(item, depth).area, 0)
+    ? (selectedTechnicalFloor
+      ? technicalFloorFootprints.reduce((total, rect) => total + (rect.maxX - rect.minX) * (rect.maxZ - rect.minZ), 0)
+      : signatureArchItems.reduce((total, item) => total + signatureArchFootprintDimensions(item, depth).area, 0))
     : genericCarpetFootprintEnabled ? carpetFootprintAreaM2() : 0;
 
   const scenePricing = useMemo(() => calculateScenePricing({
@@ -2894,6 +2904,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 technicalFloorTrimType={effectiveTechnicalFloorTrimType}
                 technicalFloorRamps={technicalFloorRamps}
                 onTechnicalFloorRampChange={readOnly ? undefined : updateTechnicalFloorRamp}
+                technicalFloorFootprints={technicalFloorFootprints}
                 onTechnicalFloorRampDragChange={setTechnicalFloorRampDragging}
                 visualContext={sceneVisualContext}
                 sceneConstraints={sceneConstraints}
@@ -3069,6 +3080,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             technicalFloorTrimType={effectiveTechnicalFloorTrimType}
             technicalFloorRamps={technicalFloorRamps}
             technicalFloorFootprintEnabled={carpetFootprintEnabled && !isSignatureStand}
+            technicalFloorSignature={isSignatureStand}
+            technicalFloorArches={signatureArchItems}
+            technicalFloorContext={technicalFloorContext}
             standWidth={width}
             onAddTechnicalFloorRamp={() => !readOnly && addTechnicalFloorRamp()}
             onRemoveTechnicalFloorRamp={(rampId) => !readOnly && removeTechnicalFloorRamp(rampId)}
@@ -4999,6 +5013,9 @@ function OptionsStepPanel({
   technicalFloorTrimType,
   technicalFloorRamps = [],
   technicalFloorFootprintEnabled = false,
+  technicalFloorSignature = false,
+  technicalFloorArches = [],
+  technicalFloorContext = null,
   standWidth = 0,
   onAddTechnicalFloorRamp,
   onRemoveTechnicalFloorRamp,
@@ -5180,6 +5197,9 @@ function OptionsStepPanel({
           carpetColor={selectedCarpetColor}
           footprintColor={selectedCarpetFootprintColor}
           footprintEnabled={technicalFloorFootprintEnabled}
+          signature={technicalFloorSignature}
+          archItems={technicalFloorArches}
+          rampContext={technicalFloorContext}
           ramps={technicalFloorRamps}
           disabled={readOnly}
           onFloorType={onTechnicalFloorType}
@@ -8360,7 +8380,7 @@ function shadeHex(hex = '#bebebe', factor = 1) {
 }
 
 // Isometric section of the actual stand: dimensions, open sides, carpet/footprint colours and ramps.
-function technicalFloorPreviewModel({ width = 5, depth = 5, layout = 'u', floorHeight = 0, trimType = 'straight', carpetHex = '#bebebe', footprintHex = '#f2a24e', footprintEnabled = false, ramps = [], viewWidth = 324, viewHeight = 176, padding = [26, 22, 34, 22] }) {
+function technicalFloorPreviewModel({ width = 5, depth = 5, layout = 'u', floorHeight = 0, trimType = 'straight', carpetHex = '#bebebe', footprintHex = '#f2a24e', footprintEnabled = false, ramps = [], arches = [], viewWidth = 324, viewHeight = 176, padding = [26, 22, 34, 22] }) {
   const w = Math.max(1, Number(width) || 5);
   const d = Math.max(1, Number.isFinite(Number(depth)) ? Number(depth) : 5);
   const size = Math.max(w, d);
@@ -8408,6 +8428,20 @@ function technicalFloorPreviewModel({ width = 5, depth = 5, layout = 'u', floorH
 
   add(quad([x0, top, z0], [x1, top, z0], [x1, top, z1], [x0, top, z1]), carpetHex, shadeHex(carpetHex, 0.7));
 
+  // Signature: arch footprint. Without a floor it runs 50 cm into the aisle; on a floor it stays in the stand.
+  const archFootprints = arches.map((arch) => ({
+    ...arch,
+    minX: Math.max(x0, arch.x - arch.width / 2),
+    maxX: Math.min(x1, arch.x + arch.width / 2),
+    minZ: z0,
+    maxZ: raised ? z1 : z1 + signatureArchFootprintOverflow,
+  })).filter((rect) => rect.maxX - rect.minX > 0.01);
+  archFootprints.forEach((rect) => {
+    const y = top + 0.001;
+    add(quad([rect.minX, y, rect.minZ], [rect.maxX, y, rect.minZ], [rect.maxX, y, rect.maxZ], [rect.minX, y, rect.maxZ]), rect.color, shadeHex(rect.color, 0.68));
+  });
+
+  // Aluminium bands are drawn over the footprint: the carpet stops at the trim.
   if (raised && !sloped) {
     if (edges.includes('front')) add(quad([x0, top, z1 - bandWidth], [x1, top, z1 - bandWidth], [x1, top, z1], [x0, top, z1]), '#eef1f5', '#8d96a5');
     if (edges.includes('right')) add(quad([x1 - bandWidth, top, z0], [x1, top, z0], [x1, top, z1], [x1 - bandWidth, top, z1]), '#eef1f5', '#8d96a5');
@@ -8417,8 +8451,11 @@ function technicalFloorPreviewModel({ width = 5, depth = 5, layout = 'u', floorH
   const rampSize = raised ? technicalRampDimensions(floorHeight) : null;
   (raised && !sloped ? ramps : []).forEach((ramp) => {
     const offset = Number(ramp.offset || 0);
-    const half = rampSize.width / 2;
-    const rampFill = shadeHex(carpetHex, 0.94);
+    const half = technicalRampWidth(ramp, rampSize) / 2;
+    // A ramp fully on the arch footprint is covered by it (it never straddles its border).
+    const onFootprint = ramp.edge === 'front' && archFootprints.find((rect) => offset - half >= rect.minX - 0.01 && offset + half <= rect.maxX + 0.01);
+    const surfaceHex = onFootprint ? onFootprint.color : carpetHex;
+    const rampFill = shadeHex(surfaceHex, 0.94);
     const rampStroke = '#8d96a5';
     if (ramp.edge === 'front') add(quad([offset - half, top, z1 - rampSize.depth], [offset + half, top, z1 - rampSize.depth], [offset + half, 0, z1], [offset - half, 0, z1]), rampFill, rampStroke);
     if (ramp.edge === 'right') add(quad([x1 - rampSize.depth, top, offset - half], [x1 - rampSize.depth, top, offset + half], [x1, 0, offset + half], [x1, 0, offset - half]), shadeHex(rampFill, 0.92), rampStroke);
@@ -8433,11 +8470,30 @@ function technicalFloorPreviewModel({ width = 5, depth = 5, layout = 'u', floorH
     footprintCenter = raw((rect.minX + rect.maxX) / 2, y, (rect.minZ + rect.maxZ) / 2);
   }
 
+  // Arch structure (two posts + beam), simplified and lowered like the walls.
+  const box = (xa, xb, ya, yb, za, zb, fill) => {
+    add(quad([xa, ya, zb], [xb, ya, zb], [xb, yb, zb], [xa, yb, zb]), shadeHex(fill, 0.94), '#9aa4b2');
+    add(quad([xb, ya, zb], [xb, ya, za], [xb, yb, za], [xb, yb, zb]), shadeHex(fill, 0.84), '#9aa4b2');
+    add(quad([xa, yb, za], [xb, yb, za], [xb, yb, zb], [xa, yb, zb]), fill, '#9aa4b2');
+  };
+  arches.forEach((arch) => {
+    const archHeight = size * 0.2;
+    const post = Math.max(0.08, arch.width * 0.07);
+    const beam = archHeight * 0.14;
+    const za = arch.z - Math.max(0.2, arch.depth) / 2;
+    const zb = arch.z + Math.max(0.2, arch.depth) / 2;
+    const left = arch.x - arch.width / 2;
+    const right = arch.x + arch.width / 2;
+    box(left, left + post, top, top + archHeight, za, zb, '#f4f6f9');
+    box(right - post, right, top, top + archHeight, za, zb, '#f4f6f9');
+    box(left, right, top + archHeight - beam, top + archHeight, za, zb, '#f4f6f9');
+  });
+
   if (walls.includes('right')) add(quad([x1, top, z1], [x1, top, z0], [x1, top + wallHeight, z0], [x1, top + wallHeight, z1]), shadeHex(wallFill, 0.95), '#b8c2cf');
 
   const anchors = {
     carpet: raw(x0 + w * 0.32, top, z0 + d * 0.3),
-    footprint: footprintCenter,
+    footprint: footprintCenter || (archFootprints[0] ? raw((archFootprints[0].minX + archFootprints[0].maxX) / 2, top, archFootprints[0].maxZ - Math.min(1, (archFootprints[0].maxZ - archFootprints[0].minZ) * 0.25)) : null),
     trim: edges.includes('right') ? raw(x1, top, z0 + d * 0.35) : raw(x0 + w * 0.8, top, z1),
     plinth: raw(x0 + w * 0.28, top * 0.4, z1),
     heightTop: raw(x1, top, z1),
@@ -8470,7 +8526,7 @@ function TechnicalFloorIsoSvg({ model, width, height, className = '' }) {
   );
 }
 
-function TechnicalFloorHero({ floor, trimType, previewProps, carpetColor, footprintColor, footprintEnabled }) {
+function TechnicalFloorHero({ floor, trimType, previewProps, carpetColor, footprintColor, footprintEnabled, signature = false }) {
   const t = useT();
   const viewWidth = 324;
   const viewHeight = 176;
@@ -8488,7 +8544,16 @@ function TechnicalFloorHero({ floor, trimType, previewProps, carpetColor, footpr
     callouts.push({ id, anchor, x, y, align, strong, text });
   };
   const carpetCaption = technicalFloorColorCaption(carpetColor);
-  if (!floor) {
+  const arch = previewProps.arches?.[0];
+  const archCaption = arch ? String(arch.colorName || '').toLocaleLowerCase('fr-FR') : '';
+  if (signature && arch) {
+    if (!floor) pushCallout('carpet', model.anchors.carpet, -8, -26, t('floor_preview_carpet'), t('floor_preview_carpet_ground'));
+    pushCallout('footprint', model.anchors.footprint, -14, 26, t('floor_preview_arch_footprint'), archCaption);
+    if (floor) {
+      pushCallout('trim', model.anchors.trim, 14, -24, t(sloped ? 'floor_preview_trim_sloped' : 'floor_preview_trim'), sloped ? '' : '4 × 4 cm');
+      if (floor.height > 0.05 && !model.anchors.footprint) pushCallout('plinth', model.anchors.plinth, -12, 26, t('floor_preview_plinth'), t('floor_preview_plinth_white'));
+    }
+  } else if (!floor) {
     pushCallout('carpet', model.anchors.carpet, -8, -26, t('floor_preview_carpet'), t('floor_preview_carpet_ground'));
     if (footprintEnabled) pushCallout('footprint', model.anchors.footprint, 12, 22, t('floor_preview_footprint'), `${technicalFloorColorCaption(footprintColor)} ${technicalFloorColorCode(footprintColor)}`.trim());
   } else {
@@ -8532,26 +8597,62 @@ function TechnicalFloorHero({ floor, trimType, previewProps, carpetColor, footpr
 }
 
 function TechnicalFloorThumb({ floorHeight, previewProps, footprintEnabled }) {
+  // Generic footprints disappear on a floor; the Signature arch footprint stays (in previewProps.arches).
   const model = technicalFloorPreviewModel({ ...previewProps, floorHeight, trimType: 'straight', ramps: [], footprintEnabled: !floorHeight && footprintEnabled, viewWidth: 60, viewHeight: 42, padding: [3, 3, 3, 3] });
   return <span className="floor-qv-thumb"><TechnicalFloorIsoSvg model={model} width={60} height={42} /></span>;
 }
 
-function TechnicalFloorOptionCard({ floorType, trimType, area, layout, standWidth = 0, standDepth = 0, carpetColor = null, footprintColor = null, footprintEnabled = false, ramps = [], disabled = false, onFloorType, onTrimType, onAddRamp, onRemoveRamp }) {
+function technicalFloorPreviewArches(archItems = []) {
+  return archItems.map((item) => {
+    const bounds = itemGroupBounds(item);
+    const footprint = signatureArchFootprintDimensions(item, 0);
+    return {
+      id: item.id,
+      x: Number(item.x || 0) + footprint.centerX,
+      z: Number(item.z || 0) + Number(bounds.centerZ || 0),
+      width: footprint.width,
+      depth: Number(bounds.depth || 0.5),
+      color: item.options?.signatureArchColorHex || '#bebebe',
+      colorName: item.options?.signatureArchColorName || '',
+    };
+  });
+}
+
+function TechnicalFloorOptionCard({ floorType, trimType, area, layout, standWidth = 0, standDepth = 0, carpetColor = null, footprintColor = null, footprintEnabled = false, signature = false, archItems = [], rampContext = null, ramps = [], disabled = false, onFloorType, onTrimType, onAddRamp, onRemoveRamp }) {
   const t = useT();
   const selectedFloor = technicalFloorOptions.find((option) => option.id === floorType) || null;
   const effectiveTrim = technicalFloorTrimAllowed(selectedFloor, trimType);
   const carpetHex = colorHex(carpetColor, '#bebebe');
   const footprintHex = colorHex(footprintColor, '#f2a24e');
-  const previewProps = { width: standWidth, depth: standDepth, layout, carpetHex, footprintHex, footprintEnabled, ramps };
+  const arches = useMemo(() => (signature ? technicalFloorPreviewArches(archItems) : []), [signature, archItems]);
+  const previewProps = { width: standWidth, depth: standDepth, layout, carpetHex, footprintHex, footprintEnabled, ramps, arches };
   const surface = formatNumber(area);
   const estimate = (option) => Math.round(Number(area || 0) * option.price).toLocaleString('fr-FR');
   const footprintCaption = `${technicalFloorColorCaption(footprintColor)}${technicalFloorColorCode(footprintColor) ? ` (${technicalFloorColorCode(footprintColor)})` : ''}`;
-  const canAddRamp = Boolean(selectedFloor && nextTechnicalFloorRamp(ramps, { width: standWidth, depth: standDepth, layout, floor: selectedFloor }));
+  const canAddRamp = Boolean(selectedFloor && nextTechnicalFloorRamp(ramps, rampContext || { width: standWidth, depth: standDepth, layout, floor: selectedFloor }));
   const rampSize = selectedFloor ? technicalRampDimensions(selectedFloor.height) : null;
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const aboutId = useId();
 
   return (
     <div className="floor-qv">
-      <TechnicalFloorHero floor={selectedFloor} trimType={effectiveTrim} previewProps={previewProps} carpetColor={carpetColor} footprintColor={footprintColor} footprintEnabled={footprintEnabled} />
+      <div className="floor-qv-hero-wrap">
+        <button type="button" className={`floor-qv-about-toggle ${aboutOpen ? 'active' : ''}`} aria-expanded={aboutOpen} aria-controls={aboutId} aria-label={t('floor_about_toggle')} title={t('floor_about_toggle')} onClick={() => setAboutOpen((open) => !open)}>
+          <Info size={15} strokeWidth={2} />
+        </button>
+      <TechnicalFloorHero floor={selectedFloor} trimType={effectiveTrim} previewProps={previewProps} carpetColor={carpetColor} footprintColor={footprintColor} footprintEnabled={footprintEnabled} signature={signature && arches.length > 0} />
+      </div>
+      {aboutOpen && (
+        <div className="floor-qv-about" id={aboutId} role="note">
+          <strong>{t('floor_about_title')}</strong>
+          <p>{t('floor_about_body')}</p>
+          <ul>
+            <li>{t('floor_about_point_cables')}</li>
+            <li>{t('floor_about_point_safety')}</li>
+            <li>{t('floor_about_point_when')}</li>
+          </ul>
+        </div>
+      )}
 
       <div className="floor-qv-section">
         <div className="floor-qv-section-head">
@@ -8576,6 +8677,7 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, standWidt
                   <span className="floor-qv-option-title">
                     <strong>{formatNumber(option.height * 100)} cm</strong>
                     {footprintEnabled && <em className="floor-qv-removes"><Info size={11} strokeWidth={2} />{t('floor_removes_footprint')}</em>}
+                    {signature && arches.length > 0 && <em className="floor-qv-keeps"><Check size={11} strokeWidth={2.4} />{t('floor_keeps_footprint')}</em>}
                   </span>
                   <small>{t(option.height > 0.05 ? 'floor_detail_12' : 'floor_detail_4')}</small>
                 </span>
@@ -8615,7 +8717,7 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, standWidt
                 <span className="floor-qv-ramp-index">{index + 1}</span>
                 <span className="floor-qv-ramp-copy">
                   <strong>{t('floor_ramp_label', { height: formatNumber(selectedFloor.height * 100) })}</strong>
-                  <small>{t('floor_ramp_side', { side: t(`floor_edge_${ramp.edge}`) })} · {formatNumber(rampSize.width * 100)} × {formatNumber(rampSize.depth * 100)} cm</small>
+                  <small>{t('floor_ramp_side', { side: t(`floor_edge_${ramp.edge}`) })} · {formatNumber(technicalRampWidth(ramp, rampSize) * 100)} × {formatNumber(rampSize.depth * 100)} cm{ramp.width ? ` · ${t('floor_ramp_on_footprint')}` : ''}</small>
                 </span>
                 {ramps.length > 1 && (
                   <button type="button" className="floor-qv-ramp-remove" disabled={disabled} onClick={() => onRemoveRamp?.(ramp.id)} aria-label={t('floor_ramp_remove')} title={t('floor_ramp_remove')}><X size={14} /></button>
@@ -8633,6 +8735,9 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, standWidt
           <strong>{t('floor_know_title')}</strong>
           {footprintEnabled && (
             <div className="floor-qv-know-row warn"><Info size={15} /><span><b>{t('floor_know_footprint', { color: footprintCaption })}</b> {t('floor_know_footprint_auto')}</span></div>
+          )}
+          {signature && arches.length > 0 && (
+            <div className="floor-qv-know-row ok"><Check size={15} /><span><b>{t('floor_know_signature_footprint')}</b> {t('floor_know_signature_footprint_detail')}</span></div>
           )}
           <div className="floor-qv-know-row step">
             <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" d="M1.875 11.25L5.625 11.25L5.625 8.125L9.375 8.125L9.375 5L13.125 5" /></svg>
@@ -16157,8 +16262,10 @@ function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = [])
         signature: isSignatureScene(scene),
         footprintEnabled: options.carpetFootprintEnabled !== false,
         footprints: items.filter(isSignatureArchItem).map((item) => {
-          const footprint = signatureArchFootprintDimensions(item, depth);
-          const localZ = signatureArchFootprintLocalZ(item);
+          // On a technical floor the arch footprint stays inside the stand (no aisle overflow).
+          const contained = Boolean(options.technicalFloorType);
+          const footprint = contained ? { ...signatureArchFootprintDimensions(item, depth), depth: Math.max(0.1, depth) } : signatureArchFootprintDimensions(item, depth);
+          const localZ = contained ? -Number(item.z || 0) : signatureArchFootprintLocalZ(item);
           const angle = Number(item.rotation || 0) * Math.PI / 180;
           return {
             width: footprint.width, depth: footprint.depth,
@@ -16603,11 +16710,17 @@ function technicalRampEdges(bounds, ramp) {
   });
 }
 
+// A ramp is 1 m wide, except on a Signature footprint where it takes the footprint's exact width.
+function technicalRampWidth(ramp, size) {
+  return Math.max(0.1, Number(ramp?.width || size?.width || 1));
+}
+
 function technicalRampRect(ramp, bounds, size) {
   const offset = Number(ramp.offset || 0);
-  if (ramp.edge === 'left') return { minX: bounds.minX, maxX: bounds.minX + size.depth, minZ: offset - size.width / 2, maxZ: offset + size.width / 2 };
-  if (ramp.edge === 'right') return { minX: bounds.maxX - size.depth, maxX: bounds.maxX, minZ: offset - size.width / 2, maxZ: offset + size.width / 2 };
-  return { minX: offset - size.width / 2, maxX: offset + size.width / 2, minZ: bounds.maxZ - size.depth, maxZ: bounds.maxZ };
+  const half = technicalRampWidth(ramp, size) / 2;
+  if (ramp.edge === 'left') return { minX: bounds.minX, maxX: bounds.minX + size.depth, minZ: offset - half, maxZ: offset + half };
+  if (ramp.edge === 'right') return { minX: bounds.maxX - size.depth, maxX: bounds.maxX, minZ: offset - half, maxZ: offset + half };
+  return { minX: offset - half, maxX: offset + half, minZ: bounds.maxZ - size.depth, maxZ: bounds.maxZ };
 }
 
 function legacyTechnicalFloorRamps(options = {}) {
@@ -16615,54 +16728,177 @@ function legacyTechnicalFloorRamps(options = {}) {
   return [{ id: 'ramp-1', edge: 'front', offset: Number(options.technicalFloorRampX || 0) }];
 }
 
-// Keeps every ramp on an open edge (never against a wall), inside its edge and without overlap.
-function normalizeTechnicalFloorRamps(ramps = [], { width, depth, layout, floor, trimType = 'straight' } = {}) {
+// Signature arch footprints on a technical floor, in floor-local coordinates: kept inside the stand
+// (no 50 cm overflow into the aisle any more) and clipped to the slab.
+function technicalFloorFootprintRects(archItems = [], { width, depth, layout, floor, trimType = 'straight' } = {}) {
+  if (!floor || !archItems.length) return [];
+  const bounds = technicalFloorSlabBounds(width, sceneFloorDepth(layout, depth), layout, technicalFloorTrimAllowed(floor, trimType));
+  const floorCenterZ = sceneFloorCenterZ(layout);
+  return archItems.map((item) => {
+    const footprint = signatureArchFootprintDimensions(item, depth);
+    const centerX = Number(item.x || 0) + footprint.centerX;
+    const rect = {
+      id: String(item.id || ''),
+      minX: Math.max(bounds.minX, centerX - footprint.width / 2),
+      maxX: Math.min(bounds.maxX, centerX + footprint.width / 2),
+      minZ: Math.max(bounds.minZ, -Number(depth || 0) / 2 - floorCenterZ),
+      maxZ: bounds.maxZ,
+      color: item.options?.signatureArchColorHex || '#bebebe',
+      image: item.options?.signatureArchColorImage || '',
+      colorName: item.options?.signatureArchColorName || '',
+    };
+    return rect.maxX - rect.minX > 0.01 && rect.maxZ - rect.minZ > 0.01 ? rect : null;
+  }).filter(Boolean);
+}
+
+// Floor-standing obstacles a ramp must never run under, in floor-local coordinates:
+// the side partitions and the partition heads (têtes de cloison) at the stand corners.
+function technicalFloorObstacleRects({ width, depth, layout, items = [] } = {}) {
+  const floorCenterZ = sceneFloorCenterZ(layout);
+  const floorDepth = sceneFloorDepth(layout, depth);
+  const walls = availableWalls(layout).map((wall) => wall.id);
+  const rects = [];
+  if (walls.includes('left')) rects.push({ id: 'wall-left', minX: -width / 2, maxX: -width / 2 + wallThickness, minZ: -floorDepth / 2, maxZ: floorDepth / 2 });
+  if (walls.includes('right')) rects.push({ id: 'wall-right', minX: width / 2 - wallThickness, maxX: width / 2, minZ: -floorDepth / 2, maxZ: floorDepth / 2 });
+  const footprintRect = (id, x, z, sizeX, sizeZ, rotation) => {
+    const angle = Number(rotation || 0) * Math.PI / 180;
+    const cos = Math.abs(Math.cos(angle));
+    const sin = Math.abs(Math.sin(angle));
+    const halfX = (sizeX * cos + sizeZ * sin) / 2;
+    const halfZ = (sizeX * sin + sizeZ * cos) / 2;
+    return { id, minX: x - halfX, maxX: x + halfX, minZ: z - floorCenterZ - halfZ, maxZ: z - floorCenterZ + halfZ };
+  };
+  items.forEach((item) => {
+    if (item?.options?.partitionHeadHidden || item?.options?.prestigeHidden) return;
+    try {
+      if (isPartitionHeadItem(item)) {
+        const pose = technicalPartitionHeadPose(item, items, width, depth);
+        rects.push(footprintRect(`head-${item.id}`, pose.x, pose.z, pose.width, pose.depth, pose.rotation));
+      } else if (item.children?.some(isPartitionHeadItem)) {
+        const bounds = itemGroupBounds(item);
+        rects.push(footprintRect(`head-${item.id}`, Number(item.x || 0) + Number(bounds.centerX || 0), Number(item.z || 0) + Number(bounds.centerZ || 0), bounds.width, bounds.depth, item.rotation));
+      }
+    } catch {
+      // A head without resolvable geometry simply adds no obstacle.
+    }
+  });
+  return rects.filter((rect) => Number.isFinite(rect.minX) && Number.isFinite(rect.minZ));
+}
+
+function rectContains(outer, inner, tolerance = 0.002) {
+  return inner.minX >= outer.minX - tolerance && inner.maxX <= outer.maxX + tolerance
+    && inner.minZ >= outer.minZ - tolerance && inner.maxZ <= outer.maxZ + tolerance;
+}
+
+function rectOverlapArea(a, b) {
+  const x = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
+  const z = Math.min(a.maxZ, b.maxZ) - Math.max(a.minZ, b.minZ);
+  return x > 0.002 && z > 0.002 ? x * z : 0;
+}
+
+// Rule: a ramp is either 100 % on the footprint carpet or 100 % off it, never straddling its border.
+function technicalRampStraddlesFootprint(rampRect, footprints = []) {
+  return footprints.some((footprint) => rectOverlapArea(rampRect, footprint) > 0 && !rectContains(footprint, rampRect));
+}
+
+function technicalRampFootprint(ramp, bounds, size, footprints = []) {
+  const rect = technicalRampRect(ramp, bounds, size);
+  return footprints.find((footprint) => rectContains(footprint, rect)) || null;
+}
+
+const technicalFootprintRampMinWidth = 0.8;
+
+// Closest valid placement on an edge, clear of other ramps (`taken` = along-edge intervals):
+// - on the aisle side, a ramp touching a Signature footprint becomes exactly as wide as the footprint,
+//   so its borders line up with the footprint's (never straddling, never narrower);
+// - elsewhere a standard 1 m ramp, fully beside any footprint.
+function technicalRampValidPlacement(edge, desired, { bounds, size, footprints = [], obstacles = [], taken = [] }) {
+  const range = technicalRampOffsetRange(edge, bounds, size);
+  const target = Number(desired || 0);
+  // In the corners the ramp stops at the partition / partition head instead of running under it.
+  const clearOfObstacles = (offset, width) => {
+    const rect = technicalRampRect({ edge, offset, width }, bounds, size);
+    return !obstacles.some((obstacle) => rectOverlapArea(rect, obstacle) > 0);
+  };
+  const free = (offset, width) => clearOfObstacles(offset, width)
+    && taken.every(([a, b]) => offset + width / 2 + technicalRampGap - 0.0001 <= a || offset - width / 2 - technicalRampGap + 0.0001 >= b);
+  const candidates = [];
+  if (edge === 'front') {
+    footprints.forEach((footprint) => {
+      const width = footprint.maxX - footprint.minX;
+      if (footprint.maxZ < bounds.maxZ - 0.002 || width < technicalFootprintRampMinWidth) return;
+      const offset = (footprint.minX + footprint.maxX) / 2;
+      const distance = target >= footprint.minX && target <= footprint.maxX ? 0 : Math.abs(offset - target);
+      if (free(offset, width)) candidates.push({ offset, width, distance });
+    });
+  }
+  if (range.max >= range.min) {
+    const clamped = clamp(target, range.min, range.max);
+    const span = range.max - range.min;
+    const valid = (offset) => free(offset, size.width) && !footprints.some((footprint) => {
+      const rect = technicalRampRect({ edge, offset }, bounds, size);
+      if (!rectOverlapArea(rect, footprint)) return false;
+      // Front ramps on a footprint are handled above; side ramps must be fully on or fully off it.
+      return edge === 'front' || !rectContains(footprint, rect);
+    });
+    for (let distance = 0; distance <= span + 0.005; distance += 0.01) {
+      const found = (distance ? [clamped - distance, clamped + distance] : [clamped])
+        .find((offset) => offset >= range.min - 0.0001 && offset <= range.max + 0.0001 && valid(offset));
+      if (found !== undefined) { candidates.push({ offset: found, width: null, distance: Math.abs(found - target) }); break; }
+    }
+  }
+  if (!candidates.length) return null;
+  const best = candidates.sort((a, b) => a.distance - b.distance)[0];
+  return { offset: Math.round(best.offset * 1000) / 1000, width: best.width ? Math.round(best.width * 1000) / 1000 : null };
+}
+
+function technicalRampInterval(placement, size) {
+  const half = (placement.width || size.width) / 2;
+  return [placement.offset - half, placement.offset + half];
+}
+
+// Keeps every ramp on an open edge (never against a wall), inside its edge, without overlap,
+// and aligned on the Signature footprint when it sits on it.
+function normalizeTechnicalFloorRamps(ramps = [], { width, depth, layout, floor, trimType = 'straight', footprints = [], obstacles = [] } = {}) {
   if (!floor || technicalFloorTrimAllowed(floor, trimType) === 'sloped') return [];
   const size = technicalRampDimensions(floor.height);
   const bounds = technicalFloorSlabBounds(width, sceneFloorDepth(layout, depth), layout, 'straight');
   const edges = technicalRampEdges(bounds, size);
   if (!edges.length) return [];
-  const byEdge = new Map(edges.map((edge) => [edge, []]));
-  (Array.isArray(ramps) ? ramps : []).forEach((ramp, index) => {
-    const edge = edges.includes(ramp?.edge) ? ramp.edge : edges[0];
-    const range = technicalRampOffsetRange(edge, bounds, size);
-    byEdge.get(edge).push({ id: String(ramp?.id || `ramp-${index + 1}`), edge, offset: clamp(Number(ramp?.offset || 0), range.min, range.max) });
-  });
   const result = [];
-  byEdge.forEach((list, edge) => {
-    const range = technicalRampOffsetRange(edge, bounds, size);
-    const step = size.width + technicalRampGap;
-    list.sort((a, b) => a.offset - b.offset);
-    for (let index = 1; index < list.length; index += 1) list[index].offset = Math.max(list[index].offset, list[index - 1].offset + step);
-    for (let index = list.length - 1; index >= 0; index -= 1) {
-      const limit = index === list.length - 1 ? range.max : list[index + 1].offset - step;
-      list[index].offset = Math.min(list[index].offset, limit);
-    }
-    list.filter((ramp) => ramp.offset >= range.min - 0.001).forEach((ramp) => result.push({ ...ramp, offset: Math.round(ramp.offset * 1000) / 1000 }));
+  const requested = (Array.isArray(ramps) ? ramps : []).map((ramp, index) => ({
+    id: String(ramp?.id || `ramp-${index + 1}`),
+    edge: edges.includes(ramp?.edge) ? ramp.edge : edges[0],
+    offset: Number(ramp?.offset || 0),
+  }));
+  const place = (ramp, edge, desired, taken) => {
+    const placement = technicalRampValidPlacement(edge, desired, { bounds, size, footprints, obstacles, taken });
+    if (!placement) return false;
+    taken.push(technicalRampInterval(placement, size));
+    result.push({ id: ramp.id, edge, offset: placement.offset, ...(placement.width ? { width: placement.width } : {}) });
+    return true;
+  };
+  edges.forEach((edge) => {
+    const taken = [];
+    requested.filter((ramp) => ramp.edge === edge).sort((a, b) => a.offset - b.offset).forEach((ramp) => place(ramp, edge, ramp.offset, taken));
   });
   if (!result.length) {
-    const range = technicalRampOffsetRange(edges[0], bounds, size);
-    result.push({ id: 'ramp-1', edge: edges[0], offset: clamp(0, range.min, range.max) });
+    for (const edge of edges) if (place({ id: requested[0]?.id || 'ramp-1' }, edge, 0, [])) break;
   }
   return result;
 }
 
 // Finds a free spot for an extra ramp, front edge first.
 function nextTechnicalFloorRamp(ramps = [], context = {}) {
-  const { width, depth, layout, floor } = context;
+  const { width, depth, layout, floor, footprints = [], obstacles = [] } = context;
   if (!floor) return null;
   const size = technicalRampDimensions(floor.height);
   const bounds = technicalFloorSlabBounds(width, sceneFloorDepth(layout, depth), layout, 'straight');
-  const step = size.width + technicalRampGap;
   for (const edge of technicalRampEdges(bounds, size)) {
     const range = technicalRampOffsetRange(edge, bounds, size);
-    const taken = ramps.filter((ramp) => ramp.edge === edge).map((ramp) => ramp.offset);
-    const candidates = [];
-    for (let offset = range.min; offset <= range.max + 0.0001; offset += 0.05) candidates.push(offset);
-    const center = (range.min + range.max) / 2;
-    candidates.sort((a, b) => Math.abs(a - center) - Math.abs(b - center));
-    const free = candidates.find((offset) => taken.every((other) => Math.abs(other - offset) >= step - 0.0001));
-    if (free !== undefined) return { id: `ramp-${Date.now().toString(36)}`, edge, offset: Math.round(free * 1000) / 1000 };
+    const taken = ramps.filter((ramp) => ramp.edge === edge).map((ramp) => technicalRampInterval(ramp, size));
+    const placement = technicalRampValidPlacement(edge, (range.min + range.max) / 2, { bounds, size, footprints, obstacles, taken });
+    if (placement) return { id: `ramp-${Date.now().toString(36)}`, edge, offset: placement.offset, ...(placement.width ? { width: placement.width } : {}) };
   }
   return null;
 }
@@ -21244,7 +21480,7 @@ function canAnimateSceneDeparture(item) {
   return shopCartItemVisible(item) && !item.autoMeterCover;
 }
 
-function StandScene({ width, depth, height, layout, animationReady = true, items, catalog = [], selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, reserveDoorColorHex = '', wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRamps = [], onTechnicalFloorRampChange, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
+function StandScene({ width, depth, height, layout, animationReady = true, items, catalog = [], selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, reserveDoorColorHex = '', wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRamps = [], technicalFloorFootprints = [], onTechnicalFloorRampChange, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const { departures, finishDeparture } = useSceneDepartures(items, canAnimateSceneDeparture);
   const dragPointerOffset = useRef({ x: 0, z: 0 });
@@ -21330,7 +21566,7 @@ function StandScene({ width, depth, height, layout, animationReady = true, items
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
       {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragPointer={dragFromPointer} onDragMove={(point) => onDragMove(applyDragPointerOffset(point, dragPointerOffset.current))} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
       <SceneAssembly phase="floor" ready={animationReady}>
-        <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRamps={technicalFloorRamps} onTechnicalFloorRampChange={onTechnicalFloorRampChange} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
+        <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRamps={technicalFloorRamps} technicalFloorFootprints={technicalFloorFootprints} onTechnicalFloorRampChange={onTechnicalFloorRampChange} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
         <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">{width}m x {depth}m</Text>
       </SceneAssembly>
       <SceneAssembly phase="walls" delay={110} ready={animationReady}>
@@ -21472,7 +21708,7 @@ function SceneConstraintColumn({ constraint }) {
   );
 }
 
-function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRamps = [], onTechnicalFloorRampChange, onTechnicalFloorRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
+function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRamps = [], technicalFloorFootprints = [], onTechnicalFloorRampChange, onTechnicalFloorRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
   const floorDepth = sceneFloorDepth(layout, depth);
   const floorCenterZ = sceneFloorCenterZ(layout);
@@ -21492,6 +21728,7 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
             floor={technicalFloor}
             trimType={technicalFloorTrimAllowed(technicalFloor, technicalFloorTrimType)}
             ramps={technicalFloorRamps}
+            footprints={technicalFloorFootprints}
             carpetColor={carpetColor}
             onRampChange={onTechnicalFloorRampChange}
             onRampDragChange={onTechnicalFloorRampDragChange}
@@ -21519,18 +21756,20 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
 function technicalFloorSlabOutline(bounds, ramps = [], size = null) {
   const { minX, maxX, minZ, maxZ } = bounds;
   const rampDepth = Number(size?.depth || 0);
-  const half = Number(size?.width || 0) / 2;
   const onEdge = (edge) => ramps.filter((ramp) => ramp.edge === edge);
   const points = [[minX, minZ], [maxX, minZ]];
   onEdge('right').sort((a, b) => a.offset - b.offset).forEach((ramp) => {
+    const half = technicalRampWidth(ramp, size) / 2;
     points.push([maxX, ramp.offset - half], [maxX - rampDepth, ramp.offset - half], [maxX - rampDepth, ramp.offset + half], [maxX, ramp.offset + half]);
   });
   points.push([maxX, maxZ]);
   onEdge('front').sort((a, b) => b.offset - a.offset).forEach((ramp) => {
+    const half = technicalRampWidth(ramp, size) / 2;
     points.push([ramp.offset + half, maxZ], [ramp.offset + half, maxZ - rampDepth], [ramp.offset - half, maxZ - rampDepth], [ramp.offset - half, maxZ]);
   });
   points.push([minX, maxZ]);
   onEdge('left').sort((a, b) => b.offset - a.offset).forEach((ramp) => {
+    const half = technicalRampWidth(ramp, size) / 2;
     points.push([minX, ramp.offset + half], [minX + rampDepth, ramp.offset + half], [minX + rampDepth, ramp.offset - half], [minX, ramp.offset - half]);
   });
   return points;
@@ -21539,11 +21778,10 @@ function technicalFloorSlabOutline(bounds, ramps = [], size = null) {
 // Straight runs of trim along the open edges, interrupted by the ramp notches whose sides get their own trim.
 function technicalFloorTrimRuns(bounds, ramps = [], size = null) {
   const runs = [];
-  const half = Number(size?.width || 0) / 2;
   const rampDepth = Number(size?.depth || 0);
   bounds.edges.forEach((edge) => {
     const along = edge === 'front' ? [bounds.minX, bounds.maxX] : [bounds.minZ, bounds.maxZ];
-    const gaps = ramps.filter((ramp) => ramp.edge === edge).map((ramp) => [ramp.offset - half, ramp.offset + half]).sort((a, b) => a[0] - b[0]);
+    const gaps = ramps.filter((ramp) => ramp.edge === edge).map((ramp) => [ramp.offset - technicalRampWidth(ramp, size) / 2, ramp.offset + technicalRampWidth(ramp, size) / 2]).sort((a, b) => a[0] - b[0]);
     let cursor = along[0];
     gaps.forEach(([gapStart, gapEnd]) => {
       if (gapStart - cursor > 0.01) runs.push({ edge, start: cursor, end: gapStart });
@@ -21553,6 +21791,7 @@ function technicalFloorTrimRuns(bounds, ramps = [], size = null) {
   });
   // Notch sides: trims facing into the ramp opening, from the edge to the ramp head.
   ramps.forEach((ramp) => {
+    const half = technicalRampWidth(ramp, size) / 2;
     const a = ramp.offset - half;
     const b = ramp.offset + half;
     if (ramp.edge === 'front') {
@@ -21663,7 +21902,7 @@ function useTechnicalRampGeometry(url) {
   }, [source]);
 }
 
-function TechnicalFloorSlab({ width, depth, layout, floor, trimType, ramps = [], carpetColor, onRampChange, onRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
+function TechnicalFloorSlab({ width, depth, layout, floor, trimType, ramps = [], footprints = [], carpetColor, onRampChange, onRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
   const height = Math.max(0.04, Number(floor?.height || 0.04));
   const sloped = trimType === 'sloped';
   const bounds = useMemo(() => technicalFloorSlabBounds(width, depth, layout, trimType), [width, depth, layout, trimType]);
@@ -21672,7 +21911,7 @@ function TechnicalFloorSlab({ width, depth, layout, floor, trimType, ramps = [],
   // One carpet repeat per metre: the slab and ramps use world-unit UVs.
   const carpetTexture = useRepeatedTexture(colorTextureUrl(carpetColor), 1, 1);
   const carpetHex = colorHex(carpetColor, '#bebebe');
-  const rampKey = activeRamps.map((ramp) => `${ramp.edge}:${ramp.offset}`).join('|');
+  const rampKey = activeRamps.map((ramp) => `${ramp.edge}:${ramp.offset}:${ramp.width || ''}`).join('|');
   const slabGeometry = useMemo(() => {
     const outline = technicalFloorSlabOutline(bounds, activeRamps, rampSize);
     const shape = new Shape(outline.map(([x, z]) => new Vector2(x, z)));
@@ -21692,7 +21931,18 @@ function TechnicalFloorSlab({ width, depth, layout, floor, trimType, ramps = [],
         <meshStandardMaterial attach="material-1" color="#f4f5f7" roughness={0.62} allowOverride={false} />
       </mesh>
       <TechnicalFloorTrims bounds={bounds} ramps={activeRamps} rampSize={rampSize} height={height} sloped={sloped} />
-      {activeRamps.map((ramp) => (
+      {footprints.map((footprint) => (
+        <TechnicalFloorFootprint
+          key={footprint.id}
+          footprint={footprint}
+          bounds={bounds}
+          ramps={activeRamps}
+          rampSize={rampSize}
+          trimInset={sloped ? technicalSlopedTrimDepth - technicalSlopedTrimOverhang : technicalStraightTrimFlange}
+          rampProps={{ onRampChange, onRampDragChange, interactive, sceneOffset }}
+        />
+      ))}
+      {activeRamps.filter((ramp) => !technicalRampFootprint(ramp, bounds, rampSize, footprints)).map((ramp) => (
         <TechnicalFloorRamp
           key={ramp.id}
           ramp={ramp}
@@ -21705,6 +21955,63 @@ function TechnicalFloorSlab({ width, depth, layout, floor, trimType, ramps = [],
           interactive={interactive}
           sceneOffset={sceneOffset}
         />
+      ))}
+    </group>
+  );
+}
+
+// Rectangle minus the ramp openings, as a flat mesh with world-unit UVs (x, z).
+function technicalFloorFootprintGeometry(rect, holes = []) {
+  const xs = [...new Set([rect.minX, rect.maxX, ...holes.flatMap((hole) => [hole.minX, hole.maxX])]
+    .filter((x) => x >= rect.minX && x <= rect.maxX))].sort((a, b) => a - b);
+  const zs = [...new Set([rect.minZ, rect.maxZ, ...holes.flatMap((hole) => [hole.minZ, hole.maxZ])]
+    .filter((z) => z >= rect.minZ && z <= rect.maxZ))].sort((a, b) => a - b);
+  const positions = [];
+  const uvs = [];
+  for (let i = 0; i < xs.length - 1; i += 1) {
+    for (let j = 0; j < zs.length - 1; j += 1) {
+      const cell = { minX: xs[i], maxX: xs[i + 1], minZ: zs[j], maxZ: zs[j + 1] };
+      if (cell.maxX - cell.minX < 0.001 || cell.maxZ - cell.minZ < 0.001) continue;
+      if (holes.some((hole) => rectContains(hole, cell))) continue;
+      const corners = [[cell.minX, cell.minZ], [cell.minX, cell.maxZ], [cell.maxX, cell.maxZ], [cell.maxX, cell.minZ]];
+      [0, 1, 2, 0, 2, 3].forEach((index) => {
+        positions.push(corners[index][0], 0, corners[index][1]);
+        uvs.push(corners[index][0], corners[index][1]);
+      });
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new Float32BufferAttribute(uvs, 2));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+// Signature arch footprint on the technical floor: never past the stand edge, cut around the ramps
+// that sit outside it and laid over the ramps it fully contains.
+function TechnicalFloorFootprint({ footprint, bounds, ramps = [], rampSize, trimInset = 0, rampProps }) {
+  const texture = useRepeatedTexture(footprint.image, 1, 1);
+  // The carpet stops at the inner edge of the aluminium trim on every open side it reaches.
+  const visible = {
+    minX: footprint.minX + (bounds.edges.includes('left') && footprint.minX <= bounds.minX + 0.001 ? trimInset : 0),
+    maxX: footprint.maxX - (bounds.edges.includes('right') && footprint.maxX >= bounds.maxX - 0.001 ? trimInset : 0),
+    minZ: footprint.minZ,
+    maxZ: footprint.maxZ - (bounds.edges.includes('front') && footprint.maxZ >= bounds.maxZ - 0.001 ? trimInset : 0),
+  };
+  const holes = ramps.map((ramp) => technicalRampRect(ramp, bounds, rampSize)).filter((rect) => rectOverlapArea(rect, visible) > 0);
+  const holeKey = holes.map((hole) => `${hole.minX},${hole.maxX},${hole.minZ},${hole.maxZ}`).join('|');
+  const geometry = useMemo(() => technicalFloorFootprintGeometry(visible, holes), [visible.minX, visible.maxX, visible.minZ, visible.maxZ, holeKey]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  const materialProps = { color: texture ? '#ffffff' : footprint.color, map: texture || null, roughness: 0.88 };
+  const containedRamps = ramps.filter((ramp) => rectContains(footprint, technicalRampRect(ramp, bounds, rampSize)));
+  return (
+    <group>
+      {/* Flush with the slab (no lip): otherwise a light seam shows where it meets the top of the ramp. */}
+      <mesh geometry={geometry} position={[0, 0.0005, 0]} receiveShadow raycast={() => null} renderOrder={1}>
+        <meshStandardMaterial {...materialProps} polygonOffset polygonOffsetFactor={-4} polygonOffsetUnits={-4} allowOverride={false} />
+      </mesh>
+      {containedRamps.map((ramp) => (
+        <TechnicalFloorRamp key={ramp.id} ramp={ramp} ramps={ramps} bounds={bounds} size={rampSize} carpetMaterialProps={materialProps} {...rampProps} />
       ))}
     </group>
   );
@@ -21765,7 +22072,8 @@ function TechnicalFloorRamp({ ramp, ramps, bounds, size, carpetMaterialProps, on
   const sourceDepth = Math.max(0.001, geometry.boundingBox.max.z - geometry.boundingBox.min.z);
   const sourceHeight = Math.max(0.001, geometry.boundingBox.max.y - geometry.boundingBox.min.y);
   // Origin of the OBJ is the low outer corner: shift it so the ramp is centred on its offset.
-  const placement = technicalEdgePlacement(ramp.edge, bounds, ramp.edge === 'right' ? ramp.offset + size.width / 2 : ramp.offset - size.width / 2);
+  const rampWidth = technicalRampWidth(ramp, size);
+  const placement = technicalEdgePlacement(ramp.edge, bounds, ramp.edge === 'right' ? ramp.offset + rampWidth / 2 : ramp.offset - rampWidth / 2);
   const releaseDrag = (event) => {
     event?.stopPropagation?.();
     event?.target?.releasePointerCapture?.(event.pointerId);
@@ -21788,7 +22096,8 @@ function TechnicalFloorRamp({ ramp, ramps, bounds, size, carpetMaterialProps, on
     if (!edge) return;
     const range = technicalRampOffsetRange(edge, bounds, size);
     const offset = clamp(edge === 'front' ? x : z, range.min, range.max);
-    const blocked = ramps.some((other) => other.id !== ramp.id && other.edge === edge && Math.abs(other.offset - offset) < size.width + technicalRampGap);
+    const blocked = ramps.some((other) => other.id !== ramp.id && other.edge === edge
+      && Math.abs(other.offset - offset) < (technicalRampWidth(other, size) + size.width) / 2 + technicalRampGap);
     if (blocked) return;
     onRampChange(ramp.id, { edge, offset: Math.round(offset * 1000) / 1000 });
   };
@@ -21801,7 +22110,7 @@ function TechnicalFloorRamp({ ramp, ramps, bounds, size, carpetMaterialProps, on
       receiveShadow
       position={[placement.position[0], -size.height, placement.position[1]]}
       rotation={[0, placement.rotationY, 0]}
-      scale={[size.width / sourceWidth, size.height / sourceHeight, size.depth / sourceDepth]}
+      scale={[rampWidth / sourceWidth, size.height / sourceHeight, size.depth / sourceDepth]}
       onPointerOver={(event) => { if (!editable) return; event.stopPropagation(); setHovered(true); document.body.style.cursor = 'grab'; }}
       onPointerOut={() => { setHovered(false); if (!dragging) document.body.style.cursor = ''; }}
       onPointerDown={(event) => {
@@ -22328,7 +22637,7 @@ function SceneItem({ item, items = [], selected, hovered, dragging, width, depth
         if (dragging) onDragMove(event);
       }}
     >
-      {isSignatureArchItem(item) && <SignatureArchFootprint item={item} standDepth={depth} />}
+      {isSignatureArchItem(item) && !visualContext?.technicalFloorActive && <SignatureArchFootprint item={item} standDepth={depth} />}
       <SceneItemContent item={item} selected={selected} hovered={hovered} dragging={dragging} visualContext={visualContext} />
     </group>
   );
@@ -22353,7 +22662,7 @@ function GroupedSceneItem({ item, selected, hovered, dragging, rotationY, standD
         if (dragging) onDragMove(event);
       }}
     >
-      {isSignatureArchItem(item) && <SignatureArchFootprint item={item} standDepth={standDepth} />}
+      {isSignatureArchItem(item) && !visualContext?.technicalFloorActive && <SignatureArchFootprint item={item} standDepth={standDepth} />}
       {item.children?.map((child) => (
         <group key={child.id} position={[child.x || 0, groupChildRenderY(child), child.z || 0]} rotation={[0, ((child.rotation || 0) * Math.PI) / 180, 0]}>
           <SceneItemContent item={reserveChildWithFinish(child, item)} selected={false} hovered={hovered} dragging={dragging} visualContext={visualContext} />

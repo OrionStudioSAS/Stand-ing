@@ -15997,3 +15997,79 @@ img.asset-thumb {
 @media (prefers-reduced-motion: reduce) {
   .floor-qv-option { transition: none; }
 }
+
+.floor-qv-keeps {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 5px;
+  padding: 2px 6px;
+  color: #298552;
+  background: #e4f5ea;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 650;
+}
+
+.floor-qv-hero-wrap {
+  position: relative;
+}
+
+.floor-qv-about-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #dfe5ee;
+  border-radius: 50%;
+  color: #3b64a8;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(20, 30, 50, 0.12);
+  cursor: pointer;
+}
+
+.floor-qv-about-toggle:hover,
+.floor-qv-about-toggle.active {
+  border-color: #3b64a8;
+  color: #fff;
+  background: #3b64a8;
+}
+
+.floor-qv-about-toggle:focus-visible {
+  outline: 2px solid #3b64a8;
+  outline-offset: 2px;
+}
+
+.floor-qv-about {
+  display: grid;
+  gap: 6px;
+  margin-top: -6px;
+  border: 1px solid #cfdcf0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: #3f4148;
+  background: #f4f8ff;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.floor-qv-about strong {
+  color: #1f4378;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.floor-qv-about p {
+  margin: 0;
+}
+
+.floor-qv-about ul {
+  display: grid;
+  gap: 4px;
+  margin: 2px 0 0;
+  padding-left: 16px;
+}

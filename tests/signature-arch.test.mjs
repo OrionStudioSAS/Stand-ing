@@ -43,7 +43,7 @@ test('Signature arch color targets the requested material and its attached carpe
   assert.match(appSource, /function SignatureArchFootprint\(/);
   assert.match(appSource, /Number\(standDepth \|\| 0\) \+ signatureArchFootprintOverflow/);
   assert.match(appSource, /const signatureArchFootprintOverflow = 0\.5/);
-  assert.match(appSource, /isSignatureArchItem\(item\) && <SignatureArchFootprint item=\{item\} standDepth=\{depth\}/);
+  assert.match(appSource, /isSignatureArchItem\(item\) && (?:!visualContext\?\.technicalFloorActive && )?<SignatureArchFootprint item=\{item\} standDepth=\{depth\}/);
   const footprintStart = appSource.indexOf('function SignatureArchFootprint(');
   const footprintEnd = appSource.indexOf('\nfunction SceneItem(', footprintStart);
   const footprint = appSource.slice(footprintStart, footprintEnd);
