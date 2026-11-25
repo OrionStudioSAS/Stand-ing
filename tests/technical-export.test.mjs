@@ -412,10 +412,11 @@ test('wall and reserve cover previews retain the exact surface location', () => 
   assert.equal(visuals.length, 1);
   assert.deepEqual(visuals[0].position, position);
   assert.match(visuals[0].placement, /Cloison réserve/);
+  assert.equal(visuals[0].format, '2000 × 2500 mm', 'Legacy surfaces without visibleWidth still export');
   assert.equal(visuals[0].imageUrl, imageUrl);
 });
 
-test('the admin/email marker exports enabled surfaces with database preview URLs, not HD originals', () => {
+test('the admin/email marker exports printable dimensions and preview URLs, not 3D or HD dimensions', () => {
   const { api } = runtime();
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
   api.sceneOfferLabel = (scene) => scene.offer || '';
@@ -430,13 +431,16 @@ test('the admin/email marker exports enabled surfaces with database preview URLs
     vm.runInContext(appSource.slice(start, end), api);
   }
   api.wallCoverSurfaceOptions = () => [
-    { id: 'reserve-1', sourceWall: 'reserve', label: 'Cloison réserve', position: [1, 1.25, -1], width: 2, height: 2.5 },
-    { id: 'left', label: 'Cloison gauche' },
+    ...[1, 2, 3].map(size => ({ id: `reserve-${size}`, sourceWall: 'reserve', label: 'Cloison réserve', position: [1, 1.25, -1], width: size - .04, visibleWidth: size, height: 2.5 })),
+    { id: 'left', label: 'Cloison gauche', width: 1.942, visibleWidth: 1.94, height: 2.5 },
+    { id: 'right', label: 'Cloison droite' },
   ];
-  const items = api.withTechnicalOptionsMarker([], { offer: 'Confort', source_payload: { options: { wallCovers: { reserve: { enabled: true, previewUrl: imageUrl, previewName: 'Logo.jpg', originalUrl: 'https://storage.example/original-hd.pdf', visualPending: true }, left: { enabled: false } } } } }, [{ type: 'counter', dimensions: { packPricing: { confort: { reference: 'SMCL-COMPT01' } } } }]);
-  assert.equal(items[0].sourceVisualSurfaces.length, 1);
+  const items = api.withTechnicalOptionsMarker([], { offer: 'Confort', source_payload: { options: { wallCovers: { reserve: { enabled: true, previewUrl: imageUrl, previewName: 'Logo.jpg', originalUrl: 'https://storage.example/original-hd.pdf', visualPending: true }, left: { enabled: true }, right: { enabled: false } } } } }, [{ type: 'counter', dimensions: { packPricing: { confort: { reference: 'SMCL-COMPT01' } } } }]);
+  assert.equal(items[0].sourceVisualSurfaces.length, 4);
+  assert.equal(items[0].sourceVisualSurfaces[1].width, 1.96, 'Render geometry stays intact');
   assert.equal(items[0].sourceProductReferences.counter, 'SMCL-COMPT01');
   const visuals = api.technicalPlanVisuals(items);
+  assert.deepEqual(Array.from(visuals, (visual) => visual.format), ['1000 × 2500 mm', '2000 × 2500 mm', '3000 × 2500 mm', '1940 × 2500 mm']);
   assert.equal(visuals[0].imageUrl, imageUrl);
   assert.match(visuals[0].status, /En attente/);
   assert.match(visuals[0].placement, /Cloison réserve/);

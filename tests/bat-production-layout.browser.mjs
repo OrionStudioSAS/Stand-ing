@@ -13,7 +13,10 @@ const artwork = (name, color = '#15547b') => 'data:image/svg+xml,' + encodeURICo
 const logo = artwork('LOGO');
 const counter = { id: 'counter', type: 'counter', label: 'Comptoir accueil', x: 1.8, z: 1.05, modelSize: [1.5, 1, .5], options: { binary3Enabled: true, binary3ImageUrl: logo } };
 const marker = (banners = []) => ({ sourceOptions: { carpetColorName: 'Gris clair', carpetColorCode: '0939', carpetColorHex: '#c6c6c6', wallFabricColorName: 'Blanc', wallFabricColorCode: '303', wallFabricColorHex: '#ffffff', carpetFootprintColorName: 'Rouge', carpetFootprintColorHex: '#cc1421' }, sourceVisualSurfaces: banners });
-const banners = (count) => Array.from({ length: count }, (_, index) => ({ label: `Cloison ${index + 1}`, position: [-2 + index * .5, 0, -1.5], width: 1.88 + index * .2, height: 2.5, previewUrl: artwork(`BACHE ${index + 1}`, index % 2 ? '#403526' : '#1a447b') }));
+const banners = (count) => Array.from({ length: count }, (_, index) => ({ label: `Cloison ${index + 1}`, position: [-2.4 + (index % 9) * .6, 0, -1.45 + Math.floor(index / 9) * 1.25], width: 1.88 + index * .2, height: 2.5, previewUrl: artwork(`BACHE ${index + 1}`, index % 2 ? '#403526' : '#1a447b') }));
+const actipoleBanners = banners(3);
+Object.assign(actipoleBanners[1], { width: 1.942, visibleWidth: 1.94 });
+Object.assign(actipoleBanners[2], { width: 1.96, visibleWidth: 2 });
 const header = artwork('SOCIETE - P77', '#75bfd2');
 const input = {
   width: 6, depth: 3, layout: 'left', catalog: [],
@@ -22,7 +25,7 @@ const input = {
     ...['left', 'right'].map((side) => ({ id: `head-${side}`, type: `tete-de-cloison-smcl-${side}`, label: `Tête de cloison ${side}`, x: side === 'left' ? -2.7 : 2.7, z: -1.45, modelSize: [.6, 3, .11], options: { partitionHeadSide: side, headMainImageUrl: artwork('VISUEL TETE') } })),
     counter,
     { id: 'sign', type: 'enseigne-haute', label: 'Enseigne haute', x: .5, z: -.2, modelSize: [1.5, 5.8, 1.3], dimensions: { ceilingMounted: true }, options: { posterImageUrl: artwork('VISCOM') } },
-    { ...marker(banners(3)), sourceHeadInformation: ['left', 'right'].map((side) => ({ itemId: `head-${side}`, side, label: 'Tête de cloison', position: [side === 'left' ? -2.7 : 2.7, 0, -1.45], imageUrl: header })) },
+    { ...marker(actipoleBanners), sourceHeadInformation: ['left', 'right'].map((side) => ({ itemId: `head-${side}`, side, label: 'Tête de cloison', position: [side === 'left' ? -2.7 : 2.7, 0, -1.45], imageUrl: header })) },
   ],
 };
 const cases = [
@@ -80,7 +83,8 @@ try {
       results.push({ name, pdf, pages: pages.map((svg) => new XMLSerializer().serializeToString(svg)),
         headers: pages.map((svg) => [...svg.querySelectorAll('[data-bat-text-role="visual-slot-title"]')].map((node) => ({ text: node.textContent, x: +node.getAttribute('x'), y: +node.getAttribute('y') }))),
         non: pages.map((svg) => [...svg.querySelectorAll('text')].filter((node) => node.textContent === 'NON').map((node) => ({ x: +node.getAttribute('x'), y: +node.getAttribute('y') }))),
-        text: pages.map((svg) => svg.textContent),
+        bannerMarkers: [...pages[0].querySelectorAll('[data-bat-text-role="banner-plan-reference"]')].map((node) => node.textContent),
+        bannerPreviews: [...pages[0].querySelectorAll('[data-bat-text-role="banner-preview-reference"]')].map((node) => node.textContent),
       });
     }
     return results;
@@ -88,7 +92,8 @@ try {
   assert.deepEqual(errors, []);
   for (const result of results) {
     const pdf = Buffer.from(result.pdf.split(',')[1], 'base64');
-    assert.equal((await PDFDocument.load(pdf)).getPageCount(), result.pages.length);
+    assert.equal(result.pages.length, 1);
+    assert.equal((await PDFDocument.load(pdf)).getPageCount(), 1);
     await writeFile(resolve(output, `${result.name}.pdf`), pdf);
     for (const [index, svg] of result.pages.entries()) await writeFile(resolve(output, `${result.name}-${index + 1}.svg`), svg);
     const headers = result.headers.filter((headers) => headers.length);
@@ -97,9 +102,14 @@ try {
       '1 - Tête de cloison visuel', '2 - Tête de cloison texte', '3 - Adhésif banque accueil', '4 - Viscom suspendu', '5 - Bâche cloison',
     ]);
     if (!realDataPath && result.name === 'axione') assert.equal(result.non[0].length, 5, 'Four absent artwork sections and disabled footprint are explicitly marked NON');
+    if (!realDataPath && result.name === 'actipole') {
+      assert.match(result.pages[0], />1940 × 2500 mm<.*>2000 × 2500 mm</s);
+      assert.doesNotMatch(result.pages[0], /(?:1942|1960) × 2500 mm/, 'Banner cards never use the width of the 3D preview');
+    }
     if (!realDataPath && result.name === 'many-artworks') {
-      assert.equal(headers.length, 5, 'Additional artwork is paginated below a repeated 2D plan');
-      for (let number = 1; number <= 19; number++) assert.match(result.pages.join(''), new RegExp(`>5\\.${number}</text>`));
+      assert.equal(headers.length, 1, 'Additional artwork fits beneath the single 2D plan');
+      assert.deepEqual(result.bannerMarkers, Array.from({ length: 19 }, (_, index) => `5.${index + 1}`));
+      assert.deepEqual(result.bannerPreviews, [...result.bannerMarkers.slice(1), '5.1']);
     }
     console.log(JSON.stringify({ name: result.name, pages: result.pages.length, planPages: headers.length, absentMarkers: result.non[0].length }));
   }

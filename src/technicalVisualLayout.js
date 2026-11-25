@@ -41,7 +41,5 @@ export function layoutTechnicalVisuals(visuals = []) {
     if (!slot.primary) slot.primary = card;
     else extra.push(card);
   }
-  const galleries = [];
-  for (let index = 0; index < extra.length; index += technicalFrontPage.gallery.columns) galleries.push(extra.slice(index, index + technicalFrontPage.gallery.columns));
-  return { slots, visuals: mapped, extra, galleries: galleries.length ? galleries : [[]] };
+  return { slots, visuals: mapped, extra };
 }

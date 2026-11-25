@@ -14,7 +14,7 @@ test('the five artwork sections retain their order, including absent head and si
   assert.ok(empty.slots.every((slot) => slot.primary === null));
   const axione = layoutTechnicalVisuals([visual('counter', 'logo')]);
   assert.deepEqual(axione.slots.map((slot) => slot.primary?.reference || 'NON'), ['NON', 'NON', '3', 'NON', 'NON']);
-  assert.deepEqual(axione.galleries, [[]]);
+  assert.deepEqual(axione.extra, []);
 });
 
 test('artwork roles, rather than item order, determine their fixed references', () => {
@@ -39,14 +39,12 @@ test('identical artwork shares one preview without losing either plan position',
   assert.equal(layoutTechnicalVisuals([left, visual('head-text', 'shared')]).slots[1].primary.reference, '2', 'Text and graphic roles remain separate');
 });
 
-test('additional artwork stays under the plan and paginates without omission', () => {
+test('additional artwork stays under the plan without omission', () => {
   const banners = Array.from({ length: 19 }, (_, index) => visual('wall-banner', `banner-${index}`));
   const result = layoutTechnicalVisuals([...banners, visual('other', 'custom')]);
   assert.equal(result.slots[4].primary.reference, '5.1');
   assert.equal(result.extra.length, 19);
-  assert.equal(result.galleries.length, 5);
-  assert.ok(result.galleries.every((page) => page.length <= technicalFrontPage.gallery.columns));
-  assert.deepEqual(result.galleries.flat().map((entry) => entry.imageUrl), result.extra.map((entry) => entry.imageUrl));
+  assert.deepEqual(result.extra.map((entry) => entry.imageUrl), [...banners.slice(1), visual('other', 'custom')].map((entry) => entry.imageUrl));
   assert.equal(result.extra[0].reference, '5.2');
   assert.equal(result.extra.at(-1).reference, '6.1');
 });

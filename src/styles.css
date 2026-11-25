@@ -14653,10 +14653,9 @@ img.asset-thumb {
 .bat-editor > footer > small { margin: 0 auto 0 0; }
 .bat-editor button { display: inline-flex; justify-content: center; align-items: center; gap: 7px; min-height: 36px; padding: 8px 12px; border: 1px solid #dce2ea; border-radius: 6px; background: #fff; color: #132c65; cursor: pointer; }
 .bat-editor button:disabled { opacity: .5; cursor: default; }
-.bat-editor button.primary, .bat-editor nav button.active { background: #102e6c; color: #fff; }
+.bat-editor button.primary { background: #102e6c; color: #fff; }
 .bat-editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 0; flex: 1; }
 .bat-editor-layout main { overflow: auto; padding: 24px; }
-.bat-editor-layout nav { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .bat-editor-paper { background: #fff; box-shadow: 0 4px 20px #152d4714; touch-action: none; }
 .bat-editor-paper > svg { display: block; width: 100%; height: auto; }
 .bat-editor-paper [data-bat-id] { cursor: move; }

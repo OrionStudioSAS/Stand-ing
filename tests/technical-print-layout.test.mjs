@@ -47,7 +47,7 @@ test('Visual cards move whole onto another page and retain every plan reference'
   assert.ok(pages.every((page) => page.blocks.every((block) => block.y + block.height <= technicalA3.bottom)));
 });
 
-test('BAT downloads and email attachments both use the multipage PDF export', () => {
+test('BAT downloads, preview and email attachments use the same single-sheet renderer', () => {
   const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const download = app.slice(app.indexOf('async function downloadSceneTechnicalPlan('), app.indexOf('function withTechnicalOptionsMarker('));
   assert.match(download, /exportTechnicalPdf\(/);
@@ -55,7 +55,10 @@ test('BAT downloads and email attachments both use the multipage PDF export', ()
   assert.match(download, /contentType: 'application\/pdf'/);
   assert.doesNotMatch(download, /exportTechnicalPng|image\/png/);
   const exporter = readFileSync(new URL('../src/technicalExport.js', import.meta.url), 'utf8');
-  assert.match(exporter, /pdf\.addPage\('a3', 'landscape'\)/);
+  assert.doesNotMatch(exporter, /pdf\.addPage\(/);
   assert.match(exporter, /await pdf\.svg\(page/);
+  const editor = readFileSync(new URL('../src/TechnicalPlanEditor.jsx', import.meta.url), 'utf8');
+  assert.match(editor, /createTechnicalPlanSvg\(/);
+  assert.match(editor, /exportTechnicalPdf\(options, rendered\.svg\)/);
   assert.doesNotMatch(exporter.slice(exporter.indexOf('export async function createTechnicalPlanBlob('), exporter.indexOf('function technicalItemsForPlan(')), /canvasToBlob|drawImage|embedPng/);
 });

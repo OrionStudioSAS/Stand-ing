@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Plus, Download, Save, RotateCcw, Trash2 } from 'lucide-react';
-import { createTechnicalPlanSvgPages, exportTechnicalPdf } from './technicalExport.js';
+import { createTechnicalPlanSvg, exportTechnicalPdf } from './technicalExport.js';
 import { moveTechnicalPlanElement, normalizeTechnicalPlanEdits } from './technicalPlanEdits.js';
 import { loadTechnicalPlanEdits, saveTechnicalPlanEdits } from './data/technicalPlanStore.js';
 
@@ -9,18 +9,17 @@ export default function TechnicalPlanEditor({ sceneId, options, onClose }) {
   const [edits, setEdits] = useState(() => normalizeTechnicalPlanEdits());
   const [saved, setSaved] = useState(null);
   const [revision, setRevision] = useState(0);
-  const [pages, setPages] = useState([]);
-  const [page, setPage] = useState(0);
+  const [rendered, setRendered] = useState(null);
   const [selection, setSelection] = useState(null);
   const [pictoType, setPictoType] = useState('');
   const [error, setError] = useState('');
   const [status, setStatus] = useState('Chargement…');
   const [busy, setBusy] = useState(false);
-  const [rendering, setRendering] = useState(false);
   const preview = useRef(null);
   const drag = useRef(null);
   const dirty = saved !== null && JSON.stringify(edits) !== saved;
   const ready = saved !== null;
+  const currentPreview = ready && rendered?.edits === edits && rendered?.options === options;
   const choices = options.catalog.filter((entry) => entry.dimensions?.batPictoUrl);
   const selectedNote = edits.annotations.find((item) => item.id === selection?.id);
   const selectedExtra = edits.extras.find((item) => item.id === selection?.id);
@@ -37,18 +36,17 @@ export default function TechnicalPlanEditor({ sceneId, options, onClose }) {
   useEffect(() => {
     if (!ready) return;
     let active = true;
-    setRendering(true);
     const timer = setTimeout(() => {
-      createTechnicalPlanSvgPages({ ...options, batEdits: edits }).then((value) => {
-        if (active) { setPages(value); setPage((current) => Math.min(current, value.length - 1)); setRendering(false); }
-      }).catch((reason) => { if (active) { setError(reason.message); setRendering(false); } });
+      createTechnicalPlanSvg({ ...options, batEdits: edits }).then((svg) => {
+        if (active) setRendered({ svg, edits, options });
+      }).catch((reason) => { if (active) setError(reason.message); });
     }, 100);
     return () => { active = false; clearTimeout(timer); };
   }, [options, edits, ready]);
 
   useEffect(() => {
     if (!preview.current) return;
-    const svg = pages[page]?.cloneNode(true);
+    const svg = rendered?.svg.cloneNode(true);
     preview.current.replaceChildren(...(svg ? [svg] : []));
     svg?.querySelectorAll('[data-bat-id]:not([display="none"])').forEach((element) => {
       const bounds = element.getBBox();
@@ -57,11 +55,11 @@ export default function TechnicalPlanEditor({ sceneId, options, onClose }) {
         .forEach(([key, value]) => hit.setAttribute(key, String(value)));
       element.prepend(hit);
     });
-  }, [pages, page]);
+  }, [rendered]);
 
   useEffect(() => {
     preview.current?.querySelectorAll('[data-bat-id]').forEach((element) => element.classList.toggle('bat-editor-selected', element.dataset.batId === selection?.id));
-  }, [selection, pages, page]);
+  }, [selection, rendered]);
 
   useEffect(() => {
     const previous = document.activeElement;
@@ -82,13 +80,13 @@ export default function TechnicalPlanEditor({ sceneId, options, onClose }) {
     [selectedNote ? 'annotations' : 'extras']: current[selectedNote ? 'annotations' : 'extras'].map((item) => item.id === selection?.id ? { ...item, ...patch } : item) }));
   const addNote = () => {
     const id = `note-${crypto.randomUUID()}`;
-    setEdits((current) => ({ ...current, annotations: [...current.annotations, { id, page, x: 0.6, y: 0.7, text: 'Nouvelle annotation', size: 20 }] }));
+    setEdits((current) => ({ ...current, annotations: [...current.annotations, { id, page: 0, x: 0.6, y: 0.7, text: 'Nouvelle annotation', size: 20 }] }));
     setSelection({ id, kind: 'annotation', label: 'Annotation' });
   };
   const addPicto = () => {
     if (!pictoType) return;
     const id = `extra-${crypto.randomUUID()}`;
-    setEdits((current) => ({ ...current, extras: [...current.extras, { id, type: pictoType, page, x: 0.6, y: 0.5, width: 0.06, height: 0.06, rotation: 0 }] }));
+    setEdits((current) => ({ ...current, extras: [...current.extras, { id, type: pictoType, page: 0, x: 0.6, y: 0.5, width: 0.06, height: 0.06, rotation: 0 }] }));
     setSelection({ id, kind: 'extra', label: choices.find((entry) => entry.type === pictoType)?.label });
   };
   const removeSelected = () => {
@@ -125,9 +123,8 @@ export default function TechnicalPlanEditor({ sceneId, options, onClose }) {
     <header><div><small>BAT · A3 paysage</small><h2>{options.documentInfo.title}</h2></div><span>{dirty ? 'Modifications non enregistrées' : 'Plan technique'}</span><button disabled={busy} onClick={close} aria-label="Fermer l'éditeur BAT"><X size={20} /></button></header>
     <div className="bat-editor-layout">
       <main>
-        <nav aria-label="Pages du BAT">{pages.map((_, index) => <button key={index} className={page === index ? 'active' : ''} onClick={() => { setPage(index); setSelection(null); }}>Page {index + 1}</button>)}{rendering && <span role="status">Actualisation…</span>}</nav>
         <div className="bat-editor-paper" ref={preview} aria-label="Aperçu BAT : faites glisser un picto ou une annotation" onPointerDown={(event) => {
-          if (busy || rendering) return;
+          if (busy || !currentPreview) return;
           const target = event.target.closest?.('[data-bat-id]');
           const point = pagePoint(event);
           if (!target || !point) { setSelection(null); return; }
@@ -145,7 +142,7 @@ export default function TechnicalPlanEditor({ sceneId, options, onClose }) {
           const current = drag.current; if (!current) return;
           const point = pagePoint(event); drag.current = null;
           if (point) setEdits(moveTechnicalPlanElement(current.start, current.id, current.kind, point.x - current.point.x, point.y - current.point.y));
-        }} onPointerCancel={() => { drag.current = null; setPages((current) => [...current]); }} />
+        }} onPointerCancel={() => { drag.current = null; setRendered((current) => current && { ...current }); }} />
       </main>
       <aside>
         <fieldset disabled={busy || !ready} aria-label="Retouches du BAT">
@@ -164,6 +161,6 @@ export default function TechnicalPlanEditor({ sceneId, options, onClose }) {
         {error && <p className="bat-editor-error" role="alert">{error}</p>}{status && <p role="status">{status}</p>}
       </aside>
     </div>
-    <footer><small>SVG conservés en vectoriel · export A3 multipage</small><button disabled={busy || saved === null} onClick={() => run(() => exportTechnicalPdf({ ...options, batEdits: edits }))}><Download size={16} /> Exporter le PDF</button><button className="primary" disabled={busy || saved === null || !dirty} onClick={save}><Save size={16} /> {busy ? 'En cours…' : 'Enregistrer'}</button></footer>
+    <footer><small>{ready && !currentPreview && !error ? 'Actualisation…' : 'PDF vectoriel · 1 feuille A3'}</small><button disabled={busy || !currentPreview} onClick={() => run(() => exportTechnicalPdf(options, rendered.svg))}><Download size={16} /> Exporter le PDF</button><button className="primary" disabled={busy || saved === null || !dirty} onClick={save}><Save size={16} /> {busy ? 'En cours…' : 'Enregistrer'}</button></footer>
   </div>, document.body);
 }

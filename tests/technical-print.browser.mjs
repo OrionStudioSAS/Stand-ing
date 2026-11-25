@@ -36,6 +36,7 @@ try {
       { id: 'tv', type: 'screen', label: 'TV 43', x: .5, wall: 'back', modelSize: [1, .6, .1], dimensions: devicePicto(100, 10) },
       { id: 'rigging', type: 'asset-enseigne-haute-aluminium-2000x2000x1000mm-ht-mrbwze9h', label: 'Enseigne haute 2 m', x: 1.5, z: -.4, rotation: 90, dimensions: { ceilingMounted: true }, modelSize: [2, 5.8, 2] },
       { id: 'head', type: 'head-smcl', label: 'Tête de cloison gauche', isWallItem: true, wall: 'left', technicalHeadPlan: { x: -3.4, z: 1.2, rotation: 90, width: 1.25, depth: .11 } },
+      { id: 'rail', type: 'rail', label: 'Rail LED 3 Spots', x: -1.5, wall: 'back', modelSize: [1, .15, .2] },
     );
     const input = { width: 7, depth: 3.5, layout: 'u', items, catalog, documentInfo: { title: 'Société test', salon: 'SMCL 2026', hall: '3', stand: 'A-12', aisleNumber: 'A', aisleSide: 'right' } };
     window.batInput = input;
@@ -53,23 +54,24 @@ try {
     return { pdf: await encode(pdf), type: pdf.type, pages: svgPages.map((svg) => new XMLSerializer().serializeToString(svg)), longPages: longPages.map((svg) => svg.textContent), orientations, unsafe };
   });
   assert.equal(result.type, 'application/pdf');
-  assert.equal(result.pages.length, 2);
+  assert.equal(result.pages.length, 1);
   assert.match(result.pages[0], /<text[^>]*transform="matrix\(0 1 -1 0 [^"]+\)"[^>]*>Allée A<\/text>/);
   assert.equal(result.pages[0].match(/<svg/g).length, 6, 'Each original SVG is embedded inline, not as a PNG');
   assert.deepEqual(result.orientations, { reception: [1, 0, 0, 1], tv: [1, 0, 0, 1] });
   for (let index = 1; index <= 4; index++) assert.match(result.pages[0], new RegExp(`E6\\.${index}</text>`));
   assert.match(result.pages[0], /data-bat-id="head"[^>]*><rect[^>]*transform="matrix\(0 -1 1 0 /, 'The SMCL head fallback uses its scene yaw');
-  assert.match(result.pages.slice(1).join(''), /X : \d+ mm depuis le mur droit · Y : \d+ mm depuis le mur du fond/);
+  assert.ok(/E6\.1 · X \d+ droit · Y \d+ fond/.test(result.pages[0]), result.pages[0].match(/E6\.1 ·[^<]*/)?.[0]);
+  assert.doesNotMatch(result.pages[0], />Rail LED 3 Spots<|>TV 43[^<]*<|fill="#ffffff"[^>]*font-size="17"/);
+  assert.match(result.pages[0], />CLOISON(?: TRAD)?</);
   assert.doesNotMatch(result.pages[0], /<image/);
   assert.match(result.pages[0], /picto-1-paint/);
   assert.match(result.pages[0], /#picto-1 \.edge/);
   assert.match(result.pages[0], /url\(["']?#picto-1-paint["']?\)/);
   assert.doesNotMatch(result.unsafe, /onload|<script|https:\/\//);
-  assert.ok(result.longPages.length > 2);
-  assert.match(result.longPages.join(' '), /Instruction finale 65/);
-  assert.match(result.longPages.join(' '), /DESCRIPTION-COMPLETE-65/);
+  assert.equal(result.longPages.length, 1);
+  assert.doesNotMatch(result.longPages[0], /Instruction finale 65|DESCRIPTION-COMPLETE-65/);
   const pdf = await PDFDocument.load(Buffer.from(result.pdf.split(',')[1], 'base64'));
-  assert.equal(pdf.getPageCount(), 2);
+  assert.equal(pdf.getPageCount(), 1);
   for (const pdfPage of pdf.getPages()) {
     assert.ok(Math.abs(pdfPage.getWidth() - 420 * 72 / 25.4) < 0.02);
     assert.ok(Math.abs(pdfPage.getHeight() - 297 * 72 / 25.4) < 0.02);
@@ -82,9 +84,9 @@ try {
   assert.match(download.suggestedFilename(), /-A3\.pdf$/);
   const path = join(directory, 'download.pdf');
   await download.saveAs(path);
-  assert.equal((await PDFDocument.load(await readFile(path))).getPageCount(), 2);
+  assert.equal((await PDFDocument.load(await readFile(path))).getPageCount(), 1);
   assert.deepEqual(errors, []);
-  console.log('BAT browser: transparent vector SVGs, A3 PDF, complete multipage details and PDF download OK');
+  console.log('BAT browser: single A3 sheet, retained wall labels and rigging, suppressed object labels, vector pictos and download OK');
 } finally {
   await browser.close();
   await server.close();

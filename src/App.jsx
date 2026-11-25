@@ -15273,13 +15273,7 @@ function useAdminBatEditor(assets) {
     try {
       const full = await loadSceneForAdminAction(scene);
       if (!full?.id || !Array.isArray(full.items)) throw new Error('Impossible de charger la scène pour modifier le BAT.');
-      await prepareTechnicalExportFonts(full);
-      const catalog = sceneAdminCatalog(assets, full);
-      setEditor({ sceneId: full.id, options: {
-        width: Number(full.dimensions?.width || full.width_m || 4), depth: Number(full.dimensions?.depth || full.depth_m || 3),
-        layout: full.layout || 'back', items: withTechnicalOptionsMarker(sceneAllAdminItems(full, catalog), full, catalog),
-        catalog, documentInfo: sceneTechnicalDocumentInfo(full),
-      } });
+      setEditor({ sceneId: full.id, options: await sceneTechnicalPlanOptions(full, assets) });
     } catch (error) { setEditorError(error.message || 'Impossible d’ouvrir le BAT.'); } finally { setLoadingId(''); }
   };
   return { editor, editorError, loadingId, openEditor, closeEditor: () => setEditor(null) };
@@ -15789,40 +15783,30 @@ function purchaseOrderOptionLabel(option = '') {
     .trim();
 }
 
-async function downloadSceneTechnicalPlan(scene = {}, assets = []) {
-  scene = await loadSceneForAdminAction(scene);
+async function sceneTechnicalPlanOptions(scene, assets) {
   await prepareTechnicalExportFonts(scene);
   const catalogEntries = sceneAdminCatalog(assets, scene);
-  const width = Number(scene.dimensions?.width || scene.width_m || 4);
-  const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
-  const items = sceneAllAdminItems(scene, catalogEntries);
-  const { edits: batEdits } = await loadTechnicalPlanEdits(scene.id);
-  return exportTechnicalPdf({
-    batEdits,
-    width,
-    depth,
-    layout: scene.layout || 'back',
-    items: withTechnicalOptionsMarker(items, scene, catalogEntries),
-    catalog: catalogEntries,
-    documentInfo: sceneTechnicalDocumentInfo(scene),
-  });
-}
-
-async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = [], includeAdminEdits = false) {
-  await prepareTechnicalExportFonts(scene);
-  const catalogEntries = sceneAdminCatalog(assets, scene);
-  const width = Number(scene.dimensions?.width || scene.width_m || 4);
-  const depth = Number(scene.dimensions?.depth || scene.depth_m || 3);
-  const { edits: batEdits } = includeAdminEdits ? await loadTechnicalPlanEdits(scene.id) : { edits: {} };
-  const blob = await createTechnicalPlanBlob({
-    batEdits,
-    width,
-    depth,
+  return {
+    width: Number(scene.dimensions?.width || scene.width_m || 4),
+    depth: Number(scene.dimensions?.depth || scene.depth_m || 3),
     layout: scene.layout || 'back',
     items: withTechnicalOptionsMarker(sceneAllAdminItems(scene, catalogEntries), scene, catalogEntries),
     catalog: catalogEntries,
     documentInfo: sceneTechnicalDocumentInfo(scene),
-  });
+  };
+}
+
+async function downloadSceneTechnicalPlan(scene = {}, assets = []) {
+  scene = await loadSceneForAdminAction(scene);
+  const options = await sceneTechnicalPlanOptions(scene, assets);
+  const { edits: batEdits } = await loadTechnicalPlanEdits(scene.id);
+  return exportTechnicalPdf({ ...options, batEdits });
+}
+
+async function sceneTechnicalPlanEmailAttachment(scene = {}, assets = [], includeAdminEdits = false) {
+  const options = await sceneTechnicalPlanOptions(scene, assets);
+  const { edits: batEdits } = includeAdminEdits ? await loadTechnicalPlanEdits(scene.id) : { edits: {} };
+  const blob = await createTechnicalPlanBlob({ ...options, batEdits });
   return {
     filename: `bat-${slugForType(scene.client_name || scene.project_name || scene.id || 'stand')}-A3.pdf`,
     contentBase64: await blobToBase64(blob),
@@ -15855,7 +15839,7 @@ function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = [])
     .map((surface) => {
       const cover = covers[surface.id] || covers[surface.sourceWall] || {};
       const preview = wallCoverPreviewForSurface(previews, surface);
-      return { id: surface.id, label: surface.label, position: surface.position, width: surface.width, height: surface.height, previewUrl: preview?.url || '', previewName: preview?.name || '', visualPending: Boolean(cover.visualPending) };
+      return { id: surface.id, label: surface.label, position: surface.position, width: surface.width, visibleWidth: surface.visibleWidth, height: surface.height, previewUrl: preview?.url || '', previewName: preview?.name || '', visualPending: Boolean(cover.visualPending) };
     });
   return [
     ...items.map((item) => isPartitionHeadItem(item) ? { ...item, technicalHeadPlan: technicalPartitionHeadPose(item, items, width, depth) } : item),
