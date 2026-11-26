@@ -48,7 +48,7 @@ export default function TechnicalPlanEditor({ sceneId, options, onClose }) {
     if (!preview.current) return;
     const svg = rendered?.svg.cloneNode(true);
     preview.current.replaceChildren(...(svg ? [svg] : []));
-    svg?.querySelectorAll('[data-bat-id]:not([display="none"])').forEach((element) => {
+    svg?.querySelectorAll('[data-bat-id]:not([display="none"]):not([data-bat-layer="electrical-overlay"])').forEach((element) => {
       const bounds = element.getBBox();
       const hit = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
       Object.entries({ x: bounds.x - 6, y: bounds.y - 6, width: Math.max(12, bounds.width + 12), height: Math.max(12, bounds.height + 12), fill: 'transparent', 'pointer-events': 'all', 'data-bat-hit': '' })
@@ -129,15 +129,18 @@ export default function TechnicalPlanEditor({ sceneId, options, onClose }) {
           const point = pagePoint(event);
           if (!target || !point) { setSelection(null); return; }
           const selected = { id: target.dataset.batId, kind: target.dataset.batKind, label: target.dataset.batLabel };
-          setSelection(selected); drag.current = { ...selected, point, start: edits, target };
+          const targets = [...preview.current.querySelectorAll('[data-bat-id]')].filter(node =>
+            node.dataset.batId === selected.id && node.dataset.batKind === selected.kind);
+          setSelection(selected); drag.current = { ...selected, point, start: edits, targets };
           event.currentTarget.setPointerCapture(event.pointerId); event.preventDefault();
         }} onPointerMove={(event) => {
           if (!drag.current) return;
           const point = pagePoint(event); if (!point) return;
-          const { target, point: start } = drag.current;
+          const { targets, point: start } = drag.current;
           const svg = preview.current.querySelector('svg');
           const base = drag.current.start.items[drag.current.id] || {};
-          target.setAttribute('transform', `translate(${((base.dx || 0) + point.x - start.x) * svg.viewBox.baseVal.width} ${((base.dy || 0) + point.y - start.y) * svg.viewBox.baseVal.height})`);
+          const transform = `translate(${((base.dx || 0) + point.x - start.x) * svg.viewBox.baseVal.width} ${((base.dy || 0) + point.y - start.y) * svg.viewBox.baseVal.height})`;
+          targets.forEach(target => target.setAttribute('transform', transform));
         }} onPointerUp={(event) => {
           const current = drag.current; if (!current) return;
           const point = pagePoint(event); drag.current = null;

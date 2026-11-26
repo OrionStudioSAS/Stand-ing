@@ -10,6 +10,7 @@ const fixtures = {
   '/__arch.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 200"><defs><style>.paint{fill:#f0f;opacity:.5;stroke:#0b0c1d;stroke-width:2}</style></defs><rect data-arch="" class="paint" width="100" height="200"/><rect data-detail="" x="8" y="9" width="10" height="15" fill="#fcffdd"/></svg>',
   '/bat-picto-mvryukq3.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 200"><style>.old{fill:#ad7d05;opacity:.5;stroke:#0b0c1d}</style><rect class="old" width="100" height="200"/></svg>',
   '/__counter.svg': await readFile(new URL('./fixtures/reception-counter-bat.svg', import.meta.url), 'utf8'),
+  '/__coffee.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 34"><rect data-coffee="" width="24" height="34" fill="#432a18"/></svg>',
 };
 const server = await createServer({ logLevel: 'error', server: { host: '127.0.0.1', port: 0 }, plugins: [{
   name: 'bat-electrical-layout', configureServer(vite) {
@@ -33,7 +34,8 @@ try {
     const counter = { type: 'comptoir-accueil', label: 'Comptoir accueil 2m', modelSize: [2, 1, .48], dimensions: { ...electric, batElectricalPictoY: .5, batPictoUrl: '/__counter.svg', batPictoReplaceColor: '#ff00ff' } };
     const power = { type: 'triplette', label: 'Triplette', modelSize: [.23, .05, .13], dimensions: { category: 'Électricité', batPictoUrl: '/__electric.svg' } };
     const arch = { type: 'arche-signature', label: 'Arche Signature 2m', modelSize: [1.1, 3.64, 2.52], dimensions: { batPictoUrl: '/__arch.svg', batPictoReplaceColor: '#ff00ff' } };
-    const items = [{ ...tv, id: 'tv', x: -.25, y: 1.6 }, { ...counter, id: 'base', included: true, x: -.7, z: .65, options: { binary2Color: '#0057a8' } },
+    const coffee = { id: 'coffee', type: 'nespresso', label: 'Machine à café', surfaceHostId: 'base', x: -.7, z: .65, y: 1, modelSize: [.24, .28, .34], dimensions: { batPictoUrl: '/__coffee.svg' } };
+    const items = [coffee, { ...tv, id: 'tv', x: -.25, y: 1.6 }, { ...counter, id: 'base', included: true, x: -.7, z: .65, options: { binary2Color: '#0057a8' } },
       { ...counter, id: 'shop', x: .7, z: .65 }, { ...arch, id: 'arch', x: -.7, z: 0, options: { signatureArchColorHex: '#cc4422' } },
       { id: 'chair-under-arch', type: 'chair', x: -.7, z: 0, modelSize: [.52, .86, .5], color: '#116699' }];
     const before = JSON.stringify(items);
@@ -62,7 +64,7 @@ try {
     const chairBounds = bounds(pages[0].querySelector('[data-bat-id="chair-under-arch"] rect'));
     const dimensions = [...pages[0].querySelectorAll('text')].filter(node=>node.getAttribute('data-bat-text-role')==='electrical-dimension').map(node=>node.textContent);
     const requirements = window.bat.standWallPanelRequirements(input).map(panel => [panel.lengthMm, panel.reinforced]);
-    const glyphs = [...pages[0].querySelectorAll('[data-bat-id]')].map(node => node.dataset.batId);
+    const glyphs = [...pages[0].querySelectorAll('[data-bat-id]')].map(node => node.dataset.batLayer ? `${node.dataset.batId}:${node.dataset.batLayer}` : node.dataset.batId);
     const noElectric = await window.bat.createTechnicalPlanSvgPages({ ...input, items: items.map(item => ({ ...item, dimensions: { ...item.dimensions, batElectricalPictoUrl: '' } })), catalog: [tv, counter, power, arch].map(entry => ({ ...entry, dimensions: { ...entry.dimensions, batElectricalPictoUrl: '' } })) });
     document.body.append(noElectric[0]);
     const withoutTvBody = bounds(noElectric[0].querySelector('[data-bat-id="tv"] [data-tv]'));
@@ -93,6 +95,9 @@ try {
   const { archBounds: a, chairBounds: c, glyphs } = result;
   assert.ok(c.x > a.x && c.x + c.width < a.x + a.width && c.y > a.y && c.y + c.height < a.y + a.height, 'The test chair is physically under the arch');
   assert.ok(glyphs.indexOf('chair-under-arch') < glyphs.indexOf('arch') && glyphs.indexOf('tv') < glyphs.indexOf('arch'), 'Floor and wall objects paint before the translucent arch');
+  const stack = ['base', 'coffee', 'arch', 'included-counter-power-base', 'base:electrical-overlay'];
+  assert.deepEqual(glyphs.filter(id => stack.includes(id)), stack, 'Support, coffee machine, arch, power strip and electrical overlay paint bottom to top');
+  assert.ok(glyphs.indexOf('tv:electrical-overlay') > glyphs.indexOf('arch'), 'Wall-mounted electrical overlays also stay on top');
   const pdf = await PDFDocument.load(Uint8Array.from(result.bytes));
   assert.equal(pdf.getPage(0).node.Resources().lookupMaybe(PDFName.of('XObject'), PDFDict)?.entries().length || 0, 0);
   const transparency = pdf.getPage(0).node.Resources().lookupMaybe(PDFName.of('ExtGState'), PDFDict);
