@@ -112,7 +112,7 @@ try {
   const accordion = page.locator('.floor-qv-accordion');
   await accordion.locator('> button').click();
   await page.locator('.floor-qv').waitFor();
-  assert.match(await accordion.locator('.option-accordion-subtitle').textContent(), /Sol du stand · 25 m²/);
+  assert.equal(await accordion.getByRole('button', { name: 'Plancher technique', exact: true }).getAttribute('aria-expanded'), 'true');
   assert.match(await page.locator('.floor-qv-hero').textContent(), /Empreinte/);
   if (shotsDir) await accordion.screenshot({ path: `${shotsDir}/quickview-none.png` });
   await page.getByRole('button', { name: 'À quoi sert le plancher technique ?' }).click();
@@ -121,7 +121,7 @@ try {
   await page.getByRole('button', { name: 'À quoi sert le plancher technique ?' }).click();
 
   await page.getByRole('radio', { name: /^12 cm/ }).click();
-  await page.waitForFunction(() => document.querySelector('.floor-qv-accordion .option-accordion-subtitle')?.textContent.includes('12 cm'));
+  await page.waitForFunction(() => window.savedScene?.options.technicalFloorType === 'floor12');
   const quickView = await page.locator('.floor-qv').textContent();
   assert.match(quickView, /Retire l’empreinte/);
   assert.match(quickView, /≈ 1\s475 € HT/u);

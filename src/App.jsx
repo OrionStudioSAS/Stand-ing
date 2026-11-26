@@ -20,7 +20,7 @@ import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Canvas, events as createSceneEvents, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { Html, OrbitControls, Text } from '@react-three/drei';
-import { AmbientLight, Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DirectionalLight, DoubleSide, Float32BufferAttribute, HemisphereLight, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, MOUSE, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Plane, RepeatWrapping, SRGBColorSpace, Scene, TOUCH, Vector3, WebGLRenderer } from 'three';
+import { AmbientLight, Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DirectionalLight, DoubleSide, ExtrudeGeometry, Float32BufferAttribute, FrontSide, HemisphereLight, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, MOUSE, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Plane, RepeatWrapping, SRGBColorSpace, Scene, Shape, TOUCH, Vector2, Vector3, WebGLRenderer } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -4199,7 +4199,6 @@ function ConfiguratorNavbar({
   );
 }
 
-// "Ajouter un collaborateur sur le stand" + "Sur ce stand", backed by the existing scene-collaborators service (2 guests max).
 function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '', viewerIsOwner = false, onToast, children = null }) {
   const tr = useUiText();
   const language = useContext(LanguageContext);
@@ -4218,10 +4217,11 @@ function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '
   }, [sceneId]);
   useEffect(() => { if (inviteOpen) inputRef.current?.focus(); }, [inviteOpen]);
 
+  const full = (members?.length || 0) >= 3;
   const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const invite = async (event) => {
     event.preventDefault();
-    if (busy || !validEmail) return;
+    if (busy || full || !validEmail) return;
     setBusy(true);
     setError('');
     try {
@@ -4250,7 +4250,6 @@ function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '
       setBusy(false);
     }
   };
-  const full = (members?.length || 0) >= 2;
   const memberStatus = (member) => (member.accepted_at ? 'Accès actif' : Date.parse(member.expires_at) < Date.now() ? 'Invitation expirée' : 'En attente');
 
   return (
@@ -4272,7 +4271,7 @@ function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '
           )}
         </>
       )}
-      {full && <p className="invite-note">{tr('Deux collaborateurs maximum par scène.')}</p>}
+      {full && <p className="invite-note">{tr('Trois collaborateurs maximum par scène.')}</p>}
       {error && <p className="invite-note form-error" role="alert">{tr(error)}</p>}
       {children}
       <hr />

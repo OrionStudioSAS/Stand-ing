@@ -143,7 +143,7 @@ try {
   const dialog = owner.getByRole('region', { name: 'Ajouter des collaborateurs' });
   await dialog.waitFor();
   assert.ok(await owner.getByRole('dialog', { name: 'Mon profil' }).isVisible(), 'Collaborators are managed from the profile panel');
-  for (const email of ['guest@example.test', 'second@example.test']) {
+  for (const email of ['guest@example.test', 'second@example.test', 'third@example.test']) {
     await dialog.getByRole('button', { name: /Ajouter un collaborateur sur le stand/ }).click();
     await dialog.getByRole('textbox', { name: 'E-mail du collaborateur' }).fill(email);
     await dialog.getByRole('button', { name: 'Inviter', exact: true }).click();
@@ -151,6 +151,7 @@ try {
   }
   await dialog.getByText('Trois collaborateurs maximum par scène.').waitFor();
   assert.equal(await dialog.getByRole('textbox').count(), 0);
+  assert.equal(await dialog.getByRole('button', { name: /Ajouter un collaborateur sur le stand/ }).count(), 0);
   await dialog.getByRole('button', { name: 'Retirer l’accès : second@example.test' }).click();
   await owner.getByText('Accès retiré.', { exact: true }).waitFor();
   assert.equal(await dialog.getByRole('button', { name: /Ajouter un collaborateur sur le stand/ }).count(), 1);
