@@ -7,7 +7,7 @@ export const navbarEnglishUi = {
   'Copier': 'Copy', 'E-mail': 'Email', 'Modifier coordonnées, société, facturation': 'Edit contact details, company, billing',
   'Ajouter un collaborateur sur le stand': 'Add a collaborator to the stand', 'Il pourra voir et modifier ce stand': 'They will be able to view and edit this stand',
   'E-mail du collaborateur': 'Collaborator email', 'Inviter': 'Invite', 'Sur ce stand': 'On this stand', 'Exposant': 'Exhibitor', 'Vous': 'You',
-  'Invitation envoyée': 'Invitation sent', 'En attente': 'Pending', 'Question ou remarque': 'Question or comment', 'Message envoyé': 'Message sent',
+  'Invitation envoyée': 'Invitation sent', 'En attente': 'Pending', 'Envoi…': 'Sending…', 'Envoi de l’invitation…': 'Sending invitation…', 'Question ou remarque': 'Question or comment', 'Message envoyé': 'Message sent',
   'On vous répond par e-mail sous 24 h ouvrées.': 'We will reply by email within 24 business hours.', 'Écrire un autre message': 'Write another message',
   'Retour': 'Back', 'Rechercher : visuel, livraison, devis…': 'Search: artwork, delivery, quote…',
   'Posez-nous la question, on vous répond sous 24 h ouvrées.': 'Ask us and we will reply within 24 business hours.', 'Poser ma question': 'Ask my question',

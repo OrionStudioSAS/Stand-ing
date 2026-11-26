@@ -4060,6 +4060,26 @@ function emailInitials(email = '') {
   return String(email).split('@')[0].split(/[._-]/).map((part) => part[0] || '').join('').slice(0, 2).toUpperCase();
 }
 
+// Collaborators per scene. The list comes from an edge function (often a cold
+// start), so it is prefetched with the navbar and kept between profile-panel
+// openings instead of being refetched each time the panel mounts.
+const sceneCollaboratorsCache = new Map();
+const sceneCollaboratorsRequests = new Map();
+
+function loadSceneCollaborators(sceneId) {
+  if (!sceneId) return Promise.resolve([]);
+  if (sceneCollaboratorsRequests.has(sceneId)) return sceneCollaboratorsRequests.get(sceneId);
+  const request = manageSceneCollaborators(sceneId, 'list')
+    .then((result) => {
+      const members = result?.members || [];
+      sceneCollaboratorsCache.set(sceneId, members);
+      return members;
+    })
+    .finally(() => sceneCollaboratorsRequests.delete(sceneId));
+  sceneCollaboratorsRequests.set(sceneId, request);
+  return request;
+}
+
 // Top bar of the configurator, as in the navbar mock-up: project, steps, phone help, questions, language, profile, cart.
 function ConfiguratorNavbar({
   language, selectedLanguage, onLanguage, panel, setPanel, project, activeStep, onStep, readOnly,
@@ -4073,6 +4093,11 @@ function ConfiguratorNavbar({
   const [toastNode, showToast] = useNavToast();
   const dropdownOpen = ['help', 'question', 'language', 'profile'].includes(panel);
   const toggle = (id) => setPanel((current) => (current === id ? null : id));
+
+  // Warm the collaborators list before the profile panel is opened.
+  useEffect(() => {
+    if (canManageCollaborators && sceneId) loadSceneCollaborators(sceneId).catch(() => {});
+  }, [canManageCollaborators, sceneId]);
 
   useEffect(() => {
     if (!dropdownOpen) return undefined;
@@ -4240,7 +4265,16 @@ function ConfiguratorNavbar({
 function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '', viewerIsOwner = false, onToast, children = null }) {
   const tr = useUiText();
   const language = useContext(LanguageContext);
-  const [members, setMembers] = useState(null);
+  const [members, setMembersState] = useState(() => sceneCollaboratorsCache.get(sceneId) || null);
+  const editedRef = useRef(false);
+  const setMembers = useCallback((update) => {
+    editedRef.current = true;
+    setMembersState((current) => {
+      const next = typeof update === 'function' ? update(current) : update;
+      sceneCollaboratorsCache.set(sceneId, next);
+      return next;
+    });
+  }, [sceneId]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
@@ -4248,9 +4282,11 @@ function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '
   const inputRef = useRef(null);
   useEffect(() => {
     let active = true;
-    manageSceneCollaborators(sceneId, 'list')
-      .then((result) => { if (active) setMembers(result.members || []); })
-      .catch((err) => { if (active) setError(err.message); });
+    // Cached members show instantly; this refresh catches accepted invitations.
+    loadSceneCollaborators(sceneId)
+      // A list fetched before a local invite/removal would undo it: keep local.
+      .then((list) => { if (active && !editedRef.current) setMembersState(list); })
+      .catch((err) => { if (active && !sceneCollaboratorsCache.has(sceneId)) setError(err.message); });
     return () => { active = false; };
   }, [sceneId]);
   useEffect(() => { if (inviteOpen) inputRef.current?.focus(); }, [inviteOpen]);
@@ -4262,13 +4298,20 @@ function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '
     if (busy || full || !validEmail) return;
     setBusy(true);
     setError('');
+    const invitedEmail = email.trim();
+    // Show the invitee at once: the server only answers after the e-mail is sent.
+    const pendingId = `pending-${Date.now()}`;
+    setMembers((current) => [...(current || []), { id: pendingId, email: invitedEmail.toLowerCase(), accepted_at: null, expires_at: null, sending: true }]);
+    setEmail('');
+    setInviteOpen(false);
     try {
-      const result = await manageSceneCollaborators(sceneId, 'invite', { email: email.trim(), language });
-      setMembers((current) => [...(current || []), result.member]);
-      onToast?.(tr(`Invitation envoyée à ${email.trim()}`));
-      setEmail('');
-      setInviteOpen(false);
+      const result = await manageSceneCollaborators(sceneId, 'invite', { email: invitedEmail, language });
+      setMembers((current) => (current || []).map((entry) => (entry.id === pendingId ? result.member : entry)));
+      onToast?.(tr(`Invitation envoyée à ${invitedEmail}`));
     } catch (err) {
+      setMembers((current) => (current || []).filter((entry) => entry.id !== pendingId));
+      setEmail(invitedEmail);
+      setInviteOpen(true);
       setError(err.message);
     } finally {
       setBusy(false);
@@ -4288,11 +4331,11 @@ function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '
       setBusy(false);
     }
   };
-  const memberStatus = (member) => (member.accepted_at ? 'Accès actif' : Date.parse(member.expires_at) < Date.now() ? 'Invitation expirée' : 'En attente');
+  const memberStatus = (member) => (member.sending ? 'Envoi…' : member.accepted_at ? 'Accès actif' : Date.parse(member.expires_at) < Date.now() ? 'Invitation expirée' : 'En attente');
 
   return (
     <section aria-label={tr('Ajouter des collaborateurs')}>
-      {members && !full && (
+      {!full && (
         <>
           <button type="button" className="item" aria-expanded={inviteOpen} onClick={() => setInviteOpen((open) => !open)}>
             <NavIcon name="invite" />
@@ -4324,9 +4367,9 @@ function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '
         {(members || []).map((member) => (
           <div className="member" key={member.id}>
             <span className="avatar sm alt">{emailInitials(member.email)}</span>
-            <span><b>{member.email}</b><span>{tr(member.accepted_at ? 'Accès actif' : 'Invitation envoyée')}</span></span>
+            <span><b>{member.email}</b><span>{tr(member.sending ? 'Envoi de l’invitation…' : member.accepted_at ? 'Accès actif' : 'Invitation envoyée')}</span></span>
             <em className={member.accepted_at ? '' : 'pending'}>{tr(memberStatus(member))}</em>
-            <button type="button" className="member-rm" disabled={busy} onClick={() => remove(member)} aria-label={`${tr('Retirer l’accès')} : ${member.email}`}>
+            <button type="button" className="member-rm" disabled={busy || member.sending} onClick={() => remove(member)} aria-label={`${tr('Retirer l’accès')} : ${member.email}`}>
               <NavIcon name="close" size={14} stroke={2.6} />
             </button>
           </div>
