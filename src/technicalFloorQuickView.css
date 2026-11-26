@@ -166,10 +166,25 @@
 
 .floor-qv-option-title {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 4px 7px;
+  gap: 7px;
+  min-width: 0;
 }
+
+/* The height stays whole and the footprint tag stays on the same line,
+   whatever the height label width (4 cm / 12 cm); a narrow card trims the tag. */
+.floor-qv-option-title > strong { flex: none; }
+
+.floor-qv-option-title > .floor-qv-removes,
+.floor-qv-option-title > .floor-qv-keeps {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.floor-qv-option-title > .floor-qv-removes svg,
+.floor-qv-option-title > .floor-qv-keeps svg { flex: none; }
 
 .floor-qv-option-copy strong {
   color: #252b35;
