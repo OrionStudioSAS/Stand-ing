@@ -1,0 +1,390 @@
+/* Spots LED quick-view v3 — editable rail composition */
+.led-option-card.led-rail-editor {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 14px 14px;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+}
+
+.led-rail-editor .led-rail-summary {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #dce5ef;
+  border-radius: 9px;
+  padding: 11px 12px 10px;
+  background: linear-gradient(180deg, #f7faff, #fff);
+}
+
+.led-rail-editor .led-rail-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.led-rail-editor .led-rail-summary-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  color: #1c2f55;
+}
+
+.led-rail-editor .led-rail-summary-count strong {
+  font-size: 1.45rem;
+  font-weight: 950;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.led-rail-editor .led-rail-summary-count span {
+  color: #5f6b7d;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.led-rail-editor .led-rail-summary-badge {
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #17824b;
+  background: #e3f5ea;
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.led-rail-editor .led-rail-gauge {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 3px;
+}
+
+.led-rail-editor .led-rail-gauge span {
+  height: 6px;
+  border-radius: 3px;
+  background: #e6ebf2;
+  transition: background-color 0.2s ease;
+}
+
+.led-rail-editor .led-rail-gauge span.on {
+  background: #f4b000;
+  box-shadow: 0 0 6px rgba(244, 176, 0, 0.45);
+}
+
+.led-rail-editor .led-rail-summary-note {
+  color: #5f6b7d;
+  font-size: 0.7rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.led-rail-editor .led-rail-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.led-rail-editor .led-rail-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  padding: 6px 6px 6px 8px;
+  background: #fff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.led-rail-editor .led-rail-row:hover {
+  border-color: #b9c9e2;
+  box-shadow: 0 2px 8px rgba(28, 47, 85, 0.06);
+}
+
+.led-rail-editor .led-rail-visual {
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  place-items: center;
+  width: 64px;
+  height: 36px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: radial-gradient(ellipse at 50% 40%, #ffffff 0%, #eef2f7 75%);
+}
+
+.led-rail-editor .led-rail-visual img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.led-rail-editor .led-rail-visual.glyph {
+  background: #1c2f55;
+}
+
+.led-rail-editor .led-rail-visual.loading {
+  background: linear-gradient(90deg, #eef2f7 0%, #f8fafc 50%, #eef2f7 100%);
+  background-size: 200% 100%;
+  animation: led-rail-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes led-rail-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+.led-rail-editor .led-rail-glyph rect {
+  fill: #c9d3e3;
+}
+
+.led-rail-editor .led-rail-glyph path {
+  fill: rgba(255, 214, 102, 0.28);
+}
+
+.led-rail-editor .led-rail-glyph circle {
+  fill: #ffcf4a;
+}
+
+.led-rail-editor .led-rail-row-text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.led-rail-editor .led-rail-row-text strong {
+  color: #252b35;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.led-rail-editor .led-rail-row-text small {
+  overflow: hidden;
+  color: #6b7686;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.led-rail-editor .led-rail-row-size {
+  color: #3b414d;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.led-rail-editor .led-rail-segment {
+  display: inline-flex;
+  border-radius: 7px;
+  padding: 2px;
+  background: #eef2f7;
+}
+
+.led-rail-editor .led-rail-segment button {
+  min-width: 28px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  padding: 0 7px;
+  color: #5f6b7d;
+  background: transparent;
+  font-size: 0.74rem;
+  font-weight: 900;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.led-rail-editor .led-rail-segment button:not(:disabled):not(.active):hover {
+  color: #1c2f55;
+}
+
+.led-rail-editor .led-rail-segment button.active {
+  color: #fff;
+  background: #3467bd;
+  box-shadow: 0 1px 3px rgba(52, 103, 189, 0.35);
+}
+
+.led-rail-editor .led-rail-segment button:disabled:not(.active) {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.led-rail-editor .led-rail-delete {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  color: #8a94a3;
+  background: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.led-rail-editor .led-rail-delete:not(:disabled):hover,
+.led-rail-editor .led-rail-delete:focus-visible {
+  color: #e53935;
+  background: #fdecec;
+}
+
+.led-rail-editor .led-rail-add {
+  display: grid;
+  gap: 6px;
+}
+
+.led-rail-editor .led-rail-add > span {
+  color: #3b414d;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.led-rail-editor .led-rail-add > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.led-rail-editor .led-rail-add button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 34px;
+  border: 1px dashed #9db4da;
+  border-radius: 7px;
+  color: #3467bd;
+  background: #f7faff;
+  font-size: 0.75rem;
+  font-weight: 900;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.led-rail-editor .led-rail-add button:not(:disabled):hover {
+  border-style: solid;
+  border-color: #3467bd;
+  background: #eef4ff;
+}
+
+.led-rail-editor .led-rail-add button:disabled {
+  border-color: #dce5ef;
+  color: #a3adbb;
+  background: #fafbfc;
+  cursor: not-allowed;
+}
+
+.led-rail-editor .led-rail-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: #6b7686;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.led-rail-editor .led-rail-footer {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid #eef2f7;
+  padding-top: 10px;
+}
+
+.led-rail-editor .led-rail-reset,
+.led-rail-editor .led-rail-remove-all,
+.led-rail-editor .led-rail-restore {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  border-radius: 7px;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.led-rail-editor .led-rail-reset {
+  border: 1px solid #dce5ef;
+  color: #3b414d;
+  background: #fff;
+}
+
+.led-rail-editor .led-rail-reset:not(:disabled):hover {
+  border-color: #3467bd;
+  color: #3467bd;
+}
+
+.led-rail-editor .led-rail-remove-all {
+  border: 1px solid transparent;
+  color: #e53935;
+  background: transparent;
+}
+
+.led-rail-editor .led-rail-remove-all:not(:disabled):hover {
+  border-color: #f5c2c0;
+  background: #fff5f5;
+}
+
+.led-rail-editor .led-rail-restore {
+  border: 0;
+  color: #fff;
+  background: #3467bd;
+}
+
+.led-rail-editor .led-rail-restore:not(:disabled):hover {
+  background: #2a56a3;
+}
+
+.led-rail-editor .led-rail-empty {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px dashed #cbd6e6;
+  border-radius: 9px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.led-rail-editor .led-rail-empty-icon {
+  display: grid;
+  place-items: center;
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+.led-rail-editor .led-rail-empty-icon .led-rail-glyph rect { fill: #8a94a3; }
+.led-rail-editor .led-rail-empty-icon .led-rail-glyph circle { fill: #b7bfcb; }
+.led-rail-editor .led-rail-empty-icon .led-rail-glyph path { fill: transparent; }
+
+.led-rail-editor .led-rail-empty > span:last-child {
+  display: grid;
+  gap: 2px;
+}
+
+.led-rail-editor .led-rail-empty strong {
+  color: #252b35;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.led-rail-editor .led-rail-empty small {
+  color: #5f6b7d;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.led-rail-editor button:disabled {
+  cursor: not-allowed;
+}
+
+.led-rail-editor button:focus-visible {
+  outline: 2px solid #3467bd;
+  outline-offset: 2px;
+}

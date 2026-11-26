@@ -43,12 +43,6 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   AlertTriangle,
   Armchair,
-  CircleCheck,
-  Monitor,
-  Palette,
-  Send,
-  Zap,
-  Image as ImageIcon,
   ArrowRight,
   Ban,
   Blocks,
@@ -60,12 +54,14 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  CircleCheck,
   Download,
   Eye,
   FileImage,
   Globe2,
   GripVertical,
   HelpCircle,
+  Image as ImageIcon,
   Info,
   KeyRound,
   Layers,
@@ -76,15 +72,18 @@ import {
   Mail,
   MessageSquare,
   Minus,
+  Monitor,
   Move,
   Move3D,
   Orbit,
+  Palette,
   Paperclip,
   Pencil,
   Plus,
   RotateCcw,
   Ruler,
   Search,
+  Send,
   Settings2,
   ShoppingCart,
   Signpost,
@@ -113,6 +112,8 @@ import { loadTechnicalPlanEdits } from './data/technicalPlanStore.js';
 import { manageSceneCollaborators, openSceneInvitation, requestSceneInvitationLink } from './data/sceneStore.js';
 import './signatureHeadInformation.css';
 import './styles.css';
+import './ledRailEditor.css';
+import './technicalFloorQuickView.css';
 // Top bar and guided tour (kept apart from the other imports to stay independent of the reserve work).
 import './configuratorNavbar.css';
 import { GuidedTour } from './GuidedTour.jsx';
