@@ -8,6 +8,8 @@ const functions = [
   'objectWallSurfaces', 'groupObjectWallSurfaces', 'mergeObjectWallSurfaces',
   'isProtectedBoundarySurface', 'protectedObjectOutsideSide', 'safeObjectWallSide',
   'serializeObjectWallSurface', 'pickLedRailOverride',
+  'isSpotObstacleItem', 'isReserveDoorChild', 'spotRailSlot', 'spotSlotsOverlap', 'boxSpotObstacles',
+  'alignDoorSurfaces', 'spotObstacles', 'spotTargetHolding',
 ];
 
 // Real application snapping/drag adapters, with only catalog/model sizing replaced by fixtures.
@@ -18,6 +20,11 @@ const isWallItem = (item) => Boolean(item?.isWallItem);
 const isLedRailEntry = (item) => Boolean(item?.isLedSpotOption);
 const isAutomaticSpotItem = (item) => Boolean(item?.autoSpot);
 const isReserveSceneItem = (item) => Boolean(item?.autoReserve);
+const spotObstacleNormalPadding = 0.12, reserveDoorPanelInset = 0.033;
+const normalizedItemText = (item = {}) => \`\${item?.type || ''} \${item?.label || ''}\`.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase();
+const isPartitionHeadItem = (item) => normalizedItemText(item).includes('tete de cloison');
+const isSignatureArchItem = (item) => normalizedItemText(item).includes('arche');
+const isPrestigeArchItem = (item) => normalizedItemText(item).includes('arche');
 const itemCollisionEnabled = (item) => item.collisionEnabled !== false;
 const itemDefaultSize = (item) => item.dimensions.size;
 const itemGroupSize = (item) => ({ width: item.dimensions.size[0], depth: item.dimensions.size[2] });
@@ -28,7 +35,7 @@ const availableWalls = (layout) => ['back', ...(layout === 'left' || layout === 
 const wallAxisLimits = (wall, width, depth) => wall === 'back' ? { min: -width/2, max: width/2 } : { min: -depth/2 + 0.06, max: depth/2 };
 const standFloorBounds = (width, depth, layout) => ({ minX: -width/2 + (layout === 'u' || layout === 'left' ? 0.06 : 0), maxX: width/2 - (layout === 'u' || layout === 'right' ? 0.06 : 0), minZ: -depth/2 + 0.06, maxZ: depth/2 });
 function screenWorldPosition(item, width, depth, items) {
-  const surface = objectWallSurfaces(items).find((surface) => surface.id === item.wall) || item.wallSurface;
+  const surface = objectWallSurfaces(items, null, { includeDoors: isSpotWallItem(item) }).find((surface) => surface.id === item.wall) || item.wallSurface;
   if (surface) {
     const normal = surface.normalAxis + safeObjectWallSide(surface, item.x, item.wallSide) * wallMountedNormalOffset(item, true);
     return surface.orientation === 'x' ? [item.x, 2.4, normal] : [normal, 2.4, item.x];

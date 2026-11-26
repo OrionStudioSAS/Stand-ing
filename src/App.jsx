@@ -20,7 +20,7 @@ import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Canvas, events as createSceneEvents, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, MOUSE, MeshBasicMaterial, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
+import { AmbientLight, Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DirectionalLight, DoubleSide, Float32BufferAttribute, HemisphereLight, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, MOUSE, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Plane, RepeatWrapping, SRGBColorSpace, Scene, TOUCH, Vector3, WebGLRenderer } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -288,6 +288,136 @@ function _ensureGlbCacheEntry(modelUrl) {
     .catch((err) => { entry.error = err; });
   _glbLoadCache.set(modelUrl, entry);
   return entry;
+}
+
+// Still images of catalog 3D models (GLB, or OBJ + MTL) for compact UI rows: one shared
+// offscreen renderer instead of one WebGL context per row. Reuses the scene's model caches.
+const _modelSnapshotCache = new Map(); // modelUrl -> Promise<dataUrl>
+const _modelSnapshotResults = new Map(); // modelUrl -> dataUrl
+let _modelSnapshotRenderer = null;
+
+function isGltfModelUrl(url = '') {
+  return /\.(glb|gltf)(?:[?#]|$)/i.test(String(url || ''));
+}
+
+function isObjModelUrl(url = '') {
+  return /\.obj(?:[?#]|$)/i.test(String(url || ''));
+}
+
+function waitForMaterialMaps(root, timeout = 4000) {
+  const maps = [];
+  root.traverse((child) => {
+    (Array.isArray(child.material) ? child.material : [child.material]).filter(Boolean).forEach((material) => {
+      if (material.map) maps.push(material.map);
+    });
+  });
+  const loaded = (texture) => {
+    const image = texture.image;
+    return Boolean(image && (image.complete === undefined || (image.complete && (image.naturalWidth || image.width))));
+  };
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const check = () => {
+      if (maps.every(loaded) || Date.now() - started > timeout) {
+        maps.forEach((texture) => { if (loaded(texture)) texture.needsUpdate = true; });
+        resolve();
+      } else {
+        setTimeout(check, 60);
+      }
+    };
+    check();
+  });
+}
+
+async function loadSnapshotModel(visual) {
+  const modelUrl = visual?.modelUrl || '';
+  if (isGltfModelUrl(modelUrl)) {
+    const entry = _ensureGlbCacheEntry(modelUrl);
+    await entry.promise;
+    if (entry.error || !entry.result?.scene) throw entry.error || new Error('Modèle GLB vide');
+    return entry.result.scene.clone(true);
+  }
+  const item = { modelUrl, materialUrl: visual?.materialUrl || '', dimensions: visual?.dimensions || {} };
+  const materialUrl = modelMaterialUrl(item);
+  let materials = null;
+  if (materialUrl) {
+    const mtl = _ensureMtlCacheEntry(materialUrl, item);
+    await mtl.promise;
+    materials = mtl.error ? null : mtl.result;
+    if (materials) await Promise.all(collectMtlTextureUrls(materials, item, materialUrl).map((url) => preloadImage(url).catch(() => null)));
+  }
+  const obj = _ensureObjCacheEntry(modelUrl, materials);
+  await obj.promise;
+  if (obj.error || !obj.result) throw obj.error || new Error('Modèle OBJ vide');
+  const model = obj.result.clone(true);
+  await waitForMaterialMaps(model);
+  return model;
+}
+
+function modelSnapshot(visual, { width = 176, height = 96 } = {}) {
+  const modelUrl = visual?.modelUrl || '';
+  if (_modelSnapshotCache.has(modelUrl)) return _modelSnapshotCache.get(modelUrl);
+  const promise = (async () => {
+    const model = await loadSnapshotModel(visual);
+    if (!_modelSnapshotRenderer) {
+      _modelSnapshotRenderer = new WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
+      _modelSnapshotRenderer.outputColorSpace = SRGBColorSpace;
+    }
+    const renderer = _modelSnapshotRenderer;
+    renderer.setPixelRatio(2);
+    renderer.setSize(width, height, false);
+    renderer.setClearColor(0x000000, 0);
+    const scene = new Scene();
+    scene.add(model);
+    scene.add(new AmbientLight(0xffffff, 1.6));
+    scene.add(new HemisphereLight(0xffffff, 0xb8c0cc, 2.6));
+    const keyLight = new DirectionalLight(0xffffff, 3);
+    keyLight.position.set(2, 3, 4);
+    const fillLight = new DirectionalLight(0xffffff, 1.4);
+    fillLight.position.set(-3, 1, 2);
+    scene.add(keyLight, fillLight);
+    const box = new Box3().setFromObject(model);
+    const size = box.getSize(new Vector3());
+    const center = box.getCenter(new Vector3());
+    const camera = new PerspectiveCamera(26, width / height, 0.001, 1000);
+    const vertical = (camera.fov * Math.PI) / 180;
+    const horizontal = 2 * Math.atan(Math.tan(vertical / 2) * camera.aspect);
+    const distance = Math.max((size.x / 2) / Math.tan(horizontal / 2), (size.y / 2) / Math.tan(vertical / 2), 0.01) * 1.12 + size.z / 2;
+    // Wall items face +Z: three-quarter front view, slightly from above.
+    camera.position.copy(center).addScaledVector(new Vector3(0.32, 0.28, 1).normalize(), distance);
+    // Catalog models come in metres or millimetres: derive the clip planes from the framing.
+    camera.near = Math.max(distance / 1000, 1e-4);
+    camera.far = distance + size.length() * 4;
+    camera.updateProjectionMatrix();
+    camera.lookAt(center);
+    renderer.render(scene, camera);
+    const url = renderer.domElement.toDataURL('image/png');
+    _modelSnapshotResults.set(modelUrl, url);
+    return url;
+  })();
+  promise.catch(() => {});
+  _modelSnapshotCache.set(modelUrl, promise);
+  return promise;
+}
+
+function useModelSnapshot(visual) {
+  const modelUrl = visual?.modelUrl || '';
+  const usable = isGltfModelUrl(modelUrl) || isObjModelUrl(modelUrl);
+  const [state, setState] = useState({ url: '', src: '', failed: false });
+  useEffect(() => {
+    if (!usable || _modelSnapshotResults.has(modelUrl)) return undefined;
+    let live = true;
+    modelSnapshot(visual)
+      .then((src) => { if (live) setState({ url: modelUrl, src, failed: false }); })
+      .catch((error) => {
+        console.warn('Aperçu 3D indisponible', modelUrl, error);
+        if (live) setState({ url: modelUrl, src: '', failed: true });
+      });
+    return () => { live = false; };
+  }, [modelUrl, usable]);
+  const src = _modelSnapshotResults.get(modelUrl) || (state.url === modelUrl ? state.src : '');
+  const failed = state.url === modelUrl && state.failed;
+  return { src, loading: usable && !src && !failed };
 }
 
 const questionCategories = [
@@ -1184,6 +1314,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [technicalFloorRampX, setTechnicalFloorRampX] = useState(Number(initialOptions.technicalFloorRampX || 0));
   const [ledRailsEnabled, setLedRailsEnabled] = useState(initialOptions.ledRailsEnabled !== false);
   const [ledRailOverrides, setLedRailOverrides] = useState(initialOptions.ledRailOverrides || {});
+  const [ledRailPlan, setLedRailPlan] = useState(() => normalizeLedRailPlan(initialOptions.ledRailPlan));
   const [reserveItemOverrides, setReserveItemOverrides] = useState(initialOptions.reserveItemOverrides || {});
   const [signatureMeterCoverType, setSignatureMeterCoverType] = useState(initialOptions.signatureMeterCoverType || '');
   const [reserveOptionType, setReserveOptionType] = useState(initialOptions.reserveOptionType || (initialOptions.reserveUpgradeEnabled ? '__legacy__' : ''));
@@ -1417,18 +1548,66 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const autoSpotsRule = autoSpotsBaseRule;
   const automaticLedItems = useMemo(
     () => (ledRailsEnabled && !hasAutoSpotsRule(autoSpotsRule)
-      ? makeAutomaticLedRailItems(ledRailEntries, width, depth, layout, ledSpotCount)
+      ? makeAutomaticLedRailItems(ledRailEntries, width, depth, layout, ledSpotCount, ledRailPlan)
         .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout))
       : []),
-    [ledRailsEnabled, ledRailEntries, autoSpotsRule, width, depth, layout, ledSpotCount, ledRailOverrides],
+    [ledRailsEnabled, ledRailEntries, autoSpotsRule, width, depth, layout, ledSpotCount, ledRailOverrides, ledRailPlan],
   );
   const automaticSpotItems = useMemo(
     () => (ledRailsEnabled && hasAutoSpotsRule(autoSpotsRule)
-      ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...automaticReserveItems, ...manualHydratedItems])
+      ? makeAutomaticSpotItems(autoSpotsRule, availableCatalog, width, depth, layout, [...automaticReserveItems, ...manualHydratedItems], ledRailPlan)
         .map((item) => applyLedRailOverride(item, ledRailOverrides, width, depth, layout))
       : []),
-    [ledRailsEnabled, autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, manualHydratedItems, ledRailOverrides],
+    [ledRailsEnabled, autoSpotsRule, availableCatalog, width, depth, layout, automaticReserveItems, manualHydratedItems, ledRailOverrides, ledRailPlan],
   );
+  const ledRailSourceEntries = useMemo(
+    () => (hasAutoSpotsRule(autoSpotsRule) ? autoSpotsRuleEntries(autoSpotsRule, availableCatalog) : ledRailEntries),
+    [autoSpotsRule, availableCatalog, ledRailEntries],
+  );
+  const defaultLedRailSizes = useMemo(
+    () => makeLedRailPlan(ledRailSourceEntries, ledSpotCount).map((entry) => ledSpotsPerRail(entry)),
+    [ledRailSourceEntries, ledSpotCount],
+  );
+  const ledRailSizeOptions = useMemo(() => ledRailAvailableSizes(ledRailSourceEntries), [ledRailSourceEntries]);
+  const ledRailSizeVisuals = useMemo(() => Object.fromEntries(ledRailSizeOptions.map((size) => {
+    const entry = ledRailSourceEntries.find((candidate) => ledSpotsPerRail(candidate) === size) || {};
+    return [size, {
+      modelUrl: entry.modelUrl || '',
+      materialUrl: entry.materialUrl || entry.dimensions?.materialUrl || '',
+      dimensions: entry.dimensions || {},
+      thumbnailUrl: entry.thumbnailUrl || entry.thumbnail_url || '',
+      label: entry.label || '',
+    }];
+  })), [ledRailSizeOptions, ledRailSourceEntries]);
+  const ledRailSizes = ledRailPlan || defaultLedRailSizes;
+  // Included quota: 1 spot / 3 m², or the default 2/3-spot composition when it rounds above it.
+  const ledSpotCapacity = Math.max(ledSpotCount, defaultLedRailSizes.reduce((sum, size) => sum + size, 0));
+  const automaticLedRailSceneItems = useMemo(() => [...automaticLedItems, ...automaticSpotItems], [automaticLedItems, automaticSpotItems]);
+  const ledRailWalls = useMemo(() => automaticLedRailSceneItems.map((item) => item.wallSurface ? 'surface' : (item.wall || 'back')), [automaticLedRailSceneItems]);
+  const updateLedRailPlan = (nextSizes) => {
+    if (readOnly) return;
+    const next = normalizeLedRailPlan(nextSizes) || [];
+    // Rail ids follow their wall slot: re-spread every rail evenly after a composition change.
+    setLedRailOverrides({});
+    if (!next.length) {
+      setLedRailPlan(null);
+      setLedRailsEnabled(false);
+      return;
+    }
+    const total = next.reduce((sum, size) => sum + size, 0);
+    if (total > ledSpotCapacity) return;
+    const isDefault = next.length === defaultLedRailSizes.length && next.every((size, index) => size === defaultLedRailSizes[index]);
+    setLedRailPlan(isDefault ? null : next);
+    setLedRailsEnabled(true);
+  };
+  const setLedRailsEnabledFromPanel = (enabled) => {
+    if (readOnly) return;
+    if (enabled) {
+      setLedRailPlan(null);
+      setLedRailOverrides({});
+    }
+    setLedRailsEnabled(enabled);
+  };
   const actualLedSpotCount = useMemo(() => (
     ledRailsEnabled
       ? [...automaticLedItems, ...automaticSpotItems].reduce((count, item) => count + ledSpotsPerRail(findCatalogEntry(availableCatalog, item.type) || item), 0)
@@ -1443,7 +1622,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     () => wallCoverSurfaceOptions(layout, width, depth, [...manualVisibleItems, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems], { splitForCovers: true }),
     [layout, width, depth, manualVisibleItems, automaticReserveItems, automaticPartitionHeadItems],
   );
-  const sceneItems = useMemo(() => resolveSpotWallAttachments(applyElectricalClearance([...manualHydratedItems, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], width, depth, layout), width, depth, layout), [manualHydratedItems, automaticReserveItems, automaticMeterCoverItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems, width, depth, layout]);
+  const sceneItems = useMemo(() => resolveSpotWallAttachments(
+    applyElectricalClearance([...manualHydratedItems, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], width, depth, layout),
+    width, depth, layout,
+    { isIgnored: (item) => isHiddenIncludedCounterItem(item) || prestigeBaseHidden(item) || (isSignatureStand && isSignatureArchItem(item) && !signatureArchFitsDepth(item, depth)) },
+  ), [manualHydratedItems, automaticReserveItems, automaticMeterCoverItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems, width, depth, layout, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand, isSignatureStand]);
   const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)
     && (!isSignatureStand || !isSignatureArchItem(item) || signatureArchFitsDepth(item, depth))), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand, isSignatureStand, depth]);
   const displayedSceneItems = useMemo(() => archVisualUpload.previewUrl ? visibleSceneItems.map((item) =>
@@ -1451,6 +1634,30 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       ...item, options: { ...item.options, ...textureSlotPatch(item, archVisualUpload.slot, archUploadPreview(archVisualUpload)) },
     } : item) : visibleSceneItems, [visibleSceneItems, archVisualUpload]);
   const signatureArchItems = useMemo(() => visibleSceneItems.filter(isSignatureArchItem), [visibleSceneItems]);
+  // Dropping a rail onto another one swaps them: the other rail takes the dropped rail's start place.
+  const spotDragStartRef = useRef(null);
+  useEffect(() => {
+    if (draggingId) {
+      const rail = visibleSceneItems.find((item) => item.id === draggingId && isSpotWallItem(item));
+      spotDragStartRef.current = rail ? { id: rail.id, start: pickLedRailOverride(rail) } : null;
+      return;
+    }
+    const drag = spotDragStartRef.current;
+    spotDragStartRef.current = null;
+    if (!drag || readOnly) return;
+    const moved = visibleSceneItems.find((item) => item.id === drag.id);
+    if (!moved || (moved.wall === drag.start.wall && Math.abs(Number(moved.x || 0) - drag.start.x) < 0.01)) return;
+    const movedSlot = spotRailSlot(moved, visibleSceneItems, width, depth);
+    const other = visibleSceneItems.find((item) => item.id !== drag.id && isSpotWallItem(item)
+      && spotSlotsOverlap(movedSlot, spotRailSlot(item, visibleSceneItems, width, depth)));
+    if (!other) return;
+    const patch = { wall: drag.start.wall, x: drag.start.x, wallSide: drag.start.wallSide, wallSurface: drag.start.wallSurface };
+    if (isAutomaticLedRailItem(other)) {
+      setLedRailOverrides((current) => ({ ...current, [other.id]: { ...pickLedRailOverride(other), ...patch } }));
+    } else {
+      setItems((current) => current.map((item) => (item.id === other.id ? { ...item, ...patch } : item)));
+    }
+  }, [draggingId]);
   // Keep the saved arch available for a safe downgrade and preserve its uploaded artwork.
   const signatureArchItem = sceneItems.find(isSignatureArchItem) || null;
   const signatureArchBackZ = signatureArchItem ? signatureArchBackWallZ(signatureArchItem, depth) : null;
@@ -1645,6 +1852,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       ...(isSignatureStand ? { signatureLightingVersion: 1 } : {}),
       ledSpotCount,
       ledRailOverrides,
+      ledRailPlan,
       reserveOptionType: effectiveReserveOptionType,
       reserveOptions,
       reserveItemOverrides,
@@ -1736,7 +1944,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly, objectBankLoaded, sceneSaveError?.stale, confirmState.loading]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, technicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, ledRailPlan, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly, objectBankLoaded, sceneSaveError?.stale, confirmState.loading]);
 
   useEffect(() => {
     listObjectBank()
@@ -2605,7 +2813,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (readOnly || !selected) return;
     if (!canDeleteSceneItem(selected, effectiveAdminViewer)) return;
     if (isAutomaticLedRailItem(selected)) {
-      setLedRailsEnabled(false);
+      const railIndex = automaticLedRailSceneItems.findIndex((item) => item.id === selected.id);
+      if (railIndex >= 0 && ledRailSizes.length > 1) updateLedRailPlan(ledRailSizes.filter((_, index) => index !== railIndex));
+      else setLedRailsEnabled(false);
       setSelectedId(null);
       return;
     }
@@ -3127,7 +3337,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onWallCoverFraming={setWallCoverFraming}
             onTechnicalFloorType={(type) => !readOnly && handleTechnicalFloorType(type)}
             onTechnicalFloorTrimType={(type) => !readOnly && setTechnicalFloorTrimType(type)}
-            onLedRailsEnabled={(enabled) => !readOnly && setLedRailsEnabled(enabled)}
+            onLedRailsEnabled={setLedRailsEnabledFromPanel}
+            ledRailSizes={ledRailSizes}
+            ledRailSizeOptions={ledRailSizeOptions}
+            ledRailSizeVisuals={ledRailSizeVisuals}
+            ledRailWalls={ledRailWalls}
+            ledSpotCapacity={ledSpotCapacity}
+            ledRailCustomized={Boolean(ledRailPlan)}
+            onLedRailPlan={updateLedRailPlan}
             onReserveOption={(type) => { if (!readOnly) { if (type === '__none__') { removeReserve(); } else { setReserveOptionType(type); } } }}
             onReserveOptions={(patch) => !readOnly && setReserveOptions((current) => ({ ...current, ...patch }))}
             onPartitionHeadSide={(side, enabled) => !readOnly && !isSignatureStand && setPartitionHeadChoice((current) => ({ ...current, [side]: enabled }))}
@@ -5045,6 +5262,13 @@ function OptionsStepPanel({
   onTechnicalFloorType,
   onTechnicalFloorTrimType,
   onLedRailsEnabled,
+  ledRailSizes = [],
+  ledRailSizeOptions = [],
+  ledRailSizeVisuals = {},
+  ledRailWalls = [],
+  ledSpotCapacity = 0,
+  ledRailCustomized = false,
+  onLedRailPlan,
   onReserveOption,
   onReserveOptions,
   onPartitionHeadSide,
@@ -5176,8 +5400,15 @@ function OptionsStepPanel({
         <LedRailOptionCard
           enabled={ledRailsEnabled}
           spotCount={ledSpotCount}
+          capacity={ledSpotCapacity}
+          railSizes={ledRailSizes}
+          sizeOptions={ledRailSizeOptions}
+          sizeVisuals={ledRailSizeVisuals}
+          railWalls={ledRailWalls}
+          customized={ledRailCustomized}
           disabled={readOnly}
           onEnabledChange={onLedRailsEnabled}
+          onPlanChange={onLedRailPlan}
         />
       </OptionAccordion>}
       <OptionAccordion {...accordionScrollProps('reserve')} title={t('option_reserve')} icon={<ConfiguratorOptionIcon src="/icons/reserve.svg" />} open={openOptions.reserve} onToggle={() => toggleOption('reserve')}>
@@ -8311,22 +8542,155 @@ function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, 
   );
 }
 
-function LedRailOptionCard({ enabled, spotCount, disabled = false, onEnabledChange }) {
-  const t = useT();
+function LedRailGlyph({ spots = 2 }) {
+  const width = spots >= 3 ? 44 : 32;
   return (
-    <div className="led-option-card led-option-card-v2">
-      <div className="led-info-box">
-        <b>i</b>
-        <span>{t('led_count', { count: spotCount })}</span>
+    <svg className="led-rail-glyph" width={width} height="16" viewBox={`0 0 ${width} 16`} aria-hidden="true">
+      <rect x="1" y="2" width={width - 2} height="5" rx="2.5" />
+      {Array.from({ length: spots }, (_, index) => {
+        const cx = 1 + ((width - 2) * (index + 1)) / (spots + 1);
+        return <g key={index}><path d={`M${cx - 4} 15 L${cx - 2} 8 H${cx + 2} L${cx + 4} 15 Z`} /><circle cx={cx} cy="8.5" r="2.6" /></g>;
+      })}
+    </svg>
+  );
+}
+
+function LedRailVisual({ spots = 2, visual = null }) {
+  const { src, loading } = useModelSnapshot(visual);
+  const image = src || (!loading && visual?.thumbnailUrl) || '';
+  if (loading) return <span className="led-rail-visual loading" aria-hidden="true" />;
+  if (image) return <span className="led-rail-visual"><img src={image} alt={visual?.label || ''} draggable={false} /></span>;
+  return <span className="led-rail-visual glyph"><LedRailGlyph spots={spots} /></span>;
+}
+
+function LedRailOptionCard({
+  enabled,
+  spotCount,
+  capacity = 0,
+  railSizes = [],
+  sizeOptions = [],
+  sizeVisuals = {},
+  railWalls = [],
+  customized = false,
+  disabled = false,
+  onEnabledChange,
+  onPlanChange,
+}) {
+  const t = useT();
+  const cap = Math.max(Number(capacity || 0), Number(spotCount || 0));
+  const used = railSizes.reduce((sum, size) => sum + size, 0);
+  const remaining = Math.max(0, cap - used);
+  const editable = Boolean(onPlanChange) && sizeOptions.length > 0 && railSizes.length > 0;
+  const wallText = (wall) => t(wall === 'left' ? 'led_wall_left' : wall === 'right' ? 'led_wall_right' : wall === 'surface' ? 'led_wall_surface' : 'led_wall_back');
+  const setSize = (index, size) => onPlanChange?.(railSizes.map((current, railIndex) => (railIndex === index ? size : current)));
+  const removeRail = (index) => onPlanChange?.(railSizes.filter((_, railIndex) => railIndex !== index));
+  const addRail = (size) => onPlanChange?.([...railSizes, size]);
+
+  if (!enabled) {
+    return (
+      <div className="led-option-card led-rail-editor">
+        <div className="led-rail-empty">
+          <span className="led-rail-empty-icon" aria-hidden="true"><LedRailVisual spots={sizeOptions[sizeOptions.length - 1] || 3} visual={sizeVisuals[sizeOptions[sizeOptions.length - 1]]} /></span>
+          <span>
+            <strong>{t('led_empty_title')}</strong>
+            <small>{t('led_empty', { count: cap || spotCount })}</small>
+          </span>
+        </div>
+        <button type="button" className="led-rail-restore" disabled={disabled} onClick={() => onEnabledChange?.(true)}>
+          <Plus size={15} /> {t('led_restore')}
+        </button>
       </div>
-      <button
-        type="button"
-        className={enabled ? 'reserve-remove-button' : 'reserve-remove-button active'}
-        disabled={disabled}
-        onClick={() => onEnabledChange?.(!enabled)}
-      >
-        {enabled ? <><X size={15} /> {t('led_remove')}</> : <><Plus size={15} /> {t('led_restore')}</>}
-      </button>
+    );
+  }
+
+  return (
+    <div className="led-option-card led-rail-editor">
+      <div className="led-rail-summary">
+        <div className="led-rail-summary-head">
+          <span className="led-rail-summary-count"><strong>{used}</strong><span>/ {cap} {t('led_spots')}</span></span>
+          <span className="led-rail-summary-badge">{t('led_included')}</span>
+        </div>
+        <div className="led-rail-gauge" role="meter" aria-valuemin={0} aria-valuemax={cap} aria-valuenow={used} aria-label={t('option_led')}>
+          {Array.from({ length: cap }, (_, index) => <span key={index} className={index < used ? 'on' : ''} />)}
+        </div>
+        <small className="led-rail-summary-note">
+          {remaining > 0 ? t(remaining > 1 ? 'led_remaining' : 'led_remaining_one', { count: remaining }) : t('led_full')}
+        </small>
+      </div>
+
+      {editable ? (
+        <>
+          <ul className="led-rail-list">
+            {railSizes.map((size, index) => (
+              <li className="led-rail-row" key={`${index}-${size}`}>
+                <LedRailVisual spots={size} visual={sizeVisuals[size]} />
+                <span className="led-rail-row-text">
+                  <strong>{t('led_rail_label', { index: index + 1 })}</strong>
+                  <small>{wallText(railWalls[index])}</small>
+                </span>
+                {sizeOptions.length > 1 && (
+                  <span className="led-rail-segment" role="radiogroup" aria-label={t('led_rail_label', { index: index + 1 })}>
+                    {sizeOptions.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        role="radio"
+                        aria-checked={option === size}
+                        className={option === size ? 'active' : ''}
+                        title={t('led_size_title', { count: option })}
+                        disabled={disabled || (option !== size && option - size > remaining)}
+                        onClick={() => option !== size && setSize(index, option)}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </span>
+                )}
+                {sizeOptions.length <= 1 && <span className="led-rail-row-size">{t('led_size_title', { count: size })}</span>}
+                <button
+                  type="button"
+                  className="led-rail-delete"
+                  aria-label={t('led_remove_rail', { index: index + 1 })}
+                  title={t('led_remove_rail', { index: index + 1 })}
+                  disabled={disabled}
+                  onClick={() => removeRail(index)}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="led-rail-add">
+            <span>{t('led_add_title')}</span>
+            <div>
+              {sizeOptions.map((option) => (
+                <button key={option} type="button" disabled={disabled || option > remaining} onClick={() => addRail(option)}>
+                  <Plus size={14} /> {t('led_size_title', { count: option })}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <p className="led-rail-hint"><Move3D size={13} /> {t('led_hint')}</p>
+        </>
+      ) : (
+        <div className="led-info-box">
+          <b>i</b>
+          <span>{t('led_count', { count: spotCount })}</span>
+        </div>
+      )}
+
+      <div className="led-rail-footer">
+        {customized && (
+          <button type="button" className="led-rail-reset" disabled={disabled} onClick={() => onEnabledChange?.(true)}>
+            <RotateCcw size={13} /> {t('led_reset')}
+          </button>
+        )}
+        <button type="button" className="led-rail-remove-all" disabled={disabled} onClick={() => onEnabledChange?.(false)}>
+          <X size={14} /> {t('led_remove_all')}
+        </button>
+      </div>
     </div>
   );
 }
@@ -15675,10 +16039,11 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const ledItems = options.ledRailsEnabled === false
     ? []
     : hasAutoSpotsRule(autoSpotsRule)
-      ? makeAutomaticSpotItems(autoSpotsRule, catalogEntries, width, depth, layout, [...automaticReserveItems, ...manualItems])
+      ? makeAutomaticSpotItems(autoSpotsRule, catalogEntries, width, depth, layout, [...automaticReserveItems, ...manualItems], options.ledRailPlan)
         .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout))
-      : makeAutomaticLedRailItems(ledEntries, width, depth, layout, ledSpotCountForArea(area))
+      : makeAutomaticLedRailItems(ledEntries, width, depth, layout, ledSpotCountForArea(area), options.ledRailPlan)
         .map((item) => applyLedRailOverride(item, options.ledRailOverrides || {}, width, depth, layout));
+  const prestigeStand = isPrestigeScene(scene);
   return resolveTechnicalWallSurfaces(resolveSpotWallAttachments(applyElectricalClearance([
     ...manualItems,
     ...automaticReserveItems,
@@ -15686,14 +16051,17 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
     ...makeAutomaticPartitionHeadItems(partitionRule, partitionSides, catalogEntries, width, depth, layout, packLabel)
       .map((item) => applyPartitionHeadVisualOptions(item, options.partitionHeadVisuals || {})),
     ...ledItems,
-  ], width, depth, layout), width, depth, layout));
+  ], width, depth, layout), width, depth, layout, {
+    isIgnored: (item) => isHiddenPrestigeBaseItem(item, { isPrestigeStand: prestigeStand }),
+  }));
 }
 
 function resolveTechnicalWallSurfaces(items = []) {
   const surfaces = objectWallSurfaces(items);
+  const spotSurfaces = objectWallSurfaces(items, null, { includeDoors: true });
   return items.map((item) => {
     if (!isObjectWallId(item.wall)) return item;
-    const surface = surfaces.find((candidate) => candidate.id === item.wall) || item.wallSurface;
+    const surface = (isSpotWallItem(item) ? spotSurfaces : surfaces).find((candidate) => candidate.id === item.wall) || item.wallSurface;
     if (!surface) return item;
     return { ...item, wallSurface: serializeObjectWallSurface(surface), wallSide: safeObjectWallSide(surface, Number(item.x ?? surface.centerAxis ?? 0), item.wallSide) };
   });
@@ -18859,9 +19227,9 @@ function distributeInFreeIntervals(count, intervals) {
   return positions;
 }
 
-function makeAutomaticSpotItems(rule, catalogEntries, width, depth, layout, contextItems = []) {
+function makeAutomaticSpotItems(rule, catalogEntries, width, depth, layout, contextItems = [], customPlan = null) {
   const area = Number(width || 0) * Number(depth || 0);
-  const railPlan = makeLedRailPlan(autoSpotsRuleEntries(rule, catalogEntries), ledSpotCountForArea(area));
+  const railPlan = resolveLedRailPlan(autoSpotsRuleEntries(rule, catalogEntries), ledSpotCountForArea(area), customPlan);
   if (!railPlan.length) return [];
   const railCount = railPlan.length;
   const walls = availableWalls(layout);
@@ -18988,8 +19356,8 @@ function ledRailCenterY(entry) {
   return Number.isFinite(y) && y > 0 ? y : ledRailDefaultCenterY;
 }
 
-function makeAutomaticLedRailItems(entries, width, depth, layout, spotCount) {
-  const railPlan = makeLedRailPlan(entries, spotCount);
+function makeAutomaticLedRailItems(entries, width, depth, layout, spotCount, customPlan = null) {
+  const railPlan = resolveLedRailPlan(entries, spotCount, customPlan);
   if (!railPlan.length) return [];
   const railCount = railPlan.length;
   const walls = availableWalls(layout);
@@ -19081,6 +19449,25 @@ function makeLedRailPlan(entries, spotCount) {
   }
 
   return plan;
+}
+
+function normalizeLedRailPlan(plan) {
+  if (!Array.isArray(plan)) return null;
+  return plan.map((size) => Math.round(Number(size))).filter((size) => Number.isFinite(size) && size > 0);
+}
+
+function ledRailAvailableSizes(entries = []) {
+  const list = Array.isArray(entries) ? entries : [entries].filter(Boolean);
+  return [...new Set(list.map((entry) => ledSpotsPerRail(entry)))].sort((a, b) => a - b);
+}
+
+// A saved composition (list of 2/3-spot rails) wins over the automatic 1 spot / 3 m² plan.
+function resolveLedRailPlan(entries, spotCount, customPlan = null) {
+  const sizes = normalizeLedRailPlan(customPlan);
+  if (!sizes) return makeLedRailPlan(entries, spotCount);
+  const list = Array.isArray(entries) ? entries : [entries].filter(Boolean);
+  if (!list.length) return [];
+  return sizes.map((size) => list.find((entry) => ledSpotsPerRail(entry) === size) || list[0]);
 }
 
 function ledSpotsPerRail(entry = {}) {
@@ -19738,7 +20125,7 @@ function isSpotWallItem(item = {}) {
   return isWallItem(item) && (isLedRailEntry(item) || isAutomaticSpotItem(item));
 }
 
-function spotPlacementTargetsForItem(item, items, width, depth, layout) {
+function spotPlacementTargetsForItem(item, items, width, depth, layout, obstacles = null) {
   const halfWidth = wallItemMetrics(item, items, width, depth).width / 2;
   const halfDepth = Math.max(0.02, Number(itemGroupSize(item).depth || 0.08) / 2);
   const walls = availableWalls(layout).map(({ id }) => {
@@ -19752,24 +20139,83 @@ function spotPlacementTargetsForItem(item, items, width, depth, layout) {
   });
   return spotWallTargets({
     walls,
-    objectSurfaces: objectWallSurfaces(items, item.id).map(serializeObjectWallSurface),
+    objectSurfaces: objectWallSurfaces(items, item.id, { includeDoors: true }).map(serializeObjectWallSurface),
     reserves: items.filter(isReserveSceneItem).map((reserve) => itemHardCollisionBox(reserve, 0)).filter(Boolean),
+    obstacles: obstacles || spotObstacles(items, width, depth),
     bounds: standFloorBounds(width, depth, layout), halfWidth, halfDepth,
     nativeOffset: wallMountedNormalOffset(item), objectOffset: wallMountedNormalOffset(item, true),
   });
 }
 
-function resolveSpotWallAttachments(items = [], width, depth, layout) {
-  return items.map((item) => {
-    if (!isSpotWallItem(item)) return item;
-    const targets = spotPlacementTargetsForItem(item, items, width, depth, layout);
-    const current = targets.find((target) => target.wall === (item.wall || 'back')
-      && (!target.wallSurface || target.wallSide === safeObjectWallSide(target.wallSurface, item.x, item.wallSide))
-      && target.intervals.some(({ min, max }) => Number(item.x || 0) >= min - 0.001 && Number(item.x || 0) <= max + 0.001));
-    if (current) return { ...item, ...spotTargetPatch(current, Number(item.x || 0)) };
+const spotObstacleNormalPadding = 0.12;
+
+// Arches and partition heads occupy the top of the wall where the rails hang.
+function isSpotObstacleItem(item = {}) {
+  if (!item || isSpotWallItem(item) || isLedRailEntry(item)) return false;
+  if (normalizedItemText(item).includes('empreinte')) return false;
+  return isPartitionHeadItem(item) || isSignatureArchItem(item) || isPrestigeArchItem(item);
+}
+
+function isReserveDoorChild(child = {}) {
+  return /porte(?![-\s]*doc)|door/.test(normalizedItemText(child));
+}
+
+function spotRailSlot(item, items, width, depth) {
+  const half = wallItemMetrics(item, items, width, depth).width / 2;
+  const x = Number(item.x || 0);
+  return { wall: item.wall || 'back', wallSide: item.wallSurface ? (item.wallSide ?? null) : null, min: x - half, max: x + half };
+}
+
+function spotSlotsOverlap(a, b) {
+  return Boolean(a && b) && a.wall === b.wall && (a.wallSide ?? null) === (b.wallSide ?? null)
+    && a.min < b.max - 0.01 && a.max > b.min + 0.01;
+}
+
+function boxSpotObstacles(box, normalPadding = spotObstacleNormalPadding) {
+  if (!box) return [];
+  return [
+    { orientation: 'x', normalMin: box.minZ - normalPadding, normalMax: box.maxZ + normalPadding, min: box.minX, max: box.maxX },
+    { orientation: 'z', normalMin: box.minX - normalPadding, normalMax: box.maxX + normalPadding, min: box.minZ, max: box.maxZ },
+  ];
+}
+
+function spotObstacles(items = [], width, depth, isIgnored = () => false) {
+  return (items || []).flatMap((item) => {
+    if (!item || isIgnored(item)) return [];
+    if (!isSpotObstacleItem(item)) return [];
+    if (isWallItem(item)) return [spotRailSlot(item, items, width, depth)];
+    return boxSpotObstacles(itemHardCollisionBox(item, 0.03));
+  });
+}
+
+function spotTargetHolding(targets, item) {
+  const x = Number(item.x || 0);
+  return targets.find((target) => target.wall === (item.wall || 'back')
+    && (!target.wallSurface || target.wallSide === safeObjectWallSide(target.wallSurface, item.x, item.wallSide))
+    && target.intervals.some(({ min, max }) => x >= min - 0.001 && x <= max + 0.001)) || null;
+}
+
+// Rails stay where they are when the spot is free. A rail covered by an arch, a partition
+// head or a reserve door is moved to the closest free place, away from the other rails.
+function resolveSpotWallAttachments(items = [], width, depth, layout, { isIgnored = () => false } = {}) {
+  const fixedObstacles = spotObstacles(items, width, depth, isIgnored);
+  const firstPass = items.map((item) => {
+    if (!isSpotWallItem(item) || isIgnored(item)) return { item, placed: true, spot: false };
+    const current = spotTargetHolding(spotPlacementTargetsForItem(item, items, width, depth, layout, fixedObstacles), item);
+    return current
+      ? { item: { ...item, ...spotTargetPatch(current, Number(item.x || 0)) }, placed: true, spot: true }
+      : { item, placed: false, spot: true };
+  });
+  const placedRails = firstPass.filter((entry) => entry.spot && entry.placed).map((entry) => entry.item);
+  return firstPass.map(({ item, placed }) => {
+    if (placed) return item;
     const [x, , z] = screenWorldPosition(item, width, depth, items);
-    const closest = closestSpotWallTarget({ x, z }, targets, { preferredWall: item.wall });
-    return closest ? { ...item, ...spotTargetPatch(closest.target, closest.axis) } : item;
+    const railSlots = placedRails.map((rail) => spotRailSlot(rail, items, width, depth));
+    const free = closestSpotWallTarget({ x, z }, spotPlacementTargetsForItem(item, items, width, depth, layout, [...fixedObstacles, ...railSlots]), { preferredWall: item.wall });
+    const closest = free || closestSpotWallTarget({ x, z }, spotPlacementTargetsForItem(item, items, width, depth, layout, fixedObstacles), { preferredWall: item.wall });
+    const next = closest ? { ...item, ...spotTargetPatch(closest.target, closest.axis) } : item;
+    placedRails.push(next);
+    return next;
   });
 }
 
@@ -19815,17 +20261,18 @@ function serializeObjectWallSurface(surface) {
   } : null;
 }
 
-function objectWallSurfaces(items = [], ignoreId = null) {
+// includeDoors: reserve doors only carry LED rails, never posters, screens or wall covers.
+function objectWallSurfaces(items = [], ignoreId = null, { includeDoors = false } = {}) {
   return (items || [])
     .filter((item) => item && item.id !== ignoreId && !isWallItem(item) && itemCollisionEnabled(item))
     .flatMap((item) => {
-      if (item.isGroup && item.children?.length) return groupObjectWallSurfaces(item);
-      return wallSurfaceCandidate(item, item.id, item.x || 0, item.z || 0, item.rotation || 0);
+      if (item.isGroup && item.children?.length) return groupObjectWallSurfaces(item, { includeDoors });
+      return wallSurfaceCandidate(item, item.id, item.x || 0, item.z || 0, item.rotation || 0, { includeDoors });
     })
     .filter(Boolean);
 }
 
-function groupObjectWallSurfaces(group) {
+function groupObjectWallSurfaces(group, { includeDoors = false } = {}) {
   const groupRotation = Number(group.rotation || 0);
   const protectedBounds = isReserveSceneItem(group) ? itemHardCollisionBox(group, 0) : null;
   const surfaces = (group.children || [])
@@ -19837,12 +20284,47 @@ function groupObjectWallSurfaces(group) {
         Number(group.x || 0) + rotated.x,
         Number(group.z || 0) + rotated.z,
         groupRotation + Number(child.rotation || 0),
+        { includeDoors },
       );
-      return surface && protectedBounds ? { ...surface, protectedBounds } : surface;
+      if (!surface) return null;
+      const isDoor = isReserveDoorChild(child);
+      const size = itemDefaultSize(child);
+      const tagged = isDoor ? { ...surface, isDoor, doorDepth: Math.min(Number(size[0] || 0), Number(size[2] || 0)) } : surface;
+      return protectedBounds ? { ...tagged, protectedBounds } : tagged;
     })
     .filter(Boolean);
-  return mergeObjectWallSurfaces(group.id, surfaces)
-    .filter((surface) => !protectedBounds || isProtectedBoundarySurface(surface, protectedBounds));
+  return mergeObjectWallSurfaces(group.id, alignDoorSurfaces(surfaces, protectedBounds))
+    // The door panel sits ~22 cm inside the outline that its leaf and handle draw.
+    .filter((surface) => !protectedBounds || isProtectedBoundarySurface(surface, protectedBounds, surface.isDoor ? 0.26 : 0.14));
+}
+
+// Reserve door models (1 × 2.5 × 0.25 m) are a 6 cm partition panel with the leaf and handle
+// standing out of the reserve: the panel is 3.3 cm from the model's inner face. Above the 2 m
+// leaf only that panel remains, so a rail hangs on the panel plane, flush with the partitions.
+const reserveDoorPanelInset = 0.033;
+
+function alignDoorSurfaces(surfaces = [], bounds = null) {
+  return surfaces.map((surface) => {
+    if (!surface.isDoor) return surface;
+    let normalAxis = surface.normalAxis;
+    if (bounds) {
+      const center = surface.orientation === 'x'
+        ? (Number(bounds.minZ || 0) + Number(bounds.maxZ || 0)) / 2
+        : (Number(bounds.minX || 0) + Number(bounds.maxX || 0)) / 2;
+      const inward = surface.normalAxis >= center ? -1 : 1;
+      normalAxis += inward * Math.max(0, Number(surface.doorDepth || 0) / 2 - reserveDoorPanelInset);
+    }
+    const partition = surfaces
+      .filter((candidate) => !candidate.isDoor && candidate.orientation === surface.orientation && Math.abs(candidate.normalAxis - normalAxis) <= 0.05)
+      .sort((a, b) => Math.abs(a.normalAxis - normalAxis) - Math.abs(b.normalAxis - normalAxis))[0];
+    if (partition) normalAxis = partition.normalAxis;
+    return {
+      ...surface,
+      normalAxis,
+      centerX: surface.orientation === 'x' ? surface.centerX : normalAxis,
+      centerZ: surface.orientation === 'x' ? normalAxis : surface.centerZ,
+    };
+  });
 }
 
 function mergeObjectWallSurfaces(groupId, surfaces = []) {
@@ -19893,8 +20375,7 @@ function protectedObjectWallSideContains(surface = {}, axis = 0, side = 1) {
   return pointInsideBounds(x, z, bounds, 0.025);
 }
 
-function isProtectedBoundarySurface(surface = {}, bounds = {}) {
-  const threshold = 0.14;
+function isProtectedBoundarySurface(surface = {}, bounds = {}, threshold = 0.14) {
   const normalAxis = Number(surface.normalAxis || 0);
   if (surface.orientation === 'x') {
     return Math.abs(normalAxis - Number(bounds.minZ || 0)) <= threshold
@@ -19926,8 +20407,8 @@ function pointInsideBounds(x, z, bounds = {}, inset = 0) {
     && z < Number(bounds.maxZ || 0) - inset;
 }
 
-function wallSurfaceCandidate(item, id, centerX, centerZ, rotation = 0) {
-  if (!isObjectWallSurfaceCandidate(item)) return null;
+function wallSurfaceCandidate(item, id, centerX, centerZ, rotation = 0, { includeDoors = false } = {}) {
+  if (!isObjectWallSurfaceCandidate(item, { includeDoors })) return null;
   const size = itemDefaultSize(item);
   const width = Number(size[0] || 0.6);
   const depth = Number(size[2] || 0.06);
@@ -19952,11 +20433,13 @@ function wallSurfaceCandidate(item, id, centerX, centerZ, rotation = 0) {
   };
 }
 
-function isObjectWallSurfaceCandidate(item) {
+function isObjectWallSurfaceCandidate(item, { includeDoors = false } = {}) {
   const label = `${item?.type || ''} ${item?.label || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const size = itemDefaultSize(item);
   const looksLikePartition = Number(size[1] || 0) >= 1.8 && Math.min(Number(size[0] || 0), Number(size[2] || 0)) <= 0.18;
-  return label.includes('cloison') || looksLikePartition;
+  // Reserve doors are 25 cm deep (leaf swing + handle) but sit in the partition line.
+  const isFullHeightDoor = includeDoors && isReserveDoorChild(item) && Number(size[1] || 0) >= 1.8;
+  return label.includes('cloison') || looksLikePartition || isFullHeightDoor;
 }
 
 function rotatePoint(x, z, degrees = 0) {
@@ -19969,7 +20452,7 @@ function rotatePoint(x, z, degrees = 0) {
 
 function objectWallSurfaceForItem(item, items = []) {
   if (!isObjectWallId(item?.wall)) return null;
-  return objectWallSurfaces(items).find((surface) => surface.id === item.wall) || item.wallSurface || null;
+  return objectWallSurfaces(items, null, { includeDoors: isSpotWallItem(item) }).find((surface) => surface.id === item.wall) || item.wallSurface || null;
 }
 
 function isObjectWallId(wall) {
