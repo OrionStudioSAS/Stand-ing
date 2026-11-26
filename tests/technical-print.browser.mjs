@@ -40,6 +40,7 @@ try {
       { id: 'head', type: 'head-smcl', label: 'Tête de cloison gauche', isWallItem: true, wall: 'left', technicalHeadPlan: { x: -3.4, z: 1.2, rotation: 90, width: 1.25, depth: .11 } },
       { id: 'rail', type: 'rail', label: 'Rail LED 3 Spots', x: -1.5, wall: 'back', modelSize: [1, .15, .2] },
     );
+    items.push({ sourceOptions: {}, sourceFloor: { footprintEnabled: false, reserveFootprints: [{ x: -2.8, z: -1.1, width: 1, depth: 1 }] } });
     const input = { width: 7, depth: 3.5, layout: 'u', items, catalog, documentInfo: { title: 'Société test', salon: 'SMCL 2026', hall: '3', stand: 'A-12', aisleNumber: 'A', aisleSide: 'right' } };
     window.batInput = input;
     const svgPages = await window.exporter.createTechnicalPlanSvgPages(input);
@@ -48,17 +49,38 @@ try {
       const matrix = group.transform.baseVal.consolidate().matrix;
       return [id, [matrix.a, matrix.b, matrix.c, matrix.d]];
     }));
-    const pdf = await window.exporter.createTechnicalPlanBlob(input);
+    const svg = svgPages[0];
+    const lightning = [...svg.querySelectorAll('circle[fill="#22346e"]')].map(node => node.closest('svg'));
+    const hexCenter = Number(svg.querySelector('[data-bat-id="hex-sign"] rect').getAttribute('transform').split(' ')[4]);
+    const isLeftOfHex = Number(lightning[1]?.getAttribute('x')) + 10 < hexCenter;
+    const pdf = await window.exporter.createTechnicalPlanBlob(input, svg);
+    const customSvg = await window.exporter.createTechnicalPlanSvg({
+      ...input,
+      items: [{ id: 'custom-head', label: 'Tête de cloison Signature Gauche', x: -2, z: -1, modelSize: [.5, 2.5, .16] }, {
+        sourceOptions: { partitionHeadVisuals: { left: { textureSlotValues: {
+          'signature-head-top-28': { imageUrl: url },
+        } } } },
+        sourceHeadInformation: [{ itemId: 'custom-head', side: 'left', imageUrl: '/automatic-head.png' }],
+      }],
+    });
+    const customHeadExported = Boolean(customSvg.querySelector('linearGradient[id$="-paint"]'))
+      && !customSvg.textContent.includes('autre(s) visuel(s)');
+
     const longItems = Array.from({ length: 65 }, (_, i) => ({ ...items[i % 3], id: `long-${i}`, label: `Mobilier ${i + 1}`, options: { variantBatDescription: `DESCRIPTION-COMPLETE-${i + 1}\n${'X'.repeat(400)}\nInstruction 1\nInstruction 2\nInstruction 3\nInstruction finale ${i + 1}` } }));
     const longPages = await window.exporter.createTechnicalPlanSvgPages({ ...input, items: longItems });
     const unsafe = new XMLSerializer().serializeToString(window.svgTools.sanitizeTechnicalSvg('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(1)</script><image href="https://invalid.example/image"/><path style="fill:url(https://invalid.example/a)" d="M0 0L10 10"/></svg>'));
     const encode = (blob) => new Promise((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsDataURL(blob); });
-    return { pdf: await encode(pdf), type: pdf.type, pages: svgPages.map((svg) => new XMLSerializer().serializeToString(svg)), longPages: longPages.map((svg) => svg.textContent), orientations, unsafe };
+    return { pdf: await encode(pdf), type: pdf.type, pages: svgPages.map((svg) => new XMLSerializer().serializeToString(svg)), longPages: longPages.map((svg) => svg.textContent), orientations, unsafe, isLeftOfHex, lightningCount: lightning.length, customHeadExported };
   });
   assert.equal(result.type, 'application/pdf');
   assert.equal(result.pages.length, 1);
   assert.match(result.pages[0], /<text[^>]*transform="matrix\(0 1 -1 0 [^"]+\)"[^>]*>Allée A<\/text>/);
-  assert.equal(result.pages[0].match(/<svg/g).length, 6, 'Each original SVG is embedded inline, not as a PNG');
+  assert.equal(result.pages[0].match(/<svg/g).length, 10, 'Original pictograms, logo and lightning stay vector');
+  assert.match(result.pages[0], /<title>Stand-ING<\/title>/);
+  for (const service of ['EXPOSITION', 'ÉVÉNEMENTIEL', 'AGENCEMENT']) assert.ok(result.pages[0].includes(`>${service}</text>`));
+  assert.equal(result.lightningCount, 3);
+  assert.equal(result.isLeftOfHex, true, 'The lightning for the hexagonal sign is on the reserve side');
+  assert.equal(result.customHeadExported, true);
   assert.deepEqual(result.orientations, { reception: [1, 0, 0, 1], tv: [1, 0, 0, 1] });
   const spans = [...result.pages[0].matchAll(/data-bat-text-role="rigging-span"[^>]*>(\d+)<\/text>/g)].map(match => match[1]);
   assert.deepEqual(spans, ['2000', '700', '1000']);
@@ -69,13 +91,15 @@ try {
   assert.doesNotMatch(result.pages[0], />Rail LED 3 Spots<|>TV 43[^<]*<|fill="#ffffff"[^>]*font-size="17"/);
   assert.match(result.pages[0], />CLOISON(?: TRAD)?</);
   assert.doesNotMatch(result.pages[0], /<image/);
-  assert.match(result.pages[0], /picto-1-paint/);
-  assert.match(result.pages[0], /#picto-1 \.edge/);
-  assert.match(result.pages[0], /url\(["']?#picto-1-paint["']?\)/);
+  assert.match(result.pages[0], /picto-\d+-paint/);
+  assert.match(result.pages[0], /#picto-\d+ \.edge/);
+  assert.match(result.pages[0], /url\(["']?#picto-\d+-paint["']?\)/);
   assert.doesNotMatch(result.unsafe, /onload|<script|https:\/\//);
   assert.equal(result.longPages.length, 1);
   assert.doesNotMatch(result.longPages[0], /Instruction finale 65|DESCRIPTION-COMPLETE-65/);
-  const pdf = await PDFDocument.load(Buffer.from(result.pdf.split(',')[1], 'base64'));
+  const pdfBytes = Buffer.from(result.pdf.split(',')[1], 'base64');
+  if (process.env.BAT_TEST_PDF) await writeFile(process.env.BAT_TEST_PDF, pdfBytes);
+  const pdf = await PDFDocument.load(pdfBytes);
   assert.equal(pdf.getPageCount(), 1);
   for (const pdfPage of pdf.getPages()) {
     assert.ok(Math.abs(pdfPage.getWidth() - 420 * 72 / 25.4) < 0.02);

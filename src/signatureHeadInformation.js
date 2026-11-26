@@ -1,5 +1,6 @@
 // Signature artwork: 500 × 350 mm, matching the supplied TDC template.
 export const signatureHeadCanvasSize = { width: 1400, height: 980 };
+export const signatureHeadTopArtworkSlotId = 'signature-head-top-28';
 export function signatureHeadSide(item = {}) {
   const side = item.options?.partitionHeadSide || item.dimensions?.smclHeadSide;
   if (side === 'left' || side === 'right') return side;

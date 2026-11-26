@@ -1,7 +1,8 @@
 import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, recolorPixelData, sampleImageColor } from './imageColorReplacement.js';
 import { normalizeBatElectricalPicto, normalizeBatElectricalPictos, electricalPictoPoint } from './batElectricalPicto.js';
 import { includedCounterPowerItems } from './includedCounterPower.js';
-import { technicalSignRigging } from './technicalRigging.js';
+import { technicalRiggingPowerEnd, technicalSignRigging } from './technicalRigging.js';
+import { signatureHeadTopArtworkSlotId } from './signatureHeadInformation.js';
 import { isSignatureLedArch } from './signatureArchVariants.js';
 import { createTechnicalSvgContext, sanitizeTechnicalSvg, tintTechnicalSvgFill } from './technicalSvgContext.js';
 import { technicalA3, wrapTechnicalPrintText } from './technicalPrintLayout.js';
@@ -42,6 +43,8 @@ const technicalTableY = 1040;
 // A 2.75x backing canvas produces roughly 300 dpi on an A3 landscape print
 // while preserving the existing logical layout dimensions.
 const technicalRenderScale = 2.75;
+const batBrandImage = '/bat/stand-ing-logo.svg';
+const batSignPowerImage = '/bat/eclair-enseigne-haute.svg';
 
 // Legacy raster preview only; downloads and email attachments use the A3 PDF.
 export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog, technicalItems: providedTechnicalItems = null, pictoImages = new Map(), documentInfo = {} }) {
@@ -92,8 +95,18 @@ export async function createTechnicalPlanSvg({ width, depth, layout, items, cata
   const technicalItems = technicalItemsForPlan(items, width, depth, catalog);
   const floor = technicalFloorContext(items, catalog, depth);
   const extraItems = edits.extras.filter((item) => item.page === 0).map((extra) => ({ ...extra, dimensions: catalog.find((entry) => entry.type === extra.type)?.dimensions }));
-  const pictoImages = await loadTechnicalPictoImages([...technicalItems, ...extraItems], catalog);
   const drawable = technicalItems.filter((item) => !item?.sourceOptions);
+  const hasRigging = drawable.some((item) => {
+    const entry = catalog.find(candidate => candidate.type === item.type);
+    return !edits.items[item.id]?.hidden && isTechnicalCeilingItem(item, entry) && technicalSignRigging(item, entry);
+  });
+  const [pictoImages, brand, signPower] = await Promise.all([
+    loadTechnicalPictoImages([...technicalItems, ...extraItems], catalog),
+    loadCanvasImage(batBrandImage),
+    hasRigging ? loadCanvasImage(batSignPowerImage) : null,
+  ]);
+  if (brand) pictoImages.set(batBrandImage, brand);
+  if (signPower) pictoImages.set(batSignPowerImage, signPower);
   const sections = technicalTableSections(technicalItems, catalog);
   const visuals = technicalPlanVisuals(technicalItems, catalog, width, depth);
   const constraints = technicalItems.find((item) => item?.sourceOptions)?.sourceConstraints || [];
@@ -350,17 +363,28 @@ function drawPrintProductionSidebar(ctx, info, slots, imageMap) {
   const { x, y, width, cardHeight } = technicalFrontPage.sidebar;
   ctx.strokeStyle = technicalColors.ink; ctx.lineWidth = 1;
   line(ctx, sheet.left, sheet.margin, sheet.left, technicalA3.bottom + 18);
-  ctx.strokeRect(x, 48, width, 92);
-  wrappedProductionText(ctx, info.title || 'Stand', width - 24, 24, 'bold', 2)
-    .forEach((text, index) => drawText(ctx, text, x + width / 2, 85 + index * 28, 24, technicalColors.red, 'bold', 'center'));
-  ctx.strokeRect(x, 150, width / 2 - 4, 48);
-  ctx.strokeRect(x + width / 2 + 4, 150, width / 2 - 4, 48);
-  drawText(ctx, info.hall ? `HALL ${info.hall}` : 'HALL —', x + width / 4 - 2, 180, 19, technicalColors.red, 'bold', 'center');
-  drawText(ctx, info.stand || 'STAND —', x + width * .75 + 2, 180, 19, technicalColors.red, 'bold', 'center');
+  const infoWidth = width / 2 - 4;
+  const infoCenter = x + infoWidth / 2;
+  ctx.strokeRect(x, 48, infoWidth, 62);
+  const title = wrappedProductionText(ctx, info.title || 'Stand', infoWidth - 16, 18, 'bold', 2);
+  title.forEach((text, index) => drawText(ctx, text, infoCenter, 86 - (title.length - 1) * 10 + index * 20, 18, technicalColors.red, 'bold', 'center'));
+  ctx.strokeRect(x, 118, infoWidth, 36);
+  ctx.strokeRect(x, 162, infoWidth, 36);
+  drawText(ctx, info.hall ? `HALL ${info.hall}` : 'HALL —', infoCenter, 142, 18, technicalColors.red, 'bold', 'center');
+  drawText(ctx, info.stand || 'STAND —', infoCenter, 186, 18, technicalColors.red, 'bold', 'center');
+  const brandX = x + infoWidth + 8;
+  ctx.strokeRect(brandX, 48, infoWidth, 150);
+  const logo = imageMap.get(batBrandImage);
+  if (logo) drawContainedImage(ctx, logo, brandX + 10, 59, infoWidth - 20, 64);
+  else drawText(ctx, 'Stand-ING', brandX + 10, 108, 21, technicalColors.ink, 'bold');
+  ctx.fillStyle = technicalColors.blue;
+  ctx.fillRect(brandX + 10, 131, 17, 2);
+  ['EXPOSITION', 'ÉVÉNEMENTIEL', 'AGENCEMENT'].forEach((text, index) => {
+    drawText(ctx, text, brandX + 10, 151 + index * 15, 13, '#555555', 'bold');
+  });
   ctx.strokeRect(x, 208, width, 78);
-  drawText(ctx, 'Stand·ING', x + 12, 240, 27, technicalColors.ink, 'bold');
-  wrappedProductionText(ctx, info.salon || 'Salon non renseigné', width - 24, 15, 'normal', 2)
-    .forEach((text, index) => drawText(ctx, text, x + 12, 264 + index * 16, 15, '#555555'));
+  const salon = wrappedProductionText(ctx, info.salon || 'Salon non renseigné', width - 24, 17, 'bold', 2);
+  salon.forEach((text, index) => drawText(ctx, text, x + 12, 253 - (salon.length - 1) * 10 + index * 20, 17, technicalColors.ink, 'bold'));
   ctx.fillStyle = technicalColors.red;
   ctx.fillRect(x, 298, width, 38);
   drawText(ctx, info.pack ? `FORMULE ${String(info.pack).toLocaleUpperCase('fr-FR')}` : 'CONFIGURATION DU STAND', x + width / 2, 323, 19, '#ffffff', 'bold', 'center');
@@ -649,6 +673,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
       if (rigging && !edit?.hidden) riggingDimensions.push({
         ...rigging,
         offset: solidH / 2 + 18,
+        powerEnd: technicalRiggingPowerEnd(rigging.points, floor.reserveFootprints),
         points: rigging.points.map(point => ({
           x: toX(point.x) + Number(edit?.dx || 0) * technicalA3.width,
           y: toY(point.z) + Number(edit?.dy || 0) * technicalA3.height,
@@ -691,7 +716,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
   electricalDimensions.forEach(point => drawElectricalDimensions(ctx, point, planEdges, scale));
 
   drawTechnicalConstraints(ctx, constraints, scale, toX, toY);
-  riggingDimensions.forEach(rigging => drawTechnicalRigging(ctx, rigging, planEdges, scale));
+  riggingDimensions.forEach(rigging => drawTechnicalRigging(ctx, rigging, planEdges, scale, pictoImages.get(batSignPowerImage)));
   const previousRole = ctx.textRole;
   if (print) ctx.textRole = 'banner-plan-reference';
   visuals.forEach((visual) => {
@@ -735,7 +760,7 @@ function isTechnicalCeilingItem(item, entry) {
   return Boolean(item.ceilingMounted || item.dimensions?.ceilingMounted || entry?.dimensions?.ceilingMounted);
 }
 
-function drawTechnicalRigging(ctx, { points, spanMm, showMarkers, offset }, bounds, scale) {
+function drawTechnicalRigging(ctx, { points, spanMm, showMarkers, offset, powerEnd }, bounds, scale, powerImage) {
   const [a, b] = [...points].sort((a, b) => Math.abs(a.x - b.x) < 1e-6 ? b.y - a.y : a.x - b.x);
   const horizontal = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
   const edgeDistance = ({ x, y }) => horizontal
@@ -768,6 +793,13 @@ function drawTechnicalRigging(ctx, { points, spanMm, showMarkers, offset }, boun
   ctx.textRole = previousRole;
 
   if (showMarkers) points.forEach(({ x, y }) => drawTechnicalRiggingMarker(ctx, x, y));
+  if (powerImage) {
+    const end = points[powerEnd], other = points[1 - powerEnd];
+    const inward = Math.min(18, distance / 3) / distance;
+    const x = end.x + (other.x - end.x) * inward - nx * direction * 10;
+    const y = end.y + (other.y - end.y) * inward - ny * direction * 10;
+    drawContainedImage(ctx, powerImage, x - 10, y - 10, 20, 20);
+  }
 }
 
 function drawTechnicalRiggingMarker(ctx, x, y) {
@@ -1033,7 +1065,10 @@ function technicalPlanVisuals(items = [], catalog = [], width = 4, depth = 3) {
     if (item.options?.partitionHeadHidden || item.options?.prestigeHidden) return;
     const headSide = technicalHeadSide(item);
     const savedHeadVisual = marker?.sourceOptions?.partitionHeadVisuals?.[headSide];
-    if (savedHeadVisual) item = { ...item, options: { ...(item.options || {}), ...savedHeadVisual } };
+    if (savedHeadVisual) item = { ...item, options: {
+      ...(item.options || {}), ...savedHeadVisual,
+      textureSlotValues: { ...item.options?.textureSlotValues, ...savedHeadVisual.textureSlotValues },
+    } };
     const surface = objectWallSurfaceForTechnicalItem(item);
     let position = [Number(item.x || 0), Number(item.y || 0), Number(item.z || 0)];
     if (isWallItem(item)) {
@@ -1063,15 +1098,26 @@ function technicalPlanVisuals(items = [], catalog = [], width = 4, depth = 3) {
   });
   // Some older scenes keep the head artwork only in the scene-level options.
   Object.entries(marker?.sourceOptions?.partitionHeadVisuals || {}).forEach(([side, value]) => {
-    if (!['left', 'right'].includes(side) || (!value?.headMainImageUrl && !value?.headMainImageName && !value?.visualPending)) return;
-    const head = drawable.find((item) => technicalHeadSide(item) === side);
-    if (visuals.some((visual) => visual.headSide === side)) return;
+    if (!['left', 'right'].includes(side)) return;
     if (marker.sourceOptions[side === 'left' ? 'partitionHeadLeftEnabled' : 'partitionHeadRightEnabled'] === false) return;
+    const head = drawable.find((item) => technicalHeadSide(item) === side);
+    if (head?.options?.partitionHeadHidden || head?.options?.prestigeHidden) return;
     const label = `Tête de cloison ${side === 'left' ? 'gauche' : 'droite'}`;
     const pose = head?.technicalHeadPlan || head;
-    visuals.push({ label: `Visuel ${label.toLowerCase()}`, role: 'head-visual', headSide: side, placement: label, position: pose ? [pose.x || 0, 0, pose.z || 0] : [side === 'left' ? -width / 2 : width / 2, 0, depth / 2], imageUrl: validTechnicalImageUrl(value.headMainImageUrl), status: technicalVisualStatus(value.visualPending, value.headMainImageUrl, value.headMainImageName) });
+    const position = pose ? [pose.x || 0, 0, pose.z || 0] : [side === 'left' ? -width / 2 : width / 2, 0, depth / 2];
+    const upper = technicalHeadTopVisual(value, side, head?.id);
+    if (upper && !visuals.some(visual => visual.role === 'head-text' && visual.headSide === side)) {
+      visuals.push({ ...upper, position, placement: label });
+    }
+    if ((value?.headMainImageUrl || value?.headMainImageName || value?.visualPending)
+        && !visuals.some(visual => visual.role === 'head-visual' && visual.headSide === side)) {
+      visuals.push({ label: `Visuel ${label.toLowerCase()}`, role: 'head-visual', headSide: side, placement: label, position, imageUrl: validTechnicalImageUrl(value.headMainImageUrl), status: technicalVisualStatus(value.visualPending, value.headMainImageUrl, value.headMainImageName) });
+    }
   });
   (marker?.sourceHeadInformation || []).forEach((head) => {
+    if (visuals.some(visual => visual.role === 'head-text' && (
+      (visual.headSide && visual.headSide === head.side) || (visual.headItemId && visual.headItemId === head.itemId)
+    ))) return;
     const itemIndex = drawable.findIndex((item) => item.id === head.itemId || item.groupId === head.itemId);
     const pose = drawable[itemIndex]?.technicalHeadPlan;
     const headVisual = visuals.find((visual) => visual.headSide === head.side);
@@ -1199,6 +1245,8 @@ function technicalItemVisuals(item = {}, entry = {}) {
   const visuals = [];
   const label = item.label || entry.label || item.type || 'objet';
   const textureSlots = normalizeTechnicalTextureSlots(item.dimensions?.textureSlots || entry.dimensions?.textureSlots);
+  const upper = technicalHeadTopVisual(item.options, technicalHeadSide(item), item.groupId || item.id);
+  if (upper) visuals.push(upper);
   const hasCounterTextureVisual = isCounterTechnicalItem(item, entry)
     && textureSlots.some((slot) => technicalTextureSlotRequiresVisual(item, slot, item.options?.textureSlotValues?.[slot.id] || {}));
   if (!hasCounterTextureVisual && item.options?.binary3Enabled !== false && (item.options?.binary3ImageUrl || item.options?.binary3ImageName || item.options?.binary3VisualPending || isCounterTechnicalItem(item, entry))) {
@@ -1217,6 +1265,7 @@ function technicalItemVisuals(item = {}, entry = {}) {
     visuals.push({ label: `Image ${label}`, role: technicalVisualRole(item, entry), status: technicalVisualStatus(item.options?.posterVisualPending, item.options?.posterImageUrl || item.options?.posterImageName, item.options?.posterImageName), imageUrl: validTechnicalImageUrl(item.options?.posterImageUrl) });
   }
   textureSlots.forEach((slot) => {
+    if (slot.id === signatureHeadTopArtworkSlotId) return;
     const value = item.options?.textureSlotValues?.[slot.id] || {};
     if (technicalTextureSlotRequiresVisual(item, slot, value)) {
       visuals.push({
@@ -1228,6 +1277,18 @@ function technicalItemVisuals(item = {}, entry = {}) {
     }
   });
   return visuals;
+}
+
+function technicalHeadTopVisual(options, headSide, headItemId) {
+  const value = options?.textureSlotValues?.[signatureHeadTopArtworkSlotId];
+  if (value?.visualEnabled === false || (!value?.imageUrl && !value?.imageName && !value?.visualPending)) return null;
+  return {
+    role: 'head-text', headSide, headItemId,
+    label: 'Logo en partie haute',
+    format: '500 × 350 mm',
+    status: technicalVisualStatus(value.visualPending, value.imageUrl || value.imageName, value.imageName),
+    imageUrl: validTechnicalImageUrl(value.imageUrl),
+  };
 }
 
 function technicalVisualRole(item = {}, entry = {}, slot = {}) {

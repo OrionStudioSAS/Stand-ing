@@ -3,7 +3,8 @@ import { isSignatureLedArch } from '../src/signatureArchVariants.js';
 import { groupStructuralAsset } from '../src/groupPlacement.js';
 import { normalizeBatElectricalPicto, normalizeBatElectricalPictos, electricalPictoPoint } from '../src/batElectricalPicto.js';
 import { includedCounterPowerItems } from '../src/includedCounterPower.js';
-import { technicalSignRigging } from '../src/technicalRigging.js';
+import { technicalRiggingPowerEnd, technicalSignRigging } from '../src/technicalRigging.js';
+import { signatureHeadTopArtworkSlotId } from '../src/signatureHeadInformation.js';
 import { sceneHeadCountry } from '../src/equippedHeadInformation.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -37,7 +38,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ technicalA3, technicalFrontPage, layoutTechnicalVisuals, electricalWallClearance, electricalClearanceRect, applyElectricalClearance, includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor, technicalSignRigging });
+  const api = vm.createContext({ technicalA3, technicalFrontPage, layoutTechnicalVisuals, electricalWallClearance, electricalClearanceRect, applyElectricalClearance, includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor, technicalRiggingPowerEnd, technicalSignRigging, signatureHeadTopArtworkSlotId });
   Object.assign(api, { sceneFloorDepth, wallThicknessMeters: standWallThickness });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
@@ -194,6 +195,36 @@ test('the BAT draws exact rigging spans and offsets but only marks hexagonal att
   api.drawPlan(ctx, 6, 4, 'back', [hex], [], new Map(), [], [], true, { items: { sign: { hidden: true } } });
   assert.ok(!text.some(({ value }) => value === '700'));
   assert.equal(markers.length, 0);
+});
+
+test('the sign power symbol follows the end nearest the reserve, including rotated signs', () => {
+  const sign = { label: 'Enseigne haute 2 m', x: 0, z: 0 };
+  const left = { x: -2, z: -1, width: 1, depth: 2 };
+  const right = { ...left, x: 2, rotation: 90 };
+  const { points } = technicalSignRigging(sign);
+  assert.equal(technicalRiggingPowerEnd(points, [left]), 0);
+  assert.equal(technicalRiggingPowerEnd(points, [right]), 1);
+  const turned = technicalSignRigging({ ...sign, rotation: 90 });
+  assert.equal(technicalRiggingPowerEnd(turned.points, [left]), 1);
+  assert.equal(technicalRiggingPowerEnd(turned.points), 1);
+});
+
+test('a saved Signature top logo replaces only its own automatic head text on the BAT', () => {
+  const { api } = runtime();
+  const logo = 'https://storage.example/top-logo.png';
+  const left = { id: 'head-left', label: 'Tête de cloison Signature Gauche', options: { headMainImageUrl: imageUrl } };
+  const right = { id: 'head-right', label: 'Tête de cloison Signature Droite' };
+  const marker = {
+    sourceOptions: { partitionHeadVisuals: { left: { textureSlotValues: { [signatureHeadTopArtworkSlotId]: { imageUrl: logo } } } } },
+    sourceHeadInformation: [{ itemId: left.id, side: 'left', imageUrl: '/auto-left.png' }, { itemId: right.id, side: 'right', imageUrl: '/auto-right.png' }],
+  };
+  const visuals = api.technicalPlanVisuals([left, right, marker]);
+  const layout = layoutTechnicalVisuals(visuals);
+  assert.equal(layout.slots[0].primary.imageUrl, imageUrl);
+  assert.equal(layout.slots[1].primary.imageUrl, logo);
+  assert.equal(layout.slots[1].primary.format, '500 × 350 mm');
+  assert.deepEqual(layout.slots[1].visuals.map(({ imageUrl }) => imageUrl), [logo, '/auto-right.png']);
+  assert.equal(api.technicalPlanVisuals([marker]).find(visual => visual.role === 'head-text').imageUrl, logo, 'Older scene-level storage is also supported');
 });
 
 test('BAT SVG pictograms keep their transparent background and the PNG is A3-ready', () => {

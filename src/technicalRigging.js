@@ -21,3 +21,16 @@ export function technicalSignRigging(item = {}, entry = {}) {
   }));
   return { spanMm, points, showMarkers };
 }
+
+export function technicalRiggingPowerEnd(points, reserves = []) {
+  const distance = (point, reserve) => {
+    const angle = Number(reserve.rotation || 0) * Math.PI / 180;
+    const dx = point.x - reserve.x, dz = point.z - reserve.z;
+    const x = dx * Math.cos(angle) - dz * Math.sin(angle);
+    const z = dx * Math.sin(angle) + dz * Math.cos(angle);
+    return Math.hypot(Math.max(0, Math.abs(x) - reserve.width / 2), Math.max(0, Math.abs(z) - reserve.depth / 2));
+  };
+  if (!reserves.length) return points[0].z <= points[1].z + 1e-6 ? 0 : 1;
+  const closest = point => Math.min(...reserves.map(reserve => distance(point, reserve)));
+  return closest(points[0]) <= closest(points[1]) ? 0 : 1;
+}
