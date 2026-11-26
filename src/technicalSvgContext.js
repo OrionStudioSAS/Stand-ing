@@ -39,8 +39,9 @@ export function createTechnicalSvgContext(width, height) {
   };
   const ctx = {
     svg,
-    beginObject(id, kind = 'item', edit = {}, label = '') {
+    beginObject(id, kind = 'item', edit = {}, label = '', layer = '') {
       objectGroup = element('g', { 'data-bat-id': id, 'data-bat-kind': kind, 'data-bat-label': label,
+        ...(layer ? { 'data-bat-layer': layer } : {}),
         transform: `translate(${Number(edit.dx || 0) * width} ${Number(edit.dy || 0) * height})`,
         ...(edit.hidden ? { display: 'none' } : {}) });
       svg.append(objectGroup);

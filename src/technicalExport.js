@@ -624,35 +624,29 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
   drawDimension(ctx, planX - 64, sideDimensionStartY, planX - 64, sideDimensionEndY, sideDimensionLabel, 'vertical', technicalColors.blue);
 
   const electricalDimensions = [];
+  const electricalOverlays = [];
   const riggingDimensions = [];
   const annotateElectricity = (item, entry, frame, index) => {
     if (!frame) return;
+    const edit = edits.items?.[item.id] || {};
+    if (edit.hidden) return;
     const descriptor = technicalSvgPictoDescriptor(item, entry, catalog);
     const icons = descriptor?.electricalPictos || [];
-    const isElectricalObject = /electric/.test(normalizeTechnicalText(item.dimensions?.category || entry?.dimensions?.category || ''));
+    const isElectricalObject = isTechnicalElectricalItem(item, entry);
+    const overlays = [];
     (icons.length ? icons : isElectricalObject ? [null] : []).forEach(icon => {
       const point = icon?.url ? electricalPictoPoint(frame, icon) : { x: frame.x, y: frame.y };
       const overlay = icon?.url ? pictoImages.get(icon.url) : null;
-      if (overlay) {
-        const imageWidth = overlay.naturalWidth || overlay.width || 1;
-        const imageHeight = overlay.naturalHeight || overlay.height || 1;
-        ctx.save(); ctx.translate(point.x, point.y); ctx.rotate(frame.angle || 0);
-        const w = icon.size * scale, h = w * imageHeight / imageWidth;
-        drawContainedImage(ctx, overlay, -w / 2, -h / 2, w, h);
-        ctx.restore();
-      }
-      if (icon?.url || isElectricalObject) {
-        const edit = edits.items?.[item.id] || {};
-        if (!edit.hidden && electricalDimensionAllowed(item)) electricalDimensions.push({
-          x: point.x + Number(edit.dx || 0) * technicalA3.width,
-          y: point.y + Number(edit.dy || 0) * technicalA3.height, index,
-        });
-      }
+      if (overlay) overlays.push({ point, image: overlay, width: icon.size * scale });
+      if (electricalDimensionAllowed(item)) electricalDimensions.push({
+        x: point.x + Number(edit.dx || 0) * technicalA3.width,
+        y: point.y + Number(edit.dy || 0) * technicalA3.height, index,
+      });
     });
+    if (overlays.length) electricalOverlays.push({ item, edit, angle: frame.angle || 0, overlays });
   };
-  const drawFloorItem = (item, index, arch = false) => {
+  const drawFloorItem = ({ item, index, entry }, arch = false) => {
     ctx.beginObject?.(item.id, 'item', edits.items?.[item.id], item.label || item.type);
-    const entry = catalog.find((candidate) => candidate.type === item.type);
     const dims = itemDimensions(item, entry);
     const center = { x: toX(item.x), y: toY(item.z) };
     const color = item.options?.signatureArchColorHex || item.color || entry?.color || '#cccccc';
@@ -687,19 +681,8 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     annotateElectricity(item, entry, frame, index);
     ctx.endObject?.();
   };
-  const arches = [];
-  items.forEach((item, index) => {
-    if (isWallItem(item)) return;
-    if (isTechnicalArch(item)) arches.push({ item, index });
-    else drawFloorItem(item, index);
-  });
-
-  drawObjectWallReinforcements(ctx, items, scale, wallThickness, toX, toY);
-
-  items.forEach((item, index) => {
-    if (!isWallItem(item)) return;
+  const drawWallItem = ({ item, index, entry }) => {
     ctx.beginObject?.(item.id, 'item', edits.items?.[item.id], item.label || item.type);
-    const entry = catalog.find((candidate) => candidate.type === item.type);
     const dims = itemDimensions(item, entry);
     const label = print ? '' : `${index + 1}`;
     const pictoImage = technicalPictoImageForItem(item, entry, pictoImages, catalog);
@@ -708,10 +691,27 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
       : drawWallItemTop(ctx, item, width, depth, scale, wallThickness, toX, toY, label, dims, item.label || entry?.label, pictoImage);
     annotateElectricity(item, entry, frame, index);
     ctx.endObject?.();
-  });
+  };
 
-  // The translucent arches overlay the items below them, without changing their plan indices.
-  arches.forEach(({ item, index }) => drawFloorItem(item, index, true));
+  const layers = { furniture: [], wall: [], supported: [], arch: [], electrical: [] };
+  items.forEach((item, index) => {
+    const entry = catalog.find(candidate => candidate.type === item.type);
+    const layer = isTechnicalElectricalItem(item, entry) ? 'electrical'
+      : isWallItem(item) ? 'wall'
+      : isTechnicalArch(item) ? 'arch'
+      : item.surfaceHostId || (!isTechnicalCeilingItem(item, entry) && Number(item.y) > 0) ? 'supported'
+      : 'furniture';
+    layers[layer].push({ item, index, entry });
+  });
+  layers.furniture.forEach(record => drawFloorItem(record));
+  drawObjectWallReinforcements(ctx, items, scale, wallThickness, toX, toY);
+  layers.wall.forEach(drawWallItem);
+
+  // Use scene height for stacked objects without changing their saved plan indices.
+  layers.supported.sort((a, b) => Number(a.item.y || 0) - Number(b.item.y || 0))
+    .forEach(record => drawFloorItem(record));
+  layers.arch.forEach(record => drawFloorItem(record, true));
+  layers.electrical.forEach(record => isWallItem(record.item) ? drawWallItem(record) : drawFloorItem(record));
   const planEdges = { minX: planX, maxX: planX + planW, minY: planY, maxY: planY + planH };
   electricalDimensions.forEach(point => drawElectricalDimensions(ctx, point, planEdges, scale));
 
@@ -732,6 +732,19 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
   ctx.textRole = previousRole;
   const frontOverflow = floor.signature && floor.footprints?.length ? Math.max(0, depth + .5 - floorDepth) * scale : 0;
   drawPlanAisle(ctx, planX, planY, planW, planH, frontOverflow, documentInfo, print ? technicalFrontPage.gallery.y - 24 : 0);
+
+  electricalOverlays.forEach(({ item, edit, angle, overlays }) => {
+    ctx.beginObject?.(item.id, 'item', edit, item.label || item.type, 'electrical-overlay');
+    overlays.forEach(({ point, image, width }) => {
+      const height = width * (image.naturalHeight || image.height || 1) / (image.naturalWidth || image.width || 1);
+      ctx.save();
+      ctx.translate(point.x, point.y);
+      ctx.rotate(angle);
+      drawContainedImage(ctx, image, -width / 2, -height / 2, width, height);
+      ctx.restore();
+    });
+    ctx.endObject?.();
+  });
 }
 
 function drawPlanAisle(ctx, x, y, width, height, frontOverflow, { aisleSide, aisleNumber } = {}, frontBaseline = 0) {
@@ -758,6 +771,10 @@ function isTechnicalArch(item = {}) {
 
 function isTechnicalCeilingItem(item, entry) {
   return Boolean(item.ceilingMounted || item.dimensions?.ceilingMounted || entry?.dimensions?.ceilingMounted);
+}
+
+function isTechnicalElectricalItem(item, entry) {
+  return Boolean(item.autoCounterPower) || /electric/.test(normalizeTechnicalText(item.dimensions?.category || entry?.dimensions?.category || ''));
 }
 
 function drawTechnicalRigging(ctx, { points, spanMm, showMarkers, offset, powerEnd }, bounds, scale, powerImage) {
@@ -2095,6 +2112,7 @@ function flattenTechnicalItems(items, catalog) {
         },
         groupId: item.id,
         groupLabel: parentLabel,
+        surfaceHostId: child.surfaceHostId || item.surfaceHostId,
       };
     });
   });

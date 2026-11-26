@@ -6,7 +6,9 @@ import { PDFDocument, PDFName, decodePDFRawStream } from 'pdf-lib';
 
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill="none" stroke="#111" stroke-width="4" d="M10 10H90V90H10Z"/></svg>';
 const image = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-const catalog = [{ type: 'chair', label: 'Chaise test', modelSize: [0.6, 1, 0.6], dimensions: { batPictoUrl: image, batPictoPath: 'chair.svg' } }];
+const catalog = [{ type: 'chair', label: 'Chaise test', modelSize: [0.6, 1, 0.6], dimensions: {
+  batPictoUrl: image, batPictoPath: 'chair.svg', batElectricalPictos: [{ url: image, x: .5, y: .5, size: .18 }],
+} }];
 const input = { width: 5, depth: 4, layout: 'u', catalog, items: [{ ...catalog[0], id: 'original-chair', x: 0, z: 0 }], documentInfo: { title: 'BAT test', salon: 'Salon test', stand: 'B-12' } };
 const harness = `import React,{useState} from 'react';import{createRoot}from'react-dom/client';import Editor from '/src/TechnicalPlanEditor.jsx';import * as exporter from '/src/technicalExport.js';import '/src/styles.css';
 window.exporter=exporter;window.batInput=${JSON.stringify(input)};
@@ -30,11 +32,14 @@ try {
     revision: 0, edits: { annotations: [{ id: 'legacy-note', page: 1, x: .5, y: .5, text: 'Instruction sur la deuxième page' }] },
   })));
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__bat-editor-test__`);
-  const original = page.locator('.bat-editor-paper [data-bat-id="original-chair"]');
+  const original = page.locator('.bat-editor-paper [data-bat-id="original-chair"]:not([data-bat-layer])');
+  const overlay = page.locator('.bat-editor-paper [data-bat-id="original-chair"][data-bat-layer="electrical-overlay"]');
   await original.waitFor();
   const originalBox = await original.boundingBox();
   await page.mouse.move(originalBox.x + originalBox.width / 2, originalBox.y + originalBox.height / 2);
-  await page.mouse.down(); await page.mouse.move(originalBox.x + originalBox.width / 2 + 45, originalBox.y + originalBox.height / 2 + 25, { steps: 5 }); await page.mouse.up();
+  await page.mouse.down(); await page.mouse.move(originalBox.x + originalBox.width / 2 + 45, originalBox.y + originalBox.height / 2 + 25, { steps: 5 });
+  assert.equal(await overlay.getAttribute('transform'), await original.getAttribute('transform'), 'Electrical layer and object move together during the drag');
+  await page.mouse.up();
   await page.waitForFunction(() => document.querySelector('[data-bat-id="original-chair"]')?.getAttribute('transform') !== 'translate(0 0)');
   await page.getByRole('button', { name: 'Ajouter une annotation' }).click();
   await page.getByLabel("Texte de l'annotation").fill('Pose à vérifier — BAT admin');
@@ -55,6 +60,7 @@ try {
   await page.getByRole('button', { name: 'Ouvrir le BAT' }).click();
   await original.waitFor();
   assert.notEqual(await original.getAttribute('transform'), 'translate(0 0)');
+  assert.equal(await overlay.getAttribute('transform'), await original.getAttribute('transform'), 'The exported offset applies to both layers');
   const rendered = await page.evaluate(async () => {
     const saved = JSON.parse(localStorage.getItem('standing-bat-edits-editor-test'));
     const pages = await window.exporter.createTechnicalPlanSvgPages({ ...window.batInput, batEdits: saved.edits });
