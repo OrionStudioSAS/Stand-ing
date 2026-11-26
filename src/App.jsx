@@ -51,7 +51,6 @@ import {
   Image as ImageIcon,
   ArrowRight,
   Ban,
-  Armchair,
   Blocks,
   Box,
   CalendarDays,
@@ -97,7 +96,6 @@ import {
   UserPlus,
   Users,
   X,
-  Zap,
 } from 'lucide-react';
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
@@ -24840,9 +24838,16 @@ function signatureArchPaintMaterial(material, color) {
   return painted;
 }
 
-function isElectricalWhiteItem(item = {}) {
-  const text = normalizedItemText(item);
+// Only standalone power accessories get the white electrical finish. Furniture
+// that merely ships with one (e.g. "Bloc 3 étagères + multiprise") keeps its
+// own GLB materials and textures.
+function isElectricalAccessoryText(text = '') {
+  if (/etagere/.test(text)) return false;
   return text.includes('alimentation') || text.includes('multiprise') || text.includes('triplette');
+}
+
+function isElectricalWhiteItem(item = {}) {
+  return isElectricalAccessoryText(normalizedItemText(item));
 }
 
 function brightenElectricalMaterial(material) {
@@ -25529,19 +25534,19 @@ function getIcareChromeEnvironment() {
 function defaultModelColor(item) {
   const text = normalizeTextValue(`${item?.type || ''} ${item?.label || ''}`);
   if (/porte[-_ ]?doc/i.test(item?.type || item?.label || '')) return '#bfc5c8';
-  if (text.includes('alimentation') || text.includes('multiprise') || text.includes('triplette')) return '#ffffff';
+  if (isElectricalAccessoryText(text)) return '#ffffff';
   return item?.color || '#ece7da';
 }
 
 function defaultModelMetalness(item) {
   const text = normalizeTextValue(`${item?.type || ''} ${item?.label || ''}`);
-  if (text.includes('alimentation') || text.includes('multiprise') || text.includes('triplette')) return 0;
+  if (isElectricalAccessoryText(text)) return 0;
   return /porte[-_ ]?doc/i.test(item?.type || item?.label || '') ? 0.35 : 0.03;
 }
 
 function defaultModelRoughness(item) {
   const text = normalizeTextValue(`${item?.type || ''} ${item?.label || ''}`);
-  if (text.includes('alimentation') || text.includes('multiprise') || text.includes('triplette')) return 0.32;
+  if (isElectricalAccessoryText(text)) return 0.32;
   return /porte[-_ ]?doc/i.test(item?.type || item?.label || '') ? 0.42 : 0.58;
 }
 
