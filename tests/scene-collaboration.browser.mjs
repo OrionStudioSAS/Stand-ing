@@ -135,7 +135,7 @@ try {
     await confirm.click();
     await page.waitForFunction(() => window.notifiedContact === 'owner@example.test');
     assert.deepEqual(await page.evaluate(() => [window.savedScene.client_status, window.syncedStatus]), ['configured', 'configured']);
-    await page.getByText(/Votre scène est confirmée/).waitFor();
+    await page.getByText('Votre scène est confirmée. Vous pouvez encore la consulter.', { exact: true }).waitFor();
     await page.locator('.configurator-shell.readonly-mode').waitFor();
     assert.equal(await confirm.count(), 0, 'Exhibitor cannot submit a second time');
   };
@@ -145,8 +145,21 @@ try {
   assert.ok(await owner.getByRole('dialog', { name: 'Mon profil' }).isVisible(), 'Collaborators are managed from the profile panel');
   for (const email of ['guest@example.test', 'second@example.test', 'third@example.test']) {
     await dialog.getByRole('button', { name: /Ajouter un collaborateur sur le stand/ }).click();
-    await dialog.getByRole('textbox', { name: 'E-mail du collaborateur' }).fill(email);
-    await dialog.getByRole('button', { name: 'Inviter', exact: true }).click();
+    const emailField = dialog.getByRole('textbox', { name: 'E-mail du collaborateur' });
+    const invite = dialog.getByRole('button', { name: 'Inviter', exact: true });
+    const colors = () => invite.evaluate(button => {
+      const { backgroundColor, color } = getComputedStyle(button);
+      return [backgroundColor, color];
+    });
+    await emailField.fill('adresse-incomplete');
+    assert.equal(await invite.isDisabled(), true);
+    assert.deepEqual(await colors(), ['rgb(220, 232, 243)', 'rgb(74, 88, 104)']);
+    await emailField.fill(email);
+    assert.equal(await invite.isEnabled(), true);
+    assert.deepEqual(await colors(), ['rgb(4, 79, 139)', 'rgb(255, 255, 255)'], 'The enabled invitation remains visible');
+    await invite.hover();
+    assert.deepEqual(await colors(), ['rgb(3, 61, 108)', 'rgb(255, 255, 255)']);
+    await invite.click();
     await dialog.getByText(email, { exact: true }).waitFor();
   }
   await dialog.getByText('Trois collaborateurs maximum par scène.').waitFor();
