@@ -95,6 +95,7 @@ import {
   UserPlus,
   Users,
   X,
+  Zap,
 } from 'lucide-react';
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
@@ -1278,7 +1279,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [orbitControlsActive, setOrbitControlsActive] = useState(false);
   const orbitControlsRef = useRef(null);
   const [cameraControlMode, setCameraControlMode] = useState('orbit');
-  const [technicalFloorRampDragging, setTechnicalFloorRampDragging] = useState(false);
+  // Id of the ramp being dragged (null when none): kept here, not in the ramp,
+  // because a ramp remounts when it moves in/out of a Signature footprint.
+  const [technicalFloorRampDragging, setTechnicalFloorRampDragging] = useState(null);
   const [language, setLanguage] = useState(() => {
     if (initialOptions.language) return initialOptions.language;
     const mondayLang = mondayColumnTextAny(initialScene.source_payload, ['langue', 'language']);
@@ -1690,6 +1693,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   }), [width, depth, layout, selectedTechnicalFloor, effectiveTechnicalFloorTrimType, technicalFloorFootprints, technicalFloorObstacles]);
   const technicalFloorRamps = useMemo(() => normalizeTechnicalFloorRamps(technicalFloorRampsState, technicalFloorContext), [technicalFloorRampsState, technicalFloorContext]);
   const technicalFloorRampX = technicalFloorRamps.find((ramp) => ramp.edge === 'front')?.offset || 0;
+  // A ramp drag disables the camera: release it as soon as that ramp is no
+  // longer on screen (removed, floor or ramps hidden, read-only view).
+  useEffect(() => {
+    if (!technicalFloorRampDragging) return;
+    const stillDraggable = !readOnly && selectedTechnicalFloor && effectiveTechnicalFloorTrimType !== 'sloped'
+      && technicalFloorRamps.some((ramp) => ramp.id === technicalFloorRampDragging);
+    if (!stillDraggable) setTechnicalFloorRampDragging(null);
+  }, [technicalFloorRampDragging, readOnly, selectedTechnicalFloor, effectiveTechnicalFloorTrimType, technicalFloorRamps]);
   const updateTechnicalFloorRamp = useCallback((rampId, patch) => {
     setTechnicalFloorRamps((current) => {
       const base = normalizeTechnicalFloorRamps(current, technicalFloorContext);
@@ -3071,11 +3082,13 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           shadows
           onPointerUp={() => {
             if (!readOnly) setDraggingId(null);
+            setTechnicalFloorRampDragging(null);
           }}
           onPointerLeave={() => {
             if (!readOnly) {
               setDraggingId(null);
             }
+            setTechnicalFloorRampDragging(null);
           }}
         >
           <color attach="background" args={['#050506']} />
@@ -3114,6 +3127,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 onTechnicalFloorRampChange={readOnly ? undefined : updateTechnicalFloorRamp}
                 technicalFloorFootprints={technicalFloorFootprints}
                 onTechnicalFloorRampDragChange={setTechnicalFloorRampDragging}
+                technicalFloorRampDraggingId={technicalFloorRampDragging}
                 visualContext={sceneVisualContext}
                 sceneConstraints={sceneConstraints}
                 selectedToolbar={selected && !readOnly && !itemConfigModal ? (
@@ -22990,7 +23004,7 @@ function canAnimateSceneDeparture(item) {
   return shopCartItemVisible(item) && !item.autoMeterCover;
 }
 
-function StandScene({ width, depth, height, layout, animationReady = true, items, catalog = [], selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, reserveDoorColorHex = '', wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRamps = [], technicalFloorFootprints = [], onTechnicalFloorRampChange, onTechnicalFloorRampDragChange, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
+function StandScene({ width, depth, height, layout, animationReady = true, items, catalog = [], selectedId, setSelectedId, draggingId, setDraggingId, onDragMove, viewAngle, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, wallFabricColor, reserveWallFabricColor = null, reserveDoorColorHex = '', wallCovers = {}, wallCoverPreviews = {}, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRamps = [], technicalFloorFootprints = [], onTechnicalFloorRampChange, onTechnicalFloorRampDragChange, technicalFloorRampDraggingId = null, interactive = true, hoverEnabled = true, canEditLockedItems = false, visualContext = null, sceneConstraint = null, sceneConstraints = null, selectedToolbar = null }) {
   const [hoveredId, setHoveredId] = useState(null);
   const { departures, finishDeparture } = useSceneDepartures(items, canAnimateSceneDeparture);
   const dragPointerOffset = useRef({ x: 0, z: 0 });
@@ -23079,7 +23093,7 @@ function StandScene({ width, depth, height, layout, animationReady = true, items
     <group position={cameraPivot} onPointerMissed={clearSceneSelection}>
       {interactive && <DragSurface width={width} depth={depth} layout={layout} carpetFootprintEnabled={carpetFootprintEnabled} sceneOffset={cameraPivot} draggingId={draggingId} draggingItem={draggingItem} onDragPointer={dragFromPointer} onDragMove={(point) => onDragMove(applyDragPointerOffset(point, dragPointerOffset.current))} onClearHover={() => setHoveredId(null)} onDeselect={clearSceneSelection} />}
       <SceneAssembly phase="floor" ready={animationReady}>
-        <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRamps={technicalFloorRamps} technicalFloorFootprints={technicalFloorFootprints} onTechnicalFloorRampChange={onTechnicalFloorRampChange} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} interactive={interactive} sceneOffset={cameraPivot} />
+        <Floor width={width} depth={depth} layout={layout} carpetColor={carpetColor} carpetFootprintColor={carpetFootprintColor} carpetFootprintEnabled={carpetFootprintEnabled} technicalFloor={technicalFloor} technicalFloorTrimType={technicalFloorTrimType} technicalFloorRamps={technicalFloorRamps} technicalFloorFootprints={technicalFloorFootprints} onTechnicalFloorRampChange={onTechnicalFloorRampChange} onTechnicalFloorRampDragChange={onTechnicalFloorRampDragChange} technicalFloorRampDraggingId={technicalFloorRampDraggingId} interactive={interactive} sceneOffset={cameraPivot} />
         <Text position={[0, 0.018, depth / 2 - 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.15} color="#6b6458">{width}m x {depth}m</Text>
       </SceneAssembly>
       <SceneAssembly phase="walls" delay={110} ready={animationReady}>
@@ -23222,7 +23236,7 @@ function SceneConstraintColumn({ constraint }) {
   );
 }
 
-function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRamps = [], technicalFloorFootprints = [], onTechnicalFloorRampChange, onTechnicalFloorRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
+function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpetFootprintEnabled = true, technicalFloor = null, technicalFloorTrimType = 'straight', technicalFloorRamps = [], technicalFloorFootprints = [], onTechnicalFloorRampChange, onTechnicalFloorRampDragChange, technicalFloorRampDraggingId = null, interactive = true, sceneOffset = [0, 0, 0] }) {
   const footprint = rectSize(carpetFootprintBounds(width, depth, layout));
   const floorDepth = sceneFloorDepth(layout, depth);
   const floorCenterZ = sceneFloorCenterZ(layout);
@@ -23246,6 +23260,7 @@ function Floor({ width, depth, layout, carpetColor, carpetFootprintColor, carpet
             carpetColor={carpetColor}
             onRampChange={onTechnicalFloorRampChange}
             onRampDragChange={onTechnicalFloorRampDragChange}
+            draggingRampId={technicalFloorRampDraggingId}
             interactive={interactive}
             sceneOffset={[sceneOffset[0], sceneOffset[1], sceneOffset[2] - floorCenterZ]}
           />
@@ -23416,7 +23431,7 @@ function useTechnicalRampGeometry(url) {
   }, [source]);
 }
 
-function TechnicalFloorSlab({ width, depth, layout, floor, trimType, ramps = [], footprints = [], carpetColor, onRampChange, onRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
+function TechnicalFloorSlab({ width, depth, layout, floor, trimType, ramps = [], footprints = [], carpetColor, onRampChange, onRampDragChange, draggingRampId = null, interactive = true, sceneOffset = [0, 0, 0] }) {
   const height = Math.max(0.04, Number(floor?.height || 0.04));
   const sloped = trimType === 'sloped';
   const bounds = useMemo(() => technicalFloorSlabBounds(width, depth, layout, trimType), [width, depth, layout, trimType]);
@@ -23453,7 +23468,7 @@ function TechnicalFloorSlab({ width, depth, layout, floor, trimType, ramps = [],
           ramps={activeRamps}
           rampSize={rampSize}
           trimInset={sloped ? technicalSlopedTrimDepth - technicalSlopedTrimOverhang : technicalStraightTrimFlange}
-          rampProps={{ onRampChange, onRampDragChange, interactive, sceneOffset }}
+          rampProps={{ onRampChange, onRampDragChange, draggingRampId, interactive, sceneOffset }}
         />
       ))}
       {activeRamps.filter((ramp) => !technicalRampFootprint(ramp, bounds, rampSize, footprints)).map((ramp) => (
@@ -23466,6 +23481,7 @@ function TechnicalFloorSlab({ width, depth, layout, floor, trimType, ramps = [],
           carpetMaterialProps={carpetMaterialProps}
           onRampChange={onRampChange}
           onRampDragChange={onRampDragChange}
+          draggingRampId={draggingRampId}
           interactive={interactive}
           sceneOffset={sceneOffset}
         />
@@ -23576,11 +23592,32 @@ function TechnicalFloorTrims({ bounds, ramps, rampSize, height, sloped }) {
   );
 }
 
-function TechnicalFloorRamp({ ramp, ramps, bounds, size, carpetMaterialProps, onRampChange, onRampDragChange, interactive = true, sceneOffset = [0, 0, 0] }) {
+function TechnicalFloorRamp({ ramp, ramps, bounds, size, carpetMaterialProps, onRampChange, onRampDragChange, draggingRampId = null, interactive = true, sceneOffset = [0, 0, 0] }) {
   const geometry = useTechnicalRampGeometry(size.depth < 0.5 ? technicalFloorAssets.ramp4 : technicalFloorAssets.ramp12);
-  const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
   const editable = interactive && Boolean(onRampChange);
+  // Drag state lives in the app: this ramp remounts when it moves in/out of a
+  // Signature footprint, and local state would lose the drag and keep the
+  // camera locked (orbit/pan disabled) for good.
+  const dragging = editable && draggingRampId === ramp.id;
+  const onRampDragChangeRef = useRef(onRampDragChange);
+  onRampDragChangeRef.current = onRampDragChange;
+  // End the drag on any release, even off the ramp or outside the canvas.
+  useEffect(() => {
+    if (!dragging) return undefined;
+    const end = () => {
+      document.body.style.cursor = '';
+      onRampDragChangeRef.current?.(null);
+    };
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    window.addEventListener('blur', end);
+    return () => {
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      window.removeEventListener('blur', end);
+    };
+  }, [dragging]);
   if (!geometry) return null;
   const sourceWidth = Math.max(0.001, geometry.boundingBox.max.x - geometry.boundingBox.min.x);
   const sourceDepth = Math.max(0.001, geometry.boundingBox.max.z - geometry.boundingBox.min.z);
@@ -23591,12 +23628,13 @@ function TechnicalFloorRamp({ ramp, ramps, bounds, size, carpetMaterialProps, on
   const releaseDrag = (event) => {
     event?.stopPropagation?.();
     event?.target?.releasePointerCapture?.(event.pointerId);
-    setDragging(false);
-    onRampDragChange?.(false);
+    onRampDragChange?.(null);
   };
   const moveRamp = (event) => {
     if (!editable || !dragging) return;
     event.stopPropagation();
+    // A remounted ramp lost the pointer capture: take it back to keep following.
+    if (event.target?.hasPointerCapture && !event.target.hasPointerCapture(event.pointerId)) event.target.setPointerCapture?.(event.pointerId);
     const point = new Vector3();
     if (!event.ray.intersectPlane(floorPlane, point)) return;
     const x = point.x - sceneOffset[0];
@@ -23631,9 +23669,8 @@ function TechnicalFloorRamp({ ramp, ramps, bounds, size, carpetMaterialProps, on
         if (!editable) return;
         event.stopPropagation();
         event.target.setPointerCapture?.(event.pointerId);
-        setDragging(true);
         document.body.style.cursor = 'grabbing';
-        onRampDragChange?.(true);
+        onRampDragChange?.(ramp.id);
       }}
       onPointerMove={moveRamp}
       onPointerUp={(event) => { releaseDrag(event); document.body.style.cursor = hovered ? 'grab' : ''; }}

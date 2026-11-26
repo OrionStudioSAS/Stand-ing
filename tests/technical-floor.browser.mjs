@@ -170,6 +170,17 @@ try {
   for (let step = 1; step <= 12; step += 1) await page.mouse.move(from.x + (back.x - from.x) * step / 12, from.y + (back.y - from.y) * step / 12);
   await page.mouse.up();
   assert.doesNotMatch(await page.locator('.floor-qv-ramp small').first().textContent(), /gauche/);
+  // Releasing a ramp drag away from the ramp (here outside the 3D view) must
+  // hand the camera back: orbit/pan stayed locked when the release was missed.
+  const grab = await rampScreen();
+  await page.mouse.move(grab.x, grab.y);
+  await page.mouse.down();
+  await page.mouse.move(grab.x + 20, grab.y + 10);
+  await page.waitForFunction(() => document.querySelector('.dragging-canvas'), undefined, { timeout: 5000 });
+  await page.mouse.move(2, 2);
+  await page.mouse.up();
+  await page.waitForFunction(() => !document.querySelector('.dragging-canvas'), undefined, { timeout: 5000 })
+    .catch(() => { throw new Error('Camera stayed locked after a ramp drag released outside the scene'); });
 
   // 5 m aisle: four 1 m ramps fit on the front, the fifth goes to the open right side.
   for (let index = 0; index < 4; index += 1) await page.getByRole('button', { name: 'Ajouter une rampe' }).click();
@@ -238,6 +249,26 @@ try {
   assert.match(signatureView, /Empreinte conservée/);
   assert.match(signatureView, /largeur de l’empreinte/);
   assert.doesNotMatch(signatureView, /Retire l’empreinte/);
+  // Dragging the ramp off the arch footprint remounts it (footprint ramp ->
+  // standalone ramp). The camera must be unlocked once the drag is released.
+  await page.waitForFunction(() => Object.values(window.floorRampMeshes || {}).some(Boolean), undefined, { timeout: 20000 });
+  await page.waitForTimeout(1500);
+  const sigFrom = await rampScreen();
+  const sigOn = await rampScreen([-0.3, 0, sigFrom.world[2]]);
+  const sigTo = await rampScreen([1.9, 0, sigFrom.world[2]]);
+  await page.mouse.move(sigFrom.x, sigFrom.y);
+  await page.mouse.down();
+  const sweep = async (a, b) => { for (let step = 1; step <= 16; step += 1) await page.mouse.move(a.x + (b.x - a.x) * step / 16, a.y + (b.y - a.y) * step / 16); };
+  await sweep(sigFrom, sigOn);
+  await page.waitForTimeout(200);
+  const onFootprint = (await page.locator('.floor-qv-ramp small').first().textContent()) || '';
+  await sweep(sigOn, sigTo);
+  await page.mouse.up();
+  assert.doesNotMatch(onFootprint, /100 × 100/, `Ramp snapped onto the arch footprint mid-drag: ${onFootprint}`);
+  await page.waitForFunction(() => !document.querySelector('.dragging-canvas'), undefined, { timeout: 5000 })
+    .catch(() => { throw new Error('Camera stayed locked after dragging a ramp off the Signature footprint'); });
+  const sigMoved = await page.evaluate(() => Object.values(window.floorRampMeshes).find(Boolean).position.x);
+  assert.ok(sigMoved > 0.5, `Ramp followed the drag off the footprint (x=${sigMoved})`);
   if (shotsDir) {
     await page.locator('.floor-qv-hero').screenshot({ path: `${shotsDir}/signature-12.png` });
     await page.waitForTimeout(2500);
