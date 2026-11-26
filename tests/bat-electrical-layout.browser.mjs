@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
 import { PDFDocument, PDFName, PDFDict, PDFNumber } from 'pdf-lib';
@@ -7,7 +7,8 @@ import { PDFDocument, PDFName, PDFDict, PDFNumber } from 'pdf-lib';
 const fixtures = {
   '/__tv.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 20"><rect data-tv="" x="0" y="0" width="100" height="20" fill="#222"/></svg>',
   '/__electric.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle data-electric="" cx="10" cy="10" r="9" fill="#ffcc22" stroke="#111"/></svg>',
-  '/__arch.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 200"><rect data-arch="" width="100" height="200" fill="#f0f"/></svg>',
+  '/__arch.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 200"><defs><style>.paint{fill:#f0f;opacity:.5;stroke:#0b0c1d;stroke-width:2}</style></defs><rect data-arch="" class="paint" width="100" height="200"/><rect data-detail="" x="8" y="9" width="10" height="15" fill="#fcffdd"/></svg>',
+  '/bat-picto-mvryukq3.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 200"><style>.old{fill:#ad7d05;opacity:.5;stroke:#0b0c1d}</style><rect class="old" width="100" height="200"/></svg>',
   '/__counter.svg': await readFile(new URL('./fixtures/reception-counter-bat.svg', import.meta.url), 'utf8'),
 };
 const server = await createServer({ logLevel: 'error', server: { host: '127.0.0.1', port: 0 }, plugins: [{
@@ -44,7 +45,19 @@ try {
     const tvElectric = bounds(pages[0].querySelector('[data-bat-id="tv"] [data-electric]'));
     const counterElectric = bounds(pages[0].querySelector('[data-bat-id="base"] [data-electric]'));
     const archNode = pages[0].querySelector('[data-bat-id="arch"] [data-arch]');
-    const archOpacity = archNode.closest('g[opacity]')?.getAttribute('opacity');
+    const detail = pages[0].querySelector('[data-bat-id="arch"] [data-detail]');
+    const archPaint = (node) => {
+      const { fill, fillOpacity, opacity, stroke, strokeOpacity } = getComputedStyle(node);
+      return { fill, fillOpacity, opacity, stroke, strokeOpacity, groupOpacity: node.closest('g[opacity]')?.getAttribute('opacity') || '1' };
+    };
+    const variants = [{ ...arch, id: 'legacy', type: 'asset-arche-signature-2m-spot-210-mvhslqjn', x: 0, z: 0,
+      dimensions: { batPictoUrl: '/bat-picto-mvryukq3.svg' }, options: { signatureArchColorHex: '#254abc' } },
+    { ...arch, id: 'fallback', x: 1, z: 0, dimensions: {}, options: { signatureArchColorHex: '#254abc' } }];
+    const variantSvg = (await window.bat.createTechnicalPlanSvgPages({ ...input, items: variants, catalog: [] }))[0];
+    document.body.append(variantSvg);
+    const legacyPaint = archPaint(variantSvg.querySelector('[data-bat-id="legacy"] .old'));
+    const fallbackPaint = [...variantSvg.querySelectorAll('[data-bat-id="fallback"] rect')].map(archPaint);
+    variantSvg.remove();
     const archBounds = bounds(archNode);
     const chairBounds = bounds(pages[0].querySelector('[data-bat-id="chair-under-arch"] rect'));
     const dimensions = [...pages[0].querySelectorAll('text')].filter(node=>node.getAttribute('data-bat-text-role')==='electrical-dimension').map(node=>node.textContent);
@@ -56,7 +69,7 @@ try {
     noElectric[0].remove();
     const pdf = await window.bat.createTechnicalPlanBlob(input);
     return { unchanged: before === JSON.stringify(items), tvBody, tvElectric, counterElectric, withoutTvBody, glyphs, dimensions, requirements,
-      archFill: archNode.getAttribute('fill'), archOpacity, archBounds, chairBounds,
+      arch: archPaint(archNode), detail: archPaint(detail), legacyPaint, fallbackPaint, archBounds, chairBounds,
       bytes: [...new Uint8Array(await pdf.arrayBuffer())] };
   });
   assert.equal(result.unchanged, true);
@@ -68,15 +81,27 @@ try {
   assert.ok(!result.glyphs.includes('included-counter-power-shop'));
   assert.equal(result.dimensions.length, 6, 'Only floor objects and the included power strip have electrical cotations');
   assert.ok(result.dimensions.every(text => Number(text) % 50 === 0));
-  assert.equal(result.archFill, '#cc4422'); assert.equal(result.archOpacity, '0.5');
+  const coloredPaint = { fill: 'rgb(204, 68, 34)', fillOpacity: '0.5', opacity: '1', stroke: 'rgb(11, 12, 29)', strokeOpacity: '1', groupOpacity: '1' };
+  assert.deepEqual(result.arch, coloredPaint, 'A former shape opacity becomes fill opacity only');
+  assert.equal(result.detail.fill, 'rgb(252, 255, 221)');
+  assert.equal(result.detail.fillOpacity, '1');
+  assert.equal(result.detail.opacity, '1');
+  assert.equal(result.detail.groupOpacity, '1');
+  assert.deepEqual(result.legacyPaint, { ...coloredPaint, fill: 'rgb(37, 74, 188)' });
+  assert.equal(result.fallbackPaint[0].opacity, '0.5', 'The fallback fill is translucent');
+  assert.equal(result.fallbackPaint[1].opacity, '1', 'The fallback outline is opaque');
   const { archBounds: a, chairBounds: c, glyphs } = result;
   assert.ok(c.x > a.x && c.x + c.width < a.x + a.width && c.y > a.y && c.y + c.height < a.y + a.height, 'The test chair is physically under the arch');
   assert.ok(glyphs.indexOf('chair-under-arch') < glyphs.indexOf('arch') && glyphs.indexOf('tv') < glyphs.indexOf('arch'), 'Floor and wall objects paint before the translucent arch');
   const pdf = await PDFDocument.load(Uint8Array.from(result.bytes));
   assert.equal(pdf.getPage(0).node.Resources().lookupMaybe(PDFName.of('XObject'), PDFDict)?.entries().length || 0, 0);
   const transparency = pdf.getPage(0).node.Resources().lookupMaybe(PDFName.of('ExtGState'), PDFDict);
-  assert.ok(transparency?.entries().some(([, ref]) => pdf.context.lookup(ref, PDFDict).lookupMaybe(PDFName.of('ca'), PDFNumber)?.asNumber() === .5), 'The printed PDF keeps the arch at 50% opacity too');
+  assert.ok(transparency?.entries().some(([, ref]) => {
+    const state = pdf.context.lookup(ref, PDFDict);
+    return state.lookupMaybe(PDFName.of('ca'), PDFNumber)?.asNumber() === .5 && (state.lookupMaybe(PDFName.of('CA'), PDFNumber)?.asNumber() ?? 1) === 1;
+  }), 'The printed PDF keeps the fill at 50% opacity and the outline opaque');
+  if (process.env.BAT_ELECTRICAL_TEST_PDF) await writeFile(process.env.BAT_ELECTRICAL_TEST_PDF, Uint8Array.from(result.bytes));
   await page.locator('body > svg').screenshot({ path: '/tmp/standing-bat-electrical-layout.png' });
   assert.deepEqual(errors, []);
-  console.log('BAT: independent equal-size electrical glyphs outside TV/wall, unchanged primary geometry, nearest-edge 5cm cotations, centered reinforcement cutting, base-only power strip, colored 50%-opacity arch and vector A3 OK');
+  console.log('BAT: electrical overlays, nearest-edge cotations, opaque arch outlines and details, 50%-opacity arch fill over the furniture and vector A3 OK');
 } finally { await browser?.close(); await server.close(); }

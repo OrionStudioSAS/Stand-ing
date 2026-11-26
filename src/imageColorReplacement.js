@@ -51,7 +51,7 @@ export function recolorSvgMarkup(markup = '', sourceColor = '', targetColor = ''
   return String(markup || '').replace(paint, (match, prefix, color) => normalizeHexColor(color) === source ? `${prefix}${target}` : match);
 }
 
-export function recolorPixelData(data, sourceColor = '', targetColor = '', tolerance = 36) {
+export function recolorPixelData(data, sourceColor = '', targetColor = '', tolerance = 36, opacity = 1) {
   const source = hexToRgb(sourceColor);
   const target = hexToRgb(targetColor);
   if (!source || !target || !data?.length) return data;
@@ -65,6 +65,7 @@ export function recolorPixelData(data, sourceColor = '', targetColor = '', toler
       data[index] = target.r;
       data[index + 1] = target.g;
       data[index + 2] = target.b;
+      data[index + 3] = Math.round(data[index + 3] * opacity);
     }
   }
   return data;

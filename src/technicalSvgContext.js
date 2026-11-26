@@ -144,3 +144,25 @@ export function sanitizeTechnicalSvg(markup) {
   }
   return svg;
 }
+
+export function tintTechnicalSvgFill(svg, { sourceColor, targetColor, fillOpacity }) {
+  const rgb = `rgb(${sourceColor.slice(1).match(/../g).map(channel => parseInt(channel, 16)).join(', ')})`;
+  // Resolve Illustrator styles in isolation before replacing only the chosen paint.
+  const host = document.createElement('div');
+  host.style.display = 'none';
+  host.attachShadow({ mode: 'closed' }).append(svg);
+  document.body.append(host);
+  try {
+    const matches = [...svg.querySelectorAll('path, rect, circle, ellipse, polygon, polyline, use')]
+      .filter(node => getComputedStyle(node).fill === rgb);
+    for (const node of matches) {
+      node.style.setProperty('fill', targetColor, 'important');
+      node.style.setProperty('fill-opacity', String(fillOpacity), 'important');
+      // Old pictograms set opacity on the whole shape, including its outline.
+      node.style.setProperty('opacity', '1', 'important');
+    }
+  } finally {
+    svg.remove();
+    host.remove();
+  }
+}

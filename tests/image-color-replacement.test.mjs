@@ -37,6 +37,12 @@ test('recolors matching PNG pixels while preserving alpha and unrelated pixels',
   ]);
 });
 
+test('raster fill opacity only affects the pixels matching the source color', () => {
+  const pixels = new Uint8ClampedArray([255, 0, 255, 255, 10, 15, 20, 255]);
+  recolorPixelData(pixels, '#ff00ff', '#336699', 36, .5);
+  assert.deepEqual([...pixels], [51, 102, 153, 128, 10, 15, 20, 255]);
+});
+
 test('Illustrator shorthand paint colors match full source colors without altering SVG references', () => {
   const markup = '<svg><style>.st2{fill:#f0f;stroke:#1d1d1b}.shade{stop-color:#FF00FF}</style><defs><linearGradient id="f0f"/></defs><path fill="#f0f" stroke="#000"/><path style="fill: #F0F !important;stroke:#fff"/><path fill="url(#f0f)"/><use href="#f0f"/><path fill="#f0f0"/><path fill="#ff00ff80"/></svg>';
   const result = recolorSvgMarkup(markup, '#ff00ff', '#244998');

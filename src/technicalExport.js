@@ -1,9 +1,9 @@
-import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor } from './imageColorReplacement.js';
+import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, recolorPixelData, sampleImageColor } from './imageColorReplacement.js';
 import { normalizeBatElectricalPicto, normalizeBatElectricalPictos, electricalPictoPoint } from './batElectricalPicto.js';
 import { includedCounterPowerItems } from './includedCounterPower.js';
 import { technicalRiggingCoordinates, technicalSignRiggingPoints } from './technicalRigging.js';
 import { isSignatureLedArch } from './signatureArchVariants.js';
-import { createTechnicalSvgContext, sanitizeTechnicalSvg } from './technicalSvgContext.js';
+import { createTechnicalSvgContext, sanitizeTechnicalSvg, tintTechnicalSvgFill } from './technicalSvgContext.js';
 import { technicalA3, wrapTechnicalPrintText } from './technicalPrintLayout.js';
 import { normalizeTechnicalPlanEdits } from './technicalPlanEdits.js';
 import { groupStructuralAsset } from './groupPlacement.js';
@@ -36,6 +36,7 @@ const fixedWallHeight = 2.5;
 const wallPanelWidth = 1;
 const reinforcementWidth = 1;
 const wallThicknessMeters = 0.06;
+const archFillOpacity = .5;
 const carpetFootprintOverflow = 0.2;
 const technicalTableY = 1040;
 // A 2.75x backing canvas produces roughly 300 dpi on an A3 landscape print
@@ -167,10 +168,11 @@ async function loadTechnicalPictoImages(items = [], catalog = []) {
       try { targetColor = await sampleImageColor(request.targetImageUrl); }
       catch (cause) { throw new Error('Impossible de lire la texture de couleur d’un objet pour le BAT. Réessayez après avoir vérifié son image de finition.', { cause }); }
     }
-    const imageUrl = request.sourceColor && targetColor
+    const fillTreatment = request.fillOpacity ? { sourceColor: request.sourceColor, targetColor, fillOpacity: request.fillOpacity } : null;
+    const imageUrl = !fillTreatment && request.sourceColor && targetColor
       ? await recolorImageUrl(request.url, request.sourceColor, targetColor)
       : request.url;
-    let image = await loadCanvasImage(imageUrl);
+    const image = await loadCanvasImage(imageUrl, fillTreatment);
     if (!image && request.isPicto) throw new Error('Impossible de charger un picto BAT. Verifiez le fichier importe puis relancez le BAT.');
     return [request.key, image];
   }));
@@ -207,7 +209,10 @@ function technicalSvgPictoDescriptor(item = {}, entry = {}, catalog = []) {
     const inheritedUrl = source.batPictoUrl || sources.slice(index + 1).find((parent) => parent.batPictoUrl)?.batPictoUrl;
     return inheritedUrl === url && source.batPictoReplaceColor != null;
   });
-  const sourceColor = normalizeHexColor(rule?.batPictoReplaceColor);
+  const arch = isTechnicalArch(item);
+  // The first Signature arch SVG predates the configurable color rule.
+  const legacyArchFill = arch && !rule && /\/bat-picto-mvryukq3\.svg(?:$|[?#])/.test(url) ? '#ad7d05' : '';
+  const sourceColor = normalizeHexColor(rule?.batPictoReplaceColor) || legacyArchFill;
   const selectedColors = Object.values(item.options?.variantColorSelections || {});
   const textureColors = Object.values(item.options?.textureSlotValues || {}).map((value) => value?.color);
   const counterText = [item.type, item.label, variantEntry?.label, entry?.label].join(' ').toLowerCase();
@@ -219,16 +224,18 @@ function technicalSvgPictoDescriptor(item = {}, entry = {}, catalog = []) {
     item.options?.binary2Color,
     ...textureColors,
     item.color, variantEntry?.color, entry?.color,
-  ].map((color) => normalizeHexColor(color)).find(Boolean) || '';
+  ].map((color) => normalizeHexColor(color)).find(Boolean) || (arch ? sourceColor : '');
   const targetImageUrl = sourceColor ? counterFinish?.image || '' : '';
   const electricalPictos = normalizeBatElectricalPictos(sources.find((source) => Array.isArray(source.batElectricalPictos) || source.batElectricalPictoUrl) || {});
   const electrical = electricalPictos[0] || normalizeBatElectricalPicto();
+  const fillOpacity = arch && sourceColor && targetColor ? archFillOpacity : null;
   const colorKey = sourceColor && targetColor ? recoloredImageCacheKey(url, sourceColor, targetColor) : url;
   const baseKey = targetImageUrl ? `${colorKey}|finish-image:${targetImageUrl}` : colorKey;
-  const key = electricalPictos.length ? `${baseKey}|electric:${JSON.stringify(electricalPictos)}` : baseKey;
+  const paintKey = fillOpacity ? `${baseKey}|fill-opacity:${fillOpacity}` : baseKey;
+  const key = electricalPictos.length ? `${paintKey}|electric:${JSON.stringify(electricalPictos)}` : paintKey;
   // These models have their doors on local -Z, while their BAT drawings put the doors at the bottom.
   const rotationOffset = /^asset-banque-accueil-(?:bois-(?:1|1-5|2)m|blanc-0-5m)-signa(?:-|$)/.test(variantType || '') ? 180 : 0;
-  return { key, url, sourceColor, targetColor, targetImageUrl, electrical, electricalPictos, rotationOffset };
+  return { key, url, sourceColor, targetColor, targetImageUrl, electrical, electricalPictos, rotationOffset, fillOpacity };
 }
 
 function technicalReceptionCounterFinish(item = {}, entry = {}) {
@@ -264,7 +271,7 @@ function technicalBatDescription(item = {}, entry = {}, catalog = []) {
     || '';
 }
 
-async function loadCanvasImage(url) {
+async function loadCanvasImage(url, fillTreatment = null) {
   let isSvg = /\.svg(?:$|[?#])/i.test(url) || /^data:image\/svg\+xml/i.test(url);
   try {
     const response = await fetch(url, { mode: 'cors', signal: AbortSignal.timeout(20000) });
@@ -274,11 +281,27 @@ async function loadCanvasImage(url) {
       isSvg ||= /svg/i.test(blob.type);
       if (isSvg) {
         svg = sanitizeTechnicalSvg(await blob.text());
+        if (fillTreatment) tintTechnicalSvgFill(svg, fillTreatment);
         blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
       }
       const objectUrl = URL.createObjectURL(blob);
       try {
-        const image = await loadImageElement(objectUrl);
+        let image = await loadImageElement(objectUrl);
+        if (image && fillTreatment && !svg) {
+          const canvas = document.createElement('canvas');
+          canvas.width = image.naturalWidth;
+          canvas.height = image.naturalHeight;
+          const context = canvas.getContext('2d', { willReadFrequently: true });
+          context.drawImage(image, 0, 0);
+          const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+          recolorPixelData(pixels.data, fillTreatment.sourceColor, fillTreatment.targetColor, 36, fillTreatment.fillOpacity);
+          context.putImageData(pixels, 0, 0);
+          image = await loadImageElement(canvas.toDataURL('image/png'));
+          if (image) {
+            image.technicalDataUrl = image.src;
+            return image;
+          }
+        }
         if (image) {
           image.technicalSvg = svg;
           image.technicalDataUrl = await new Promise((resolve, reject) => {
@@ -625,8 +648,6 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     const pictoImage = picto ? pictoImages.get(picto.key) : null;
 
     const hasElectric = Boolean(picto?.electrical.url);
-    ctx.save();
-    if (arch) ctx.globalAlpha = .5;
     let frame;
     if (item.technicalHeadPlan) {
       frame = drawTechnicalHead(ctx, item.technicalHeadPlan, toX, toY, scale, pictoImage, label);
@@ -644,9 +665,8 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     } else {
       frame = pictoImage
         ? drawRotatedPictoObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, Number(item.rotation || 0) + picto.rotationOffset, pictoImage, label, groupStructuralAsset(item), hasElectric)
-        : drawRotatedObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, color, label, hasElectric);
+        : drawRotatedObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, item.rotation || 0, color, label, hasElectric, arch ? archFillOpacity : 1);
     }
-    ctx.restore();
     annotateElectricity(item, entry, frame, index);
     ctx.endObject?.();
   };
@@ -1564,14 +1584,17 @@ function drawGrid(ctx, x, y, w, h, width, depth, scale) {
   }
 }
 
-function drawRotatedObject(ctx, x, y, w, h, rotation, color, label, outsideBadge = false) {
+function drawRotatedObject(ctx, x, y, w, h, rotation, color, label, outsideBadge = false, fillOpacity = 1) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(technicalPlanRotation(rotation));
   ctx.fillStyle = color;
   ctx.strokeStyle = technicalColors.ink;
   ctx.lineWidth = 2;
+  ctx.save();
+  ctx.globalAlpha *= fillOpacity;
   ctx.fillRect(-w / 2, -h / 2, w, h);
+  ctx.restore();
   ctx.strokeRect(-w / 2, -h / 2, w, h);
   ctx.restore();
   drawBadge(ctx, x, outsideBadge ? y + (Math.abs(Math.sin(technicalPlanRotation(rotation))) * w + Math.abs(Math.cos(technicalPlanRotation(rotation))) * h) / 2 + 23 : y, label);
