@@ -7,7 +7,7 @@ const root = new URL('../', import.meta.url).pathname;
 const source = await readFile(`${root}src/App.jsx`, 'utf8');
 const harness = `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{OptionsStepPanel,ValidationAllowanceRecap}from'/src/__accordion-app.jsx';
 const closed=Object.fromEntries(['moquette','coton','plancher','led','reserve','tete','arche','enseigne','comptoir'].map(key=>[key,false]));
-function Test(){const[pack,setPack]=useState('Signature'),[open,setOpen]=useState(closed),[depth,setDepth]=useState(4);return <><nav style={{position:'fixed',bottom:0,left:0,zIndex:9999,background:'white'}}>{['Signature','Équipé','Confort','Prestige','Autre'].map(pack=><button key={pack} onClick={()=>{setPack(pack);setOpen(closed);setDepth(4)}}>Pack {pack}</button>)}<button onClick={()=>{setDepth(2);setOpen(closed)}}>Arche indisponible</button></nav><main style={{width:360,maxWidth:'calc(100vw - 24px)',margin:'16px auto',display:'grid',gap:14}}><OptionsStepPanel activeStep={2} area={20} standWidth={5} standDepth={depth} layout="u" openOptions={open} toggleOption={key=>setOpen(value=>({...value,[key]:!value[key]}))} salonLabel={pack} catalog={[]} isSignatureStand={pack==='Signature'} isPrestigeStand={pack==='Prestige'} isAdminViewer hasIncludedObjects partitionHeadSides={{left:true,right:true}} onOpenShop={()=>{}}/></main><aside style={{width:360,maxWidth:'calc(100vw - 24px)',margin:'16px auto'}}><ValidationAllowanceRecap pricing={{grossTotal:2068.74,insuranceLine:{total:84.74,insuranceBase:1984},allowanceApplied:1120,total:948.74}}/></aside></>};createRoot(document.getElementById('root')).render(<Test/>);`;
+function Test(){const[pack,setPack]=useState('Signature'),[open,setOpen]=useState(closed),[depth,setDepth]=useState(4);return <><nav style={{position:'fixed',bottom:0,left:0,zIndex:9999,background:'white'}}>{['Signature','Équipé','Confort','Prestige','Autre'].map(pack=><button key={pack} onClick={()=>{setPack(pack);setOpen(closed);setDepth(4)}}>Pack {pack}</button>)}<button onClick={()=>{setDepth(2);setOpen(closed)}}>Arche indisponible</button></nav><main style={{width:360,maxWidth:'calc(100vw - 24px)',margin:'16px auto',display:'grid',gap:14}}><OptionsStepPanel activeStep={2} area={20} standWidth={5} standDepth={depth} layout="u" openOptions={open} toggleOption={key=>setOpen(value=>({...value,[key]:!value[key]}))} salonLabel={pack} catalog={[]} isSignatureStand={pack==='Signature'} isPrestigeStand={pack==='Prestige'} isAdminViewer hasIncludedObjects ledRailsEnabled ledSpotCount={10} ledSpotCapacity={10} ledRailSizes={[3,3,2,2]} ledRailSizeOptions={[2,3]} ledRailSizeVisuals={{2:{thumbnailUrl:"/icons/spots.svg"},3:{thumbnailUrl:"/icons/spots.svg"}}} onLedRailPlan={()=>{}} partitionHeadSides={{left:true,right:true}} onOpenShop={()=>{}}/></main><aside style={{width:360,maxWidth:'calc(100vw - 24px)',margin:'16px auto'}}><ValidationAllowanceRecap pricing={{grossTotal:2068.74,insuranceLine:{total:84.74,insuranceBase:1984},allowanceApplied:1120,total:948.74}}/></aside></>};createRoot(document.getElementById('root')).render(<Test/>);`;
 const server = await createServer({ logLevel: 'error', server: { host: '127.0.0.1', port: 0 }, plugins: [{
   name: 'accordion-headers-test',
   resolveId(id) { if (id === '/src/__accordion-app.jsx') return `${root}src/__accordion-app.jsx`; if (id === '/src/__accordion-page.jsx') return `${root}src/__accordion-page.jsx`; },
@@ -65,6 +65,28 @@ try {
     }
   }
   await page.getByRole('button',{name:'Pack Signature',exact:true}).click();
+  const ledHeader = page.locator('[data-option="led"] > button');
+  await ledHeader.click();
+  const railList = page.locator('.led-rail-list');
+  await railList.waitFor();
+  assert.equal(await railList.evaluate(el => getComputedStyle(el).listStyleType), 'none');
+  assert.equal(await railList.locator('.led-rail-row').count(), 4);
+  const activeSegments = page.locator('.led-rail-gauge > .on');
+  assert.equal(await activeSegments.count(), 10);
+  assert.equal(await activeSegments.first().evaluate(el => el.getBoundingClientRect().height), 6);
+  for (const width of [408, 320]) {
+    await page.setViewportSize({ width, height: 1600 });
+    const layouts = await railList.locator('.led-rail-row').evaluateAll(rows => rows.map(row => {
+      const img = row.querySelector('.led-rail-visual img');
+      const { width, height } = img.getBoundingClientRect();
+      return [getComputedStyle(row).display, width, height, row.scrollWidth <= row.clientWidth];
+    }));
+    for (const layout of layouts) {
+      assert.deepEqual(layout, ['grid', 64, 36, true], `LED rail cards and thumbnails stay compact at ${width}px`);
+    }
+  }
+  await ledHeader.click();
+  await page.setViewportSize({ width: 408, height: 1600 });
   await page.getByRole('button',{name:'Arche indisponible',exact:true}).click();
   const arch=page.locator('.signature-arch-accordion');
   assert.equal(await arch.locator(':scope > button').innerText(), 'Arche');

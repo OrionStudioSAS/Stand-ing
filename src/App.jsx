@@ -113,6 +113,7 @@ import { loadTechnicalPlanEdits } from './data/technicalPlanStore.js';
 import { manageSceneCollaborators, openSceneInvitation, requestSceneInvitationLink } from './data/sceneStore.js';
 import './signatureHeadInformation.css';
 import './styles.css';
+import './ledRailEditor.css';
 // Top bar and guided tour (kept apart from the other imports to stay independent of the reserve work).
 import './configuratorNavbar.css';
 import { GuidedTour } from './GuidedTour.jsx';
