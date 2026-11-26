@@ -20,7 +20,7 @@ import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Canvas, events as createSceneEvents, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { Html, OrbitControls, Text } from '@react-three/drei';
-import { AmbientLight, Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DirectionalLight, DoubleSide, ExtrudeGeometry, Float32BufferAttribute, FrontSide, HemisphereLight, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, MOUSE, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Plane, RepeatWrapping, SRGBColorSpace, Scene, Shape, TOUCH, Vector2, Vector3, WebGLRenderer } from 'three';
+import { AmbientLight, Box3, BufferGeometry, Cache, CanvasTexture, CubeTexture, DirectionalLight, DoubleSide, ExtrudeGeometry, Float32BufferAttribute, FrontSide, HemisphereLight, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, MOUSE, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Plane, Raycaster, RepeatWrapping, SRGBColorSpace, Scene, Shape, TOUCH, Vector2, Vector3, WebGLRenderer } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -23645,41 +23645,11 @@ function TechnicalFloorRamp({ ramp, ramps, bounds, size, carpetMaterialProps, on
   const dragging = editable && draggingRampId === ramp.id;
   const onRampDragChangeRef = useRef(onRampDragChange);
   onRampDragChangeRef.current = onRampDragChange;
-  // End the drag on any release, even off the ramp or outside the canvas.
-  useEffect(() => {
-    if (!dragging) return undefined;
-    const end = () => {
-      document.body.style.cursor = '';
-      onRampDragChangeRef.current?.(null);
-    };
-    window.addEventListener('pointerup', end);
-    window.addEventListener('pointercancel', end);
-    window.addEventListener('blur', end);
-    return () => {
-      window.removeEventListener('pointerup', end);
-      window.removeEventListener('pointercancel', end);
-      window.removeEventListener('blur', end);
-    };
-  }, [dragging]);
-  if (!geometry) return null;
-  const sourceWidth = Math.max(0.001, geometry.boundingBox.max.x - geometry.boundingBox.min.x);
-  const sourceDepth = Math.max(0.001, geometry.boundingBox.max.z - geometry.boundingBox.min.z);
-  const sourceHeight = Math.max(0.001, geometry.boundingBox.max.y - geometry.boundingBox.min.y);
-  // Origin of the OBJ is the low outer corner: shift it so the ramp is centred on its offset.
-  const rampWidth = technicalRampWidth(ramp, size);
-  const placement = technicalEdgePlacement(ramp.edge, bounds, ramp.edge === 'right' ? ramp.offset + rampWidth / 2 : ramp.offset - rampWidth / 2);
-  const releaseDrag = (event) => {
-    event?.stopPropagation?.();
-    event?.target?.releasePointerCapture?.(event.pointerId);
-    onRampDragChange?.(null);
-  };
-  const moveRamp = (event) => {
-    if (!editable || !dragging) return;
-    event.stopPropagation();
-    // A remounted ramp lost the pointer capture: take it back to keep following.
-    if (event.target?.hasPointerCapture && !event.target.hasPointerCapture(event.pointerId)) event.target.setPointerCapture?.(event.pointerId);
+  const camera = useThree((state) => state.camera);
+  const canvas = useThree((state) => state.gl.domElement);
+  const moveRampToRay = (ray) => {
     const point = new Vector3();
-    if (!event.ray.intersectPlane(floorPlane, point)) return;
+    if (!ray.intersectPlane(floorPlane, point)) return;
     const x = point.x - sceneOffset[0];
     const z = point.z - sceneOffset[2];
     // Snap to the closest open side (walls are never candidates).
@@ -23696,7 +23666,49 @@ function TechnicalFloorRamp({ ramp, ramps, bounds, size, carpetMaterialProps, on
     if (blocked) return;
     onRampChange(ramp.id, { edge, offset: Math.round(offset * 1000) / 1000 });
   };
-
+  const moveRampRef = useRef(moveRampToRay);
+  moveRampRef.current = moveRampToRay;
+  // While dragging, follow the pointer and catch the release at window level:
+  // the ramp remounts when it crosses a Signature footprint edge and loses the
+  // pointer capture, and a release off the ramp must still unlock the camera.
+  useEffect(() => {
+    if (!dragging) return undefined;
+    const raycaster = new Raycaster();
+    const ndc = new Vector2();
+    const move = (event) => {
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      ndc.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      moveRampRef.current(raycaster.ray);
+    };
+    const end = () => {
+      document.body.style.cursor = '';
+      onRampDragChangeRef.current?.(null);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    window.addEventListener('blur', end);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      window.removeEventListener('blur', end);
+    };
+  }, [dragging, camera, canvas]);
+  if (!geometry) return null;
+  const sourceWidth = Math.max(0.001, geometry.boundingBox.max.x - geometry.boundingBox.min.x);
+  const sourceDepth = Math.max(0.001, geometry.boundingBox.max.z - geometry.boundingBox.min.z);
+  const sourceHeight = Math.max(0.001, geometry.boundingBox.max.y - geometry.boundingBox.min.y);
+  // Origin of the OBJ is the low outer corner: shift it so the ramp is centred on its offset.
+  const rampWidth = technicalRampWidth(ramp, size);
+  const placement = technicalEdgePlacement(ramp.edge, bounds, ramp.edge === 'right' ? ramp.offset + rampWidth / 2 : ramp.offset - rampWidth / 2);
+  const releaseDrag = (event) => {
+    event?.stopPropagation?.();
+    event?.target?.releasePointerCapture?.(event.pointerId);
+    onRampDragChange?.(null);
+  };
   return (
     <mesh
       name={`technical-floor-ramp-${ramp.id}`}
@@ -23715,7 +23727,7 @@ function TechnicalFloorRamp({ ramp, ramps, bounds, size, carpetMaterialProps, on
         document.body.style.cursor = 'grabbing';
         onRampDragChange?.(ramp.id);
       }}
-      onPointerMove={moveRamp}
+      onPointerMove={(event) => { if (dragging) event.stopPropagation(); }}
       onPointerUp={(event) => { releaseDrag(event); document.body.style.cursor = hovered ? 'grab' : ''; }}
       onPointerCancel={() => releaseDrag(null)}
     >
