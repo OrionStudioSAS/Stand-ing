@@ -7141,6 +7141,7 @@ img.asset-thumb {
 .option-type-tabs {
   grid-column: 1 / -1;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   background: #eef1f6;
   border-radius: 8px;
@@ -9529,6 +9530,21 @@ img.asset-thumb {
   background: #fff;
   text-align: left;
 }
+
+.config-quantity-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #dfe8f4;
+  border-radius: 10px;
+}
+
+.config-quantity-option > span { display: grid; gap: 3px; }
+.config-quantity-option small { color: #536178; }
+.config-quantity-option .quantity-control { flex-shrink: 0; }
+.config-quantity-option output { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; }
 
 .config-toggle-option.active {
   border-color: #cbd6e8;
@@ -12096,11 +12112,12 @@ img.asset-thumb {
   grid-row: 1;
   border-radius: 999px;
   padding: 5px 8px;
-  color: #9aa2ae;
+  color: #1f4378;
   background: #f0f3f8;
   font-size: 0.66rem;
   font-style: normal;
   font-weight: 950;
+  white-space: nowrap;
 }
 
 .wall-cover-row-main > div {

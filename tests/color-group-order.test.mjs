@@ -1,3 +1,4 @@
+import { isSiaePackLabel, siaeSurfaceColorRate } from '../src/siaeStandOptions.js';
 import { signatureFootprintPalette } from '../src/signatureFootprint.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -14,7 +15,7 @@ function loadFunction(name, context) {
 }
 
 function colorContext() {
-  const context = vm.createContext({ signatureFootprintPalette,
+  const context = vm.createContext({ isSiaePackLabel, siaeSurfaceColorRate, signatureFootprintPalette,
     colorGroupMatchesPack: (group, pack) => group.dimensions?.packs?.includes(pack),
     counterOptionalColorPrice: 79,
     normalizePackLabel: (label) => String(label || '').toLowerCase(),

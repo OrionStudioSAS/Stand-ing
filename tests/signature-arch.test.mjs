@@ -19,7 +19,7 @@ test('Signature Sol uses the carpet design with the arch palette and shared colo
   assert.match(appSource, /function isSignatureScene\(/);
   assert.match(appSource, /function SignatureArchOptionCard\(/);
   assert.match(appSource, /accordionScrollProps\('moquette'\)\} title=\{t\('option_ground'\)\} icon=/);
-  assert.match(appSource, /<SurfaceColorOptionCard title=\{tr\("EMPREINTE MOQUETTE"\)\} iconSrc="\/icons\/empreinte_moquette_icon.svg"/);
+  assert.match(appSource, /<SurfaceColorOptionCard title=\{tr\("EMPREINTE MOQUETTE"\)\}\s+colors=/);
   assert.match(appSource, /colors=\{signatureArchColors\} selectedColor=\{signatureArchColor\} area=\{1\}/);
   assert.match(appSource, /disabled=\{readOnly \|\| !signatureArchItems.length\}\s+onSelect=\{onSignatureArchColor\}/);
   assert.match(appSource, /<SignatureArchColorCard colors=\{colors\} selectedColor=\{selectedColor\}/);

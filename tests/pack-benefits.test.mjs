@@ -254,7 +254,7 @@ test('allowance scenes inherit automatic reserve rules and charge the default re
   assert.equal(sourcePayload.pricing.reserveRules.small.includedType, 'reserve-2m2');
 
   const reserveRuleBands = [{ id: 'small', label: 'Petit stand', minArea: 0, maxArea: 20, includedLabel: 'Réserve' }];
-  const api = vm.createContext({ includedCounterPowerItems, electricalWallClearance, electricalClearanceRect, applyElectricalClearance, wallCoverPackTariff, wallCoverQuote, signatureArchSizeSupplementLines, signatureFootprintSupplementLine, scenePackBenefits, reserveRuleBands, signatureReserveRuleBands: [], isSignatureScene: () => false });
+  const api = vm.createContext({ includedCounterPowerItems, electricalWallClearance, electricalClearanceRect, applyElectricalClearance, wallCoverPackTariff, wallCoverQuote, signatureArchSizeSupplementLines, signatureFootprintSupplementLine, scenePackBenefits, reserveRuleBandsForPack: () => reserveRuleBands, sceneOfferLabel: () => 'Confort' });
   for (const name of ['normalizeComplementaryOptions', 'normalizeReserveRules', 'sceneReserveRules']) loadFunction(api, appSource, name);
   const rules = api.sceneReserveRules({
     source_payload: { packBenefits: { mode: 'allowance', allowanceAmount: 1600 }, reserveRules: presetReserveRules },

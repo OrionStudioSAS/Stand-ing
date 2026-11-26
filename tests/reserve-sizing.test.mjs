@@ -1,3 +1,4 @@
+import { isSiaePackLabel, siaeReserveRuleBands } from '../src/siaeStandOptions.js';
 import { electricalWallClearance, electricalClearanceRect, applyElectricalClearance } from '../src/electricalClearance.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -13,13 +14,13 @@ const groups = [1, 2, 3, 4].map((area) => ({ type: `group-reserve-${area}m2`, la
 const rule = { id: 'medium', includedType: groups[1].type, includedLabel: groups[1].label,
   options: [{ type: groups[0].type, label: groups[0].label, price: 0 }, { type: groups[2].type, label: groups[2].label, price: 222 }] };
 function runtime() {
-  const api = vm.createContext({ electricalWallClearance, electricalClearanceRect, applyElectricalClearance,
+  const api = vm.createContext({ isSiaePackLabel, siaeReserveRuleBands, electricalWallClearance, electricalClearanceRect, applyElectricalClearance,
     normalizePackLabel: label=>String(label).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(),
     isSignaturePackLabel: (label) => label === 'Signature', reserveDoorColorForPack: () => '',
     assetUnitPrice: () => 0, findCatalogEntry: (entries, type) => entries.find((entry) => entry.type === type),
     makeItem: (_type, _width, _depth, _layout, entry) => structuredClone(entry), constrainItem: (item) => item,
   });
-  for (const name of ['normalizeComplementaryOptions', 'configuredReserveAssetTypes', 'configuredReserveOptionType', 'reserveAreaFromText', 'isReserveCatalogEntry', 'reserveRuleWithPackChoices', 'firstPriceValue', 'reserveOptionPrice', 'makeAutomaticReserveItems']) {
+  for (const name of ['normalizeReserveRules', 'activeReserveRule', 'normalizeComplementaryOptions', 'configuredReserveAssetTypes', 'configuredReserveOptionType', 'reserveAreaFromText', 'isReserveCatalogEntry', 'reserveRuleWithPackChoices', 'firstPriceValue', 'reserveOptionPrice', 'makeAutomaticReserveItems']) {
     const start = source.indexOf(`function ${name}(`);
     vm.runInContext(source.slice(start, source.indexOf('\n}\n', start) + 2), api);
   }
@@ -93,24 +94,36 @@ test('empty options stay empty; old automatic choices fall back to the configure
   assert.equal(api.makeAutomaticReserveItems({}, '', groups, 8, 4, 'left', 'Signature').length, 0);
 });
 
-test('Equipped offers both linked 2m² and 3m² groups regardless of the active area band',()=>{
- const api=runtime(), rules={medium:{id:'medium',includedType:groups[1].type,options:[]},large:{id:'large',includedType:groups[2].type,options:[]}};
- for(const band of ['medium','large']){
-  const choices=api.reserveRuleWithPackChoices(rules[band],rules,groups,'Équipé');
-  assert.equal(choices.options.length,1);const alternative=choices.options[0];
-  assert.equal(alternative.type,band==='large'?groups[1].type:groups[2].type);
-  const selected=api.configuredReserveOptionType(choices,alternative.type);
-  assert.equal(selected,alternative.type);
-  const [item]=api.makeAutomaticReserveItems(choices,selected,groups,5,5,'right','Équipé');
-  assert.equal(item.type,alternative.type);assert.equal(JSON.stringify(item.children),JSON.stringify(groups.find(g=>g.type===alternative.type).children));
- }
+test('SIAE corrects previously configured defaults and retains actual groups across all surface bands', () => {
+  const api = runtime();
+  const catalog = groups.map((entry, index) => ({
+    ...entry, dimensions: { packs: [index === 3 ? 'Confort' : 'SIAE'] },
+  }));
+  const bands = siaeReserveRuleBands;
+  const rules = api.normalizeReserveRules({ medium: { includedType: groups[1].type }, large: { includedType: groups[2].type } }, { bands });
+  for (const [area, size] of [[11.9999, 0], [12, 1], [24, 1], [24.9999, 1], [25, 2], [30, 2], [30.9999, 2], [31, 3]]) {
+    const rule = api.reserveRuleWithPackChoices(api.activeReserveRule(rules, area, bands), rules, catalog, 'Équipé');
+    assert.equal(rule.includedType, size ? groups[size - 1].type : '', `Default reserve at ${area} m²`);
+    assert.equal(rule.options.some(option => option.type === groups[3].type), false, 'No group from another pack');
+    if (size) {
+      const [item] = api.makeAutomaticReserveItems(rule, '', catalog, 5, 5, 'right', 'Équipé');
+      assert.equal(item.type, groups[size - 1].type);
+      assert.equal(JSON.stringify(item.children), JSON.stringify(groups[size - 1].children));
+    }
+  }
 });
-test('Equipped preserves explicit supplements and uses catalog differences or allowance prices for newly linked choices',()=>{
- const api=runtime();api.assetUnitPrice=entry=>Number(entry?.price||0);
- const catalog=groups.map((entry,i)=>({...entry,price:(i+1)*100}));
- const rules={medium:{id:'medium',includedType:groups[1].type,options:[{type:groups[2].type,price:111,label:'Grande réserve'}]},large:{id:'large',includedType:groups[2].type,options:[]}};
- const medium=api.reserveRuleWithPackChoices(rules.medium,rules,catalog,'Équipé');assert.equal(medium.options[0].price,111);assert.equal(medium.options[0].label,'Grande réserve');
- assert.equal(api.reserveRuleWithPackChoices(rules.large,rules,catalog,'Équipé').options[0].price,0,'Choosing a smaller reserve does not create a supplement');
- assert.equal(api.reserveRuleWithPackChoices({...rules.medium,options:[]},rules,catalog,'Équipé').options[0].price,100);
- assert.equal(api.reserveRuleWithPackChoices({...rules.large,chargeIncluded:true},rules,catalog,'Équipé').options[0].price,200,'Allowance orders retain the complete catalog price');
+
+test('SIAE preserves explicit supplements and uses catalog differences for other reserve choices', () => {
+  const api = runtime();
+  api.assetUnitPrice = entry => Number(entry?.price || 0);
+  const catalog = groups.map((entry, index) => ({ ...entry, price: (index + 1) * 100, dimensions: { packs: ['Équipé'] } }));
+  const rules = {
+    medium: { id: 'medium', includedType: groups[1].type, options: [{ type: groups[2].type, price: 111, label: 'Grande réserve' }] },
+    large: { id: 'large', includedType: groups[2].type, options: [] },
+  };
+  const medium = api.reserveRuleWithPackChoices(rules.medium, rules, catalog, 'SIAE');
+  assert.equal(medium.options.find(option => option.type === groups[2].type).price, 111);
+  assert.equal(medium.options.find(option => option.type === groups[1].type).price, 100);
+  const large = api.reserveRuleWithPackChoices(rules.large, rules, catalog, 'Équipé');
+  assert.equal(large.options.find(option => option.type === groups[0].type).price, 0);
 });

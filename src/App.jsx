@@ -8,11 +8,13 @@ import AssetGroupPlacementEditor from './AssetGroupPlacementEditor.jsx';
 import { nextGroupRowPosition } from './groupPlacement.js';
 import { counterPowerCatalogEntry, includedCounterPowerItems } from './includedCounterPower.js';
 import { signageExtraOptions, normalizedExtraChoices } from './signageExtras.js';
+import { maxVariantExtraQuantity, variantExtraQuantity, variantExtraUnits } from './variantExtraQuantity.js';
 import { normalizeAdminRole, isSuperAdmin } from '../supabase/functions/_shared/adminRoles.js';
 import { electricalWallClearance, electricalClearanceRect, applyElectricalClearance } from './electricalClearance.js';
 import { prioritizeUnderArchIntersections } from './scenePicking.js';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
 import { drawSignatureHeadInformation, signatureHeadCanvasSize, signatureHeadTopArtworkSlotId } from './signatureHeadInformation.js';
+import { isSiaePackLabel, siaeReserveRuleBands, siaeSurfaceColorRate, siaeViscomMinArea, thickCarpetRate } from './siaeStandOptions.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
 import { sceneAdminRequests, sceneQuestions, questionAsRequest } from './sceneRequests.js';
 import React, { Suspense, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -1347,7 +1349,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       window.localStorage.setItem(tutorialProgressKey, completed ? '0' : String(index || 0));
     } catch (_) {}
   };
-  const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, plancher: false, led: false, reserve: false, tete: false, comptoir: false, arche: false, enseigne: false });
+  const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, plancher: false, led: false, reserve: false, tete: false, comptoir: false, arche: false, enseigne: false, viscom: false });
   const [optionScrollTarget, setOptionScrollTarget] = useState('');
   const [selectedCarpetId, setSelectedCarpetId] = useState(initialOptions.carpetColorId || initialOptions.defaultColorOptions?.carpetColorId || '');
   const [selectedCarpetFootprintId, setSelectedCarpetFootprintId] = useState(initialOptions.carpetFootprintColorId || initialOptions.defaultColorOptions?.carpetFootprintColorId || initialOptions.carpetColorId || initialOptions.defaultColorOptions?.carpetColorId || '');
@@ -1379,6 +1381,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     right: hasOwn(initialOptions, 'partitionHeadRightEnabled') ? Boolean(initialOptions.partitionHeadRightEnabled) : null,
   });
   const [partitionHeadVisuals, setPartitionHeadVisuals] = useState(() => normalizePartitionHeadVisuals(initialOptions.partitionHeadVisuals || {}));
+  const [siaeViscomVisual, setSiaeViscomVisual] = useState(initialOptions.siaeViscomVisual || {});
+  const [siaeViscomPlacement, setSiaeViscomPlacement] = useState(initialOptions.siaeViscomPlacement || null);
+  const [siaeViscomUpload, setSiaeViscomUpload] = useState({});
+  const pendingSiaeViscomUpload = useRef(false);
   const [prestigeArchEnabled, setPrestigeArchEnabled] = useState(() => (
     initialPrestigeArchVisible || (hasOwn(initialOptions, 'prestigeArchEnabled') ? initialOptions.prestigeArchEnabled !== false : false)
   ));
@@ -1458,7 +1464,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const standLabel = initialScene.project_name || clientInfo.project || 'Stand A-14';
   const clientLabel = clientInfo.client || contactDetails.company || 'Aerosys Industries';
   const carpetPalette = useMemo(() => packColorPalette(objectBank, assetPackLabel, 'carpet', carpetColors), [objectBank, assetPackLabel]);
-  const footprintPalette = useMemo(() => packColorPalette(objectBank, assetPackLabel, 'footprint', isSignatureStand ? carpetColors : carpetPalette), [objectBank, assetPackLabel, carpetPalette, isSignatureStand]);
+  const footprintPalette = useMemo(() => packColorPalette(objectBank, assetPackLabel, 'footprint', isSignatureStand
+    ? carpetColors
+    : isSiaePackLabel(assetPackLabel) ? colorOptionsForUsage(objectBank, assetPackLabel, 'carpet', carpetColors) : carpetPalette), [objectBank, assetPackLabel, carpetPalette, isSignatureStand]);
   const wallFabricPalette = useMemo(() => packColorPalette(objectBank, assetPackLabel, 'wallFabric', wallFabricColors), [objectBank, assetPackLabel]);
   const counterPalette = useMemo(() => colorOptionsForUsage(objectBank, assetPackLabel, 'counter', []), [objectBank, assetPackLabel]);
   const carpetGroupConfigOptionsList = useMemo(() => colorGroupConfigOptions(objectBank, assetPackLabel, 'carpet'), [objectBank, assetPackLabel]);
@@ -1573,9 +1581,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const ledSpotCount = ledSpotCountForArea(area);
   const reserveRules = useMemo(() => sceneReserveRules(initialScene), [initialScene]);
   const activeReserveRuleConfig = useMemo(() => reserveRuleWithPackChoices(
-    activeReserveRule(reserveRules, area, isSignatureStand ? signatureReserveRuleBands : reserveRuleBands),
+    activeReserveRule(reserveRules, area, reserveRuleBandsForPack(assetPackLabel)),
     reserveRules, availableCatalog, assetPackLabel,
-  ), [reserveRules, area, isSignatureStand, availableCatalog, assetPackLabel]);
+  ), [reserveRules, area, availableCatalog, assetPackLabel]);
   const effectiveReserveOptionType = configuredReserveOptionType(activeReserveRuleConfig, reserveOptionType);
   const partitionHeadRules = useMemo(() => scenePartitionHeadRules(initialScene), [initialScene]);
   const activePartitionHeadRuleConfig = useMemo(() => activePartitionHeadRule(partitionHeadRules, area, layout), [partitionHeadRules, area, layout]);
@@ -1588,6 +1596,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       .map((item) => applyReserveItemOverride(item, reserveItemOverrides, width, depth, layout, genericCarpetFootprintEnabled)),
     [activeReserveRuleConfig, effectiveReserveOptionType, availableCatalog, width, depth, layout, assetPackLabel, reserveOptions, reserveItemOverrides, genericCarpetFootprintEnabled],
   );
+  const siaeViscom = useMemo(() => makeSiaeViscomItem(assetPackLabel, width, depth, layout,
+    [...automaticReserveItems, ...manualHydratedItems], siaeViscomVisual, siaeViscomPlacement),
+  [assetPackLabel, width, depth, layout, automaticReserveItems, manualHydratedItems, siaeViscomVisual, siaeViscomPlacement]);
   const automaticPartitionHeadItems = useMemo(
     () => makeAutomaticPartitionHeadItems(activePartitionHeadRuleConfig, effectivePartitionHeadSides, availableCatalog, width, depth, layout, assetPackLabel)
       .map((item) => applyPartitionHeadVisualOptions(item, partitionHeadVisuals)),
@@ -1672,16 +1683,18 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     [layout, width, depth, manualVisibleItems, automaticReserveItems, automaticPartitionHeadItems],
   );
   const sceneItems = useMemo(() => resolveSpotWallAttachments(
-    applyElectricalClearance([...manualHydratedItems, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], width, depth, layout),
+    applyElectricalClearance([...manualHydratedItems, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems, ...(siaeViscom ? [siaeViscom] : [])], width, depth, layout),
     width, depth, layout,
     { isIgnored: (item) => isHiddenIncludedCounterItem(item) || prestigeBaseHidden(item) || (isSignatureStand && isSignatureArchItem(item) && !signatureArchFitsDepth(item, depth)) },
-  ), [manualHydratedItems, automaticReserveItems, automaticMeterCoverItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems, width, depth, layout, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand, isSignatureStand]);
+  ), [manualHydratedItems, automaticReserveItems, automaticMeterCoverItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems, siaeViscom, width, depth, layout, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand, isSignatureStand]);
   const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)
     && (!isSignatureStand || !isSignatureArchItem(item) || signatureArchFitsDepth(item, depth))), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand, isSignatureStand, depth]);
-  const displayedSceneItems = useMemo(() => archVisualUpload.previewUrl ? visibleSceneItems.map((item) =>
-    item.id === archVisualUpload.itemId ? {
+  const displayedSceneItems = useMemo(() => (archVisualUpload.previewUrl || siaeViscomUpload.previewUrl) ? visibleSceneItems.map((item) =>
+    item.autoSiaeViscom && siaeViscomUpload.previewUrl ? {
+      ...item, options: { ...item.options, posterImageUrl: siaeViscomUpload.previewUrl, posterImageFraming: defaultImageFraming },
+    } : item.id === archVisualUpload.itemId ? {
       ...item, options: { ...item.options, ...textureSlotPatch(item, archVisualUpload.slot, archUploadPreview(archVisualUpload)) },
-    } : item) : visibleSceneItems, [visibleSceneItems, archVisualUpload]);
+    } : item) : visibleSceneItems, [visibleSceneItems, archVisualUpload, siaeViscomUpload]);
   const signatureArchItems = useMemo(() => visibleSceneItems.filter(isSignatureArchItem), [visibleSceneItems]);
   // Only Signature stands keep a footprint on the technical floor (the arch one), contained in the stand.
   const technicalFloorFootprints = useMemo(() => (isSignatureStand ? technicalFloorFootprintRects(signatureArchItems, {
@@ -1837,14 +1850,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     layout,
     technicalFloor: selectedTechnicalFloor ? { ...selectedTechnicalFloor, area } : null,
     colorSelections: [
-      { usage: 'Moquette', color: selectedCarpetColor, defaultColorId: effectiveDefaultColorOptions.carpetColorId, quantityM2: area, configOptions: [...carpetGroupConfigOptionsList, { id: '__carpet-thick__', label: 'Moquette épaisse', pricePerM2: 30 }], selectedConfigOptions: { ...carpetConfigOptions, '__carpet-thick__': thickCarpetEnabled } },
+      { usage: 'Moquette', color: selectedCarpetColor, defaultColorId: effectiveDefaultColorOptions.carpetColorId, quantityM2: area, configOptions: [...carpetGroupConfigOptionsList, { id: '__carpet-thick__', label: 'Moquette épaisse', pricePerM2: thickCarpetRate }], selectedConfigOptions: { ...carpetConfigOptions, '__carpet-thick__': thickCarpetEnabled } },
       thickFootprintArea > 0 ? {
         usage: 'Empreinte moquette',
         color: isSignatureStand ? null : selectedCarpetFootprintColor,
         defaultColorId: effectiveDefaultColorOptions.carpetFootprintColorId || effectiveDefaultColorOptions.carpetColorId,
         quantityM2: thickFootprintArea,
-        configOptions: [{ id: '__footprint-thick__', label: 'Moquette épaisse', pricePerM2: 30 }],
-        selectedConfigOptions: { '__footprint-thick__': thickCarpetEnabled },
       } : null,
       { usage: 'Coton cloison', color: selectedWallFabricColor, defaultColorId: effectiveDefaultColorOptions.wallFabricColorId, quantityM2: Math.max(0, sceneWallFabricArea(width, depth, layout) - activeWallCoverFabricArea(wallCoverSurfaces, wallCovers)) },
     ],
@@ -1918,6 +1929,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       partitionHeadRightEnabled: effectivePartitionHeadSides.right,
       partitionHeadCompany,
       partitionHeadVisuals,
+      siaeViscomVisual,
+      siaeViscomPlacement,
       prestigeArchEnabled,
       prestigeArchTvEnabled,
       prestigeSignageEnabled,
@@ -2001,7 +2014,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, effectiveTechnicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, technicalFloorRamps, carpetFootprintEnabled, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly, objectBankLoaded, sceneSaveError?.stale, confirmState.loading]);
+  }, [width, depth, height, layout, manualHydratedItems, clientInfo, contactDetails, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, selectedReserveWallFabricColor, wallCovers, technicalFloorType, effectiveTechnicalFloorTrimType, selectedTechnicalFloor, technicalFloorRampX, technicalFloorRamps, carpetFootprintEnabled, language, ledRailsEnabled, ledSpotCount, ledRailOverrides, reserveItemOverrides, reserveOptions, signatureMeterCoverType, effectiveReserveOptionType, effectivePartitionHeadSides, partitionHeadCompany, partitionHeadVisuals, siaeViscomVisual, siaeViscomPlacement, prestigeArchEnabled, prestigeArchTvEnabled, prestigeSignageEnabled, specialRequest, specialRequestTags, saveState, readOnly, objectBankLoaded, sceneSaveError?.stale, confirmState.loading]);
 
   useEffect(() => {
     listObjectBank()
@@ -2011,7 +2024,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   }, []);
 
   const validateConfiguration = async () => {
-    if (readOnly || sceneSaveError?.stale || confirming.current || pendingWallCoverUploads.current.size || pendingArchVisualUpload.current) return;
+    if (readOnly || sceneSaveError?.stale || confirming.current || pendingWallCoverUploads.current.size || pendingArchVisualUpload.current || pendingSiaeViscomUpload.current) return;
     confirming.current = true;
     setConfirmState({ loading: true, message: '', error: '' });
     try {
@@ -2151,6 +2164,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const updateItem = (id, patch) => {
     if (readOnly) return;
     const currentItem = sceneItems.find((item) => item.id === id);
+    if (currentItem?.autoSiaeViscom) {
+      if (!isTransformPatch(patch)) return;
+      const next = constrainItem({ ...currentItem, ...patch }, width, depth, layout);
+      if (!collidesWithScene(next, visibleSceneItems, id, width, depth)) {
+        setSiaeViscomPlacement({ wall: next.wall, wallSide: next.wallSide, x: next.x });
+      }
+      return;
+    }
     if (isTransformPatch(patch) && itemSystemTransformLocked(currentItem) && !canApplyAutomaticReservePatch(currentItem, patch)) return;
     if (!effectiveAdminViewer && hasOwn(patch, 'rotation') && itemRotationLocked(currentItem)) return;
     if (isSignatureStand && isSignatureArchItem(currentItem)) {
@@ -2280,6 +2301,22 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       setArchVisualUpload({ error: error.message || 'Import du visuel impossible.' });
     } finally {
       pendingArchVisualUpload.current = false;
+    }
+  };
+
+  const uploadSiaeViscomVisual = async (file) => {
+    if (readOnly || confirming.current || pendingSiaeViscomUpload.current || !siaeViscom || !file) return;
+    pendingSiaeViscomUpload.current = true;
+    setSiaeViscomUpload({ uploading: true, fileName: file.name });
+    try {
+      const imageUrl = await uploadArtworkWithPreview(initialScene, { ...siaeViscom, visualLabel: siaeViscom.label }, file,
+        (previewUrl) => setSiaeViscomUpload({ uploading: true, fileName: file.name, previewUrl }));
+      setSiaeViscomVisual({ posterImageUrl: imageUrl, posterImageName: file.name, posterImageFraming: defaultImageFraming });
+      setSiaeViscomUpload({});
+    } catch (error) {
+      setSiaeViscomUpload({ error: error.message || 'Import du visuel impossible.' });
+    } finally {
+      pendingSiaeViscomUpload.current = false;
     }
   };
 
@@ -3260,7 +3297,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             catalog={availableCatalog}
             saveState={saveState}
             confirmState={confirmState}
-            visualsUploading={archVisualUpload.uploading || Object.values(wallCoverUploadState).some((upload) => upload.uploading)}
+            visualsUploading={archVisualUpload.uploading || siaeViscomUpload.uploading || Object.values(wallCoverUploadState).some((upload) => upload.uploading)}
             readOnly={readOnly}
             canConfirm={!sceneSaveError?.stale}
             isAdminViewer={effectiveAdminViewer}
@@ -3321,6 +3358,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             partitionHeadCompany={partitionHeadCompany}
             partitionHeadVisuals={partitionHeadVisuals}
             partitionHeadUploadState={itemOptionState}
+            siaeViscom={siaeViscom}
+            siaeViscomUpload={siaeViscomUpload}
+            onSiaeViscomImage={uploadSiaeViscomVisual}
+            onSiaeViscomReset={() => !readOnly && setSiaeViscomVisual({})}
+            onSiaeViscomFraming={(framing) => !readOnly && setSiaeViscomVisual((current) => ({ ...current, posterImageFraming: framing }))}
             counterItems={includedCounterItems}
             counterColors={counterPalette}
             counterColorCatalog={objectBank}
@@ -3346,7 +3388,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             carpetThick={thickCarpetEnabled}
             footprintThick={thickCarpetEnabled}
             carpetArea={area}
-            footprintArea={thickFootprintArea}
             onCarpetColor={(colorId) => !readOnly && setSelectedCarpetId(colorId)}
             onCarpetConfigOption={(optionId, checked) => !readOnly && setCarpetConfigOptions((current) => ({ ...current, [optionId]: checked }))}
             onCarpetThick={(v) => {
@@ -5777,6 +5818,11 @@ function OptionsStepPanel({
   wallCoverSurfaces = [],
   wallCoverIncludedMl = 0,
   wallFabricArea = 0,
+  siaeViscom = null,
+  siaeViscomUpload = {},
+  onSiaeViscomImage,
+  onSiaeViscomReset,
+  onSiaeViscomFraming,
   defaultColorOptions = {},
   technicalFloorType,
   technicalFloorTrimType,
@@ -5823,7 +5869,6 @@ function OptionsStepPanel({
   carpetThick = false,
   footprintThick = false,
   carpetArea = 0,
-  footprintArea = 0,
   onCarpetColor,
   onCarpetConfigOption,
   onCarpetThick,
@@ -5901,14 +5946,13 @@ function OptionsStepPanel({
           selectedOptions={carpetConfigOptions}
           thick={carpetThick}
           footprintEnabled={carpetFootprintEnabled}
-          footprintArea={footprintArea}
           onSelect={onCarpetColor}
           onOptionToggle={onCarpetConfigOption}
           onThickChange={onCarpetThick}
         />
         {isSignatureStand && (
           <div className="signature-floor-footprint">
-            <SurfaceColorOptionCard title={tr("EMPREINTE MOQUETTE")} iconSrc="/icons/empreinte_moquette_icon.svg"
+            <SurfaceColorOptionCard title={tr("EMPREINTE MOQUETTE")}
               colors={signatureArchColors} selectedColor={signatureArchColor} area={1}
               description="S’applique à l’arche et à son empreinte moquette."
               disabled={readOnly || !signatureArchItems.length}
@@ -5923,6 +5967,7 @@ function OptionsStepPanel({
             defaultColorId={defaultColorOptions.carpetFootprintColorId || defaultColorOptions.carpetColorId}
             area={carpetFootprintAreaM2()}
             disabled={readOnly || Boolean(technicalFloorType)}
+            thickDisabled={readOnly}
             disabledReason={technicalFloorType ? t('floor_warning') : ''}
             thick={footprintThick}
             carpetArea={carpetArea}
@@ -6030,6 +6075,28 @@ function OptionsStepPanel({
           onDifferentVisuals={onPartitionHeadDifferentVisuals}
         />
       </OptionAccordion>
+      {siaeViscom && (
+        <OptionAccordion {...accordionScrollProps('viscom')} title={t('option_siae_viscom')}
+          icon={<FileImage size={20} />} open={openOptions.viscom} onToggle={() => toggleOption('viscom')}>
+          <div className="partition-head-panel partition-head-panel-v2">
+            <PartitionHeadVisualUpload
+              row={{ visualLabel: t('option_siae_viscom'), badge: t('color_included'), uploadSubtitle: t('siae_viscom_format') }}
+              visual={{
+                headMainImageUrl: siaeViscomUpload.previewUrl || siaeViscom.options?.posterImageUrl,
+                headMainImageName: siaeViscomUpload.fileName || siaeViscom.options?.posterImageName,
+                headMainImageFraming: siaeViscom.options?.posterImageFraming,
+              }}
+              uploading={siaeViscomUpload.uploading}
+              disabled={readOnly}
+              showPending={false}
+              onImage={onSiaeViscomImage}
+              onReset={onSiaeViscomReset}
+              onFramingChange={onSiaeViscomFraming}
+            />
+            {siaeViscomUpload.error && <small role="alert" className="partition-head-upload-error">{tr(siaeViscomUpload.error)}</small>}
+          </div>
+        </OptionAccordion>
+      )}
       {isSignatureStand && (
         <OptionAccordion {...accordionScrollProps('arche')} className="signature-arch-accordion" title={tr("Arche")}
           icon={<ConfiguratorOptionIcon src="/icons/arche.svg" />} open={openOptions.arche} onToggle={() => toggleOption('arche')}>
@@ -6826,7 +6893,8 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
     const previous = initialOptions.extraOptions || {};
     return normalizedExtraChoices(extraOptions, extraOptions.reduce((acc, option) => {
       const sharedValue = sharedGlobalExtraValue(option, catalogEntry, item, items, initialOptions);
-      acc[option.id] = sharedValue ?? previous[option.id] ?? initialOptions[option.id] ?? Boolean(option.defaultChecked);
+      const value = sharedValue ?? previous[option.id] ?? initialOptions[option.id] ?? option.defaultQuantity ?? Boolean(option.defaultChecked);
+      acc[option.id] = option.type === 'quantity' ? variantExtraQuantity(value) : Boolean(value);
       return acc;
     }, {}));
   });
@@ -6877,8 +6945,6 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const canConfigureCounterVisual = isWoodReceptionDeskItem(visualItem) || isWoodReceptionDeskItem(resolvedEntry);
   const configuredCounterColors = counterColorOptionsForItem(visualItem, catalog, salonLabel, counterColors);
   const basePrice = selectedVariant?.price ?? assetUnitPrice(catalogEntry, salonLabel);
-  const extras = extraOptions
-    .reduce((sum, option) => sum + (selectedExtras[option.id] ? effectiveExtraOptionPrice(option, catalogEntry, selectedVariant) : 0), 0);
   const colorOptionExtras = colorOptions.reduce((sum, option) => sum + Number(resolvedColorSelections[option.id]?.price || 0), 0);
   const selectedColorOptionReferences = colorOptions
     .map((option) => {
@@ -6917,20 +6983,22 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const selectedVariantMeta = variantGroupMetaForType(catalogEntry, selectedVariant?.assetType);
   const selectedTemplateColor = Object.values(resolvedColorSelections).find((color) => normalizeHexColor(color?.hex || color?.color || color?.value));
   const selectedTemplateColorHex = normalizeHexColor(selectedTemplateColor?.hex || selectedTemplateColor?.color || selectedTemplateColor?.value);
-  const selectedOptionReferences = extraOptions
-    .filter((option) => Boolean(selectedExtras[option.id]))
-    .map((option) => ({
+  const selectedOptionReferences = extraOptions.flatMap((option) => {
+    const units = variantExtraUnits(option, selectedExtras[option.id]);
+    if (!units) return [];
+    const label = displayConfigOptionLabel(option, catalogEntry);
+    const unitPrice = effectiveExtraOptionPrice(option, catalogEntry, selectedVariant);
+    return [{
       id: option.id,
-      label: displayConfigOptionLabel(option, catalogEntry),
+      label: option.type === 'quantity' ? `${label} × ${units}` : label,
       reference: option.reference || '',
-      price: effectiveExtraOptionPrice(option, catalogEntry, selectedVariant),
+      price: roundCurrency(unitPrice * units),
+      ...(option.type === 'quantity' ? { type: 'quantity', quantity: units, unitPrice } : {}),
       global: isSharedGlobalGroupOption(option),
-    }))
-    .filter((option) => option.label || option.reference);
-  const nonGlobalExtras = extraOptions
-    .reduce((sum, option) => sum + (selectedExtras[option.id] && !isSharedGlobalGroupOption(option) ? effectiveExtraOptionPrice(option, catalogEntry, selectedVariant) : 0), 0);
-  const globalExtras = extraOptions
-    .reduce((sum, option) => sum + (selectedExtras[option.id] && isSharedGlobalGroupOption(option) ? effectiveExtraOptionPrice(option, catalogEntry, selectedVariant) : 0), 0);
+    }];
+  });
+  const nonGlobalExtras = selectedOptionReferences.reduce((sum, option) => sum + (option.global ? 0 : option.price), 0);
+  const globalExtras = selectedOptionReferences.reduce((sum, option) => sum + (option.global ? option.price : 0), 0);
   const globalExtraOptions = extraOptions
     .filter(isSharedGlobalGroupOption)
     .reduce((acc, option) => ({ ...acc, [option.id]: Boolean(selectedExtras[option.id]) }), {});
@@ -7039,6 +7107,27 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
   const renderExtraOption = (option) => {
     const optionPrice = effectiveExtraOptionPrice(option, catalogEntry, selectedVariant);
     const displayPrice = optionPrice > 0 ? `+ ${optionPrice.toLocaleString('fr-FR')} €` : t('item_config_included');
+    if (option.type === 'quantity') {
+      const count = variantExtraQuantity(selectedExtras[option.id]);
+      const label = displayConfigOptionLabel(option, catalogEntry);
+      const change = (delta) => setSelectedExtras((current) => ({
+        ...current, [option.id]: variantExtraQuantity(variantExtraQuantity(current[option.id]) + delta),
+      }));
+      return (
+        <div key={option.id} className="config-quantity-option" role="group" aria-label={tr(label)}>
+          <span>
+            <strong>{tr(label)}</strong>
+            {option.detail && <small>{tr(option.detail)}</small>}
+            <small>{optionPrice > 0 ? t('item_config_unit_extra', { price: formatNumber(optionPrice) }) : t('item_config_included')}</small>
+          </span>
+          <div className="quantity-control">
+            <button type="button" disabled={count === 0} onClick={() => change(-1)} aria-label={t('item_config_less_extra', { label: tr(label) })}><Minus size={14} /></button>
+            <output aria-live="polite">{count}</output>
+            <button type="button" disabled={count >= maxVariantExtraQuantity} onClick={() => change(1)} aria-label={t('item_config_more_extra', { label: tr(label) })}><Plus size={14} /></button>
+          </div>
+        </div>
+      );
+    }
     return (
       <ToggleOption
         key={option.id}
@@ -7102,7 +7191,7 @@ function ItemConfiguratorModal({ mode, scene, entry, item, salonLabel, visualCon
         fileCheck: Boolean(selectedExtras.fileCheck),
         baseUnitPrice: basePrice,
         billableUnitPrice: basePrice + nonGlobalExtras + colorOptionExtras + counterLogoSupplement,
-        unitPrice: basePrice + extras + colorOptionExtras + counterLogoSupplement,
+        unitPrice: basePrice + nonGlobalExtras + globalExtras + colorOptionExtras + counterLogoSupplement,
       },
     });
   };
@@ -7797,6 +7886,7 @@ function podiumVariantOptionLabel(variant = {}) {
 
 
 function isSharedGlobalGroupOption(option = {}) {
+  if (option.type === 'quantity') return false;
   const text = normalizeTextValue(`${option.id || ''} ${option.label || ''} ${option.reference || ''}`);
   return text.includes('permanence') && text.includes('technicien');
 }
@@ -8086,6 +8176,7 @@ function firstImageTextureSlot(item = {}) {
 
 function step2OptionKeyForItem(item = {}) {
   if (!item) return '';
+  if (item.autoSiaeViscom) return 'viscom';
   if (isPartitionHeadItem(item) || isAutomaticPartitionHeadItem(item)) return 'tete';
   if (isSignatureArchItem(item)) return 'arche';
   if (isPrestigeArchControlItem(item, false)) return 'arche';
@@ -8140,6 +8231,7 @@ function normalizeAssetConfigOptions(options = []) {
       reference: option.reference || option.ref || '',
       price: Number(option.price || 0),
       defaultChecked: Boolean(option.defaultChecked),
+      ...(option.type === 'quantity' ? { defaultQuantity: variantExtraQuantity(option.defaultQuantity ?? option.defaultChecked) } : {}),
       exclusiveGroup: option.exclusiveGroup || option.group || '',
       required: Boolean(option.required),
       type: option.type || 'toggle',
@@ -8594,6 +8686,7 @@ function patereVariantSubtitle(entry = {}) {
 
 function shopCartItemVisible(item) {
   if (!item) return false;
+  if (item.autoSiaeViscom) return false;
   if (isAutomaticReserveItem(item)) return false;
   if (isAutomaticPartitionHeadItem(item)) return false;
   if (isAutomaticLedRailItem(item)) return false;
@@ -10442,7 +10535,7 @@ function PartitionHeadOptionCard({ rule, sides = {}, isSignatureStand = false, c
           <input type="checkbox" checked={differentVisuals} disabled={disabled || uploading} onChange={(event) => onDifferentVisuals?.(event.target.checked)} />
           <span>{t('partition_different_visuals')}</span>
         </label>
-        <small>{t(sharedVisual ? 'partition_shared_visual_hint' : 'partition_different_visuals_hint')}</small>
+        {!isSiaePackLabel(salonLabel) && <small>{t(sharedVisual ? 'partition_shared_visual_hint' : 'partition_different_visuals_hint')}</small>}
       </div>}
 
       {visualRows.length ? visualRows.map((row) => (
@@ -10633,7 +10726,7 @@ function SurfaceColorOptionCard({ title, iconSrc, info = '', description = '', c
 function ColorOptionCard({ title, colors, selectedColor, defaultColorId = '', includedLabel = 'Inclus', optionLabel, area = 0, disabled = false, onSelect, uniformLayout = false }) {
   const tr = useUiText();
   if (uniformLayout) {
-    return <SurfaceColorOptionCard title={tr(title)} iconSrc="/icons/cloison.svg" colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />;
+    return <SurfaceColorOptionCard title={tr(title)} colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />;
   }
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
@@ -10747,6 +10840,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, upload
 
       {surfaces.map((surface) => {
         const enabled = wallCoverEnabledForSurface(covers, surface);
+        const { total: price } = wallCoverQuote([surface], 0, unitPrice);
         const preview = wallCoverPreviewForSurface(previews, surface);
         const pending = Boolean(covers?.[surface.id]?.visualPending || (surface.sourceWall && covers?.[surface.sourceWall]?.visualPending));
         const upload = uploadState[surface.id] || {};
@@ -10763,7 +10857,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, upload
               >
                 <span />
               </button>
-              <em>{tr("Option")}</em>
+              <em title={t('wall_cover_before_allowance')}>{tr(formatNumber(price))} € HT</em>
               <div>
                 <strong>{tr(surface.label)}</strong>
                 <span>{tr(formatNumber(surface.visibleWidth || surface.width))} m × {tr(formatNumber(surface.height))} m</span>
@@ -10810,16 +10904,16 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, upload
   );
 }
 
-function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect, uniformLayout = false, showThickOption = true, thick = false, footprintArea = 0, onThickChange }) {
+function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', area = 0, disabled = false, onSelect, uniformLayout = false, showThickOption = true, thick = false, onThickChange }) {
   const tr = useUiText();
   const t = useT();
   const carpetInfo = "La moquette est recyclée.";
   const thickOption = <div className="carpet-thick-option"><ToggleOption active={thick} disabled={disabled} label={t('carpet_thick_label')}
     detail={tr("S’applique à la moquette et à l’empreinte moquette.")}
-    price={thickCarpetPriceFromCarpetTab(area, footprintArea, t)} onChange={onThickChange} /></div>;
+    price={thickCarpetPriceLabel(area, t)} onChange={onThickChange} /></div>;
   // Other packs already show this shared option below the footprint palette.
   if (uniformLayout) {
-    return <><SurfaceColorOptionCard title={tr("MOQUETTE")} iconSrc="/icons/moquette_icon.svg" info={carpetInfo} colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />{tr(showThickOption && thickOption)}</>;
+    return <><SurfaceColorOptionCard title={tr("MOQUETTE")} info={carpetInfo} colors={colors} selectedColor={selectedColor} defaultColorId={defaultColorId} area={area} disabled={disabled} onSelect={onSelect} />{tr(showThickOption && thickOption)}</>;
   }
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
   const selectedDisplayColor = colorWithDefaultIncluded(selectedColor, defaultColorId);
@@ -10834,7 +10928,7 @@ function CarpetColorOptionCard({ colors, selectedColor, defaultColorId = '', are
   return (
     <div className="carpet-choice-card ground-choice-card ground-carpet-card">
       <section className="carpet-choice-section ground-section">
-        <GroundOptionHeading title={tr("MOQUETTE")} iconSrc="/icons/moquette_icon.svg" info={carpetInfo} />
+        <GroundOptionHeading title={tr("MOQUETTE")} info={carpetInfo} />
         <div className="ground-main-choice">
           <button
             type="button"
@@ -10903,7 +10997,7 @@ function GroundOptionHeading({ title, value = '', iconSrc = '', info = '' }) {
   );
 }
 
-function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColorId = '', area = 1, disabled = false, disabledReason = '', thick = false, carpetArea = 0, onEnabledChange, onSelect, onThickChange }) {
+function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColorId = '', area = 1, disabled = false, disabledReason = '', thickDisabled = disabled, thick = false, carpetArea = 0, onEnabledChange, onSelect, onThickChange }) {
   const tr = useUiText();
   const t = useT();
   const displayColors = colors.map((color) => colorWithDefaultIncluded(color, defaultColorId));
@@ -10927,7 +11021,7 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
         const minPrice = minColorPrice(paidColors);
         return (
           <section key={group.id} className="carpet-choice-section ground-section">
-            <GroundOptionHeading title={tr("EMPREINTE MOQUETTE")} value={`${referenceColor?.name} (${referenceColor?.code})`} iconSrc="/icons/empreinte_moquette_icon.svg" />
+            <GroundOptionHeading title={tr("EMPREINTE MOQUETTE")} value={`${referenceColor?.name} (${referenceColor?.code})`} />
             <small>{tr(`${includedColors.length || 1} couleur${(includedColors.length || 1) > 1 ? 's' : ''} incluse${(includedColors.length || 1) > 1 ? 's' : ''}`)}</small>
             <div className="carpet-swatch-row">
               {(includedColors.length ? includedColors : [referenceColor]).filter(Boolean).map((color) => (
@@ -11017,9 +11111,10 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
       <div className="carpet-config-options">
         <ToggleOption
           active={thick}
+          disabled={thickDisabled}
           label={t('carpet_thick_label')}
           detail={tr("S’applique à la moquette et à l’empreinte moquette.")}
-          price={thickCarpetPriceFromFootprintTab(carpetArea, area, t)}
+          price={thickCarpetPriceLabel(carpetArea, t)}
           onChange={(v) => onThickChange?.(v)}
         />
       </div>
@@ -11027,28 +11122,10 @@ function FootprintColorOptionCard({ enabled, colors, selectedColor, defaultColor
   );
 }
 
-function thickCarpetPriceFromCarpetTab(carpetArea = 0, footprintArea = 0, t = (_key) => '') {
-  const carpetTotal = Math.round(30 * Number(carpetArea || 0));
-  const footprintTotal = Math.round(30 * Number(footprintArea || 0));
-  const total = carpetTotal + footprintTotal;
-  if (footprintTotal > 0) {
-    return t('carpet_thick_price_with_footprint', {
-      carpet: formatNumber(carpetTotal),
-      footprint: formatNumber(footprintTotal),
-      total: formatNumber(total),
-    });
-  }
-  return `+ 30 €/m² (+${formatNumber(carpetTotal)} €)`;
-}
-
-function thickCarpetPriceFromFootprintTab(carpetArea = 0, footprintArea = 1, t = (_key) => '') {
-  const carpetTotal = Math.round(30 * Number(carpetArea || 0));
-  const footprintTotal = Math.round(30 * Number(footprintArea || 0));
-  const total = carpetTotal + footprintTotal;
-  return t('footprint_thick_price_with_carpet', {
-    carpet: formatNumber(carpetTotal),
-    footprint: formatNumber(footprintTotal),
-    total: formatNumber(total),
+function thickCarpetPriceLabel(carpetArea = 0, t = (_key) => '') {
+  return t('carpet_thick_price', {
+    rate: thickCarpetRate,
+    total: formatNumber(roundCurrency(thickCarpetRate * Number(carpetArea || 0))),
   });
 }
 
@@ -13246,7 +13323,7 @@ function PresetSceneEditor({ salon, offer, preset, assets, initialDraft, onDraft
   const packReserveBands = reserveRuleBandsForPack(offer?.name);
   const isSignaturePack = packReserveBands === signatureReserveRuleBands;
   const [reserveRules, setReserveRules] = useState(() => normalizeReserveRules(initialDraft?.reserveRules || preset.base_config?.reserveRules || preset.base_config?.options?.reserveRules, { keepEmptyOptions: true, bands: packReserveBands }));
-  const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(initialDraft?.partitionHeadRules || preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules, { isSignaturePack, isEquippedPack: normalizePackLabel(offer?.name) === 'equipe' }));
+  const [partitionHeadRules, setPartitionHeadRules] = useState(() => normalizePartitionHeadRules(initialDraft?.partitionHeadRules || preset.base_config?.partitionHeadRules || preset.base_config?.options?.partitionHeadRules, { isSignaturePack, isEquippedPack: isSiaePackLabel(offer?.name) }));
   const [autoSpotsRule, setAutoSpotsRule] = useState(() => initialDraft ? initialDraft.autoSpotsRule || null : preset.base_config?.autoSpotsRule || null);
   const [presetColorIds, setPresetColorIds] = useState(() => initialDraft?.defaultColorOptions || presetDefaultColorIds(preset));
   const [ledRailOverrides, setLedRailOverrides] = useState(() => initialDraft?.options?.ledRailOverrides || preset.base_config?.options?.ledRailOverrides || {});
@@ -16217,14 +16294,15 @@ function ColorGroupColorsEditor({ colors = [], groupType = '', onReorder, onDefa
 function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroups = [], textureSlots = [], links = [], onChange, onRemove, onAddChoice, onUpdateChoice, onRemoveChoice, onSetLink }) {
   if (!rows.length) return <p className="asset-variants-empty">{emptyLabel}</p>;
   const selectOption = rows.find((r) => r.type === 'select');
-  const toggleRows = rows.filter((r) => !['select', 'color'].includes(r.type || 'toggle'));
+  const toggleRows = rows.filter((r) => (r.type || 'toggle') === 'toggle');
   const comboRows = optionCombinationRows(toggleRows);
   return (
     <div className="asset-variant-list">
       {rows.map((row, index) => {
         const isSelect = row.type === 'select';
         const isColor = row.type === 'color';
-        const isToggle = !isSelect && !isColor;
+        const isQuantity = row.type === 'quantity';
+        const isToggle = !isSelect && !isColor && !isQuantity;
         return (
           <article key={`${row.id}-${index}`} className={`asset-variant-row option-row ${isSelect ? 'option-row-select' : ''}`}>
             <div className="option-row-fields">
@@ -16235,6 +16313,12 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
                   onClick={() => onChange(index, { type: 'toggle', choices: undefined, colorGroupType: '', textureSlotId: '' })}
                   title="Case à cocher"
                 >Case à cocher</button>
+                <button
+                  type="button"
+                  className={isQuantity ? 'active' : ''}
+                  onClick={() => onChange(index, { type: 'quantity', choices: undefined, colorGroupType: '', textureSlotId: '', exclusiveGroup: '', required: false })}
+                  title="Quantité avec boutons + et −"
+                >Quantité</button>
                 <button
                   type="button"
                   className={isSelect ? 'active' : ''}
@@ -16291,7 +16375,7 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
                   />
                 </>
               )}
-              {isToggle && (
+              {(isToggle || isQuantity) && (
                 <>
                   <label>
                     <span>Description</span>
@@ -16302,13 +16386,17 @@ function AssetConfigOptionRows({ rows, emptyLabel, sourceAssets = [], colorGroup
                     <input value={row.reference || ''} onChange={(event) => onChange(index, { reference: event.target.value })} placeholder="Ex : SMCL02OPT01" />
                   </label>
                   <label>
-                    <span>Supplément HT</span>
-                    <input type="number" min="0" step="1" value={row.price ?? 0} onChange={(event) => onChange(index, { price: event.target.value })} />
+                    <span>{isQuantity ? 'Prix unitaire HT' : 'Supplément HT'}</span>
+                    <input type="number" min="0" step={isQuantity ? '0.01' : '1'} value={row.price ?? 0} onChange={(event) => onChange(index, { price: event.target.value })} />
                   </label>
-                  <label className="asset-toggle-row asset-variant-default">
+                  {isQuantity ? <label>
+                    <span>Quantité par défaut</span>
+                    <input type="number" min="0" max={maxVariantExtraQuantity} step="1" value={row.defaultQuantity ?? Number(Boolean(row.defaultChecked))}
+                      onChange={(event) => onChange(index, { defaultQuantity: variantExtraQuantity(event.target.value) })} />
+                  </label> : <label className="asset-toggle-row asset-variant-default">
                     <input type="checkbox" checked={Boolean(row.defaultChecked)} onChange={(event) => onChange(index, { defaultChecked: event.target.checked })} />
                     <span><strong>Cochée par défaut</strong><small>L'option est active à l'ouverture.</small></span>
-                  </label>
+                  </label>}
                 </>
               )}
               <button type="button" onClick={() => onRemove(index)} aria-label="Supprimer cette option"><Trash2 size={14} /></button>
@@ -17444,7 +17532,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
     && (!isSignatureScene(scene) || !isSignatureArchItem(item) || signatureArchFitsDepth(item, depth)));
   const automaticMeterCoverItems = makeAutomaticMeterCoverItems(packLabel, options.signatureMeterCoverType, catalogEntries, width, depth, layout, manualItems);
   const reserveRules = sceneReserveRules(scene);
-  const reserveRule = reserveRuleWithPackChoices(activeReserveRule(reserveRules, area, isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands), reserveRules, catalogEntries, packLabel);
+  const reserveRule = reserveRuleWithPackChoices(activeReserveRule(reserveRules, area, reserveRuleBandsForPack(packLabel)), reserveRules, catalogEntries, packLabel);
   const reserveOption = configuredReserveOptionType(reserveRule, options.reserveOptionType);
   const partitionRule = activePartitionHeadRule(scenePartitionHeadRules(scene), area, layout);
   const partitionSides = isSignatureScene(scene) ? { left: true, right: true } : partitionHeadEnabledSides(partitionRule, {
@@ -17455,6 +17543,8 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
   const autoSpotsRule = options.autoSpotsRule || null;
   const automaticReserveItems = makeAutomaticReserveItems(reserveRule, reserveOption, catalogEntries, width, depth, layout, packLabel, options.reserveOptions || {})
     .map((item) => applyReserveItemOverride(item, options.reserveItemOverrides || {}, width, depth, layout, options.carpetFootprintEnabled !== false));
+  const siaeViscom = makeSiaeViscomItem(packLabel, width, depth, layout, [...automaticReserveItems, ...manualItems],
+    options.siaeViscomVisual, options.siaeViscomPlacement);
   const ledItems = options.ledRailsEnabled === false
     ? []
     : hasAutoSpotsRule(autoSpotsRule)
@@ -17470,6 +17560,7 @@ function sceneAllAdminItems(scene = {}, catalogEntries = []) {
     ...makeAutomaticPartitionHeadItems(partitionRule, partitionSides, catalogEntries, width, depth, layout, packLabel)
       .map((item) => applyPartitionHeadVisualOptions(item, options.partitionHeadVisuals || {})),
     ...ledItems,
+    ...(siaeViscom ? [siaeViscom] : []),
   ], width, depth, layout), width, depth, layout, {
     isIgnored: (item) => isHiddenPrestigeBaseItem(item, { isPrestigeStand: prestigeStand }),
   }));
@@ -18675,6 +18766,12 @@ function colorOptionsForUsage(assets = [], salonLabel = '', usage = '', fallback
 
 function packColorPalette(assets = [], packLabel = '', usage = '', fallbackColors = []) {
   const palette = colorOptionsForUsage(assets, packLabel, usage, fallbackColors);
+  if (isSiaePackLabel(packLabel) && ['carpet', 'wallFabric'].includes(usage)) {
+    return palette.map((color) => ({
+      ...color,
+      price: color.included || color.isDefault || color.isFree ? 0 : siaeSurfaceColorRate,
+    }));
+  }
   if (!isSignaturePackLabel(packLabel)) return palette;
   if (usage === 'footprint') return signatureFootprintPalette(palette.length ? palette : carpetColors);
   if (colorGroupAssets(assets, packLabel, usage).length && palette.length) {
@@ -18848,7 +18945,7 @@ function colorGroupMatchesPack(asset = {}, packLabel = '') {
 }
 
 function samePackLabel(a = '', b = '') {
-  return normalizePackLabel(a) === normalizePackLabel(b);
+  return normalizePackLabel(a) === normalizePackLabel(b) || (isSiaePackLabel(a) && isSiaePackLabel(b));
 }
 
 function normalizePackLabel(value = '') {
@@ -19103,7 +19200,7 @@ function isBasePackEligible(entry) {
 }
 
 function sceneReserveRules(scene = {}) {
-  const bands = isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands;
+  const bands = reserveRuleBandsForPack(sceneOfferLabel(scene));
   const normalized = normalizeReserveRules(
     scene?.source_payload?.reserveRules
     || scene?.source_payload?.reserve_rules
@@ -19118,7 +19215,8 @@ function sceneReserveRules(scene = {}) {
 }
 
 function reserveRuleBandsForPack(packLabel = '') {
-  return isSignaturePackLabel(packLabel) ? signatureReserveRuleBands : reserveRuleBands;
+  if (isSignaturePackLabel(packLabel)) return signatureReserveRuleBands;
+  return isSiaePackLabel(packLabel) ? siaeReserveRuleBands : reserveRuleBands;
 }
 
 function normalizeReserveRules(rules = {}, config = {}) {
@@ -19147,7 +19245,7 @@ function activeReserveRule(rules = {}, area = 0, bands = reserveRuleBands) {
   const numericArea = Number(area || 0);
   const band = bands.find((entry) => (
     numericArea >= entry.minArea
-    && (entry.maxArea === null || numericArea <= entry.maxArea)
+    && (entry.maxArea === null || (entry.maxExclusive ? numericArea < entry.maxArea : numericArea <= entry.maxArea))
   ));
   return band ? normalizeReserveRules(rules, { bands })[band.id] : null;
 }
@@ -19183,6 +19281,32 @@ function configuredReserveOptionType(rule, selectedType = '') {
 }
 
 function reserveRuleWithPackChoices(rule, rules = {}, catalogEntries = [], packLabel = '') {
+  if (isSiaePackLabel(packLabel) && rule) {
+    const band = siaeReserveRuleBands.find((candidate) => candidate.id === rule.id);
+    if (band) {
+      const configuredTypes = configuredReserveAssetTypes(rules);
+      const entries = catalogEntries.filter((entry) => entry?.isGroup && isReserveCatalogEntry(entry)
+        && (configuredTypes.has(entry.type) || (entry.dimensions?.packs || []).some(isSiaePackLabel)));
+      const entrySize = (entry) => reserveAreaFromText(`${entry.label || ''} ${entry.type}`);
+      const included = band.size ? entries.find((entry) => entry.type === rule.includedType && entrySize(entry) === band.size)
+        || entries.find((entry) => configuredTypes.has(entry.type) && entrySize(entry) === band.size)
+        || entries.find((entry) => entrySize(entry) === band.size) : null;
+      const options = normalizeComplementaryOptions(rule.options).filter((option) => option.type !== included?.type);
+      const knownSizes = new Set([band.size, ...options.map((option) => {
+        const entry = findCatalogEntry(entries, option.type);
+        return entry ? entrySize(entry) : 0;
+      })]);
+      const includedPrice = included ? assetUnitPrice(included, packLabel) : 0;
+      for (const entry of entries) {
+        const size = entrySize(entry);
+        if (!size || knownSizes.has(size)) continue;
+        knownSizes.add(size);
+        const price = assetUnitPrice(entry, packLabel);
+        options.push({ type: entry.type, label: entry.label, price: rule.chargeIncluded ? price : Math.max(0, price - includedPrice) });
+      }
+      return { ...rule, includedType: included?.type || '', includedLabel: band.includedLabel, options };
+    }
+  }
   const isSignature = isSignaturePackLabel(packLabel);
   if ((!isSignature && normalizePackLabel(packLabel) !== 'equipe') || !rule?.includedType) return rule;
   const includedEntry = findCatalogEntry(catalogEntries, rule.includedType);
@@ -19288,6 +19412,28 @@ function makeAutomaticReserveItems(rule, selectedOptionType, catalogEntries = []
   return applyElectricalClearance([item], width, depth, layout);
 }
 
+function makeSiaeViscomItem(packLabel, width, depth, layout, items = [], options = {}, placement = null) {
+  if (!isSiaePackLabel(packLabel) || width * depth < siaeViscomMinArea) return null;
+  const reserves = items.filter(isReserveSceneItem);
+  const reserveSurfaces = objectWallSurfaces(reserves).filter((surface) => surface.length >= .999);
+  const front = (surface) => surface.orientation === 'x' && protectedObjectOutsideSide(surface) === 1;
+  reserveSurfaces.sort((a, b) => Number(front(b)) - Number(front(a)) || b.length - a.length);
+  const savedSurface = isObjectWallId(placement?.wall)
+    ? objectWallSurfaces(items).find((surface) => surface.id === placement.wall && surface.length >= .999) : null;
+  const validWall = availableWalls(layout).some((wall) => wall.id === placement?.wall);
+  const surface = savedSurface || (!validWall && reserveSurfaces[0]) || null;
+  const wall = surface?.id || (validWall ? placement.wall : 'back');
+  const item = {
+    id: 'auto-siae-viscom', type: 'poster', label: 'Visuel Viscom 1000 × 1000 mm',
+    autoSiaeViscom: true, included: true, priceMode: 'included', deleteLocked: true, rotationLocked: true,
+    wall, wallSurface: serializeObjectWallSurface(surface), wallSide: surface
+      ? safeObjectWallSide(surface, Number(placement?.x || surface.centerAxis), placement?.wallSide) : null,
+    options: { ...options, unitPrice: 0 },
+    x: savedSurface || validWall ? Number(placement.x || 0) : Number(surface?.centerAxis || 0),
+  };
+  return { ...item, x: posterSurfaceRegion(item, items, width, depth).center };
+}
+
 function scenePartitionHeadRules(scene = {}) {
   const isSignaturePack = isSignatureScene(scene);
   if (scenePackBenefits(scene).mode === 'allowance' && !isSignaturePack) return normalizePartitionHeadRules({});
@@ -19299,7 +19445,7 @@ function scenePartitionHeadRules(scene = {}) {
     || scene?.options?.partitionHeadRules
     || scene?.source_payload?.options?.partitionHeadRules
     || {},
-    { isSignaturePack, isEquippedPack: normalizePackLabel(sceneOfferLabel(scene)) === 'equipe' },
+    { isSignaturePack, isEquippedPack: isSiaePackLabel(sceneOfferLabel(scene)) },
   );
 }
 
@@ -19569,8 +19715,9 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
     .filter((selection) => !isIncludedColorSelection(selection))
     .forEach((selection) => {
       const colorPrice = Number(selection.color.price || 0);
-      const quantityM2 = Math.max(0, Number(selection.quantityM2 || 1));
-      const lineTotal = Math.round(colorPrice * quantityM2);
+      const quantityM2 = Math.max(0, Number(selection.quantityM2 ?? 1));
+      if (!quantityM2) return;
+      const lineTotal = roundCurrency(colorPrice * quantityM2);
       const line = {
         type: `color-${selection.color.groupId || selection.color.id}`,
         label: `${selection.usage} — ${selection.color.groupLabel || selection.color.name} (${formatNumber(quantityM2)} m²)`,
@@ -19591,14 +19738,16 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
         const pricePerM2 = Number(option.pricePerM2 || 0);
         const flatPrice = Number(option.price || 0);
         if (pricePerM2 <= 0 && flatPrice <= 0) return;
+        const quantity = pricePerM2 > 0 ? Number(selection.quantityM2 ?? 1) : 1;
+        if (quantity <= 0) return;
         const lineTotal = pricePerM2 > 0
-          ? Math.round(pricePerM2 * Number(selection.quantityM2 || 1))
+          ? roundCurrency(pricePerM2 * quantity)
           : Math.round(flatPrice);
         itemsTotal += lineTotal;
         lines.push({
           type: `color-option-${selection.color?.groupId || selection.usage}-${option.id}`,
           label: `${selection.usage} — ${option.label}`,
-          quantity: pricePerM2 > 0 ? Number(selection.quantityM2 || 1) : 1,
+          quantity,
           unitPrice: pricePerM2 > 0 ? pricePerM2 : flatPrice,
           total: lineTotal,
           reference: '',
@@ -19826,7 +19975,9 @@ function automaticBaseUsageRows(items = [], scene = {}, catalogEntries = [], con
   const meterCover = items.find((item) => item.autoMeterCover);
   if (meterCover) rows.push({ type: meterCover.type, label: meterCover.label, quantity: 1, used: 1, remaining: 0, billable: 0, automatic: true });
   const area = Number(scene?.dimensions?.width || scene?.width_m || 0) * Number(scene?.dimensions?.depth || scene?.depth_m || 0);
-  const reserveRule = activeReserveRule(sceneReserveRules(scene), area, isSignatureScene(scene) ? signatureReserveRuleBands : reserveRuleBands);
+  const packLabel = sceneOfferLabel(scene);
+  const reserveRules = sceneReserveRules(scene);
+  const reserveRule = reserveRuleWithPackChoices(activeReserveRule(reserveRules, area, reserveRuleBandsForPack(packLabel)), reserveRules, catalogEntries, packLabel);
   if (reserveRule?.includedType) {
     const reserveUsed = items.some((item) => isAutomaticReserveItem(item));
     rows.push({
@@ -20660,7 +20811,16 @@ function wallCoverDisplayBlockers(wall, items, width, depth, layout = 'back') {
   }
   (items || []).forEach((item) => {
     const partitionBlocker = wallCoverPartitionHeadBlocker(item, wall, width, depth, 0);
-    if (partitionBlocker) blockers.push(partitionBlocker);
+    if (partitionBlocker) {
+      if (wall !== 'back' && siaePartitionHeadPlacementBounds(item)) {
+        // The SIAE end fitting uses 610 mm measured from the wall tip, including any placement inset.
+        if (range.max - partitionBlocker.max <= partitionHeadEdgeInset + 0.001) {
+          blockers.push({ min: Math.min(partitionBlocker.min, range.max - 0.61), max: range.max });
+        } else if (partitionBlocker.min - range.min <= partitionHeadEdgeInset + 0.001) {
+          blockers.push({ min: range.min, max: Math.max(partitionBlocker.max, range.min + 0.61) });
+        } else blockers.push(partitionBlocker);
+      } else blockers.push(partitionBlocker);
+    }
     if (isReserveSceneItem(item)) {
       const reserveBlocker = wallCoverReserveDisplayBlocker(item, wall, width, depth);
       if (reserveBlocker) blockers.push(reserveBlocker);
@@ -26017,7 +26177,7 @@ function WallMountedItem({ item, items, width, depth, selected, hovered, draggin
             <boxGeometry args={[posterWidth, posterHeight, 0.006]} />
             <meshStandardMaterial color="#ffffff" map={posterTexture || null} roughness={0.5} polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2} />
           </mesh>
-          {!posterTexture && <Text position={[0, 0, 0.022]} fontSize={Math.min(0.18, posterWidth / 8)} color="#1f4378" anchorX="center" anchorY="middle">AFFICHE</Text>}
+          {!posterTexture && <Text position={[0, 0, 0.022]} fontSize={Math.min(0.18, posterWidth / 8)} color="#1f4378" anchorX="center" anchorY="middle">{item.autoSiaeViscom ? 'VISCOM' : 'AFFICHE'}</Text>}
           {selected && <SelectionFrame bounds={{ width: posterWidth, height: posterHeight, depth: 0.05 }} centerY={0} />}
         </>
       ) : isCustomModel ? (
