@@ -43,6 +43,8 @@ import {
   AlertTriangle,
   ArrowRight,
   Ban,
+  Armchair,
+  Blocks,
   Box,
   CalendarDays,
   Check,
@@ -61,6 +63,7 @@ import {
   KeyRound,
   Layers,
   LayoutDashboard,
+  LayoutGrid,
   Lock,
   LogOut,
   Mail,
@@ -76,13 +79,16 @@ import {
   Search,
   Settings2,
   ShoppingCart,
+  Signpost,
   Sparkles,
   Trash2,
+  Tv,
   Upload,
   Unlock,
   UserPlus,
   Users,
   X,
+  Zap,
 } from 'lucide-react';
 import { supabase } from './data/supabaseClient.js';
 import { catalog, layouts } from './config/catalog.js';
@@ -2588,10 +2594,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     }, 0);
   };
 
-  const removeOptionalItem = (type) => {
+  const removeOptionalItem = (typeOrTypes) => {
     if (readOnly) return;
+    const types = new Set([typeOrTypes].flat().filter(Boolean));
     setItems((current) => {
-      const index = [...current].reverse().findIndex((item) => item.type === type && !isIncludedSceneItem(item) && (effectiveAdminViewer || !itemDeletionLocked(item)));
+      const index = [...current].reverse().findIndex((item) => types.has(item.type) && !isIncludedSceneItem(item) && (effectiveAdminViewer || !itemDeletionLocked(item)));
       if (index < 0) return current;
       const removeIndex = current.length - 1 - index;
       const removedItem = current[removeIndex];
@@ -3202,6 +3209,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             readOnly={readOnly}
             onAdd={openAddItemConfigurator}
             onRemove={removeOptionalItem}
+            onDuplicate={duplicateCartItem}
             onSelectItem={setSelectedId}
             onConfigureItem={(item) => {
             const entry = itemConfiguratorEntry(item);
@@ -5516,103 +5524,280 @@ function OptionsStepPanel({
   );
 }
 
-function FurnitureStepPanel({ items, catalog, pricing, salonLabel, selectedId, readOnly = false, onAdd, onRemove, onSelectItem, onConfigureItem, onNext }) {
-  const tr = useUiText();
-  const t = useT();
-  const [activeCategory, setActiveCategory] = useState('all');
-  const [search, setSearch] = useState('');
-  const groupedVariantTypes = variantGroupMemberTypes(catalog);
-  const entries = catalog.filter((entry) => (
-    !['hidden'].includes(furniturePanelCategory(entry))
-    && !groupedVariantTypes.has(entry.type)
-    && (!isVariantGroupEntry(entry) || variantGroupHasDisplayVariants(entry))
-  ));
-  const categories = marketplaceCategories(entries);
-  const selectedCategory = categories.find((category) => category.id === activeCategory) || categories[0];
-  const filteredEntries = entries.filter((entry) => {
-    const entryCategory = normalizeMarketCategory(entry);
-    const matchesCategory = activeCategory === 'all' || entryCategory === activeCategory;
-    const searchText = [entry.label, entry.type, entry.dimensions?.category, marketplaceItemSubtitle(entry, marketCategoryMeta(entryCategory).label), marketplaceItemDescription(entry)]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
-    const matchesSearch = !search || searchText.includes(search.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
-  return (
-    <>
-      <PanelHead title={t('panel_furniture_title')} step={3} />
-      <p className="marketplace-subtitle">{t('furniture_subtitle')}</p>
+const marketCategoryIcons = {
+  all: LayoutGrid,
+  furniture: Armchair,
+  multimedia: Tv,
+  electricity: Zap,
+  signage: Signpost,
+  structure: Blocks,
+};
 
-      <label className="marketplace-search">
-        <Search size={15} />
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('furniture_search')} />
-      </label>
-
-      <nav className="marketplace-tabs" aria-label={t('furniture_aria_filter')}>
-        {categories.map((category) => (
-          <button key={category.id} type="button" className={selectedCategory?.id === category.id ? 'active' : ''} onClick={() => setActiveCategory(category.id)}>
-            <span>{tr(category.icon)}</span>{tr(category.label)}<em>{tr(category.count)}</em>
-          </button>
-        ))}
-      </nav>
-
-
-      <section className="marketplace-grid">
-        {filteredEntries.map((entry, index) => (
-          <MarketplaceCard
-            key={entry.type}
-            entry={entry}
-            index={index}
-            salonLabel={salonLabel}
-            catalog={catalog}
-            readOnly={readOnly}
-            includedCount={pricing?.includedCounts?.get(entry.type) || 0}
-            billableCount={pricing?.billableCounts?.get(entry.type) || 0}
-            onAdd={() => onAdd(entry)}
-            onRemoveOne={() => onRemove(entry.type)}
-          />
-        ))}
-        {!filteredEntries.length && <div className="marketplace-empty">{t('furniture_empty')}</div>}
-      </section>
-    </>
-  );
+function marketplaceEntryTypes(entry = {}) {
+  return isVariantGroupEntry(entry)
+    ? uniqueTextValues([entry.type, ...variantManagedAssetTypes(entry)])
+    : [entry.type];
 }
 
-function MarketplaceCard({ entry, index, salonLabel, catalog, readOnly, includedCount = 0, billableCount = 0, onAdd, onRemoveOne }) {
+const marketplaceSearchSynonyms = [
+  ['ecran', 'tv', 'tele', 'televiseur', 'television', 'moniteur', 'screen', 'mur led', 'borne', 'numerique'],
+  ['prise', 'electricite', 'electrique', 'courant', 'alimentation', 'triplette', 'multiprise', 'power', 'socket'],
+  ['lumiere', 'eclairage', 'spot', 'rail led', 'pont lumiere', 'lampe', 'light'],
+  ['chaise', 'siege', 'assise', 'tabouret', 'fauteuil', 'chair', 'stool'],
+  ['rangement', 'meuble', 'etagere', 'placard', 'storage', 'shelf'],
+  ['accueil', 'comptoir', 'banque', 'bar', 'desk', 'counter'],
+  ['affiche', 'poster', 'visuel', 'enseigne', 'totem', 'signaletique', 'sign'],
+  ['son', 'sono', 'enceinte', 'micro', 'audio', 'sound'],
+  ['documentation', 'brochure', 'flyer', 'porte document', 'presentoir'],
+  ['portemanteau', 'cintre', 'patere', 'crochet', 'hook'],
+];
+
+function marketplaceSearchTerms(word = '') {
+  const group = marketplaceSearchSynonyms.find((terms) => terms.some((term) => term.startsWith(word) || word.startsWith(term)));
+  return group && word.length >= 3 ? [word, ...group] : [word];
+}
+
+function marketplaceSearchText(entry = {}) {
+  const category = normalizeMarketCategory(entry);
+  return normalizeTextValue([
+    entry.label,
+    entry.type,
+    entry.dimensions?.category,
+    marketCategoryMeta(category).label,
+    marketplaceItemSubtitle(entry, marketCategoryMeta(category).label),
+    marketplaceItemDescription(entry),
+  ].filter(Boolean).join(' '));
+}
+
+function FurnitureStepPanel({ items = [], catalog, pricing, salonLabel, selectedId, readOnly = false, onAdd, onRemove, onDuplicate, onSelectItem, onConfigureItem, onNext }) {
   const tr = useUiText();
   const t = useT();
   const lang = useContext(LanguageContext);
-  const Icon = entry.icon || Box;
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [search, setSearch] = useState('');
+  const [announcement, setAnnouncement] = useState('');
+  const searchRef = useRef(null);
+  const previousCounts = useRef(null);
+  const groupedVariantTypes = useMemo(() => variantGroupMemberTypes(catalog), [catalog]);
+  const entries = useMemo(() => catalog.filter((entry) => (
+    !['hidden'].includes(furniturePanelCategory(entry))
+    && !groupedVariantTypes.has(entry.type)
+    && (!isVariantGroupEntry(entry) || variantGroupHasDisplayVariants(entry))
+  )), [catalog, groupedVariantTypes]);
+  const query = normalizeTextValue(search);
+  const searchMatches = useMemo(() => (
+    query ? entries.filter((entry) => {
+      const text = marketplaceSearchText(entry);
+      return query.split(/\s+/).every((word) => marketplaceSearchTerms(word).some((term) => text.includes(term)));
+    }) : entries
+  ), [entries, query]);
+  const categories = marketplaceCategories(entries).map((category) => ({
+    ...category,
+    count: category.id === 'all' ? searchMatches.length : searchMatches.filter((entry) => normalizeMarketCategory(entry) === category.id).length,
+  }));
+  const selectedCategory = categories.some((category) => category.id === activeCategory) ? activeCategory : 'all';
+  const filteredEntries = searchMatches.filter((entry) => selectedCategory === 'all' || normalizeMarketCategory(entry) === selectedCategory);
+  const sections = selectedCategory === 'all'
+    ? categories.filter((category) => category.id !== 'all')
+      .map((category) => ({ ...category, entries: filteredEntries.filter((entry) => normalizeMarketCategory(entry) === category.id) }))
+      .filter((section) => section.entries.length)
+    : [{ id: selectedCategory, entries: filteredEntries }];
+
+  const counts = useMemo(() => {
+    const map = new Map();
+    entries.forEach((entry) => {
+      const types = marketplaceEntryTypes(entry);
+      const sum = (source) => types.reduce((total, type) => total + (source?.get?.(type) || 0), 0);
+      const lastItem = [...items].reverse().find((item) => (
+        types.includes(item.type) || item.options?.variantGroupType === entry.type
+      ) && !isIncludedSceneItem(item) && shopCartItemVisible(item));
+      map.set(entry.type, { types, included: sum(pricing?.includedCounts), billable: sum(pricing?.billableCounts), lastItem });
+    });
+    return map;
+  }, [entries, items, pricing]);
+
+  useEffect(() => {
+    const previous = previousCounts.current;
+    previousCounts.current = new Map([...counts].map(([type, value]) => [type, value.billable]));
+    if (!previous) return;
+    const changed = entries.find((entry) => (previous.get(entry.type) || 0) !== (counts.get(entry.type)?.billable || 0));
+    if (!changed) return;
+    const count = counts.get(changed.type)?.billable || 0;
+    const label = tr(localizeItemLabel(changed, lang));
+    setAnnouncement(t(count > (previous.get(changed.type) || 0) ? 'shop_announce_added' : 'shop_announce_removed', { label, count }));
+  }, [counts]);
+
+  const clearSearch = () => {
+    setSearch('');
+    searchRef.current?.focus();
+  };
+  const resetFilters = () => {
+    setSearch('');
+    setActiveCategory('all');
+  };
+  const totalAdded = [...counts.values()].reduce((total, value) => total + value.billable, 0);
+
+  return (
+    <div className="shop-panel">
+      <header className="shop-head">
+        <div>
+          <h1>{tr(t('panel_furniture_title'))}</h1>
+          <p>{t('furniture_subtitle')}</p>
+        </div>
+        {totalAdded > 0 && <span className="shop-head-count" aria-hidden="true"><ShoppingCart size={13} />{totalAdded}</span>}
+      </header>
+
+      <div className="shop-toolbar">
+        <label className="shop-search">
+          <Search size={16} aria-hidden="true" />
+          <input
+            ref={searchRef}
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Escape' && search) { event.preventDefault(); clearSearch(); } }}
+            placeholder={t('furniture_search')}
+            aria-label={t('furniture_search')}
+          />
+          {search && (
+            <button type="button" className="shop-search-clear" onClick={clearSearch} aria-label={t('shop_clear_search')}>
+              <X size={14} />
+            </button>
+          )}
+        </label>
+
+        <nav className="shop-chips" aria-label={t('furniture_aria_filter')}>
+          {categories.map((category) => {
+            const CategoryIcon = marketCategoryIcons[category.id] || Box;
+            const active = selectedCategory === category.id;
+            return (
+              <button
+                key={category.id}
+                type="button"
+                className={active ? 'active' : ''}
+                aria-pressed={active}
+                disabled={!category.count && !active}
+                onClick={() => setActiveCategory(category.id)}
+              >
+                <CategoryIcon size={14} aria-hidden="true" />
+                <span>{t(`cat_${category.id}`)}</span>
+                <em>{category.count}</em>
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+
+      {query && filteredEntries.length > 0 && (
+        <p className="shop-results-meta">
+          {t(filteredEntries.length > 1 ? 'shop_results_many' : 'shop_results_one', { count: filteredEntries.length })}
+          <button type="button" onClick={clearSearch}>{t('shop_clear_search')}</button>
+        </p>
+      )}
+
+      {sections.map((section) => {
+        const SectionIcon = marketCategoryIcons[section.id] || Box;
+        return (
+          <section key={section.id} className="shop-section" aria-label={t(`cat_${section.id}`)}>
+            {selectedCategory === 'all' && (
+              <h2 className="shop-section-title"><SectionIcon size={14} aria-hidden="true" />{t(`cat_${section.id}`)}<em>{section.entries.length}</em></h2>
+            )}
+            <div className="shop-grid">
+              {section.entries.map((entry) => {
+                const count = counts.get(entry.type) || {};
+                return (
+                  <MarketplaceCard
+                    key={entry.type}
+                    entry={entry}
+                    salonLabel={salonLabel}
+                    catalog={catalog}
+                    readOnly={readOnly}
+                    includedCount={count.included || 0}
+                    billableCount={count.billable || 0}
+                    onAdd={() => onAdd(entry)}
+                    onAddOne={() => (count.lastItem && entryNeedsConfigurator(entry) && onDuplicate ? onDuplicate(count.lastItem) : onAdd(entry))}
+                    onRemoveOne={() => onRemove(count.types || [entry.type])}
+                  />
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+
+      {!filteredEntries.length && (
+        <div className="shop-empty">
+          <Search size={22} aria-hidden="true" />
+          <strong>{t('furniture_empty')}</strong>
+          {query && <span>{t('shop_empty_hint', { query: search.trim() })}</span>}
+          <button type="button" onClick={resetFilters}>{t('shop_reset_filters')}</button>
+        </div>
+      )}
+
+      <p className="visually-hidden" role="status" aria-live="polite">{announcement}</p>
+    </div>
+  );
+}
+
+function MarketplaceCard({ entry, salonLabel, catalog, readOnly, includedCount = 0, billableCount = 0, onAdd, onAddOne, onRemoveOne }) {
+  const tr = useUiText();
+  const t = useT();
+  const lang = useContext(LanguageContext);
+  const Icon = entry.icon || marketCategoryIcons[normalizeMarketCategory(entry)] || Box;
   const price = marketplaceStartingPrice(entry, catalog, salonLabel);
   const category = marketCategoryMeta(normalizeMarketCategory(entry));
   const subtitle = marketplaceItemSubtitle(entry, category.label);
-  const label = localizeItemLabel(entry, lang);
+  const label = tr(localizeItemLabel(entry, lang));
+  const needsConfigurator = entryNeedsConfigurator(entry);
+  const actionLabel = t(needsConfigurator ? 'shop_configure' : 'shop_add');
+  const added = billableCount > 0;
+  const [pulse, setPulse] = useState(false);
+  const previousCount = useRef(billableCount);
+  useEffect(() => {
+    if (billableCount > previousCount.current) {
+      setPulse(true);
+      const timer = window.setTimeout(() => setPulse(false), 650);
+      previousCount.current = billableCount;
+      return () => window.clearTimeout(timer);
+    }
+    previousCount.current = billableCount;
+    return undefined;
+  }, [billableCount]);
+
   return (
-    <article className="marketplace-card">
-      <div className="marketplace-card-preview">
-        {entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" /> : <Icon size={42} />}
-      </div>
-      <div className="marketplace-card-body">
-        <strong>{tr(label)}</strong>
-        {price ? <em>{tr(marketplacePriceLabel(entry, price, t))}</em> : null}
-        {subtitle ? <small>{tr(subtitle)}</small> : null}
-        {billableCount > 0 ? (
-          <div className="marketplace-card-counter">
-            <button type="button" disabled={readOnly} onClick={() => onRemoveOne?.()} aria-label={tr(`- ${label}`)}>
-              <Minus size={14} />
-            </button>
-            <span>{tr(billableCount)}</span>
-            <button type="button" disabled={readOnly} onClick={onAdd} aria-label={tr(`+ ${label}`)}>
-              <Plus size={14} />
-            </button>
-          </div>
-        ) : (
-          <button type="button" disabled={readOnly} onClick={onAdd} aria-label={tr(`+ ${label}`)}>
-            <Plus size={18} />
+    <article className={`shop-card${added ? ' is-added' : ''}${pulse ? ' is-pulsing' : ''}`}>
+      <button
+        type="button"
+        className="shop-card-main"
+        disabled={readOnly}
+        onClick={onAdd}
+        aria-label={`${actionLabel} : ${label}${price ? ` — ${tr(marketplacePriceLabel(entry, price, t))}` : ''}`}
+      >
+        <span className="shop-card-media">
+          {entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" loading="lazy" /> : <Icon size={40} strokeWidth={1.5} />}
+          {includedCount > 0 && <span className="shop-badge included">{t('shop_included', { count: includedCount })}</span>}
+          {added && <span className="shop-badge added"><Check size={11} strokeWidth={3} />{billableCount}</span>}
+        </span>
+        <span className="shop-card-info">
+          <strong>{label}</strong>
+          {subtitle ? <small>{tr(subtitle)}</small> : null}
+        </span>
+        <span className="shop-card-footer">
+          <b>{price ? tr(marketplacePriceLabel(entry, price, t)) : (includedCount > 0 ? t('shop_included_short') : '')}</b>
+          {!added && !readOnly && <span className="shop-card-cta"><Plus size={14} strokeWidth={2.6} />{actionLabel}</span>}
+        </span>
+      </button>
+      {added && (
+        <div className="shop-stepper" role="group" aria-label={label}>
+          <button type="button" disabled={readOnly} onClick={onRemoveOne} aria-label={t('shop_remove_one', { label })}>
+            {billableCount === 1 ? <Trash2 size={13} /> : <Minus size={14} />}
           </button>
-        )}
-      </div>
+          <span aria-live="off">{billableCount}</span>
+          <button type="button" disabled={readOnly} onClick={onAddOne} aria-label={t('shop_add_one', { label })}>
+            <Plus size={14} />
+          </button>
+        </div>
+      )}
     </article>
   );
 }
@@ -7641,7 +7826,10 @@ function marketplaceCategories(entries) {
 
 function marketplaceItemSubtitle(entry, categoryLabel) {
   if (isPatereEntry(entry)) return entry.dimensions?.category || categoryLabel;
-  if (isVariantGroupEntry(entry)) return `${variantGroupDisplayVariantCount(entry)} variantes disponibles`;
+  if (isVariantGroupEntry(entry)) {
+    const count = variantGroupDisplayVariantCount(entry);
+    return count > 1 ? `${count} variantes disponibles` : `${count} variante disponible`;
+  }
   if (isTelevisionMarketplaceEntry(entry)) return '32 / 43 / 55 / 65 pouces';
   if (entry.dimensions?.category) return entry.dimensions.category;
   return categoryLabel;
