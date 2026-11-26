@@ -3874,55 +3874,7 @@ function ModalHead({ icon, title, salonLabel, onClose }) {
   );
 }
 
-
-  const changeMembership = async (action, member) => {
-    if (busy) return;
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      const result = await manageSceneCollaborators(sceneId, action, action === 'invite'
-        ? { email: email.trim(), language }
-        : { invitation_id: member.id });
-      if (action === 'invite') {
-        setMembers((current) => [...current, result.member]);
-        setEmail('');
-        setMessage('Invitation envoyée.');
-      } else {
-        setMembers((current) => current.filter((entry) => entry.id !== member.id));
-        setMessage('Accès retiré.');
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <section className="scene-collaborators-section" aria-label={tr('Ajouter des collaborateurs')}>
-      <h3><Users size={17} />{tr('Ajouter des collaborateurs')}</h3>
-      <div className="scene-collaborators-content" aria-busy={busy || (!members && !error)}>
-        <p>{tr('Invitez jusqu’à trois personnes à modifier et à valider la configuration de ce stand.')}</p>
-        {!members && !error && <div role="status">{tr('Chargement')}</div>}
-        {members?.length > 0 && <ul className="scene-collaborators-list">
-          {members.map((member) => <li key={member.id}>
-            <div><strong>{member.email}</strong><small>{tr(member.accepted_at ? 'Accès actif' : Date.parse(member.expires_at) < Date.now() ? 'Invitation expirée' : 'En attente de confirmation')}</small></div>
-            <button type="button" disabled={busy} onClick={() => changeMembership('remove', member)} aria-label={`${tr('Retirer l’accès')} : ${member.email}`}><Trash2 size={15} /> {tr('Retirer')}</button>
-          </li>)}
-        </ul>}
-        {members && (members.length < 3 ? <form className="scene-collaborators-form" onSubmit={(event) => { event.preventDefault(); changeMembership('invite'); }}>
-          <label className="form-row">{tr('Adresse e-mail du collaborateur')}<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required maxLength={254} disabled={busy} /></label>
-          <button className="client-correction-button" type="submit" disabled={busy || !email.trim()}>{tr('Envoyer l’invitation')}</button>
-        </form> : <p>{tr('Trois collaborateurs maximum par scène.')}</p>)}
-        {message && <div className="validation-message success" role="status">{tr(message)}</div>}
-        {error && <div className="validation-message error" role="alert">{tr(error)}</div>}
-      </div>
-    </section>
-  );
-}
-
-function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrection, sceneId, canManageCollaborators = false }) {
+function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrection }) {
   const tr = useUiText();
   const t = useT();
   const [correctionOpen, setCorrectionOpen] = useState(false);

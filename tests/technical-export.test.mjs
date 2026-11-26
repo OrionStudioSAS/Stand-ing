@@ -707,6 +707,8 @@ test('the BAT uses the moved reserve and refreshes the TV surface from its curre
   Object.assign(api, {
     sceneAdminItems: (scene) => scene.items,
     sceneOfferLabel: (scene) => scene.offer || '',
+    isPrestigeScene: () => false,
+    isSpotWallItem: () => false,
     isLockedPlacementRule: () => false,
     isSignatureScene: () => false, reserveRuleBands: [], signatureReserveRuleBands: [],
     sceneReserveRules: () => [], activeReserveRule: () => ({}),

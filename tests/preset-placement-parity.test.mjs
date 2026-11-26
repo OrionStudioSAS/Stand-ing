@@ -57,12 +57,13 @@ function surfaceContext() {
     isWallItem: (item) => Boolean(item.isWallItem),
     itemCollisionEnabled: () => true,
     isReserveSceneItem: (item) => Boolean(item.autoReserve),
+    spotObstacles: () => [],
     itemDefaultSize: (item) => item.dimensions.size,
     itemHardCollisionBox: (item) => ({ minX: item.x - 1, maxX: item.x + 1, minZ: item.z - 0.5, maxZ: item.z + 0.5 }),
   });
   for (const name of [
-    'rotatePoint', 'wallSurfaceCandidate', 'isObjectWallSurfaceCandidate',
-    'objectWallSurfaces', 'groupObjectWallSurfaces', 'mergeObjectWallSurfaces',
+    'normalizedItemText', 'isReserveDoorChild', 'rotatePoint', 'wallSurfaceCandidate', 'isObjectWallSurfaceCandidate',
+    'objectWallSurfaces', 'groupObjectWallSurfaces', 'alignDoorSurfaces', 'mergeObjectWallSurfaces',
     'isProtectedBoundarySurface', 'protectedObjectOutsideSide', 'safeObjectWallSide',
     'serializeObjectWallSurface', 'objectWallFromDrag', 'wallDragPatch', 'isSpotWallItem', 'spotPlacementTargetsForItem',
     'pickLedRailOverride', 'applyLedRailOverride',
@@ -115,7 +116,7 @@ test('Automatic rails ignore Viscom posters, retaining reserve blockers in every
     distributeInFreeIntervals: (count, intervals) => Array.from({ length: count }, (_, i) => intervals[0].min + (i + 1) * (intervals[0].max - intervals[0].min) / (count + 1)),
     clamp: (v, min, max) => Math.max(min, Math.min(max, v)), snapWallAxis: (v) => v, constrainItem: (item) => item,
   });
-  loadFunction('makeAutomaticSpotItems', context);
+  for (const name of ['normalizeLedRailPlan', 'resolveLedRailPlan', 'makeAutomaticSpotItems']) loadFunction(name, context);
   const reserve = { id: 'reserve', autoReserve: true, x: 2 };
   const poster = { id: 'viscom', x: -1, isWallItem: true };
   const make = (items) => Array.from(context.makeAutomaticSpotItems({}, [rail], 7, 3, 'u', items), (item) => ({ id: item.id, x: item.x, wall: item.wall }));
