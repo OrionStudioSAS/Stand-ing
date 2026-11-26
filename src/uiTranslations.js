@@ -186,6 +186,19 @@ export const englishUi = {
   'Image personnalisable': 'Custom artwork', 'Images personnalisable': 'Custom artwork', 'Inclinaison': 'Tilt',
   'Option rangement': 'Storage option', 'Option vérification et intégration des fichiers vidéo': 'Video file checking and integration',
   'Taille:': 'Size:',
+  // Step 4 · Validation recap
+  'Récapitulatif de votre stand': 'Your stand summary',
+  'Vérifiez chaque élément avant d’envoyer votre configuration à Stand-ING.': 'Check every item before sending your configuration to Stand-ING.',
+  'Configuration envoyée': 'Configuration sent',
+  'Votre stand est prêt à être envoyé': 'Your stand is ready to send',
+  'Tous les visuels nécessaires ont été fournis.': 'All required artwork has been provided.',
+  'visuels à fournir': 'artwork files to provide', 'visuel à fournir': 'artwork file to provide',
+  'Vous pouvez envoyer votre configuration dès maintenant : notre équipe reviendra vers vous pour les récupérer.': 'You can send your configuration now: our team will get back to you to collect them.',
+  'Personnalisation': 'Customisation', 'Modifier': 'Edit', 'Options et mobilier': 'Options and furniture',
+  'Une demande particulière ?': 'Any special request?', 'dont assurance mobilier': 'incl. furniture insurance', 'Retour': 'Back',
+  'Envoyer ma demande': 'Send my request', 'Envoyer ma configuration': 'Send my configuration', 'Visuel manquant': 'Missing artwork',
+  'Montants HT': 'Amounts excl. VAT', 'Visuels manquants': 'Missing artwork',
+  'Logo haut — deux têtes de cloison': 'Top logo — both partition heads', 'utilisés sur': 'used out of',
 };
 
 const key = text => String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[’‘]/g,"'").replace(/\s+/g,' ').trim().toLowerCase();
