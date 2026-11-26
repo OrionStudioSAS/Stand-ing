@@ -2711,7 +2711,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       },
     };
     setItems((current) => {
-      const placed = placeItemInFreeSpot(item, [...current, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems], width, depth, layout, genericCarpetFootprintEnabled) || constrainItem(item, width, depth, layout, genericCarpetFootprintEnabled);
+      const blockers = [...current, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems];
+      const placed = placeItemInFreeSpot(item, blockers, width, depth, layout, genericCarpetFootprintEnabled);
+      if (!placed) {
+        window.setTimeout(() => showPlacementMessage(placementErrorMessage(entry)), 0);
+        return current;
+      }
       setSelectedId(placed.id);
       return [...current, placed];
     });
@@ -22400,15 +22405,21 @@ function collidesWithScene(candidate, items, ignoreId = null, width = 0, depth =
 
 function collidesWithPartitionHeads(candidate, items = [], ignoreId = null, width = 0, depth = 0) {
   const isHead = (item) => isPartitionHeadItem(item) || isAutomaticPartitionHeadItem(item);
-  const isProtectedObject = (item) => isReserveSceneItem(item) || isPrestigeArchItem(item) || isSignatureArchItem(item);
+  const isProtectedObject = (item) => !isHead(item) && !isWallItem(item) && !isCeilingMountedItem(item) && (
+    isReserveSceneItem(item) || isPrestigeArchItem(item) || isSignatureArchItem(item) || itemCollisionEnabled(item)
+  );
   const isHidden = (item) => item?.options?.partitionHeadHidden || item?.options?.prestigeHidden;
-  if (!candidate || isHidden(candidate) || (!isHead(candidate) && !isProtectedObject(candidate))) return false;
+  if (!candidate || isHidden(candidate)) return false;
+  const candidateIsHead = isHead(candidate);
+  if (!candidateIsHead && !isProtectedObject(candidate)) return false;
+  const collisionBox = (item) => isHead(item) ? partitionHeadPhysicalBox(item, items, width, depth) : itemHardCollisionBox(item, 0);
+  let candidateBox;
   return (items || []).some((item) => {
     if (!item || item.id === ignoreId || item.id === candidate.id || isHidden(item)) return false;
-    if (!(isHead(candidate) && isProtectedObject(item)) && !(isProtectedObject(candidate) && isHead(item))) return false;
-    const candidateBox = isHead(candidate) ? partitionHeadPhysicalBox(candidate, items, width, depth) : itemHardCollisionBox(candidate, 0);
-    const itemBox = isHead(item) ? partitionHeadPhysicalBox(item, items, width, depth) : itemHardCollisionBox(item, 0);
-    return candidateBox && itemBox ? boxesOverlap(candidateBox, itemBox) : false;
+    if (!(candidateIsHead ? isProtectedObject(item) : isHead(item))) return false;
+    candidateBox ??= collisionBox(candidate);
+    const itemBox = collisionBox(item);
+    return Boolean(candidateBox && itemBox && boxesOverlap(candidateBox, itemBox));
   });
 }
 

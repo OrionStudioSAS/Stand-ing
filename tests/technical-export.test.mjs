@@ -3,7 +3,7 @@ import { isSignatureLedArch } from '../src/signatureArchVariants.js';
 import { groupStructuralAsset } from '../src/groupPlacement.js';
 import { normalizeBatElectricalPicto, normalizeBatElectricalPictos, electricalPictoPoint } from '../src/batElectricalPicto.js';
 import { includedCounterPowerItems } from '../src/includedCounterPower.js';
-import { technicalRiggingCoordinates, technicalSignRiggingPoints } from '../src/technicalRigging.js';
+import { technicalSignRigging } from '../src/technicalRigging.js';
 import { sceneHeadCountry } from '../src/equippedHeadInformation.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -37,7 +37,7 @@ function runtime() {
     measureText(value) { return { width: String(value).length * 8 }; },
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
-  const api = vm.createContext({ technicalA3, technicalFrontPage, layoutTechnicalVisuals, electricalWallClearance, electricalClearanceRect, applyElectricalClearance, includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor, technicalRiggingCoordinates, technicalSignRiggingPoints });
+  const api = vm.createContext({ technicalA3, technicalFrontPage, layoutTechnicalVisuals, electricalWallClearance, electricalClearanceRect, applyElectricalClearance, includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor, technicalSignRigging });
   Object.assign(api, { sceneFloorDepth, wallThicknessMeters: standWallThickness });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
@@ -169,22 +169,31 @@ test('the BAT compensates native reception-desk orientation without losing scene
   }
 });
 
-test('the BAT labels the measured 4, 2 or 1 rigging points and dimensions them from usable walls', () => {
+test('the BAT draws exact rigging spans and offsets but only marks hexagonal attachments', () => {
   const { api, ctx, text } = runtime();
-  const sign = { id: 'sign', type: 'asset-enseigne-haute-aluminium-2000x2000x1000mm-ht-mrbwze9h', label: 'Enseigne haute 2 m', x: .5, z: .25, rotation: 90, dimensions: { ceilingMounted: true }, modelSize: [2, 5.8, 2] };
-  const points = technicalSignRiggingPoints(sign);
-  assert.deepEqual(points.map(({ x, z }) => [Math.round(x * 1000), Math.round(z * 1000)]), [[-490, 1240], [-490, -740], [1490, -740], [1490, 1240]]);
-  assert.equal(technicalSignRiggingPoints({ ...sign, type: 'asset-enseigne-haute-hexagonale-smcl-1500x1300mm-ht-mqqg851n' }).length, 2);
-  assert.equal(technicalSignRiggingPoints({ ...sign, type: 'asset-enseigne-haute-aluminium-2000x2000x1000mm-ht-kit-mrbx0zab' }).length, 1);
-  assert.equal(technicalSignRiggingPoints({ ...sign, options: { prestigeHidden: true } }).length, 0);
-  assert.equal(api.technicalRiggingSection([sign], [], 6, 4, 'u', { items: { sign: { hidden: true } } }), null);
-  const section = api.technicalRiggingSection([sign], [], 6, 4, 'u');
-  assert.match(section.rows[0].lines[0], /X : 2450 mm depuis le mur gauche · Y : 3180 mm depuis le mur du fond/);
-  const rightOnly = technicalRiggingCoordinates(points[0], 6, 4, 'right', .06);
-  assert.equal(rightOnly.xReference, 'mur droit');
-  assert.equal(technicalRiggingCoordinates(points[0], 6, 4, 'back', .06).xReference, 'bord gauche');
-  api.drawPlan(ctx, 6, 4, 'u', [sign], []);
-  assert.deepEqual(text.map(({ value }) => value).filter((value) => /^E1\.\d$/.test(value)), ['E1.1', 'E1.2', 'E1.3', 'E1.4']);
+  const markers = [];
+  api.drawTechnicalRiggingMarker = (_ctx, x, y) => markers.push([x, y]);
+  const base = { id: 'sign', x: .5, z: .25, dimensions: { ceilingMounted: true }, modelSize: [2, 5.8, 2] };
+  const hex = { ...base, type: 'asset-enseigne-haute-hexagonale-smcl-1500x1300mm-ht-mqqg851n' };
+  const square1 = { ...base, label: 'Enseigne haute 1 m' };
+  const square2 = { ...base, type: 'asset-enseigne-haute-aluminium-2000x2000x1000mm-ht-mrbwze9h', rotation: 90 };
+  const rotated = technicalSignRigging({ ...hex, rotation: 90 });
+  assert.deepEqual(rotated.points.map(({ x, z }) => [Math.round(x * 1000), Math.round(z * 1000)]), [[500, 600], [500, -100]]);
+  assert.equal(technicalSignRigging({ ...hex, options: { prestigeHidden: true } }), null);
+  for (const [item, labels, markerCount] of [
+    [hex, ['2150', '1750', '700'], 2],
+    [square1, ['2000', '1750', '1000'], 0],
+    [square2, ['2500', '750', '2000'], 0],
+  ]) {
+    text.length = 0; markers.length = 0;
+    api.drawPlan(ctx, 6, 4, 'back', [item], []);
+    assert.deepEqual(text.slice(-4, -1).map(({ value }) => value), labels);
+    assert.equal(markers.length, markerCount);
+  }
+  text.length = 0; markers.length = 0;
+  api.drawPlan(ctx, 6, 4, 'back', [hex], [], new Map(), [], [], true, { items: { sign: { hidden: true } } });
+  assert.ok(!text.some(({ value }) => value === '700'));
+  assert.equal(markers.length, 0);
 });
 
 test('BAT SVG pictograms keep their transparent background and the PNG is A3-ready', () => {

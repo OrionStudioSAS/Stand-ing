@@ -1,7 +1,7 @@
 import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, recolorPixelData, sampleImageColor } from './imageColorReplacement.js';
 import { normalizeBatElectricalPicto, normalizeBatElectricalPictos, electricalPictoPoint } from './batElectricalPicto.js';
 import { includedCounterPowerItems } from './includedCounterPower.js';
-import { technicalRiggingCoordinates, technicalSignRiggingPoints } from './technicalRigging.js';
+import { technicalSignRigging } from './technicalRigging.js';
 import { isSignatureLedArch } from './signatureArchVariants.js';
 import { createTechnicalSvgContext, sanitizeTechnicalSvg, tintTechnicalSvgFill } from './technicalSvgContext.js';
 import { technicalA3, wrapTechnicalPrintText } from './technicalPrintLayout.js';
@@ -49,8 +49,6 @@ export function renderTechnicalPlanCanvas({ width, depth, layout, items, catalog
   const floor = technicalFloorContext(providedTechnicalItems || items, catalog, depth);
   const drawableTechnicalItems = technicalItems.filter((item) => !item?.sourceOptions);
   const sections = technicalTableSections(technicalItems, catalog);
-  const rigging = technicalRiggingSection(drawableTechnicalItems, catalog, width, depth, layout);
-  if (rigging) sections.unshift(rigging);
   const visuals = technicalPlanVisuals(technicalItems, catalog, width, depth);
   const constraints = technicalItems.find((item) => item?.sourceOptions)?.sourceConstraints || [];
   const tableHeight = technicalTableHeight(sections);
@@ -97,7 +95,6 @@ export async function createTechnicalPlanSvg({ width, depth, layout, items, cata
   const pictoImages = await loadTechnicalPictoImages([...technicalItems, ...extraItems], catalog);
   const drawable = technicalItems.filter((item) => !item?.sourceOptions);
   const sections = technicalTableSections(technicalItems, catalog);
-  const rigging = technicalRiggingSection(drawable, catalog, width, depth, layout, edits);
   const visuals = technicalPlanVisuals(technicalItems, catalog, width, depth);
   const constraints = technicalItems.find((item) => item?.sourceOptions)?.sourceConstraints || [];
   const visualLayout = layoutTechnicalVisuals(visuals);
@@ -110,7 +107,7 @@ export async function createTechnicalPlanSvg({ width, depth, layout, items, cata
   drawPrintProductionSidebar(ctx, documentInfo, visualLayout.slots, pictoImages);
   drawPlan(ctx, width, depth, layout, drawable, catalog, pictoImages, visualLayout.visuals, constraints, true, edits, floor, documentInfo);
   drawPrintVisualStrip(ctx, visualLayout.extra, pictoImages);
-  drawPrintProductionFooter(ctx, visualLayout.slots[4], sections, technicalItems, floor, pictoImages, rigging);
+  drawPrintProductionFooter(ctx, visualLayout.slots[4], sections, technicalItems, floor, pictoImages);
   drawPrintProductionLegend(ctx, drawable, catalog, pictoImages);
   drawPrintPageHeader(ctx, documentInfo);
   drawText(ctx, 'BAT - A3 paysage - Imprimer a 100 % / taille reelle', technicalA3.margin + 16, technicalA3.height - 48, 15, '#555555');
@@ -443,28 +440,18 @@ function drawPrintVisualStrip(ctx, visuals, imageMap) {
   });
 }
 
-function drawPrintProductionFooter(ctx, banner, sections, items, floor, imageMap, rigging) {
+function drawPrintProductionFooter(ctx, banner, sections, items, floor, imageMap) {
   const { x, y, height, bannerWidth, notesWidth, finishesWidth } = technicalFrontPage.footer;
   drawPrintArtworkCard(ctx, banner, imageMap, x, y, bannerWidth, height);
   const notesX = x + bannerWidth + 12;
   ctx.strokeStyle = technicalColors.ink; ctx.strokeRect(notesX, y, notesWidth, height);
   drawText(ctx, '6 - AMCO / ÉQUIPEMENTS', notesX + 12, y + 26, 18, technicalColors.red, 'bold');
   const equipment = sections.find((section) => section.id === 'amco')?.rows || [];
-  const notesColumnWidth = rigging ? notesWidth * .52 : notesWidth;
   let textY = y + 54;
   for (const row of equipment.slice(0, 4)) {
-    const lines = wrappedProductionText(ctx, row.label.replace(/^\d+\.\s*/, ''), notesColumnWidth - 24, 14, 'bold', 2);
+    const lines = wrappedProductionText(ctx, row.label.replace(/^\d+\.\s*/, ''), notesWidth - 24, 14, 'bold', 2);
     lines.forEach((text, index) => drawText(ctx, text, notesX + 12, textY + index * 16, 14, technicalColors.ink, 'bold'));
     textY += 16 * lines.length + 4;
-  }
-  if (rigging) {
-    const riggingX = notesX + notesColumnWidth;
-    ctx.strokeStyle = technicalColors.ink; line(ctx, riggingX, y, riggingX, y + height);
-    drawText(ctx, 'ÉLINGUES - X/Y (mm)', riggingX + 12, y + 26, 15, technicalColors.red, 'bold');
-    rigging.rows.slice(0, 8).forEach(({ id, coords }, index) => {
-      const axis = (value, reference) => `${value} ${reference.replace(/^mur (?:du )?|^bord /, '')}`;
-      drawText(ctx, `${id} · X ${axis(coords.xMm, coords.xReference)} · Y ${axis(coords.yMm, coords.yReference)}`, riggingX + 12, y + 47 + index * 17, 12);
-    });
   }
   const colorsX = notesX + notesWidth + 12;
   ctx.strokeRect(colorsX, y, finishesWidth, height);
@@ -613,7 +600,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
   drawDimension(ctx, planX - 64, sideDimensionStartY, planX - 64, sideDimensionEndY, sideDimensionLabel, 'vertical', technicalColors.blue);
 
   const electricalDimensions = [];
-  const riggingMarkers = [];
+  const riggingDimensions = [];
   const annotateElectricity = (item, entry, frame, index) => {
     if (!frame) return;
     const descriptor = technicalSvgPictoDescriptor(item, entry, catalog);
@@ -656,14 +643,17 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     } else if (isTechnicalCeilingItem(item, entry)) {
       const solidW = Math.max(0.32, dims.width || 0.6) * scale;
       const solidH = Math.max(0.18, dims.depth || 0.3) * scale;
-      const points = technicalSignRiggingPoints(item, entry);
-      frame = drawCeilingObject(ctx, center.x, center.y, solidW, solidH, item.rotation || 0, pictoImage, color, label, points.length > 0);
+      const rigging = technicalSignRigging(item, entry);
+      frame = drawCeilingObject(ctx, center.x, center.y, solidW, solidH, item.rotation || 0, pictoImage, color, label, Boolean(rigging));
       const edit = edits.items?.[item.id];
-      if (!edit?.hidden) points.forEach((point, pointIndex) => riggingMarkers.push({
-        x: toX(point.x) + Number(edit?.dx || 0) * technicalA3.width,
-        y: toY(point.z) + Number(edit?.dy || 0) * technicalA3.height,
-        label: technicalRiggingId(index, pointIndex),
-      }));
+      if (rigging && !edit?.hidden) riggingDimensions.push({
+        ...rigging,
+        offset: solidH / 2 + 18,
+        points: rigging.points.map(point => ({
+          x: toX(point.x) + Number(edit?.dx || 0) * technicalA3.width,
+          y: toY(point.z) + Number(edit?.dy || 0) * technicalA3.height,
+        })),
+      });
     } else {
       frame = pictoImage
         ? drawRotatedPictoObject(ctx, center.x, center.y, dims.width * scale, dims.depth * scale, Number(item.rotation || 0) + picto.rotationOffset, pictoImage, label, groupStructuralAsset(item), hasElectric)
@@ -697,10 +687,11 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
 
   // The translucent arches overlay the items below them, without changing their plan indices.
   arches.forEach(({ item, index }) => drawFloorItem(item, index, true));
-  electricalDimensions.forEach(point => drawElectricalDimensions(ctx, point, { minX: planX, maxX: planX + planW, minY: planY, maxY: planY + planH }, scale));
+  const planEdges = { minX: planX, maxX: planX + planW, minY: planY, maxY: planY + planH };
+  electricalDimensions.forEach(point => drawElectricalDimensions(ctx, point, planEdges, scale));
 
   drawTechnicalConstraints(ctx, constraints, scale, toX, toY);
-  riggingMarkers.forEach(({ x, y, label }) => drawTechnicalRiggingMarker(ctx, x, y, label));
+  riggingDimensions.forEach(rigging => drawTechnicalRigging(ctx, rigging, planEdges, scale));
   const previousRole = ctx.textRole;
   if (print) ctx.textRole = 'banner-plan-reference';
   visuals.forEach((visual) => {
@@ -740,63 +731,76 @@ function isTechnicalArch(item = {}) {
   return item.options?.signatureBaseKey === 'arche' || isSignatureLedArch(item) || /\barche\b/.test(normalizeTechnicalText(`${item.type || ''} ${item.label || ''}`).replace(/[-_]/g, ' '));
 }
 
-function technicalRiggingId(itemIndex, pointIndex) {
-  return `E${itemIndex + 1}.${pointIndex + 1}`;
-}
-
 function isTechnicalCeilingItem(item, entry) {
   return Boolean(item.ceilingMounted || item.dimensions?.ceilingMounted || entry?.dimensions?.ceilingMounted);
 }
 
-function technicalRiggingSection(items, catalog, width, depth, layout, edits = {}) {
-  const scale = technicalPlanScale(width, sceneFloorDepth(layout, depth));
-  const rows = items.flatMap((item, index) => {
-    const edit = edits.items?.[item.id];
-    if (edit?.hidden) return [];
-    const entry = catalog.find((candidate) => candidate.type === item.type);
-    if (!isTechnicalCeilingItem(item, entry)) return [];
-    return technicalSignRiggingPoints(item, entry).map(({ x, z }, pointIndex) => {
-      const coords = technicalRiggingCoordinates({
-        x: x + Number(edit?.dx || 0) * technicalA3.width / scale,
-        z: z + Number(edit?.dy || 0) * technicalA3.height / scale,
-      }, width, depth, layout, wallThicknessMeters);
-      const id = technicalRiggingId(index, pointIndex);
-      return { ...technicalSimpleRow(`${id} · ${item.label || entry?.label || 'Enseigne haute'}`,
-        `X : ${coords.xMm} mm depuis le ${coords.xReference} · Y : ${coords.yMm} mm depuis le ${coords.yReference}`), id, coords };
-    });
-  });
-  return rows.length ? { id: 'rigging', title: 'ÉLINGUES — COTES X/Y', rows } : null;
+function drawTechnicalRigging(ctx, { points, spanMm, showMarkers, offset }, bounds, scale) {
+  const [a, b] = [...points].sort((a, b) => Math.abs(a.x - b.x) < 1e-6 ? b.y - a.y : a.x - b.x);
+  const horizontal = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
+  const edgeDistance = ({ x, y }) => horizontal
+    ? Math.min(Math.abs(x - bounds.minX), Math.abs(x - bounds.maxX))
+    : Math.min(Math.abs(y - bounds.minY), Math.abs(y - bounds.maxY));
+  const anchor = edgeDistance(a) <= edgeDistance(b) ? a : b;
+  drawEdgeDimensions(ctx, anchor, bounds, scale, 'rigging-offset', technicalColors.ink, mm, 30);
+
+  const angle = Math.atan2(b.y - a.y, b.x - a.x);
+  const nx = -Math.sin(angle), ny = Math.cos(angle);
+  const available = (direction) => Math.min(...points.flatMap(({ x, y }) => [
+    Math.abs(nx) < 1e-6 ? Infinity : ((nx * direction > 0 ? bounds.maxX : bounds.minX) - x) / (nx * direction),
+    Math.abs(ny) < 1e-6 ? Infinity : ((ny * direction > 0 ? bounds.maxY : bounds.minY) - y) / (ny * direction),
+  ]));
+  const positive = available(1), negative = available(-1);
+  const direction = positive >= negative ? 1 : -1;
+  const gap = direction * Math.min(offset, Math.max(18, Math.max(positive, negative) - 12));
+  const distance = Math.hypot(b.x - a.x, b.y - a.y);
+  const previousRole = ctx.textRole;
+  ctx.textRole = 'rigging-span';
+  ctx.save();
+  ctx.translate(a.x, a.y);
+  ctx.rotate(angle);
+  ctx.strokeStyle = technicalColors.ink;
+  ctx.lineWidth = 1;
+  line(ctx, 0, 0, 0, gap);
+  line(ctx, distance, 0, distance, gap);
+  drawDimension(ctx, 0, gap, distance, gap, String(spanMm), 'horizontal', technicalColors.ink, 14);
+  ctx.restore();
+  ctx.textRole = previousRole;
+
+  if (showMarkers) points.forEach(({ x, y }) => drawTechnicalRiggingMarker(ctx, x, y));
 }
 
-function drawTechnicalRiggingMarker(ctx, x, y, label) {
+function drawTechnicalRiggingMarker(ctx, x, y) {
   ctx.save();
   ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = '#15526b';
+  ctx.strokeStyle = '#207b4d';
   ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.font = 'bold 12px Arial';
-  ctx.fillRect(x + 8, y - 17, ctx.measureText(label).width + 5, 17);
-  drawText(ctx, label, x + 10, y - 5, 12, '#15526b', 'bold');
+  ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  line(ctx, x - 7, y, x + 7, y);
+  line(ctx, x, y - 7, x, y + 7);
   ctx.restore();
 }
 
 function drawElectricalDimensions(ctx, point, bounds, scale) {
+  drawEdgeDimensions(ctx, point, bounds, scale, 'electrical-dimension', technicalColors.red, dimensionMm, 18 + (point.index % 5) * 14);
+}
+
+function drawEdgeDimensions(ctx, point, bounds, scale, role, color, format, offset) {
   const previousRole = ctx.textRole;
-  ctx.textRole = 'electrical-dimension';
+  ctx.textRole = role;
   const edgeX = Math.abs(point.x - bounds.minX) <= Math.abs(point.x - bounds.maxX) ? bounds.minX : bounds.maxX;
   const edgeY = Math.abs(point.y - bounds.minY) <= Math.abs(point.y - bounds.maxY) ? bounds.minY : bounds.maxY;
-  const offset = 18 + (point.index % 5) * 14;
   const directionX = point.x < bounds.minX ? -1 : point.x > bounds.maxX ? 1 : edgeX === bounds.minX ? 1 : -1;
   const directionY = point.y < bounds.minY ? -1 : point.y > bounds.maxY ? 1 : edgeY === bounds.minY ? 1 : -1;
   const lineX = point.x + directionX * offset, lineY = point.y + directionY * offset;
-  const horizontal = point.wallNormalAxis !== 'x' && dimensionMm(Math.abs(point.x - edgeX) / scale) !== '0';
-  const vertical = point.wallNormalAxis !== 'y' && dimensionMm(Math.abs(point.y - edgeY) / scale) !== '0';
-  ctx.save(); ctx.strokeStyle = technicalColors.red; ctx.lineWidth = 1;
+  const horizontal = point.wallNormalAxis !== 'x' && format(Math.abs(point.x - edgeX) / scale) !== '0';
+  const vertical = point.wallNormalAxis !== 'y' && format(Math.abs(point.y - edgeY) / scale) !== '0';
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 1;
   if (horizontal) { line(ctx, point.x, point.y, point.x, lineY); line(ctx, edgeX, point.y, edgeX, lineY); }
   if (vertical) { line(ctx, point.x, point.y, lineX, point.y); line(ctx, point.x, edgeY, lineX, edgeY); }
   ctx.restore();
-  if (horizontal) drawDimension(ctx, Math.min(point.x, edgeX), lineY, Math.max(point.x, edgeX), lineY, dimensionMm(Math.abs(point.x - edgeX) / scale), 'horizontal', technicalColors.red, 12);
-  if (vertical) drawDimension(ctx, lineX, Math.min(point.y, edgeY), lineX, Math.max(point.y, edgeY), dimensionMm(Math.abs(point.y - edgeY) / scale), 'vertical', technicalColors.red, 12);
+  if (horizontal) drawDimension(ctx, Math.min(point.x, edgeX), lineY, Math.max(point.x, edgeX), lineY, format(Math.abs(point.x - edgeX) / scale), 'horizontal', color, 12);
+  if (vertical) drawDimension(ctx, lineX, Math.min(point.y, edgeY), lineX, Math.max(point.y, edgeY), format(Math.abs(point.y - edgeY) / scale), 'vertical', color, 12);
   ctx.textRole = previousRole;
 }
 
