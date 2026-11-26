@@ -114,6 +114,18 @@ try {
   await page.locator('.floor-qv').waitFor();
   assert.equal(await accordion.getByRole('button', { name: 'Plancher technique', exact: true }).getAttribute('aria-expanded'), 'true');
   assert.match(await page.locator('.floor-qv-hero').textContent(), /Empreinte/);
+  const panel = await accordion.locator('.floor-qv').evaluate(el => {
+    const preview = el.querySelector('.floor-qv-hero');
+    const info = el.querySelector('.floor-qv-about-toggle');
+    const choice = el.querySelector('.floor-qv-option');
+    return {
+      panel: getComputedStyle(el).display,
+      preview: getComputedStyle(preview).overflow,
+      info: getComputedStyle(info).position,
+      choice: getComputedStyle(choice).display,
+    };
+  });
+  assert.deepEqual(panel, { panel: 'grid', preview: 'hidden', info: 'absolute', choice: 'grid' }, 'Technical floor quick-view styles are loaded');
   if (shotsDir) await accordion.screenshot({ path: `${shotsDir}/quickview-none.png` });
   await page.getByRole('button', { name: 'À quoi sert le plancher technique ?' }).click();
   assert.match(await page.locator('.floor-qv-about').textContent(), /câbles/);

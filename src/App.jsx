@@ -114,6 +114,7 @@ import { manageSceneCollaborators, openSceneInvitation, requestSceneInvitationLi
 import './signatureHeadInformation.css';
 import './styles.css';
 import './ledRailEditor.css';
+import './technicalFloorQuickView.css';
 // Top bar and guided tour (kept apart from the other imports to stay independent of the reserve work).
 import './configuratorNavbar.css';
 import { GuidedTour } from './GuidedTour.jsx';
