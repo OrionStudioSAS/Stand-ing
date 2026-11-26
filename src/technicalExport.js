@@ -8,6 +8,7 @@ import { technicalA3, wrapTechnicalPrintText } from './technicalPrintLayout.js';
 import { normalizeTechnicalPlanEdits } from './technicalPlanEdits.js';
 import { groupStructuralAsset } from './groupPlacement.js';
 import { layoutTechnicalVisuals, technicalFrontPage } from './technicalVisualLayout.js';
+import { sceneFloorDepth, standWallThickness as wallThicknessMeters } from './standFloorGeometry.js';
 
 const sheet = {
   width: 1800,
@@ -35,7 +36,6 @@ const technicalColors = {
 const fixedWallHeight = 2.5;
 const wallPanelWidth = 1;
 const reinforcementWidth = 1;
-const wallThicknessMeters = 0.06;
 const archFillOpacity = .5;
 const carpetFootprintOverflow = 0.2;
 const technicalTableY = 1040;
@@ -580,12 +580,13 @@ function technicalPlanScale(width, depth, print = true) {
 
 function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new Map(), visuals = [], constraints = [], print = false, edits = {}, floor = technicalFloorContext(items, catalog, depth), documentInfo = {}) {
   const bounds = print ? technicalFrontPage.plan : { x: sheet.left + 58, y: 130, w: 1260, h: 760 };
-  const scale = technicalPlanScale(width, depth, print);
+  const floorDepth = sceneFloorDepth(layout, depth);
+  const scale = technicalPlanScale(width, floorDepth, print);
   const planW = width * scale;
-  const planH = depth * scale;
+  const planH = floorDepth * scale;
   const planX = bounds.x + (bounds.w - planW) / 2;
   const planY = bounds.y + (bounds.h - planH) / 2 + 30;
-  const wallThickness = Math.max(8, scale * wallThicknessMeters);
+  const wallThickness = scale * wallThicknessMeters;
 
   drawText(ctx, `${formatNumber(width * depth)}m2`, print ? sheet.width - 60 : planX + planW / 2, print ? 116 : 105, print ? 24 : 64, technicalColors.ink, 'bold', print ? 'right' : 'center');
 
@@ -594,19 +595,20 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
 
   ctx.fillStyle = technicalCarpetTint(floor.carpetColor, .14, technicalColors.floor);
   ctx.fillRect(planX, planY, planW, planH);
-  drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale, floor);
+  // The accent carpet retains its scene coordinates, which use the nominal depth.
+  drawCarpetFootprint(ctx, planX, planY, planW, depth * scale, layout, scale, floor);
   drawReserveFootprints(ctx, floor.reserveFootprints, scale, toX, toY, planX, planY, planW, planH);
   drawGrid(ctx, planX, planY, planW, planH, width, depth, scale);
 
   ctx.strokeStyle = technicalColors.ink;
   ctx.lineWidth = 2;
   ctx.strokeRect(planX, planY, planW, planH);
-  drawWalls(ctx, planX, planY, planW, planH, wallThickness, layout, width, depth, scale, items);
+  drawWalls(ctx, planX, planY, planW, wallThickness, layout, width, depth, scale, items);
 
   drawDimension(ctx, planX, planY - 66, planX + planW, planY - 66, dimensionMm(width), 'horizontal', technicalColors.blue);
   const hasSideWall = layout === 'left' || layout === 'right' || layout === 'u';
   const sideDimensionStartY = hasSideWall ? planY + wallThickness : planY;
-  const sideDimensionEndY = hasSideWall ? sideDimensionStartY + sideWallLength(depth) * scale : planY + planH;
+  const sideDimensionEndY = planY + planH;
   const sideDimensionLabel = hasSideWall ? dimensionMm(sideWallLength(depth)) : dimensionMm(depth);
   drawDimension(ctx, planX - 64, sideDimensionStartY, planX - 64, sideDimensionEndY, sideDimensionLabel, 'vertical', technicalColors.blue);
 
@@ -712,7 +714,8 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     drawText(ctx, visual.reference, x, y + 5, 13, '#ffffff', 'bold', 'center');
   });
   ctx.textRole = previousRole;
-  drawPlanAisle(ctx, planX, planY, planW, planH, floor.signature && floor.footprints?.length ? .5 * scale : 0, documentInfo, print ? technicalFrontPage.gallery.y - 24 : 0);
+  const frontOverflow = floor.signature && floor.footprints?.length ? Math.max(0, depth + .5 - floorDepth) * scale : 0;
+  drawPlanAisle(ctx, planX, planY, planW, planH, frontOverflow, documentInfo, print ? technicalFrontPage.gallery.y - 24 : 0);
 }
 
 function drawPlanAisle(ctx, x, y, width, height, frontOverflow, { aisleSide, aisleNumber } = {}, frontBaseline = 0) {
@@ -746,7 +749,7 @@ function isTechnicalCeilingItem(item, entry) {
 }
 
 function technicalRiggingSection(items, catalog, width, depth, layout, edits = {}) {
-  const scale = technicalPlanScale(width, depth);
+  const scale = technicalPlanScale(width, sceneFloorDepth(layout, depth));
   const rows = items.flatMap((item, index) => {
     const edit = edits.items?.[item.id];
     if (edit?.hidden) return [];
@@ -1308,18 +1311,18 @@ function technicalDescriptionLines(text = '') {
     .filter(Boolean);
 }
 
-function drawWalls(ctx, x, y, w, h, thickness, layout, width, depth, scale, items) {
+function drawWalls(ctx, x, y, w, thickness, layout, width, depth, scale, items) {
   ctx.fillStyle = technicalColors.panel1000;
   ctx.fillRect(x, y, w, thickness);
   drawWallPanelTicks(ctx, wallDescriptor('back', width, depth, items), x, y, scale, 'horizontal', thickness, 'Fond');
   if (layout === 'left' || layout === 'u') {
     const sideLength = sideWallLength(depth);
-    ctx.fillRect(x, y + thickness, thickness, Math.max(1, sideLength * scale));
+    ctx.fillRect(x, y + thickness, thickness, sideLength * scale);
     drawWallPanelTicks(ctx, wallDescriptor('left', width, depth, items), x, y + thickness, scale, 'vertical', thickness, 'Gauche');
   }
   if (layout === 'right' || layout === 'u') {
     const sideLength = sideWallLength(depth);
-    ctx.fillRect(x + w - thickness, y + thickness, thickness, Math.max(1, sideLength * scale));
+    ctx.fillRect(x + w - thickness, y + thickness, thickness, sideLength * scale);
     drawWallPanelTicks(ctx, wallDescriptor('right', width, depth, items), x + w - thickness, y + thickness, scale, 'vertical', thickness, 'Droite');
   }
 }

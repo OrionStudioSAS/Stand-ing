@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 const root = new URL('../', import.meta.url).pathname;
 const source = await readFile(`${root}src/App.jsx`, 'utf8');
 const base = { salon: 'SMCL 2026', event_name: 'SMCL 2026', offer: 'Prestige', dimensions: { width: 6, depth: 4 },
-  updated_at: '2026-10-19T08:00:00.000Z', items: [{ id: 'manual-reserve', children: [{ x: 0.25, z: -0.5 }] }], files: [{ id: 'artwork.svg' }],
+  updated_at: '2026-10-19T08:00:00.000Z', items: [{ id: 'manual-reserve', type: 'reserve', x: 0, z: -1, children: [{ x: 0.25, z: -0.5 }] }], files: [{ id: 'artwork.svg' }],
   source_payload: { exhibitor_view_only: true, options: { reserveOptionType: 'manual-reserve' }, manualPurchaseOrderLines: [{ id: 'manual', label: 'Café' }] } };
 const fixtures = [
   { ...base, id: 'alpha', share_token: 'alpha', project_name: 'Stand Alpha', status: 'bat_pending', client_status: 'configured' },

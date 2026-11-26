@@ -52,9 +52,11 @@ test('new admin navigation and salon details have functional tabs and responsive
 test('a saved BAT tab falls back to the dashboard without affecting the remaining tabs', () => {
   vm.runInContext(source.slice(source.indexOf('const adminTabStorageKey'), source.indexOf('function rememberAdminTab')), api);
   for (const [saved, expected] of [['bat', 'dashboard'], ['clients', 'clients'], ['salons', 'salons']]) {
-    api.window = { localStorage: { getItem: () => saved } };
+    api.window = { history: { state: null }, localStorage: { getItem: () => saved } };
     assert.equal(api.initialAdminTab(), expected);
   }
+  api.window.history.state = { adminBatSceneId: 'scene-1' };
+  assert.equal(api.initialAdminTab(), 'clients', 'An open editor wins over a tab saved by another browser tab');
 });
 
 test('salon BAT tracking separates pending, sent, signed and explicit correction states', () => {

@@ -15,6 +15,7 @@ import { layoutTechnicalVisuals, technicalFrontPage } from '../src/technicalVisu
 import { Euler, Vector3 } from 'three';
 import { scenePackBenefits, sceneLightingOptions } from '../supabase/functions/_shared/packBenefits.js';
 import { normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor } from '../src/imageColorReplacement.js';
+import { sceneFloorDepth, standWallThickness } from '../src/standFloorGeometry.js';
 
 const source = readFileSync(new URL('../src/technicalExport.js', import.meta.url), 'utf8')
   .replace(/^import .*;$/gm, '')
@@ -37,6 +38,7 @@ function runtime() {
   }, { get(target, key) { return key in target ? target[key] : () => {}; } });
   const canvas = { getContext: () => ctx, toDataURL: () => 'data:image/png;base64,aGVhZA==' };
   const api = vm.createContext({ technicalA3, technicalFrontPage, layoutTechnicalVisuals, electricalWallClearance, electricalClearanceRect, applyElectricalClearance, includedCounterPowerItems, electricalPictoPoint, groupStructuralAsset, isSignatureLedArch, normalizeBatElectricalPicto, normalizeBatElectricalPictos, document: { createElement: () => canvas }, console, normalizeImageFraming, scenePackBenefits, normalizeHexColor, recoloredImageCacheKey, recolorImageUrl, sampleImageColor, technicalRiggingCoordinates, technicalSignRiggingPoints });
+  Object.assign(api, { sceneFloorDepth, wallThicknessMeters: standWallThickness });
   vm.runInContext(source, api);
   return { api, canvas, text, images, rectangles, outlines, points, ctx };
 }

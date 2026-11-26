@@ -824,8 +824,9 @@ export async function sendSceneCompletionEmail(scene, options = {}) {
   return data;
 }
 
-export async function uploadSceneItemOptionImage(scene, item, file) {
+export async function uploadSceneItemOptionImage(scene, item, file, { onPreviewReady } = {}) {
   const previewFile = await makeScenePreviewImage(file, { requirePreview: item?.type === 'wall-cover' });
+  onPreviewReady?.(previewFile);
   if (!supabase) return fileToDataUrl(previewFile);
 
   const extension = file.name.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() || 'jpg';

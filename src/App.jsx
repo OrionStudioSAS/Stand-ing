@@ -3,6 +3,7 @@ import { wallCoverPackTariff, wallCoverQuote } from './wallCoverPricing.js';
 import { lastSceneSyncAt, sceneSyncLabel } from './sceneSyncInfo.js';
 import AssetBatElectricalPictoEditor from './AssetBatElectricalPictoEditor.jsx';
 import { batElectricalPictosMetadata, normalizeBatElectricalPictos } from './batElectricalPicto.js';
+import { standWallThickness as wallThickness, sceneFloorDepth, sceneFloorCenterZ, sceneFloorFrontZ } from './standFloorGeometry.js';
 import AssetGroupPlacementEditor from './AssetGroupPlacementEditor.jsx';
 import { nextGroupRowPosition } from './groupPlacement.js';
 import { counterPowerCatalogEntry, includedCounterPowerItems } from './includedCounterPower.js';
@@ -154,7 +155,6 @@ const wallSwitchHysteresis = 0.12;
 const objectWallSnapThreshold = 0.75;
 const objectWallAxisPadding = 0.65;
 const fixedWallHeight = 2.5;
-const wallThickness = 0.06;
 const floorThickness = 0.01;
 const baseboardHeight = 0.06;
 const baseboardThickness = 0.003;
@@ -1214,10 +1214,20 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const [specialRequest, setSpecialRequest] = useState(() => initialScene.source_payload?.specialRequest?.text || initialOptions.specialRequest?.text || '');
   const [specialRequestTags, setSpecialRequestTags] = useState(() => initialScene.source_payload?.specialRequest?.tags || initialOptions.specialRequest?.tags || []);
   const [itemOptionState, setItemOptionState] = useState({ uploading: false, error: '' });
+  const [archVisualUpload, setArchVisualUpload] = useState({});
+  const pendingArchVisualUpload = useRef(false);
   const [wallCovers, setWallCovers] = useState(initialOptions.wallCovers || {});
   const [wallCoverUploadState, setWallCoverUploadState] = useState({});
   const pendingWallCoverUploads = useRef(new Set());
-  const wallCoverPreviews = useMemo(() => wallCoverPreviewsFromCovers(wallCovers), [wallCovers]);
+  // Local artwork is display-only until the stored preview is available.
+  const displayedWallCovers = useMemo(() => {
+    const pending = Object.entries(wallCoverUploadState).filter(([, upload]) => upload.previewUrl);
+    if (!pending.length) return wallCovers;
+    return { ...wallCovers, ...Object.fromEntries(pending.map(([id, upload]) => [id, {
+      ...wallCovers[id], enabled: true, ...defaultImageFraming, previewUrl: upload.previewUrl, previewName: upload.fileName,
+    }])) };
+  }, [wallCovers, wallCoverUploadState]);
+  const wallCoverPreviews = useMemo(() => wallCoverPreviewsFromCovers(displayedWallCovers), [displayedWallCovers]);
   const [itemConfigModal, setItemConfigModal] = useState(null);
   const [sceneHasRendered, setSceneHasRendered] = useState(false);
   const [clientInfo, setClientInfo] = useState({
@@ -1436,6 +1446,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const sceneItems = useMemo(() => resolveSpotWallAttachments(applyElectricalClearance([...manualHydratedItems, ...automaticReserveItems, ...automaticMeterCoverItems, ...automaticPartitionHeadItems, ...automaticLedItems, ...automaticSpotItems], width, depth, layout), width, depth, layout), [manualHydratedItems, automaticReserveItems, automaticMeterCoverItems, automaticPartitionHeadItems, automaticLedItems, automaticSpotItems, width, depth, layout]);
   const visibleSceneItems = useMemo(() => sceneItems.filter((item) => !isHiddenIncludedCounterItem(item) && !prestigeBaseHidden(item)
     && (!isSignatureStand || !isSignatureArchItem(item) || signatureArchFitsDepth(item, depth))), [sceneItems, prestigeArchEnabled, prestigeSignageEnabled, isPrestigeStand, isSignatureStand, depth]);
+  const displayedSceneItems = useMemo(() => archVisualUpload.previewUrl ? visibleSceneItems.map((item) =>
+    item.id === archVisualUpload.itemId ? {
+      ...item, options: { ...item.options, ...textureSlotPatch(item, archVisualUpload.slot, archUploadPreview(archVisualUpload)) },
+    } : item) : visibleSceneItems, [visibleSceneItems, archVisualUpload]);
   const signatureArchItems = useMemo(() => visibleSceneItems.filter(isSignatureArchItem), [visibleSceneItems]);
   // Keep the saved arch available for a safe downgrade and preserve its uploaded artwork.
   const signatureArchItem = sceneItems.find(isSignatureArchItem) || null;
@@ -1732,7 +1746,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   }, []);
 
   const validateConfiguration = async () => {
-    if (readOnly || sceneSaveError?.stale || confirming.current || pendingWallCoverUploads.current.size) return;
+    if (readOnly || sceneSaveError?.stale || confirming.current || pendingWallCoverUploads.current.size || pendingArchVisualUpload.current) return;
     confirming.current = true;
     setConfirmState({ loading: true, message: '', error: '' });
     try {
@@ -1984,6 +1998,28 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     });
   };
 
+  const uploadSignatureArchVisual = async (item, slot, file) => {
+    if (readOnly || confirming.current || pendingArchVisualUpload.current || !item?.id || !slot || !file) return;
+    pendingArchVisualUpload.current = true;
+    const upload = { uploading: true, itemId: item.id, slot, fileName: file.name };
+    setArchVisualUpload(upload);
+    try {
+      const imageUrl = await uploadArtworkWithPreview(initialScene, {
+        ...item, id: `${item.id}-${slot.id}`, label: `${item.label || item.type} - ${slot.label}`, visualLabel: slot.label,
+      }, file, (previewUrl) => setArchVisualUpload({ ...upload, previewUrl }));
+      setItems((current) => current.map((candidate) => candidate.id === item.id ? {
+        ...candidate, options: { ...candidate.options, ...textureSlotPatch(candidate, slot, {
+          imageUrl, imageName: file.name, visualPending: false, ...defaultImageFraming,
+        }) },
+      } : candidate));
+      setArchVisualUpload({});
+    } catch (error) {
+      setArchVisualUpload({ error: error.message || 'Import du visuel impossible.' });
+    } finally {
+      pendingArchVisualUpload.current = false;
+    }
+  };
+
   const setWallCoverPreview = async (surfaceId, file) => {
     if (readOnly || confirming.current || !surfaceId || !file || pendingWallCoverUploads.current.has(surfaceId)) return;
     pendingWallCoverUploads.current.add(surfaceId);
@@ -1991,15 +2027,14 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
     try {
       const surface = wallCoverSurfaces.find((candidate) => candidate.id === surfaceId) || {};
-      const uploadedUrl = await uploadSceneItemOptionImage(initialScene, {
+      const imageUrl = await uploadArtworkWithPreview(initialScene, {
         id: `wall-cover-${surfaceId}`,
         type: 'wall-cover',
         label: surface.label || `Bâche cloison ${surfaceId}`,
         visualLabel: surface.label || '',
-      }, file);
-      const imageUrl = cacheBustedUrl(uploadedUrl);
-      const { ok } = await preloadImage(imageUrl);
-      if (!ok) throw new Error('Aperçu indisponible. Réessayez l’import.');
+      }, file, (previewUrl) => setWallCoverUploadState((current) => ({
+        ...current, [surfaceId]: { uploading: true, previewUrl, fileName: file.name },
+      })));
 
       setWallCovers((current) => ({
         ...current,
@@ -2837,7 +2872,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 height={height}
                 layout={layout}
                 animationReady={sceneHasRendered}
-                items={visibleSceneItems}
+                items={displayedSceneItems}
                 catalog={availableCatalog}
                 selectedId={selectedId}
                 setSelectedId={selectSceneItem}
@@ -2854,7 +2889,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
                 wallFabricColor={selectedWallFabricColor}
                 reserveWallFabricColor={selectedReserveWallFabricColor}
                 reserveDoorColorHex={reserveDoorColorForPack(assetPackLabel)}
-                wallCovers={wallCovers}
+                wallCovers={displayedWallCovers}
                 wallCoverPreviews={wallCoverPreviews}
                 technicalFloor={selectedTechnicalFloor}
                 technicalFloorTrimType={technicalFloorTrimType}
@@ -2992,7 +3027,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             catalog={availableCatalog}
             saveState={saveState}
             confirmState={confirmState}
-            visualsUploading={Object.values(wallCoverUploadState).some((upload) => upload.uploading)}
+            visualsUploading={archVisualUpload.uploading || Object.values(wallCoverUploadState).some((upload) => upload.uploading)}
             readOnly={readOnly}
             canConfirm={!sceneSaveError?.stale}
             isAdminViewer={effectiveAdminViewer}
@@ -3053,7 +3088,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             signatureArchEntries={signatureArchEntries}
             signatureArchColor={signatureArchColor}
             signatureArchColors={footprintPalette}
-            signatureArchUploadState={itemOptionState}
+            signatureArchUploadState={archVisualUpload}
             isPrestigeStand={isPrestigeStand}
             prestigeArchItems={visiblePrestigeArchItems}
             prestigeArchEnabled={prestigeArchEnabled}
@@ -3112,7 +3147,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             onSelectCounter={setSelectedId}
             onSignatureArchVariant={selectSignatureArchVariant}
             onSignatureArchColor={updateSignatureArchColor}
-            onSignatureArchImage={(item, slot, file) => uploadItemImage(item, file, { textureSlot: slot })}
+            onSignatureArchImage={uploadSignatureArchVisual}
             onSignatureArchResetImage={resetSignatureArchImage}
             onSignatureArchVisualPending={(item, slot, checked) => updateItemOptions(item, textureSlotPatch(item, slot, { visualPending: checked }))}
             onSignatureArchFraming={(item, slot, framing) => updateItemOptions(item, textureSlotPatch(item, slot, framing))}
@@ -4261,7 +4296,8 @@ function SignatureArchOptionCard({ standDepth = Infinity, standArea = 0, items =
         disabled={busy || !selectedItem} onSelect={onColorChange} />
 
       {signatureArchVisualSlots.filter((slot) => !ledWall || slot.id !== 'signature-arch-led-5').map((slot) => {
-        const value = selectedItem?.options?.textureSlotValues?.[slot.id] || {};
+        const localPreview = uploadState.itemId === selectedItem?.id && uploadState.slot?.id === slot.id && uploadState.previewUrl;
+        const value = localPreview ? archUploadPreview(uploadState) : selectedItem?.options?.textureSlotValues?.[slot.id] || {};
         const label = slot.id === 'signature-arch-led-5' ? 'Visuel lumineux façade' : 'Visuel arrière haut';
         return (
           <section key={slot.id} className="signature-arch-section signature-arch-visual-section">
@@ -7046,6 +7082,10 @@ function textureSlotPatch(item = {}, slot = {}, patch = {}) {
   };
 }
 
+function archUploadPreview(upload) {
+  return { imageUrl: upload.previewUrl, imageName: upload.fileName, visualPending: false, ...defaultImageFraming };
+}
+
 function normalizeVariantGroupOptions(variantAssets = [], salonLabel = '', variantOptionLinks = []) {
   if (!Array.isArray(variantAssets)) return [];
   return variantAssets
@@ -9269,7 +9309,23 @@ function carpetGroupDescription(label = '') {
 const adminTabStorageKey = 'standing-admin-active-tab';
 const adminTabs = ['dashboard', 'salons', 'clients', 'requests', 'objects', 'presets', 'users', 'monday'];
 
+function rememberedAdminBatSceneId() {
+  return window.history.state?.adminBatSceneId || '';
+}
+
+function rememberAdminBatScene(sceneId) {
+  try {
+    const state = { ...window.history.state };
+    if (sceneId) state.adminBatSceneId = sceneId;
+    else delete state.adminBatSceneId;
+    window.history.replaceState(state, '');
+  } catch {
+    // The editor still works if browser history is unavailable.
+  }
+}
+
 function initialAdminTab() {
+  if (rememberedAdminBatSceneId()) return 'clients';
   try {
     const savedTab = window.localStorage.getItem(adminTabStorageKey);
     return adminTabs.includes(savedTab) ? savedTab : 'dashboard';
@@ -9391,7 +9447,9 @@ function DesignerDashboard({ user, adminProfile }) {
 
 function AdminDashboard({ user, adminProfile }) {
   const [scenes, setScenes] = useState([]);
+  const [scenesLoaded, setScenesLoaded] = useState(false);
   const [clients, setClients] = useState([]);
+  const [clientsLoaded, setClientsLoaded] = useState(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminUsersError, setAdminUsersError] = useState('');
   const [adminAudit, setAdminAudit] = useState([]);
@@ -9402,6 +9460,7 @@ function AdminDashboard({ user, adminProfile }) {
   const [salons, setSalons] = useState([]);
   const [salonFilterChoices, setSalonFilterChoices] = useState([]);
   const [assets, setAssets] = useState([]);
+  const [assetsLoaded, setAssetsLoaded] = useState(false);
   const [presetSalonId, setPresetSalonId] = useState('');
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [assetCategory, setAssetCategory] = useState('Tout');
@@ -9418,6 +9477,7 @@ function AdminDashboard({ user, adminProfile }) {
   const packFilterChoices = useMemo(() => adminPackAssignmentChoices(salons), [salons]);
   const setTab = (nextTab) => {
     rememberAdminTab(nextTab);
+    if (nextTab !== 'clients' && rememberedAdminBatSceneId()) rememberAdminBatScene(null);
     setTabState(nextTab);
     setAdminSearch('');
     if (nextTab !== 'clients') setFilters({ search: '', salon: '', pack: '', status: '' });
@@ -9425,11 +9485,11 @@ function AdminDashboard({ user, adminProfile }) {
   };
 
   useEffect(() => {
-    listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error));
+    listScenes(filters).then(setScenes).catch((error) => console.error('Scene list failed', error)).finally(() => setScenesLoaded(true));
   }, [filters]);
 
   useEffect(() => {
-    listClients({}).then(setClients).catch((error) => console.error('Client list failed', error));
+    listClients({}).then(setClients).catch((error) => console.error('Client list failed', error)).finally(() => setClientsLoaded(true));
     listSalons({}).then(setSalons).catch((error) => console.error('Salon list failed', error));
     listAdminUsers().then((rows) => { setAdminUsers(rows); setAdminUsersError(''); }).catch((error) => setAdminUsersError(error.message || 'Liste des utilisateurs indisponible.'));
   }, []);
@@ -9453,7 +9513,7 @@ function AdminDashboard({ user, adminProfile }) {
   }, [adminAuditFilters, adminSearch]);
 
   useEffect(() => {
-    listObjectBank().then(setAssets).catch((error) => console.error('Object bank list failed', error));
+    listObjectBank().then(setAssets).catch((error) => console.error('Object bank list failed', error)).finally(() => setAssetsLoaded(true));
     listScenes({}).then((items) => setSalonFilterChoices(adminSceneSalonChoices(items))).catch((error) => console.error('Salon filter choices failed', error));
   }, []);
 
@@ -9764,7 +9824,7 @@ function AdminDashboard({ user, adminProfile }) {
               onSalonChanged={refreshSalons}
             />
           )}
-          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} salonChoices={salonFilterChoices} packChoices={packFilterChoices} updateFilter={updateFilter} search={adminSearch} syncState={syncState} onSyncMonday={runMondaySync} onDeleteScene={deleteAdminScene} onReopenScene={reopenAdminScene} />}
+          {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} assetsLoaded={assetsLoaded} sceneListsLoaded={scenesLoaded && clientsLoaded} filters={filters} salonChoices={salonFilterChoices} packChoices={packFilterChoices} updateFilter={updateFilter} search={adminSearch} syncState={syncState} onSyncMonday={runMondaySync} onDeleteScene={deleteAdminScene} onReopenScene={reopenAdminScene} />}
           {tab === 'objects' && (
             <AdminObjectsView
               assets={assets}
@@ -12647,7 +12707,7 @@ function adminClientSalonChoices(baseChoices = [], currentSalon = '') {
   return [...choices].sort((a, b) => a.localeCompare(b, 'fr'));
 }
 
-function AdminClientsView({ clients, scenes = [], assets = [], filters, salonChoices = [], packChoices = [], updateFilter, search = '', syncState, onSyncMonday, onDeleteScene, onReopenScene }) {
+function AdminClientsView({ clients, scenes = [], assets = [], assetsLoaded = true, sceneListsLoaded = true, filters, salonChoices = [], packChoices = [], updateFilter, search = '', syncState, onSyncMonday, onDeleteScene, onReopenScene }) {
   const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
   const [batDownload, setBatDownload] = useState({ sceneId: '', error: '' });
   const [reopenState, setReopenState] = useState({ sceneId: '', message: '', error: '' });
@@ -12655,7 +12715,6 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
   const [clientPageSize, setClientPageSize] = useState(12);
   const [activeTab, setActiveTab] = useState('all');
   const [profileClient, setProfileClient] = useState(null);
-  const { editor, editorError, loadingId: loadingBatId, openEditor, closeEditor } = useAdminBatEditor(assets);
 
   useEffect(() => {
     setClientPage(1);
@@ -12672,6 +12731,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
     const clientScenes = clientScenesWithFullData(client, sceneLookup);
     return { client, clientScenes, company: adminClientCompanyName(client, clientScenes) };
   }), [clients, sceneLookup]);
+  const { editor, editorError, loadingId: loadingBatId, restoring, openEditor, closeEditor } = useAdminBatEditor({ assets, assetsLoaded, scenes, clientRows, sceneListsLoaded });
   const searchedRows = clientRows.filter(({ client, clientScenes }) => adminClientMatchesFilters(client, clientScenes, filters, search));
   const tabCounts = Object.fromEntries(['all', 'draft', 'pending', 'signed'].map((tab) => [tab, searchedRows.filter(({ clientScenes }) => tab === 'all' || clientScenes.some((scene) => adminClientSceneState(scene).id === tab)).length]));
   const visibleRows = searchedRows.filter(({ clientScenes }) => activeTab === 'all' || clientScenes.some((scene) => adminClientSceneState(scene).id === activeTab)).sort(compareAdminClientCompanies);
@@ -12757,6 +12817,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
       {batDownload.error && <div className="sync-result error" role="alert">{batDownload.error}</div>}
       {reopenState.error && <div className="sync-result error" role="alert">{reopenState.error}</div>}
       {!profileClient && editorError && <div className="sync-result error" role="alert">{editorError}</div>}
+      {restoring && <p className="admin-exhibitors-feedback" role="status">Réouverture du BAT…</p>}
       {reopenState.message && <p className="admin-exhibitors-feedback" role="status">{reopenState.message}</p>}
       <p className="admin-exhibitors-count"><strong>{visibleRows.length} exposant{visibleRows.length > 1 ? 's' : ''}</strong> · triés par société</p>
       <div className="admin-exhibitors-table-scroll"><section className="admin-exhibitors-table" aria-label="Liste des exposants">
@@ -15273,19 +15334,46 @@ function GroupEditorModel({ item }) {
   return <><Model3D item={item} selected={false} hovered={false} dragging={false} /><ObjectBaseboards item={item} /></>;
 }
 
-function useAdminBatEditor(assets) {
-  const [editor, setEditor] = useState(null);
-  const [editorError, setEditorError] = useState('');
-  const [loadingId, setLoadingId] = useState('');
-  const openEditor = async (scene) => {
-    setLoadingId(scene.id); setEditorError('');
-    try {
-      const full = await loadSceneForAdminAction(scene);
-      if (!full?.id || !Array.isArray(full.items)) throw new Error('Impossible de charger la scène pour modifier le BAT.');
-      setEditor({ sceneId: full.id, options: await sceneTechnicalPlanOptions(full, assets) });
-    } catch (error) { setEditorError(error.message || 'Impossible d’ouvrir le BAT.'); } finally { setLoadingId(''); }
+function useAdminBatEditor({ assets, assetsLoaded, scenes, clientRows, sceneListsLoaded }) {
+  const [request, setRequest] = useState(() => {
+    const id = rememberedAdminBatSceneId();
+    return id ? { id } : null;
+  });
+  const [result, setResult] = useState(null);
+  const current = result?.request === request ? result : null;
+  const loading = Boolean(request && !current);
+  const scene = loading ? request.scene
+    || scenes.find((candidate) => candidate.id === request.id)
+    || clientRows.find(({ clientScenes }) => clientScenes.some((candidate) => candidate.id === request.id))
+      ?.clientScenes.find((candidate) => candidate.id === request.id) : null;
+
+  useEffect(() => {
+    if (!loading || !assetsLoaded || (!scene && !sceneListsLoaded)) return;
+    let active = true;
+    const load = async () => {
+      try {
+        const full = scene && await loadSceneForAdminAction(scene);
+        if (full?.id !== request.id || !Array.isArray(full.items)) throw new Error('Cette scène est introuvable ou son BAT ne peut pas être chargé.');
+        const options = await sceneTechnicalPlanOptions(full, assets);
+        if (active) setResult({ request, editor: { sceneId: full.id, options } });
+      } catch (error) {
+        if (!active) return;
+        rememberAdminBatScene(null);
+        setResult({ request, error: error.message || 'Impossible d’ouvrir le BAT.' });
+      }
+    };
+    load();
+    return () => { active = false; };
+  }, [request, loading, scene, sceneListsLoaded, assets, assetsLoaded]);
+
+  return {
+    editor: current?.editor || null,
+    editorError: current?.error || '',
+    loadingId: loading ? request.id : '',
+    restoring: loading && !request.scene,
+    openEditor: (scene) => { rememberAdminBatScene(scene.id); setRequest({ id: scene.id, scene }); },
+    closeEditor: () => { rememberAdminBatScene(null); setRequest(null); setResult(null); },
   };
-  return { editor, editorError, loadingId, openEditor, closeEditor: () => setEditor(null) };
 }
 
 function AdminSpecialRequestsView({ scenes, assets = [], search = '', onResolve, onSaveManualLines }) {
@@ -17985,6 +18073,26 @@ function preloadImage(url, attempt = 0) {
   return loadDecodedImage(url, attempt).then(({ ok }) => ({ ok, url }));
 }
 
+async function uploadArtworkWithPreview(scene, target, file, showPreview) {
+  let localUrl;
+  try {
+    const url = await uploadSceneItemOptionImage(scene, target, file, {
+      onPreviewReady(previewFile) {
+        localUrl = URL.createObjectURL(previewFile);
+        showPreview(localUrl);
+      },
+    });
+    const { ok } = await preloadImage(url);
+    if (!ok) throw new Error('Aperçu indisponible. Réessayez l’import.');
+    return url;
+  } finally {
+    if (localUrl) {
+      URL.revokeObjectURL(localUrl);
+      Cache.remove(`image:${localUrl}`);
+    }
+  }
+}
+
 function preloadFile(url, attempt = 0) {
   return new Promise((resolve) => {
     if (!url) {
@@ -18384,23 +18492,6 @@ function availableWalls(layout) {
 
 function sideWallLength(depth) {
   return Math.max(0.01, Number(depth || 0));
-}
-
-function layoutHasSideWalls(layout) {
-  return layout === 'left' || layout === 'right' || layout === 'u';
-}
-
-function sceneFloorDepth(layout, depth) {
-  const nominalDepth = Number(depth || 0);
-  return Math.max(0.01, nominalDepth + (layoutHasSideWalls(layout) ? wallThickness : 0));
-}
-
-function sceneFloorCenterZ(layout) {
-  return layoutHasSideWalls(layout) ? wallThickness / 2 : 0;
-}
-
-function sceneFloorFrontZ(layout, depth) {
-  return sceneFloorCenterZ(layout) + sceneFloorDepth(layout, depth) / 2;
 }
 
 function sideWallStartZ(depth) {
@@ -20098,6 +20189,7 @@ function canSupportCountertopAccessory(item = {}) {
   if (!item || item.isGroup || isWallItem(item) || isCeilingMountedItem(item)) return false;
   const label = normalizedItemText(item);
   return item.dimensions?.canSupportObjects === true
+    || isStorageCabinetSceneItem(item)
     || /\btable\b|\bcomptoir\b|\bbanque\s+(?:d\s+)?accueil\b/.test(label);
 }
 

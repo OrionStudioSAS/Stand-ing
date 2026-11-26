@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'vite';
@@ -85,8 +85,43 @@ try {
   const path = join(directory, 'download.pdf');
   await download.saveAs(path);
   assert.equal((await PDFDocument.load(await readFile(path))).getPageCount(), 1);
+  const floorCheck = await page.evaluate(async (savePdf) => {
+    const layouts = [];
+    for (const [layout, extension] of [['back', 0], ['left', .06], ['right', .06], ['u', .06]]) {
+      const width = 15, depth = 4;
+      const options = { width, depth, layout, catalog: [], items: [
+        { id: 'front-counter', type: 'counter', label: 'Banque accueil', modelSize: [1.04, 1, .48], x: 0, z: depth / 2 + extension - .24, color: '#a96b32' },
+        { sourceOptions: { carpetColorHex: '#000000', carpetFootprintEnabled: false }, sourceFloor: { footprintEnabled: false } },
+      ] };
+      const svg = await window.exporter.createTechnicalPlanSvg(options);
+      document.body.append(svg);
+      const floor = svg.querySelector('rect[fill="#dbdbdb"]').getBoundingClientRect();
+      const scale = floor.width / width;
+      const wallFronts = [...svg.querySelectorAll('rect')].map(node => node.getBoundingClientRect())
+        .filter(box => Math.abs(box.height / scale - depth) < .001 && Math.abs(box.width / scale - .06) < .001);
+      const counter = svg.querySelector('[data-bat-id="front-counter"] rect[fill="#a96b32"]').getBoundingClientRect();
+      const texts = [...svg.querySelectorAll('text')].map(node => node.textContent);
+      layouts.push({ layout, depth: floor.height / scale,
+        counterGap: (floor.bottom - counter.bottom) / scale, wallGaps: wallFronts.map(box => (floor.bottom - box.bottom) / scale),
+        nominalCote: texts.includes('4000') && !texts.includes('4060') });
+      if (savePdf && layout === 'u') {
+        const pdf = await window.exporter.createTechnicalPlanBlob(options, svg);
+        layouts.at(-1).pdf = [...new Uint8Array(await pdf.arrayBuffer())];
+      }
+      svg.remove();
+    }
+    return layouts;
+  }, Boolean(process.env.BAT_FLOOR_TEST_PDF));
+  for (const result of floorCheck) {
+    assert.ok(Math.abs(result.depth - (result.layout === 'back' ? 4 : 4.06)) < .001, result.layout);
+    assert.ok(Math.abs(result.counterGap) < .001, 'The front object is flush with the carpet');
+    assert.equal(result.wallGaps.length, result.layout === 'u' ? 2 : result.layout === 'back' ? 0 : 1);
+    assert.ok(result.wallGaps.every(gap => Math.abs(gap) < .001), 'The carpet reaches the ends of the side panels');
+    assert.equal(result.nominalCote, true);
+    if (result.pdf) await writeFile(process.env.BAT_FLOOR_TEST_PDF, Uint8Array.from(result.pdf));
+  }
   assert.deepEqual(errors, []);
-  console.log('BAT browser: single A3 sheet, retained wall labels and rigging, suppressed object labels, vector pictos and download OK');
+  console.log('BAT browser: single A3 sheet, vector pictos and download, retained wall labels and rigging, actual carpet front edge with nominal cotation OK');
 } finally {
   await browser.close();
   await server.close();

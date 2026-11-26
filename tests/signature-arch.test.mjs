@@ -288,7 +288,7 @@ test('Signature arch image slots replace only their own material, including the 
   for(const name of ['led_5500k_11','_28','led_5500k_150']) assert.equal(context.applyTextureSlotMaterial({name},ledItem,images,name).map,undefined);
   assert.equal(context.applyTextureSlotMaterial({ name: '_280' }, item, images, '_280').map, undefined);
   assert.equal(context.applyTextureSlotMaterial({ name: 'LED_5500k#50' }, item, images, 'led_5500k#50').map, undefined);
-  assert.match(appSource, /onSignatureArchImage=\{\(item, slot, file\) => uploadItemImage\(item, file, \{ textureSlot: slot \}\)\}/);
+  assert.match(appSource, /onSignatureArchImage=\{uploadSignatureArchVisual\}/);
 });
 
 

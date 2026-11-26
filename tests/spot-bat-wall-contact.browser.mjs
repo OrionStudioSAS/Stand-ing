@@ -41,7 +41,7 @@ try {
       const scale = floor.width/width;
       const wallFace = item.wallSurface
         ? (axis==='y'?floor.y+depth/2*scale:floor.x+width/2*scale)+(-.5+side*.03)*scale
-        : item.wall==='back'?floor.top+Math.max(8,scale*.06):item.wall==='left'?floor.left+Math.max(8,scale*.06):floor.right-Math.max(8,scale*.06);
+        : item.wall==='back'?floor.top+scale*.06:item.wall==='left'?floor.left+scale*.06:floor.right-scale*.06;
       const edge = axis==='y'?(side>0?contact.top:contact.bottom):(side>0?contact.left:contact.right);
       const cotations = [...pages[0].querySelectorAll('text')].filter(node=>node.getAttribute('data-bat-text-role')==='electrical-dimension');
       results.push({name:item.wallSurface?item.wallSurface.orientation+side:item.wall,gap:Math.abs(edge-wallFace),cotations:cotations.length,unchanged:before===JSON.stringify(items),raster:pages[0].querySelectorAll('image').length});

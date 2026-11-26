@@ -33,7 +33,7 @@ function placementContext() {
     itemPlacementBounds: (item) => context.itemGroupBounds(item),
   });
   for (const name of [
-    'normalizedItemText', 'rotatePoint', 'isCountertopAccessory', 'canSupportCountertopAccessory',
+    'normalizedItemText', 'rotatePoint', 'isCountertopAccessory', 'isStorageCabinetSceneItem', 'canSupportCountertopAccessory',
     'accessoryFitsSurface', 'detachCountertopAccessory', 'floorItemBaseY',
     'placeCountertopAccessory', 'resolveSurfaceAttachments', 'itemHardCollisionBox',
     'itemCollisionBox', 'boxesOverlap', 'collidesWithScene', 'isSameSceneTransform',
@@ -50,6 +50,23 @@ const machine = {
   id: 'coffee', label: 'Machine à café Nespresso', x: 0, z: 1.5, rotation: 0,
   dimensions: { size: [0.25, 0.32, 0.22] },
 };
+
+test('all coffee variants can be placed on the low wooden storage cabinet without allowing overhang', () => {
+  const context = placementContext();
+  const cabinet = {
+    id: 'cabinet', type: 'asset-meuble-bas-rangement-bois-mszuqkar', label: 'Meuble Bois',
+    x: 0, z: 0, rotation: 180, dimensions: { size: [1.04, .5, .5] },
+  };
+  for (const label of ['Machine à café', 'Machine à café (200 dosettes)', 'Machine à café (300 dosettes)']) {
+    const coffee = { ...machine, label, dimensions: { size: [.5, .25, .32] } };
+    const items = context.updateSceneItemWithCollision([cabinet, coffee], coffee.id, { x: .1, z: 0 }, 4, 3, 'u');
+    assert.equal(items[1].surfaceHostId, cabinet.id);
+    assert.equal(items[1].y, .5);
+    assert.equal(context.resolveSurfaceAttachments(items)[1].surfaceHostId, cabinet.id);
+    assert.equal(context.placeCountertopAccessory({ ...coffee, x: 0, z: .2 }, [cabinet]).surfaceHostId, null);
+  }
+  assert.equal(context.canSupportCountertopAccessory({ ...cabinet, type: 'asset-vitrine-haute-rangement', label: 'Vitrine haute' }), false);
+});
 
 test('Nespresso can sit on a Chronos table, not on unrelated furniture', () => {
   const context = placementContext();

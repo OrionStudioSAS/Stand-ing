@@ -119,6 +119,10 @@ try {
     await page.mouse.move(end.x, end.y, { steps: 12 });
     await page.mouse.up();
     await page.waitForFunction(() => !window.pose.dragging, null, { timeout: 3000 });
+    if (models.length) await page.waitForFunction(() => {
+      const { model, floor } = window.frontBounds();
+      return Math.abs(model - floor) < .005;
+    }, null, { timeout: 4000 });
     const result = await page.evaluate(() => ({ ...window.frontBounds(), positionFront: window.pose.front, presetFront: window.presetFront }));
     assert.ok(Math.abs(result.positionFront - result.floor) < .001, `${variant}: ${JSON.stringify(result)}`);
     assert.ok(Math.abs(result.presetFront - result.floor) < .001, `${variant}: front preset uses the same edge`);
