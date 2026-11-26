@@ -104,23 +104,24 @@ try {
   };
 
   const owner = await open('?scene=owner-link', 'owner');
-  const infoButton = (page) => page.locator('.configurator-topbar .user-pill');
-  assert.equal(await owner.locator('.configurator-topbar img[src="/icons/account-add.svg"]').count(), 0);
-  const tutorial = owner.getByRole('button', { name: 'Relancer le tutoriel' });
-  assert.equal(await tutorial.locator('img').getAttribute('src'), '/icons/info.svg');
-  await tutorial.click();
+  const infoButton = (page) => page.locator('.stn-nav .user-pill');
+  assert.equal(await owner.locator('.stn-nav img[src="/icons/account-add.svg"]').count(), 0);
+  // The walkthrough is relaunched from the profile menu of the top bar.
+  await owner.locator('.user-pill').click();
+  await owner.getByRole('button', { name: 'Relancer le tutoriel' }).click();
   await owner.getByRole('dialog', { name: 'Tutoriel configurateur' }).waitFor();
   await owner.getByRole('button', { name: 'Fermer le tutoriel' }).click();
   await owner.locator('.user-pill').click();
+  await owner.getByRole('button', { name: /Mes informations/ }).click();
   const clientInfo = owner.locator('.client-info-modal-locked');
   await clientInfo.waitFor();
   assert.equal(await clientInfo.getByRole('button', { name: 'Inviter un collaborateur' }).count(), 0);
   await clientInfo.locator('.modal-head-actions button').click();
-  await owner.getByRole('button', { name: 'Questions et remarques', exact: true }).click();
-  const phone = owner.locator('.question-help-contact a');
+  await owner.getByRole('button', { name: 'Aide par téléphone', exact: true }).click();
+  const phone = owner.locator('.stn-nav .call');
   assert.equal(await phone.getAttribute('href'), 'tel:+33134646413');
-  assert.equal(await phone.innerText(), '01 34 64 64 13');
-  await owner.getByRole('button', { name: 'Questions et remarques', exact: true }).click();
+  assert.equal(await phone.locator('strong').innerText(), '01 34 64 64 13');
+  await owner.getByRole('button', { name: 'Aide par téléphone', exact: true }).click();
 
   const validate = async (page) => {
     await page.locator('.stepper').getByRole('button', { name: /Validation/ }).click();
@@ -140,17 +141,19 @@ try {
   };
   await infoButton(owner).click();
   const dialog = owner.getByRole('region', { name: 'Ajouter des collaborateurs' });
-  assert.ok(await owner.locator('.client-info-modal-locked').isVisible());
-  for (const email of ['guest@example.test', 'second@example.test', 'third@example.test']) {
-    await dialog.getByRole('textbox', { name: 'Adresse e-mail du collaborateur' }).fill(email);
-    await dialog.getByRole('button', { name: 'Envoyer l’invitation' }).click();
+  await dialog.waitFor();
+  assert.ok(await owner.getByRole('dialog', { name: 'Mon profil' }).isVisible(), 'Collaborators are managed from the profile panel');
+  for (const email of ['guest@example.test', 'second@example.test']) {
+    await dialog.getByRole('button', { name: /Ajouter un collaborateur sur le stand/ }).click();
+    await dialog.getByRole('textbox', { name: 'E-mail du collaborateur' }).fill(email);
+    await dialog.getByRole('button', { name: 'Inviter', exact: true }).click();
     await dialog.getByText(email, { exact: true }).waitFor();
   }
   await dialog.getByText('Trois collaborateurs maximum par scène.').waitFor();
   assert.equal(await dialog.getByRole('textbox').count(), 0);
   await dialog.getByRole('button', { name: 'Retirer l’accès : second@example.test' }).click();
-  await dialog.getByText('Accès retiré.', { exact: true }).waitFor();
-  assert.equal(await dialog.getByRole('textbox').count(), 1);
+  await owner.getByText('Accès retiré.', { exact: true }).waitFor();
+  assert.equal(await dialog.getByRole('button', { name: /Ajouter un collaborateur sur le stand/ }).count(), 1);
   await infoButton(owner).click();
   await dialog.waitFor({ state: 'hidden' });
   await owner.setViewportSize({ width: 320, height: 740 });
@@ -163,18 +166,19 @@ try {
   await validate(owner);
   await infoButton(owner).click();
   await owner.getByRole('region', { name: 'Ajouter des collaborateurs' }).waitFor();
-  assert.equal(await owner.getByRole('button', { name: 'Envoyer l’invitation' }).count(), 1, 'Owner can still manage access after submission');
+  assert.equal(await owner.getByRole('button', { name: /Ajouter un collaborateur sur le stand/ }).count(), 1, 'Owner can still manage access after submission');
   await infoButton(owner).click();
   await owner.close();
 
   const admin = await open('?scene=owner-link&submitted=1', 'admin');
   await infoButton(admin).click();
   const adminDialog = admin.getByRole('region', { name: 'Ajouter des collaborateurs' });
-  await adminDialog.getByRole('textbox', { name: 'Adresse e-mail du collaborateur' }).fill('new@example.test');
-  await adminDialog.getByRole('button', { name: 'Envoyer l’invitation' }).click();
+  await adminDialog.getByRole('button', { name: /Ajouter un collaborateur sur le stand/ }).click();
+  await adminDialog.getByRole('textbox', { name: 'E-mail du collaborateur' }).fill('new@example.test');
+  await adminDialog.getByRole('button', { name: 'Inviter', exact: true }).click();
   await adminDialog.getByText('new@example.test', { exact: true }).waitFor();
   await adminDialog.getByRole('button', { name: 'Retirer l’accès : new@example.test' }).click();
-  await adminDialog.getByText('Accès retiré.', { exact: true }).waitFor();
+  await admin.getByText('Accès retiré.', { exact: true }).waitFor();
   await admin.close();
 
   const designer = await open('?scene=owner-link', 'designer');
@@ -197,6 +201,7 @@ try {
   assert.equal(await guest.evaluate(() => window.requestedInvite), undefined, 'No code request for a personal link');
   assert.equal(await guest.getByRole('region', { name: 'Ajouter des collaborateurs' }).count(), 0);
   assert.equal(await guest.getByRole('button', { name: 'Inviter un collaborateur' }).count(), 0);
+  await guest.getByRole('button', { name: /Mes informations/ }).click();
   assert.equal(await guest.locator('.client-correction-button').isVisible(), true, 'Guest can report incorrect contact details');
   await guest.locator('.client-info-modal .modal-head-actions button').click();
   await guest.getByRole('button', { name: /^Sol/ }).click();

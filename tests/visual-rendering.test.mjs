@@ -214,8 +214,8 @@ test('the header cart only shows the HT price next to its icon', () => {
   const start = appSource.indexOf('function HeaderCartMenu(');
   const end = appSource.indexOf('\nfunction FurnitureCartBar(', start);
   const source = appSource.slice(start, end);
-  assert.match(source, /className="topbar-cart-total">\s*<strong>\{tr\(total\.toLocaleString\('fr-FR'\)\)\} \{tr\("€ HT"\)\}<\/strong>\s*<\/div>/);
-  assert.doesNotMatch(source, /topbar-cart-total[\s\S]*total_ht_estimated/);
+  assert.match(source, /<span className="two"><span>\{navEuro\(total\)\} \{tr\('HT'\)\}<\/span><small>\{tr\('Voir le panier'\)\}<\/small><\/span>/);
+  assert.doesNotMatch(source, /total_ht_estimated/);
 });
 
 test('chrome materials are detected for reflective furniture legs', () => {

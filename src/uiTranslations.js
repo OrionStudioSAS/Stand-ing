@@ -1,5 +1,7 @@
 // Text added by the redesigned panels, separate from persisted catalogue/user data.
+import { navbarEnglishUi, translateNavbarUi } from './navbarTranslations.js';
 export const englishUi = {
+  ...navbarEnglishUi,
   'Ce fichier est vide. Choisissez le fichier original.': 'This file is empty. Choose the original file.',
   'Impossible de lire le PDF. Réexportez sa première page en PDF, JPG ou PNG.': 'Could not read this PDF. Export its first page again as a PDF, JPG or PNG.',
   'Impossible de lire cette image. Réexportez-la en JPG ou PNG, avec des dimensions réduites si elle est très grande.': 'Could not read this image. Export it again as JPG or PNG, reducing its dimensions if it is very large.',
@@ -238,6 +240,8 @@ export function translateCatalogLabel(text) {
 }
 
 export function translateGeneratedUi(text, translate) {
+  const navbarText = translateNavbarUi(text, translate);
+  if (navbarText != null) return navbarText;
   let match;
   if (text.includes('\n')) return text.split('\n').map(translate).join('\n');
   if ((match=text.match(/^-\s+(.*)$/))) return `- ${translate(match[1])}`;

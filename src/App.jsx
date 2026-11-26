@@ -106,6 +106,10 @@ import { loadTechnicalPlanEdits } from './data/technicalPlanStore.js';
 import { manageSceneCollaborators, openSceneInvitation, requestSceneInvitationLink } from './data/sceneStore.js';
 import './signatureHeadInformation.css';
 import './styles.css';
+// Top bar and guided tour (kept apart from the other imports to stay independent of the reserve work).
+import './configuratorNavbar.css';
+import { GuidedTour } from './GuidedTour.jsx';
+import { Phone, PlayCircle, UserRound } from 'lucide-react';
 
 const visualUploadAccept = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf,.svg,.pdf,.psd,image/vnd.adobe.photoshop';
 const wallCoverUploadAccept = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf,.svg,.pdf';
@@ -1266,7 +1270,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   const tutorialStorageKey = useMemo(() => `standing-config-tutorial:${initialScene.id || initialScene.share_token || initialScene.project_name || 'scene'}`, [initialScene.id, initialScene.share_token, initialScene.project_name]);
   const tutorialAutoOpened = useRef(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
-  const [tutorialStep, setTutorialStep] = useState(0);
+  const tutorialProgressKey = `${tutorialStorageKey}:step`;
+  const tutorialSnapshot = useRef(null);
+  const [tutorialSession, setTutorialSession] = useState({ id: 0, resume: 0 });
   const [activeStep, setActiveStepValue] = useState(() => {
     if (typeof window === 'undefined') return 1;
     return window.localStorage.getItem(introStorageKey) === 'started' ? 2 : 1;
@@ -1284,26 +1290,36 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       return resolvedStep;
     });
   };
-  const tutorialStepTargets = [2, 2, 2, 3, 4];
-  const setTutorialStepAndFocus = (nextStep) => {
-    const clampedStep = Math.max(0, Math.min(tutorialStepTargets.length - 1, nextStep));
-    setTutorialStep(clampedStep);
-    setActiveStep(tutorialStepTargets[clampedStep] || 2);
-  };
+  // Guided tour: remembers where the exhibitor was, and where they stopped in the tour.
   const openTutorial = () => {
+    tutorialSnapshot.current = { step: activeStep, options: openOptions, selectedId };
+    let resume = 0;
+    try { resume = Number(window.localStorage.getItem(tutorialProgressKey) || 0) || 0; } catch (_) {}
     setHeaderPanel(null);
     setItemConfigModal(null);
     setRotationPanelOpen(false);
+    setTutorialSession({ id: Date.now(), resume });
     setTutorialOpen(true);
-    setTutorialStepAndFocus(0);
   };
-  const closeTutorial = (persist = true) => {
+  const closeTutorial = ({ completed = false, index = 0 } = {}) => {
     setTutorialOpen(false);
-    if (typeof window !== 'undefined' && persist) {
-      try {
-        window.localStorage.setItem(tutorialStorageKey, 'done');
-      } catch (_) {}
+    setHeaderPanel(null);
+    setRotationPanelOpen(false);
+    const snapshot = tutorialSnapshot.current;
+    tutorialSnapshot.current = null;
+    if (completed) {
+      setSelectedId(null);
+      setOpenOptions((current) => Object.fromEntries(Object.keys(current).map((key) => [key, false])));
+      setActiveStep(2);
+    } else if (snapshot) {
+      setSelectedId(snapshot.selectedId || null);
+      setOpenOptions(snapshot.options);
+      setActiveStep(snapshot.step);
     }
+    try {
+      window.localStorage.setItem(tutorialStorageKey, 'done');
+      window.localStorage.setItem(tutorialProgressKey, completed ? '0' : String(index || 0));
+    } catch (_) {}
   };
   const [openOptions, setOpenOptions] = useState({ moquette: false, empreinte: false, coton: false, plancher: false, led: false, reserve: false, tete: false, comptoir: false, arche: false, enseigne: false });
   const [optionScrollTarget, setOptionScrollTarget] = useState('');
@@ -1758,13 +1774,9 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     tutorialAutoOpened.current = true;
     if (typeof window === 'undefined') return;
     try {
-      if (window.localStorage.getItem(tutorialStorageKey) !== 'done') {
-        setTutorialOpen(true);
-        setTutorialStepAndFocus(0);
-      }
+      if (window.localStorage.getItem(tutorialStorageKey) !== 'done') openTutorial();
     } catch (_) {
-      setTutorialOpen(true);
-      setTutorialStepAndFocus(0);
+      openTutorial();
     }
   }, [activeStep, effectiveAdminViewer, readOnly, sceneHasRendered, tutorialStorageKey]);
 
@@ -2918,7 +2930,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       });
       setQuestionForm({ subject: '', message: '' });
       setQuestionState({ loading: false, message: delivery.saved && !delivery.sent ? 'Question enregistrée dans les demandes Stand-ING.' : 'Question envoyée et enregistrée dans les demandes Stand-ING.', error: '' });
-      window.setTimeout(() => setHeaderPanel(null), 650);
     } catch (error) {
       console.error('Question email failed', error);
       setQuestionState({ loading: false, message: '', error: error.message || 'Envoi impossible pour le moment.' });
@@ -2929,48 +2940,29 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   return (
     <LanguageContext.Provider value={language}>
-    <main className={`configurator-shell ${activeStep === 1 ? 'intro-step' : ''} ${showCartBar ? 'has-cart-bar' : ''} ${readOnly ? 'readonly-mode' : ''}`}>
-      <header className="configurator-topbar">
-        <div className="configurator-topbar-identity">
-        <a className="config-logo" href="/">
-          <img src="/images/logo.png" alt={tr("Stand-ING")} />
-        </a>
-        <div className="config-breadcrumb" title={`${salonLabel} · ${offerLabel} · ${standLabel} · ${area} m²`}>
-          <span>{salonLabel}</span>
-          {offerLabel && <span className="config-offer-chip">{offerLabel}</span>}
-          <span>{standLabel}</span>
-          <span>{tr(area.toFixed(0))} m²</span>
-        </div>
-        </div>
-        <nav className="stepper" aria-label={tRaw(language, 'step_home')}>
-          {[
-            { id: 1, key: 'step_home' },
-            { id: 2, key: 'step_options' },
-            { id: 3, key: 'step_furniture' },
-            { id: 4, key: 'step_validation' },
-          ].map((step) => (
-            <button key={step.id} className={activeStep === step.id ? 'active' : step.id < activeStep ? 'done' : ''} onClick={() => setActiveStep(step.id)}>
-              <span>{step.id < activeStep ? <Check size={13} /> : step.id}</span>
-              {tRaw(language, step.key)}
-            </button>
-          ))}
-        </nav>
-        <div className="configurator-topbar-actions">
-        <button className={`language-pill ${headerPanel === 'language' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('language')} aria-label={tRaw(language, 'aria_language')}>
-          <span className="flag-dot"><img src={selectedLanguage.flagSrc} alt="" aria-hidden="true" /></span>
-        </button>
-        <button className={`user-pill ${headerPanel === 'client' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('client')} aria-label={tRaw(language, 'aria_client')}>
-          <img className="topbar-tool-icon" src="/icons/account.svg" alt="" aria-hidden="true" />
-        </button>
-        <button className={`round-tool ${headerPanel === 'question' ? 'active' : ''}`} type="button" onClick={() => toggleHeaderPanel('question')} aria-label={tRaw(language, 'aria_questions')}>
-          <img className="topbar-tool-icon" src="/icons/qr.svg" alt="" aria-hidden="true" />
-        </button>
-        {!readOnly && (
-          <button className={`round-tool tutorial-trigger ${tutorialOpen ? 'active' : ''}`} type="button" onClick={openTutorial} aria-label={tr("Relancer le tutoriel")}>
-            <img className="topbar-tool-icon" src="/icons/info.svg" alt="" aria-hidden="true" />
-          </button>
-        )}
-        {activeStep > 1 && (
+    <main className={`configurator-shell has-stn-nav ${activeStep === 1 ? 'intro-step' : ''} ${showCartBar ? 'has-cart-bar' : ''} ${readOnly ? 'readonly-mode' : ''}`}>
+      <ConfiguratorNavbar
+        language={language}
+        selectedLanguage={selectedLanguage}
+        onLanguage={setLanguage}
+        panel={headerPanel}
+        setPanel={setHeaderPanel}
+        project={{ name: standLabel, salon: salonLabel, offer: offerLabel, area }}
+        activeStep={activeStep}
+        onStep={setActiveStep}
+        readOnly={readOnly}
+        tutorialOpen={tutorialOpen}
+        onOpenTutorial={openTutorial}
+        questionForm={questionForm}
+        onQuestionChange={(key, value) => setQuestionForm((current) => ({ ...current, [key]: value }))}
+        questionState={questionState}
+        onQuestionSubmit={submitQuestion}
+        onQuestionReset={() => setQuestionState({ loading: false, message: '', error: '' })}
+        contactDetails={contactDetails}
+        sceneId={initialScene.id}
+        canManageCollaborators={canManageCollaborators}
+        viewerIsOwner={sceneRole === 'owner'}
+        cart={activeStep > 1 ? (
           <HeaderCartMenu
             items={cartItems}
             pricingItems={visibleSceneItems}
@@ -2980,17 +2972,21 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             pricing={scenePricing}
             salonLabel={assetPackLabel}
             readOnly={readOnly}
+            standLabel={standLabel}
+            area={area}
+            offerLabel={offerLabel}
+            nextStep={activeStep < 3 ? 3 : 4}
+            onContinue={() => setActiveStep(3)}
+            open={headerPanel === 'cart'}
+            onOpenChange={(open) => setHeaderPanel(open ? 'cart' : null)}
             onSelectItem={setSelectedId}
             onOpenItem={openCartItemConfigurator}
-            onIncrementItem={duplicateCartItem}
-            onDecrementItem={removeSceneItemById}
             onDeleteItems={removeSceneItemsById}
             canRemoveItem={(item) => canDeleteSceneItem(item, effectiveAdminViewer)}
             onValidate={() => setActiveStep(4)}
           />
-        )}
-        </div>
-      </header>
+        ) : null}
+      />
 
       {sceneSaveError ? (
         <div className="placement-feedback scene-save-feedback" role="alert">
@@ -3012,33 +3008,6 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             contactDetails={contactDetails}
             onClose={() => setHeaderPanel(null)}
             onReportCorrection={submitContactCorrection}
-            sceneId={initialScene.id}
-            canManageCollaborators={canManageCollaborators}
-          />
-        </div>
-      )}
-
-      {headerPanel === 'question' && (
-        <div className="header-modal-layer" onMouseDown={(event) => event.target === event.currentTarget && setHeaderPanel(null)}>
-          <QuestionModal
-            salonLabel={salonLabel}
-            form={questionForm}
-            onFormChange={(key, value) => setQuestionForm((current) => ({ ...current, [key]: value }))}
-            onClose={() => setHeaderPanel(null)}
-            state={questionState}
-            onSubmit={submitQuestion}
-          />
-        </div>
-      )}
-
-      {headerPanel === 'language' && (
-        <div className="header-popover-layer" onMouseDown={() => setHeaderPanel(null)}>
-          <LanguageMenu
-            language={language}
-            onSelect={(nextLanguage) => {
-              setLanguage(nextLanguage);
-              setHeaderPanel(null);
-            }}
           />
         </div>
       )}
@@ -3401,12 +3370,30 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       )}
 
       {tutorialOpen && (
-        <ConfiguratorTutorial
-          step={tutorialStep}
-          language={language}
-          onStep={setTutorialStepAndFocus}
-          onClose={() => closeTutorial(true)}
-          onSkip={() => closeTutorial(true)}
+        <GuidedTour
+          key={tutorialSession.id}
+          {...buildConfiguratorTour({
+            language,
+            firstName: contactDetails.firstName,
+            standLabel,
+            salonLabel,
+            offerLabel,
+            area,
+            pricing: scenePricing,
+            hasReserve: Boolean(activeReserveRuleConfig?.includedType || activeReserveRuleConfig?.options?.length),
+            sampleItem: tourSampleItem(visibleSceneItems),
+            hasCart: activeStep > 1,
+            actions: {
+              goStep: (step) => { setHeaderPanel(null); setActiveStep(step); },
+              openOption: (key) => openOnlyStepOption(key, true),
+              closeOptions: () => setOpenOptions((current) => Object.fromEntries(Object.keys(current).map((key) => [key, false]))),
+              select: (id) => { setRotationPanelOpen(false); setSelectedId(id); },
+              openPanel: (panel) => setHeaderPanel(panel),
+            },
+          })}
+          resumeIndex={tutorialSession.resume}
+          onStepChange={(index) => { try { window.localStorage.setItem(tutorialProgressKey, String(index)); } catch (_) {} }}
+          onClose={closeTutorial}
         />
       )}
 
@@ -3476,127 +3463,327 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   );
 }
 
-const tutorialSlides = {
-  fr: [
-    {
-      eyebrow: 'Bienvenue',
-      title: 'Configure ton stand en quelques minutes',
-      text: 'Ce tutoriel présente l’interface actuelle : la scène 3D au centre, le panneau à droite, la toolbar sur les objets et le panier en bas.',
-      hint: 'Tu peux le relancer à tout moment avec l’icône ✨ dans le header.',
-      cta: 'Commencer',
-      visual: 'overview',
-    },
-    {
-      eyebrow: 'Étape 2 · Configuration',
-      title: 'Personnalise depuis le panneau de droite',
-      text: 'Ouvre les menus Sol, Cloison, Réserve, Spots LED, Tête de cloison ou Comptoir accueil pour modifier les options incluses dans ton stand.',
-      hint: 'Un seul menu s’ouvre à la fois pour garder la lecture claire.',
-      visual: 'panel',
-    },
-    {
-      eyebrow: 'Modifier un objet',
-      title: 'Clique l’objet puis utilise la toolbar',
-      text: 'Sélectionne un élément dans la scène. La toolbar permet de configurer, tourner, verrouiller ou supprimer l’objet quand l’action est disponible.',
-      hint: 'Le crayon ouvre soit la bonne section de l’étape 2, soit la popup de personnalisation de l’objet.',
-      visual: 'toolbar',
-    },
-    {
-      eyebrow: 'Étape 3 · Mobilier',
-      title: 'Ajoute du mobilier et place-le dans la scène',
-      text: 'Choisis une catégorie, clique sur un produit, sélectionne ses variantes ou options, puis déplace l’objet directement dans la scène.',
-      hint: 'Le panier en bas reste visible et récapitule les objets ajoutés et leur prix.',
-      visual: 'shop',
-    },
-    {
-      eyebrow: 'Étape 4 · Validation',
-      title: 'Vérifie puis envoie ta configuration',
-      text: 'Contrôle les options choisies, les éléments inclus, les suppléments facturés et ajoute une demande particulière si nécessaire.',
-      hint: 'Stand·ING reçoit ensuite ta configuration et ton bon de commande, ou traite ta demande particulière avant validation finale.',
-      visual: 'validation',
-    },
-  ],
-  en: [
-    {
-      eyebrow: 'Welcome',
-      title: 'Configure your booth in a few minutes',
-      text: 'This tour introduces the current interface: 3D scene in the center, right-side panel, object toolbar and bottom cart.',
-      hint: 'You can replay it anytime with the ✨ icon in the header.',
-      cta: 'Start',
-      visual: 'overview',
-    },
-    {
-      eyebrow: 'Step 2 · Configuration',
-      title: 'Customize from the right panel',
-      text: 'Open Floor, Wall, Storage, LED spots, Partition head or Welcome counter to adjust the options included in your booth.',
-      hint: 'Only one section opens at a time to keep things readable.',
-      visual: 'panel',
-    },
-    {
-      eyebrow: 'Edit an object',
-      title: 'Click an object, then use the toolbar',
-      text: 'Select an item in the scene. The toolbar lets you configure, rotate, lock or delete the object when available.',
-      hint: 'The pencil opens either the right Step 2 section or the item customization popup.',
-      visual: 'toolbar',
-    },
-    {
-      eyebrow: 'Step 3 · Furniture',
-      title: 'Add furniture and place it in the scene',
-      text: 'Choose a category, click a product, select variants or options, then drag the object directly in the scene.',
-      hint: 'The bottom cart stays visible and summarizes added items and prices.',
-      visual: 'shop',
-    },
-    {
-      eyebrow: 'Step 4 · Review',
-      title: 'Check and send your configuration',
-      text: 'Review selected options, included items, charged extras and add a special request if needed.',
-      hint: 'Stand·ING then receives your configuration and purchase order, or handles your special request before final validation.',
-      visual: 'validation',
-    },
-  ],
-};
+// Object used to demonstrate the selection toolbar: a regular piece of the stand the exhibitor can act on.
+function tourSampleItem(items = []) {
+  const regular = items.filter((item) => item && !isAutomaticReserveItem(item) && !item.autoMeterCover
+    && !isAutomaticLedRailItem(item) && !isAutomaticSpotItem(item) && !isCeilingMountedItem(item) && !item.options?.reserveContent);
+  return regular.find((item) => !isWallItem(item)) || regular[0] || null;
+}
 
-function ConfiguratorTutorial({ step = 0, language = 'fr', onStep, onClose, onSkip }) {
-  const tr = useUiText();
-  const slides = tutorialSlides[language] || tutorialSlides.fr;
-  const currentIndex = Math.max(0, Math.min(slides.length - 1, step));
-  const slide = slides[currentIndex];
-  const isLast = currentIndex === slides.length - 1;
-  const nextLabel = language === 'en' ? (isLast ? 'Finish' : 'Next') : (isLast ? 'Terminer' : 'Suivant');
-  const backLabel = language === 'en' ? 'Back' : 'Retour';
-  const skipLabel = language === 'en' ? 'Skip tutorial' : 'Passer le tutoriel';
+// Guided tour content: every step points at a real element of the configurator.
+function buildConfiguratorTour({ language = 'fr', firstName = '', standLabel = '', salonLabel = '', offerLabel = '', area = 0, pricing = {}, hasReserve = false, sampleItem = null, hasCart = false, actions = {} }) {
+  const en = language === 'en';
+  const L = (fr, english) => (en ? english : fr);
+  const surface = `${Number(area || 0).toFixed(0)} m²`;
+  const allowance = pricing?.packBenefits?.mode === 'allowance';
+  const allowanceAmount = Number(pricing?.allowanceAmount || 0).toLocaleString(en ? 'en-GB' : 'fr-FR');
+  const sampleLabel = sampleItem ? localizeItemLabel(sampleItem, language) || sampleItem.label : '';
+  const toolbarButton = (n) => `.view-toolbar.selection-mode > button:nth-of-type(${n})`;
 
-  return (
-    <div className={`tutorial-layer tutorial-step-${currentIndex}`} role="dialog" aria-modal="true" aria-label={tr("Tutoriel configurateur")}>
-      <article className="tutorial-card">
-        <button type="button" className="tutorial-close" onClick={onClose} aria-label={tr("Fermer le tutoriel")}><X size={17} /></button>
-        <div className="tutorial-progress">
-          {slides.map((item, index) => (
-            <button key={item.title} type="button" className={index === currentIndex ? 'active' : index < currentIndex ? 'done' : ''} onClick={() => onStep(index)}>
-              {index < currentIndex ? <Check size={11} /> : index + 1}
-            </button>
-          ))}
-        </div>
-        <div className="tutorial-content">
-          <TutorialVisual type={slide.visual} />
-          <section>
-            <span className="tutorial-eyebrow">{tr(slide.eyebrow)}</span>
-            <h2>{tr(slide.title)}</h2>
-            <p>{tr(slide.text)}</p>
-            <div className="tutorial-hint"><Sparkles size={15} />{tr(slide.hint)}</div>
-          </section>
-        </div>
-        <footer className="tutorial-actions">
-          <button type="button" className="tutorial-skip" onClick={onSkip}>{tr(skipLabel)}</button>
-          <div>
-            {currentIndex > 0 && <button type="button" className="tutorial-back" onClick={() => onStep(currentIndex - 1)}>{tr(backLabel)}</button>}
-            <button type="button" className="tutorial-next" onClick={() => (isLast ? onClose() : onStep(currentIndex + 1))}>
-              {tr(slide.cta || nextLabel)} <ChevronDown size={15} />
-            </button>
-          </div>
-        </footer>
-      </article>
-    </div>
-  );
+  const chapters = [
+    { id: 'nav', label: L('Votre espace', 'Your workspace'), detail: L('La barre du haut et les étapes', 'Top bar and steps') },
+    { id: 'scene', label: L('La vue 3D', 'The 3D view'), detail: L('Naviguer, sélectionner, déplacer', 'Navigate, select, move') },
+    { id: 'config', label: L('Configurer le stand', 'Configure the stand'), detail: L('Sol, cloisons, réserve, options', 'Floor, walls, storage room, options') },
+    { id: 'shop', label: L('Boutique et panier', 'Shop and cart'), detail: L('Mobilier, multimédia, électricité', 'Furniture, multimedia, electricity') },
+    { id: 'validate', label: L('Validation', 'Review'), detail: L('Vérifier puis envoyer', 'Check, then send') },
+    { id: 'help', label: L('Besoin d’aide ?', 'Need help?'), detail: L('Téléphone, questions, cette visite', 'Phone, questions, this tour') },
+  ];
+
+  const steps = [
+    {
+      id: 'welcome',
+      kind: 'welcome',
+      chapter: 'nav',
+      eyebrow: L('Visite guidée · 3 minutes', 'Guided tour · 3 minutes'),
+      title: firstName ? L(`Bienvenue ${firstName} !`, `Welcome ${firstName}!`) : L('Bienvenue sur votre configurateur', 'Welcome to your configurator'),
+      body: L(
+        `Découvrez comment composer votre stand ${standLabel ? `« ${standLabel} » ` : ''}de ${surface}${salonLabel ? ` pour ${salonLabel}` : ''} : la vue 3D, les options de votre formule${offerLabel ? ` ${offerLabel}` : ''}, la boutique et l’envoi de votre configuration. Quittez quand vous voulez, la visite reprendra où vous l’avez laissée.`,
+        `Learn how to put together your ${surface} stand${standLabel ? ` “${standLabel}”` : ''}${salonLabel ? ` for ${salonLabel}` : ''}: the 3D view, the options of your${offerLabel ? ` ${offerLabel}` : ''} package, the shop and how to send your configuration. Leave at any time, the tour picks up where you left off.`,
+      ),
+      visual: <TutorialVisual type="overview" />,
+      enter: () => actions.goStep?.(2),
+    },
+    {
+      id: 'navbar',
+      chapter: 'nav',
+      target: '.stn-nav',
+      placement: 'bottom',
+      padding: 4,
+      radius: 0,
+      title: L('Tout votre stand, en un coup d’œil', 'Your whole stand at a glance'),
+      body: L('La barre du haut reste visible à chaque étape. Survolez un numéro pour repérer l’élément correspondant.', 'The top bar stays visible at every step. Hover over a number to spot the matching element.'),
+      annotations: [
+        { target: '.stn-nav .project', label: L('Votre stand', 'Your stand'), text: L('Nom, salon, formule et surface.', 'Name, show, package and floor area.') },
+        { target: '.stn-nav .stepper', label: L('Les 4 étapes', 'The 4 steps'), text: L('Accueil, Configuration, Boutique, Validation.', 'Home, Configuration, Shop, Review.') },
+        { target: '[data-tour="nav-help"]', label: L('Aide par téléphone', 'Phone support'), text: L('Un conseiller du lundi au vendredi, de 9 h à 18 h.', 'An advisor Monday to Friday, 9 am to 6 pm.') },
+        { target: '[data-tour="nav-questions"]', label: L('Questions et remarques', 'Questions and comments'), text: L('Questions fréquentes et message à l’équipe.', 'FAQ and message to the team.') },
+        { target: '[data-tour="nav-language"]', label: L('Langue', 'Language'), text: L('Interface en français ou en anglais.', 'Interface in French or English.') },
+        { target: '[data-tour="nav-profile"]', label: L('Mon profil', 'My profile'), text: L('Vos coordonnées, vos collaborateurs et cette visite.', 'Your details, your collaborators and this tour.') },
+        ...(hasCart ? [{ target: '[data-tour="nav-cart"]', label: L('Panier', 'Cart'), text: L('Le total HT de vos options, en temps réel.', 'The total of your options excl. VAT, live.') }] : []),
+      ],
+    },
+    {
+      id: 'steps',
+      chapter: 'nav',
+      target: '.stn-nav .stepper',
+      placement: 'bottom',
+      title: L('Avancez à votre rythme', 'Go at your own pace'),
+      body: L('Cliquez sur une étape pour y aller directement. Rien n’est perdu : chaque modification est enregistrée automatiquement.', 'Click a step to jump straight to it. Nothing is lost: every change is saved automatically.'),
+      tips: [
+        L('Le rond vert indique une étape déjà parcourue.', 'A green dot marks a step you have already visited.'),
+        L('« Étape suivante », en bas du panneau, fait aussi avancer.', '“Next step”, at the bottom of the panel, moves you on too.'),
+      ],
+    },
+    {
+      id: 'scene',
+      chapter: 'scene',
+      target: '.configurator-stage',
+      interactive: true,
+      padding: 0,
+      radius: 0,
+      title: L('Votre stand en 3D, à l’échelle', 'Your stand in 3D, to scale'),
+      body: L('Tout ce que vous choisissez apparaît ici instantanément : couleurs, cloisons, réserve, mobilier, visuels.', 'Everything you choose shows up here instantly: colours, walls, storage room, furniture, artwork.'),
+      keys: [[L('Glisser', 'Drag'), L('tourner autour du stand', 'orbit around the stand')], [L('Molette', 'Scroll'), L('zoomer', 'zoom')], [L('Clic', 'Click'), L('sélectionner un objet', 'select an object')]],
+      tryIt: L('La vue est active pendant cette étape : faites-la pivoter avec la souris.', 'The view is live during this step: rotate it with your mouse.'),
+    },
+    {
+      id: 'camera',
+      chapter: 'scene',
+      target: '.camera-mode-toolbar',
+      placement: 'top',
+      optional: true,
+      title: L('Deux façons de bouger la caméra', 'Two ways to move the camera'),
+      body: L('Choisissez ce que fait le glisser de la souris.', 'Choose what dragging with the mouse does.'),
+      annotations: [
+        { target: '.camera-mode-toolbar button:nth-of-type(1)', label: L('Incliner', 'Tilt'), text: L('Tourne et incline la vue autour du stand.', 'Rotates and tilts the view around the stand.') },
+        { target: '.camera-mode-toolbar button:nth-of-type(2)', label: L('Déplacer', 'Move'), text: L('Fait glisser la vue pour cadrer un détail.', 'Slides the view to frame a detail.') },
+      ],
+    },
+    {
+      id: 'toolbar',
+      chapter: 'scene',
+      when: () => Boolean(sampleItem),
+      enter: () => {
+        actions.goStep?.(2);
+        actions.select?.(sampleItem?.id);
+        return () => actions.select?.(null);
+      },
+      enterDelay: 250,
+      target: '.view-toolbar.selection-mode',
+      optional: true,
+      title: L('Chaque objet a sa barre d’outils', 'Every object has its toolbar'),
+      body: L(
+        `Cliquez sur un objet dans la 3D : sa barre d’outils apparaît à côté. Ici, nous avons sélectionné « ${sampleLabel} ».`,
+        `Click an object in the 3D view and its toolbar appears next to it. Here we selected “${sampleLabel}”.`,
+      ),
+      annotations: [
+        { target: toolbarButton(1), label: L('Rotation', 'Rotation'), text: L('Ouvre la molette pour orienter l’objet.', 'Opens the dial to turn the object.') },
+        { target: toolbarButton(2), label: L('Réglages', 'Settings'), text: L('Couleur, variante, visuel ou options de l’objet.', 'Colour, variant, artwork or options of the object.') },
+        { target: '.view-toolbar.selection-mode .toolbar-lock-button', label: L('Verrouiller', 'Lock'), text: L('Empêche de le déplacer par erreur.', 'Stops it from being moved by mistake.') },
+        { target: toolbarButton(4), label: L('Supprimer', 'Delete'), text: L('Retire l’objet du stand.', 'Removes the object from the stand.') },
+      ],
+      tips: [
+        L('Glissez un objet pour le déplacer : il reste dans le stand et évite les chevauchements.', 'Drag an object to move it: it stays inside the stand and avoids overlaps.'),
+        L('Un bouton grisé signifie que l’action n’est pas possible pour cet objet.', 'A greyed-out button means the action is not available for this object.'),
+      ],
+    },
+    {
+      id: 'panel',
+      chapter: 'config',
+      enter: () => { actions.goStep?.(2); actions.closeOptions?.(); },
+      target: '.config-panel',
+      placement: 'left',
+      padding: 0,
+      radius: 0,
+      title: L('Le panneau de configuration', 'The configuration panel'),
+      body: L('Chaque rubrique correspond à une partie du stand ; la ligne sous son titre résume votre choix actuel.', 'Each section matches a part of the stand; the line under its title sums up your current choice.'),
+      annotations: [
+        { target: '.config-panel .option-accordion', label: L('Une rubrique', 'A section'), text: L('Cliquez pour l’ouvrir. Une seule reste ouverte à la fois.', 'Click to open it. Only one stays open at a time.') },
+        { target: '.config-panel-actions .panel-step-button.primary', label: L('Étape suivante', 'Next step'), text: L('Passe à la boutique quand le stand vous convient.', 'Moves on to the shop when the stand suits you.') },
+      ],
+    },
+    {
+      id: 'option',
+      chapter: 'config',
+      enter: () => { actions.goStep?.(2); actions.openOption?.('moquette'); },
+      enterDelay: 250,
+      target: '.config-panel [data-option="moquette"]',
+      placement: 'left',
+      optional: true,
+      title: L('Ouvrez une rubrique, choisissez', 'Open a section, choose'),
+      body: L('Les choix compris dans votre formule sont marqués « Inclus » ; les autres affichent leur supplément HT, ajouté automatiquement au panier.', 'Choices included in your package are marked “Included”; the others show their extra cost excl. VAT, added to the cart automatically.'),
+      tips: [
+        L('La 3D se met à jour dès que vous cliquez.', 'The 3D view updates as soon as you click.'),
+        L('Tout reste modifiable jusqu’à l’envoi de votre configuration.', 'Everything can be changed until you send your configuration.'),
+      ],
+    },
+    {
+      id: 'allowance',
+      chapter: 'config',
+      when: () => allowance,
+      enter: () => { actions.goStep?.(2); actions.closeOptions?.(); },
+      target: '.config-panel .pack-allowance-progress',
+      placement: 'left',
+      optional: true,
+      title: L('Votre forfait accessoires', 'Your accessory allowance'),
+      body: L(
+        `Votre formule${offerLabel ? ` ${offerLabel}` : ''} comprend ${allowanceAmount} € HT d’accessoires. La jauge montre ce que vous avez utilisé ; au-delà, le supplément s’ajoute au panier.`,
+        `Your${offerLabel ? ` ${offerLabel}` : ''} package includes €${allowanceAmount} excl. VAT of accessories. The gauge shows what you have used; beyond it, the extra is added to the cart.`,
+      ),
+    },
+    {
+      id: 'reserve',
+      chapter: 'config',
+      when: () => hasReserve,
+      enter: () => { actions.goStep?.(2); actions.openOption?.('reserve'); },
+      enterDelay: 300,
+      target: '.config-panel [data-option="reserve"]',
+      placement: 'left',
+      optional: true,
+      title: L('Votre réserve, sur mesure', 'Your storage room, made to measure'),
+      body: L('Choisissez la taille de votre réserve, incluse dans votre formule ou en option : la 3D se met à jour aussitôt.', 'Pick the size of your storage room, included in your package or as an option: the 3D view updates straight away.'),
+      annotations: [
+        { target: '.rsv-quick .rsv-quick-plan', label: L('Plan', 'Plan'), text: L('Vue de dessus ; un clic ouvre l’éditeur.', 'Top view; one click opens the editor.') },
+        { target: '.rsv-quick .rsv-size-grid', label: L('Taille', 'Size'), text: L('Incluse ou en option, avec son prix.', 'Included or optional, with its price.') },
+        { target: '.rsv-quick .rsv-quick-orientation', label: L('Orientation', 'Orientation'), text: L('Le long du fond ou du mur latéral.', 'Along the back wall or the side wall.') },
+        { target: '.rsv-quick .rsv-quick-edit', label: L('Personnaliser la réserve', 'Customise the storage room'), text: L('Structure, porte et aménagement, en 3 étapes.', 'Structure, door and layout, in 3 steps.') },
+      ],
+    },
+    {
+      id: 'shop',
+      chapter: 'shop',
+      enter: () => { actions.closeOptions?.(); actions.goStep?.(3); },
+      enterDelay: 200,
+      target: '.config-panel',
+      placement: 'left',
+      padding: 0,
+      radius: 0,
+      title: L('La boutique de votre salon', 'Your show’s shop'),
+      body: L('Ajoutez mobilier, écrans, éclairage ou électricité. Chaque produit ajouté apparaît dans la 3D, où vous le placez librement.', 'Add furniture, screens, lighting or power. Every product you add appears in the 3D view, where you can place it freely.'),
+      annotations: [
+        { target: '.marketplace-search', label: L('Recherche', 'Search'), text: L('Trouvez un produit par son nom.', 'Find a product by name.') },
+        { target: '.marketplace-tabs', label: L('Catégories', 'Categories'), text: L('Mobilier, multimédia, électricité, signalétique…', 'Furniture, multimedia, electricity, signage…') },
+        { target: '.marketplace-grid', label: L('Catalogue', 'Catalogue'), text: L(`Les produits disponibles pour votre formule${offerLabel ? ` ${offerLabel}` : ''}.`, `Products available for your${offerLabel ? ` ${offerLabel}` : ''} package.`) },
+      ],
+    },
+    {
+      id: 'product',
+      chapter: 'shop',
+      enter: () => actions.goStep?.(3),
+      target: '.marketplace-grid .marketplace-card',
+      placement: 'left',
+      optional: true,
+      title: L('Ajouter un produit', 'Add a product'),
+      body: L('Le bouton « + » ajoute le produit au stand ; s’il existe en plusieurs couleurs ou versions, vous choisissez d’abord la vôtre.', 'The “+” button adds the product to the stand; if it comes in several colours or versions, you pick yours first.'),
+      annotations: [
+        { target: '.marketplace-grid .marketplace-card .marketplace-card-body > button, .marketplace-grid .marketplace-card .marketplace-card-counter', label: L('Ajouter', 'Add'), text: L('Une fois ajouté, un compteur − / + règle la quantité.', 'Once added, a − / + counter sets the quantity.') },
+        { target: '.marketplace-grid .marketplace-card .marketplace-card-body em', label: L('Prix', 'Price'), text: L('Prix HT ; « À partir de » quand le produit existe en plusieurs versions.', 'Price excl. VAT; “From” when the product comes in several versions.') },
+      ],
+      tips: [L('Le produit apparaît sur le stand : glissez-le à sa place.', 'The product appears on the stand: drag it into place.')],
+    },
+    {
+      id: 'cart',
+      chapter: 'shop',
+      enter: () => actions.goStep?.(3),
+      target: '[data-tour="nav-cart"]',
+      placement: 'bottom',
+      optional: true,
+      title: L('Le panier, toujours à jour', 'The cart, always up to date'),
+      body: L('Le total HT se met à jour à chaque choix. Ouvrez le panier pour ajuster une quantité, modifier un produit ou le retirer.', 'The total excl. VAT updates with every choice. Open the cart to change a quantity, edit a product or remove it.'),
+      tips: [
+        L('Le badge indique le nombre d’articles.', 'The badge shows the number of items.'),
+        L('Le détail affiche le total HT et le total TTC (TVA 20 %).', 'The details show the total excl. VAT and incl. VAT (20%).'),
+      ],
+    },
+    {
+      id: 'summary',
+      chapter: 'validate',
+      enter: () => actions.goStep?.(4),
+      enterDelay: 200,
+      target: '.validation-modern-total-card',
+      placement: 'left',
+      title: L('Le récapitulatif', 'The summary'),
+      body: L('Retrouvez le total de vos options et de votre mobilier, puis le détail rubrique par rubrique. Les lignes cliquables vous ramènent à l’élément concerné.', 'Find the total of your options and furniture, then the details section by section. Clickable rows take you back to the item.'),
+    },
+    {
+      id: 'request',
+      chapter: 'validate',
+      enter: () => actions.goStep?.(4),
+      target: '.validation-modern-request-box',
+      placement: 'left',
+      optional: true,
+      title: L('Une demande particulière ?', 'A special request?'),
+      body: L('Précisez ici tout besoin spécifique : il est transmis à l’équipe Stand-ING avec votre configuration.', 'Write any specific need here: it is sent to the Stand-ING team with your configuration.'),
+    },
+    {
+      id: 'send',
+      chapter: 'validate',
+      enter: () => actions.goStep?.(4),
+      target: '.validation-confirm-button',
+      placement: 'left',
+      optional: true,
+      title: L('Envoyez votre configuration', 'Send your configuration'),
+      body: L('Un clic suffit : Stand-ING reçoit votre configuration et votre bon de commande, ou traite votre demande particulière avant la validation finale.', 'One click is enough: Stand-ING receives your configuration and purchase order, or handles your special request before final approval.'),
+      tips: [L('Vous recevez ensuite un e-mail de confirmation.', 'You then receive a confirmation email.')],
+    },
+    {
+      id: 'help-phone',
+      chapter: 'help',
+      enter: () => { actions.goStep?.(2); actions.openPanel?.('help'); return () => actions.openPanel?.(null); },
+      enterDelay: 200,
+      target: '.stn-nav .panel',
+      placement: 'left',
+      title: L('Un conseiller au bout du fil', 'An advisor on the line'),
+      body: L('Du lundi au vendredi, de 9 h à 18 h. Le point vert sur l’icône indique qu’un conseiller est disponible.', 'Monday to Friday, 9 am to 6 pm. The green dot on the icon shows an advisor is available.'),
+      annotations: [
+        { target: '.stn-nav .call', label: L('Appeler', 'Call'), text: L('Lance l’appel depuis un mobile.', 'Starts the call from a phone.') },
+        { target: '.stn-nav .hours', label: L('Horaires', 'Opening hours'), text: L('Ouvert ou fermé, en temps réel.', 'Open or closed, live.') },
+      ],
+    },
+    {
+      id: 'help-questions',
+      chapter: 'help',
+      enter: () => { actions.openPanel?.('question'); return () => actions.openPanel?.(null); },
+      enterDelay: 200,
+      target: '.stn-nav .panel.fb',
+      placement: 'left',
+      title: L('Une question ? Écrivez-nous', 'A question? Write to us'),
+      body: L('Consultez les questions fréquentes ou envoyez un message : il part avec la référence de votre stand.', 'Browse the frequently asked questions or send a message: it goes out with your stand’s reference.'),
+      annotations: [
+        { target: '.stn-nav .panel.fb .faq-acc', label: L('Questions fréquentes', 'Frequently asked questions'), text: L('Les réponses aux questions les plus courantes.', 'Answers to the most common questions.') },
+        { target: '.stn-nav .panel.fb .write', label: L('Écrire à l’équipe', 'Write to the team'), text: L('Réponse par e-mail sous 24 h ouvrées.', 'Reply by email within 24 business hours.') },
+      ],
+    },
+    {
+      id: 'finish',
+      kind: 'finish',
+      chapter: 'help',
+      enter: () => { actions.openPanel?.(null); actions.goStep?.(2); },
+      eyebrow: L('Visite terminée', 'Tour complete'),
+      title: L('Vous êtes prêt !', 'You are all set!'),
+      body: L('Votre stand vous attend. Commencez par les rubriques de configuration, puis passez à la boutique.', 'Your stand is waiting. Start with the configuration sections, then move on to the shop.'),
+      checklist: [
+        L('Explorer le stand en 3D', 'Explore the stand in 3D'),
+        L('Configurer sol, cloisons et réserve', 'Set up floor, walls and storage room'),
+        L('Ajouter du mobilier depuis la boutique', 'Add furniture from the shop'),
+        L('Vérifier puis envoyer la configuration', 'Check, then send the configuration'),
+      ],
+      note: L('Pour revoir la visite : icône « Mon profil » › Revoir la visite guidée.', 'To replay the tour: “My profile” icon › Replay the guided tour.'),
+      cta: L('Commencer ma configuration', 'Start my configuration'),
+    },
+  ];
+
+  const labels = en ? {
+    dialog: 'Configurator tutorial', close: 'Close the tutorial', skip: 'Skip the tour', back: 'Back', next: 'Next', last: 'Finish',
+    start: 'Start the tour', later: 'Later', restart: 'Watch again from the start', finish: 'Finish', try: 'Try it', welcome: 'Guided tour',
+    stepsCount: (n) => `${n} step${n > 1 ? 's' : ''}`, resume: (n) => `Resume at step ${n}`,
+  } : {
+    dialog: 'Tutoriel configurateur', close: 'Fermer le tutoriel', skip: 'Passer la visite', back: 'Retour', next: 'Suivant', last: 'Terminer',
+    start: 'Commencer la visite', later: 'Plus tard', restart: 'Revoir depuis le début', finish: 'Terminer', try: 'Essayez', welcome: 'Visite guidée',
+    stepsCount: (n) => `${n} étape${n > 1 ? 's' : ''}`, resume: (n) => `Reprendre à l’étape ${n}`,
+  };
+
+  return { chapters, steps, labels };
 }
 
 function TutorialVisual({ type }) {
@@ -3658,21 +3845,6 @@ function ModalHead({ icon, title, salonLabel, onClose }) {
   );
 }
 
-function SceneCollaboratorsSection({ sceneId }) {
-  const tr = useUiText();
-  const language = useContext(LanguageContext);
-  const [members, setMembers] = useState(null);
-  const [email, setEmail] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  useEffect(() => {
-    let active = true;
-    manageSceneCollaborators(sceneId, 'list')
-      .then((result) => { if (active) setMembers(result.members); })
-      .catch((err) => { if (active) setError(err.message); });
-    return () => { active = false; };
-  }, [sceneId]);
 
   const changeMembership = async (action, member) => {
     if (busy) return;
@@ -3778,7 +3950,6 @@ function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrecti
           <label>{t('client_hall')}<input value={contactDetails.hall || ''} {...lockedInputProps} /></label>
           <label>{t('client_placement_field')}<input value={contactDetails.emplacement || ''} {...lockedInputProps} /></label>
         </div>
-        {canManageCollaborators && sceneId && <SceneCollaboratorsSection sceneId={sceneId} />}
       </div>
       {correctionOpen && (
         <div className="client-correction-layer" onMouseDown={(event) => event.target === event.currentTarget && setCorrectionOpen(false)}>
@@ -3798,97 +3969,426 @@ function ClientInfoModal({ salonLabel, contactDetails, onClose, onReportCorrecti
   );
 }
 
-function QuestionFaq() {
+// Stand-ING support line, as already published in the configurator; opening hours from the navbar mock-up.
+const STANDING_SUPPORT_PHONE = { label: '01 34 64 64 13', href: 'tel:+33134646413' };
+
+// Icons drawn exactly as in the navbar mock-up (24 × 24 stroke icons).
+const NAV_ICONS = {
+  phone: <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" />,
+  message: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M8 9h8M8 13h5" /></>,
+  check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  user: <><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></>,
+  chevron: <path d="M6 9l6 6 6-6" />,
+  back: <path d="M15 18l-6-6 6-6" />,
+  close: <path d="M6 6l12 12M18 6L6 18" />,
+  cart: <><circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" /><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6" /></>,
+  play: <><circle cx="12" cy="12" r="10" /><path d="M10 8l6 4-6 4z" /></>,
+  search: <><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>,
+  mail: <><rect x="2" y="4" width="20" height="16" rx="2" /><path d="M22 7l-10 6L2 7" /></>,
+  invite: <><circle cx="9" cy="8" r="4" /><path d="M1.5 21c0-4 3.5-6 7.5-6 1.6 0 3 .3 4.2.9M19 14v6M16 17h6" /></>,
+  structure: <><path d="M12 2l9 5v10l-9 5-9-5V7z" /><path d="M12 22V12M21 7l-9 5-9-5" /></>,
+  image: <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></>,
+  receipt: <><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 1 .7V2l-1 .7-3-2-3 2-3-2-3 2-3-2z" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
+  truck: <><path d="M1 3h15v13H1z" /><path d="M16 8h4l3 3v5h-7z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></>,
+};
+function NavIcon({ name, size = 20, stroke = 2, className = '' }) {
+  return (
+    <svg className={className || undefined} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {NAV_ICONS[name]}
+    </svg>
+  );
+}
+
+// Support line open Monday to Friday, 9 am to 6 pm, Paris time.
+function standingSupportOpen(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', weekday: 'short', hour: 'numeric', hour12: false }).formatToParts(date);
+  const day = parts.find((part) => part.type === 'weekday')?.value || '';
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value || 0);
+  return !['sam.', 'dim.'].includes(day) && hour >= 9 && hour < 18;
+}
+
+function useSupportOpen() {
+  const [open, setOpen] = useState(() => standingSupportOpen());
+  useEffect(() => {
+    const timer = window.setInterval(() => setOpen(standingSupportOpen()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return open;
+}
+
+function useNavToast() {
+  const [toast, setToast] = useState(null);
+  const timer = useRef(0);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const show = useCallback((message) => {
+    window.clearTimeout(timer.current);
+    setToast({ message, id: Date.now() });
+    timer.current = window.setTimeout(() => setToast(null), 2200);
+  }, []);
+  const node = toast ? createPortal(<div className="stn-toast" role="status" aria-live="polite" key={toast.id}>{toast.message}</div>, document.body) : null;
+  return [node, show];
+}
+
+const navEuro = (value = 0) => `${Number(value || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+
+function navbarInitials(contactDetails = {}) {
+  const first = String(contactDetails.firstName || '').trim();
+  const last = String(contactDetails.lastName || '').trim();
+  return `${first[0] || ''}${last[0] || ''}`.toUpperCase();
+}
+
+function emailInitials(email = '') {
+  return String(email).split('@')[0].split(/[._-]/).map((part) => part[0] || '').join('').slice(0, 2).toUpperCase();
+}
+
+// Top bar of the configurator, as in the navbar mock-up: project, steps, phone help, questions, language, profile, cart.
+function ConfiguratorNavbar({
+  language, selectedLanguage, onLanguage, panel, setPanel, project, activeStep, onStep, readOnly,
+  tutorialOpen, onOpenTutorial, questionForm, onQuestionChange, questionState, onQuestionSubmit, onQuestionReset,
+  contactDetails, sceneId, canManageCollaborators, viewerIsOwner, cart = null,
+}) {
   const tr = useUiText();
   const t = useT();
-  const [openIndex, setOpenIndex] = React.useState(null);
-  const faq = [
-    { q: t('faq_q1'), a: t('faq_a1') },
-    { q: t('faq_q2'), a: t('faq_a2') },
-    { q: t('faq_q3'), a: t('faq_a3') },
-    { q: t('faq_q4'), a: t('faq_a4') },
+  const navRef = useRef(null);
+  const supportOpen = useSupportOpen();
+  const [toastNode, showToast] = useNavToast();
+  const dropdownOpen = ['help', 'question', 'language', 'profile'].includes(panel);
+  const toggle = (id) => setPanel((current) => (current === id ? null : id));
+
+  useEffect(() => {
+    if (!dropdownOpen) return undefined;
+    const onPointer = (event) => { if (!navRef.current?.contains(event.target)) setPanel(null); };
+    const onKey = (event) => { if (event.key === 'Escape') setPanel(null); };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [dropdownOpen, setPanel]);
+
+  const steps = [
+    { id: 1, key: 'step_home' },
+    { id: 2, key: 'step_options' },
+    { id: 3, key: 'step_furniture' },
+    { id: 4, key: 'step_validation' },
   ];
+  const first = String(contactDetails.firstName || '').trim();
+  const last = String(contactDetails.lastName || '').trim();
+  const shortName = [first, last ? `${last[0].toUpperCase()}.` : ''].filter(Boolean).join(' ');
+  const initials = navbarInitials(contactDetails);
+  const tourReplay = !readOnly && (
+    <button type="button" className="item tour-replay" onClick={onOpenTutorial} aria-pressed={tutorialOpen} aria-label={tr('Relancer le tutoriel')}>
+      <NavIcon name="play" />
+      <span><b>{tr('Revoir la visite guidée')}</b><span>{tr('2 minutes pour prendre l’outil en main')}</span></span>
+    </button>
+  );
+  const helpTip = tr(supportOpen ? 'Aide par téléphone · conseiller disponible' : 'Aide par téléphone');
+
   return (
-    <div className="question-faq">
-      <span className="form-section-label">{t('question_faq_title')}</span>
-      {faq.map((entry, index) => (
-        <div key={index} className={openIndex === index ? 'faq-item open' : 'faq-item'}>
-          <button type="button" onClick={() => setOpenIndex(openIndex === index ? null : index)}>
-            <span>{tr(entry.q)}</span>
-            {openIndex === index ? <Minus size={14} /> : <Plus size={14} />}
-          </button>
-          {openIndex === index && <p>{tr(entry.a)}</p>}
+    <header className="stn-nav" ref={navRef}>
+      {/* Gauche : marque + projet */}
+      <div className="left">
+        <a className="logo-wrap" href="/"><img className="logo" src="/images/logo-standing-nav.png" alt={tr('Stand-ING')} /></a>
+        <span className="sep" aria-hidden="true" />
+        <div className="project">
+          <span className="project-name">{project.name}</span>
+          <span className="project-meta">{project.salon}{project.offer && <> · <b>{project.offer}</b></>} · {tr(project.area.toFixed(0))} m²</span>
         </div>
-      ))}
-    </div>
-  );
-}
-
-function QuestionModal({ salonLabel, form, state = {}, onFormChange, onClose, onSubmit }) {
-  const tr = useUiText();
-  const t = useT();
-  return (
-    <form className="question-modal" onSubmit={onSubmit}>
-      <ModalHead icon={<HelpCircle size={19} />} title={t('question_title')} salonLabel={salonLabel} onClose={onClose} />
-      <div className="question-content">
-        <p>{t('question_intro')}</p>
-        <p className="question-help-contact">{tr("Vous avez besoin d’aide ? N’hésitez pas à nous contacter au")}{' '}
-          <a href="tel:+33134646413">01 34 64 64 13</a>.
-        </p>
-
-        <QuestionFaq />
-
-        <label className="form-row">{t('question_subject')}
-          <input value={form.subject} onChange={(event) => onFormChange('subject', event.target.value)} placeholder={t('question_subject_placeholder')} />
-        </label>
-
-        <label className="form-row">{t('question_message')}
-          <textarea
-            value={form.message}
-            onChange={(event) => onFormChange('message', event.target.value)}
-            maxLength={500}
-          />
-          <em>{tr(form.message.length)} / 500</em>
-        </label>
-
-        <span className="form-section-label">{t('question_attachments')}</span>
-        <label className="file-drop">
-          <Paperclip size={18} />
-          <span>{t('question_drag')}</span>
-          <strong>{t('question_browse')}</strong>
-          <small>{t('question_file_types')}</small>
-          <input type="file" accept={visualUploadAccept} />
-        </label>
-
-        <div className="question-note">{t('question_note')}</div>
-        {state.message && <div className="question-submit-feedback success">{tr(state.message)}</div>}
-        {state.error && <div className="question-submit-feedback error">{tr(state.error)}</div>}
-        <button className="modal-primary-button centered" type="submit" disabled={state.loading}><Mail size={15} /> {tr(state.loading ? 'Envoi...' : t('question_send'))}</button>
-        <button className="modal-cancel-button" type="button" onClick={onClose}>{t('question_cancel')}</button>
       </div>
-    </form>
+
+      {/* Centre : étapes */}
+      <nav aria-label={tr('Étapes de la commande')}>
+        <ol className="stepper">
+          {steps.map((step, index) => (
+            <React.Fragment key={step.id}>
+              {index > 0 && <li className={`link${step.id <= activeStep ? ' done' : ''}`} aria-hidden="true" />}
+              <li>
+                <button
+                  type="button"
+                  className={activeStep === step.id ? 'active' : step.id < activeStep ? 'done' : ''}
+                  aria-current={activeStep === step.id ? 'step' : undefined}
+                  aria-label={t(step.key)}
+                  onClick={() => onStep(step.id)}
+                >
+                  <span className="dot">{step.id < activeStep ? <NavIcon name="check" size={13} stroke={3.2} /> : step.id}</span>
+                  <span className="lab">{t(step.key)} {activeStep === step.id && <span className="step-count">· {step.id} / 4</span>}</span>
+                </button>
+              </li>
+            </React.Fragment>
+          ))}
+        </ol>
+      </nav>
+
+      {/* Droite */}
+      <div className="right configurator-topbar-actions">
+        <div className="anchor">
+          <button type="button" className="ibtn" data-tour="nav-help" aria-expanded={panel === 'help'} aria-label={tr('Aide par téléphone')} data-tip={helpTip} onClick={() => toggle('help')}>
+            <NavIcon name="phone" size={21} />
+            <span className={`live${supportOpen ? ' on' : ''}`} />
+          </button>
+          {panel === 'help' && (
+            <div className="panel" role="dialog" aria-label={tr('Aide par téléphone')}>
+              <div className="p-head">
+                <h3>{tr('Un conseiller vous guide')}</h3>
+                <p>{tr('Un doute sur une option ou un prix ? Appelez-nous, on regarde votre stand avec vous.')}</p>
+              </div>
+              <div className="p-body">
+                <a className="call" href={STANDING_SUPPORT_PHONE.href}>
+                  <span className="call-ico"><NavIcon name="phone" /></span>
+                  <span><strong>{STANDING_SUPPORT_PHONE.label}</strong><span>{tr('Appel non surtaxé')}</span></span>
+                </a>
+                <div className="hours">
+                  <span>{tr('Lun – ven, 9 h – 18 h')} · <span className={`status ${supportOpen ? 'on' : 'off'}`}>{tr(supportOpen ? 'ouvert maintenant' : 'fermé')}</span></span>
+                  <button type="button" className="copy" onClick={() => { navigator.clipboard?.writeText(STANDING_SUPPORT_PHONE.label).catch(() => {}); showToast(tr('Numéro copié')); }}>{tr('Copier')}</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="anchor">
+          <button type="button" className="ibtn" data-tour="nav-questions" aria-expanded={panel === 'question'} aria-label={t('aria_questions')} data-tip={t('aria_questions')} onClick={() => toggle('question')}>
+            <NavIcon name="message" size={21} />
+          </button>
+          {panel === 'question' && (
+            <NavbarQuestionPanel
+              form={questionForm}
+              onFormChange={onQuestionChange}
+              state={questionState}
+              onSubmit={onQuestionSubmit}
+              onReset={onQuestionReset}
+            />
+          )}
+        </div>
+
+        <div className="anchor">
+          <button type="button" className="language-pill" data-tour="nav-language" aria-expanded={panel === 'language'} aria-label={language === 'en' ? 'Language: English' : 'Langue : français'} data-tip={tr('Langue')} onClick={() => toggle('language')}>
+            <span className="flag-dot"><img src={selectedLanguage.flagSrc} alt="" aria-hidden="true" /></span>
+          </button>
+          {panel === 'language' && (
+            <div className="panel lang-p" role="menu" aria-label={tr('Langue')}>
+              {languages.map((entry) => (
+                <button key={entry.id} type="button" className="opt" role="menuitemradio" aria-checked={language === entry.id} onClick={() => { onLanguage(entry.id); setPanel(null); }}>
+                  <span className="stn-flag"><img src={entry.flagSrc} alt="" aria-hidden="true" /></span>
+                  {entry.label}
+                  <NavIcon name="check" size={16} stroke={3} className="tick" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <span className="vr" aria-hidden="true" />
+
+        <div className="anchor">
+          <button type="button" className="user-pill" data-tour="nav-profile" aria-expanded={panel === 'profile'} aria-label={tr('Mon profil')} data-tip={tr('Mon profil')} onClick={() => toggle('profile')}>
+            <span className="avatar"><NavIcon name="user" size={18} stroke={2.2} /></span>
+            <NavIcon name="chevron" size={16} stroke={2.4} className="chev" />
+          </button>
+          {panel === 'profile' && (
+            <div className="panel w380" role="dialog" aria-label={tr('Mon profil')}>
+              <div className="me">
+                <span className="avatar lg">{initials || <NavIcon name="user" size={20} stroke={2.2} />}</span>
+                <span><b>{shortName || contactDetails.company || tr('Mon profil')}</b>{shortName && contactDetails.company && <span>{contactDetails.company}</span>}</span>
+              </div>
+              {contactDetails.phone && (
+                <dl className="contact">
+                  <div><dt><NavIcon name="phone" size={16} />{tr('Téléphone')}</dt><dd>{contactDetails.phone}</dd></div>
+                </dl>
+              )}
+              <hr />
+              <div className="list">
+                <button type="button" className="item" onClick={() => setPanel('client')}>
+                  <NavIcon name="user" />
+                  <span><b>{tr('Mes informations')}</b><span>{tr('Modifier coordonnées, société, facturation')}</span></span>
+                </button>
+                {canManageCollaborators && sceneId ? (
+                  <NavbarTeam sceneId={sceneId} contactDetails={contactDetails} shortName={shortName} initials={initials} viewerIsOwner={viewerIsOwner} onToast={showToast}>{tourReplay}</NavbarTeam>
+                ) : tourReplay}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {cart}
+      </div>
+      {toastNode}
+    </header>
   );
 }
 
-function LanguageMenu({ language, onSelect }) {
+// "Ajouter un collaborateur sur le stand" + "Sur ce stand", backed by the existing scene-collaborators service (2 guests max).
+function NavbarTeam({ sceneId, contactDetails = {}, shortName = '', initials = '', viewerIsOwner = false, onToast, children = null }) {
+  const tr = useUiText();
+  const language = useContext(LanguageContext);
+  const [members, setMembers] = useState(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const inputRef = useRef(null);
+  useEffect(() => {
+    let active = true;
+    manageSceneCollaborators(sceneId, 'list')
+      .then((result) => { if (active) setMembers(result.members || []); })
+      .catch((err) => { if (active) setError(err.message); });
+    return () => { active = false; };
+  }, [sceneId]);
+  useEffect(() => { if (inviteOpen) inputRef.current?.focus(); }, [inviteOpen]);
+
+  const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const invite = async (event) => {
+    event.preventDefault();
+    if (busy || !validEmail) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await manageSceneCollaborators(sceneId, 'invite', { email: email.trim(), language });
+      setMembers((current) => [...(current || []), result.member]);
+      onToast?.(tr(`Invitation envoyée à ${email.trim()}`));
+      setEmail('');
+      setInviteOpen(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async (member) => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await manageSceneCollaborators(sceneId, 'remove', { invitation_id: member.id });
+      setMembers((current) => (current || []).filter((entry) => entry.id !== member.id));
+      onToast?.(tr('Accès retiré.'));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const full = (members?.length || 0) >= 2;
+  const memberStatus = (member) => (member.accepted_at ? 'Accès actif' : Date.parse(member.expires_at) < Date.now() ? 'Invitation expirée' : 'En attente');
+
+  return (
+    <section aria-label={tr('Ajouter des collaborateurs')}>
+      {members && !full && (
+        <>
+          <button type="button" className="item" aria-expanded={inviteOpen} onClick={() => setInviteOpen((open) => !open)}>
+            <NavIcon name="invite" />
+            <span><b>{tr('Ajouter un collaborateur sur le stand')}</b><span>{tr('Il pourra voir et modifier ce stand')}</span></span>
+          </button>
+          {inviteOpen && (
+            <form className="invite" onSubmit={invite}>
+              <label className="lbl" htmlFor="stn-invite-mail">{tr('E-mail du collaborateur')}</label>
+              <div className="invite-row">
+                <input id="stn-invite-mail" ref={inputRef} className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="prenom@societe.fr" autoComplete="off" maxLength={254} disabled={busy} />
+                <button type="submit" disabled={busy || !validEmail}>{tr('Inviter')}</button>
+              </div>
+            </form>
+          )}
+        </>
+      )}
+      {full && <p className="invite-note">{tr('Deux collaborateurs maximum par scène.')}</p>}
+      {error && <p className="invite-note form-error" role="alert">{tr(error)}</p>}
+      {children}
+      <hr />
+      <div className="team-title">{tr('Sur ce stand')}</div>
+      <div className="team">
+        <div className="member">
+          <span className="avatar sm">{initials || <NavIcon name="user" size={15} stroke={2.2} />}</span>
+          <span><b>{shortName || contactDetails.company || tr('Exposant')}</b>{contactDetails.email && <span>{contactDetails.email}</span>}</span>
+          <em>{tr(viewerIsOwner ? 'Vous' : 'Exposant')}</em>
+        </div>
+        {!members && !error && <div className="member" role="status"><span>{tr('Chargement')}</span></div>}
+        {(members || []).map((member) => (
+          <div className="member" key={member.id}>
+            <span className="avatar sm alt">{emailInitials(member.email)}</span>
+            <span><b>{member.email}</b><span>{tr(member.accepted_at ? 'Accès actif' : 'Invitation envoyée')}</span></span>
+            <em className={member.accepted_at ? '' : 'pending'}>{tr(memberStatus(member))}</em>
+            <button type="button" className="member-rm" disabled={busy} onClick={() => remove(member)} aria-label={`${tr('Retirer l’accès')} : ${member.email}`}>
+              <NavIcon name="close" size={14} stroke={2.6} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// FAQ entries: the configurator's four validated questions, each with the matching mock-up category icon.
+const NAVBAR_FAQ_ICONS = ['structure', 'image', 'receipt', 'truck'];
+
+function NavbarQuestionPanel({ form, onFormChange, state = {}, onSubmit, onReset }) {
   const tr = useUiText();
   const t = useT();
+  const [openIndex, setOpenIndex] = useState(null);
+  const subjectRef = useRef(null);
+  const faq = [1, 2, 3, 4].map((index) => ({ q: tr(t(`faq_q${index}`)), a: tr(t(`faq_a${index}`)) }));
+  const sent = Boolean(state.message) && !state.loading && !state.error;
+  const canSend = String(form.subject || '').trim().length >= 3 && String(form.message || '').trim().length >= 3;
+
+  const writeAgain = () => {
+    onReset?.();
+    onFormChange('subject', '');
+    onFormChange('message', '');
+    window.setTimeout(() => subjectRef.current?.focus(), 0);
+  };
+
+  if (sent) {
+    return (
+      <div className="panel w380 fb" role="dialog" aria-label={tr('Question ou remarque')}>
+        <div className="done-state">
+          <div className="ok"><NavIcon name="check" size={24} stroke={2.8} /></div>
+          <h3>{tr('Message envoyé')}</h3>
+          <p>{tr('On vous répond par e-mail sous 24 h ouvrées.')}<br />{tr(`Urgent ? Appelez le ${STANDING_SUPPORT_PHONE.label}.`)}</p>
+          <button type="button" className="ghost" onClick={writeAgain}>{tr('Écrire un autre message')}</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <section className="language-menu" onMouseDown={(event) => event.stopPropagation()}>
-      <h3>{t('lang_title')}</h3>
-      {languages.map((entry) => (
-        <button key={entry.id} className={language === entry.id ? 'active' : ''} type="button" onClick={() => onSelect(entry.id)}>
-          <span className="language-flag"><img src={entry.flagSrc} alt="" aria-hidden="true" /></span>
-          <span>
-            <strong>{tr(entry.label)}</strong>
-            <small>{tr(entry.sublabel)}</small>
-          </span>
-          <em>{tr(entry.short)}</em>
-          {language === entry.id && <Check size={14} />}
-        </button>
-      ))}
-      <p>{t('lang_note')}</p>
-    </section>
+    <div className="panel w380 fb" role="dialog" aria-label={tr('Question ou remarque')}>
+      <form onSubmit={onSubmit}>
+        <div className="p-head"><h3>{tr('Une question, une remarque ?')}</h3></div>
+        <div className="faq-home">
+          <p className="write-title">{tr('Questions fréquentes')}</p>
+          <div className="faq-acc">
+            {faq.map((entry, index) => {
+              const open = openIndex === index;
+              return (
+                <div key={index} className={`qa${open ? ' open' : ''}`}>
+                  <button type="button" className="qa-q" aria-expanded={open} aria-controls={`stn-faq-${index}`} onClick={() => setOpenIndex(open ? null : index)}>
+                    <NavIcon name={NAVBAR_FAQ_ICONS[index]} size={20} />
+                    <span>{entry.q}</span>
+                    <NavIcon name="chevron" size={16} stroke={2.4} className="qa-chev" />
+                  </button>
+                  {open && <p id={`stn-faq-${index}`}>{entry.a}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="p-body write">
+          <p className="write-title">{tr('Pas trouvé ? Écrivez-nous')}</p>
+          <p className="write-sub">{tr('Votre message part avec la référence de ce stand : pas besoin de tout réexpliquer.')}</p>
+          <div className="field" style={{ marginTop: 0 }}>
+            <label className="lbl" htmlFor="stn-subject">{tr('Objet')}</label>
+            <input id="stn-subject" ref={subjectRef} className="input" type="text" maxLength={90} value={form.subject} onChange={(event) => onFormChange('subject', event.target.value)} placeholder={tr('Ex. : ajouter une deuxième réserve')} autoComplete="off" />
+          </div>
+          <div className="field">
+            <label className="lbl" htmlFor="stn-message">{tr('Votre message')}</label>
+            <textarea id="stn-message" maxLength={500} value={form.message} onChange={(event) => onFormChange('message', event.target.value)} placeholder={tr('Décrivez votre besoin en quelques lignes')} />
+          </div>
+          {state.error && <p className="form-error" role="alert">{tr(state.error)}</p>}
+          <button className="primary" type="submit" disabled={state.loading || !canSend}>{tr(state.loading ? 'Envoi…' : 'Envoyer')}</button>
+          <p className="hint">{tr('Réponse par e-mail sous 24 h ouvrées')}</p>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -5876,12 +6376,14 @@ function ValidationAllowanceRecap({ pricing }) {
     <div className="validation-allowance-total"><dt>{tr("Montant total")}</dt><dd>{money(pricing.total || 0)}</dd></div>
   </dl>;
 }
-
-function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, total, pricing, salonLabel, readOnly, onSelectItem, onOpenItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onValidate }) {
+function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, total, pricing, salonLabel, readOnly, standLabel = '', area = 0, offerLabel = '', nextStep = 4, open, onOpenChange, onSelectItem, onOpenItem, onDeleteItems, canRemoveItem, onValidate, onContinue }) {
   const tr = useUiText();
-  const t = useT();
   const itemRefs = useRef(new Map());
-  const [cartOpen, setCartOpen] = useState(false);
+  const closeRef = useRef(null);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const [toastNode, showToast] = useNavToast();
+  const cartOpen = open ?? ownOpen;
+  const setCartOpen = (next) => { if (onOpenChange) onOpenChange(next); else setOwnOpen(next); };
   const cartGroups = useMemo(() => groupCartItems(items), [items]);
 
   useEffect(() => {
@@ -5891,96 +6393,160 @@ function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, tota
     selectedNode?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
   }, [selectedId, cartGroups, cartOpen]);
 
+  useEffect(() => {
+    if (!cartOpen) return undefined;
+    const previous = document.activeElement;
+    const timer = window.setTimeout(() => closeRef.current?.focus(), 50);
+    const onKey = (event) => { if (event.key === 'Escape') setCartOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('keydown', onKey);
+      previous?.focus?.();
+    };
+  }, [cartOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const openCartItem = (item) => {
     setCartOpen(false);
     if (onOpenItem) onOpenItem(item);
     else onSelectItem?.(item?.id);
   };
 
+  // Lines grouped by shop category, like the shop panels (Mobilier, Multimédia, Électricité…).
+  const lines = cartGroups.map((group) => {
+    const item = group.items[0];
+    const entry = findCatalogEntry(catalog, item.type) || item;
+    const lineTotal = group.items.reduce((sum, groupItem) => sum + cartItemPrice(groupItem, entry, salonLabel, pricing, pricingItems, catalog), 0);
+    const category = furniturePanelCategory(entry);
+    return { group, item, entry, lineTotal, category: category === 'hidden' ? 'structure' : category };
+  });
+  const categoryOrder = ['structure', 'signage', 'furniture', 'multimedia', 'electricity'];
+  const sections = categoryOrder
+    .map((id) => ({ id, label: marketCategoryMeta(id).label, lines: lines.filter((line) => line.category === id) }))
+    .concat([{ id: 'other', label: 'Options', lines: lines.filter((line) => !categoryOrder.includes(line.category)) }])
+    .filter((section) => section.lines.length);
+
+  const count = items.length;
+  const articles = tr(`${count} article${count > 1 ? 's' : ''}`);
+  const allowance = pricing?.packBenefits?.mode === 'allowance';
+  const allowanceAmount = Number(pricing?.allowanceAmount || 0);
+  const allowanceUsed = Math.min(allowanceAmount, Number(pricing?.allowanceApplied || 0));
+  const allowanceBalance = Number(pricing?.allowanceRemaining || 0) - Number(pricing?.accessoriesSupplement ?? pricing?.total ?? 0);
+  const baseItems = normalizeBaseItemsForUi(pricing?.baseItems || []);
+  const ttc = roundCurrency(Number(total || 0) * 1.2);
+  const continueLabel = nextStep === 3 ? 'Continuer vers la boutique' : 'Valider le panier';
+
   return (
     <div className="topbar-cart">
-      <div className="topbar-cart-total">
-        <strong>{tr(total.toLocaleString('fr-FR'))} {tr("€ HT")}</strong>
-      </div>
       <button
         type="button"
-        className={`topbar-cart-button ${cartOpen ? 'active' : ''}`}
-        onClick={() => setCartOpen((open) => !open)}
+        className="cart"
+        data-tour="nav-cart"
+        onClick={() => setCartOpen(!cartOpen)}
         aria-expanded={cartOpen}
-        aria-label={tr("Ouvrir le panier")}
+        aria-haspopup="dialog"
+        aria-label={`${tr('Voir le panier')} : ${articles}, ${navEuro(total)} ${tr('HT')}`}
       >
-        <ShoppingCart size={20} />
-        <span>{tr(items.length)}</span>
+        <span className="two"><span>{navEuro(total)} {tr('HT')}</span><small>{tr('Voir le panier')}</small></span>
+        <span className="ico">
+          <NavIcon name="cart" />
+          {count > 0 && <span className="badge">{count}</span>}
+        </span>
       </button>
 
-      {cartOpen && (
-        <div className="cart-popover topbar-cart-popover">
-          <header>
-            <div>
-              <strong>{t('cart_my_stand')}</strong>
-              <small>{t('cart_articles', { count: items.length, s: items.length > 1 ? 's' : '' })}</small>
+      {cartOpen && createPortal(
+        <>
+          <div className="stn-scrim" onMouseDown={() => setCartOpen(false)} />
+          <aside className="stn-drawer" role="dialog" aria-modal="true" aria-labelledby="stn-drawer-title">
+            <div className="d-head">
+              <div>
+                <h2 id="stn-drawer-title">{tr('Votre panier')}</h2>
+                <p>{[articles, standLabel, area ? `${tr(Number(area).toFixed(0))} m²` : ''].filter(Boolean).join(' · ')}</p>
+              </div>
+              <button type="button" ref={closeRef} className="d-close" onClick={() => setCartOpen(false)} aria-label={tr('Fermer le panier')}><NavIcon name="close" stroke={2.4} /></button>
             </div>
-            <button type="button" className="cart-popover-close" onClick={() => setCartOpen(false)} aria-label={tr("Fermer le panier")}>
-              <X size={16} />
-            </button>
-          </header>
-          <div className="cart-item-strip">
-            {items.length === 0 && <p className="cart-empty-state">{tr("Aucun objet AMCO ajouté pour le moment.")}</p>}
-            {cartGroups.map((group) => {
-              const item = group.items[0];
-              const entry = findCatalogEntry(catalog, item.type) || item;
-              const selected = group.items.some((groupItem) => groupItem.id === selectedId);
-              const removableItems = group.items.filter((groupItem) => canRemoveItem?.(groupItem) ?? true);
-              const decrementItem = [...removableItems].pop();
-              const optionLines = itemOptionLines(item).filter((line) => line !== item.options?.variantLabel);
-              const groupTotal = group.items.reduce((sum, groupItem) => sum + cartItemPrice(groupItem, entry, salonLabel, pricing, pricingItems, catalog), 0);
-              return (
-                <article
-                  key={group.key}
-                  ref={(node) => {
-                    if (node) itemRefs.current.set(group.key, node);
-                    else itemRefs.current.delete(group.key);
-                  }}
-                  className={`cart-item-card ${selected ? 'active' : ''} clickable`}
-                  onClick={() => openCartItem(item)}
-                >
-                  <button type="button" className="cart-item-main" onClick={(event) => { event.stopPropagation(); openCartItem(item); }}>
-                    <CartItemThumb item={item} entry={entry} catalog={catalog} />
-                    <span className="cart-item-copy">
-                      <strong>{tr(itemCartLabel(item))}</strong>
-                      <small>{tr("Quantité :")} {tr(group.items.length)}</small>
-                      {optionLines.length > 0 && (
-                        <span className="cart-item-options">
-                          {optionLines.map((line, index) => <em key={`${line}-${index}`}>{tr(line)}</em>)}
-                        </span>
-                      )}
-                      <b>{tr(groupTotal > 0 ? `${groupTotal.toLocaleString('fr-FR')} € HT` : 'Inclus')}</b>
-                    </span>
-                  </button>
-                  <div className="cart-item-controls" onClick={(event) => event.stopPropagation()}>
-                    <div className="cart-quantity-controls">
-                      <button type="button" disabled={readOnly || !decrementItem} onClick={() => decrementItem && onDecrementItem?.(decrementItem.id)} aria-label={tr("-1")}>
-                        <Minus size={13} />
-                      </button>
-                      <span>{tr(group.items.length)}</span>
-                    <button type="button" disabled={readOnly || item.autoMeterCover} onClick={() => onIncrementItem?.(item)} aria-label={tr("+1")}>
-                        <Plus size={13} />
-                      </button>
-                    </div>
-                    <button type="button" className="danger" disabled={readOnly || !removableItems.length} onClick={() => onDeleteItems?.(removableItems.map((groupItem) => groupItem.id))} aria-label={tr("Supprimer")}>
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
 
-          <PackAllowanceSummary pricing={pricing} />
-          <button type="button" className="cart-validate-button" onClick={() => { setCartOpen(false); onValidate?.(); }}>
-            {tr("Valider le panier")} </button>
-        </div>
+            <div className="d-body">
+              {allowance && (
+                <section className="forfait" aria-label={tr('Forfait accessoires')}>
+                  <div className="f-row"><b>{tr('Forfait accessoires')}</b><b>{navEuro(allowanceUsed)} / {navEuro(allowanceAmount)} {tr('HT')}</b></div>
+                  <div className="gauge"><span style={{ width: `${allowanceAmount > 0 ? Math.min(100, (allowanceUsed / allowanceAmount) * 100) : 0}%` }} /></div>
+                  <p>{allowanceBalance > 0
+                    ? tr(`Il vous reste ${navEuro(allowanceBalance)} HT d’accessoires inclus à utiliser.`)
+                    : tr('Entièrement utilisé. Le reste de vos options est facturé en supplément.')}</p>
+                </section>
+              )}
+
+              {baseItems.length > 0 && (
+                <details className="included">
+                  <summary>
+                    <span><b>{tr(`Inclus dans votre formule${offerLabel ? ` ${offerLabel}` : ''}`)}</b><span>{tr(`Stand ${Number(area || 0).toFixed(0)} m² · ${baseItems.length} élément${baseItems.length > 1 ? 's' : ''} inclus`)}</span></span>
+                    <NavIcon name="chevron" size={16} stroke={2.4} />
+                  </summary>
+                  <ul>{baseItems.map((base) => <li key={base.type}>{tr(base.label)}{base.quantity > 1 ? ` × ${base.quantity}` : ''}</li>)}</ul>
+                </details>
+              )}
+
+              {sections.map((section) => (
+                <React.Fragment key={section.id}>
+                  <p className="group-title">{tr(section.label)}<span>{navEuro(section.lines.reduce((sum, line) => sum + line.lineTotal, 0))} {tr('HT')}</span></p>
+                  {section.lines.map(({ group, item, entry, lineTotal }) => {
+                    const quantity = group.items.length;
+                    const removableItems = group.items.filter((groupItem) => canRemoveItem?.(groupItem) ?? true);
+                    const optionLines = itemOptionLines(item).filter((line) => line !== item.options?.variantLabel);
+                    const label = tr(itemCartLabel(item));
+                    return (
+                      <div
+                        key={group.key}
+                        ref={(node) => { if (node) itemRefs.current.set(group.key, node); else itemRefs.current.delete(group.key); }}
+                        className={`line${group.items.some((groupItem) => groupItem.id === selectedId) ? ' selected' : ''}`}
+                      >
+                        <span className="thumb"><CartItemThumb item={item} entry={entry} catalog={catalog} /></span>
+                        <div>
+                          <p className="l-name">{label}</p>
+                          {optionLines.length > 0 && <p className="l-detail">{optionLines.map((line) => tr(line)).join(' · ')}</p>}
+                          <div className="l-tools">
+                            <button type="button" className="l-link" onClick={() => openCartItem(item)}>{tr('Modifier')}</button>
+                            <button type="button" className="l-link rm" disabled={readOnly || !removableItems.length} onClick={() => { onDeleteItems?.(removableItems.map((groupItem) => groupItem.id)); showToast(tr(`${itemCartLabel(item)} retiré du panier`)); }}>{tr('Retirer')}</button>
+                          </div>
+                        </div>
+                        <p className={`l-price${lineTotal > 0 ? '' : ' included'}`}>
+                          {lineTotal > 0 ? navEuro(lineTotal) : tr('Inclus')}
+                          {lineTotal > 0 && quantity > 1 && <small>{quantity} × {navEuro(lineTotal / quantity)}</small>}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </React.Fragment>
+              ))}
+
+              {count === 0 && (
+                <div className="d-empty">
+                  <NavIcon name="cart" size={40} stroke={1.6} />
+                  <b>{tr('Aucune option ajoutée')}</b>
+                  <p>{offerLabel ? `${tr(`Votre formule ${offerLabel} reste incluse.`)} ` : ''}{tr('Ajoutez des options depuis le panneau de configuration.')}</p>
+                  <button type="button" className="ghost" onClick={() => setCartOpen(false)}>{tr('Continuer la configuration')}</button>
+                </div>
+              )}
+            </div>
+
+            <div className="d-foot">
+              <dl className="totals">
+                {allowance && <div><dt>{tr('Options et accessoires')}</dt><dd>{navEuro(pricing?.grossTotal || 0)} {tr('HT')}</dd></div>}
+                {allowance && <div><dt>{tr('Forfait accessoires déduit')}</dt><dd>− {navEuro(pricing?.allowanceApplied || 0)} {tr('HT')}</dd></div>}
+                <div className="grand"><dt>{tr('Total HT')}</dt><dd>{navEuro(total)} {tr('HT')}</dd></div>
+                <div className="ttc"><dt>{tr('TVA 20 % · Total TTC')}</dt><dd>{navEuro(ttc)}</dd></div>
+              </dl>
+              <button type="button" className="primary" onClick={() => { setCartOpen(false); if (nextStep === 3 && onContinue) onContinue(); else onValidate?.(); }}>{tr(continueLabel)}</button>
+              <div className="d-actions">
+                <button type="button" className="ghost" onClick={() => setCartOpen(false)}>{tr('Continuer la configuration')}</button>
+              </div>
+            </div>
+          </aside>
+        </>,
+        document.body,
       )}
+      {toastNode}
     </div>
   );
 }
@@ -8715,7 +9281,7 @@ function OptionAccordion({ optionKey, scrollTarget = '', onScrollTargetHandled, 
   }, [open, optionKey, scrollTarget, onScrollTargetHandled]);
 
   return (
-    <section ref={accordionRef} className={`option-accordion ${open ? 'open' : ''} ${className}`}>
+    <section ref={accordionRef} className={`option-accordion ${open ? 'open' : ''} ${className}`} data-option={optionKey || undefined}>
       <button type="button" aria-expanded={open} onClick={onToggle}>
         <span className="option-accordion-label">
           <span className="option-accordion-icon" aria-hidden="true">{tr(icon)}</span>
