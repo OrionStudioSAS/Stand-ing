@@ -12,7 +12,7 @@ import { normalizeAdminRole, isSuperAdmin } from '../supabase/functions/_shared/
 import { electricalWallClearance, electricalClearanceRect, applyElectricalClearance } from './electricalClearance.js';
 import { prioritizeUnderArchIntersections } from './scenePicking.js';
 import { drawEquippedHeadInformation, equippedHeadMaterialFace, loadEquippedHeadFlag, sceneHeadCountry } from './equippedHeadInformation.js';
-import { drawSignatureHeadInformation, signatureHeadCanvasSize } from './signatureHeadInformation.js';
+import { drawSignatureHeadInformation, signatureHeadCanvasSize, signatureHeadTopArtworkSlotId } from './signatureHeadInformation.js';
 import { signatureFootprintPalette, signatureFootprintSupplementLine } from './signatureFootprint.js';
 import { sceneAdminRequests, sceneQuestions, questionAsRequest } from './sceneRequests.js';
 import React, { Suspense, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -192,7 +192,7 @@ const signatureArchVisualSlots = [
   { id: 'signature-arch-led-30', label: 'Visuel arrière haut — Viscom', format: '1000 × 1000 mm', aspectRatio: 1, targetName: 'LED_5500k#30', kind: 'image', matchMode: 'exact' },
 ];
 const signaturePartitionHeadVisualSlots = [
-  { id: 'signature-head-top-28', label: 'Visuel haut de la tête de cloison', targetName: '*28', kind: 'image', matchMode: 'exact' },
+  { id: signatureHeadTopArtworkSlotId, label: 'Visuel haut de la tête de cloison', targetName: '*28', kind: 'image', matchMode: 'exact' },
 ];
 const collisionPadding = 0;
 const partitionHeadEdgeInset = 0.02;

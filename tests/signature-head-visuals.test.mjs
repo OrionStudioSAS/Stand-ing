@@ -6,6 +6,7 @@ import vm from 'node:vm';
 import { BufferGeometry, Float32BufferAttribute, MeshStandardMaterial, Texture } from 'three';
 import { defaultImageFraming } from '../src/imageFraming.js';
 import { patchPartitionHeadVisuals } from '../src/partitionHeadVisuals.js';
+import { signatureHeadTopArtworkSlotId } from '../src/signatureHeadInformation.js';
 
 const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 
@@ -29,6 +30,7 @@ function visualContext() {
     isTextureResource: () => false,
     defaultImageFraming,
     patchPartitionHeadVisuals,
+    signatureHeadTopArtworkSlotId,
   });
   const start = source.indexOf('const signaturePartitionHeadVisualSlots = [');
   const end = source.indexOf('\n];', start) + 3;
