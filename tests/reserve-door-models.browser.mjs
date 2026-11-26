@@ -125,6 +125,15 @@ try {
   await editor.waitFor();
   await page.getByRole('button', { name: /Suivant : la porte/ }).click();
   await editor.getByRole('tab', { name: /3D/ }).click();
+  // The opening and handle cards show a picture rendered from the door model instead of an icon.
+  await page.waitForFunction(() => {
+    const photos = [...document.querySelectorAll('.rsv-modal .rsv-choice-card .rsv-choice-photo')];
+    return photos.length === 4 && photos.every((img) => img.src.startsWith('data:image/png') && img.naturalWidth > 0);
+  });
+  const srcs = await editor.locator('.rsv-choice-photo').evaluateAll((imgs) => imgs.map((img) => img.src));
+  // Cards: [inwards, outwards] for the current handle, then [left, right] for the current opening. These fixture
+  // doors are plain blocks (a leaf opening inwards hides behind the panel), so only the opening must show.
+  assert.notEqual(srcs[0], srcs[1], 'Opening inwards and outwards show different pictures');
 
   const choose = async (opening, handle) => {
     await editor.locator('.rsv-choice-card').filter({ hasText: opening === 'push' ? 'Vers l’intérieur' : 'Vers l’extérieur' }).click();
@@ -175,6 +184,12 @@ try {
   await editor.getByRole('button', { name: /Façade/ }).first().click();
   // The hook hung on that partition: it moves to a free wall and the exhibitor is told.
   await editor.getByText('Porte posée sur ce mur : Patère passe sur une autre cloison').waitFor();
+  // Position on the wall: buttons only, no slider.
+  const position = editor.locator('.rsv-section').filter({ hasText: 'Position sur le mur' });
+  assert.equal(await position.locator('input[type="range"]').count(), 0, 'No slider for the door position');
+  const positions = await position.getByRole('button').allInnerTexts();
+  assert.ok(positions.length >= 2 && positions[0] === 'À gauche' && positions.at(-1) === 'À droite', JSON.stringify(positions));
+  assert.equal(await position.locator('[aria-pressed="true"]').count(), 1, 'The current position is marked');
   for (const [opening, handle] of [['pull', 'right'], ['push', 'left']]) {
     const shot = await choose(opening, handle);
     const { thin, along } = checkDoor(shot, opening, handle, `façade ${opening}/${handle}`);

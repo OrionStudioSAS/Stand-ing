@@ -8,7 +8,7 @@ import {
   RESERVE_DOOR_LEAF, RESERVE_GRID, boundsOverlap, boundsPolygon, childFootprint, clampFloorContent, contentCenter, contentFootprint, contentPolygon,
   footprintPolygon, polygonsOverlap,
   doorDistanceFromLeft, findFreeReserveSpot, footprintBounds, formatReserveCm, formatReserveMetres, isReservePowerSource,
-  isWallBuiltin, builtinWallContent, refitReserveContents, reserveBuiltinChildren, reserveChildSize, reserveContentIssues, reserveDoorSlots,
+  fitsUnderReserveShelf, isShelfMountedChild, isWallBuiltin, builtinWallContent, refitReserveContents, reserveBuiltinChildren, reserveChildSize, reserveContentIssues, reserveDoorSlots,
   reserveDoorState, reserveFreeSurfaceRatio, reserveInterior, reserveSegments, snapToGrid, snapWallContent,
 } from './reserveConfigurator.js';
 import './reserveConfigurator.css';
@@ -281,7 +281,8 @@ function planItemsFor(structure, contents = []) {
       content,
     };
   });
-  const builtinItems = (structure?.builtins || []).map((child) => ({
+  // A power strip laid on the reserve shelf moves with the shelf: it is not a separate plan object.
+  const builtinItems = (structure?.builtins || []).filter((child) => !isShelfMountedChild(child)).map((child) => ({
     key: `builtin:${child.id}`,
     kind: 'builtin',
     label: child.label,
@@ -1163,6 +1164,8 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
   const [customOpen, setCustomOpen] = useState(false);
   const svgRef = useRef(null);
   const groupRef = useRef(null);
+  // 3D view: pointer → reserve coordinates and objects under the pointer (set by the 3D preview).
+  const pickerRef = useRef(null);
   const planWrapRef = useRef(null);
   const dragCatalogKey = useRef('');
   const toastTimer = useRef(0);
@@ -1381,7 +1384,8 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
     const inside = box.minX >= interior.minX - 0.005 && box.maxX <= interior.maxX + 0.005 && box.minZ >= interior.minZ - 0.005 && box.maxZ <= interior.maxZ + 0.005;
     if (!inside) return 'outside';
     if (structure?.door?.zoneInside && polygonsOverlap(outline, boundsPolygon(structure.door.zone))) return 'door';
-    if (!isWallBuiltin(child) && draft.contents.some((content) => content.mount !== 'wall' && polygonsOverlap(outline, contentPolygon(content, interior)))) return 'overlap';
+    if (!isWallBuiltin(child) && draft.contents.some((content) => content.mount !== 'wall' && polygonsOverlap(outline, contentPolygon(content, interior))
+      && !fitsUnderReserveShelf(content, { ...child, x: center.x, z: center.z, rotation }, interior))) return 'overlap';
     return '';
   }, [draft.contents, interior, structure]);
 
@@ -1409,6 +1413,7 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
 
   // Pointer helpers.
   const toLocal = useCallback((clientX, clientY) => {
+    if (view === '3d') return pickerRef.current?.(clientX, clientY) || null;
     const group = groupRef.current;
     const svg = svgRef.current;
     if (!group || !svg?.createSVGPoint) return null;
@@ -1419,7 +1424,7 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
     if (!matrix) return null;
     const local = point.matrixTransform(matrix.inverse());
     return { x: local.x, z: local.y };
-  }, []);
+  }, [view]);
 
   const snap = useCallback((value) => (showGrid ? snapToGrid(value, RESERVE_GRID) : Math.round(value * 100) / 100), [showGrid]);
 
@@ -1434,6 +1439,27 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
     event.currentTarget.ownerSVGElement?.setPointerCapture?.(event.pointerId);
     setDrag({ key: item.key, kind: item.kind, offset: { x: item.x - local.x, z: item.z - local.z }, origin: { x: item.x, z: item.z }, position: null, valid: true, reason: '', pointerId: event.pointerId, moved: false });
   }, [readOnly, step, toLocal]);
+
+  // 3D view: an object pressed in the scene is dragged on the floor with the plan's rules. Included pieces belong to
+  // the reserve model, so the one under the pointer is found from the plan footprints (top-most: wall pieces first).
+  const on3DPress = useCallback((press) => {
+    if (!press || readOnly || step !== 'layout' || !structure) return false;
+    const local = toLocal(press.clientX, press.clientY);
+    if (!local) return false;
+    const items = planItemsFor(structure, draft.contents);
+    const inside = (box, point) => point.x >= box.minX - 0.03 && point.x <= box.maxX + 0.03 && point.z >= box.minZ - 0.03 && point.z <= box.maxZ + 0.03;
+    // The object under the pointer: the nearest hit on an added content; otherwise, on the reserve model, the
+    // nearest hit point that lies over an included piece's footprint (a partition in front of it does not count).
+    const hits = pickerRef.current?.hits?.(press.clientX, press.clientY) || [];
+    const builtins = items.filter((candidate) => candidate.kind === 'builtin');
+    const item = hits.map((hit) => items.find((candidate) => candidate.kind === 'content' && candidate.key === hit.itemId)
+      || (hit.itemId === reserve?.id ? builtins.find((candidate) => inside(candidate.box, hit)) : null)).find(Boolean);
+    if (!item) return false;
+    setSelectedKey(item.key);
+    setLayoutTab('inside');
+    setDrag({ key: item.key, kind: item.kind, offset: { x: item.x - local.x, z: item.z - local.z }, origin: { x: item.x, z: item.z }, position: null, valid: true, reason: '', pointerId: press.pointerId, moved: false });
+    return true;
+  }, [draft.contents, readOnly, reserve, step, structure, toLocal]);
 
   const onRotatePointerDown = useCallback((event, item) => {
     if (readOnly || step !== 'layout') return;
@@ -1531,6 +1557,13 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
     if (!structure || !drag?.position || drag.kind !== 'builtin') return structure;
     return { ...structure, builtins: structure.builtins.map((child) => (`builtin:${child.id}` === drag.key ? { ...child, x: drag.position.x, z: drag.position.z, rotation: drag.rotation ?? child.rotation } : child)) };
   }, [structure, drag]);
+
+  // The 3D view follows an included piece being dragged (contents follow through planContents).
+  const preview3DReserve = useMemo(() => {
+    if (!reserve || !drag?.position || drag.kind !== 'builtin') return reserve;
+    const id = drag.key.slice('builtin:'.length);
+    return { ...reserve, children: (reserve.children || []).map((child) => (child.id === id ? { ...child, x: drag.position.x, z: drag.position.z, rotation: drag.rotation ?? child.rotation } : child)) };
+  }, [reserve, drag]);
 
   // Catalogue drag & drop (HTML5).
   const catalogEntryByKey = useMemo(() => new Map(products.map((product) => [product.key, product])), [products]);
@@ -1649,11 +1682,26 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
   // Floor objects (included or added) standing where the door leaf swings.
   const doorBlockers = useMemo(() => {
     if (!doorState?.zoneInside || !interior) return [];
-    const builtinBlockers = (structure?.builtins || []).filter((child) => !isWallBuiltin(child) && boundsOverlap(childFootprint(child), doorState.zone))
+    const builtinBlockers = (structure?.builtins || []).filter((child) => !isWallBuiltin(child) && !isShelfMountedChild(child) && boundsOverlap(childFootprint(child), doorState.zone))
       .map((child) => ({ key: `builtin:${child.id}`, label: child.label }));
     const contentBlockers = draft.contents.filter((content) => (issuesByKey[content.key] || []).includes('door')).map((content) => ({ key: content.key, label: content.label }));
     return [...builtinBlockers, ...contentBlockers];
   }, [doorState, interior, structure, draft.contents, issuesByKey]);
+  // Pictures of the door for each opening × handle, rendered from its model (the cards keep their icon meanwhile).
+  const [doorPictures, setDoorPictures] = useState({});
+  const doorPictureKey = `${draft.optionType}|${draft.placement}|${draft.orientation}|${JSON.stringify(draft.doorByType?.[groupType] || {})}`;
+  useEffect(() => {
+    if (step !== 'door' || !model.doorSnapshot || !doorState) return undefined;
+    let cancelled = false;
+    const combos = ['push', 'pull'].flatMap((opening) => ['left', 'right'].map((handle) => ({ opening, handle })));
+    Promise.all(combos.map(({ opening, handle }) => {
+      const next = model.build({ ...draft, doorOpening: opening, handleOrientation: handle });
+      return next?.reserve ? Promise.resolve(model.doorSnapshot(next.reserve)).catch(() => null) : null;
+    })).then((urls) => {
+      if (!cancelled) setDoorPictures(Object.fromEntries(combos.map(({ opening, handle }, index) => [`${opening}|${handle}`, urls[index] || ''])));
+    });
+    return () => { cancelled = true; };
+  }, [model, step, doorPictureKey, Boolean(doorState)]); // eslint-disable-line react-hooks/exhaustive-deps
   const doorSideSlots = doorState ? (doorSlotsBySide[doorState.side] || []) : [];
   const doorSlotIndex = doorSideSlots.findIndex((slot) => slot.kind === 'door');
   // The stored slot is the authored partition that swaps places with the authored door.
@@ -1736,12 +1784,23 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
                     <span><Box size={13} /> {tr('Voir en 3D')}</span>
                   </button>
                 )}
-                <div className="rsv-preview3d-canvas">
+                <div
+                  className="rsv-preview3d-canvas"
+                  onPointerDownCapture={(event) => {
+                    // An object pressed: the camera must not turn with it (the camera controls never see this press).
+                    if (view === '3d' && event.button === 0 && on3DPress({ clientX: event.clientX, clientY: event.clientY, pointerId: event.pointerId })) {
+                      event.stopPropagation();
+                      event.preventDefault();
+                    }
+                  }}
+                >
                   <Preview3D
-                    reserve={reserve}
+                    reserve={preview3DReserve}
                     contents={drag?.candidate ? planContents : draft.contents}
                     selectedKey={selectedKey}
                     full={view === '3d'}
+                    pickerRef={pickerRef}
+                    dragging={view === '3d' && Boolean(drag)}
                     onSelect={(key) => { if (key) { setSelectedKey(key); if (step === 'layout') setLayoutTab('inside'); } }}
                   />
                 </div>
@@ -1792,7 +1851,7 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
             )}
 
             <div className="rsv-hint" key={`${step}-${view}-${drag ? 'drag' : ghost ? 'ghost' : ''}`}>
-              {view === '3d' ? <><RotateCw size={13} /> <b>{tr('Glisser')}</b> {tr('pour tourner')} · <b>{tr('Molette')}</b> {tr('pour zoomer')} · {tr('cliquez un objet pour le sélectionner')}</>
+              {view === '3d' ? <><RotateCw size={13} /> <b>{tr('Glisser')}</b> {tr('pour tourner')} · <b>{tr('Molette')}</b> {tr('pour zoomer')} · <b>{tr('Glisser un objet')}</b> {tr('pour le déplacer')}</>
                 : ghost ? <><b>{tr('Relâchez')}</b> {tr('pour déposer')} · <b>{tr('Échap')}</b> {tr('pour annuler')}</>
                   : step === 'structure' ? <><Eye size={13} /> {tr('Survolez une option pour la prévisualiser sur le plan')}</>
                     : step === 'door' ? <><ArrowLeftRight size={13} /> {tr('Cliquez un mur en pointillés pour y déplacer la porte')}</>
@@ -1851,6 +1910,7 @@ export function ReserveEditorModal({ model, initialStep = 'structure', initialSe
                   slotIndex={doorSlotIndex}
                   distance={doorDistance}
                   handleChoices={handleChoices}
+                  pictures={doorPictures}
                   blockers={doorBlockers}
                   onArrange={(key) => { goStep('layout'); setLayoutTab('inside'); if (key) setSelectedKey(key); }}
                   onSide={(side) => {
@@ -2072,9 +2132,10 @@ function StructureStep({ tr, model, draft, readOnly, placements, currentPlacemen
   );
 }
 
-function DoorStep({ tr, readOnly, doorState, slotsBySide, sideSlots, slotIndex, distance, handleChoices, blockers = [], onArrange, onSide, onSlotIndex, onOpening, onHandle }) {
+function DoorStep({ tr, readOnly, doorState, slotsBySide, sideSlots, slotIndex, distance, handleChoices, pictures = {}, blockers = [], onArrange, onSide, onSlotIndex, onOpening, onHandle }) {
   const sides = ['front', 'left', 'right', 'back'].filter((side) => (slotsBySide[side] || []).length);
-  const positionLabels = sideSlots.length === 3 ? ['À gauche', 'Centrée', 'À droite'] : sideSlots.length === 2 ? ['À gauche', 'À droite'] : [];
+  const positionLabels = sideSlots.length === 3 ? ['À gauche', 'Centrée', 'À droite']
+    : sideSlots.map((slot, index) => (index === 0 ? 'À gauche' : index === sideSlots.length - 1 ? 'À droite' : `Position ${index + 1}`));
   return (
     <div className="rsv-step-body">
       <section className="rsv-section">
@@ -2091,27 +2152,11 @@ function DoorStep({ tr, readOnly, doorState, slotsBySide, sideSlots, slotIndex, 
       {sideSlots.length > 1 && (
         <section className="rsv-section">
           <header><h3>{tr('Position sur le mur')}</h3><span className="rsv-section-value">{tr(`à ${formatReserveCm(distance)} cm du coin gauche`)}</span></header>
-          <div className="rsv-slider-row">
-            <input
-              type="range"
-              min={0}
-              max={sideSlots.length - 1}
-              step={1}
-              value={Math.max(0, slotIndex)}
-              disabled={readOnly}
-              onChange={(event) => onSlotIndex(Number(event.target.value))}
-              style={{ '--rsv-range': `${(Math.max(0, slotIndex) / Math.max(1, sideSlots.length - 1)) * 100}%` }}
-              aria-label={tr('Position de la porte')}
-            />
-            <span className="rsv-slider-value">{formatReserveCm(distance)} <em>cm</em></span>
+          <div className="rsv-chips" role="group" aria-label={tr('Position de la porte')}>
+            {positionLabels.map((label, index) => (
+              <button key={label} type="button" className={slotIndex === index ? 'active' : ''} aria-pressed={slotIndex === index} disabled={readOnly} onClick={() => onSlotIndex(index)}>{tr(label)}</button>
+            ))}
           </div>
-          {positionLabels.length > 0 && (
-            <div className="rsv-chips">
-              {positionLabels.map((label, index) => (
-                <button key={label} type="button" className={slotIndex === index ? 'active' : ''} disabled={readOnly} onClick={() => onSlotIndex(index)}>{tr(label)}</button>
-              ))}
-            </div>
-          )}
         </section>
       )}
 
@@ -2119,9 +2164,11 @@ function DoorStep({ tr, readOnly, doorState, slotsBySide, sideSlots, slotIndex, 
         <header><h3>{tr('Ouverture')}</h3><span className="rsv-section-value">{tr(doorState.opening === 'pull' ? 'Vers l’extérieur' : 'Vers l’intérieur')}</span></header>
         <div className="rsv-choice-grid">
           {[{ id: 'push', label: 'Vers l’intérieur', detail: 'Poussante' }, { id: 'pull', label: 'Vers l’extérieur', detail: 'Tirante' }].map((choice) => (
-            <button key={choice.id} type="button" className={`rsv-choice-card${doorState.opening === choice.id ? ' active' : ''}`} disabled={readOnly} onClick={() => onOpening(choice.id)}>
+            <button key={choice.id} type="button" className={`rsv-choice-card${doorState.opening === choice.id ? ' active' : ''}${pictures[`${choice.id}|${doorState.handle}`] ? ' has-photo' : ''}`} disabled={readOnly} onClick={() => onOpening(choice.id)}>
               {doorState.opening === choice.id && <span className="rsv-check"><Check size={11} /></span>}
-              <OpeningIcon inward={choice.id === 'push'} />
+              {pictures[`${choice.id}|${doorState.handle}`]
+                ? <img className="rsv-choice-photo" src={pictures[`${choice.id}|${doorState.handle}`]} alt="" draggable={false} />
+                : <OpeningIcon inward={choice.id === 'push'} />}
               <span><strong>{tr(choice.label)}</strong><small>{tr(choice.detail)}</small></span>
             </button>
           ))}
@@ -2151,9 +2198,11 @@ function DoorStep({ tr, readOnly, doorState, slotsBySide, sideSlots, slotIndex, 
           {[{ id: 'left', label: 'À gauche', detail: 'Charnières à droite' }, { id: 'right', label: 'À droite', detail: 'Charnières à gauche' }].map((choice) => {
             const available = handleChoices.includes(choice.id);
             return (
-              <button key={choice.id} type="button" className={`rsv-choice-card${doorState.handle === choice.id ? ' active' : ''}`} disabled={readOnly || !available} onClick={() => onHandle(choice.id)} title={available ? '' : tr('Non disponible pour ce modèle de porte')}>
+              <button key={choice.id} type="button" className={`rsv-choice-card${doorState.handle === choice.id ? ' active' : ''}${available && pictures[`${doorState.opening}|${choice.id}`] ? ' has-photo' : ''}`} disabled={readOnly || !available} onClick={() => onHandle(choice.id)} title={available ? '' : tr('Non disponible pour ce modèle de porte')}>
                 {doorState.handle === choice.id && <span className="rsv-check"><Check size={11} /></span>}
-                <HandleIcon side={choice.id} />
+                {available && pictures[`${doorState.opening}|${choice.id}`]
+                  ? <img className="rsv-choice-photo" src={pictures[`${doorState.opening}|${choice.id}`]} alt="" draggable={false} />
+                  : <HandleIcon side={choice.id} />}
                 <span><strong>{tr(choice.label)}</strong><small>{tr(available ? choice.detail : 'Non disponible')}</small></span>
               </button>
             );

@@ -18,7 +18,7 @@ import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Canvas, events as createSceneEvents, useFrame, useLoader, useThree } from '@react-three/fiber';
 import { Html, OrbitControls, Text } from '@react-three/drei';
-import { Box3, BoxGeometry, BufferGeometry, Cache, CanvasTexture, CubeTexture, DoubleSide, Float32BufferAttribute, Group, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, Matrix4, Mesh, MOUSE, MeshBasicMaterial, MeshStandardMaterial, Plane, RepeatWrapping, SRGBColorSpace, TOUCH, Vector3 } from 'three';
+import { AmbientLight, Box3, BoxGeometry, BufferGeometry, Cache, CanvasTexture, CubeTexture, DirectionalLight, DoubleSide, Float32BufferAttribute, Group, LinearFilter, LinearMipmapLinearFilter, LoadingManager, Material, Matrix4, Mesh, MOUSE, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Plane, Raycaster, RepeatWrapping, Scene, SRGBColorSpace, TOUCH, Vector2, Vector3, WebGLRenderer } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -95,7 +95,7 @@ import { manageSceneCollaborators, openSceneInvitation, requestSceneInvitationLi
 import { ReserveEditorModal, ReserveQuickView } from './ReserveConfigurator.jsx';
 import {
   configureReserveChildren, formatReserveMetres, isReservePowerSource, normalizeDegrees,
-  refitReserveContents, reserveBuiltinChildren, reserveCatalogCategory, reserveDoorState, reserveEntryNeedsPower, reserveInterior,
+  refitReserveContents, reserveBuiltinChildren, reserveCatalogCategory, isReserveShelfUnit, reserveWorldToLocal, reserveDoorState, reserveEntryNeedsPower, reserveInterior,
   reserveLocalToWorld, reservePlacementAllowed, reservePlacementFromEntry, reserveDoorChild, applyReserveDoorChoice, reserveDoorFit, isReserveDoorChild,
   mirrorReserveChildren, reserveOrientation, clampFloorContent, contentCenter, snapWallContent,
 } from './reserveConfigurator.js';
@@ -1736,6 +1736,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     contentPricing: reserveContentPricing,
     reservePrice: reserveRowPrice,
     Preview3D: ReserveEditorPreview3D,
+    // Picture of the door as chosen (opening, handle), rendered from its catalogue model.
+    doorSnapshot: (reserve) => renderReserveDoorSnapshot(reserve, reserveDoorColorForPack(assetPackLabel)),
     // Items supplied with the reserve (patère, triplette…) are bank assets: show their shop thumbnail.
     thumbnailFor: (child) => child?.thumbnailUrl || child?.thumbnail_url
       || findCatalogEntry(availableCatalog, child?.type)?.thumbnailUrl
@@ -1755,7 +1757,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         },
       });
     },
-  } : null), [reserveEditor, readOnly, width, depth, layout, reserveStandOthers, reserveRows, reserveCatalog, availableCatalog, objectBank, reserveInitialDraft, buildReserveDraft, reservePlacementsFor, reserveContentPricing, reserveRowPrice]);
+  } : null), [reserveEditor, readOnly, width, depth, layout, reserveStandOthers, reserveRows, reserveCatalog, availableCatalog, objectBank, reserveInitialDraft, buildReserveDraft, reservePlacementsFor, reserveContentPricing, reserveRowPrice, assetPackLabel]);
   const reservePreviewContext = useMemo(() => ({
     stand: { width, depth, height, layout },
     catalog: availableCatalog,
@@ -17587,7 +17589,45 @@ function ReservePreviewCameraFrame({ position, target }) {
 }
 
 // Live 3D view of the reserve being edited, rendered with the configurator's own scene components.
-function ReserveEditorPreview3D({ reserve, contents = [], selectedKey = '', full = false, onSelect }) {
+// Pointer → reserve plan coordinates in the editor's 3D view: ray on the floor, then into the reserve's frame.
+// Lets the editor move objects in 3D with the same rules as on the 2D plan.
+function ReservePreviewPicker({ reserve, pickerRef, pivot }) {
+  const { camera, gl, scene } = useThree();
+  useEffect(() => {
+    if (!pickerRef) return undefined;
+    const raycaster = new Raycaster();
+    const cast = (clientX, clientY) => {
+      const rect = gl.domElement.getBoundingClientRect();
+      if (!rect.width || !rect.height) return false;
+      raycaster.setFromCamera(new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1), camera);
+      return true;
+    };
+    const toReserve = (point) => reserveWorldToLocal(reserve, { x: point.x - Number(pivot[0] || 0), z: point.z - Number(pivot[2] || 0) });
+    // Floor point under the pointer, in the reserve's frame (drag positions).
+    const pick = (clientX, clientY) => {
+      if (!cast(clientX, clientY)) return null;
+      const point = floorDragPointFromRay(raycaster.ray, pivot);
+      return point ? reserveWorldToLocal(reserve, point) : null;
+    };
+    // Surfaces hit under the pointer, nearest first: the scene item each belongs to and the point in the reserve's frame.
+    pick.hits = (clientX, clientY) => {
+      if (!cast(clientX, clientY)) return [];
+      return raycaster.intersectObjects(scene.children, true).filter((hit) => hit.object.visible !== false).map((hit) => {
+        let node = hit.object;
+        while (node && !node.userData?.standSceneItem) node = node.parent;
+        return { ...toReserve(hit.point), itemId: node?.userData?.itemId || '' };
+      });
+    };
+    pickerRef.current = pick;
+    return () => { if (pickerRef.current === pick) pickerRef.current = null; };
+  }, [camera, gl, scene, reserve, pickerRef, pivot]);
+  return null;
+}
+
+// StandScene shifts the stand by its camera pivot: viewAngle 0 here.
+const reservePreviewPivot = [0, 0, 0.25];
+
+function ReserveEditorPreview3D({ reserve, contents = [], selectedKey = '', full = false, onSelect, pickerRef = null, dragging = false }) {
   const context = useContext(ReservePreviewContext);
   const contentItems = useMemo(() => (context && reserve ? context.makeContentItems(contents, reserve) : []), [context, reserve, contents]);
   const items = useMemo(() => (reserve ? [reserve, ...contentItems] : []), [reserve, contentItems]);
@@ -17635,8 +17675,10 @@ function ReserveEditorPreview3D({ reserve, contents = [], selectedKey = '', full
         />
       </Suspense>
       <ReservePreviewCameraFrame position={frame.position} target={frame.center} />
+      {full && <ReservePreviewPicker reserve={reserve} pickerRef={pickerRef} pivot={reservePreviewPivot} />}
       <OrbitControls
         makeDefault
+        enabled={!dragging}
         target={frame.center}
         enablePan={full}
         enableZoom={full}
@@ -23164,6 +23206,8 @@ function signatureArchPaintMaterial(material, color) {
 }
 
 function isElectricalWhiteItem(item = {}) {
+  // A shelving unit sold with its power strip ("Bloc 3 Étagères Multiprise") keeps its own materials (wood…).
+  if (isReserveShelfUnit(item)) return false;
   const text = normalizedItemText(item);
   return text.includes('alimentation') || text.includes('multiprise') || text.includes('triplette');
 }
@@ -24238,6 +24282,60 @@ function fitReserveDoorModel(model, fit) {
   pivot.userData.reserveDoorFit = { ...fit, turned: scaleX < 0 && scaleZ < 0, mirrored: scaleX * scaleZ < 0 };
   addReserveDoorBaseboards(pivot, parts);
   return pivot;
+}
+
+// Pictures of the reserve door for the editor's choice cards: the catalogue model, fitted exactly as in the 3D view
+// (opening side, handle side), seen from the stand side. One picture per model and choice, kept for the session.
+const reserveDoorSnapshotCache = new Map();
+let reserveDoorSnapshotRenderer = null;
+
+function renderReserveDoorSnapshot(reserve, doorColorHex = '') {
+  const door = (reserve?.children || []).find(isReserveDoorChild);
+  if (!door?.modelUrl || !/\.glb(?:[?#]|$)/i.test(door.modelUrl) || typeof document === 'undefined') return Promise.resolve(null);
+  const parent = doorColorHex ? { ...reserve, options: { ...reserve.options, reserveDoorColorHex: doorColorHex, reserveFrameColorHex: doorColorHex } } : reserve;
+  const item = reserveChildWithFinish(door, parent);
+  const fit = item.options?.reserveDoorFit;
+  if (!fit) return Promise.resolve(null);
+  const key = [door.modelUrl, fit.handleSign, fit.swingSign, doorColorHex].join('|');
+  if (!reserveDoorSnapshotCache.has(key)) {
+    const entry = _ensureGlbCacheEntry(door.modelUrl);
+    reserveDoorSnapshotCache.set(key, entry.promise
+      .then(() => (entry.result?.scene ? drawReserveDoorSnapshot(entry.result.scene, item, fit) : null))
+      .catch(() => null));
+  }
+  return reserveDoorSnapshotCache.get(key);
+}
+
+function drawReserveDoorSnapshot(source, item, fit) {
+  const width = 320;
+  const height = 220;
+  reserveDoorSnapshotRenderer ||= new WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  const renderer = reserveDoorSnapshotRenderer;
+  renderer.setPixelRatio(1);
+  renderer.setSize(width, height, false);
+  renderer.setClearColor(0x000000, 0);
+  const model = prepareLoadedModel(source, item, { isGlb: true });
+  const stage = new Scene();
+  stage.add(model);
+  stage.add(new AmbientLight(0xffffff, 1.7));
+  // In the door's frame the stand side is +z × outward: light and camera stand there, a little to the side and
+  // above, so the ajar leaf shows which way it opens and the handle which side it is on.
+  const outward = Number(fit.outward) || 1;
+  const wallZ = Number(fit.wallZ) || 0;
+  const sun = new DirectionalLight(0xffffff, 1.6);
+  sun.position.set(1.5, 4, wallZ + outward * 3);
+  stage.add(sun);
+  const camera = new PerspectiveCamera(32, width / height, 0.05, 50);
+  camera.position.set(2.2, 3.3, wallZ + outward * 3.8);
+  camera.lookAt(0, 1.22, wallZ + outward * 0.1);
+  renderer.render(stage, camera);
+  const url = renderer.domElement.toDataURL('image/png');
+  stage.remove(model);
+  model.traverse((child) => {
+    if (!child.isMesh) return;
+    (Array.isArray(child.material) ? child.material : [child.material]).forEach((material) => material?.dispose?.());
+  });
+  return url;
 }
 
 // The partitions' skirting carries on along the fixed parts of the door module, on both faces, up to the door frame.

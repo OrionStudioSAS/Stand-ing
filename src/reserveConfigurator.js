@@ -461,15 +461,98 @@ export function doorDistanceFromLeft(children = [], options = {}) {
 
 export function applyReserveBuiltins(children = [], overrides = {}) {
   if (!overrides || !Object.keys(overrides).length) return children;
-  return (children || []).flatMap((child) => {
+  const moved = (children || []).flatMap((child) => {
     const override = overrides[child.id];
     if (!override || isReserveStructuralChild(child)) return [child];
     if (override.removed) return [];
+    if (isShelfMountedChild(child)) return [child];
     return [{
       ...child,
       x: Number.isFinite(Number(override.x)) ? Number(override.x) : child.x,
       z: Number.isFinite(Number(override.z)) ? Number(override.z) : child.z,
       rotation: Number.isFinite(Number(override.rotation)) ? Number(override.rotation) : child.rotation,
+    }];
+  });
+  return followReserveShelves(children, moved);
+}
+
+// Reserve shelving with a power strip laid on its top shelf: two catalogue objects (two GLB), grouped in the reserve.
+// The shelf asset carries dimensions.reserveShelf (+ topSurfaceY); the strip carries dimensions.mountType 'shelf'.
+// The link lives in the assets, not in child ids, so it survives the admin group editor renumbering the children.
+export function isReserveShelfChild(child = {}) {
+  return Boolean(child?.dimensions?.reserveShelf || child?.reserveShelf);
+}
+
+export function isShelfMountedChild(child = {}) {
+  return (child?.dimensions?.mountType || child?.mountType) === 'shelf';
+}
+
+export function reserveShelfTopY(shelf = {}) {
+  const top = Number(shelf?.dimensions?.topSurfaceY);
+  return Number.isFinite(top) && top > 0 ? top : reserveChildSize(shelf)[1];
+}
+
+// The shelf a mounted object stands on: the one under its centre, else the closest one.
+export function reserveShelfHost(children = [], child = {}) {
+  const shelves = (children || []).filter(isReserveShelfChild);
+  if (!shelves.length) return null;
+  const x = Number(child.x || 0);
+  const z = Number(child.z || 0);
+  const under = shelves.find((shelf) => {
+    const box = childFootprint(shelf);
+    return x >= box.minX - EPSILON && x <= box.maxX + EPSILON && z >= box.minZ - EPSILON && z <= box.maxZ + EPSILON;
+  });
+  return under || [...shelves].sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z))[0];
+}
+
+// A shelving unit, possibly sold with a power strip on it ("Bloc 3 Étagères Multiprise"): furniture first.
+export function isReserveShelfUnit(entry = {}) {
+  return /\betageres?\b|\bbloc 3\b/.test(childText(entry)) && !/murale/.test(childText(entry));
+}
+
+// "Bloc 3 Étagères" (950 × 1800 × 325 mm): under its bottom shelf (underside 922.5 mm) only the two 45 mm side
+// frames reach the floor, open front and back: 86 cm wide, 92 cm high (a 140 L fridge, 63 × 86 × 56 cm, fits).
+const KNOWN_FREE_UNDER = [{ pattern: /\bbloc 3 etageres?\b/, free: { width: 0.86, height: 0.92 } }];
+
+// Free space under the bottom shelf (dimensions.freeUnder: { width, height }, metres), open front and back.
+export function reserveShelfFreeUnder(child = {}) {
+  const free = child?.dimensions?.freeUnder || child?.freeUnder || KNOWN_FREE_UNDER.find((known) => known.pattern.test(childText(child)))?.free;
+  const width = Number(free?.width);
+  const height = Number(free?.height);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+// A floor object lower than that space may stand under the shelf, between its uprights (a fridge under the
+// shelving): its outline stays within the free width in the shelf's frame; it may stick out at the front or back.
+export function fitsUnderReserveShelf(content = {}, shelf = {}, interior = null, tolerance = 0.005) {
+  const free = reserveShelfFreeUnder(shelf);
+  if (!free || content.mount === 'wall') return false;
+  if (Number((content.size || [])[1] || 0) > free.height + EPSILON) return false;
+  return contentPolygon(content, interior).every((point) => {
+    const local = rotateReservePoint(point.x - Number(shelf.x || 0), point.z - Number(shelf.z || 0), -Number(shelf.rotation || 0));
+    return Math.abs(local.x) <= free.width / 2 + tolerance;
+  });
+}
+
+// Mounted objects keep their place on their shelf (offset and angle in the shelf's frame) when it moves or turns,
+// sit on its top shelf, and go away with it.
+export function followReserveShelves(before = [], after = []) {
+  const byId = new Map((after || []).map((child) => [child.id, child]));
+  return (after || []).flatMap((child) => {
+    if (!isShelfMountedChild(child)) return [child];
+    const original = (before || []).find((candidate) => candidate.id === child.id) || child;
+    const host = reserveShelfHost(before, original);
+    if (!host) return [child];
+    const next = byId.get(host.id);
+    if (!next) return [];
+    const offset = rotateReservePoint(Number(original.x || 0) - Number(host.x || 0), Number(original.z || 0) - Number(host.z || 0), -Number(host.rotation || 0));
+    const placed = rotateReservePoint(offset.x, offset.z, Number(next.rotation || 0));
+    return [{
+      ...child,
+      x: round(Number(next.x || 0) + placed.x),
+      z: round(Number(next.z || 0) + placed.z),
+      y: reserveShelfTopY(next),
+      rotation: normalizeDegrees(Number(original.rotation || 0) - Number(host.rotation || 0) + Number(next.rotation || 0)),
     }];
   });
 }
@@ -667,7 +750,10 @@ export function reserveContentIssues(content, { interior, contents = [], builtin
   if (inSwing || onDoor) issues.push('door');
   const blocking = [
     ...contents.filter((other) => other.key !== content.key).map((other) => ({ mount: other.mount === 'wall' ? 'wall' : 'floor', box: contentFootprint(other, interior), outline: contentPolygon(other, interior) })),
-    ...builtins.map((child) => ({ mount: isWallBuiltin(child) ? 'wall' : 'floor', box: childFootprint(child), outline: childPolygon(child) })),
+    // Objects laid on a shelf take no room of their own: the shelf blocks for them. Under a shelf with free room
+    // below, a low enough object fits.
+    ...builtins.filter((child) => !isShelfMountedChild(child) && !fitsUnderReserveShelf(content, child, interior))
+      .map((child) => ({ mount: isWallBuiltin(child) ? 'wall' : 'floor', box: childFootprint(child), outline: childPolygon(child) })),
   ];
   const overlaps = blocking.some((other) => other.mount === mount && boundsOverlap(box, other.box) && polygonsOverlap(outline, other.outline));
   if (overlaps) issues.push('overlap');
@@ -675,8 +761,10 @@ export function reserveContentIssues(content, { interior, contents = [], builtin
 }
 
 export function isWallBuiltin(child = {}) {
+  if (isShelfMountedChild(child)) return false;
   const mountType = child.dimensions?.mountType || child.mountType;
   if (mountType === 'wall') return true;
+  if (isReserveShelfUnit(child)) return false;
   return /patere|triplette|multiprise|miroir|porte documents mural/.test(childText(child));
 }
 
@@ -740,7 +828,7 @@ export function reserveFreeSurfaceRatio(interior, contents = [], builtins = []) 
   const area = interior.width * interior.depth;
   const used = [
     ...contents.filter((content) => content.mount !== 'wall').map((content) => contentFootprint(content, interior)),
-    ...builtins.filter((child) => !isWallBuiltin(child)).map(childFootprint),
+    ...builtins.filter((child) => !isWallBuiltin(child) && !isShelfMountedChild(child)).map(childFootprint),
   ].reduce((sum, box) => sum + Math.max(0, Math.min(box.maxX, interior.maxX) - Math.max(box.minX, interior.minX))
     * Math.max(0, Math.min(box.maxZ, interior.maxZ) - Math.max(box.minZ, interior.minZ)), 0);
   return Math.max(0, Math.min(1, 1 - used / area));
@@ -778,7 +866,7 @@ export function reserveCatalogCategory(entry = {}) {
     entry.label, entry.type, entry.options?.variantGroupLabel, entry.groupLabel, entry.dimensions?.category,
   ].filter(Boolean).join(' '));
   if (/frigo|refrigerateur|fontaine|machine a cafe|nespresso|cafetiere|micro onde|bouilloire/.test(text)) return 'appliance';
-  if (/triplette|alimentation|multiprise|prise electrique/.test(text)) return 'electric';
+  if (/triplette|alimentation|multiprise|prise electrique/.test(text) && !isReserveShelfUnit(entry)) return 'electric';
   if (/tete de cloison|\bporte\b|cloison|reserve|enseigne|arche|totem|\btv\b|ecran|mur led|moquette|spot|rail|pont lumiere|podium|comptoir|banque|\bbar\b|canape|fauteuil|chaise|tabouret|table|mange debout|vitrine|sono|borne|caisson|affiche|viscom|rampe|corniere|kit tournette|cache compteur/.test(text)) return '';
   if (/etagere murale|patere/.test(text) || entry.dimensions?.mountType === 'wall' || entry.mountType === 'wall') {
     return /etagere|patere|blanche|verre|inclinee/.test(text) ? 'wall' : '';

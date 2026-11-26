@@ -188,7 +188,7 @@ export const englishUi = {
   'Comment ça marche ?': 'How does it work?', 'Annuler (⌘Z)': 'Undo (⌘Z)', 'Rétablir': 'Redo', 'Rétablir (⇧⌘Z)': 'Redo (⇧⌘Z)', 'Dézoomer': 'Zoom out',
   'Réinitialiser le zoom': 'Reset zoom', 'Zoomer': 'Zoom in', 'Cotes': 'Dimensions', 'Grille': 'Grid', 'Grille magnétique': 'Snap to grid', 'Plan 2D': '2D plan',
   'Aperçu 3D': '3D preview', 'Agrandir': 'Enlarge', 'Pivoter (R)': 'Rotate (R)', 'Pivoter': 'Rotate', 'Dupliquer': 'Duplicate', 'Supprimer (Suppr)': 'Delete (Del)',
-  'Glisser': 'Drag', 'déplacer': 'move', 'pivoter': 'rotate', 'supprimer': 'delete', 'annuler': 'undo', 'ajuster': 'adjust', 'pour tourner': 'to orbit', 'Molette': 'Scroll',
+  'Glisser': 'Drag', 'déplacer': 'move', 'pivoter': 'rotate', 'supprimer': 'delete', 'annuler': 'undo', 'ajuster': 'adjust', 'pour tourner': 'to orbit', 'Glisser un objet': 'Drag an object', 'pour le déplacer': 'to move it', 'Molette': 'Scroll',
   'pour zoomer': 'to zoom', 'cliquez un objet pour le sélectionner': 'click an item to select it', 'Relâchez': 'Release', 'pour déposer': 'to drop', 'Échap': 'Esc',
   'pour annuler': 'to cancel', 'Survolez une option pour la prévisualiser sur le plan': 'Hover over an option to preview it on the plan', 'Suppr': 'Del', 'Suivant': 'Next',
   'Quitter sans enregistrer ?': 'Leave without saving?', 'Continuer l’édition': 'Keep editing', 'Quitter': 'Leave', 'Perpendiculaire au fond': 'Perpendicular to the back wall',

@@ -985,6 +985,10 @@ kbd {
 .rsv-choice-card > span:last-child { display: grid; gap: 1px; }
 .rsv-choice-card:disabled { opacity: 0.55; cursor: not-allowed; }
 /* On the compact door cards the tick sits on the corner, so it never covers the label (« Vers l’intérieur »). */
+/* Door cards with a picture rendered from the door model: picture on top, label below. */
+.rsv-choice-card.has-photo { grid-template-columns: 1fr; gap: 8px; padding: 8px 8px 10px; }
+.rsv-choice-photo { display: block; width: 100%; aspect-ratio: 16 / 11; object-fit: contain; border-radius: 8px; background: linear-gradient(180deg, #f3f5f8, #e7ebf0); }
+.rsv-choice-card.has-photo > span:last-child { padding: 0 4px; }
 .rsv-choice-card > .rsv-check { top: -7px; right: -7px; width: 18px; height: 18px; box-shadow: 0 0 0 2px #fff; }
 .rsv-opening-icon { width: 40px; height: 30px; }
 .rsv-oi-wall { stroke: #2b3240; stroke-width: 3; }

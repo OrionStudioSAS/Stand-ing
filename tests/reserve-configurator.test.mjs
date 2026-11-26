@@ -111,7 +111,11 @@ test('contents are checked against walls, the door swing and other objects', () 
   const fridge = { key: 'fridge', mount: 'floor', size: [0.5, 0.85, 0.55], rotation: 0 };
   const inDoorway = clampFloorContent(fridge, { x: door.zone.minX + 0.3, z: door.zone.minZ + 0.3 }, interior);
   assert.ok(reserveContentIssues(inDoorway, context).includes('door'));
-  const onShelves = clampFloorContent(fridge, { x: interior.minX, z: interior.centerZ }, interior);
+  // "Bloc 3 Étagères" is open below its bottom shelf (92 cm): a 85 cm fridge slides under it, a 220 L (110 cm) does not.
+  const underShelves = clampFloorContent(fridge, { x: interior.minX, z: interior.centerZ }, interior);
+  assert.deepEqual(reserveContentIssues(underShelves, context), []);
+  const tallFridge = { ...fridge, size: [0.63, 1.1, 0.56] };
+  const onShelves = clampFloorContent(tallFridge, { x: interior.minX, z: interior.centerZ }, interior);
   assert.ok(reserveContentIssues(onShelves, context).includes('overlap'));
   const free = findFreeReserveSpot(fridge, context);
   assert.ok(free, 'A fridge fits next to the shelves');
