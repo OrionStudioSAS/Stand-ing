@@ -40,6 +40,13 @@ import { normalizePartitionHeadVisuals, partitionHeadUsesDifferentVisuals, patch
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   AlertTriangle,
+  Armchair,
+  CircleCheck,
+  Monitor,
+  Palette,
+  Send,
+  Zap,
+  Image as ImageIcon,
   ArrowRight,
   Ban,
   Box,
@@ -3001,9 +3008,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             specialRequestTags={specialRequestTags}
             onSpecialRequest={setSpecialRequest}
             onSpecialRequestTags={setSpecialRequestTags}
-            onConfirm={validateConfiguration}
             onRemoveItem={removeSceneItemById}
             onOpenItem={openValidationItemConfigurator}
+            onEditStep={(step) => { setHeaderPanel(null); setActiveStep(step); }}
+            onEditOption={(key) => { setHeaderPanel(null); setActiveStep(2); openOnlyStepOption(key, true); }}
           />
         ) : (
           <OptionsStepPanel
@@ -3130,6 +3138,18 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           />
         )}
         </div>
+        {activeStep === 4 && (
+          <ValidationStepActions
+            pricing={scenePricing}
+            confirmState={confirmState}
+            visualsUploading={Object.values(wallCoverUploadState).some((upload) => upload.uploading)}
+            readOnly={readOnly}
+            canConfirm={!sceneSaveError?.stale}
+            hasSpecialRequest={Boolean(String(specialRequest || '').trim())}
+            onPrevious={() => setActiveStep(3)}
+            onConfirm={validateConfiguration}
+          />
+        )}
         {activeStep < 4 && !readOnly && (
           <PanelStepActions
             previousLabel={tRaw(language, 'back')}
@@ -5416,14 +5436,52 @@ function ValidationAllowanceRecap({ pricing }) {
   const insuranceBase = pricing.insuranceLine?.insuranceBase ?? pricing.furnitureInsuranceBase ?? 0;
   const subtotal = roundCurrency(Number(pricing.grossTotal || 0) - insurance);
   const allowance = Number(pricing.allowanceApplied || 0);
-  const money = (amount) => `${validationMoney(amount, true)} ${tr("€ HT")}`;
+  const allowanceAmount = Number(pricing.allowanceAmount || 0);
+  return (
+    <ValidationAmountList
+      rows={[
+        { id: 'subtotal', label: 'Options et mobilier', amount: subtotal },
+        { id: 'insurance', label: 'Assurance mobilier', amount: insurance, hint: insurance > 0 ? <>{tr("Calculée sur")} {validationMoney(insuranceBase, true)} {tr("€ HT de mobilier")}</> : null },
+        {
+          id: 'allowance',
+          label: 'Forfait mobilier',
+          amount: -allowance,
+          tone: 'discount',
+          meter: allowanceAmount > 0 ? { used: Math.min(allowance, allowanceAmount), max: allowanceAmount } : null,
+        },
+      ]}
+      totalLabel="Montant total"
+      total={Number(pricing.total || 0)}
+    />
+  );
+}
 
-  return <dl className="validation-allowance-recap" aria-label={tr("Récapitulatif des montants")}>
-    <div><dt>{tr("Total hors assurance")}</dt><dd>{money(subtotal)}</dd></div>
-    <div><dt>{tr("Assurance mobilier")}{insurance > 0 && <small>{tr("Calculée sur")} {validationMoney(insuranceBase, true)} {tr("€ HT de mobilier")}</small>}</dt><dd>{money(insurance)}</dd></div>
-    <div><dt>{tr("Forfait mobilier")}</dt><dd>{allowance > 0 && '− '}{money(allowance)}</dd></div>
-    <div className="validation-allowance-total"><dt>{tr("Montant total")}</dt><dd>{money(pricing.total || 0)}</dd></div>
-  </dl>;
+function ValidationAmountList({ rows = [], totalLabel, total = 0 }) {
+  const tr = useUiText();
+  const money = (amount) => `${amount < 0 ? '− ' : ''}${validationMoney(Math.abs(amount), true)} €`;
+  return (
+    <dl className="validation-allowance-recap validation-amounts" aria-label={tr("Récapitulatif des montants")}>
+      {rows.map((row) => (
+        <div key={row.id} className={row.tone ? `is-${row.tone}` : undefined}>
+          <dt>
+            <span className="validation-amounts-label">{tr(row.label)}</span>
+            {row.hint && <small>{row.hint}</small>}
+          </dt>
+          <dd>{money(row.amount)}</dd>
+          {row.meter && (
+            <span className="validation-amounts-meter">
+              <span className="validation-amounts-meter-track" aria-hidden="true"><i style={{ width: `${Math.min(100, (row.meter.used / Math.max(1, row.meter.max)) * 100)}%` }} /></span>
+              <span>{validationMoney(row.meter.used, true)} € {tr("utilisés sur")} {validationMoney(row.meter.max)} €</span>
+            </span>
+          )}
+        </div>
+      ))}
+      <div className="validation-allowance-total">
+        <dt><span className="validation-amounts-label">{tr(totalLabel)}</span></dt>
+        <dd>{validationMoney(total, true)} {tr("€ HT")}</dd>
+      </div>
+    </dl>
+  );
 }
 
 function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, total, pricing, salonLabel, readOnly, onSelectItem, onOpenItem, onIncrementItem, onDecrementItem, onDeleteItems, canRemoveItem, onValidate }) {
@@ -7559,9 +7617,10 @@ function ValidationStepPanel({
   specialRequestTags = [],
   onSpecialRequest,
   onSpecialRequestTags,
-  onConfirm,
   onRemoveItem,
   onOpenItem,
+  onEditStep,
+  onEditOption,
 }) {
   const tr = useUiText();
   const t = useT();
@@ -7574,8 +7633,6 @@ function ValidationStepPanel({
   const hasSpecialRequest = Boolean(specialRequestText.trim());
   const reserveOption = reserveOptionType ? normalizeComplementaryOptions(reserveRule?.options).find((option) => option.type === reserveOptionType) : null;
   const activeCovers = wallCoverSurfaces.filter((surface) => wallCoverEnabledForSurface(wallCovers, surface));
-  const pendingVisuals = validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals, isSignatureStand, wallCovers, wallCoverSurfaces, items: safeItems });
-  const insuranceLine = pricing?.insuranceLine;
   const priceBadge = (amount) => validationBadgeText(amount, isSignatureStand);
   const sectionRows = {
     personalization: [],
@@ -7610,11 +7667,35 @@ function ValidationStepPanel({
   const pushRow = (section, row) => {
     if (!row) return;
     const target = sectionRows[section] ? section : 'furniture';
-    sectionRows[target].push(row);
+    const { optionKey, missingVisualCount, ...rest } = row;
+    const onOpen = rest.onOpen || (optionKey && onEditOption && !readOnly ? () => onEditOption(optionKey) : null);
+    sectionRows[target].push({ ...rest, onOpen: readOnly ? null : onOpen, missingVisualCount: rest.visualStatus?.tone === 'missing' ? Math.max(1, missingVisualCount || 1) : 0 });
   };
   const supplementLineKey = (line) => `${line.type || 'line'}:${line.optionForItemId || ''}:${normalizeTextValue(line.label || '')}`;
   const renderedSupplementLineKeys = new Set();
+  const signatureHeadLogo = (() => {
+    const slotId = signaturePartitionHeadVisualSlots[0].id;
+    const values = [
+      ...['left', 'right'].map((side) => partitionHeadVisuals?.[side]?.textureSlotValues?.[slotId]),
+      ...safeItems.filter((item) => item.autoPartitionHead).map((item) => item.options?.textureSlotValues?.[slotId]),
+    ].filter(Boolean);
+    const withImage = values.find((value) => validDisplayImageUrl(value.imageUrl));
+    return { imageUrl: withImage ? validDisplayImageUrl(withImage.imageUrl) : '', pending: !withImage && values.some((value) => value.visualPending) };
+  })();
   const supplementRowFromLine = (line, index, billableItems = [], entry = null, associatedItem = null) => {
+    if (line.type === 'signature-head-top-logo') {
+      return {
+        id: `line-${line.type}-${index}`,
+        optionKey: 'tete',
+        label: line.label,
+        detail: '',
+        imageUrl: signatureHeadLogo.imageUrl,
+        swatchColor: '#eef2f7',
+        badge: priceBadge(line.total),
+        badgeTone: 'price',
+        visualStatus: validationVisualStatus(signatureHeadLogo.pending, signatureHeadLogo.imageUrl),
+      };
+    }
     const sourceItem = billableItems[0] || associatedItem;
     const isCounterLogo = validationIsCounterLogoLine(line);
     const isManual = String(line.type || '').startsWith('admin-manual-');
@@ -7632,6 +7713,7 @@ function ValidationStepPanel({
       visualStatus: isCounterLogo ? validationCounterLogoVisualStatus(sourceItem) : null,
       onOpen: sourceItem ? () => onOpenItem?.(sourceItem) : null,
       option: !isCounterLogo && Boolean(associatedItem || String(line.type || '').startsWith('global-option-')),
+      discount: Number(line.total || 0) < 0,
     };
   };
   const pushAssociatedOptionRows = (parentItem, parentEntry, parentSection) => {
@@ -7648,6 +7730,7 @@ function ValidationStepPanel({
 
   pushRow('personalization', {
     id: 'carpet',
+    optionKey: 'moquette',
     label: 'Moquette',
     detail: validationColorLabel(carpetColor),
     swatchColor: colorHex(carpetColor, '#b8b8b8'),
@@ -7657,6 +7740,7 @@ function ValidationStepPanel({
   });
   if (!isSignatureStand) pushRow('personalization', {
     id: 'footprint',
+    optionKey: 'moquette',
     label: 'Empreinte moquette',
     detail: carpetFootprintEnabled ? validationColorLabel(carpetFootprintColor) : 'Non sélectionnée',
     swatchColor: colorHex(carpetFootprintColor, '#b8b8b8'),
@@ -7667,6 +7751,7 @@ function ValidationStepPanel({
   if (thickCarpetSupplement > 0) {
     pushRow('personalization', {
       id: 'thick-carpet',
+    optionKey: 'moquette',
       label: 'Option Moquette Épaisse',
       detail: 'S’applique à la moquette et à l’empreinte moquette',
       badge: priceBadge(thickCarpetSupplement),
@@ -7676,6 +7761,7 @@ function ValidationStepPanel({
   }
   pushRow('personalization', {
     id: 'wall-fabric',
+    optionKey: 'coton',
     label: 'Coton gratté',
     detail: validationColorLabel(wallFabricColor),
     swatchColor: colorHex(wallFabricColor, '#b8b8b8'),
@@ -7685,6 +7771,7 @@ function ValidationStepPanel({
   });
   pushRow('personalization', {
     id: 'reserve',
+    optionKey: 'reserve',
     label: 'Réserve',
     detail: [reserveOptionType === '__none__' ? 'Non sélectionnée' : (reserveOption?.label || reserveRule?.includedLabel || 'Non configurée'), reserveOptionDetails].filter(Boolean).join(' · '),
     imageUrl: validationItemImage(null, reserveEntry, catalog),
@@ -7701,14 +7788,35 @@ function ValidationStepPanel({
       : billable ? Math.max(0, partitionHeadSupplement / Math.max(1, partitionHeadBillableSides(partitionHeadRule, partitionHeadSides).size)) : 0;
     pushRow('signage', {
       id: `partition-head-${side}`,
+    optionKey: 'tete',
       label: 'Tête de cloison',
       detail: side === 'left' ? 'Gauche' : 'Droite',
       imageUrl: validationPartitionHeadThumb(side, catalog),
       badge: priceBadge(sidePrice),
       badgeTone: isSignatureStand || sidePrice > 0 ? 'price' : 'included',
-      visualStatus: !isSignatureStand || visual.headMainImageUrl || visual.headMainImageName
-        ? validationVisualStatus(visual.visualPending, visual.headMainImageUrl || visual.headMainImageName)
-        : '',
+      // Signature heads display a standard placeholder in 3D, but the exhibitor's lower artwork is still expected.
+      visualStatus: validationVisualStatus(!isSignatureStand && visual.visualPending, visual.headMainImageUrl || visual.headMainImageName),
+    });
+  });
+
+  if (isSignatureStand) safeItems.filter(isSignatureArchItem).forEach((item) => {
+    const entry = findCatalogEntry(catalog, item.options?.signatureArchVariantType || item.type) || item;
+    const variant = signatureArchVariant(entry);
+    const slots = signatureArchVisualSlots.filter((slot) => !isSignatureLedArch(entry) || slot.id !== 'signature-arch-led-5');
+    const missingSlots = slots.filter((slot) => !item.options?.textureSlotValues?.[slot.id]?.imageUrl);
+    const slotLabel = (slot) => slot.id === 'signature-arch-led-5' ? 'Visuel lumineux façade' : 'Visuel arrière haut';
+    pushRow('signage', {
+      id: `signature-arch-${item.id}`,
+      optionKey: 'arche',
+      label: 'Arche',
+      detail: missingSlots.length
+        ? missingSlots.map(slotLabel).join(' · ')
+        : `${variant.size} m · ${variant.lighting === 'suspension' ? 'Suspension' : 'Spot'}`,
+      imageUrl: validationItemImage(item, entry, catalog),
+      missingVisualCount: missingSlots.length,
+      visualStatus: !slots.length ? null : missingSlots.length
+        ? { label: missingSlots.length > 1 ? 'Visuels manquants' : 'Visuel manquant', tone: 'missing' }
+        : { label: 'Visuel fourni', tone: 'provided' },
     });
   });
 
@@ -7717,6 +7825,7 @@ function ValidationStepPanel({
     const preview = wallCoverPreviewForSurface(wallCoverPreviewsFromCovers(wallCovers), surface);
     pushRow('signage', {
       id: `wall-cover-${surface.id}`,
+    optionKey: 'coton',
       label: `Bâche - ${surface.label || 'cloison'}`,
       detail: validationWallCoverDetail(surface, includedMl, billableMl),
       imageUrl: preview?.url || '',
@@ -7730,6 +7839,7 @@ function ValidationStepPanel({
   if (ledRailsEnabled) {
     pushRow('electricity', {
       id: 'spots-led',
+    optionKey: 'led',
       label: 'Spot LED',
       detail: `${ledSpotCount || 0} spots`,
       imageUrl: validationLedThumb(autoSpotsRule, catalog),
@@ -7782,103 +7892,281 @@ function ValidationStepPanel({
       }
     });
 
-  const sectionOrder = [
-    ['personalization', 'PERSONNALISATION'],
-    ['furniture', 'MOBILIER'],
-    ['multimedia', 'MULTIMÉDIA'],
-    ['signage', 'SIGNALÉTIQUE'],
-    ['electricity', 'ÉLECTRICITÉ'],
-  ];
+  const visibleSections = VALIDATION_SECTIONS.filter((section) => sectionRows[section.id].length > 0);
+  const missingVisualRows = visibleSections.flatMap((section) => sectionRows[section.id]
+    .filter((row) => row.visualStatus?.tone === 'missing')
+    .map((row) => ({ ...row, sectionId: section.id })));
 
   return (
-    <>
-      <PanelHead title={tr("Validation")} step={4} />
+    <div className="validation-v2">
+      <header className="validation-v2-head">
+        <span>{t('panel_step', { step: 4 })}</span>
+        <h1>{tr("Récapitulatif de votre stand")}</h1>
+        <p>{tr("Vérifiez chaque élément avant d’envoyer votre configuration à Stand-ING.")}</p>
+      </header>
 
-      {pricing?.packBenefits?.mode === 'allowance' ? <ValidationAllowanceRecap pricing={pricing} /> : <>
-        <section className="validation-modern-total-card">
-          <span>{tr("Total options et mobilier")}</span>
-          <strong>{tr(validationMoney(pricing?.total || 0, true))} {tr("€ HT")}</strong>
-        </section>
-        {insuranceLine && <section className="validation-modern-insurance-card">
-          <div>
-            <strong><HelpCircle size={14} /> {tr("Assurance mobilier obligatoire")}</strong>
-            <span>{tr("Calculée sur")} {tr(validationMoney(insuranceLine.insuranceBase || pricing?.furnitureInsuranceBase || 0))} {tr("€ HT de mobilier")}</span>
-          </div>
-          <b>+ {tr(validationMoney(insuranceLine.total || 0, true))} €</b>
-        </section>}
-      </>}
+      <ValidationReadiness
+        confirmed={confirmed && !confirmState?.loading}
+        isAdminViewer={isAdminViewer}
+        missingRows={missingVisualRows}
+      />
 
-      {pendingVisuals.length > 0 && (
-        <section className="validation-modern-alert-card">
-          <strong><AlertTriangle size={15} /> {tr(pendingVisuals.length)} {tr("visuel")}{tr(pendingVisuals.length > 1 ? 's' : '')} {tr("manquant")}{tr(pendingVisuals.length > 1 ? 's' : '')} {tr("- Vous n’avez pas le fichier ?")}</strong>
-          <span>{tr("Pas de panique, notre équipe reviendra vers vous ultérieurement.")}</span>
-        </section>
-      )}
-
-      {sectionOrder.map(([id, title]) => sectionRows[id].length > 0 && (
-        <ValidationModernSection key={id} title={tr(title)}>
-          {sectionRows[id].map((row) => <ValidationModernRow key={row.id} {...row} />)}
-        </ValidationModernSection>
+      {visibleSections.map((section) => (
+        <ValidationSection
+          key={section.id}
+          section={section}
+          rows={sectionRows[section.id]}
+          onEdit={!readOnly && onEditStep ? () => onEditStep(section.step) : null}
+        />
       ))}
 
-      <section className="validation-modern-request-box">
-        <h3>{tr("UNE DEMANDE PARTICULIÈRE ?")}</h3>
-        <p>{tr("Indiquez toute information utile à notre équipe.")}</p>
-        <textarea value={specialRequestText} onChange={(event) => onSpecialRequest?.(event.target.value)} disabled={readOnly} placeholder={tr("Ajouter une remarque ou une demande particulière...")} rows={6} />
-        {hasSpecialRequest && (
-          <div className="validation-warning-note">
-            <strong>{tr("Demande détectée")}</strong>
-            <span>{tr("Votre demande sera transmise à Stand-ING. Si votre commande contient des éléments AMCO, votre bon de commande sera joint à l’e-mail de confirmation.")}</span>
-          </div>
-        )}
+      <ValidationAmounts pricing={pricing} />
+
+      <ValidationSpecialRequest
+        value={specialRequestText}
+        readOnly={readOnly}
+        onChange={onSpecialRequest}
+      />
+    </div>
+  );
+}
+
+const VALIDATION_SECTIONS = [
+  { id: 'personalization', title: 'Personnalisation', step: 2, icon: Palette, defaultOpen: false },
+  { id: 'furniture', title: 'Mobilier', step: 3, icon: Armchair, defaultOpen: false },
+  { id: 'multimedia', title: 'Multimédia', step: 3, icon: Monitor, defaultOpen: false },
+  { id: 'signage', title: 'Signalétique', step: 2, icon: ImageIcon, defaultOpen: false },
+  { id: 'electricity', title: 'Électricité', step: 2, icon: Zap, defaultOpen: false },
+];
+
+function ValidationReadiness({ confirmed = false, isAdminViewer = false, missingRows = [] }) {
+  const tr = useUiText();
+  const t = useT();
+  if (confirmed) {
+    return (
+      <section className="validation-v2-status sent" role="status">
+        <CircleCheck size={18} />
+        <div>
+          <strong>{tr("Configuration envoyée")}</strong>
+          <span>{tr(isAdminViewer ? t('validation_confirmed_admin_note') : t('validation_confirmed_client_note'))}</span>
+        </div>
       </section>
-
-      {confirmState.message && <div className="validation-message success">{tr(confirmState.message)}</div>}
-      {confirmState.error && <div className="validation-message error">{tr(confirmState.error)}</div>}
-
-      {confirmed && !confirmState.message && !confirmState.loading && <div className="validation-message success"><Check size={16} /> {tr(isAdminViewer ? t('validation_confirmed_admin_note') : t('validation_confirmed_client_note'))}</div>}
-      <button className="validation-confirm-button dark" type="button" disabled={confirmState.loading || visualsUploading || readOnly || !canConfirm} onClick={onConfirm}>
-        {tr(visualsUploading ? t('partition_uploading') : confirmState.loading ? t('validation_confirm_loading') : hasSpecialRequest ? 'Envoyer ma demande →' : 'Envoyer ma configuration →')}
-      </button>
-    </>
+    );
+  }
+  if (!missingRows.length) {
+    return (
+      <section className="validation-v2-status ready">
+        <CircleCheck size={18} />
+        <div>
+          <strong>{tr("Votre stand est prêt à être envoyé")}</strong>
+          <span>{tr("Tous les visuels nécessaires ont été fournis.")}</span>
+        </div>
+      </section>
+    );
+  }
+  const count = missingRows.reduce((sum, row) => sum + (row.missingVisualCount || 1), 0);
+  return (
+    <section className="validation-v2-status pending">
+      <AlertTriangle size={18} />
+      <div>
+        <strong>{count} {tr(count > 1 ? "visuels à fournir" : "visuel à fournir")}</strong>
+        <span>{tr("Vous pouvez envoyer votre configuration dès maintenant : notre équipe reviendra vers vous pour les récupérer.")}</span>
+        <ul>
+          {missingRows.map((row) => (
+            <li key={`${row.sectionId}-${row.id}`}>
+              {row.onOpen ? (
+                <button type="button" onClick={row.onOpen}>
+                  <span>{tr(row.label)}{row.detail ? <em> · {tr(row.detail)}</em> : null}</span>
+                  <b>{tr("Ajouter")} <ChevronRight size={13} /></b>
+                </button>
+              ) : (
+                <span>{tr(row.label)}{row.detail ? <em> · {tr(row.detail)}</em> : null}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }
 
-function ValidationModernSection({ title, children }) {
+function ValidationSection({ section, rows = [], onEdit = null }) {
   const tr = useUiText();
+  const [open, setOpen] = useState(section.defaultOpen !== false);
+  const Icon = section.icon;
+  const count = rows.filter((row) => !row.option && !row.discount).length;
+  const bodyId = useId();
   return (
-    <details className="validation-modern-section" open>
-      <summary><span>{tr(title)}</span><ChevronUp size={14} /></summary>
-      <div className="validation-modern-list">{tr(children)}</div>
-    </details>
+    <section className={`validation-v2-section ${open ? 'open' : ''}`}>
+      <header>
+        <button type="button" className="validation-v2-section-toggle" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((value) => !value)}>
+          <span className="validation-v2-section-icon"><Icon size={14} /></span>
+          <strong>{tr(section.title)}</strong>
+          <span className="validation-v2-count">{count}</span>
+          <ChevronDown size={15} className="validation-v2-chevron" />
+        </button>
+        {onEdit && (
+          <button type="button" className="validation-v2-edit" onClick={onEdit}>
+            <Pencil size={12} /> {tr("Modifier")}
+          </button>
+        )}
+      </header>
+      {open && (
+        <div className="validation-v2-rows" id={bodyId}>
+          {rows.map((row) => <ValidationRow key={row.id} {...row} />)}
+        </div>
+      )}
+    </section>
   );
 }
 
-function ValidationModernRow({ label, detail, imageUrl, imageReplaceColor, imageTargetColor, swatchColor, swatchImage, badge, badgeTone = 'included', visualStatus = null, option = false, onRemove = null, onOpen = null }) {
+function ValidationRow({ missingVisualCount: _missingVisualCount, label, detail, imageUrl, imageReplaceColor, imageTargetColor, swatchColor, swatchImage, badge, badgeTone = 'included', visualStatus = null, option = false, discount = false, onRemove = null, onOpen = null }) {
   const tr = useUiText();
+  const interactive = Boolean(onOpen);
+  const handleKey = (event) => {
+    if (!interactive || event.target !== event.currentTarget) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onOpen();
+    }
+  };
+  const tone = discount ? 'discount' : badgeTone;
   return (
-    <article className={`validation-modern-row ${option ? 'option' : ''} ${onOpen ? 'clickable' : ''}`} onClick={onOpen || undefined}>
-      {!option && <ValidationModernThumb imageUrl={imageUrl} imageReplaceColor={imageReplaceColor} imageTargetColor={imageTargetColor} color={swatchColor} image={swatchImage} />}
-      <div className="validation-modern-row-copy">
+    <article
+      className={`validation-v2-row ${option ? 'option' : ''} ${discount ? 'discount' : ''} ${interactive ? 'interactive' : ''}`}
+      onClick={onOpen || undefined}
+      onKeyDown={handleKey}
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+    >
+      {!option && (discount
+        ? <span className="validation-v2-thumb discount"><Sparkles size={16} /></span>
+        : <ValidationThumb imageUrl={imageUrl} imageReplaceColor={imageReplaceColor} imageTargetColor={imageTargetColor} color={swatchColor} image={swatchImage} />)}
+      <div className="validation-v2-row-copy">
         <strong>{tr(label)}</strong>
         {detail && <span>{tr(detail)}</span>}
+        {visualStatus && (
+          <em className={`validation-v2-visual ${visualStatus.tone}`}>
+            {visualStatus.tone === 'provided' ? <Check size={11} /> : <AlertTriangle size={11} />}
+            {tr(visualStatus.label)}
+          </em>
+        )}
       </div>
-      <div className="validation-modern-row-side">
-        {badge && <b className={`validation-modern-badge ${badgeTone}`}>{tr(badge)}</b>}
-        {visualStatus && <em className={`validation-modern-visual-status ${visualStatus.tone}`}>{tr(visualStatus.label)}</em>}
+      <div className="validation-v2-row-side">
+        {badge && <b className={`validation-v2-price ${tone}`}>{tr(badge)}</b>}
+        {onRemove && (
+          <button type="button" className="validation-v2-remove" aria-label={tr("Retirer")} title={tr("Retirer")} onClick={(event) => { event.stopPropagation(); onRemove(); }}><Trash2 size={14} /></button>
+        )}
+        {interactive && !onRemove && <ChevronRight size={15} className="validation-v2-row-chevron" aria-hidden="true" />}
       </div>
-      {onRemove && (
-        <button type="button" className="validation-modern-remove" aria-label={tr("Retirer")} onClick={(event) => { event.stopPropagation(); onRemove(); }}><Trash2 size={14} /></button>
-      )}
     </article>
   );
 }
 
-function ValidationModernThumb({ imageUrl = '', imageReplaceColor = '', imageTargetColor = '', color = '#bdbdbd', image = '' }) {
+function ValidationThumb({ imageUrl = '', imageReplaceColor = '', imageTargetColor = '', color = '#bdbdbd', image = '' }) {
   const recoloredUrl = useRecoloredImageUrl(imageUrl, imageReplaceColor, imageTargetColor);
-  if (recoloredUrl) return <span className="validation-modern-thumb"><img src={recoloredUrl} alt="" /></span>;
-  if (image) return <span className="validation-modern-thumb"><img src={image} alt="" /></span>;
-  return <span className="validation-modern-thumb" style={{ background: color || '#bdbdbd' }} />;
+  if (recoloredUrl) return <span className="validation-v2-thumb"><img src={recoloredUrl} alt="" /></span>;
+  if (image) return <span className="validation-v2-thumb swatch"><img src={image} alt="" /></span>;
+  return <span className="validation-v2-thumb swatch" style={{ background: color || '#bdbdbd' }} />;
+}
+
+function ValidationAmounts({ pricing }) {
+  const tr = useUiText();
+  if (!pricing) return null;
+  const allowanceMode = pricing.packBenefits?.mode === 'allowance';
+  const total = Number(pricing.total || 0);
+  const insurance = Number(pricing.insuranceLine?.total || 0);
+  const insuranceBase = pricing.insuranceLine?.insuranceBase || pricing.furnitureInsuranceBase || 0;
+  return (
+    <section className="validation-v2-amounts">
+      <header>
+        <h2>{tr("Récapitulatif des montants")}</h2>
+        <span>{tr("Montants HT")}</span>
+      </header>
+      {allowanceMode ? <ValidationAllowanceRecap pricing={pricing} /> : (
+        <ValidationAmountList
+          rows={insurance > 0 ? [
+            { id: 'subtotal', label: 'Options et mobilier', amount: roundCurrency(total - insurance) },
+            { id: 'insurance', label: 'Assurance mobilier obligatoire', amount: insurance, hint: <>{tr("Calculée sur")} {validationMoney(insuranceBase, true)} {tr("€ HT de mobilier")}</> },
+          ] : []}
+          totalLabel="Total options et mobilier"
+          total={total}
+        />
+      )}
+    </section>
+  );
+}
+
+function ValidationSpecialRequest({ value = '', readOnly = false, onChange }) {
+  const tr = useUiText();
+  const hasText = Boolean(String(value || '').trim());
+  const [open, setOpen] = useState(hasText);
+  const fieldId = useId();
+  const expanded = open || hasText;
+  if (readOnly && !hasText) return null;
+  return (
+    <section className={`validation-v2-request ${expanded ? 'open' : ''}`}>
+      <button type="button" className="validation-v2-request-toggle" aria-expanded={expanded} aria-controls={fieldId} onClick={() => !hasText && setOpen((current) => !current)}>
+        <MessageSquare size={15} />
+        <span>
+          <strong>{tr("Une demande particulière ?")}</strong>
+          <small>{tr("Indiquez toute information utile à notre équipe.")}</small>
+        </span>
+        {!hasText && (expanded ? <Minus size={15} /> : <Plus size={15} />)}
+      </button>
+      {expanded && <>
+        <textarea
+          id={fieldId}
+          value={value}
+          onChange={(event) => onChange?.(event.target.value)}
+          disabled={readOnly}
+          placeholder={tr("Ajouter une remarque ou une demande particulière...")}
+          rows={4}
+          autoFocus={open && !hasText}
+        />
+        {hasText && (
+          <p className="validation-v2-request-note">
+            <Info size={13} />
+            <span>{tr("Votre demande sera transmise à Stand-ING. Si votre commande contient des éléments AMCO, votre bon de commande sera joint à l’e-mail de confirmation.")}</span>
+          </p>
+        )}
+      </>}
+    </section>
+  );
+}
+
+function ValidationStepActions({ pricing, confirmState = {}, visualsUploading = false, readOnly = false, canConfirm = true, hasSpecialRequest = false, onPrevious, onConfirm }) {
+  const tr = useUiText();
+  const t = useT();
+  const total = Number(pricing?.total || 0);
+  const insurance = pricing?.packBenefits?.mode === 'allowance' ? 0 : Number(pricing?.insuranceLine?.total || 0);
+  const disabled = confirmState.loading || visualsUploading || readOnly || !canConfirm;
+  const label = visualsUploading
+    ? t('partition_uploading')
+    : confirmState.loading
+      ? t('validation_confirm_loading')
+      : (hasSpecialRequest ? 'Envoyer ma demande' : 'Envoyer ma configuration');
+  return (
+    <footer className="validation-v2-footer">
+      <div className="validation-v2-footer-total">
+        <span>
+          {tr("Total HT")}
+          {insurance > 0 && <small>{tr("dont assurance mobilier")} {validationMoney(insurance, true)} €</small>}
+        </span>
+        <strong>{tr(validationMoney(total, true))} {tr("€ HT")}</strong>
+      </div>
+      {confirmState.message && <div className="validation-v2-feedback success" role="status"><Check size={14} /> {tr(confirmState.message)}</div>}
+      {confirmState.error && <div className="validation-v2-feedback error" role="alert"><AlertTriangle size={14} /> {tr(confirmState.error)}</div>}
+      {!readOnly && (
+        <div className="validation-v2-footer-actions">
+          <button type="button" className="panel-step-button secondary" onClick={onPrevious}>{tr("Retour")}</button>
+          <button type="button" className="panel-step-button primary validation-v2-send" disabled={disabled} onClick={onConfirm}>
+            {tr(label)} {!confirmState.loading && !visualsUploading && <Send size={14} />}
+          </button>
+        </div>
+      )}
+    </footer>
+  );
 }
 
 function useRecoloredImageUrl(imageUrl = '', sourceColor = '', targetColor = '') {
@@ -8089,29 +8377,6 @@ function validationLineQuantitySuffix(line = {}) {
   if (line.type === 'wall-cover') return '';
   const quantity = Number(line.quantity || 0);
   return quantity > 1 ? ` × ${formatNumber(quantity)}` : '';
-}
-
-function validationPendingVisuals({ partitionHeadRule, partitionHeadSides, partitionHeadVisuals = {}, isSignatureStand = false, wallCovers = {}, wallCoverSurfaces = [], items = [] }) {
-  const rows = [];
-  const headSides = partitionHeadSelectedSides(partitionHeadRule, partitionHeadSides);
-  if (!isSignatureStand) headSides.forEach((side) => {
-    const visual = partitionHeadVisuals?.[side] || {};
-    if (visual.visualPending || (!visual.headMainImageUrl && !visual.headMainImageName)) rows.push(`Visuel haut de cloison ${side === 'left' ? 'gauche' : 'droite'} manquant`);
-  });
-  wallCoverSurfaces.forEach((surface) => {
-    const cover = wallCovers?.[surface.id] || (surface.sourceWall ? wallCovers?.[surface.sourceWall] : null) || {};
-    if (cover.enabled && (cover.visualPending || !(cover.previewUrl || cover.url))) rows.push(cover.visualPending ? `Visuel bâche ${surface.label || surface.id} à transmettre` : `Visuel bâche ${surface.label || surface.id} manquant`);
-  });
-  items.filter((item) => isWoodReceptionDeskItem(item) && counterLogoOptionActive(item) && !(item?.options?.binary3ImageUrl || item?.options?.binary3ImageName))
-    .forEach((item, index) => rows.push(item?.options?.binary3VisualPending ? `Logo comptoir accueil ${index + 1} à transmettre` : `Logo comptoir accueil ${index + 1} manquant`));
-  items.forEach((item) => {
-    validationItemTextureVisualRequests(item).forEach((request) => {
-      if (!request.hasImage) {
-        rows.push(request.pending ? `${request.label} à transmettre` : `${request.label} manquant`);
-      }
-    });
-  });
-  return uniqueTextValues(rows);
 }
 
 function validationItemTextureVisualRequests(item = {}) {

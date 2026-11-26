@@ -85,7 +85,7 @@ try {
   }
   const recap = page.locator('.validation-allowance-recap');
   const values = (await recap.locator('dd').allTextContents()).map(text => text.replace(/\s/gu, ''));
-  assert.deepEqual(values, ['1984,00€HT', '84,74€HT', '−1120,00€HT', '948,74€HT']);
+  assert.deepEqual(values, ['1984,00€', '84,74€', '−1120,00€', '948,74€HT']);
   assert.match(await recap.locator('small').innerText(), /Calculée sur 1\s984,00 € HT de mobilier/);
   await page.setViewportSize({ width: 320, height: 900 });
   assert.ok(await recap.evaluate(element => [...element.children].every(row => {

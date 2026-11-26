@@ -125,18 +125,18 @@ try {
   const validate = async (page) => {
     await page.locator('.stepper').getByRole('button', { name: /Validation/ }).click();
     const recap = page.locator('.validation-allowance-recap');
-    assert.deepEqual((await recap.locator('dt').allTextContents()).map(text => text.trim()), [
-      'Total hors assurance', 'Assurance mobilier', 'Forfait mobilier', 'Montant total',
+    assert.deepEqual((await recap.locator('.validation-amounts-label').allTextContents()).map(text => text.trim()), [
+      'Options et mobilier', 'Assurance mobilier', 'Forfait mobilier', 'Montant total',
     ]);
-    assert.equal(await page.locator('.pack-allowance-progress, .validation-modern-insurance-card').count(), 0);
-    const confirm = page.locator('.validation-confirm-button');
+    assert.equal(await page.locator('.config-panel .pack-allowance-progress').count(), 0);
+    const confirm = page.locator('.validation-v2-send');
     assert.equal(await confirm.isEnabled(), true);
     await confirm.click();
     await page.waitForFunction(() => window.notifiedContact === 'owner@example.test');
     assert.deepEqual(await page.evaluate(() => [window.savedScene.client_status, window.syncedStatus]), ['configured', 'configured']);
     await page.getByText(/Votre scène est confirmée/).waitFor();
-    assert.equal(await confirm.isDisabled(), true, 'Exhibitor cannot submit a second time');
     await page.locator('.configurator-shell.readonly-mode').waitFor();
+    assert.equal(await confirm.count(), 0, 'Exhibitor cannot submit a second time');
   };
   await infoButton(owner).click();
   const dialog = owner.getByRole('region', { name: 'Ajouter des collaborateurs' });
@@ -210,7 +210,7 @@ try {
   await guest.getByRole('button', { name: 'Recharger la scène' }).waitFor();
   assert.equal(await guest.evaluate(() => window.savedScene.options.carpetThick), true);
   await guest.locator('.stepper').getByRole('button', { name: /Validation/ }).click();
-  assert.equal(await guest.locator('.validation-confirm-button').isDisabled(), true, 'Stale draft cannot be submitted');
+  assert.equal(await guest.locator('.validation-v2-send').isDisabled(), true, 'Stale draft cannot be submitted');
   await guest.close();
 
   const submitter = await openGuest();
