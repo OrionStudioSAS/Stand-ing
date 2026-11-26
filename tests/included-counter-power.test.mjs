@@ -60,3 +60,10 @@ test('an optional counter receives a billable strip only when its own toggle is 
   assert.equal(includedCounterPowerItems([{ ...base, options: { counterPowerEnabled: false } }], catalog).length, 1,
     'Included counters always keep their free strip');
 });
+
+test('the countertop power strip is never a shelf unit that includes a power strip', () => {
+  const shelf = { type: 'bloc-3-etageres', label: 'Bloc 3 étagères + multiprise', modelUrl: '/shelf.glb', dimensions: { category: 'Mobilier' } };
+  const [power] = includedCounterPowerItems([base], [shelf, ...catalog]);
+  assert.equal(power.modelUrl, '/triplette.obj');
+  assert.equal(includedCounterPowerItems([base], [shelf]).length, 0);
+});

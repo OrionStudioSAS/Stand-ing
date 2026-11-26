@@ -1,8 +1,12 @@
 const text = item => `${item?.type || ''} ${item?.label || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const included = item => Boolean(item?.included || item?.priceMode === 'included' || item?.price_mode === 'included' || item?.basePresetId);
 
+// Furniture that merely ships with a power strip (e.g. "Bloc 3 étagères +
+// multiprise") must never stand in for the countertop power strip itself.
+const bundledFurniture = /etagere|bloc|meuble|rangement|reserve|comptoir|banque/;
+
 export function counterPowerCatalogEntry(catalog = []) {
-  return catalog.find(entry => /\btriplette\b|\bmultiprise\b/.test(text(entry)));
+  return catalog.find(entry => /\btriplette\b|\bmultiprise\b/.test(text(entry)) && !bundledFurniture.test(text(entry)));
 }
 
 export function includedCounterPowerItems(items = [], catalog = []) {
