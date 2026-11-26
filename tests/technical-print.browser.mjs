@@ -35,6 +35,8 @@ try {
       { id: 'reception', type: 'asset-banque-accueil-bois-1m-signa-mr48wzmt', label: 'Comptoir accueil', x: 2.5, z: .5, rotation: 180, modelSize: [1, 1, .5], dimensions: devicePicto(100, 50) },
       { id: 'tv', type: 'screen', label: 'TV 43', x: .5, wall: 'back', modelSize: [1, .6, .1], dimensions: devicePicto(100, 10) },
       { id: 'rigging', type: 'asset-enseigne-haute-aluminium-2000x2000x1000mm-ht-mrbwze9h', label: 'Enseigne haute 2 m', x: 1.5, z: -.4, rotation: 90, dimensions: { ceilingMounted: true }, modelSize: [2, 5.8, 2] },
+      { id: 'hex-sign', label: 'Enseigne haute hexagonale', x: 0, z: -.5, dimensions: { ceilingMounted: true }, modelSize: [1.6, 5.8, .3] },
+      { id: 'one-meter-sign', label: 'Enseigne haute 1 m', x: -1.75, z: .8, dimensions: { ceilingMounted: true }, modelSize: [1, 5.8, 1] },
       { id: 'head', type: 'head-smcl', label: 'Tête de cloison gauche', isWallItem: true, wall: 'left', technicalHeadPlan: { x: -3.4, z: 1.2, rotation: 90, width: 1.25, depth: .11 } },
       { id: 'rail', type: 'rail', label: 'Rail LED 3 Spots', x: -1.5, wall: 'back', modelSize: [1, .15, .2] },
     );
@@ -58,9 +60,12 @@ try {
   assert.match(result.pages[0], /<text[^>]*transform="matrix\(0 1 -1 0 [^"]+\)"[^>]*>Allée A<\/text>/);
   assert.equal(result.pages[0].match(/<svg/g).length, 6, 'Each original SVG is embedded inline, not as a PNG');
   assert.deepEqual(result.orientations, { reception: [1, 0, 0, 1], tv: [1, 0, 0, 1] });
-  for (let index = 1; index <= 4; index++) assert.match(result.pages[0], new RegExp(`E6\\.${index}</text>`));
+  const spans = [...result.pages[0].matchAll(/data-bat-text-role="rigging-span"[^>]*>(\d+)<\/text>/g)].map(match => match[1]);
+  assert.deepEqual(spans, ['2000', '700', '1000']);
+  assert.equal(result.pages[0].match(/data-bat-text-role="rigging-offset"/g)?.length, 6);
+  assert.equal(result.pages[0].match(/stroke="#207b4d"/g)?.length, 6, 'Only the two hexagonal points have green target marks');
+  assert.doesNotMatch(result.pages[0], /E\d+\.\d+<\/text>/);
   assert.match(result.pages[0], /data-bat-id="head"[^>]*><rect[^>]*transform="matrix\(0 -1 1 0 /, 'The SMCL head fallback uses its scene yaw');
-  assert.ok(/E6\.1 · X \d+ droit · Y \d+ fond/.test(result.pages[0]), result.pages[0].match(/E6\.1 ·[^<]*/)?.[0]);
   assert.doesNotMatch(result.pages[0], />Rail LED 3 Spots<|>TV 43[^<]*<|fill="#ffffff"[^>]*font-size="17"/);
   assert.match(result.pages[0], />CLOISON(?: TRAD)?</);
   assert.doesNotMatch(result.pages[0], /<image/);

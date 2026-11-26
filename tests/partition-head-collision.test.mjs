@@ -29,7 +29,7 @@ function collisionContext() {
     snapWallAxis: (value) => Math.round(value / .1) * .1,
     signatureArchPlacementStep: 0.25,
     signatureArchTotemDepth: 0.55,
-    isCeilingMountedItem: () => false,
+    isCeilingMountedItem: (item) => Boolean(item?.dimensions?.ceilingMounted),
     isCountertopAccessory: () => false,
     isPosterItem: () => false,
     isSignaturePackLabel: (label) => label === 'Signature',
@@ -283,7 +283,11 @@ test('Arch back and overhead footprint cannot encroach on heads, while furniture
   const chair = { id: 'chair', label: 'Chaise', x: -0.5, z: -1, dimensions: { size: [0.4, 0.8, 0.4] } };
   assert.equal(context.collidesWithScene(chair, [arch], chair.id, 4, 4), false);
   assert.equal(context.collidesWithScene(arch, [chair], arch.id, 4, 4), false);
-  assert.equal(context.collidesWithScene({ ...chair, x: 0.3, z: -1.9 }, [head], chair.id, 4, 4), false, 'Ordinary furniture does not gain a new full-head restriction');
+  const overlapping = { ...chair, x: 0.3, z: -1.9 };
+  assert.equal(context.collidesWithScene(overlapping, [head], chair.id, 4, 4), true, 'Furniture cannot overlap a head');
+  assert.equal(context.collidesWithScene(head, [overlapping], head.id, 4, 4), true, 'Moving a head cannot overlap furniture either');
+  assert.equal(context.collidesWithScene(chair, [head], chair.id, 4, 4), false);
+  assert.equal(context.collidesWithScene({ ...overlapping, dimensions: { ...chair.dimensions, ceilingMounted: true } }, [head], chair.id, 4, 4), false, 'Ceiling objects remain independent');
 });
 
 test('Head protection is symmetric and survives disabled normal collisions, but skips hidden and ignored heads', () => {
