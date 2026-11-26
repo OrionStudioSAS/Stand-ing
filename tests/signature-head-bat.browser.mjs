@@ -94,8 +94,8 @@ try {
   assert.ok(Math.abs(result.saved.x - .7) < .02 && Math.abs(result.saved.y - .8) < .03, 'Dragging saves the point on the wide SVG');
   for (const { wall, width, height, yellow: [sx, sy], electrical: [x, y], physicalRatio } of result.projections) {
     assert.ok(wall === 'back' ? width > 10 * height : height > 10 * width, `The yellow strip follows the long axis on ${wall}`);
-    assert.ok(wall === 'back' ? sy > 0 : wall === 'left' ? sx > 0 : sx < 0, `The strip faces the stand on ${wall}`);
-    assert.ok(wall === 'back' ? x < 0 && y < 0 : wall === 'left' ? x < 0 && y > 0 : x > 0 && y < 0, `The electrical point follows the drawing on ${wall}`);
+    assert.ok(wall === 'back' ? sy < 0 : wall === 'left' ? sx < 0 : sx > 0, `The yellow edge sits against the ${wall} wall`);
+    assert.ok(wall === 'back' ? x > 0 && y > 0 : wall === 'left' ? x > 0 && y < 0 : x < 0 && y > 0, `The electrical point follows the drawing on ${wall}`);
     assert.ok(Math.abs(physicalRatio - .2 / .5) < .01, 'The electrical pictogram retains its physical size');
   }
   const bytes = Uint8Array.from(result.pdf);

@@ -89,7 +89,7 @@ test('Signature BAT footprint follows the arch color and stand depth instead of 
   ctx.translate = (...point) => transforms.push(point);
   api.drawCarpetFootprint(ctx, 100, 200, 600, 400, 'back', 100, floor);
   assert.equal(rectangles.length, 1);
-  assert.equal(rectangles[0].color, '#d7e0f0', 'The arch footprint remains blue but prints as a light tint');
+  assert.equal(rectangles[0].color, '#d1dbed', 'The arch footprint remains blue but prints as a light tint');
   assert.ok(Math.abs(rectangles[0].width - 110) < 1e-9);
   assert.equal(rectangles[0].height, 450);
   assert.deepEqual(transforms[0], [330, 425]);
@@ -117,8 +117,8 @@ test('BAT paints a subtle tint for saved carpet and footprint colors', () => {
   };
   const input = { width: 6, depth: 4, layout: 'back', items: [marker], catalog: [] };
   api.renderTechnicalPlanCanvas(input);
-  assert.ok(rectangles.some(rect => rect.color === '#fae6e6'), 'Selected red on the floor takes precedence over the pack default');
-  assert.ok(rectangles.some(rect => rect.color === '#d1ddf0'), 'The footprint has a separate color and tint');
+  assert.ok(rectangles.some(rect => rect.color === '#f8dbdb'), 'Selected red on the floor takes precedence over the pack default');
+  assert.ok(rectangles.some(rect => rect.color === '#c9d8ee'), 'The footprint has a separate color and tint');
 });
 
 test('BAT furniture and SVG pictos turn in the same direction as the 3D scene', () => {

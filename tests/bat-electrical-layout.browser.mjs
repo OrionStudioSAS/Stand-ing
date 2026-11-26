@@ -33,7 +33,8 @@ try {
     const power = { type: 'triplette', label: 'Triplette', modelSize: [.23, .05, .13], dimensions: { category: 'Électricité', batPictoUrl: '/__electric.svg' } };
     const arch = { type: 'arche-signature', label: 'Arche Signature 2m', modelSize: [1.1, 3.64, 2.52], dimensions: { batPictoUrl: '/__arch.svg', batPictoReplaceColor: '#ff00ff' } };
     const items = [{ ...tv, id: 'tv', x: -.25, y: 1.6 }, { ...counter, id: 'base', included: true, x: -.7, z: .65, options: { binary2Color: '#0057a8' } },
-      { ...counter, id: 'shop', x: .7, z: .65 }, { ...arch, id: 'arch', x: -.7, z: 0, options: { signatureArchColorHex: '#cc4422' } }];
+      { ...counter, id: 'shop', x: .7, z: .65 }, { ...arch, id: 'arch', x: -.7, z: 0, options: { signatureArchColorHex: '#cc4422' } },
+      { id: 'chair-under-arch', type: 'chair', x: -.7, z: 0, modelSize: [.52, .86, .5], color: '#116699' }];
     const before = JSON.stringify(items);
     const input = { width: 3, depth: 3, layout: 'back', items, catalog: [tv, counter, power, arch] };
     const pages = await window.bat.createTechnicalPlanSvgPages(input);
@@ -44,6 +45,8 @@ try {
     const counterElectric = bounds(pages[0].querySelector('[data-bat-id="base"] [data-electric]'));
     const archNode = pages[0].querySelector('[data-bat-id="arch"] [data-arch]');
     const archOpacity = archNode.closest('g[opacity]')?.getAttribute('opacity');
+    const archBounds = bounds(archNode);
+    const chairBounds = bounds(pages[0].querySelector('[data-bat-id="chair-under-arch"] rect'));
     const dimensions = [...pages[0].querySelectorAll('text')].filter(node=>node.getAttribute('data-bat-text-role')==='electrical-dimension').map(node=>node.textContent);
     const requirements = window.bat.standWallPanelRequirements(input).map(panel => [panel.lengthMm, panel.reinforced]);
     const glyphs = [...pages[0].querySelectorAll('[data-bat-id]')].map(node => node.dataset.batId);
@@ -53,7 +56,7 @@ try {
     noElectric[0].remove();
     const pdf = await window.bat.createTechnicalPlanBlob(input);
     return { unchanged: before === JSON.stringify(items), tvBody, tvElectric, counterElectric, withoutTvBody, glyphs, dimensions, requirements,
-      archFill: archNode.getAttribute('fill'), archOpacity, firstObject: pages[0].querySelector('[data-bat-id]')?.dataset.batId,
+      archFill: archNode.getAttribute('fill'), archOpacity, archBounds, chairBounds,
       bytes: [...new Uint8Array(await pdf.arrayBuffer())] };
   });
   assert.equal(result.unchanged, true);
@@ -65,7 +68,10 @@ try {
   assert.ok(!result.glyphs.includes('included-counter-power-shop'));
   assert.equal(result.dimensions.length, 6, 'Only floor objects and the included power strip have electrical cotations');
   assert.ok(result.dimensions.every(text => Number(text) % 50 === 0));
-  assert.equal(result.archFill, '#cc4422'); assert.equal(result.archOpacity, '0.5'); assert.equal(result.firstObject, 'arch');
+  assert.equal(result.archFill, '#cc4422'); assert.equal(result.archOpacity, '0.5');
+  const { archBounds: a, chairBounds: c, glyphs } = result;
+  assert.ok(c.x > a.x && c.x + c.width < a.x + a.width && c.y > a.y && c.y + c.height < a.y + a.height, 'The test chair is physically under the arch');
+  assert.ok(glyphs.indexOf('chair-under-arch') < glyphs.indexOf('arch') && glyphs.indexOf('tv') < glyphs.indexOf('arch'), 'Floor and wall objects paint before the translucent arch');
   const pdf = await PDFDocument.load(Uint8Array.from(result.bytes));
   assert.equal(pdf.getPage(0).node.Resources().lookupMaybe(PDFName.of('XObject'), PDFDict)?.entries().length || 0, 0);
   const transparency = pdf.getPage(0).node.Resources().lookupMaybe(PDFName.of('ExtGState'), PDFDict);

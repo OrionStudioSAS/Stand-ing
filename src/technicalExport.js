@@ -569,9 +569,10 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
   const toX = (x) => planX + (x + width / 2) * scale;
   const toY = (z) => planY + (z + depth / 2) * scale;
 
-  ctx.fillStyle = technicalCarpetTint(floor.carpetColor, .10, technicalColors.floor);
+  ctx.fillStyle = technicalCarpetTint(floor.carpetColor, .14, technicalColors.floor);
   ctx.fillRect(planX, planY, planW, planH);
   drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale, floor);
+  drawReserveFootprints(ctx, floor.reserveFootprints, scale, toX, toY, planX, planY, planW, planH);
   drawGrid(ctx, planX, planY, planW, planH, width, depth, scale);
 
   ctx.strokeStyle = technicalColors.ink;
@@ -613,9 +614,7 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
       }
     });
   };
-  // Draw overhead structures first, preserving the numbering from the original item order.
-  items.map((item, index) => ({ item, index })).sort((a, b) => Number(isTechnicalArch(b.item)) - Number(isTechnicalArch(a.item))).forEach(({ item, index }) => {
-    if (isWallItem(item)) return;
+  const drawFloorItem = (item, index, arch = false) => {
     ctx.beginObject?.(item.id, 'item', edits.items?.[item.id], item.label || item.type);
     const entry = catalog.find((candidate) => candidate.type === item.type);
     const dims = itemDimensions(item, entry);
@@ -626,7 +625,6 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     const pictoImage = picto ? pictoImages.get(picto.key) : null;
 
     const hasElectric = Boolean(picto?.electrical.url);
-    const arch = isTechnicalArch(item);
     ctx.save();
     if (arch) ctx.globalAlpha = .5;
     let frame;
@@ -651,6 +649,12 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     ctx.restore();
     annotateElectricity(item, entry, frame, index);
     ctx.endObject?.();
+  };
+  const arches = [];
+  items.forEach((item, index) => {
+    if (isWallItem(item)) return;
+    if (isTechnicalArch(item)) arches.push({ item, index });
+    else drawFloorItem(item, index);
   });
 
   drawObjectWallReinforcements(ctx, items, scale, wallThickness, toX, toY);
@@ -669,6 +673,8 @@ function drawPlan(ctx, width, depth, layout, items, catalog, pictoImages = new M
     ctx.endObject?.();
   });
 
+  // The translucent arches overlay the items below them, without changing their plan indices.
+  arches.forEach(({ item, index }) => drawFloorItem(item, index, true));
   electricalDimensions.forEach(point => drawElectricalDimensions(ctx, point, { minX: planX, maxX: planX + planW, minY: planY, maxY: planY + planH }, scale));
 
   drawTechnicalConstraints(ctx, constraints, scale, toX, toY);
@@ -840,6 +846,26 @@ function technicalCarpetTint(color, opacity, fallback) {
   )).join('');
 }
 
+function drawReserveFootprints(ctx, footprints = [], scale, toX, toY, x, y, width, depth) {
+  if (!footprints.length) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, width, depth);
+  ctx.clip();
+  ctx.fillStyle = '#525252';
+  ctx.globalAlpha = .12;
+  for (const footprint of footprints) {
+    const w = footprint.width * scale, h = footprint.depth * scale;
+    if (!(w > 0 && h > 0)) continue;
+    ctx.save();
+    ctx.translate(toX(footprint.x), toY(footprint.z));
+    ctx.rotate(technicalPlanRotation(footprint.rotation));
+    ctx.fillRect(-w / 2, -h / 2, w, h);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale, floor = {}) {
   if (floor.signature) {
     (floor.footprints || []).forEach((footprint) => {
@@ -847,7 +873,7 @@ function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale, flo
       ctx.save();
       ctx.translate(planX + planW / 2 + footprint.x * scale, planY + planH / 2 + footprint.z * scale);
       ctx.rotate(-Number(footprint.rotation || 0) * Math.PI / 180);
-      ctx.fillStyle = technicalCarpetTint(footprint.color || '#bebebe', .18, technicalColors.footprint);
+      ctx.fillStyle = technicalCarpetTint(footprint.color || '#bebebe', .21, technicalColors.footprint);
       ctx.strokeStyle = '#777777'; ctx.lineWidth = 1.5; ctx.setLineDash([10, 6]);
       ctx.fillRect(-w / 2, -h / 2, w, h);
       ctx.strokeRect(-w / 2, -h / 2, w, h);
@@ -871,7 +897,7 @@ function drawCarpetFootprint(ctx, planX, planY, planW, planH, layout, scale, flo
   }
 
   ctx.save();
-  ctx.fillStyle = technicalCarpetTint(floor.footprintColor, .18, technicalColors.footprint);
+  ctx.fillStyle = technicalCarpetTint(floor.footprintColor, .21, technicalColors.footprint);
   ctx.strokeStyle = '#b8aa91';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([10, 6]);

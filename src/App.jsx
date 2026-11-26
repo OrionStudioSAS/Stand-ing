@@ -15851,6 +15851,13 @@ function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = [])
       sourceFloor: {
         signature: isSignatureScene(scene),
         footprintEnabled: options.carpetFootprintEnabled !== false,
+        reserveFootprints: items.filter((item) => (item.isGroup || item.dimensions?.isReserve) && isReserveSceneItem(item)).map((item) => {
+          const bounds = reserveWallCoverBounds({ ...item, x: 0, z: 0, rotation: 0 });
+          const rotation = Number(item.rotation || 0);
+          const center = rotatePoint((bounds.minX + bounds.maxX) / 2, (bounds.minZ + bounds.maxZ) / 2, -rotation);
+          return { x: Number(item.x || 0) + center.x, z: Number(item.z || 0) + center.z,
+            width: bounds.maxX - bounds.minX, depth: bounds.maxZ - bounds.minZ, rotation };
+        }),
         footprints: items.filter(isSignatureArchItem).map((item) => {
           const footprint = signatureArchFootprintDimensions(item, depth);
           const localZ = signatureArchFootprintLocalZ(item);
@@ -15877,9 +15884,9 @@ function withTechnicalOptionsMarker(items = [], scene = {}, catalogEntries = [])
 function partitionHeadBatPictoFrame(item, bounds = partitionHeadModelBounds(item), rotation = 0) {
   const width = bounds.maxX - bounds.minX;
   const depth = bounds.maxZ - bounds.minZ;
-  // The Signature drawing runs along model Z, with the yellow face on local +X.
+  // The Signature drawing runs along model Z, with the yellow edge against the wall (local -X).
   return isSignaturePartitionHeadItem(item)
-    ? { width: depth, depth: width, rotation: rotation - 90 }
+    ? { width: depth, depth: width, rotation: rotation + 90 }
     : { width, depth, rotation };
 }
 

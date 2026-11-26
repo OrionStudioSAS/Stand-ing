@@ -26,7 +26,7 @@ try {
   await page.waitForFunction(() => window.floorApi);
   const result = await page.evaluate(async () => {
     const api = window.floorApi;
-    const width = 6, depth = 4, color = '#2874ad', footprintTint = '#d8e6f0', carpetTint = '#fae6e6';
+    const width = 6, depth = 4, color = '#2874ad', footprintTint = '#d2e2ee', carpetTint = '#f8dbdb';
     const arch = { id:'arch', type:'arche-signature', label:'Arche Signature 2m', modelSize:[1.2,3.5,2], x:-1.2,z:-.7,rotation:0,options:{signatureArchColorHex:color,signatureArchColorName:'Bleu'} };
     const scene = { offer:'Signature',dimensions:{width,depth},layout:'back',options:{carpetFootprintEnabled:false,carpetColorHex:'#d00000',carpetColorName:'Rouge'} };
     const input = items => ({width,depth,layout:'back',items:api.withTechnicalOptionsMarker(items,scene,[]),catalog:[]});
@@ -42,12 +42,23 @@ try {
         x:(center.x-Number(floor.getAttribute('x')))/scale-width/2,z:(center.y-Number(floor.getAttribute('y')))/scale-depth/2,
         expected,legend:svg.textContent.includes('Empreinte moquette') && Boolean(svg.querySelector('rect[fill="'+color+'"][width="28"]')),color:rect.getAttribute('fill')};
     };
-    const marked = input([arch]);
+    const reserve = { id:'reserve', type:'reserve', label:'Réserve', isGroup:true, x:2.3, z:-1.2, rotation:90, children:[
+      { id:'back', type:'panel', label:'Cloison', modelSize:[1.5,2.5,.06], x:0, z:-.47 },
+      { id:'front', type:'door', label:'Porte', modelSize:[1.5,2.5,.06], x:0, z:.47 },
+      { id:'side', type:'panel', label:'Cloison', modelSize:[.94,2.5,.06], x:-.72, z:0, rotation:90 },
+      { id:'shelf', type:'shelf', label:'Étagères', modelSize:[.6,1,.45], x:0, z:.15 },
+    ] };
+    const chair = { id:'chair', type:'chair', label:'Fauteuil', modelSize:[.52,.86,.5], color:'#c47439', x:arch.x, z:arch.z };
+    const marked = input([arch, reserve, chair]);
     const pages = await api.createTechnicalPlanSvgPages(marked);
     const standard = inspect(pages[0], marked.items.at(-1).sourceFloor.footprints[0]);
     const preview = api.renderTechnicalPlanCanvas(marked);
     const floorRect = pages[0].querySelector('rect[fill="'+carpetTint+'"]');
     const scale = +floorRect.getAttribute('width') / width;
+    const reserveRect = pages[0].querySelector('rect[fill="#525252"][opacity="0.12"]');
+    const reserveTint = { width: +reserveRect.getAttribute('width') / scale, depth: +reserveRect.getAttribute('height') / scale,
+      rotation: reserveRect.getCTM().b, clipped: reserveRect.parentElement.hasAttribute('clip-path'),
+      underShelf: Boolean(reserveRect.compareDocumentPosition(pages[0].querySelector('[data-bat-id="reserve-shelf"]')) & Node.DOCUMENT_POSITION_FOLLOWING) };
     const pixel = preview.getContext('2d').getImageData(
       Math.round((+floorRect.getAttribute('x')+(arch.x+width/2)*scale)*2.75),
       Math.round((+floorRect.getAttribute('y')+(depth+.25)*scale)*2.75),1,1).data;
@@ -66,19 +77,19 @@ try {
       const items = api.withTechnicalOptionsMarker([],{...scene,offer,options:{...scene.options,carpetFootprintEnabled:true,carpetFootprintColorHex:'#0044ad'}},[]);
       const svg = await api.createTechnicalPlanSvg({width,depth,layout:'back',items,catalog:[]});
       otherPacks.push({
-        tile: [...svg.querySelectorAll('rect[fill="#d1ddf0"]')].some(rect => +rect.getAttribute('width') > 30 && rect.getAttribute('width') === rect.getAttribute('height')),
-        floor: Boolean(svg.querySelector('rect[fill="#fae6e6"]')),
+        tile: [...svg.querySelectorAll('rect[fill="#c9d8ee"]')].some(rect => +rect.getAttribute('width') > 30 && rect.getAttribute('width') === rect.getAttribute('height')),
+        floor: Boolean(svg.querySelector('rect[fill="#f8dbdb"]')),
         swatches: ['#d00000', '#0044ad'].every(hex => svg.querySelector('rect[fill="'+hex+'"][width="28"]')),
       });
     }
     document.body.replaceChildren(pages[0]);
     const pdf = await api.createTechnicalPlanBlob(marked);
-    return {standard,variants,previewPixel:Array.from(pixel),absent:squareCount(absent) + Number(Boolean(footprint(absent))),otherPacks,pdf:Array.from(new Uint8Array(await pdf.arrayBuffer()))};
+    return {standard,variants,reserveTint,previewPixel:Array.from(pixel),absent:squareCount(absent) + Number(Boolean(footprint(absent))),otherPacks,pdf:Array.from(new Uint8Array(await pdf.arrayBuffer()))};
   });
   for (const entry of [result.standard, ...result.variants]) {
     assert.equal(entry.squareCount, 0);
     for (const key of ['width','depth','x','z']) assert.ok(Math.abs(entry[key]-entry.expected[key])<.0001, `${key}: ${JSON.stringify(entry)}`);
-    assert.equal(entry.color, '#d8e6f0');
+    assert.equal(entry.color, '#d2e2ee');
     assert.equal(entry.legend, true);
     if (entry.threeDimensions) {
       assert.ok(Math.abs(entry.width-entry.threeDimensions.width)<.0001);
@@ -86,7 +97,10 @@ try {
     }
   }
   assert.equal(result.standard.depth, 4.5);
-  assert.deepEqual(result.previewPixel, [216,230,240,255], 'The legacy PNG preview also uses the arch footprint tint and 50 cm overhang');
+  assert.deepEqual(result.previewPixel, [210,226,238,255], 'The legacy PNG preview also uses the arch footprint tint and 50 cm overhang');
+  assert.ok(Math.abs(result.reserveTint.width - 1.5) < .001 && Math.abs(result.reserveTint.depth - 1) < .001, 'The reserve tint follows the actual footprint');
+  assert.ok(Math.abs(result.reserveTint.rotation + 1) < .001, 'The tint preserves the reserve rotation');
+  assert.equal(result.reserveTint.clipped && result.reserveTint.underShelf, true, 'The tint stays on the plan and underneath the furniture');
   assert.equal(result.absent, 0, 'Signature without an arch has no square footprint');
   assert.deepEqual(result.otherPacks, Array.from({length:3}, () => ({tile:true,floor:true,swatches:true})));
   const pdf = await PDFDocument.load(Uint8Array.from(result.pdf));
