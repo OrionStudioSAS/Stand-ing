@@ -53,7 +53,6 @@ import {
   Download,
   Eye,
   FileImage,
-  FileCheck2,
   Globe2,
   GripVertical,
   HelpCircle,
@@ -9268,7 +9267,7 @@ function carpetGroupDescription(label = '') {
 }
 
 const adminTabStorageKey = 'standing-admin-active-tab';
-const adminTabs = ['dashboard', 'salons', 'clients', 'bat', 'requests', 'objects', 'presets', 'users', 'monday'];
+const adminTabs = ['dashboard', 'salons', 'clients', 'requests', 'objects', 'presets', 'users', 'monday'];
 
 function initialAdminTab() {
   try {
@@ -9697,7 +9696,6 @@ function AdminDashboard({ user, adminProfile }) {
           <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}><LayoutDashboard size={16} />Dashboard</button>
           <button className={tab === 'salons' ? 'active' : ''} onClick={() => setTab('salons')}><CalendarDays size={16} />Salons</button>
           <button className={tab === 'clients' ? 'active' : ''} onClick={() => setTab('clients')}><Users size={16} />Exposants</button>
-          <button className={tab === 'bat' ? 'active' : ''} onClick={() => setTab('bat')}><FileCheck2 size={16} />BAT</button>
           <button className={tab === 'requests' ? 'active' : ''} onClick={() => setTab('requests')}><MessageSquare size={16} />Demandes</button>
           <span className="admin-nav-group-label">Contenu</span>
           <button className={tab === 'objects' ? 'active' : ''} onClick={() => setTab('objects')}><Box size={16} />Assets 3D</button>
@@ -9727,7 +9725,7 @@ function AdminDashboard({ user, adminProfile }) {
           </div>
           <div className="admin-topbar-actions">
             {tab === 'dashboard' && <div className="admin-dashboard-year" aria-label="Année du dashboard"><button type="button" aria-label="Année précédente" onClick={() => setDashboardYear((year) => year - 1)}><ChevronLeft size={16} /></button><strong>{dashboardYear}</strong>{dashboardYear === new Date().getFullYear() && <span>En cours</span>}<button type="button" aria-label="Année suivante" onClick={() => setDashboardYear((year) => year + 1)}><ChevronRight size={16} /></button></div>}
-            {(tab === 'dashboard' || tab === 'salons' || tab === 'clients' || tab === 'bat' || tab === 'objects' || tab === 'users' || tab === 'monday') && <label className="admin-global-search"><Search size={17} /><input aria-label="Rechercher" placeholder="Rechercher..." value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} /></label>}
+            {(tab === 'dashboard' || tab === 'salons' || tab === 'clients' || tab === 'objects' || tab === 'users' || tab === 'monday') && <label className="admin-global-search"><Search size={17} /><input aria-label="Rechercher" placeholder="Rechercher..." value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} /></label>}
           </div>
         </header>
 
@@ -9767,7 +9765,6 @@ function AdminDashboard({ user, adminProfile }) {
             />
           )}
           {tab === 'clients' && <AdminClientsView clients={clients} scenes={scenes} assets={assets} filters={filters} salonChoices={salonFilterChoices} packChoices={packFilterChoices} updateFilter={updateFilter} search={adminSearch} syncState={syncState} onSyncMonday={runMondaySync} onDeleteScene={deleteAdminScene} onReopenScene={reopenAdminScene} />}
-          {tab === 'bat' && <AdminBatView scenes={scenes.filter((scene) => !adminSearch || normalizeTextValue([scene.project_name, scene.client_name, scene.salon, scene.event_name].join(' ')).includes(normalizeTextValue(adminSearch)))} assets={assets} />}
           {tab === 'objects' && (
             <AdminObjectsView
               assets={assets}
@@ -9818,7 +9815,6 @@ function adminTitle(tab) {
     dashboard: 'Dashboard',
     salons: 'Salons',
     clients: 'Exposants',
-    bat: 'BAT',
     requests: 'Demandes',
     objects: 'Assets 3D',
     presets: 'Packs',
@@ -12653,6 +12649,7 @@ function adminClientSalonChoices(baseChoices = [], currentSalon = '') {
 
 function AdminClientsView({ clients, scenes = [], assets = [], filters, salonChoices = [], packChoices = [], updateFilter, search = '', syncState, onSyncMonday, onDeleteScene, onReopenScene }) {
   const [deleteState, setDeleteState] = useState({ loadingId: '', error: '' });
+  const [batDownload, setBatDownload] = useState({ sceneId: '', error: '' });
   const [reopenState, setReopenState] = useState({ sceneId: '', message: '', error: '' });
   const [clientPage, setClientPage] = useState(1);
   const [clientPageSize, setClientPageSize] = useState(12);
@@ -12719,6 +12716,16 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
     }
   };
 
+  const downloadBat = async (scene) => {
+    setBatDownload({ sceneId: scene.id, error: '' });
+    try {
+      await downloadSceneTechnicalPlan(scene, assets);
+      setBatDownload({ sceneId: '', error: '' });
+    } catch (error) {
+      setBatDownload({ sceneId: '', error: isDeploymentAssetError(error) ? deploymentAssetErrorMessage : error.message || 'Le téléchargement du BAT a échoué. Réessayez.' });
+    }
+  };
+
   const runReopen = async (scene) => {
     if (reopenState.sceneId || !onReopenScene || !canReopenSceneAsDraft(scene)) return;
     const label = scene.project_name || scene.client_name || 'cette scène';
@@ -12747,6 +12754,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
       </div>
       <MondaySyncFeedback syncState={syncState} />
       {deleteState.error && <div className="sync-result error" role="alert">{deleteState.error}</div>}
+      {batDownload.error && <div className="sync-result error" role="alert">{batDownload.error}</div>}
       {reopenState.error && <div className="sync-result error" role="alert">{reopenState.error}</div>}
       {!profileClient && editorError && <div className="sync-result error" role="alert">{editorError}</div>}
       {reopenState.message && <p className="admin-exhibitors-feedback" role="status">{reopenState.message}</p>}
@@ -12765,7 +12773,7 @@ function AdminClientsView({ clients, scenes = [], assets = [], filters, salonCho
             <summary className="admin-exhibitors-row"><span className="admin-exhibitors-company"><strong>{company || '—'}</strong></span><span className="admin-exhibitors-person"><i>{initials}</i><span><strong>{name}</strong><small>{client.email || 'E-mail non renseigné'}</small></span></span><span>{clientSalonSummary(client)}</span><span className="admin-exhibitors-hall" title={clientHallSummary(clientScenes)}>{clientHallSummary(clientScenes)}</span><span><em className="admin-exhibitors-pack">{primary.offer || '—'}</em></span><span><em className={`admin-exhibitors-badge ${status.id}`}>{status.label}</em>{clientScenes.length > 1 && <small className="admin-exhibitors-more">+{clientScenes.length - 1}</small>}</span><span className="admin-exhibitors-activity" title={latestActivity ? `${latestActivity.actor_name} · ${latestActivity.action}` : sceneActivity.error}><strong>{latestActivity ? adminUserDateTime(latestActivity.created_at) : sceneActivity.loading ? 'Chargement…' : sceneActivity.error ? 'Activité indisponible' : 'Non enregistrée'}</strong>{latestActivity && <small>{latestActivity.actor_name}</small>}</span><span className="admin-exhibitors-expand">Scènes {clientScenes.length} <ChevronDown size={14} /></span></summary>
             <div className="admin-exhibitors-scenes"><div className="admin-exhibitors-scenes-head"><p>{clientScenes.length} scène{clientScenes.length > 1 ? 's' : ''} liée{clientScenes.length > 1 ? 's' : ''}</p><button type="button" onClick={() => setProfileClient(client)}>Ouvrir la fiche exposant</button></div>{clientScenes.length ? clientScenes.map((scene) => {
               const sceneStatus = adminClientSceneState(scene);
-              return <div className="admin-exhibitors-scene" data-scene-id={scene.id} key={scene.id || scene.share_token || scene.monday_item_id}><span className="admin-exhibitors-scene-icon"><Box size={16} /></span><span className="admin-exhibitors-scene-title"><strong>{scene.project_name || scene.client_name || 'Scène'}</strong><small>{clientSceneMeta(scene)}</small><small className="admin-exhibitors-scene-location">{clientSceneLocationLabel(scene)}</small><small>{sceneActivity.activities.has(scene.id) ? `Modifiée le ${adminUserDateTime(sceneActivity.activities.get(scene.id).created_at)} · ${sceneActivity.activities.get(scene.id).actor_name}` : sceneActivity.loading ? 'Chargement de l’activité…' : sceneActivity.error ? 'Activité indisponible' : 'Aucune activité enregistrée'} · ID {String(scene.id || '').slice(-8)}</small></span><em className={`admin-exhibitors-badge ${sceneStatus.id}`}>{sceneStatus.label}</em><div className="admin-exhibitors-scene-actions"><AdminSceneHistoryButton scene={scene} renderEvents={(events) => <AdminAuditTable events={events} />} />{onReopenScene && canReopenSceneAsDraft(scene) && <button className="admin-exhibitors-reopen" type="button" disabled={Boolean(reopenState.sceneId) || Boolean(deleteState.loadingId)} onClick={() => runReopen(scene)}><Unlock size={14} />{reopenState.sceneId === scene.id ? 'Déverrouillage...' : 'Repasser en brouillon'}</button>}<a className="admin-outline-v2" href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a><button type="button" onClick={async () => downloadSceneTechnicalPlan(await loadSceneForAdminAction(scene), assets)}>Télécharger BAT</button><button type="button" disabled={Boolean(loadingBatId)} onClick={() => openEditor(scene)}>{loadingBatId === scene.id ? 'Chargement…' : 'Modifier le BAT'}</button><button type="button" onClick={async () => downloadScenePurchaseOrder(await loadSceneForAdminAction(scene), assets)}>Bon de commande</button><button className="admin-exhibitors-delete" type="button" aria-label={`Supprimer la scène ${scene.project_name || ''}`} disabled={deleteState.loadingId === `scene:${scene.id}`} onClick={() => runDelete(`scene:${scene.id}`, () => onDeleteScene?.(scene))}><Trash2 size={16} /></button></div></div>;
+              return <div className="admin-exhibitors-scene" data-scene-id={scene.id} key={scene.id || scene.share_token || scene.monday_item_id}><span className="admin-exhibitors-scene-icon"><Box size={16} /></span><span className="admin-exhibitors-scene-title"><strong>{scene.project_name || scene.client_name || 'Scène'}</strong><small>{clientSceneMeta(scene)}</small><small className="admin-exhibitors-scene-location">{clientSceneLocationLabel(scene)}</small><small>{sceneActivity.activities.has(scene.id) ? `Modifiée le ${adminUserDateTime(sceneActivity.activities.get(scene.id).created_at)} · ${sceneActivity.activities.get(scene.id).actor_name}` : sceneActivity.loading ? 'Chargement de l’activité…' : sceneActivity.error ? 'Activité indisponible' : 'Aucune activité enregistrée'} · ID {String(scene.id || '').slice(-8)}</small></span><em className={`admin-exhibitors-badge ${sceneStatus.id}`}>{sceneStatus.label}</em><div className="admin-exhibitors-scene-actions"><AdminSceneHistoryButton scene={scene} renderEvents={(events) => <AdminAuditTable events={events} />} />{onReopenScene && canReopenSceneAsDraft(scene) && <button className="admin-exhibitors-reopen" type="button" disabled={Boolean(reopenState.sceneId) || Boolean(deleteState.loadingId)} onClick={() => runReopen(scene)}><Unlock size={14} />{reopenState.sceneId === scene.id ? 'Déverrouillage...' : 'Repasser en brouillon'}</button>}<a className="admin-outline-v2" href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a><button type="button" disabled={Boolean(batDownload.sceneId)} onClick={() => downloadBat(scene)}>{batDownload.sceneId === scene.id ? 'Préparation du BAT…' : 'Télécharger BAT'}</button><button type="button" disabled={Boolean(loadingBatId)} onClick={() => openEditor(scene)}>{loadingBatId === scene.id ? 'Chargement…' : 'Modifier le BAT'}</button><button type="button" onClick={async () => downloadScenePurchaseOrder(await loadSceneForAdminAction(scene), assets)}>Bon de commande</button><button className="admin-exhibitors-delete" type="button" aria-label={`Supprimer la scène ${scene.project_name || ''}`} disabled={deleteState.loadingId === `scene:${scene.id}`} onClick={() => runDelete(`scene:${scene.id}`, () => onDeleteScene?.(scene))}><Trash2 size={16} /></button></div></div>;
             }) : <div className="admin-empty-row">Aucune scène associée.</div>}</div>
           </details>;
         }) : <div className="admin-empty-row">Aucun exposant trouvé avec les filtres actuels.</div>}
@@ -15279,59 +15287,6 @@ function useAdminBatEditor(assets) {
   };
   return { editor, editorError, loadingId, openEditor, closeEditor: () => setEditor(null) };
 }
-
-function AdminBatView({ scenes, assets = [], onToggleViewOnly }) {
-  const [page, setPage] = useState(1);
-  const { editor, editorError, loadingId, openEditor, closeEditor } = useAdminBatEditor(assets);
-  const [downloadState, setDownloadState] = useState({ sceneId: '', error: '' });
-  const downloadBat = async scene => {
-    setDownloadState({ sceneId: scene.id, error: '' });
-    try {
-      await downloadSceneTechnicalPlan(scene, assets);
-      setDownloadState({ sceneId: '', error: '' });
-    } catch (error) {
-      setDownloadState({ sceneId: '', error: isDeploymentAssetError(error) ? deploymentAssetErrorMessage : error.message || 'Le téléchargement du BAT a échoué. Réessayez.' });
-    }
-  };
-  const pageCount = Math.max(1, Math.ceil(scenes.length / 18));
-  const currentPage = Math.min(page, pageCount);
-  const rows = scenes.slice((currentPage - 1) * 18, currentPage * 18);
-  return (
-    <section className="admin-table modern bat-table">
-      {editorError && <p role="alert">{editorError}</p>}
-      {downloadState.error && <p role="alert">{downloadState.error}</p>}
-      {rows.length ? rows.map((scene) => {
-        const order = scenePurchaseOrder(scene, assets);
-        const lockedForExhibitor = Boolean(scene.source_payload?.exhibitor_view_only);
-        return (
-          <article key={scene.id} className="stand-row bat-row">
-            <div><strong>{scene.client_name || 'Exposant sans nom'}</strong><span>{scene.project_name || sceneStandNumber(scene, {}, 'Stand')}</span></div>
-            <div><span>Salon</span><strong>{normalizeSalonTitle(scene.event_name || scene.salon) || 'A definir'}</strong></div>
-            <div><span>Lots AMCO</span><strong>{order.lines.length ? `${order.total.toLocaleString('fr-FR')} € HT` : 'Aucun lot payant'}</strong></div>
-            <div><span>Exposant</span><strong>{clientStatusLabel(scene.client_status)}</strong></div>
-            {onToggleViewOnly && <label className="bat-view-only-toggle">
-              <input
-                type="checkbox"
-                checked={lockedForExhibitor}
-                onChange={(event) => onToggleViewOnly?.(scene, event.target.checked)}
-              />
-              <span>Vue seule exposant</span>
-            </label>}
-            <div className="stand-actions">
-              <a href={sceneShareUrl(scene)} target="_blank" rel="noreferrer">Voir la scène</a>
-              <button type="button" disabled={Boolean(downloadState.sceneId)} onClick={() => downloadBat(scene)}>{downloadState.sceneId === scene.id ? 'Préparation du BAT…' : 'Télécharger BAT'}</button>
-              <button type="button" disabled={Boolean(loadingId)} onClick={() => openEditor(scene)}>{loadingId === scene.id ? 'Chargement…' : 'Modifier le BAT'}</button>
-              <button type="button" onClick={() => downloadScenePurchaseOrder(scene, assets)}>Bon de commande</button>
-            </div>
-          </article>
-        );
-      }) : <div className="admin-empty-row">Aucune scène à afficher.</div>}
-      {pageCount > 1 && <nav className="admin-pagination" aria-label="Pagination des BAT"><span>Page {currentPage}/{pageCount}</span><div><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Précédent</button><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</button></div></nav>}
-      {editor && <TechnicalPlanEditor {...editor} onClose={closeEditor} />}
-    </section>
-  );
-}
-
 
 function AdminSpecialRequestsView({ scenes, assets = [], search = '', onResolve, onSaveManualLines }) {
   const [actionState, setActionState] = useState({ sceneId: '', message: '', error: '' });

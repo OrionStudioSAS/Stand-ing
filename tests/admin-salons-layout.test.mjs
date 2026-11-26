@@ -39,8 +39,9 @@ test('salon pack labels resolve offer IDs when a scene has no pack text', () => 
 });
 
 test('new admin navigation and salon details have functional tabs and responsive styles', () => {
-  assert.match(source, /tab === 'bat' && <AdminBatView/);
+  assert.doesNotMatch(source, /AdminBatView|setTab\('bat'\)/);
   assert.match(source, /\['overview', "Vue d’ensemble"\]/);
+  assert.match(source, /\['bat', 'Bon à tirer'\]/);
   assert.match(source, /\['packs', 'Packs'\]/);
   assert.match(source, /\['monday', 'Synchro Monday'\]/);
   assert.match(source, /onClick=\{exportRows\}/);
@@ -48,7 +49,15 @@ test('new admin navigation and salon details have functional tabs and responsive
   assert.match(css, /@media \(max-width: 760px\)[\s\S]*?\.admin-dashboard-shell \.admin-sidebar-nav/);
 });
 
-test('BAT tab separates pending, sent, signed and explicit correction states', () => {
+test('a saved BAT tab falls back to the dashboard without affecting the remaining tabs', () => {
+  vm.runInContext(source.slice(source.indexOf('const adminTabStorageKey'), source.indexOf('function rememberAdminTab')), api);
+  for (const [saved, expected] of [['bat', 'dashboard'], ['clients', 'clients'], ['salons', 'salons']]) {
+    api.window = { localStorage: { getItem: () => saved } };
+    assert.equal(api.initialAdminTab(), expected);
+  }
+});
+
+test('salon BAT tracking separates pending, sent, signed and explicit correction states', () => {
   const scenes = [
     { id: 'draft', client_status: 'draft' },
     { id: 'pending', client_status: 'configured', status: 'bat_pending' },

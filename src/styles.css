@@ -842,10 +842,6 @@ select {
   padding: 14px;
 }
 
-.bat-table .stand-row {
-  grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(110px, 0.35fr)) minmax(150px, auto) auto;
-}
-
 .stand-row div {
   display: grid;
   gap: 4px;
@@ -874,23 +870,6 @@ select {
 
 .stand-actions button {
   cursor: pointer;
-}
-
-.bat-view-only-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  color: #1f4378;
-  font-size: 0.78rem;
-  font-weight: 900;
-  white-space: nowrap;
-}
-
-.bat-view-only-toggle input {
-  width: 16px;
-  height: 16px;
-  accent-color: #1f4378;
 }
 
 .object-bank article {
