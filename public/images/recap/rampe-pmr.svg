@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
+  <rect width="96" height="96" rx="14" fill="#eef2f7"/>
+  <!-- floor edge -->
+  <path d="M10 40 L46 22 L86 42 L50 60 Z" fill="#c9d0d9"/>
+  <path d="M50 60 L86 42 L86 50 L50 68 Z" fill="#59636f"/>
+  <path d="M10 40 L50 60 L50 68 L10 48 Z" fill="#6f7a89"/>
+  <!-- ramp wedge -->
+  <path d="M26 56 L50 68 L34 80 L10 68 Z" fill="#9aa4b1"/>
+  <path d="M26 56 L50 68 L50 60 L26 48 Z" fill="#9aa4b1"/>
+  <path d="M26 48 L50 60 L34 80 L10 68 Z" fill="#aeb7c2" stroke="#7d8896" stroke-width="1"/>
+  <path d="M10 68 L34 80 L34 82 L10 70 Z" fill="#59636f"/>
+  <path d="M18 64 L42 76 M22 60 L46 72 M14 66 L38 78" stroke="#8d97a5" stroke-width="1"/>
+  <!-- accessibility badge -->
+  <circle cx="72" cy="22" r="13" fill="#0b5cad"/>
+  <circle cx="72.5" cy="14.5" r="2" fill="#fff"/>
+  <path d="M71 18 L71.8 24 H77 L79 29" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M69 21.5 A5.5 5.5 0 1 0 76 29.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+</svg>

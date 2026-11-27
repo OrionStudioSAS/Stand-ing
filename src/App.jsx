@@ -3021,6 +3021,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
   if (!objectBankLoaded) return <div className="loading-screen">{tRaw(language, 'loading_objects')}</div>;
 
   const validationRecapProps = {
+    assetBank: objectBank,
     area: area,
     layout: layout,
     standLabel: initialScene.project_name || 'Stand A-14',
@@ -6572,6 +6573,60 @@ function ValidationAmountList({ rows = [], totalLabel, total = 0 }) {
     </dl>
   );
 }
+// Parent row with its own sub-rows (floor → ramps, reserve → equipment, counter → options…).
+function groupCartRecapRows(rows = []) {
+  const groups = [];
+  rows.forEach((row) => {
+    const parent = groups[groups.length - 1];
+    if (row.option && parent) parent.children.push(row);
+    else groups.push({ row, children: [] });
+  });
+  return groups;
+}
+
+function CartRecapThumb({ row, small = false }) {
+  const hasVisual = Boolean(row.imageUrl || row.swatchImage);
+  if (small && !hasVisual) return <span className="thumb sm empty" aria-hidden="true" />;
+  return (
+    <span className={`thumb${small ? ' sm' : ''}`}>
+      <ValidationThumb imageUrl={row.imageUrl} imageReplaceColor={row.imageReplaceColor} imageTargetColor={row.imageTargetColor} color={row.swatchColor} image={row.swatchImage} />
+    </span>
+  );
+}
+
+function CartRecapLine({ row, readOnly, onAction, small = false }) {
+  const tr = useUiText();
+  return (
+    <div className={`line${small ? ' line-child' : ''}`} data-cart-row={row.id}>
+      <CartRecapThumb row={row} small={small} />
+      <div>
+        <p className="l-name">{tr(row.label)}{row.quantity > 1 ? <span className="l-qty"> × {row.quantity}</span> : null}</p>
+        {row.detail && <p className="l-detail">{tr(row.detail)}</p>}
+        {row.visualStatus && <p className={`l-visual ${row.visualStatus.tone}`}>{tr(row.visualStatus.label)}</p>}
+        {!small && !readOnly && (row.onOpen || row.onRemove) && (
+          <div className="l-tools">
+            {row.onOpen && <button type="button" className="l-link" onClick={onAction(row.onOpen)}>{tr('Modifier')}</button>}
+            {row.onRemove && <button type="button" className="l-link rm" onClick={row.onRemove}>{tr('Retirer')}</button>}
+          </div>
+        )}
+      </div>
+      <p className={`l-price${row.badgeTone === 'included' ? ' included' : ''}`}>{tr(row.badge || '')}</p>
+    </div>
+  );
+}
+
+function CartRecapGroup({ row, subRows = [], readOnly, onAction }) {
+  if (!subRows.length) return <CartRecapLine row={row} readOnly={readOnly} onAction={onAction} />;
+  return (
+    <div className="line-group">
+      <CartRecapLine row={row} readOnly={readOnly} onAction={onAction} />
+      <div className="line-children">
+        {subRows.map((child) => <CartRecapLine key={child.id} row={child} readOnly={readOnly} onAction={onAction} small />)}
+      </div>
+    </div>
+  );
+}
+
 function HeaderCartMenu({ items, total, pricing, recapProps = null, readOnly, standLabel = '', area = 0, offerLabel = '', nextStep = 4, open, onOpenChange, onValidate, onContinue }) {
   const tr = useUiText();
   const closeRef = useRef(null);
@@ -6653,28 +6708,8 @@ function HeaderCartMenu({ items, total, pricing, recapProps = null, readOnly, st
               {sections.map((section) => (
                 <React.Fragment key={section.id}>
                   <p className="group-title">{tr(section.title)}<span>{sectionRows[section.id].filter((row) => !row.option && !row.discount).reduce((sum, row) => sum + (row.quantity || 1), 0)}</span></p>
-                  {sectionRows[section.id].map((row) => (
-                    <div key={row.id} className={`line${row.option ? ' line-option' : ''}`} data-cart-row={row.id}>
-                      {!row.option && (
-                        <span className="thumb">
-                          <ValidationThumb imageUrl={row.imageUrl} imageReplaceColor={row.imageReplaceColor} imageTargetColor={row.imageTargetColor} color={row.swatchColor} image={row.swatchImage} />
-                        </span>
-                      )}
-                      <div>
-                        <p className="l-name">{tr(row.label)}{row.quantity > 1 ? <span className="l-qty"> × {row.quantity}</span> : null}</p>
-                        {row.detail && <p className="l-detail">{tr(row.detail)}</p>}
-                        {row.visualStatus && (
-                          <p className={`l-visual ${row.visualStatus.tone}`}>{tr(row.visualStatus.label)}</p>
-                        )}
-                        {!readOnly && (row.onOpen || row.onRemove) && (
-                          <div className="l-tools">
-                            {row.onOpen && <button type="button" className="l-link" onClick={runAndClose(row.onOpen)}>{tr('Modifier')}</button>}
-                            {row.onRemove && <button type="button" className="l-link rm" onClick={row.onRemove}>{tr('Retirer')}</button>}
-                          </div>
-                        )}
-                      </div>
-                      <p className={`l-price${row.badgeTone === 'included' ? ' included' : ''}`}>{tr(row.badge || '')}</p>
-                    </div>
+                  {groupCartRecapRows(sectionRows[section.id]).map(({ row, children }) => (
+                    <CartRecapGroup key={row.id} row={row} subRows={children} readOnly={readOnly} onAction={runAndClose} />
                   ))}
                 </React.Fragment>
               ))}
@@ -8735,8 +8770,20 @@ function itemOptionLines(item) {
   return result;
 }
 
+// Thumbnail of an object-bank asset, admin-only assets included (they are not in the exhibitor catalogue).
+function assetBankThumbnailUrl(asset = {}, assetBank = []) {
+  const bankEntry = (assetBank || []).find((entry) => entry?.type === asset?.type);
+  const direct = validDisplayImageUrl(bankEntry?.thumbnail_url || bankEntry?.thumbnailUrl || asset?.thumbnail_url || asset?.thumbnailUrl);
+  if (direct) return direct;
+  const path = String(bankEntry?.dimensions?.thumbnailPath || asset?.dimensions?.thumbnailPath || '').replace(/^\/+/, '');
+  if (!path) return '';
+  const bucket = bankEntry?.dimensions?.storageBucket || asset?.dimensions?.storageBucket || 'object-assets';
+  return `${technicalFloorAssetBaseUrl.replace(/\/object-assets$/, '')}/${bucket}/${path.split('/').map(encodeURIComponent).join('/')}`;
+}
+
 // Rows of the step-4 recap, shared with the header cart (a quick view of the same information).
 function buildValidationSectionRows({
+  assetBank = [],
   area,
   layout,
   standLabel,
@@ -8917,6 +8964,7 @@ function buildValidationSectionRows({
       optionKey: 'plancher',
       label: technicalFloor.label || 'Plancher technique',
       detail: [`${formatNumber(area)} m²`, technicalTrimLabel(technicalFloorTrimType)].join(' · '),
+      imageUrl: '/images/recap/plancher-technique.svg',
       swatchColor: '#d9dde3',
       badge: priceBadge(technicalFloorSupplement),
       badgeTone: isSignatureStand || technicalFloorSupplement > 0 ? 'price' : 'included',
@@ -8926,6 +8974,7 @@ function buildValidationSectionRows({
       optionKey: 'plancher',
       label: technicalFloor.rampLabel || 'Rampe PMR',
       detail: rampCount ? `${rampCount} rampe${rampCount > 1 ? 's' : ''}` : 'Aucune rampe',
+      imageUrl: '/images/recap/rampe-pmr.svg',
       swatchColor: '#d9dde3',
       badge: 'Inclus',
       badgeTone: 'included',
@@ -8963,6 +9012,37 @@ function buildValidationSectionRows({
     badge: priceBadge(isSignatureStand ? Number(safeItems.find(isAutomaticReserveItem)?.options?.unitPrice || 0) : reserveSupplement),
     badgeTone: isSignatureStand || reserveSupplement > 0 ? 'price' : 'included',
   });
+
+  // Equipment delivered inside the reserve (coat hook, shelves, electrical box…), walls and door excluded.
+  if (reserveOptionType !== '__none__') {
+    const reserveItem = safeItems.find(isAutomaticReserveItem) || null;
+    const reserveChildren = reserveItem?.children?.length ? reserveItem.children : (reserveEntry?.children || reserveEntry?.dimensions?.children || []);
+    const equipment = new Map();
+    reserveChildren.filter(Boolean).forEach((child) => {
+      const label = String(child.label || child.type || '').replace(/\s+/g, ' ').trim();
+      const key = normalizeTextValue(label);
+      if (!key || /\b(?:cloisons?|portes?|murs?)\b/.test(key)) return;
+      const current = equipment.get(key) || { label, quantity: 0, child };
+      current.quantity += 1;
+      equipment.set(key, current);
+    });
+    equipment.forEach(({ label, quantity, child }, key) => {
+      const childEntry = findCatalogEntry(catalog, child.type) || child;
+      pushRow('personalization', {
+        id: `reserve-equipment-${key}`,
+        optionKey: 'reserve',
+        label,
+        detail: 'Dans la réserve',
+        imageUrl: validationItemImage(null, childEntry, catalog)
+          || assetBankThumbnailUrl(child, assetBank)
+          || '/images/recap/objet-reserve.svg',
+        badge: 'Inclus',
+        badgeTone: 'included',
+        option: true,
+        quantity,
+      });
+    });
+  }
 
   partitionHeadSelectedSides(partitionHeadRule, partitionHeadSides).forEach((side) => {
     const visual = partitionHeadVisuals?.[side] || {};
@@ -9102,12 +9182,12 @@ function groupValidationRows(rows = []) {
     const groupable = key && (row.badgeTone === 'included' || amount !== null);
     const existing = groupable ? byKey.get(key) : null;
     if (!existing) {
-      const entry = { ...row, quantity: 1, amountTotal: amount };
+      const entry = { ...row, quantity: row.quantity || 1, amountTotal: amount };
       grouped.push(entry);
       if (groupable) byKey.set(key, entry);
       return;
     }
-    existing.quantity += 1;
+    existing.quantity += row.quantity || 1;
     existing.missingVisualCount = (existing.missingVisualCount || 0) + (row.missingVisualCount || 0);
     if (existing.amountTotal !== null && amount !== null) {
       existing.amountTotal = roundCurrency(existing.amountTotal + amount);

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
+  <rect width="96" height="96" rx="14" fill="#eef2f7"/>
+  <!-- slab: carpet top, raised sides, angle trims -->
+  <path d="M48 26 L84 44 L48 62 L12 44 Z" fill="#b9c1cc"/>
+  <path d="M48 26 L84 44 L48 62 L12 44 Z" fill="none" stroke="#8d97a5" stroke-width="1"/>
+  <path d="M12 44 L48 62 L48 72 L12 54 Z" fill="#6f7a89"/>
+  <path d="M48 62 L84 44 L84 54 L48 72 Z" fill="#59636f"/>
+  <path d="M12 44 L48 62 L84 44" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linejoin="round"/>
+  <path d="M12 54 L48 72 L84 54" fill="none" stroke="#3c4450" stroke-width="1.2" stroke-linejoin="round"/>
+  <!-- carpet seams -->
+  <path d="M30 35 L66 53 M39 30.5 L75 48.5 M21 39.5 L57 57.5" stroke="#a7b0bc" stroke-width="1"/>
+  <!-- height marker -->
+  <path d="M88 44 L88 54" stroke="#0b5cad" stroke-width="2" stroke-linecap="round"/>
+  <path d="M85.5 44 H90.5 M85.5 54 H90.5" stroke="#0b5cad" stroke-width="2" stroke-linecap="round"/>
+</svg>
