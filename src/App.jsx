@@ -6610,7 +6610,9 @@ function CartRecapLine({ row, readOnly, onAction, small = false }) {
           </div>
         )}
       </div>
-      <p className={`l-price${row.badgeTone === 'included' ? ' included' : ''}`}>{tr(row.badge || '')}</p>
+      <p className={`l-price${row.badgeTone === 'included' ? ' included' : ''}`}>
+        {row.badgeTone === 'included' ? <span className="included-pill">{tr(row.badge || 'Inclus')}</span> : tr(row.badge || '')}
+      </p>
     </div>
   );
 }
