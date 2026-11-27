@@ -1,10 +1,11 @@
+import { isSiaePackLabel } from '../src/siaeStandOptions.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
-const context = vm.createContext({
+const context = vm.createContext({ isSiaePackLabel,
   isSignatureScene: (scene) => scene.offer === 'Signature',
   scenePackBenefits: () => ({ mode: 'included' }),
   normalizePackLabel: (label) => String(label || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(),

@@ -1,3 +1,4 @@
+import { isSiaePackLabel, siaeReserveRuleBands, siaeSurfaceColorRate } from '../src/siaeStandOptions.js';
 import { signatureFootprintPalette } from '../src/signatureFootprint.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -14,7 +15,7 @@ function loadFunction(name, context) {
 }
 
 function packContext() {
-  const context = vm.createContext({ signatureFootprintPalette,
+  const context = vm.createContext({ isSiaePackLabel, siaeReserveRuleBands, siaeSurfaceColorRate, signatureFootprintPalette,
     carpetColors,
     wallFabricColors,
     colorOptionsForUsage: (_assets, _pack, _usage, fallback) => fallback,
@@ -54,7 +55,7 @@ test('Signature reserve bands cover 14, 15, 23, 24, 35 and 36 square metres with
 });
 
 test('Signature includes both partition heads at every area, including existing scenes with old rule counts', () => {
-  const context = vm.createContext({ signatureFootprintPalette,
+  const context = vm.createContext({ isSiaePackLabel, signatureFootprintPalette,
     isSignatureScene: (scene) => scene.offer === 'Signature',
     scenePackBenefits: () => ({ mode: 'allowance' }),
     normalizePackLabel: (label) => String(label || '').toLowerCase(),

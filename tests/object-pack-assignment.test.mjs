@@ -1,3 +1,4 @@
+import { isSiaePackLabel } from '../src/siaeStandOptions.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -12,7 +13,7 @@ function loadFunction(api, name) {
 }
 
 function runtime() {
-  const api = vm.createContext({});
+  const api = vm.createContext({ isSiaePackLabel });
   for (const name of [
     'normalizeTextValue',
     'normalizeSalonLabel',

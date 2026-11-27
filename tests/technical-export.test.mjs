@@ -751,7 +751,7 @@ test('the BAT uses the moved reserve and refreshes the TV surface from its curre
     isSpotWallItem: () => false,
     isLockedPlacementRule: () => false,
     isSignatureScene: () => false, reserveRuleBands: [], signatureReserveRuleBands: [],
-    sceneReserveRules: () => [], activeReserveRule: () => ({}),
+    sceneReserveRules: () => [], activeReserveRule: () => ({}), reserveRuleBandsForPack: () => [], makeSiaeViscomItem: () => null,
     reserveRuleWithPackChoices: (rule) => rule,
     configuredReserveOptionType: (_rule, type) => type || '',
     scenePartitionHeadRules: () => [], activePartitionHeadRule: () => null,

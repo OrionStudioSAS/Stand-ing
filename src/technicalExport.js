@@ -1279,7 +1279,11 @@ function technicalItemVisuals(item = {}, entry = {}) {
     visuals.push({ label: headSide ? `Visuel tête de cloison ${headSide === 'left' ? 'gauche' : 'droite'}` : `Image ${label}`, role: headSide ? 'head-visual' : technicalVisualRole(item, entry), headSide, status: technicalVisualStatus(item.options?.visualPending, item.options?.headMainImageUrl || item.options?.headMainImageName, item.options?.headMainImageName), imageUrl: validTechnicalImageUrl(item.options?.headMainImageUrl) });
   }
   if (item.options?.posterImageUrl || item.options?.posterImageName || item.options?.posterVisualPending) {
-    visuals.push({ label: `Image ${label}`, role: technicalVisualRole(item, entry), status: technicalVisualStatus(item.options?.posterVisualPending, item.options?.posterImageUrl || item.options?.posterImageName, item.options?.posterImageName), imageUrl: validTechnicalImageUrl(item.options?.posterImageUrl) });
+    visuals.push({
+      label: item.autoSiaeViscom ? 'Visuel Viscom sur réserve' : `Image ${label}`,
+      format: item.autoSiaeViscom ? '1000 × 1000 mm' : '',
+      role: technicalVisualRole(item, entry), status: technicalVisualStatus(item.options?.posterVisualPending, item.options?.posterImageUrl || item.options?.posterImageName, item.options?.posterImageName), imageUrl: validTechnicalImageUrl(item.options?.posterImageUrl),
+    });
   }
   textureSlots.forEach((slot) => {
     if (slot.id === signatureHeadTopArtworkSlotId) return;

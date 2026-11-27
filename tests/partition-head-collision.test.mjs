@@ -206,6 +206,21 @@ test('Signature banner exclusions use local Z on every wall instead of the narro
   }
 });
 
+test('SIAE banners on the 4 m side walls deduct the 610 mm partition head return', () => {
+  const api = collisionContext();
+  for (const side of ['left', 'right']) {
+    const item = {
+      label: `Tête de cloison SIAE ${side === 'left' ? 'Gauche' : 'Droite'}`,
+      modelUrl: '/head.glb', dimensions: { size: [1.11, 2.99, 0.11] },
+      placementRule: { id: `outer-${side}`, locked: true },
+    };
+    const placed = api.applyWallPlacementRule(item, 6, 4, 'u');
+    const cover = api.wallCoverSurfaceOptions('u', 6, 4, [placed], { splitForCovers: true }).find(surface => surface.id === side);
+    assert.equal(cover.visibleWidth, 3.39, side);
+    assert.ok(Math.abs(cover.width - 3.39) <= 0.005001, `${side}: ${cover.width}`);
+  }
+});
+
 test('covers stop at equipped heads on the back wall and Signature heads on side walls', () => {
   const context = collisionContext();
   const cases = [
