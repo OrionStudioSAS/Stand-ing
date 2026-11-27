@@ -6362,14 +6362,20 @@ function FurnitureStepPanel({ items = [], catalog, pricing, salonLabel, selected
         types.includes(item.type) || item.options?.variantGroupType === entry.type
       ) && !isIncludedSceneItem(item) && shopCartItemVisible(item));
       // Items really in the scene (included ones too), so the stepper can remove an included stool.
-      const matchesEntry = (item) => types.includes(item.type) || item.options?.variantGroupType === entry.type;
-      const present = items.filter((item) => matchesEntry(item) && shopCartItemVisible(item)).length;
-      // Automatic items (storage room…) are on the stand too: they count for the "included" badge.
-      const placed = items.filter(matchesEntry).length;
-      // Coffret électrique / patère stay "Inclus ×1" while a storage room exists, even before being placed.
-      const reserveIncluded = reserveIncludedEquipmentEntry(entry) && items.some(isReserveSceneItem) ? 1 : 0;
-      // The pack quota is remembered: a removed included object can be put back for free.
-      const included = Math.max(sum(pricing?.includedCounts), reserveIncluded);
+      const matchesEntry = (item) => Boolean(item) && (types.includes(item.type) || item.options?.variantGroupType === entry.type);
+      const matching = items.filter(matchesEntry);
+      // Items really in the scene (included ones too), so the stepper can remove an included stool.
+      const present = matching.filter(shopCartItemVisible).length;
+      // Objects inside a group are on the stand too (the storage room holds a coat hook and an
+      // electrical box): they are part of what the group brings, so they count as included.
+      const groupChildren = items.flatMap((item) => (Array.isArray(item?.children) ? item.children.filter(matchesEntry).map(() => item) : []));
+      const includedChildren = groupChildren.filter((group) => isIncludedSceneItem(group) || isReserveSceneItem(group)).length;
+      const placed = matching.length + groupChildren.length;
+      // Pack quota (remembered when an included object is removed) or included objects actually
+      // placed, whichever is higher: a stool whose asset type is not listed in its variant group
+      // still counts.
+      const includedPlaced = matching.filter(isIncludedSceneItem).length;
+      const included = Math.max(sum(pricing?.includedCounts), includedPlaced) + includedChildren;
       map.set(entry.type, { types, included, billable: sum(pricing?.billableCounts), present, placed, lastItem });
     });
     return map;
@@ -19934,16 +19940,6 @@ function includedItemQuotaFromItems(items = []) {
   }, {});
 }
 
-// Equipment supplied with every storage room (one of each), matched on label/type.
-const RESERVE_INCLUDED_EQUIPMENT = [
-  (entry = {}) => normalizeTextValue(`${entry?.label || ''} ${entry?.type || ''} ${entry?.options?.variantGroupLabel || ''}`).includes('coffret electrique'),
-  (entry = {}) => isPatereEntry(entry) || normalizeTextValue(entry?.options?.variantGroupLabel || '').includes('patere'),
-];
-
-function reserveIncludedEquipmentEntry(entry = {}) {
-  return RESERVE_INCLUDED_EQUIPMENT.some((matches) => matches(entry));
-}
-
 function calculateScenePricing({ catalog, items, salonLabel, scene, includedQuota = null, colorSelections = [], technicalFloor = null, wallCovers = {}, wallCoverSurfaces = [], ledRailsEnabled = true, expectedLedSpotCount = 0 }) {
   const safeItems = (items || []).filter(Boolean);
   const insureAllFurniture = isSignatureScene(scene);
@@ -19968,13 +19964,6 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, includedQuot
     const quota = normalizeIncludedItemQuota(includedQuota || scene?.options?.includedItemQuota || scene?.source_payload?.options?.includedItemQuota);
     Object.entries(quota || {}).forEach(([type, count]) => {
       includedCounts.set(type, Math.max(includedCounts.get(type) || 0, count));
-    });
-  }
-  // The storage room comes with one electrical box and one coat hook: the first of each is free.
-  if (safeItems.some(isReserveSceneItem)) {
-    RESERVE_INCLUDED_EQUIPMENT.forEach((matches) => {
-      const item = safeItems.find((candidate) => !isIncludedSceneItem(candidate) && matches(candidate));
-      if (item) includedCounts.set(item.type, (includedCounts.get(item.type) || 0) + 1);
     });
   }
   const totalCounts = countSceneItems(safeItems);
