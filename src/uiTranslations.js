@@ -197,6 +197,12 @@ export const englishUi = {
   'Personnalisation': 'Customisation', 'Modifier': 'Edit', 'Options et mobilier': 'Options and furniture',
   'Une demande particulière ?': 'Any special request?', 'dont assurance mobilier': 'incl. furniture insurance', 'Retour': 'Back',
   'Envoyer ma demande': 'Send my request', 'Envoyer ma configuration': 'Send my configuration', 'Visuel manquant': 'Missing artwork',
+  'Dans la réserve': 'In the storage room',
+  'Plancher technique': 'Technical floor', 'Plancher technique 4 cm': 'Technical floor 4 cm', 'Plancher technique 12 cm': 'Technical floor 12 cm',
+  'Rampe PMR': 'PRM ramp', 'Rampe PMR 4 cm': 'PRM ramp 4 cm', 'Rampe PMR 12 cm': 'PRM ramp 12 cm', 'Aucune rampe': 'No ramp',
+  'Cornière droite': 'Straight trim', 'Cornière inclinée': 'Sloped trim',
+  'Hauteur 4 cm + cornières 4 × 4 cm': 'Height 4 cm + 4 × 4 cm angle trims',
+  'Hauteur 12 cm + cornières 4 × 4 cm + plinthes blanches': 'Height 12 cm + 4 × 4 cm angle trims + white skirting',
   'Montants HT': 'Amounts excl. VAT', 'Visuels manquants': 'Missing artwork',
   'Logo haut — deux têtes de cloison': 'Top logo — both partition heads', 'utilisés sur': 'used out of',
 };
@@ -272,6 +278,17 @@ export function translateGeneratedUi(text, translate) {
   if ((match=text.match(/^Disponible à partir de ([\d,.]+) m de profondeur$/))) return `Available from ${match[1].replace(',','.')} m depth`;
   if ((match=text.match(/^Votre formule n.en inclut pas pour ([\d,.]+) m² et ne permet pas d.en ajouter en option\.$/))) return `Your package does not include one for ${match[1]} m² and it cannot be added as an option.`;
   if ((match=text.match(/^(\d+) spots calculés automatiquement, soit 1 spot tous les 3 m²\. Ils sont placés en haut des murs\.$/))) return `${match[1]} spotlights calculated automatically: 1 per 3 m². They are placed at the top of the walls.`;
+  if ((match=text.match(/^(\d+) éléments?$/))) return `${match[1]} item${match[1]==='1'?'':'s'}`;
+  if ((match=text.match(/^Cloison (arrière|gauche|droite|réserve)(?: (gauche|droite|arrière|avant|\d+))?$/))) {
+    const wall = { 'arrière': 'Back wall', gauche: 'Left wall', droite: 'Right wall', 'réserve': 'Storage room wall' }[match[1]];
+    const part = match[2] ? ({ gauche: 'left', droite: 'right', 'arrière': 'rear', avant: 'front' }[match[2]] || match[2]) : '';
+    return part ? `${wall} ${/^\d+$/.test(part) ? part : `(${part})`}` : wall;
+  }
+  if ((match=text.match(/^(VISUEL(?: LUMINEUX)?) tête de cloison (gauche|droite)$/))) return `${match[1].includes('LUMINEUX')?'BACKLIT ARTWORK':'ARTWORK'} partition head ${match[2]==='gauche'?'left':'right'}`;
+  if ((match=text.match(/^([\d.,]+) ml facturés$/))) return `${match[1].replace(',','.')} linear m billed`;
+  if ((match=text.match(/^([\d.,]+) ml inclus déduits$/))) return `${match[1].replace(',','.')} linear m included (deducted)`;
+  if ((match=text.match(/^Plancher technique (\d+) cm \(([\d,.\s\u202f]+) m²\)$/))) return `Technical floor ${match[1]} cm (${match[2].replace(',','.')} m²)`;
+  if ((match=text.match(/^(\d+) rampes?$/))) return `${match[1]} ramp${Number(match[1])>1?'s':''}`;
   if (text.includes(' · ')) return text.split(' · ').map(translate).join(' · ');
   if ((match=text.match(/^(.*) : couleurs (incluses|en option)$/))) return `${translate(match[1])}: ${match[2]==='incluses'?'included':'optional'} colours`;
   return null;

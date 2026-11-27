@@ -3,7 +3,7 @@
 export const navbarEnglishUi = {
   'Aide par téléphone · conseiller disponible': 'Phone support · advisor available', 'Un conseiller vous guide': 'An advisor guides you',
   'Un doute sur une option ou un prix ? Appelez-nous, on regarde votre stand avec vous.': 'Unsure about an option or a price? Call us and we will look at your stand with you.',
-  'Appel non surtaxé': 'Standard call rate', 'Lun – ven, 9 h – 18 h': 'Mon – Fri, 9 am – 6 pm', 'ouvert maintenant': 'open now', 'fermé': 'closed',
+  'Appel non surtaxé': 'Standard call rate', 'Lun – ven, 9 h – 12 h / 12 h – 18 h': 'Mon – Fri, 9 am – 12 pm / 12 pm – 6 pm', 'ouvert maintenant': 'open now', 'fermé': 'closed',
   'Copier': 'Copy', 'E-mail': 'Email', 'Modifier coordonnées, société, facturation': 'Edit contact details, company, billing',
   'Ajouter un collaborateur sur le stand': 'Add a collaborator to the stand', 'Il pourra voir et modifier ce stand': 'They will be able to view and edit this stand',
   'E-mail du collaborateur': 'Collaborator email', 'Inviter': 'Invite', 'Sur ce stand': 'On this stand', 'Exposant': 'Exhibitor', 'Vous': 'You',

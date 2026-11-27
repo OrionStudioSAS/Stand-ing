@@ -38,6 +38,8 @@ import PresentationGround from './PresentationGround.jsx';
 import AdminSceneHistoryButton, { useSceneLatestActivities } from './AdminSceneHistory.jsx';
 import { StudioContactShadows, StudioLighting } from './StudioLighting.jsx';
 import { studioWhiteFinishMaterial } from './importedWhiteFinish.js';
+import { isScreenVideoItem, isScreenVideoMaterial, screenVideoTexture } from './screenVideo.js';
+import { addPartitionHeadGlow } from './partitionHeadGlow.js';
 import SceneAssembly, { SceneFirstFrame, SceneOpeningOrbit, useSceneDepartures } from './SceneAssembly.jsx';
 import { clampHangingSignBottom, effectiveHangingLimit, hangingSignBodyHeight } from '../supabase/functions/_shared/standHangingLimits.js';
 import { normalizePartitionHeadVisuals, partitionHeadUsesDifferentVisuals, patchPartitionHeadVisuals, withPartitionHeadVisualMode } from './partitionHeadVisuals.js';
@@ -69,6 +71,7 @@ import {
   Layers,
   LayoutDashboard,
   LayoutGrid,
+  PackageCheck,
   Lock,
   LogOut,
   Mail,
@@ -257,6 +260,8 @@ const technicalFloorAssets = {
   // embedded brushed aluminium). The SketchUp OBJ had inverted faces that flickered on the carpet.
   trimStraight: '/models/technical-floor/corniere-droite-40x40-1ml.glb',
   trimSloped: '/models/technical-floor/corniere-inclinee-1ml.glb',
+  // Outer corner of the 40 × 40 angle (origin on the corner, slab towards +x / -z).
+  trimCorner: '/models/technical-floor/corniere-angle-40x40.glb',
 };
 const technicalSlopedTrimDepth = 0.12;
 const technicalStraightTrimFlange = 0.042; // top flange of the 40 × 40 angle, lying on the slab edge
@@ -315,11 +320,23 @@ function _ensureObjCacheEntry(modelUrl, materials) {
   return entry;
 }
 
+// Object-bank GLBs corrected in the repo, served instead of the stored file (matched on the storage path).
+const correctedGlbModels = {
+  // White body and see-through blue bottle (the stored file used grey aluminium and a clear bottle).
+  'asset-fontaine-a-eau-muh006jo/fontaine-a-eau.glb': '/models/object-bank/fontaine-a-eau.glb',
+};
+
+function correctedGlbModelUrl(modelUrl = '') {
+  const path = String(modelUrl || '').split(/[?#]/)[0];
+  const match = Object.keys(correctedGlbModels).find((key) => path.endsWith(`/${key}`));
+  return match ? correctedGlbModels[match] : modelUrl;
+}
+
 function _ensureGlbCacheEntry(modelUrl) {
   if (_glbLoadCache.has(modelUrl)) return _glbLoadCache.get(modelUrl);
   const entry = {};
   const loader = new GLTFLoader();
-  entry.promise = loader.loadAsync(modelUrl)
+  entry.promise = loader.loadAsync(correctedGlbModelUrl(modelUrl))
     .then((result) => { entry.result = result; })
     .catch((err) => { entry.error = err; });
   _glbLoadCache.set(modelUrl, entry);
@@ -1266,6 +1283,11 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     ...(initialScene.options || {}),
   }, initialScene.stand_presets?.base_config?.autoSpotsRule || initialScene.stand_presets?.base_config?.options?.autoSpotsRule);
   const initialPrestigeStand = isPrestigeScene(initialScene);
+  // Objects the pack includes, remembered from the first opening (and saved with the scene),
+  // so an included stool removed then put back is still free.
+  const [includedItemQuota] = useState(() => (
+    normalizeIncludedItemQuota(initialOptions.includedItemQuota) || includedItemQuotaFromItems(initialScene.items || [])
+  ));
   const initialPrestigeArchVisible = initialPrestigeStand && (initialScene.items || []).some((item) => isPrestigeArchControlItem(item, true) && item?.options?.prestigeHidden !== true);
   const initialPrestigeSignageVisible = initialPrestigeStand && (initialScene.items || []).some((item) => isPrestigeHighSignControlItem(item, true) && item?.options?.prestigeHidden !== true);
   const initialWidth = initialScene.dimensions?.width || 4;
@@ -1845,6 +1867,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     items: visibleSceneItems,
     salonLabel: assetPackLabel,
     scene: { ...initialScene, dimensions: { ...(initialScene.dimensions || {}), width, depth } },
+    includedQuota: includedItemQuota,
     width,
     depth,
     layout,
@@ -1906,6 +1929,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
       reserveWallFabricColorPrice: Number(selectedReserveWallFabricColor.price || 0),
       reserveWallFabricColorReference: selectedReserveWallFabricColor.reference || '',
       wallCovers,
+      includedItemQuota,
       technicalFloorType,
       technicalFloorLabel: selectedTechnicalFloor?.label || '',
       technicalFloorHeight: selectedTechnicalFloor?.height || 0,
@@ -2687,7 +2711,10 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     if (readOnly) return;
     const types = new Set([typeOrTypes].flat().filter(Boolean));
     setItems((current) => {
-      const index = [...current].reverse().findIndex((item) => types.has(item.type) && !isIncludedSceneItem(item) && (effectiveAdminViewer || !itemDeletionLocked(item)));
+      const reversed = [...current].reverse();
+      // Paid items go first; once none are left, included ones (e.g. stools) can be removed too.
+      let index = reversed.findIndex((item) => types.has(item.type) && !isIncludedSceneItem(item) && (effectiveAdminViewer || !itemDeletionLocked(item)));
+      if (index < 0) index = reversed.findIndex((item) => types.has(item.type) && isIncludedSceneItem(item) && canDeleteSceneItem(item, effectiveAdminViewer));
       if (index < 0) return current;
       const removeIndex = current.length - 1 - index;
       const removedItem = current[removeIndex];
@@ -3574,7 +3601,7 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
         </div>
         <nav>
           <button type="button" onClick={() => setActiveStep((step) => Math.max(1, step - 1))}>{tRaw(language, 'back')}</button>
-          {activeStep < 4 && <button type="button" onClick={() => setActiveStep((step) => Math.min(4, step + 1))}>{tRaw(language, 'next_step')}</button>}
+          {activeStep < 4 && <button type="button" onClick={() => setActiveStep((step) => Math.min(4, step + 1))}>{tRaw(language, 'next_step')} <ArrowRight size={14} /></button>}
         </nav>
       </footer>
       )}
@@ -3635,7 +3662,7 @@ function buildConfiguratorTour({ language = 'fr', firstName = '', standLabel = '
       annotations: [
         { target: '.stn-nav .project', label: L('Votre stand', 'Your stand'), text: L('Nom, salon, formule et surface.', 'Name, show, package and floor area.') },
         { target: '.stn-nav .stepper', label: L('Les 4 étapes', 'The 4 steps'), text: L('Accueil, Configuration, Boutique, Validation.', 'Home, Configuration, Shop, Review.') },
-        { target: '[data-tour="nav-help"]', label: L('Aide par téléphone', 'Phone support'), text: L('Un conseiller du lundi au vendredi, de 9 h à 18 h.', 'An advisor Monday to Friday, 9 am to 6 pm.') },
+        { target: '[data-tour="nav-help"]', label: L('Aide par téléphone', 'Phone support'), text: L('Un conseiller du lundi au vendredi, de 9 h à 12 h et de 12 h à 18 h.', 'An advisor Monday to Friday, 9 am – 12 pm and 12 pm – 6 pm.') },
         { target: '[data-tour="nav-questions"]', label: L('Questions et remarques', 'Questions and comments'), text: L('Questions fréquentes et message à l’équipe.', 'FAQ and message to the team.') },
         { target: '[data-tour="nav-language"]', label: L('Langue', 'Language'), text: L('Interface en français ou en anglais.', 'Interface in French or English.') },
         { target: '[data-tour="nav-profile"]', label: L('Mon profil', 'My profile'), text: L('Vos coordonnées, vos collaborateurs et cette visite.', 'Your details, your collaborators and this tour.') },
@@ -3854,7 +3881,7 @@ function buildConfiguratorTour({ language = 'fr', firstName = '', standLabel = '
       target: '.stn-nav .panel',
       placement: 'left',
       title: L('Un conseiller au bout du fil', 'An advisor on the line'),
-      body: L('Du lundi au vendredi, de 9 h à 18 h. Le point vert sur l’icône indique qu’un conseiller est disponible.', 'Monday to Friday, 9 am to 6 pm. The green dot on the icon shows an advisor is available.'),
+      body: L('Du lundi au vendredi, de 9 h à 12 h et de 12 h à 18 h. Le point vert sur l’icône indique qu’un conseiller est disponible.', 'Monday to Friday, 9 am – 12 pm and 12 pm – 6 pm. The green dot on the icon shows an advisor is available.'),
       annotations: [
         { target: '.stn-nav .call', label: L('Appeler', 'Call'), text: L('Lance l’appel depuis un mobile.', 'Starts the call from a phone.') },
         { target: '.stn-nav .hours', label: L('Horaires', 'Opening hours'), text: L('Ouvert ou fermé, en temps réel.', 'Open or closed, live.') },
@@ -4236,7 +4263,7 @@ function ConfiguratorNavbar({
                   <span><strong>{STANDING_SUPPORT_PHONE.label}</strong><span>{tr('Appel non surtaxé')}</span></span>
                 </a>
                 <div className="hours">
-                  <span>{tr('Lun – ven, 9 h – 18 h')} · <span className={`status ${supportOpen ? 'on' : 'off'}`}>{tr(supportOpen ? 'ouvert maintenant' : 'fermé')}</span></span>
+                  <span>{tr('Lun – ven, 9 h – 12 h / 12 h – 18 h')} · <span className={`status ${supportOpen ? 'on' : 'off'}`}>{tr(supportOpen ? 'ouvert maintenant' : 'fermé')}</span></span>
                   <button type="button" className="copy" onClick={() => { navigator.clipboard?.writeText(STANDING_SUPPORT_PHONE.label).catch(() => {}); showToast(tr('Numéro copié')); }}>{tr('Copier')}</button>
                 </div>
               </div>
@@ -4289,11 +4316,6 @@ function ConfiguratorNavbar({
                 <span className="avatar lg">{initials || <NavIcon name="user" size={20} stroke={2.2} />}</span>
                 <span><b>{shortName || contactDetails.company || tr('Mon profil')}</b>{shortName && contactDetails.company && <span>{contactDetails.company}</span>}</span>
               </div>
-              {contactDetails.phone && (
-                <dl className="contact">
-                  <div><dt><NavIcon name="phone" size={16} />{tr('Téléphone')}</dt><dd>{contactDetails.phone}</dd></div>
-                </dl>
-              )}
               <hr />
               <div className="list">
                 <button type="button" className="item" onClick={() => setPanel('client')}>
@@ -5989,6 +6011,30 @@ function OptionsStepPanel({
           />
         )}
       </OptionAccordion>
+      <OptionAccordion {...accordionScrollProps('plancher')} className="floor-qv-accordion" title={t('option_floor')}
+        subtitle={technicalFloorSubtitle(technicalFloorType, area, t)}
+        icon={<Layers size={22} strokeWidth={1.7} />} open={openOptions.plancher} onToggle={() => toggleOption('plancher')}>
+        <TechnicalFloorOptionCard
+          floorType={technicalFloorType}
+          trimType={technicalFloorTrimType}
+          area={area}
+          layout={layout}
+          standWidth={standWidth}
+          standDepth={standDepth}
+          carpetColor={selectedCarpetColor}
+          footprintColor={selectedCarpetFootprintColor}
+          footprintEnabled={technicalFloorFootprintEnabled}
+          signature={technicalFloorSignature}
+          archItems={technicalFloorArches}
+          rampContext={technicalFloorContext}
+          ramps={technicalFloorRamps}
+          disabled={readOnly}
+          onFloorType={onTechnicalFloorType}
+          onTrimType={onTechnicalFloorTrimType}
+          onAddRamp={onAddTechnicalFloorRamp}
+          onRemoveRamp={onRemoveTechnicalFloorRamp}
+        />
+      </OptionAccordion>
       <OptionAccordion {...accordionScrollProps('coton')} title={t('option_wall')} icon={<ConfiguratorOptionIcon src="/icons/cloison.svg" />} open={openOptions.coton} onToggle={() => toggleOption('coton')}>
         <ColorOptionCard
           uniformLayout={uniformColorSections}
@@ -6015,30 +6061,6 @@ function OptionsStepPanel({
           onPreviewReset={onWallCoverPreviewReset}
           onPending={onWallCoverPending}
           onFramingChange={onWallCoverFraming}
-        />
-      </OptionAccordion>
-      <OptionAccordion {...accordionScrollProps('plancher')} className="floor-qv-accordion" title={t('option_floor')}
-        subtitle={technicalFloorSubtitle(technicalFloorType, area, t)}
-        icon={<Layers size={22} strokeWidth={1.7} />} open={openOptions.plancher} onToggle={() => toggleOption('plancher')}>
-        <TechnicalFloorOptionCard
-          floorType={technicalFloorType}
-          trimType={technicalFloorTrimType}
-          area={area}
-          layout={layout}
-          standWidth={standWidth}
-          standDepth={standDepth}
-          carpetColor={selectedCarpetColor}
-          footprintColor={selectedCarpetFootprintColor}
-          footprintEnabled={technicalFloorFootprintEnabled}
-          signature={technicalFloorSignature}
-          archItems={technicalFloorArches}
-          rampContext={technicalFloorContext}
-          ramps={technicalFloorRamps}
-          disabled={readOnly}
-          onFloorType={onTechnicalFloorType}
-          onTrimType={onTechnicalFloorTrimType}
-          onAddRamp={onAddTechnicalFloorRamp}
-          onRemoveRamp={onRemoveTechnicalFloorRamp}
         />
       </OptionAccordion>
       {(hasIncludedObjects || isSignatureStand) && <OptionAccordion {...accordionScrollProps('led')} title={t('option_led')} icon={<ConfiguratorOptionIcon src="/icons/spots.svg" />} open={openOptions.led} onToggle={() => toggleOption('led')}>
@@ -6185,6 +6207,7 @@ function OptionsStepPanel({
 
 const marketCategoryIcons = {
   all: LayoutGrid,
+  included: PackageCheck,
   furniture: Armchair,
   multimedia: Tv,
   electricity: Zap,
@@ -6228,6 +6251,84 @@ function marketplaceSearchText(entry = {}) {
   ].filter(Boolean).join(' '));
 }
 
+// Horizontal chip row that also works with a plain mouse (Windows): wheel scrolls sideways,
+// click-and-drag pans, and arrow buttons appear when chips overflow.
+function useHorizontalScroller() {
+  const ref = useRef(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  const dragRef = useRef(null);
+  const suppressClickRef = useRef(false);
+  const update = useCallback(() => {
+    const node = ref.current;
+    if (!node) return;
+    const left = node.scrollLeft > 2;
+    const right = node.scrollLeft + node.clientWidth < node.scrollWidth - 2;
+    setEdges((current) => (current.left === left && current.right === right ? current : { left, right }));
+  }, []);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return undefined;
+    const onWheel = (event) => {
+      if (node.scrollWidth <= node.clientWidth) return;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (!delta) return;
+      const max = node.scrollWidth - node.clientWidth;
+      const atEdge = (delta < 0 && node.scrollLeft <= 0) || (delta > 0 && node.scrollLeft >= max - 1);
+      if (atEdge) return;
+      event.preventDefault();
+      node.scrollLeft += event.deltaMode === 1 ? delta * 24 : delta;
+    };
+    const onPointerDown = (event) => {
+      if (event.pointerType !== 'mouse' || event.button !== 0 || node.scrollWidth <= node.clientWidth) return;
+      dragRef.current = { x: event.clientX, scrollLeft: node.scrollLeft, moved: false };
+    };
+    const onPointerMove = (event) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const dx = event.clientX - drag.x;
+      if (!drag.moved && Math.abs(dx) < 5) return;
+      drag.moved = true;
+      node.classList.add('is-dragging');
+      node.scrollLeft = drag.scrollLeft - dx;
+    };
+    const onPointerUp = () => {
+      if (dragRef.current?.moved) suppressClickRef.current = true;
+      dragRef.current = null;
+      node.classList.remove('is-dragging');
+    };
+    const onClickCapture = (event) => {
+      if (!suppressClickRef.current) return;
+      suppressClickRef.current = false;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    node.addEventListener('wheel', onWheel, { passive: false });
+    node.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    node.addEventListener('click', onClickCapture, true);
+    node.addEventListener('scroll', update, { passive: true });
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : null;
+    observer?.observe(node);
+    update();
+    return () => {
+      node.removeEventListener('wheel', onWheel);
+      node.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      node.removeEventListener('click', onClickCapture, true);
+      node.removeEventListener('scroll', update);
+      observer?.disconnect();
+    };
+  }, [update]);
+  const scrollStep = (direction) => {
+    const node = ref.current;
+    if (!node) return;
+    node.scrollBy({ left: direction * Math.max(120, node.clientWidth * 0.6), behavior: 'smooth' });
+  };
+  return { ref, edges, update, scrollStep };
+}
+
 function FurnitureStepPanel({ items = [], catalog, pricing, salonLabel, selectedId, readOnly = false, onAdd, onRemove, onDuplicate, onSelectItem, onConfigureItem, onNext }) {
   const tr = useUiText();
   const t = useT();
@@ -6237,6 +6338,7 @@ function FurnitureStepPanel({ items = [], catalog, pricing, salonLabel, selected
   const [announcement, setAnnouncement] = useState('');
   const searchRef = useRef(null);
   const previousCounts = useRef(null);
+  const chipScroller = useHorizontalScroller();
   const groupedVariantTypes = useMemo(() => variantGroupMemberTypes(catalog), [catalog]);
   const entries = useMemo(() => catalog.filter((entry) => (
     !['hidden'].includes(furniturePanelCategory(entry))
@@ -6250,17 +6352,6 @@ function FurnitureStepPanel({ items = [], catalog, pricing, salonLabel, selected
       return query.split(/\s+/).every((word) => marketplaceSearchTerms(word).some((term) => text.includes(term)));
     }) : entries
   ), [entries, query]);
-  const categories = marketplaceCategories(entries).map((category) => ({
-    ...category,
-    count: category.id === 'all' ? searchMatches.length : searchMatches.filter((entry) => normalizeMarketCategory(entry) === category.id).length,
-  }));
-  const selectedCategory = categories.some((category) => category.id === activeCategory) ? activeCategory : 'all';
-  const filteredEntries = searchMatches.filter((entry) => selectedCategory === 'all' || normalizeMarketCategory(entry) === selectedCategory);
-  const sections = selectedCategory === 'all'
-    ? categories.filter((category) => category.id !== 'all')
-      .map((category) => ({ ...category, entries: filteredEntries.filter((entry) => normalizeMarketCategory(entry) === category.id) }))
-      .filter((section) => section.entries.length)
-    : [{ id: selectedCategory, entries: filteredEntries }];
 
   const counts = useMemo(() => {
     const map = new Map();
@@ -6270,10 +6361,39 @@ function FurnitureStepPanel({ items = [], catalog, pricing, salonLabel, selected
       const lastItem = [...items].reverse().find((item) => (
         types.includes(item.type) || item.options?.variantGroupType === entry.type
       ) && !isIncludedSceneItem(item) && shopCartItemVisible(item));
-      map.set(entry.type, { types, included: sum(pricing?.includedCounts), billable: sum(pricing?.billableCounts), lastItem });
+      // Items really in the scene (included ones too), so the stepper can remove an included stool.
+      const matchesEntry = (item) => types.includes(item.type) || item.options?.variantGroupType === entry.type;
+      const present = items.filter((item) => matchesEntry(item) && shopCartItemVisible(item)).length;
+      // Automatic items (storage room…) are on the stand too: they count for the "included" badge.
+      const placed = items.filter(matchesEntry).length;
+      // Coffret électrique / patère stay "Inclus ×1" while a storage room exists, even before being placed.
+      const reserveIncluded = reserveIncludedEquipmentEntry(entry) && items.some(isReserveSceneItem) ? 1 : 0;
+      // The pack quota is remembered: a removed included object can be put back for free.
+      const included = Math.max(sum(pricing?.includedCounts), reserveIncluded);
+      map.set(entry.type, { types, included, billable: sum(pricing?.billableCounts), present, placed, lastItem });
     });
     return map;
   }, [entries, items, pricing]);
+
+  const isIncludedEntry = (entry) => (counts.get(entry.type)?.included || 0) > 0;
+  const includedMatches = searchMatches.filter(isIncludedEntry);
+  const baseCategories = marketplaceCategories(entries).map((category) => ({
+    ...category,
+    count: category.id === 'all' ? searchMatches.length : searchMatches.filter((entry) => normalizeMarketCategory(entry) === category.id).length,
+  }));
+  // "Inclus": every object of the pack, right after "Tout".
+  const categories = entries.some(isIncludedEntry)
+    ? [baseCategories[0], { id: 'included', label: 'Inclus', count: includedMatches.length }, ...baseCategories.slice(1)]
+    : baseCategories;
+  const selectedCategory = categories.some((category) => category.id === activeCategory) ? activeCategory : 'all';
+  const filteredEntries = selectedCategory === 'included'
+    ? includedMatches
+    : searchMatches.filter((entry) => selectedCategory === 'all' || normalizeMarketCategory(entry) === selectedCategory);
+  const sections = selectedCategory === 'all'
+    ? categories.filter((category) => category.id !== 'all' && category.id !== 'included')
+      .map((category) => ({ ...category, entries: filteredEntries.filter((entry) => normalizeMarketCategory(entry) === category.id) }))
+      .filter((section) => section.entries.length)
+    : [{ id: selectedCategory, entries: filteredEntries }];
 
   useEffect(() => {
     const previous = previousCounts.current;
@@ -6325,7 +6445,11 @@ function FurnitureStepPanel({ items = [], catalog, pricing, salonLabel, selected
           )}
         </label>
 
-        <nav className="shop-chips" aria-label={t('furniture_aria_filter')}>
+        <div className={`shop-chips-wrap${chipScroller.edges.left ? ' can-left' : ''}${chipScroller.edges.right ? ' can-right' : ''}`}>
+        {chipScroller.edges.left && (
+          <button type="button" className="shop-chips-arrow left" tabIndex={-1} aria-hidden="true" onClick={() => chipScroller.scrollStep(-1)}><ChevronLeft size={16} /></button>
+        )}
+        <nav ref={chipScroller.ref} className="shop-chips" aria-label={t('furniture_aria_filter')}>
           {categories.map((category) => {
             const CategoryIcon = marketCategoryIcons[category.id] || Box;
             const active = selectedCategory === category.id;
@@ -6345,6 +6469,10 @@ function FurnitureStepPanel({ items = [], catalog, pricing, salonLabel, selected
             );
           })}
         </nav>
+        {chipScroller.edges.right && (
+          <button type="button" className="shop-chips-arrow right" tabIndex={-1} aria-hidden="true" onClick={() => chipScroller.scrollStep(1)}><ChevronRight size={16} /></button>
+        )}
+        </div>
       </div>
 
       {query && filteredEntries.length > 0 && (
@@ -6373,6 +6501,8 @@ function FurnitureStepPanel({ items = [], catalog, pricing, salonLabel, selected
                     readOnly={readOnly}
                     includedCount={count.included || 0}
                     billableCount={count.billable || 0}
+                    presentCount={count.present || 0}
+                    placedCount={count.placed || 0}
                     onAdd={() => onAdd(entry)}
                     onAddOne={() => (count.lastItem && entryNeedsConfigurator(entry) && onDuplicate ? onDuplicate(count.lastItem) : onAdd(entry))}
                     onRemoveOne={() => onRemove(count.types || [entry.type])}
@@ -6398,7 +6528,7 @@ function FurnitureStepPanel({ items = [], catalog, pricing, salonLabel, selected
   );
 }
 
-function MarketplaceCard({ entry, salonLabel, catalog, readOnly, includedCount = 0, billableCount = 0, onAdd, onAddOne, onRemoveOne }) {
+function MarketplaceCard({ entry, salonLabel, catalog, readOnly, includedCount = 0, billableCount = 0, presentCount = 0, placedCount = presentCount, onAdd, onAddOne, onRemoveOne }) {
   const tr = useUiText();
   const t = useT();
   const lang = useContext(LanguageContext);
@@ -6407,9 +6537,10 @@ function MarketplaceCard({ entry, salonLabel, catalog, readOnly, includedCount =
   const category = marketCategoryMeta(normalizeMarketCategory(entry));
   const subtitle = marketplaceItemSubtitle(entry, category.label);
   const label = tr(localizeItemLabel(entry, lang));
-  const needsConfigurator = entryNeedsConfigurator(entry);
-  const actionLabel = t(needsConfigurator ? 'shop_configure' : 'shop_add');
+  // Always "Ajouter", even when a configurator opens first: one simple verb in the shop.
+  const actionLabel = t('shop_add');
   const added = billableCount > 0;
+  const inScene = Math.max(presentCount, billableCount);
   const [pulse, setPulse] = useState(false);
   const previousCount = useRef(billableCount);
   useEffect(() => {
@@ -6424,7 +6555,7 @@ function MarketplaceCard({ entry, salonLabel, catalog, readOnly, includedCount =
   }, [billableCount]);
 
   return (
-    <article className={`shop-card${added ? ' is-added' : ''}${pulse ? ' is-pulsing' : ''}`}>
+    <article className={`shop-card${added ? ' is-added' : ''}${inScene > 0 ? ' has-stepper' : ''}${pulse ? ' is-pulsing' : ''}`}>
       <button
         type="button"
         className="shop-card-main"
@@ -6434,7 +6565,13 @@ function MarketplaceCard({ entry, salonLabel, catalog, readOnly, includedCount =
       >
         <span className="shop-card-media">
           {entry.thumbnailUrl ? <img src={entry.thumbnailUrl} alt="" loading="lazy" /> : <Icon size={40} strokeWidth={1.5} />}
-          {includedCount > 0 && <span className="shop-badge included">{t('shop_included', { count: includedCount })}</span>}
+          {includedCount > 0 && (
+            <span className="shop-badge included">
+              {placedCount < includedCount
+                ? t('shop_included_partial', { present: placedCount, count: includedCount })
+                : t('shop_included', { count: includedCount })}
+            </span>
+          )}
           {added && <span className="shop-badge added"><Check size={11} strokeWidth={3} />{billableCount}</span>}
         </span>
         <span className="shop-card-info">
@@ -6443,15 +6580,15 @@ function MarketplaceCard({ entry, salonLabel, catalog, readOnly, includedCount =
         </span>
         <span className="shop-card-footer">
           <b>{price ? tr(marketplacePriceLabel(entry, price, t)) : (includedCount > 0 ? t('shop_included_short') : '')}</b>
-          {!added && !readOnly && <span className="shop-card-cta"><Plus size={14} strokeWidth={2.6} />{actionLabel}</span>}
+          {!inScene && !readOnly && <span className="shop-card-cta"><Plus size={14} strokeWidth={2.6} />{actionLabel}</span>}
         </span>
       </button>
-      {added && (
+      {inScene > 0 && (
         <div className="shop-stepper" role="group" aria-label={label}>
           <button type="button" disabled={readOnly} onClick={onRemoveOne} aria-label={t('shop_remove_one', { label })}>
-            {billableCount === 1 ? <Trash2 size={13} /> : <Minus size={14} />}
+            {inScene === 1 ? <Trash2 size={13} /> : <Minus size={14} />}
           </button>
-          <span aria-live="off">{billableCount}</span>
+          <span aria-live="off">{inScene}</span>
           <button type="button" disabled={readOnly} onClick={onAddOne} aria-label={t('shop_add_one', { label })}>
             <Plus size={14} />
           </button>
@@ -9252,6 +9389,14 @@ function ValidationStepPanel(props) {
   const missingVisualRows = visibleSections.flatMap((section) => sectionRows[section.id]
     .filter((row) => row.visualStatus?.tone === 'missing')
     .map((row) => ({ ...row, sectionId: section.id })));
+  const sentStatus = confirmed && !confirmState?.loading;
+  const readiness = (
+    <ValidationReadiness
+      confirmed={sentStatus}
+      isAdminViewer={isAdminViewer}
+      missingRows={missingVisualRows}
+    />
+  );
 
   return (
     <div className="validation-v2">
@@ -9261,18 +9406,13 @@ function ValidationStepPanel(props) {
         <p>{tr("Vérifiez chaque élément avant d’envoyer votre configuration à Stand-ING.")}</p>
       </header>
 
-      <ValidationReadiness
-        confirmed={confirmed && !confirmState?.loading}
-        isAdminViewer={isAdminViewer}
-        missingRows={missingVisualRows}
-      />
+      {sentStatus && readiness}
 
       {visibleSections.map((section) => (
         <ValidationSection
           key={section.id}
           section={section}
           rows={sectionRows[section.id]}
-          onEdit={!readOnly && onEditStep ? () => onEditStep(section.step) : null}
         />
       ))}
 
@@ -9283,6 +9423,9 @@ function ValidationStepPanel(props) {
         readOnly={readOnly}
         onChange={onSpecialRequest}
       />
+
+      {/* Most exhibitors send their artwork afterwards: the reminder sits at the end, not above the recap. */}
+      {!sentStatus && readiness}
     </div>
   );
 }
@@ -9346,7 +9489,7 @@ function ValidationReadiness({ confirmed = false, isAdminViewer = false, missing
   );
 }
 
-function ValidationSection({ section, rows = [], onEdit = null }) {
+function ValidationSection({ section, rows = [] }) {
   const tr = useUiText();
   const [open, setOpen] = useState(section.defaultOpen !== false);
   const Icon = section.icon;
@@ -9361,11 +9504,6 @@ function ValidationSection({ section, rows = [], onEdit = null }) {
           <span className="validation-v2-count">{count}</span>
           <ChevronDown size={15} className="validation-v2-chevron" />
         </button>
-        {onEdit && (
-          <button type="button" className="validation-v2-edit" onClick={onEdit}>
-            <Pencil size={12} /> {tr("Modifier")}
-          </button>
-        )}
       </header>
       {open && (
         <div className="validation-v2-rows" id={bodyId}>
@@ -10223,6 +10361,7 @@ function TechnicalFloorIsoSvg({ model, width, height, className = '' }) {
 
 function TechnicalFloorHero({ floor, trimType, previewProps, carpetColor, footprintColor, footprintEnabled, signature = false }) {
   const t = useT();
+  const tr = useUiText();
   const viewWidth = 324;
   const viewHeight = 176;
   const model = technicalFloorPreviewModel({ ...previewProps, floorHeight: floor?.height || 0, trimType, viewWidth, viewHeight, padding: [22, 30, 36, 30] });
@@ -10238,9 +10377,9 @@ function TechnicalFloorHero({ floor, trimType, previewProps, carpetColor, footpr
     const y = clamp(anchor[1] + dy, 12, viewHeight - 34);
     callouts.push({ id, anchor, x, y, align, strong, text });
   };
-  const carpetCaption = technicalFloorColorCaption(carpetColor);
+  const carpetCaption = tr(technicalFloorColorCaption(carpetColor));
   const arch = previewProps.arches?.[0];
-  const archCaption = arch ? String(arch.colorName || '').toLocaleLowerCase('fr-FR') : '';
+  const archCaption = arch ? tr(String(arch.colorName || '').toLocaleLowerCase('fr-FR')) : '';
   if (signature && arch) {
     if (!floor) pushCallout('carpet', model.anchors.carpet, -8, -26, t('floor_preview_carpet'), t('floor_preview_carpet_ground'));
     pushCallout('footprint', model.anchors.footprint, -14, 26, t('floor_preview_arch_footprint'), archCaption);
@@ -10250,7 +10389,7 @@ function TechnicalFloorHero({ floor, trimType, previewProps, carpetColor, footpr
     }
   } else if (!floor) {
     pushCallout('carpet', model.anchors.carpet, -8, -26, t('floor_preview_carpet'), t('floor_preview_carpet_ground'));
-    if (footprintEnabled) pushCallout('footprint', model.anchors.footprint, 12, 22, t('floor_preview_footprint'), `${technicalFloorColorCaption(footprintColor)} ${technicalFloorColorCode(footprintColor)}`.trim());
+    if (footprintEnabled) pushCallout('footprint', model.anchors.footprint, 12, 22, t('floor_preview_footprint'), `${tr(technicalFloorColorCaption(footprintColor))} ${technicalFloorColorCode(footprintColor)}`.trim());
   } else {
     pushCallout('carpet', model.anchors.carpet, -10, -26, t('floor_preview_carpet'), carpetCaption);
     pushCallout('trim', model.anchors.trim, 14, -24, t(sloped ? 'floor_preview_trim_sloped' : 'floor_preview_trim'), sloped ? '' : '4 × 4 cm');
@@ -10315,6 +10454,7 @@ function technicalFloorPreviewArches(archItems = []) {
 
 function TechnicalFloorOptionCard({ floorType, trimType, area, layout, standWidth = 0, standDepth = 0, carpetColor = null, footprintColor = null, footprintEnabled = false, signature = false, archItems = [], rampContext = null, ramps = [], disabled = false, onFloorType, onTrimType, onAddRamp, onRemoveRamp }) {
   const t = useT();
+  const tr = useUiText();
   const selectedFloor = technicalFloorOptions.find((option) => option.id === floorType) || null;
   const effectiveTrim = technicalFloorTrimAllowed(selectedFloor, trimType);
   const carpetHex = colorHex(carpetColor, '#bebebe');
@@ -10323,7 +10463,7 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, standWidt
   const previewProps = { width: standWidth, depth: standDepth, layout, carpetHex, footprintHex, footprintEnabled, ramps, arches };
   const surface = formatNumber(area);
   const estimate = (option) => Math.round(Number(area || 0) * option.price).toLocaleString('fr-FR');
-  const footprintCaption = `${technicalFloorColorCaption(footprintColor)}${technicalFloorColorCode(footprintColor) ? ` (${technicalFloorColorCode(footprintColor)})` : ''}`;
+  const footprintCaption = `${tr(technicalFloorColorCaption(footprintColor))}${technicalFloorColorCode(footprintColor) ? ` (${technicalFloorColorCode(footprintColor)})` : ''}`;
   const canAddRamp = Boolean(selectedFloor && nextTechnicalFloorRamp(ramps, rampContext || { width: standWidth, depth: standDepth, layout, floor: selectedFloor }));
   const rampSize = selectedFloor ? technicalRampDimensions(selectedFloor.height) : null;
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -10378,7 +10518,7 @@ function TechnicalFloorOptionCard({ floorType, trimType, area, layout, standWidt
                 </span>
                 <span className="floor-qv-option-price">
                   <strong>{option.price} € <small>{t('floor_price_unit')}</small></strong>
-                  <small>≈ {estimate(option)} € HT</small>
+                  <small>{t('floor_price_estimate', { amount: estimate(option) })}</small>
                 </span>
               </button>
             );
@@ -11033,7 +11173,7 @@ function WallCoverOptionCard({ surfaces = [], covers = {}, previews = {}, upload
                 type="button"
                 className={`wall-cover-toggle ${enabled ? 'active' : ''}`}
                 disabled={busy}
-                aria-label={t(enabled ? 'wall_cover_toggle_remove' : 'wall_cover_toggle_add', { label: surface.label })}
+                aria-label={t(enabled ? 'wall_cover_toggle_remove' : 'wall_cover_toggle_add', { label: tr(surface.label) })}
                 onClick={() => onToggle?.(surface.id, !enabled, surface.sourceWall)}
               >
                 <span />
@@ -19775,7 +19915,36 @@ function partitionHeadSummary(rule, sides = {}) {
   return labels.length ? labels.join(' + ') : 'Aucune';
 }
 
-function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelections = [], technicalFloor = null, wallCovers = {}, wallCoverSurfaces = [], ledRailsEnabled = true, expectedLedSpotCount = 0 }) {
+function normalizeIncludedItemQuota(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const quota = {};
+  Object.entries(value).forEach(([type, count]) => {
+    const number = Math.floor(Number(count));
+    if (type && number > 0) quota[type] = number;
+  });
+  return quota;
+}
+
+// Included pack objects of a scene (stools, counter…), automatic structure items left aside.
+function includedItemQuotaFromItems(items = []) {
+  return (items || []).filter(Boolean).reduce((quota, item) => {
+    if (!item.type || !isIncludedSceneItem(item) || !shopCartItemVisible(item) || item.autoMeterCover) return quota;
+    quota[item.type] = (quota[item.type] || 0) + 1;
+    return quota;
+  }, {});
+}
+
+// Equipment supplied with every storage room (one of each), matched on label/type.
+const RESERVE_INCLUDED_EQUIPMENT = [
+  (entry = {}) => normalizeTextValue(`${entry?.label || ''} ${entry?.type || ''} ${entry?.options?.variantGroupLabel || ''}`).includes('coffret electrique'),
+  (entry = {}) => isPatereEntry(entry) || normalizeTextValue(entry?.options?.variantGroupLabel || '').includes('patere'),
+];
+
+function reserveIncludedEquipmentEntry(entry = {}) {
+  return RESERVE_INCLUDED_EQUIPMENT.some((matches) => matches(entry));
+}
+
+function calculateScenePricing({ catalog, items, salonLabel, scene, includedQuota = null, colorSelections = [], technicalFloor = null, wallCovers = {}, wallCoverSurfaces = [], ledRailsEnabled = true, expectedLedSpotCount = 0 }) {
   const safeItems = (items || []).filter(Boolean);
   const insureAllFurniture = isSignatureScene(scene);
   const basePrice = 0;
@@ -19794,6 +19963,20 @@ function calculateScenePricing({ catalog, items, salonLabel, scene, colorSelecti
       includedCounts.set(baseType, Math.max(0, (includedCounts.get(baseType) || 0) - 1));
     }
   });
+  // Pack objects stay included after being removed and put back (quota saved with the scene).
+  if (!isSignatureScene(scene)) {
+    const quota = normalizeIncludedItemQuota(includedQuota || scene?.options?.includedItemQuota || scene?.source_payload?.options?.includedItemQuota);
+    Object.entries(quota || {}).forEach(([type, count]) => {
+      includedCounts.set(type, Math.max(includedCounts.get(type) || 0, count));
+    });
+  }
+  // The storage room comes with one electrical box and one coat hook: the first of each is free.
+  if (safeItems.some(isReserveSceneItem)) {
+    RESERVE_INCLUDED_EQUIPMENT.forEach((matches) => {
+      const item = safeItems.find((candidate) => !isIncludedSceneItem(candidate) && matches(candidate));
+      if (item) includedCounts.set(item.type, (includedCounts.get(item.type) || 0) + 1);
+    });
+  }
   const totalCounts = countSceneItems(safeItems);
   const configuredBaseUsage = baseItemsConfigured
     ? baseItems.map((item) => {
@@ -23934,7 +24117,41 @@ function TechnicalFloorFootprint({ footprint, bounds, ramps = [], rampSize, trim
 function TechnicalFloorTrims({ bounds, ramps, rampSize, height, sloped }) {
   const trimUrl = sloped ? technicalFloorAssets.trimSloped : technicalFloorAssets.trimStraight;
   const { geometry, material } = useTechnicalFloorAsset(trimUrl);
-  const runs = useMemo(() => technicalFloorTrimRuns(bounds, ramps, rampSize), [bounds, ramps, rampSize]);
+  const corner = useTechnicalFloorAsset(technicalFloorAssets.trimCorner);
+  const baseRuns = useMemo(() => technicalFloorTrimRuns(bounds, ramps, rampSize), [bounds, ramps, rampSize]);
+  // Straight trims meet on the open outer corners through a dedicated corner piece:
+  // the runs stop short of the corner instead of overlapping their top flanges.
+  const { runs, corners } = useMemo(() => {
+    if (sloped || !corner.geometry) return { runs: baseRuns, corners: [] };
+    const size = corner.geometry.boundingBox.max.x - corner.geometry.boundingBox.min.x;
+    const edges = new Set(bounds.edges);
+    const found = [];
+    if (edges.has('front') && edges.has('left')) found.push({ key: 'front-left', position: [bounds.minX, bounds.maxZ], rotationY: 0 });
+    if (edges.has('front') && edges.has('right')) found.push({ key: 'front-right', position: [bounds.maxX, bounds.maxZ], rotationY: Math.PI / 2 });
+    const near = (a, b) => Math.abs(a - b) < 0.005;
+    const hasCorner = (key) => found.some((item) => item.key === key);
+    const trimmed = baseRuns.map((run) => {
+      if (run.edge === 'front') {
+        return {
+          ...run,
+          start: hasCorner('front-left') && near(run.start, bounds.minX) ? run.start + size : run.start,
+          end: hasCorner('front-right') && near(run.end, bounds.maxX) ? run.end - size : run.end,
+        };
+      }
+      if ((run.edge === 'left' || run.edge === 'right') && hasCorner(`front-${run.edge}`) && near(run.end, bounds.maxZ)) {
+        return { ...run, end: run.end - size };
+      }
+      return run;
+    }).filter((run) => run.edge === 'notch' || run.end - run.start > 0.005);
+    // A ramp right at the corner leaves no trim to join there.
+    const kept = found.filter((item) => {
+      const side = item.key === 'front-left' ? 'left' : 'right';
+      const frontEnd = side === 'left' ? bounds.minX : bounds.maxX;
+      return baseRuns.some((run) => run.edge === 'front' && near(side === 'left' ? run.start : run.end, frontEnd))
+        || baseRuns.some((run) => run.edge === side && near(run.end, bounds.maxZ));
+    });
+    return { runs: trimmed, corners: kept };
+  }, [baseRuns, bounds, sloped, corner.geometry]);
   if (!geometry || !material) return null;
   const pieceLength = Math.max(0.001, geometry.boundingBox.max.x - geometry.boundingBox.min.x);
   const pieceHeight = Math.max(0.001, geometry.boundingBox.max.y - geometry.boundingBox.min.y);
@@ -23971,6 +24188,9 @@ function TechnicalFloorTrims({ bounds, ramps, rampSize, height, sloped }) {
     <group>
       {pieces.map((piece) => (
         <mesh key={piece.key} geometry={geometry} material={material} castShadow receiveShadow position={[piece.position[0], baseY, piece.position[1]]} rotation={[0, piece.rotationY, 0]} scale={[piece.length / pieceLength, sloped ? height / pieceHeight : 1, 1]} />
+      ))}
+      {corners.map((item) => (
+        <mesh key={`corner-${item.key}`} geometry={corner.geometry} material={corner.material || material} castShadow receiveShadow position={[item.position[0], baseY, item.position[1]]} rotation={[0, item.rotationY, 0]} />
       ))}
     </group>
   );
@@ -24209,51 +24429,115 @@ function useGenericWallCoverTexture(width = 1, height = 1) {
 
 function createGenericWallCoverTexture(width = 1, height = 1) {
   if (typeof document === 'undefined') return null;
-  const ratio = Math.max(0.2, Math.min(6, Number(width || 1) / Math.max(0.1, Number(height || 1))));
+  const widthM = Math.max(0.2, Number(width || 1));
+  const heightM = Math.max(0.2, Number(height || 1));
+  // Same proportions as the banner, about 420 px per metre (bounded for GPU memory).
+  const scale = Math.min(420, 2400 / Math.max(widthM, heightM));
   const canvas = document.createElement('canvas');
-  canvas.width = 1400;
-  canvas.height = Math.max(360, Math.min(1400, Math.round(canvas.width / ratio)));
+  canvas.width = Math.max(256, Math.round(widthM * scale));
+  canvas.height = Math.max(256, Math.round(heightM * scale));
   const ctx = canvas.getContext('2d');
-  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-  gradient.addColorStop(0, '#153d72');
-  gradient.addColorStop(0.46, '#2d7fbb');
-  gradient.addColorStop(1, '#f2b34c');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const W = canvas.width;
+  const H = canvas.height;
+  const unit = Math.min(W, H);
 
-  ctx.globalAlpha = 0.18;
-  ctx.fillStyle = '#ffffff';
-  for (let x = -canvas.height; x < canvas.width; x += 92) {
-    ctx.beginPath();
-    ctx.moveTo(x, canvas.height);
-    ctx.lineTo(x + canvas.height * 0.7, 0);
-    ctx.lineTo(x + canvas.height * 0.7 + 44, 0);
-    ctx.lineTo(x + 44, canvas.height);
-    ctx.closePath();
-    ctx.fill();
-  }
+  // Deep night-blue base.
+  const base = ctx.createLinearGradient(0, 0, W, H);
+  base.addColorStop(0, '#0b1a3d');
+  base.addColorStop(0.55, '#16306b');
+  base.addColorStop(1, '#2a1a55');
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, W, H);
 
-  ctx.globalAlpha = 0.16;
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 3;
-  const step = Math.max(80, canvas.width / 10);
-  for (let x = 0; x <= canvas.width; x += step) {
+  // Soft aurora glows, placed relative to the banner so every format stays balanced.
+  const glow = (x, y, r, color) => {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, color);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  };
+  ctx.globalCompositeOperation = 'lighter';
+  glow(W * 0.18, H * 0.2, Math.max(W, H) * 0.55, 'rgba(46, 140, 255, 0.55)');
+  glow(W * 0.85, H * 0.85, Math.max(W, H) * 0.5, 'rgba(255, 110, 90, 0.42)');
+  glow(W * 0.62, H * 0.12, Math.max(W, H) * 0.38, 'rgba(160, 90, 255, 0.38)');
+  glow(W * 0.5, H * 0.55, unit * 0.7, 'rgba(110, 220, 255, 0.22)');
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Flowing ribbons across the banner.
+  ctx.lineCap = 'round';
+  for (let index = 0; index < 7; index += 1) {
+    const t = index / 6;
     ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
+    const y0 = H * (0.25 + t * 0.6);
+    ctx.moveTo(-W * 0.05, y0);
+    ctx.bezierCurveTo(W * 0.3, y0 - H * (0.35 - t * 0.2), W * 0.65, y0 + H * (0.3 - t * 0.15), W * 1.05, y0 - H * 0.12);
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.05 + 0.05 * (1 - Math.abs(t - 0.5) * 2)})`;
+    ctx.lineWidth = Math.max(2, unit * (0.004 + 0.01 * t));
     ctx.stroke();
   }
 
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = 'rgba(255,255,255,0.88)';
-  ctx.fillRect(canvas.width * 0.08, canvas.height * 0.33, canvas.width * 0.84, canvas.height * 0.34);
-  ctx.fillStyle = '#173761';
+  // Fine dot grid for texture.
+  const dot = Math.max(14, Math.round(unit / 26));
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
+  for (let y = dot / 2; y < H; y += dot) {
+    for (let x = dot / 2; x < W; x += dot) {
+      ctx.beginPath();
+      ctx.arc(x, y, Math.max(1, dot * 0.07), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Thin inset frame marking the safe area.
+  const margin = unit * 0.06;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+  ctx.lineWidth = Math.max(2, unit * 0.004);
+  ctx.setLineDash([unit * 0.03, unit * 0.02]);
+  ctx.strokeRect(margin, margin, W - margin * 2, H - margin * 2);
+  ctx.setLineDash([]);
+
+  // Centered copy, sized from the banner's short side and kept inside its width.
+  const formatNumberFr = (value) => (Math.round(value * 100) / 100).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fitFont = (text, weight, size, maxWidth) => {
+    let next = size;
+    ctx.font = `${weight} ${next}px "Gotham", "Montserrat", "Arial Black", sans-serif`;
+    while (ctx.measureText(text).width > maxWidth && next > 10) {
+      next *= 0.92;
+      ctx.font = `${weight} ${next}px "Gotham", "Montserrat", "Arial Black", sans-serif`;
+    }
+    return next;
+  };
+  const maxTextWidth = W - margin * 4;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `900 ${Math.max(44, Math.round(canvas.height * 0.095))}px Arial, sans-serif`;
-  ctx.fillText('VISUEL GENERIQUE', canvas.width / 2, canvas.height * 0.47);
-  ctx.font = `700 ${Math.max(24, Math.round(canvas.height * 0.045))}px Arial, sans-serif`;
-  ctx.fillText('Fichiers HD recuperes par Stand-ING', canvas.width / 2, canvas.height * 0.57);
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(5, 12, 35, 0.45)';
+  ctx.shadowBlur = unit * 0.03;
+  const titleSize = fitFont('VOTRE VISUEL ICI', 900, unit * 0.16, maxTextWidth);
+  ctx.fillText('VOTRE VISUEL ICI', W / 2, H * 0.44);
+  ctx.shadowBlur = 0;
+
+  // Size pill.
+  const dims = `${formatNumberFr(widthM)} × ${formatNumberFr(heightM)} m`;
+  const pillSize = fitFont(dims, 700, Math.min(titleSize * 0.42, unit * 0.07), maxTextWidth * 0.7);
+  const pillWidth = ctx.measureText(dims).width + pillSize * 1.6;
+  const pillHeight = pillSize * 1.9;
+  const pillY = H * 0.44 + titleSize * 0.62 + pillHeight * 0.1;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.lineWidth = Math.max(1.5, pillSize * 0.06);
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - pillWidth / 2, pillY, pillWidth, pillHeight, pillHeight / 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(dims, W / 2, pillY + pillHeight / 2);
+
+  // Footer note.
+  const note = 'Visuel générique · fichier HD fourni par l’exposant';
+  fitFont(note, 500, Math.min(pillSize * 0.62, unit * 0.04), maxTextWidth);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+  ctx.fillText(note, W / 2, Math.min(H - margin * 1.8, pillY + pillHeight + pillSize * 1.3));
 
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
@@ -25013,7 +25297,10 @@ function prepareLoadedModel(source, item = null, textureOptions = {}) {
       fitSignatureHeadStandardImage(child, item, textureOptions.mainImageTexture);
     }
   });
-  return centerModel(clone, item);
+  const centered = centerModel(clone, item);
+  // Added after centring so the halo never changes the model's size or anchor.
+  addPartitionHeadGlow(centered, item);
+  return centered;
 }
 
 function modelRenderOrderForItem(item = null) {
@@ -25195,6 +25482,11 @@ function applyItemOptionMaterials(material, item, textureOptions = {}, meshName 
   }
   const textureSlotMaterial = applyTextureSlotMaterial(material, item, textureOptions, materialName);
   if (textureSlotMaterial !== material) return textureSlotMaterial;
+
+  if (isScreenVideoItem(item) && isScreenVideoMaterial(materialName, material)) {
+    const screenTexture = screenVideoTexture(item, material.map);
+    if (screenTexture) return materialWithTexture(material, screenTexture, { luminous: true });
+  }
 
   if (isWoodReceptionDeskItem(item)) {
     if (isWoodReceptionDeskImageMaterial(materialName, material, item) && !counterLogoOptionActive(item)) {

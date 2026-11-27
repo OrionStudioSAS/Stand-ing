@@ -9,6 +9,17 @@
         "dev"
       ],
       "port": 5173
+    },
+    {
+      "name": "demo-local",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tests/__tmp-demo.mjs",
+        "tests/__tmp-demo-bank.json"
+      ],
+      "port": 5180,
+      "url": "http://127.0.0.1:5180",
+      "autoPort": false
     }
   ]
 }

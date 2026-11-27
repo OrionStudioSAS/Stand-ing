@@ -23,7 +23,7 @@ export const translations = {
 
     // Footer
     back: '← Retour',
-    next_step: 'Étape suivante →',
+    next_step: 'Étape suivante',
 
     // Toolbar
     toolbar_rotation: 'Rotation',
@@ -123,6 +123,7 @@ export const translations = {
     floor_detail_4: 'Cornières alu 4 × 4 cm',
     floor_detail_12: 'Cornières alu 4 × 4 cm + plinthes blanches',
     floor_price_unit: 'HT/m²',
+    floor_price_estimate: '≈ {amount} € HT',
     floor_preview_carpet: 'Moquette',
     floor_preview_carpet_ground: 'posée au sol',
     floor_preview_footprint: 'Empreinte',
@@ -287,6 +288,7 @@ export const translations = {
     shop_add_one: 'Ajouter un {label}',
     shop_remove_one: 'Retirer un {label}',
     shop_included: 'Inclus ×{count}',
+    shop_included_partial: '{present}/{count} inclus',
     shop_included_short: 'Inclus',
     shop_announce_added: '{label} ajouté au stand ({count})',
     shop_announce_removed: '{label} retiré du stand ({count})',
@@ -471,6 +473,7 @@ export const translations = {
 
     // Furniture categories
     cat_all: 'Tout',
+    cat_included: 'Inclus',
     cat_furniture: 'Mobilier',
     cat_multimedia: 'Multimédia',
     cat_electricity: 'Électricité',
@@ -500,7 +503,7 @@ export const translations = {
 
     // Footer
     back: '← Back',
-    next_step: 'Next step →',
+    next_step: 'Next step',
 
     // Toolbar
     toolbar_rotation: 'Rotation',
@@ -600,6 +603,7 @@ export const translations = {
     floor_detail_4: 'Aluminium angle trims 4 × 4 cm',
     floor_detail_12: 'Aluminium angle trims 4 × 4 cm + white skirting',
     floor_price_unit: 'excl. VAT/m²',
+    floor_price_estimate: '≈ €{amount} excl. VAT',
     floor_preview_carpet: 'Carpet',
     floor_preview_carpet_ground: 'laid on the ground',
     floor_preview_footprint: 'Footprint',
@@ -764,6 +768,7 @@ export const translations = {
     shop_add_one: 'Add one {label}',
     shop_remove_one: 'Remove one {label}',
     shop_included: 'Included ×{count}',
+    shop_included_partial: '{present}/{count} included',
     shop_included_short: 'Included',
     shop_announce_added: '{label} added to your stand ({count})',
     shop_announce_removed: '{label} removed from your stand ({count})',
@@ -948,6 +953,7 @@ export const translations = {
 
     // Furniture categories
     cat_all: 'All',
+    cat_included: 'Included',
     cat_furniture: 'Furniture',
     cat_multimedia: 'Multimedia',
     cat_electricity: 'Electricity',
