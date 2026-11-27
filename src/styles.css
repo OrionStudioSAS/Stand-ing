@@ -16300,3 +16300,4 @@ img.asset-thumb {
   border-top: 0;
   padding-top: 8px;
 }
+.validation-v2-qty { font-style: normal; font-weight: 700; color: var(--brand, #0b3d6e); white-space: nowrap; }

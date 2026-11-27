@@ -42,6 +42,7 @@ test('header cart charges only the same billable quantities and item supplements
   for (const name of ['cartItemPrice', 'roundCurrency']) load(api, name);
   api.cartItemBasePrice = item => item.price;
   api.textureSlotColorSupplement = () => 0;
+  api.findCatalogEntry = () => null;
   const items = [{ id: 'included', type: 'chair', price: 85.5 }, { id: 'extra', type: 'chair', price: 85.5 }];
   const pricing = { includedCounts: new Map([['chair', 1]]), lines: [{ optionForItemId: 'included', total: 12.25 }] };
   assert.equal(api.cartItemPrice(items[0], {}, '', pricing, items), 12.25);

@@ -1854,9 +1854,12 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
     expectedLedSpotCount: ledSpotCount,
   }), [area, availableCatalog, visibleSceneItems, assetPackLabel, initialScene, width, depth, layout, selectedTechnicalFloor, selectedCarpetColor, selectedCarpetFootprintColor, genericCarpetFootprintEnabled, selectedWallFabricColor, effectiveDefaultColorOptions, wallCovers, wallCoverSurfaces, carpetGroupConfigOptionsList, carpetConfigOptions, thickCarpetEnabled, thickFootprintArea, isSignatureStand, ledRailsEnabled, ledSpotCount]);
   const estimatedTotal = scenePricing.total;
-  const cartItems = useMemo(() => visibleSceneItems.filter((item) => shopCartItemVisible(item) && (!isSignatureStand
-    || cartItemPrice(item, findCatalogEntry(availableCatalog, item.type) || item, assetPackLabel, scenePricing, visibleSceneItems, availableCatalog) > 0)),
-  [visibleSceneItems, isSignatureStand, assetPackLabel, scenePricing, availableCatalog]);
+  // Automatic items (partition heads, reserve, LED…) stay out of the cart unless they are billed.
+  const cartItems = useMemo(() => visibleSceneItems.filter((item) => {
+    const price = cartItemPrice(item, findCatalogEntry(availableCatalog, item.type) || item, assetPackLabel, scenePricing, visibleSceneItems, availableCatalog);
+    if (!shopCartItemVisible(item)) return price > 0;
+    return !isSignatureStand || price > 0;
+  }), [visibleSceneItems, isSignatureStand, assetPackLabel, scenePricing, availableCatalog]);
 
   const currentScenePayload = (status, clientStatus, overrides = {}) => {
     const nextContactDetails = overrides.contactDetails || contactDetails;
@@ -2980,6 +2983,39 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
 
   if (!objectBankLoaded) return <div className="loading-screen">{tRaw(language, 'loading_objects')}</div>;
 
+  const validationRecapProps = {
+    area: area,
+    layout: layout,
+    standLabel: initialScene.project_name || 'Stand A-14',
+    carpetColor: selectedCarpetColor,
+    carpetFootprintColor: selectedCarpetFootprintColor,
+    carpetFootprintEnabled: genericCarpetFootprintEnabled,
+    wallFabricColor: selectedWallFabricColor,
+    technicalFloor: selectedTechnicalFloor,
+    technicalFloorTrimType: effectiveTechnicalFloorTrimType,
+    technicalFloorRamps: selectedTechnicalFloor ? technicalFloorRamps : [],
+    ledRailsEnabled: ledRailsEnabled,
+    ledSpotCount: actualLedSpotCount,
+    autoSpotsRule: autoSpotsBaseRule,
+    reserveRule: activeReserveRuleConfig,
+    reserveOptionType: effectiveReserveOptionType,
+    reserveOptions: reserveOptions,
+    partitionHeadRule: activePartitionHeadRuleConfig,
+    partitionHeadSides: effectivePartitionHeadSides,
+    wallCovers: wallCovers,
+    wallCoverSurfaces: wallCoverSurfaces,
+    partitionHeadVisuals: partitionHeadVisuals,
+    isSignatureStand: isSignatureStand,
+    pricing: scenePricing,
+    items: visibleSceneItems,
+    catalog: availableCatalog,
+    readOnly: readOnly,
+    isAdminViewer: effectiveAdminViewer,
+    onRemoveItem: removeSceneItemById,
+    onOpenItem: openValidationItemConfigurator,
+    onEditOption: (key) => { setHeaderPanel(null); setActiveStep(2); openOnlyStepOption(key, true); },
+  };
+
   return (
     <LanguageContext.Provider value={language}>
     <main className={`configurator-shell has-stn-nav ${activeStep === 1 ? 'intro-step' : ''} ${showCartBar ? 'has-cart-bar' : ''} ${readOnly ? 'readonly-mode' : ''}`}>
@@ -3018,6 +3054,8 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
             area={area}
             offerLabel={offerLabel}
             nextStep={activeStep < 3 ? 3 : 4}
+            recapProps={validationRecapProps}
+            onEditOption={(key) => { setHeaderPanel(null); setActiveStep(2); openOnlyStepOption(key, true); }}
             onContinue={() => setActiveStep(3)}
             open={headerPanel === 'cart'}
             onOpenChange={(open) => setHeaderPanel(open ? 'cart' : null)}
@@ -3234,44 +3272,16 @@ function ConfiguratorApp({ initialScene, isAdminViewer = false, forceReadOnly = 
           />
         ) : activeStep === 4 ? (
           <ValidationStepPanel
-            area={area}
-            layout={layout}
-            standLabel={initialScene.project_name || 'Stand A-14'}
-            carpetColor={selectedCarpetColor}
-            carpetFootprintColor={selectedCarpetFootprintColor}
-            carpetFootprintEnabled={genericCarpetFootprintEnabled}
-            wallFabricColor={selectedWallFabricColor}
-            technicalFloor={selectedTechnicalFloor}
-            technicalFloorTrimType={effectiveTechnicalFloorTrimType}
-            ledRailsEnabled={ledRailsEnabled}
-            ledSpotCount={actualLedSpotCount}
-            autoSpotsRule={autoSpotsBaseRule}
-            reserveRule={activeReserveRuleConfig}
-            reserveOptionType={effectiveReserveOptionType}
-            reserveOptions={reserveOptions}
-            partitionHeadRule={activePartitionHeadRuleConfig}
-            partitionHeadSides={effectivePartitionHeadSides}
-            wallCovers={wallCovers}
-            wallCoverSurfaces={wallCoverSurfaces}
-            partitionHeadVisuals={partitionHeadVisuals}
-            isSignatureStand={isSignatureStand}
-            pricing={scenePricing}
-            items={visibleSceneItems}
-            catalog={availableCatalog}
+            {...validationRecapProps}
             saveState={saveState}
             confirmState={confirmState}
             visualsUploading={archVisualUpload.uploading || Object.values(wallCoverUploadState).some((upload) => upload.uploading)}
-            readOnly={readOnly}
             canConfirm={!sceneSaveError?.stale}
-            isAdminViewer={effectiveAdminViewer}
             specialRequest={specialRequest}
             specialRequestTags={specialRequestTags}
             onSpecialRequest={setSpecialRequest}
             onSpecialRequestTags={setSpecialRequestTags}
-            onRemoveItem={removeSceneItemById}
-            onOpenItem={openValidationItemConfigurator}
             onEditStep={(step) => { setHeaderPanel(null); setActiveStep(step); }}
-            onEditOption={(key) => { setHeaderPanel(null); setActiveStep(2); openOnlyStepOption(key, true); }}
           />
         ) : (
           <OptionsStepPanel
@@ -6494,22 +6504,12 @@ function ValidationAmountList({ rows = [], totalLabel, total = 0 }) {
     </dl>
   );
 }
-function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, total, pricing, salonLabel, readOnly, standLabel = '', area = 0, offerLabel = '', nextStep = 4, open, onOpenChange, onSelectItem, onOpenItem, onDeleteItems, canRemoveItem, onValidate, onContinue }) {
+function HeaderCartMenu({ items, total, pricing, recapProps = null, readOnly, standLabel = '', area = 0, offerLabel = '', nextStep = 4, open, onOpenChange, onValidate, onContinue }) {
   const tr = useUiText();
-  const itemRefs = useRef(new Map());
   const closeRef = useRef(null);
   const [ownOpen, setOwnOpen] = useState(false);
-  const [toastNode, showToast] = useNavToast();
   const cartOpen = open ?? ownOpen;
   const setCartOpen = (next) => { if (onOpenChange) onOpenChange(next); else setOwnOpen(next); };
-  const cartGroups = useMemo(() => groupCartItems(items), [items]);
-
-  useEffect(() => {
-    if (!selectedId || !cartOpen) return;
-    const selectedGroup = cartGroups.find((group) => group.items.some((item) => item.id === selectedId));
-    const selectedNode = selectedGroup ? itemRefs.current.get(selectedGroup.key) : null;
-    selectedNode?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
-  }, [selectedId, cartGroups, cartOpen]);
 
   useEffect(() => {
     if (!cartOpen) return undefined;
@@ -6524,35 +6524,22 @@ function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, tota
     };
   }, [cartOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openCartItem = (item) => {
-    setCartOpen(false);
-    if (onOpenItem) onOpenItem(item);
-    else onSelectItem?.(item?.id);
-  };
-
-  // Lines grouped by shop category, like the shop panels (Mobilier, Multimédia, Électricité…).
-  const lines = cartGroups.map((group) => {
-    const item = group.items[0];
-    const entry = findCatalogEntry(catalog, item.type) || item;
-    const lineTotal = group.items.reduce((sum, groupItem) => sum + cartItemPrice(groupItem, entry, salonLabel, pricing, pricingItems, catalog), 0);
-    const category = furniturePanelCategory(entry);
-    return { group, item, entry, lineTotal, category: category === 'hidden' ? 'structure' : category };
-  });
-  const categoryOrder = ['structure', 'signage', 'furniture', 'multimedia', 'electricity'];
-  const sections = categoryOrder
-    .map((id) => ({ id, label: marketCategoryMeta(id).label, lines: lines.filter((line) => line.category === id) }))
-    .concat([{ id: 'other', label: 'Options', lines: lines.filter((line) => !categoryOrder.includes(line.category)) }])
-    .filter((section) => section.lines.length);
-
-  const count = items.length;
+  // Same rows as the step-4 recap: the cart is a quick view of it.
+  const sectionRows = cartOpen && recapProps ? buildValidationSectionRows(recapProps) : null;
+  const sections = sectionRows ? VALIDATION_SECTIONS.filter((section) => sectionRows[section.id].length > 0) : [];
+  const count = items?.length || 0;
   const articles = tr(`${count} article${count > 1 ? 's' : ''}`);
+  const rowCount = sections.reduce((sum, section) => sum + sectionRows[section.id].filter((row) => !row.option && !row.discount).reduce((rowSum, row) => rowSum + (row.quantity || 1), 0), 0);
   const allowance = pricing?.packBenefits?.mode === 'allowance';
   const allowanceAmount = Number(pricing?.allowanceAmount || 0);
   const allowanceUsed = Math.min(allowanceAmount, Number(pricing?.allowanceApplied || 0));
   const allowanceBalance = Number(pricing?.allowanceRemaining || 0) - Number(pricing?.accessoriesSupplement ?? pricing?.total ?? 0);
-  const baseItems = normalizeBaseItemsForUi(pricing?.baseItems || []);
+  const insurance = Number(pricing?.insuranceLine?.total || 0);
+  const insuranceBase = pricing?.insuranceLine?.insuranceBase ?? pricing?.furnitureInsuranceBase ?? 0;
+  const optionsTotal = allowance ? roundCurrency(Number(pricing?.grossTotal || 0) - insurance) : roundCurrency(Number(total || 0) - insurance);
   const ttc = roundCurrency(Number(total || 0) * 1.2);
   const continueLabel = nextStep === 3 ? 'Continuer vers la boutique' : 'Valider le panier';
+  const runAndClose = (action) => () => { setCartOpen(false); action?.(); };
 
   return (
     <div className="topbar-cart">
@@ -6579,7 +6566,7 @@ function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, tota
             <div className="d-head">
               <div>
                 <h2 id="stn-drawer-title">{tr('Votre panier')}</h2>
-                <p>{[articles, standLabel, area ? `${tr(Number(area).toFixed(0))} m²` : ''].filter(Boolean).join(' · ')}</p>
+                <p>{[tr(`${rowCount} élément${rowCount > 1 ? 's' : ''}`), standLabel, offerLabel, area ? `${tr(Number(area).toFixed(0))} m²` : ''].filter(Boolean).join(' · ')}</p>
               </div>
               <button type="button" ref={closeRef} className="d-close" onClick={() => setCartOpen(false)} aria-label={tr('Fermer le panier')}><NavIcon name="close" stroke={2.4} /></button>
             </div>
@@ -6595,50 +6582,36 @@ function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, tota
                 </section>
               )}
 
-              {baseItems.length > 0 && (
-                <details className="included">
-                  <summary>
-                    <span><b>{tr(`Inclus dans votre formule${offerLabel ? ` ${offerLabel}` : ''}`)}</b><span>{tr(`Stand ${Number(area || 0).toFixed(0)} m² · ${baseItems.length} élément${baseItems.length > 1 ? 's' : ''} inclus`)}</span></span>
-                    <NavIcon name="chevron" size={16} stroke={2.4} />
-                  </summary>
-                  <ul>{baseItems.map((base) => <li key={base.type}>{tr(base.label)}{base.quantity > 1 ? ` × ${base.quantity}` : ''}</li>)}</ul>
-                </details>
-              )}
-
               {sections.map((section) => (
                 <React.Fragment key={section.id}>
-                  <p className="group-title">{tr(section.label)}<span>{navEuro(section.lines.reduce((sum, line) => sum + line.lineTotal, 0))} {tr('HT')}</span></p>
-                  {section.lines.map(({ group, item, entry, lineTotal }) => {
-                    const quantity = group.items.length;
-                    const removableItems = group.items.filter((groupItem) => canRemoveItem?.(groupItem) ?? true);
-                    const optionLines = itemOptionLines(item).filter((line) => line !== item.options?.variantLabel);
-                    const label = tr(itemCartLabel(item));
-                    return (
-                      <div
-                        key={group.key}
-                        ref={(node) => { if (node) itemRefs.current.set(group.key, node); else itemRefs.current.delete(group.key); }}
-                        className={`line${group.items.some((groupItem) => groupItem.id === selectedId) ? ' selected' : ''}`}
-                      >
-                        <span className="thumb"><CartItemThumb item={item} entry={entry} catalog={catalog} /></span>
-                        <div>
-                          <p className="l-name">{label}</p>
-                          {optionLines.length > 0 && <p className="l-detail">{optionLines.map((line) => tr(line)).join(' · ')}</p>}
+                  <p className="group-title">{tr(section.title)}<span>{sectionRows[section.id].filter((row) => !row.option && !row.discount).reduce((sum, row) => sum + (row.quantity || 1), 0)}</span></p>
+                  {sectionRows[section.id].map((row) => (
+                    <div key={row.id} className={`line${row.option ? ' line-option' : ''}`} data-cart-row={row.id}>
+                      {!row.option && (
+                        <span className="thumb">
+                          <ValidationThumb imageUrl={row.imageUrl} imageReplaceColor={row.imageReplaceColor} imageTargetColor={row.imageTargetColor} color={row.swatchColor} image={row.swatchImage} />
+                        </span>
+                      )}
+                      <div>
+                        <p className="l-name">{tr(row.label)}{row.quantity > 1 ? <span className="l-qty"> × {row.quantity}</span> : null}</p>
+                        {row.detail && <p className="l-detail">{tr(row.detail)}</p>}
+                        {row.visualStatus && (
+                          <p className={`l-visual ${row.visualStatus.tone}`}>{tr(row.visualStatus.label)}</p>
+                        )}
+                        {!readOnly && (row.onOpen || row.onRemove) && (
                           <div className="l-tools">
-                            <button type="button" className="l-link" onClick={() => openCartItem(item)}>{tr('Modifier')}</button>
-                            <button type="button" className="l-link rm" disabled={readOnly || !removableItems.length} onClick={() => { onDeleteItems?.(removableItems.map((groupItem) => groupItem.id)); showToast(tr(`${itemCartLabel(item)} retiré du panier`)); }}>{tr('Retirer')}</button>
+                            {row.onOpen && <button type="button" className="l-link" onClick={runAndClose(row.onOpen)}>{tr('Modifier')}</button>}
+                            {row.onRemove && <button type="button" className="l-link rm" onClick={row.onRemove}>{tr('Retirer')}</button>}
                           </div>
-                        </div>
-                        <p className={`l-price${lineTotal > 0 ? '' : ' included'}`}>
-                          {lineTotal > 0 ? navEuro(lineTotal) : tr('Inclus')}
-                          {lineTotal > 0 && quantity > 1 && <small>{quantity} × {navEuro(lineTotal / quantity)}</small>}
-                        </p>
+                        )}
                       </div>
-                    );
-                  })}
+                      <p className={`l-price${row.badgeTone === 'included' ? ' included' : ''}`}>{tr(row.badge || '')}</p>
+                    </div>
+                  ))}
                 </React.Fragment>
               ))}
 
-              {count === 0 && (
+              {!sections.length && (
                 <div className="d-empty">
                   <NavIcon name="cart" size={40} stroke={1.6} />
                   <b>{tr('Aucune option ajoutée')}</b>
@@ -6650,7 +6623,8 @@ function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, tota
 
             <div className="d-foot">
               <dl className="totals">
-                {allowance && <div><dt>{tr('Options et accessoires')}</dt><dd>{navEuro(pricing?.grossTotal || 0)} {tr('HT')}</dd></div>}
+                <div><dt>{tr('Options et mobilier')}</dt><dd>{navEuro(optionsTotal)} {tr('HT')}</dd></div>
+                {insurance > 0 && <div><dt>{tr('Assurance mobilier')}<small>{tr(`Calculée sur ${navEuro(insuranceBase)} HT de mobilier`)}</small></dt><dd>{navEuro(insurance)} {tr('HT')}</dd></div>}
                 {allowance && <div><dt>{tr('Forfait accessoires déduit')}</dt><dd>− {navEuro(pricing?.allowanceApplied || 0)} {tr('HT')}</dd></div>}
                 <div className="grand"><dt>{tr('Total HT')}</dt><dd>{navEuro(total)} {tr('HT')}</dd></div>
                 <div className="ttc"><dt>{tr('TVA 20 % · Total TTC')}</dt><dd>{navEuro(ttc)}</dd></div>
@@ -6664,7 +6638,6 @@ function HeaderCartMenu({ items, pricingItems = items, catalog, selectedId, tota
         </>,
         document.body,
       )}
-      {toastNode}
     </div>
   );
 }
@@ -8223,7 +8196,9 @@ function cartItemPrice(item, entry, salonLabel, pricing = null, allItems = [], c
   if (pricing?.includedCounts instanceof Map) {
     const index = allItems.filter((candidate) => candidate.type === item.type).findIndex((candidate) => candidate.id === item.id);
     const included = index >= 0 && index < (pricing.includedCounts.get(item.type) || 0);
-    const base = included ? 0 : cartItemBasePrice(item, entry, salonLabel, catalogEntries) + textureSlotColorSupplement(item);
+    // Same catalogue lookup as calculateScenePricing, so each row matches the billed line.
+    const pricingEntry = findCatalogEntry(catalogEntries, item.type);
+    const base = included ? 0 : cartItemBasePrice(item, pricingEntry, salonLabel, catalogEntries) + textureSlotColorSupplement(item);
     const supplements = (pricing.lines || []).filter((line) => line.optionForItemId === item.id && !line.mandatory).reduce((sum, line) => sum + Number(line.total || 0), 0);
     return roundCurrency(base + supplements);
   }
@@ -8666,7 +8641,8 @@ function itemOptionLines(item) {
   return result;
 }
 
-function ValidationStepPanel({
+// Rows of the step-4 recap, shared with the header cart (a quick view of the same information).
+function buildValidationSectionRows({
   area,
   layout,
   standLabel,
@@ -8676,6 +8652,7 @@ function ValidationStepPanel({
   wallFabricColor,
   technicalFloor,
   technicalFloorTrimType,
+  technicalFloorRamps = [],
   ledRailsEnabled,
   ledSpotCount,
   autoSpotsRule = null,
@@ -8706,15 +8683,10 @@ function ValidationStepPanel({
   onEditStep,
   onEditOption,
 }) {
-  const tr = useUiText();
-  const t = useT();
   const safeItems = (items || []).filter(Boolean);
   const lines = pricing?.lines || [];
   const visibleSupplementLines = lines.filter((line) => !line.mandatory && !String(line.type || '').startsWith('technical-floor-') && (!isSignatureStand || Number(line.total) > 0));
   const includedCounts = pricing?.includedCounts || new Map();
-  const confirmed = saveState === 'configured';
-  const specialRequestText = String(specialRequest || '');
-  const hasSpecialRequest = Boolean(specialRequestText.trim());
   const reserveOption = reserveOptionType ? normalizeComplementaryOptions(reserveRule?.options).find((option) => option.type === reserveOptionType) : null;
   const activeCovers = wallCoverSurfaces.filter((surface) => wallCoverEnabledForSurface(wallCovers, surface));
   const priceBadge = (amount) => validationBadgeText(amount, isSignatureStand);
@@ -8732,10 +8704,13 @@ function ValidationStepPanel({
     .filter((line) => match(line, normalizeTextValue(line.label || '')))
     .reduce((sum, line) => sum + Number(line.total || 0), 0);
   const carpetSupplement = optionSupplementTotal((line, label) => label.startsWith('moquette') && !label.includes('epaisse'));
-  const footprintSupplement = optionSupplementTotal((line, label) => label.startsWith('empreinte moquette'));
+  const footprintSupplement = optionSupplementTotal((line, label) => label.startsWith('empreinte moquette') && !label.includes('epaisse') && line.type !== 'signature-footprint-color');
+  const signatureFootprintLine = lines.find((line) => line.type === 'signature-footprint-color');
+  const technicalFloorSupplement = optionSupplementTotal((line) => String(line.type || '').startsWith('technical-floor-'));
   const thickCarpetSupplement = optionSupplementTotal((line, label) => label.includes('moquette epaisse'));
   const wallFabricSupplement = optionSupplementTotal((line, label) => label.startsWith('coton') || label.includes('coton cloison'));
-  const reserveSupplement = optionSupplementTotal((line, label) => label.includes('reserve'));
+  // Colour lines ("Coton … cloisons et réserve") belong to their own row, not to the reserve.
+  const reserveSupplement = optionSupplementTotal((line, label) => label.includes('reserve') && !String(line.type || '').startsWith('color') && !label.includes('coton'));
   const reserveOptionDetails = reserveOptionSummary(reserveOptions);
   const reserveEntry = findCatalogEntry(catalog, reserveOption?.type || reserveRule?.includedType) || null;
   const partitionHeadSupplement = optionSupplementTotal((line, label) => label.includes('tete de cloison'));
@@ -8822,7 +8797,8 @@ function ValidationStepPanel({
     badge: priceBadge(carpetSupplement),
     badgeTone: isSignatureStand || carpetSupplement > 0 ? 'price' : 'included',
   });
-  if (!isSignatureStand) pushRow('personalization', {
+  // A technical floor replaces the carpet footprint.
+  if (!isSignatureStand && !technicalFloor) pushRow('personalization', {
     id: 'footprint',
     optionKey: 'moquette',
     label: 'Empreinte moquette',
@@ -8832,6 +8808,36 @@ function ValidationStepPanel({
     badge: priceBadge(footprintSupplement),
     badgeTone: isSignatureStand || footprintSupplement > 0 ? 'price' : 'included',
   });
+  if (isSignatureStand && signatureFootprintLine) pushRow('personalization', {
+    id: 'signature-footprint',
+    optionKey: 'arche',
+    label: 'Empreinte moquette',
+    detail: 'Couleur en option',
+    badge: priceBadge(signatureFootprintLine.total),
+    badgeTone: 'price',
+  });
+  if (technicalFloor) {
+    const rampCount = technicalFloorRamps.length;
+    pushRow('personalization', {
+      id: 'technical-floor',
+      optionKey: 'plancher',
+      label: technicalFloor.label || 'Plancher technique',
+      detail: [`${formatNumber(area)} m²`, technicalTrimLabel(technicalFloorTrimType)].join(' · '),
+      swatchColor: '#d9dde3',
+      badge: priceBadge(technicalFloorSupplement),
+      badgeTone: isSignatureStand || technicalFloorSupplement > 0 ? 'price' : 'included',
+    });
+    pushRow('personalization', {
+      id: 'technical-floor-ramps',
+      optionKey: 'plancher',
+      label: technicalFloor.rampLabel || 'Rampe PMR',
+      detail: rampCount ? `${rampCount} rampe${rampCount > 1 ? 's' : ''}` : 'Aucune rampe',
+      swatchColor: '#d9dde3',
+      badge: 'Inclus',
+      badgeTone: 'included',
+      option: true,
+    });
+  }
   if (thickCarpetSupplement > 0) {
     pushRow('personalization', {
       id: 'thick-carpet',
@@ -8904,7 +8910,7 @@ function ValidationStepPanel({
     });
   });
 
-  wallCoverValidationRows(activeCovers, 0, pricing?.wallCoverUnitPrice || wallCoverPackTariff(isSignatureStand ? 'Signature' : '').unitPrice).forEach(({ surface, includedMl, billableMl, total }) => {
+  wallCoverValidationRows(activeCovers, pricing?.wallCoverIncludedMl || 0, pricing?.wallCoverUnitPrice || wallCoverPackTariff(isSignatureStand ? 'Signature' : '').unitPrice).forEach(({ surface, includedMl, billableMl, total }) => {
     const cover = wallCovers?.[surface.id] || (surface.sourceWall ? wallCovers?.[surface.sourceWall] : null) || {};
     const preview = wallCoverPreviewForSurface(wallCoverPreviewsFromCovers(wallCovers), surface);
     pushRow('signage', {
@@ -8976,6 +8982,96 @@ function ValidationStepPanel({
       }
     });
 
+  Object.keys(sectionRows).forEach((key) => { sectionRows[key] = groupValidationRows(sectionRows[key]); });
+  return sectionRows;
+}
+
+function validationBadgeAmount(badge = '') {
+  const text = String(badge || '').replace(/[\s\u202f\u00a0]/g, '');
+  const match = text.match(/^([+−-])([\d.,]+)€$/);
+  if (!match) return null;
+  const value = Number(match[2].replace(/\./g, '').replace(',', '.'));
+  return match[1] === '+' ? value : -value;
+}
+
+// Identical rows (same object, options and price) collapse into one row with a quantity.
+// Rows followed by their own option rows stay apart, so each option keeps its parent.
+function groupValidationRows(rows = []) {
+  const grouped = [];
+  const byKey = new Map();
+  rows.forEach((row, index) => {
+    const hasOptions = Boolean(rows[index + 1]?.option);
+    const key = !row.option && !row.discount && !hasOptions
+      ? [row.label, row.detail || '', row.badgeTone || '', row.visualStatus?.tone || '', row.imageUrl || '', row.swatchColor || ''].join('|')
+      : '';
+    const amount = validationBadgeAmount(row.badge);
+    const groupable = key && (row.badgeTone === 'included' || amount !== null);
+    const existing = groupable ? byKey.get(key) : null;
+    if (!existing) {
+      const entry = { ...row, quantity: 1, amountTotal: amount };
+      grouped.push(entry);
+      if (groupable) byKey.set(key, entry);
+      return;
+    }
+    existing.quantity += 1;
+    existing.missingVisualCount = (existing.missingVisualCount || 0) + (row.missingVisualCount || 0);
+    if (existing.amountTotal !== null && amount !== null) {
+      existing.amountTotal = roundCurrency(existing.amountTotal + amount);
+      existing.badge = validationBadgeText(existing.amountTotal, true);
+    }
+    existing.onRemove = existing.onRemove || row.onRemove;
+  });
+  return grouped;
+}
+
+function ValidationStepPanel(props) {
+  const {
+  area,
+  layout,
+  standLabel,
+  carpetColor,
+  carpetFootprintColor,
+  carpetFootprintEnabled,
+  wallFabricColor,
+  technicalFloor,
+  technicalFloorTrimType,
+  technicalFloorRamps = [],
+  ledRailsEnabled,
+  ledSpotCount,
+  autoSpotsRule = null,
+  reserveRule,
+  reserveOptionType,
+  reserveOptions = {},
+  partitionHeadRule,
+  partitionHeadSides,
+  wallCovers = {},
+  wallCoverSurfaces = [],
+  partitionHeadVisuals = {},
+  isSignatureStand = false,
+  pricing,
+  items = [],
+  catalog = [],
+  saveState,
+  confirmState,
+  visualsUploading = false,
+  readOnly,
+  canConfirm = true,
+  isAdminViewer,
+  specialRequest = '',
+  specialRequestTags = [],
+  onSpecialRequest,
+  onSpecialRequestTags,
+  onRemoveItem,
+  onOpenItem,
+  onEditStep,
+  onEditOption,
+} = props;
+  const tr = useUiText();
+  const t = useT();
+  const confirmed = saveState === 'configured';
+  const specialRequestText = String(specialRequest || '');
+  const hasSpecialRequest = Boolean(specialRequestText.trim());
+  const sectionRows = buildValidationSectionRows(props);
   const visibleSections = VALIDATION_SECTIONS.filter((section) => sectionRows[section.id].length > 0);
   const missingVisualRows = visibleSections.flatMap((section) => sectionRows[section.id]
     .filter((row) => row.visualStatus?.tone === 'missing')
@@ -9078,7 +9174,7 @@ function ValidationSection({ section, rows = [], onEdit = null }) {
   const tr = useUiText();
   const [open, setOpen] = useState(section.defaultOpen !== false);
   const Icon = section.icon;
-  const count = rows.filter((row) => !row.option && !row.discount).length;
+  const count = rows.filter((row) => !row.option && !row.discount).reduce((sum, row) => sum + (row.quantity || 1), 0);
   const bodyId = useId();
   return (
     <section className={`validation-v2-section ${open ? 'open' : ''}`}>
@@ -9104,7 +9200,7 @@ function ValidationSection({ section, rows = [], onEdit = null }) {
   );
 }
 
-function ValidationRow({ missingVisualCount: _missingVisualCount, label, detail, imageUrl, imageReplaceColor, imageTargetColor, swatchColor, swatchImage, badge, badgeTone = 'included', visualStatus = null, option = false, discount = false, onRemove = null, onOpen = null }) {
+function ValidationRow({ missingVisualCount: _missingVisualCount, quantity = 1, amountTotal: _amountTotal, label, detail, imageUrl, imageReplaceColor, imageTargetColor, swatchColor, swatchImage, badge, badgeTone = 'included', visualStatus = null, option = false, discount = false, onRemove = null, onOpen = null }) {
   const tr = useUiText();
   const interactive = Boolean(onOpen);
   const handleKey = (event) => {
@@ -9127,7 +9223,7 @@ function ValidationRow({ missingVisualCount: _missingVisualCount, label, detail,
         ? <span className="validation-v2-thumb discount"><Sparkles size={16} /></span>
         : <ValidationThumb imageUrl={imageUrl} imageReplaceColor={imageReplaceColor} imageTargetColor={imageTargetColor} color={swatchColor} image={swatchImage} />)}
       <div className="validation-v2-row-copy">
-        <strong>{tr(label)}</strong>
+        <strong>{tr(label)}{quantity > 1 ? <em className="validation-v2-qty"> × {quantity}</em> : null}</strong>
         {detail && <span>{tr(detail)}</span>}
         {visualStatus && (
           <em className={`validation-v2-visual ${visualStatus.tone}`}>
@@ -9334,7 +9430,9 @@ function validationLineHandledByOptions(line = {}) {
   const type = String(line.type || '');
   if (type.startsWith('admin-manual-')) return false;
   const label = normalizeTextValue(line.label || '');
-  if (type === 'wall-cover') return true;
+  // Banner rows already deduct the included metres surface by surface.
+  if (type === 'wall-cover' || type === 'wall-cover-allowance') return true;
+  if (type === 'signature-footprint-color') return true;
   if (type.startsWith('color-')) return true;
   if (label.includes('moquette') || label.includes('empreinte') || label.includes('coton')) return true;
   if (label.includes('reserve') || label.includes('tete de cloison')) return true;
