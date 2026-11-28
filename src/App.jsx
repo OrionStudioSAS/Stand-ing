@@ -24141,6 +24141,49 @@ function TechnicalFloorTrims({ bounds, ramps, rampSize, height, sloped }) {
     });
     return { runs: trimmed, corners: kept };
   }, [baseRuns, bounds, sloped, corner.geometry]);
+  const pieceHeightForCorners = geometry ? Math.max(0.001, geometry.boundingBox.max.y - geometry.boundingBox.min.y) : 0.041;
+  // Sloped trims overhang the slab by 10 cm: the front and side runs stop at the slab corner and leave a
+  // 10 × 10 cm square empty on each open outer corner. A mitred hip piece fills it, matching both slopes.
+  const slopedCornerGeometry = useMemo(() => {
+    if (!sloped) return null;
+    const edges = new Set(bounds.edges);
+    const corners = [];
+    if (edges.has('front') && edges.has('left')) corners.push({ cx: bounds.minX, cz: bounds.maxZ, ox: -1 });
+    if (edges.has('front') && edges.has('right')) corners.push({ cx: bounds.maxX, cz: bounds.maxZ, ox: 1 });
+    if (!corners.length) return null;
+    const o = technicalSlopedTrimOverhang;
+    // Ridge height of the trim profile at the slab edge, in world units after the run scaling.
+    const top = 0.04 * (height / pieceHeightForCorners);
+    const positions = [];
+    const uvs = [];
+    // The trim GLB repeats its brushed texture 20 times per metre along the run.
+    const uvRepeat = 20;
+    const pushTriangle = (a, b, c, alongZ) => {
+      // Keep every face pointing up (single-sided material).
+      const ux = b[0] - a[0]; const uz = b[2] - a[2];
+      const vx = c[0] - a[0]; const vz = c[2] - a[2];
+      const ny = uz * vx - ux * vz;
+      (ny >= 0 ? [a, b, c] : [a, c, b]).forEach((p) => {
+        positions.push(...p);
+        // Brushing follows the run this half of the mitre continues (side runs go along z).
+        uvs.push(...(alongZ ? [p[2] * uvRepeat, p[0] * uvRepeat] : [p[0] * uvRepeat, p[2] * uvRepeat]));
+      });
+    };
+    corners.forEach(({ cx, cz, ox }) => {
+      const inner = [cx, top, cz];
+      const side = [cx + ox * o, 0, cz];
+      const front = [cx, 0, cz + o];
+      const outer = [cx + ox * o, 0, cz + o];
+      pushTriangle(inner, side, outer, true);
+      pushTriangle(inner, outer, front, false);
+    });
+    const built = new BufferGeometry();
+    built.setAttribute('position', new Float32BufferAttribute(positions, 3));
+    built.setAttribute('uv', new Float32BufferAttribute(uvs, 2));
+    built.computeVertexNormals();
+    return built;
+  }, [sloped, bounds, height, pieceHeightForCorners]);
+  useEffect(() => () => slopedCornerGeometry?.dispose(), [slopedCornerGeometry]);
   if (!geometry || !material) return null;
   const pieceLength = Math.max(0.001, geometry.boundingBox.max.x - geometry.boundingBox.min.x);
   const pieceHeight = Math.max(0.001, geometry.boundingBox.max.y - geometry.boundingBox.min.y);
@@ -24178,6 +24221,9 @@ function TechnicalFloorTrims({ bounds, ramps, rampSize, height, sloped }) {
       {pieces.map((piece) => (
         <mesh key={piece.key} geometry={geometry} material={material} castShadow receiveShadow position={[piece.position[0], baseY, piece.position[1]]} rotation={[0, piece.rotationY, 0]} scale={[piece.length / pieceLength, sloped ? height / pieceHeight : 1, 1]} />
       ))}
+      {slopedCornerGeometry && (
+        <mesh geometry={slopedCornerGeometry} material={material} castShadow receiveShadow position={[0, baseY, 0]} />
+      )}
       {corners.map((item) => (
         <mesh key={`corner-${item.key}`} geometry={corner.geometry} material={corner.material || material} castShadow receiveShadow position={[item.position[0], baseY, item.position[1]]} rotation={[0, item.rotationY, 0]} />
       ))}
